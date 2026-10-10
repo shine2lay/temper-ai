@@ -26,7 +26,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. Its focus workflow (see "One workflow at a time" below) is the market scan, `scan_market`, which also covers a single sector when its `frame` names one. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader. |
@@ -65,6 +65,21 @@ Two owners are not departments:
 
 The same six steps for every role, built on what temper already has. A live
 config is never edited to try something.
+
+**One workflow at a time**: each department works on one workflow (or, for a
+role without workflows, one initiative), its focus, until that workflow is
+great, and only then moves to the next. Until then, its own-initiative work
+builds no new workflow and adds nothing to its other workflows; own-initiative
+tasks on anything else wait in the role's queue, paused or set to run after
+the focus task. Work that the owner or another department asks for directly
+can still go ahead. The other workflows may keep running where they're needed,
+with their output treated as unproven, and real breakages are still fixed.
+The role decides what great means, as the expert in
+its field: it writes the bar before testing, from its field's best practice,
+and holds the workflow to it with the method below (each stage tested alone,
+scripts before models, measured checks first). It records in its journal which
+workflow is its focus and why, and when that workflow became great, with the
+proof. One workflow that can be trusted is worth more than ten that can't.
 
 **Start runs only through the server**: the dashboard, the API
 (`POST /api/runs`), `temper_start_run`, Slack/Telegram, or `temper run`, which
@@ -115,6 +130,10 @@ the dashboard.
    from the next run on, so RollCall is told as well.
 
 **Building a new workflow**
+
+A role builds a new workflow only for a process that no existing workflow can
+do with a different input, and, on its own initiative, only once its focus
+workflow is great (see "One workflow at a time" above).
 
 - **Deterministic steps first.** Every step that a script or tool can do
   (fetch, count, measure, compare, check against a rule or a number,

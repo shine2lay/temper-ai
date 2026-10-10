@@ -1,0 +1,70 @@
+{
+  "purpose": "Source Sans Pro (licenses.json) has no glyphs for these four characters, so each browser drew them in its own system font. Two small Noto subsets supply exactly these four, under the CSS family 'Source Sans Pro' with a unicode-range each (index.css), so they are the same everywhere.",
+  "css_family": "Source Sans Pro",
+  "installed_fonts": [
+    {
+      "file": "notosanssymbols-arrows.woff2",
+      "bytes": 1316,
+      "sha256": "d5d7b005b91bc1fa4a7ac333c42f73b771bc7c9aac0bb16a1d70363a15864118",
+      "code_points": ["U+2192", "U+2193"],
+      "characters": "\u2192 \u2193",
+      "css": {"unicode_range": "U+2192-2193", "font_weight": ["400", "500 900"]},
+      "variation_axes": {"wght": {"min": 100, "default": 400, "max": 900}},
+      "name_table": {
+        "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
+        "1": "Noto Sans Symbols",
+        "4": "Noto Sans Symbols Regular",
+        "5": "Version 2.003",
+        "6": "NotoSansSymbols-Regular"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/caa8c83707a5797d62fd02f14301391986f21d75/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
+        "file": "NotoSansSymbols[wght].ttf",
+        "bytes": 372684,
+        "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
+        "upstream": "https://github.com/notofonts/symbols at commit b61fa7f86fb7d4163ee11d46d0977393f98d4f7a"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset 'NotoSansSymbols[wght].ttf' --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows.woff2",
+      "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    },
+    {
+      "file": "notosanssymbols2-play-warning.woff2",
+      "bytes": 2676,
+      "sha256": "a3f53b9e8b53b5ed9826b98c8ab9e1ff923bfc92169142ac92fabd54cdc6c7b3",
+      "code_points": ["U+25B6", "U+26A0"],
+      "characters": "\u25b6 \u26a0",
+      "css": {"unicode_range": "U+25B6, U+26A0", "font_weight": ["400", "500 900"]},
+      "variation_axes": {},
+      "name_table": {
+        "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
+        "1": "Noto Sans Symbols 2",
+        "4": "Noto Sans Symbols 2 Regular",
+        "5": "Version 2.008; ttfautohint (v1.8.4.7-5d5b)",
+        "6": "NotoSansSymbols2-Regular"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/7b6724ac7ececc713e9ba93af309f7520c9a80a3/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf",
+        "file": "NotoSansSymbols2-Regular.ttf",
+        "bytes": 1233128,
+        "sha256": "7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21",
+        "upstream": "https://github.com/notofonts/symbols at commit 25b00f0d3f40873a005287514ba2a48558655314"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols2-Regular.ttf --unicodes=U+25B6,U+26A0 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols2-play-warning.woff2",
+      "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    }
+  ],
+  "license_document": {
+    "file": "Noto-OFL.txt",
+    "bytes": 4383,
+    "sha256": "b118dd41337806a5d4797052c77caf3bd096aed783e5eb21b4d11154351e1ac0",
+    "source_urls": [
+      "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/OFL.txt",
+      "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt"
+    ],
+    "note": "Both upstream OFL.txt files are this same file, copied unchanged."
+  },
+  "license": "SIL Open Font License 1.1",
+  "note": "Reproducible: the two commands above, run on the upstream files, give these exact bytes. Each subset holds .notdef and its two glyphs, with no layout features. The Source Sans Pro files are unchanged."
+}

@@ -282,6 +282,110 @@ for (const theme of ['dark', 'light'] as const) {
   }
 }
 
+/** The four symbols Source Sans Pro lacks: index.css draws them from two small Noto faces (Design rm-753d7aa4 (b)). */
+const SYMBOLS = ['\u2192', '\u2193', '\u25B6', '\u26A0'];
+const FONT_FILE = /\.(woff2|ttf)(\?|$)/;
+
+/** A unicode-range's characters ("U+2192-2193, U+25B6" gives the three). */
+const rangeCharacters = (range: string) =>
+  range.split(',').flatMap((part) => {
+    const [from, to] = part.trim().replace(/^U\+/i, '').split('-');
+    const start = parseInt(from, 16);
+    return Array.from({ length: (to ? parseInt(to, 16) : start) - start + 1 }, (_, i) => String.fromCodePoint(start + i));
+  });
+
+/** The symbol faces as the browser read index.css: each one's weight, characters and load status. */
+const symbolFaces = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(document.fonts)
+      .filter((face) => face.unicodeRange.toUpperCase() !== 'U+0-10FFFF')
+      .map((face) => ({ family: face.family.replace(/["']/g, ''), weight: face.weight, range: face.unicodeRange, status: face.status })),
+  );
+
+/**
+ * Each element whose own text holds one of the four, with the fonts Chromium drew its text in
+ * (CDP CSS.getPlatformFontsForNode): a system font there means a fallback the browser chose.
+ */
+async function symbolFonts(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    await cdp.send('DOM.getDocument', { depth: -1 });
+    const query = `//*[text()[${SYMBOLS.map((symbol) => `contains(., "${symbol}")`).join(' or ')}]]`;
+    const { searchId, resultCount } = await cdp.send('DOM.performSearch', { query });
+    const found: Array<{ html: string; fonts: Array<{ familyName: string; isCustomFont: boolean; glyphCount: number }> }> = [];
+    if (resultCount > 0) {
+      const { nodeIds } = await cdp.send('DOM.getSearchResults', { searchId, fromIndex: 0, toIndex: resultCount });
+      for (const nodeId of nodeIds) {
+        const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+        const { outerHTML } = await cdp.send('DOM.getOuterHTML', { nodeId });
+        found.push({ html: outerHTML, fonts });
+      }
+    }
+    await cdp.send('DOM.discardSearchResults', { searchId });
+    return found;
+  } finally {
+    await cdp.detach();
+  }
+}
+
+for (const { theme, width, height } of [
+  { theme: 'dark', width: 1440, height: 900 },
+  { theme: 'light', width: 1440, height: 900 },
+  { theme: 'dark', width: 390, height: 844 },
+] as const) {
+  test(`contract: the four symbols Source Sans Pro lacks are drawn in the page's own faces on every state, never a system font, ${theme}, ${width}x${height} (rm-753d7aa4)`, async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ width, height });
+    await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+    const files: string[] = [];
+    page.on('request', (request) => {
+      if (FONT_FILE.test(request.url())) files.push(new URL(request.url()).pathname);
+    });
+
+    if (theme === 'dark' && width === 1440) {
+      // A page without the symbols (the run list) loads the page's own faces, but no symbol file:
+      // the unicode-range keeps them unloaded until a page shows one.
+      await page.goto('/app/');
+      await page.waitForLoadState('networkidle');
+      await page.evaluate(() => document.fonts.ready);
+      const text = await page.locator('body').innerText();
+      expect(text).toContain('Workflows');
+      expect(SYMBOLS.filter((symbol) => text.includes(symbol)), 'symbols on the run list').toEqual([]);
+      expect(files.some((file) => /sourcesanspro-regular/.test(file)), `font files: ${files.join(', ')}`).toBe(true);
+      expect(files.filter((file) => /notosanssymbols/.test(file)), 'symbol files on the run list').toEqual([]);
+      const faces = await symbolFaces(page);
+      expect(faces.map((face) => face.status)).toEqual(['unloaded', 'unloaded', 'unloaded', 'unloaded']);
+    }
+
+    const shown: string[] = [];
+    for (const name of STATES) {
+      await page.unrouteAll();
+      await open(page, name);
+      // The symbol faces join the page's family at its two weights, cover exactly the four, and the
+      // ready point (D80) waited for them: the map's measure was taken with them.
+      const faces = await symbolFaces(page);
+      expect(faces.map((face) => face.family), name).toEqual(Array(4).fill('Source Sans Pro'));
+      expect(faces.map((face) => face.weight).sort(), name).toEqual(['400', '400', '500 900', '500 900']);
+      expect([...new Set(faces.flatMap((face) => rangeCharacters(face.range)))].sort(), name).toEqual([...SYMBOLS].sort());
+      expect(faces.map((face) => face.status), name).toEqual(['loaded', 'loaded', 'loaded', 'loaded']);
+      // Every element showing one is drawn in the page's own faces only (one not drawn has no fonts).
+      const drawn = (await symbolFonts(page)).filter(({ fonts }) => fonts.length > 0);
+      for (const { html, fonts } of drawn) {
+        expect(fonts.filter((font) => !font.isCustomFont).map((font) => font.familyName), `${name}: system font for ${html}`).toEqual([]);
+      }
+      if (drawn.length > 0) shown.push(name);
+    }
+    // The Just sent line's arrow is on every state today; a state without one is noted, not failed.
+    expect(shown.length, 'states showing a symbol').toBeGreaterThan(0);
+    test.info().annotations.push({ type: 'states-without-symbols', description: STATES.filter((name) => !shown.includes(name)).join(', ') || 'none' });
+    expect(files.filter((file) => /notosanssymbols/.test(file)).length, 'symbol files fetched for the glance').toBeGreaterThan(0);
+  });
+}
+
 test("contract: a member's own long question names it, fits the phone band, and opens whole with Temper's note (D62, S1)", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 390, height: 844 });

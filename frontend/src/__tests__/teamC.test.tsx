@@ -83,7 +83,16 @@ function f3Form(): TrialForm {
     name,
     named: name !== '',
   }));
-  return { goal: 'x'.repeat(20_001), members: rows, leader: 'r1', pause: '', communication: 'all', project: '' };
+  return {
+    goal: 'x'.repeat(20_001),
+    members: rows,
+    leader: 'r1',
+    pause: '',
+    pauseEvery: null,
+    maxParallel: '',
+    communication: 'all',
+    project: '',
+  };
 }
 
 afterEach(() => {

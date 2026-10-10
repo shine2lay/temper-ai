@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { cn } from '@/lib/utils';
+import { onFontsLoaded } from '@/lib/fontsLoaded';
 import { teamBtn, teamCard, teamLabel } from '../teamUi';
 
 /** The trial's goal as written: four lines, then the rest on request. */
@@ -15,10 +16,14 @@ export function GoalCard({ goal }: { goal: string }) {
     if (!el || all) return;
     const measure = () => setLong(el.scrollHeight > el.clientHeight + 1);
     measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
+    // The clamped box keeps its height when the page's font arrives, but the text under it reflows.
+    const stopFonts = onFontsLoaded(measure);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => {
+      stopFonts();
+      observer?.disconnect();
+    };
   }, [goal, all]);
 
   return (

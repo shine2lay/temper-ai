@@ -1,0 +1,177 @@
+{
+  "_fixture": "derived from failed: you answered builder's failed turn with Stop: the run ended failed (outcome failed), elapsed_s frozen while as_of is 2 min later",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T21:33:51.948600+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "7b18ac610ad34c4295c6178447368b8c",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T21:33:51.951535+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T21:33:51.952404+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T21:33:51.953480+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "849446acb5524fc99c09860e941acf93",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T21:33:51.953876+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T21:33:51.954798+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "6857217f36e84786bf2348b7a645844f",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T21:33:51.955154+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T21:33:51.962190+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T21:33:51.966341+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T21:33:51.969660+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T21:33:51.972699+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 5,
+      "tool_calls": 1
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T21:33:51.972993+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T21:33:51.974763+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "failed",
+      "ended_by": null,
+      "cost_usd": null,
+      "tool_calls": null
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T21:33:51.976086+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 50,
+      "tool_calls": 1
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T21:33:51.976342+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": "checker: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T21:33:51.978765+00:00",
+      "kind": "wait_opened",
+      "member": "builder",
+      "wait_id": "c0dbaa829bb3405d82aeff94a2ba0e1b",
+      "wait_kind": "recovery",
+      "words": "builder's turn 1 failed: builder turn failed after its automatic retry."
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T21:34:31.982011+00:00",
+      "kind": "wait_answered",
+      "member": null,
+      "wait_id": "c0dbaa829bb3405d82aeff94a2ba0e1b",
+      "wait_kind": "recovery",
+      "answer": "stop",
+      "by": "owner"
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T21:34:31.984011+00:00",
+      "kind": "ended",
+      "member": null,
+      "decision": "failed",
+      "reason": "builder's turn 1 failed after its automatic retry, and you stopped the team."
+    }
+  ],
+  "cursor": 18,
+  "more": false,
+  "as_of": "2026-10-09T21:36:31.993011+00:00"
+}

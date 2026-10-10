@@ -1,0 +1,37 @@
+{
+  "_fixture": "derived from working: the leader in turn 1 on the goal; builder and checker idle (start); feed cut to the goal and the two start idles, so the real working feed follows it",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T21:33:49.546312+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "158c1723a418498ba0826e39dfce0825",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T21:33:49.549725+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T21:33:49.550627+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    }
+  ],
+  "cursor": 3,
+  "more": false,
+  "as_of": "2026-10-09T21:33:49.559927+00:00"
+}

@@ -26,6 +26,9 @@ import { OutcomeCard, ReservedDebrief } from '@/components/team/run/OutcomeCard'
 import { StopRunDialog } from '@/components/team/run/StopRunDialog';
 import { MessageComposer } from '@/components/team/run/MessageComposer';
 import { runResultHeading } from '@/components/team/run/runFocus';
+import { GlanceRunView } from '@/components/team/glance/GlanceRunView';
+import { GlanceLoading, GlanceReadError } from '@/components/team/glance/GlanceStates';
+import { isFlowRun } from '@/lib/teamGlanceAdapter';
 import type { TeamRun } from '@/types/team';
 
 function TryNow({ onClick }: { onClick: () => void }) {
@@ -129,21 +132,24 @@ export default function TeamRunView() {
         </Frame>
       );
     }
-    if (read.firstReadFailed) {
-      return (
-        <Frame>
-          <TeamNote tone="bad" live action={<TryNow onClick={read.refresh} />}>
-            Couldn&apos;t read this team run. Trying again every 5 s.
-          </TeamNote>
-        </Frame>
-      );
-    }
+    // Before the first reply the page can't tell the kind of run: both share SPEC 10's views [D53].
+    if (read.firstReadFailed) return <GlanceReadError onRetry={() => void read.refresh()} />;
+    return <GlanceLoading guardMode={status?.guard_mode} />;
+  }
+
+  // A free-flowing team gets the glance page; round runs keep this page as it was.
+  if (isFlowRun(run)) {
     return (
-      <Frame>
-        <p role="status" className="m-0 text-sm text-temper-text-muted">
-          Reading the team run…
-        </p>
-      </Frame>
+      <GlanceRunView
+        raw={run}
+        read={read}
+        status={status}
+        sender={sender}
+        messenger={messenger}
+        stopOpen={stopOpen}
+        onStopOpenChange={setStopOpen}
+        canStop={canStop}
+      />
     );
   }
 

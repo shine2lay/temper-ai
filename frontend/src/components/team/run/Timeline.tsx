@@ -5,24 +5,32 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleAlert,
   CircleDot,
   CircleX,
   Clock,
+  Bell,
   Eye,
+  Flag,
   Gavel,
+  GitBranch,
   GitCommitHorizontal,
   Hand,
   MessageSquare,
+  Moon,
   Pause,
   Pencil,
   Play,
   Reply,
+  Square,
 } from 'lucide-react';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { cn } from '@/lib/utils';
 import { fetchTeamMessage, teamKeys, TeamApiError } from '@/lib/teamApi';
 import { teamStopper } from '@/lib/teamOutcome';
 import { refusedDoneReview } from '@/lib/teamReview';
+import { glanceWaitWords, isFlowRun, toGlanceTimelineDone } from '@/lib/teamGlanceAdapter';
+import { clockSecOf, endedWords, rowWords } from '@/lib/teamGlance';
 import { answerWaitWords, entryTime, waitEntryTitle } from '@/lib/teamTimeline';
 import {
   countChars,
@@ -51,6 +59,7 @@ import type {
 import { TeamNote } from '../TeamNote';
 import { TeamWho } from '../TeamWho';
 import { teamBtn, teamCard, teamChip, teamChipTone, teamLabel } from '../teamUi';
+import { PathText } from '../glance/glanceUi';
 
 /** How many entries show before "Show all" (Design's boards). */
 export const TIMELINE_FIRST = 8;
@@ -65,6 +74,12 @@ const ICONS: Record<string, LucideIcon> = {
   owner_wait: Hand,
   owner_answer: Reply,
   member_turn: Play,
+  // Free-flowing teams only (round runs never carry these entries).
+  share: GitBranch,
+  idle: Moon,
+  wake: Bell,
+  closing: Flag,
+  done_refused: CircleX,
 };
 
 /** A member, Temper or you, as the timeline names them. */
@@ -78,8 +93,11 @@ function Muted({ children }: { children: ReactNode }) {
   return <span className="text-temper-text-muted">{children}</span>;
 }
 
-/** Member text under an entry's line: plain, two lines at most. */
-function Preview({ text, engine }: { text: string | null | undefined; engine?: boolean }) {
+/**
+ * Member text under an entry's line: plain, two lines at most. `paths`
+ * (free-flowing teams, D50): a path breaks only after a "/".
+ */
+function Preview({ text, engine, paths }: { text: string | null | undefined; engine?: boolean; paths?: boolean }) {
   if (!text) return null;
   return (
     <p
@@ -88,7 +106,7 @@ function Preview({ text, engine }: { text: string | null | undefined; engine?: b
         engine ? 'border-l-[3px] border-temper-control pl-3 text-temper-text' : 'line-clamp-2 text-temper-text-muted',
       )}
     >
-      {text}
+      {paths ? <PathText text={text} /> : text}
     </p>
   );
 }
@@ -210,8 +228,21 @@ interface Row {
   message?: { id: string };
 }
 
+/** A free-flowing team's member that is idle from the start, until the leader sends it work (D66). */
+function waitsForLeader(entry: AnyEntry, run: TeamRun): boolean {
+  return entry.entry === 'idle' && isFlowRun(run) && flowData(entry).reason === 'start';
+}
+
+/** A free-flowing team's ended entry (D41): stopped, failed or cancelled. */
+function flowEnded(entry: AnyEntry, run: TeamRun): string | null {
+  if (entry.entry !== 'decision' || !isFlowRun(run)) return null;
+  const decision = (entry as { decision?: string }).decision;
+  return decision === 'stopped' || decision === 'failed' || decision === 'cancelled' ? decision : null;
+}
+
 /** What one entry says, from its typed fields only (never event_type). */
 function describe(entry: AnyEntry, run: TeamRun): Row {
+  const flow = isFlowRun(run);
   switch (entry.entry) {
     case 'message': {
       const e = entry as TeamMessageEntry;
@@ -226,7 +257,7 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
             <MessageState state={e.data.state} undelivered={e.data.undelivered} />
           </>
         ),
-        body: <Preview text={e.data.preview} />,
+        body: <Preview text={e.data.preview} paths={flow} />,
         message: e.data.message_id ? { id: e.data.message_id } : undefined,
       };
     }
@@ -277,6 +308,37 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
     }
     case 'decision': {
       const e = entry as TeamDecisionEntry;
+      const done = isFlowRun(run) ? toGlanceTimelineDone(entry) : null;
+      if (done) {
+        // A flow done event has no decision word; only the adapter knows
+        // its field names. Round decisions follow their existing path.
+        return {
+          head: (
+            <>
+              <b className="font-semibold text-temper-text">Done</b>
+              {done.versionNo !== null && (
+                <>
+                  {' '}
+                  <Muted>with</Muted> <b className="font-semibold text-temper-text">v{done.versionNo}</b>
+                </>
+              )}
+              {done.commitShort !== null && (
+                <>
+                  {' '}
+                  <Muted>· commit</Muted> <span className="font-mono text-temper-text">{done.commitShort.slice(0, 7)}</span>
+                </>
+              )}
+            </>
+          ),
+          body: <Preview text={done.summary} paths />,
+        };
+      }
+      const ended = flowEnded(entry, run);
+      if (ended) {
+        // D41: "Stopped: <reason's first line>", or the reason alone when it already starts with the label.
+        const reason = (e.data as { reason?: string | null }).reason;
+        return { head: <span className="text-temper-text">{endedWords(ended, reason)}</span> };
+      }
       const refused = refusedDoneReview(e, run);
       if (refused) {
         return {
@@ -320,6 +382,24 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
     }
     case 'owner_wait': {
       const e = entry as TeamOwnerWaitEntry;
+      if (flow && e.wait_kind === 'question') {
+        // A member's own question (D62): its first line, cut at 160 after a whole word; whole in the answer view.
+        const words = rowWords(e.wait_kind, glanceWaitWords(run, e.data.wait_id));
+        return {
+          head: (
+            <>
+              <Agent name={e.data.member ?? null} />{' '}
+              {words ? (
+                <>
+                  <Muted>asked you:</Muted> <span className="break-words text-temper-text">&ldquo;{words}&rdquo;</span>
+                </>
+              ) : (
+                <Muted>asked you a question</Muted>
+              )}
+            </>
+          ),
+        };
+      }
       return {
         head: (
           <>
@@ -361,6 +441,92 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
         body: e.data.error ? <Preview text={e.data.error} engine /> : undefined,
       };
     }
+    // The entries below come only from free-flowing teams.
+    case 'share': {
+      const d = flowData(entry);
+      const files = typeof d.files_changed === 'number' ? d.files_changed : null;
+      return {
+        head: (
+          <>
+            <Agent name={entry.from_agent} /> <Muted>shared</Muted>{' '}
+            <b className="font-semibold text-temper-text">v{String(d.version_no ?? '?')}</b>
+            {typeof d.commit_short === 'string' && (
+              <>
+                {' '}
+                <Muted>· commit</Muted> <span className="font-mono text-temper-text">{d.commit_short.slice(0, 7)}</span>
+              </>
+            )}
+            {files != null && (
+              <>
+                {' '}
+                <Muted>
+                  · {files} {files === 1 ? 'file' : 'files'} changed
+                </Muted>
+              </>
+            )}
+          </>
+        ),
+        body: <Preview text={typeof d.note === 'string' ? d.note : null} paths />,
+      };
+    }
+    case 'idle': {
+      const d = flowData(entry);
+      if (waitsForLeader(entry, run)) {
+        return {
+          head: (
+            <>
+              <Agent name={entry.from_agent} /> <Muted>waits for the leader</Muted>
+            </>
+          ),
+        };
+      }
+      return {
+        head: (
+          <>
+            <Agent name={entry.from_agent} /> <Muted>went idle</Muted>
+          </>
+        ),
+        body: <Preview text={typeof d.note === 'string' ? d.note : null} paths />,
+      };
+    }
+    case 'wake': {
+      const d = flowData(entry);
+      return {
+        head: (
+          <>
+            <Agent name={entry.from_agent} /> <Muted>woke for a message from</Muted>{' '}
+            <Agent name={typeof d.by === 'string' ? d.by : null} />
+          </>
+        ),
+      };
+    }
+    case 'closing': {
+      const d = flowData(entry);
+      return {
+        head: (
+          <>
+            <Agent name={entry.from_agent} /> <Muted>said done</Muted>
+          </>
+        ),
+        body: <Preview text={typeof d.summary === 'string' ? d.summary : null} paths />,
+      };
+    }
+    case 'done_refused': {
+      const d = flowData(entry);
+      const reasons = Array.isArray(d.reasons) ? d.reasons : [];
+      const words = reasons
+        .map((r) => (r && typeof r === 'object' && typeof (r as { words?: unknown }).words === 'string' ? (r as { words: string }).words : null))
+        .filter((w): w is string => w !== null);
+      return {
+        head: (
+          <>
+            <Muted>Temper didn't count</Muted> <Agent name={entry.from_agent} />
+            <Muted>'s done yet</Muted>
+          </>
+        ),
+        body: words.length > 0 ? <Preview text={words.join('\n')} engine paths /> : undefined,
+      };
+    }
     default:
       return {
         head: (
@@ -372,24 +538,48 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
   }
 }
 
+/** A free-flowing entry's data, read loosely (its fields are not typed in TeamEntry). */
+function flowData(entry: AnyEntry): Record<string, unknown> {
+  const d = (entry as TeamOtherEntry).data;
+  return d && typeof d === 'object' ? d : {};
+}
+
 function TimelineRow({ entry, run }: { entry: AnyEntry; run: TeamRun }) {
   const [open, setOpen] = useState(false);
   const row = describe(entry, run);
   const at = entryTime(entry, run);
-  const Icon = ICONS[entry.entry] ?? CircleDot;
+  const flow = isFlowRun(run);
+  const ended = flowEnded(entry, run);
+  // One state, one icon (D66): waiting for the leader is the cards' clock (D77); an ended row the Latest's.
+  const Icon = waitsForLeader(entry, run)
+    ? Clock
+    : ended
+      ? ended === 'failed'
+        ? CircleAlert
+        : Square
+      : (ICONS[entry.entry] ?? CircleDot);
   const OpenIcon = open ? ChevronUp : ChevronDown;
   return (
     <li
       data-entry={entry.entry}
-      className="grid grid-cols-[64px_20px_minmax(0,1fr)_auto] items-start gap-2 border-t border-temper-border py-2 first:border-t-0"
+      className={cn(
+        'grid grid-cols-[64px_20px_minmax(0,1fr)_auto] items-start gap-2 border-t border-temper-border py-2 first:border-t-0',
+        // D74: under 360 px a free-flowing team's time takes its own line above the entry.
+        flow && 'max-[360px]:grid-cols-[20px_minmax(0,1fr)_auto] max-[360px]:gap-y-0.5',
+      )}
     >
       {at ? (
-        <time dateTime={isoOf(at)} title={teamTimeFull(at) || undefined} className="pt-0.5 text-xs text-temper-text-muted">
-          {teamTime(at)}
+        <time
+          dateTime={isoOf(at)}
+          title={teamTimeFull(at) || undefined}
+          className={cn('pt-0.5 text-xs text-temper-text-muted', flow && 'tabular-nums max-[360px]:col-span-full')}
+        >
+          {/* D46: a free-flowing team's rows carry seconds, so same-minute rows read in order. */}
+          {flow ? (clockSecOf(at) ?? teamTime(at)) : teamTime(at)}
         </time>
       ) : (
         // Temper sent no time for this entry: none is made up.
-        <span />
+        <span className={flow ? 'max-[360px]:hidden' : undefined} />
       )}
       <span className="pt-0.5 text-temper-text-muted">
         <Icon className="h-4 w-4" aria-hidden="true" />
@@ -434,7 +624,8 @@ export function Timeline({ run }: { run: TeamRun }) {
     <section aria-labelledby="team-timeline-title" className={cn(teamCard, 'p-4')}>
       <div className="flex items-baseline gap-2">
         <h2 id="team-timeline-title" className={teamLabel}>
-          Timeline
+          {/* Latest's link names it so (SPEC 9). */}
+          {isFlowRun(run) ? 'All activity' : 'Timeline'}
         </h2>
         <span className="flex-1" />
         <span className="text-xs text-temper-text-muted">

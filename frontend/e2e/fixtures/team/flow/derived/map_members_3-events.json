@@ -1,0 +1,231 @@
+{
+  "_fixture": "derived from working: a team of 3 read 50 minutes in: the leader's first work requests are old; 3 member messages in the last 10 minutes; links counted from the feed for the hour before as_of",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T13:36:28.765983+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T13:36:28.769601+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T13:36:28.770510+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T13:36:28.771628+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "da622e0c17c5437996aba62cbed0a571",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T13:36:28.772019+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T13:36:28.773063+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "d9ca0c5bfcb34f04877b4b4d87abe15f",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T13:36:28.773423+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T13:36:28.782013+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T13:36:28.786441+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T13:36:28.789792+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T13:37:58.816519+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T13:37:58.818519+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the parts",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T14:20:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T14:20:28.817519+00:00",
+      "kind": "message",
+      "member": "checker",
+      "from": "checker",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "info",
+      "text": "The install step fails on a clean machine.",
+      "message_id": "a5e9ff94331a5f5ca896deae7a2000b4",
+      "mid_turn": false
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T14:20:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T14:22:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T14:22:28.817519+00:00",
+      "kind": "message",
+      "member": "builder",
+      "from": "builder",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The builder part is shared, with the install step fixed.",
+      "message_id": "0c5e7936d8a9731e8bf7e8790854b04e",
+      "mid_turn": false
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T14:22:28.817719+00:00",
+      "kind": "wake",
+      "member": "lead",
+      "by": "builder"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T14:22:28.817919+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T14:22:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-09T14:24:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 22,
+      "at": "2026-10-09T14:24:28.817519+00:00",
+      "kind": "message",
+      "member": "checker",
+      "from": "checker",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "Every command in the README runs as written.",
+      "message_id": "40530c4d9ea92ca72d3d9085d7ac9006",
+      "mid_turn": false
+    },
+    {
+      "seq": 23,
+      "at": "2026-10-09T14:24:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 3,
+      "retry_of": null
+    }
+  ],
+  "cursor": 23,
+  "more": false,
+  "as_of": "2026-10-09T14:26:28.825519+00:00"
+}

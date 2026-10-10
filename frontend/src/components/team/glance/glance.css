@@ -1,0 +1,436 @@
+/*
+ * The glance page's own styles: band edges, member rings, the map's lines
+ * and the message dots. Motion is transform and opacity only, and stops for
+ * reduced motion, "still" mode and the page's Animate messages switch.
+ */
+
+/* --- the status band (SPEC layout table) ------------------------------------ */
+/* Stacked on a phone; from 768 px Now runs across the top with You and Spend
+   under it; once the band itself is 900 px wide, one row of three (1.5fr / 1fr / 1fr). */
+.glance-band {
+  container-type: inline-size;
+}
+.glance-band-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.glance-band-grid > :not(:last-child) {
+  border-bottom: 1px solid var(--temper-border);
+}
+@media (min-width: 768px) {
+  .glance-band-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .glance-band-grid > :first-child {
+    grid-column: 1 / -1;
+  }
+  .glance-band-grid > :nth-child(2) {
+    border-bottom: 0;
+    border-right: 1px solid var(--temper-border);
+  }
+}
+@container (min-width: 900px) {
+  .glance-band-grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .glance-band-grid > :first-child {
+    grid-column: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--temper-border);
+  }
+}
+
+/* --- band edges ----------------------------------------------------------- */
+.glance-edge-left {
+  border-left: 4px solid var(--glance-tone, var(--temper-border));
+}
+.glance-edge-top {
+  border-top: 4px solid var(--glance-tone, var(--temper-border));
+}
+/* Scoped to the glance page, so no other page's data-tone picks these up. */
+.glance-root [data-tone='blue'] {
+  --glance-tone: var(--badge-running-text);
+}
+.glance-root [data-tone='yellow'] {
+  --glance-tone: var(--badge-waiting-text);
+}
+.glance-root [data-tone='grey'] {
+  --glance-tone: var(--temper-text-muted);
+}
+.glance-root [data-tone='green'] {
+  --glance-tone: var(--badge-completed-text);
+}
+.glance-root [data-tone='red'] {
+  --glance-tone: var(--badge-failed-text);
+}
+
+.glance-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--temper-surface);
+  border: 1px solid var(--temper-control);
+  overflow: hidden;
+}
+.glance-bar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--badge-completed-text);
+}
+.glance-bar[data-warn='true'] > i {
+  background: var(--badge-waiting-text);
+}
+
+/* --- facts rows (D40, D69) --------------------------------------------------- */
+/*
+ * Each fact stays whole with its dot in front. The list starts one dot to
+ * the left of the box, so the dot that would begin a line is clipped and no
+ * line starts or ends with a stray dot.
+ */
+.glance-facts {
+  overflow: hidden;
+}
+.glance-facts > ul {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 0 0 -1.25em;
+  padding: 0;
+  list-style: none;
+}
+.glance-facts li {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+/* Not .glance-dot: that is the map's flying message dot. */
+.glance-sep {
+  display: inline-block;
+  width: 1.25em;
+  text-align: center;
+}
+
+/* --- member rings ----------------------------------------------------------- */
+.glance-ring {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--temper-text);
+  background: var(--temper-surface);
+  border: 2px solid var(--temper-text-muted);
+}
+.glance-ring[data-ring='solid-blue'] {
+  border: 3px solid var(--badge-running-text);
+}
+.glance-ring[data-ring='solid-grey'] {
+  border: 2px solid var(--temper-text-muted);
+}
+/* D77: filled like every ring; an empty dotted ring read as a loading spinner. */
+.glance-ring[data-ring='dotted-grey'] {
+  border: 2px dotted var(--temper-text-muted);
+}
+.glance-ring[data-ring='dashed-yellow'] {
+  border: 3px dashed var(--badge-waiting-text);
+}
+.glance-ring[data-ring='dashed-red'] {
+  border: 3px dashed var(--badge-failed-text);
+}
+.glance-ring[data-ring='thin-grey'] {
+  border: 1px solid var(--temper-text-muted);
+}
+
+/* A busy member's ring turns: a short arc over the ring (Animate on only). */
+.glance-busy::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  border-top-color: var(--badge-running-text);
+  animation: glance-spin 1.6s linear infinite;
+}
+@keyframes glance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The receiving ring's highlight when a dot lands: TeamMap animates a 6 px accent glow on it for 500 ms (SPEC 6). */
+.glance-pulse {
+  position: absolute;
+  /* Over the ring's border, so the glow starts at the ring's outer edge. */
+  inset: -3px;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+.glance-ring[data-ring='solid-grey'] .glance-pulse,
+.glance-ring[data-ring='dotted-grey'] .glance-pulse {
+  inset: -2px;
+}
+
+/* --- the map ------------------------------------------------------------------ */
+.glance-map {
+  position: relative;
+}
+/* 64 px above the first row keeps the You and Temper chips clear of the cards (D49);
+   64 px gutters and 36 px sides give the lines their tracks (D58). */
+.glance-map-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 64px;
+  row-gap: 72px;
+  padding: 64px 36px;
+  z-index: 1;
+}
+/* A card is at most 284 px wide, centred in its column (SPEC, member card). */
+.glance-map-grid > li {
+  width: 100%;
+  max-width: 284px;
+  justify-self: center;
+}
+.glance-card {
+  position: relative;
+  background: var(--temper-panel);
+}
+/*
+ * You and Temper, together at the map's top left: their messages start at the corner (D5, D45).
+ * D76: a caption says what it is, then plain tags like the leader tag; no dashed pill, no ring.
+ */
+.glance-hub {
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 2;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--temper-text-muted);
+}
+.glance-hub-cap {
+  white-space: nowrap;
+}
+.glance-hub-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--temper-control);
+  border-radius: 6px;
+  background: var(--temper-panel);
+  color: var(--temper-text);
+  font-weight: 600;
+}
+.glance-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+.glance-lines path {
+  fill: none;
+  stroke-linejoin: round;
+}
+/* 2 px in the line colour; 3 px accent for a minute after a message (D42). */
+.glance-lines path.glance-line {
+  stroke: var(--temper-control);
+  stroke-width: 2;
+}
+.glance-lines path.glance-line.is-green {
+  stroke: var(--temper-accent);
+  stroke-width: 3;
+}
+/* A 6 px panel-coloured casing under each line parts crossing strokes (Design D23). */
+.glance-lines path.glance-casing {
+  stroke: var(--temper-panel);
+  stroke-width: 6;
+}
+/* A socket where a line joins its card: a line passing a card without one is not joined to it (D58). */
+.glance-socket {
+  fill: var(--temper-control);
+  stroke: var(--temper-panel);
+  stroke-width: 2;
+}
+.glance-socket.is-green {
+  fill: var(--temper-accent);
+}
+/* No pair in the last 10 minutes: no lines, one muted line (D45). */
+.glance-map-quiet {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 4px 36px 18px;
+  font-size: 15px;
+  color: var(--temper-text-muted);
+}
+/* Paint order (Design D32): lines 0, cards 1, moving dots 3, counts 4, the +N cue 5.
+   An opaque count stays readable while a dot passes under it. */
+.glance-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.glance-counts {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 4;
+}
+/* The count: a pill at least 28 px wide and 20 px tall, 14 px digits (D43). */
+.glance-counts .glance-count rect {
+  fill: var(--temper-panel);
+  stroke: var(--temper-control);
+  stroke-width: 1;
+}
+.glance-counts .glance-count text {
+  fill: var(--temper-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.glance-extras {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.glance-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 9999px;
+  background: var(--temper-accent);
+  box-shadow: 0 0 0 2px var(--temper-panel);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+/* "+N more sent": one cue at the map's top right, never on a line (SPEC 6, D43). */
+.glance-extra {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--temper-on-accent);
+  background: var(--temper-accent);
+  opacity: 0;
+}
+
+/* --- legend and the hour list (D44, D45) ------------------------------------------ */
+.glance-legend {
+  font-size: 14px;
+  color: var(--temper-text-muted);
+}
+.glance-hour {
+  font-size: 15px;
+}
+.glance-hour-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--temper-text-muted);
+}
+.glance-hour-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.glance-hour-list li {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--temper-border);
+}
+.glance-hour-list li:last-child {
+  border-bottom: 0;
+}
+/* D71: the pair wraps inside its column; the time keeps its own right-hand column. */
+.glance-hour-pair {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  color: var(--temper-text);
+}
+.glance-hour-time {
+  flex: none;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--temper-text-muted);
+}
+/* D74(4): under 360 px the time takes its own line, under the pair, so names keep the whole width. */
+@media (max-width: 359px) {
+  .glance-hour-list li {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .glance-hour-time {
+    flex-basis: 100%;
+    text-align: left;
+  }
+}
+
+/* --- the switch ------------------------------------------------------------- */
+.glance-switch {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--temper-text-muted);
+  background: var(--temper-surface);
+}
+.glance-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--temper-text-muted);
+  transition: transform 120ms ease-out;
+}
+[aria-checked='true'] > .glance-switch {
+  background: var(--temper-accent);
+  border-color: var(--temper-accent);
+}
+[aria-checked='true'] > .glance-switch::after {
+  background: var(--temper-on-accent);
+  transform: translateX(16px);
+}
+
+/* --- less motion ---------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .glance-busy::after {
+    animation: none;
+    display: none;
+  }
+  .glance-switch::after {
+    transition: none;
+  }
+}
+:root[data-motion='still'] .glance-busy::after {
+  animation: none;
+  display: none;
+}

@@ -1,0 +1,193 @@
+{
+  "_fixture": "derived from check_in: a settings question opened while the team waited at the check-in: settings first, the check-in's wait not asked while it is open",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T21:33:50.243162+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "53de120b7a15419f8e7fbfef099d3414",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T21:33:50.245830+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T21:33:50.246657+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T21:33:50.247638+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "938a9495d3974ea48644af490009542a",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T21:33:50.248004+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T21:33:50.248927+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "cf2b0bb02b304aba9a8f5bdf3e47558b",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T21:33:50.249299+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T21:33:50.256504+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T21:33:50.260750+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T21:33:50.263998+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T21:33:50.267276+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 5,
+      "tool_calls": 1
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T21:33:50.267576+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T21:33:50.268867+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 50,
+      "tool_calls": 1
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T21:33:50.269142+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": "builder: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T21:33:50.270346+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 50,
+      "tool_calls": 1
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T21:33:50.270594+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": "checker: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T21:33:50.371252+00:00",
+      "kind": "share",
+      "member": "builder",
+      "version_no": 1,
+      "commit_short": "edcb050be835",
+      "note": "Builder's part is shared",
+      "files_changed": 1
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T21:33:50.375442+00:00",
+      "kind": "wait_opened",
+      "member": null,
+      "wait_id": "9c351d960cfa40b2949885cf4f3aa908",
+      "wait_kind": "pause",
+      "words": "The team has spent $105.00 (check-in at $100)"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T21:33:50.375757+00:00",
+      "kind": "check_in",
+      "member": null,
+      "at_usd": 100
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T21:34:10.380015+00:00",
+      "kind": "wait_opened",
+      "member": null,
+      "wait_id": "2ad570a214c6c9128101f64f1dc57b9c",
+      "wait_kind": "settings",
+      "words": "A deploy changed the team's settings while it waited"
+    }
+  ],
+  "cursor": 20,
+  "more": false,
+  "as_of": "2026-10-09T21:34:40.389015+00:00"
+}

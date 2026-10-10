@@ -1,7 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchTeamRun, teamKeys, TeamApiError } from '@/lib/teamApi';
 import { teamRunEnded } from '@/lib/teamText';
+import { flowRunEnded, isFlowRun } from '@/lib/teamGlanceAdapter';
 import type { TeamRun } from '@/types/team';
+
+/** Round polling stays as before; flow end phases no longer need an outcome. */
+export function teamRunPollingEnded(run: TeamRun): boolean {
+  return isFlowRun(run) ? flowRunEnded(run) : teamRunEnded(run);
+}
 
 /** How often a live run is read again (Design's spec, section 6). */
 export const TEAM_RUN_POLL_MS = 5_000;
@@ -38,7 +44,7 @@ export function useTeamRun(executionId: string, { enabled = true }: { enabled?: 
     staleTime: 0,
     refetchInterval: (q) => {
       const data = q.state.data;
-      if (data && teamRunEnded(data)) return false;
+      if (data && teamRunPollingEnded(data)) return false;
       // Not a team trial: nothing to keep reading.
       if (!data && q.state.error instanceof TeamApiError && q.state.error.status === 404) return false;
       return TEAM_RUN_POLL_MS;
@@ -62,7 +68,7 @@ export function useTeamRun(executionId: string, { enabled = true }: { enabled?: 
     failedAt,
     updatedAt: run ? query.dataUpdatedAt : null,
     firstReadFailed: !run && query.isError && notTeam === null,
-    ended: run ? teamRunEnded(run) : false,
+    ended: run ? teamRunPollingEnded(run) : false,
     refresh: () => query.refetch().then((r) => (r.isError ? null : (r.data ?? null))),
   };
 }

@@ -3,7 +3,10 @@ import { ChevronLeft, ChevronRight, CornerDownRight, ExternalLink, Hand, Refresh
 import { cn } from '@/lib/utils';
 import { clockTime, isoOf, readFailWords, shortId, teamCost, teamDateTime, teamTimeFull } from '@/lib/teamText';
 import {
+  hasRounds,
+  noProjectsWords,
   personWords,
+  roundColumnNamed,
   showingWords,
   trialGroups,
   trialNeedsYou,
@@ -13,7 +16,7 @@ import {
   type TrialRow,
 } from '@/lib/teamTrials';
 import type { TeamListRead } from '@/hooks/useTeamLists';
-import type { TeamTrialsPage } from '@/types/team';
+import type { TeamRunKind, TeamTrialsPage } from '@/types/team';
 import { EngineQuote } from '../TeamQuote';
 import { TeamNote } from '../TeamNote';
 import { TeamStateBadge } from '../TeamStateBadge';
@@ -71,14 +74,18 @@ function StateCell({ row }: { row: TrialRow }) {
   );
 }
 
-/** Round, start and cost, then the run page link: the same for a trial row and a sub-row. */
+/**
+ * Round, start and cost, then the run page link: the same for a trial row and a sub-row.
+ * A free-flowing team has no rounds: its Round cell stays empty.
+ */
 function RestCells({ row }: { row: TrialRow }) {
   const { item } = row;
+  const round = item.round ?? 0;
   return (
     <>
       <p className={cn(CELL.round, 'm-0 text-sm text-temper-text')}>
-        {item.round > 0 ? (
-          `round ${item.round}`
+        {!hasRounds(item) ? null : round > 0 ? (
+          `round ${round}`
         ) : (
           <span aria-label="no round yet" className="text-temper-text-muted">
             —
@@ -215,8 +222,11 @@ function Pager({
   );
 }
 
-/** The visual column names; each row says what its cells are for screen readers. */
-function ColumnNames() {
+/**
+ * The visual column names; each row says what its cells are for screen readers.
+ * Round is left blank when every row on the page is a free-flowing team.
+ */
+function ColumnNames({ rounds = true }: { rounds?: boolean }) {
   return (
     <div
       aria-hidden="true"
@@ -228,7 +238,7 @@ function ColumnNames() {
     >
       <span>Project</span>
       <span>State</span>
-      <span>Round</span>
+      <span>{rounds ? 'Round' : ''}</span>
       <span>Started</span>
       <span>Cost</span>
       <span />
@@ -240,18 +250,24 @@ function ColumnNames() {
  * The Trials tab (SPEC 4, boards T1-T3b): every team trial, newest first,
  * its re-runs and forks under it. Rows that wait for the owner are tinted
  * and say "needs you". Read every 5 s while the tab is open; a failed
- * refresh keeps the rows and says so.
+ * refresh keeps the rows and says so. `engine` is which engine the server
+ * runs (its status): an empty list says how a project starts on it, and says
+ * nothing until the status has answered, so one engine's words never flash
+ * on the other (home's note 1 on #17).
  */
 export function TrialsList({
   read,
   rows,
   page,
   onPage,
+  engine = null,
 }: {
   read: TeamListRead<TeamTrialsPage>;
   rows: TrialRow[];
   page: number;
   onPage: (page: number) => void;
+  /** null until GET /api/team/status has answered. */
+  engine?: TeamRunKind | null;
 }) {
   const { data } = read;
 
@@ -289,10 +305,9 @@ export function TrialsList({
         <h2 id="trials-empty" className="m-0 text-base font-semibold text-temper-text">
           No projects yet
         </h2>
-        <p className="m-0 mt-2 max-w-[60ch] text-sm text-temper-text-muted">
-          A project puts a few pi roles on one goal. They work in rounds, review each other&apos;s work and stop when the
-          leader&apos;s version is approved. Start one with New project at the top right.
-        </p>
+        {engine !== null && (
+          <p className="m-0 mt-2 max-w-[60ch] text-sm text-temper-text-muted">{noProjectsWords(engine)}</p>
+        )}
       </section>
     );
   }
@@ -309,7 +324,7 @@ export function TrialsList({
           </span>
         </TeamNote>
       )}
-      <ColumnNames />
+      <ColumnNames rounds={roundColumnNamed(rows)} />
       <ul aria-label="Projects" className="m-0 flex list-none flex-col gap-2 p-0">
         {groups.map((g) => (
           <li key={g.key} className="flex flex-col gap-2">

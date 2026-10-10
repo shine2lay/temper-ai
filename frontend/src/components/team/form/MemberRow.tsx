@@ -69,8 +69,10 @@ export function MemberRow({
       )}
     >
       <legend className="sr-only">Member {index + 1}</legend>
-      <div className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_auto_auto] items-end gap-3">
-        <div className="min-w-0">
+      {/* Below 768 px Role and Team name each take the row's full width, so neither is cut; Leader and remove
+          share the line under them. Same fields, same order, same keyboard path (home's note 2 on #17). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_auto_auto]">
+        <div className="col-span-2 min-w-0 md:col-span-1" data-member-field="role">
           <label htmlFor={`${id}-role`} className={LABEL}>
             Role
           </label>
@@ -92,7 +94,7 @@ export function MemberRow({
             )}
           </select>
         </div>
-        <div className="min-w-0">
+        <div className="col-span-2 min-w-0 md:col-span-1" data-member-field="name">
           <label htmlFor={`${id}-name`} className={LABEL}>
             Team name
           </label>
@@ -126,7 +128,7 @@ export function MemberRow({
           disabled={disabled || !canRemove}
           aria-label={`Remove member ${index + 1}`}
           title={canRemove ? `Remove member ${index + 1}` : 'A team needs at least one member'}
-          className="inline-flex h-10 w-8 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent text-temper-text-muted hover:bg-temper-surface hover:text-temper-text disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-10 w-8 cursor-pointer items-center justify-center justify-self-end rounded-md border border-transparent bg-transparent text-temper-text-muted hover:bg-temper-surface hover:text-temper-text disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>

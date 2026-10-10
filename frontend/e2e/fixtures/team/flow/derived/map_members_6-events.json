@@ -1,0 +1,403 @@
+{
+  "_fixture": "derived from working: a team of 6 read 50 minutes in: the leader's first work requests are old; 5 member messages in the last 10 minutes, so five recent pairs for four lines; links counted from the feed for the hour before as_of",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T13:36:28.765983+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T13:36:28.769601+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T13:36:28.770510+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T13:36:28.770610+00:00",
+      "kind": "idle",
+      "member": "designer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T13:36:28.770710+00:00",
+      "kind": "idle",
+      "member": "tester",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T13:36:28.770810+00:00",
+      "kind": "idle",
+      "member": "writer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T13:36:28.771628+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "da622e0c17c5437996aba62cbed0a571",
+      "mid_turn": false
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T13:36:28.772019+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T13:36:28.773063+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "d9ca0c5bfcb34f04877b4b4d87abe15f",
+      "mid_turn": false
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T13:36:28.773423+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T13:36:28.782013+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T13:36:28.786441+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T13:36:28.789792+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T13:37:58.816519+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T13:37:58.817519+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "designer",
+      "message_kind": "work_request",
+      "text": "Design the README layout and share it.",
+      "message_id": "aa0c8151773919d5172fa64283343d32",
+      "mid_turn": false
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T13:37:58.817719+00:00",
+      "kind": "wake",
+      "member": "designer",
+      "by": "lead"
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T13:37:58.817919+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T13:37:58.818519+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "tester",
+      "message_kind": "work_request",
+      "text": "Test the README steps on a clean machine.",
+      "message_id": "6e6e9308195625d069269fb52ca88a75",
+      "mid_turn": false
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T13:37:58.818719+00:00",
+      "kind": "wake",
+      "member": "tester",
+      "by": "lead"
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T13:37:58.818919+00:00",
+      "kind": "turn_start",
+      "member": "tester",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-09T13:37:58.819519+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "writer",
+      "message_kind": "work_request",
+      "text": "Write the Usage section and share it.",
+      "message_id": "fc0c2e6ab71e629b4d94198376ec7811",
+      "mid_turn": false
+    },
+    {
+      "seq": 22,
+      "at": "2026-10-09T13:37:58.819719+00:00",
+      "kind": "wake",
+      "member": "writer",
+      "by": "lead"
+    },
+    {
+      "seq": 23,
+      "at": "2026-10-09T13:37:58.819919+00:00",
+      "kind": "turn_start",
+      "member": "writer",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 24,
+      "at": "2026-10-09T13:37:58.821519+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the parts",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 25,
+      "at": "2026-10-09T14:18:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 26,
+      "at": "2026-10-09T14:18:28.817519+00:00",
+      "kind": "message",
+      "member": "checker",
+      "from": "checker",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The install steps pass.",
+      "message_id": "7ee692241500e41568a8b38a413c8cdf",
+      "mid_turn": false
+    },
+    {
+      "seq": 27,
+      "at": "2026-10-09T14:18:28.817719+00:00",
+      "kind": "wake",
+      "member": "lead",
+      "by": "checker"
+    },
+    {
+      "seq": 28,
+      "at": "2026-10-09T14:18:28.817919+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 29,
+      "at": "2026-10-09T14:18:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 30,
+      "at": "2026-10-09T14:20:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "designer",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 31,
+      "at": "2026-10-09T14:20:28.817519+00:00",
+      "kind": "message",
+      "member": "designer",
+      "from": "designer",
+      "from_kind": "member",
+      "to": "tester",
+      "message_kind": "info",
+      "text": "Please test the layout on a phone.",
+      "message_id": "f60c0632f120867c7ee4d99458e81446",
+      "mid_turn": false
+    },
+    {
+      "seq": 32,
+      "at": "2026-10-09T14:20:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 33,
+      "at": "2026-10-09T14:22:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "writer",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 34,
+      "at": "2026-10-09T14:22:28.817519+00:00",
+      "kind": "message",
+      "member": "writer",
+      "from": "writer",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The Usage section is shared.",
+      "message_id": "72b7f7f3aaf39ca443585d5d3b406eb4",
+      "mid_turn": false
+    },
+    {
+      "seq": 35,
+      "at": "2026-10-09T14:22:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "writer",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 36,
+      "at": "2026-10-09T14:24:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 37,
+      "at": "2026-10-09T14:24:28.817519+00:00",
+      "kind": "message",
+      "member": "checker",
+      "from": "checker",
+      "from_kind": "member",
+      "to": "designer",
+      "message_kind": "info",
+      "text": "Two headings are out of order.",
+      "message_id": "2ff202a6795f77437d4767a013a62d86",
+      "mid_turn": false
+    },
+    {
+      "seq": 38,
+      "at": "2026-10-09T14:24:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 3,
+      "retry_of": null
+    },
+    {
+      "seq": 39,
+      "at": "2026-10-09T14:25:48.816519+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 40,
+      "at": "2026-10-09T14:25:48.817519+00:00",
+      "kind": "message",
+      "member": "builder",
+      "from": "builder",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The builder part is shared.",
+      "message_id": "3dd6d5c7099ca0bc9f52914d36340cbd",
+      "mid_turn": false
+    },
+    {
+      "seq": 41,
+      "at": "2026-10-09T14:25:48.820519+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 2,
+      "retry_of": null
+    }
+  ],
+  "cursor": 41,
+  "more": false,
+  "as_of": "2026-10-09T14:26:28.825519+00:00"
+}

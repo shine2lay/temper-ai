@@ -248,7 +248,12 @@ export function OutcomeCard({ run }: { run: TeamRun }) {
           <OwnerWords by={teamStopper(run).by} words={outcome.owner_words} labelClassName={QUOTE_LABEL} />
         )}
         {state === 'failed' && (
-          <p className="m-0 text-sm text-temper-text">Resume it from the run page to retry or stop the turn.</p>
+          <p className="m-0 text-sm text-temper-text">
+            {/* An old review-round run (kind "rounds") can't be resumed (Design's SPEC 14 b 7). */}
+            {run.kind === 'rounds'
+              ? "This round run can't be resumed here. Start a new project to carry on."
+              : 'Resume it from the run page to retry or stop the turn.'}
+          </p>
         )}
         {state === 'didnt_start' && (run.cost_usd ?? 0) === 0 && (
           <p className="m-0 flex items-center gap-1.5 text-sm text-temper-text">

@@ -64,7 +64,7 @@ export function RoundCard({ run, inWait = false }: { run: TeamRun; inWait?: bool
   const { round, reviews, trial } = run;
   if (round.current < 1 && reviews.length === 0) return null;
 
-  const limit = round.pause_after_rounds || trial.pause_after_rounds;
+  const limit = round.pause_after_rounds || trial.pause_after_rounds || 0;
   const without = round.keep_goings;
   const segments = limit > 0 && limit <= MAX_SEGMENTS ? limit : 0;
   const { decided, open } = roundReviews(reviews);

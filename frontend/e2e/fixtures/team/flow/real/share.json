@@ -1,0 +1,535 @@
+{
+  "execution_id": "fixture-flow-share",
+  "kind": "flow",
+  "trial_id": "fixture-share",
+  "workflow": "fixture-flow",
+  "run_status": "running",
+  "state": "running",
+  "cost_usd": 105.0,
+  "account": {
+    "slot": "anthropic-4",
+    "picked_at": "2026-10-09T21:32:49.972222+00:00",
+    "by": "settings_order",
+    "capacity": "not_checked",
+    "room": null
+  },
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "checker",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100.0,
+    "max_parallel": 3,
+    "communication": "all",
+    "project": {
+      "source": "/work/fixture",
+      "start_commit": null
+    },
+    "started_at": "2026-10-09 21:32:49.972222+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-share"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "idle",
+      "turns": 1,
+      "cost_usd": 5.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.979553+00:00",
+        "ended_at": "2026-10-09T21:33:49.990222+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-09T21:33:49.992455+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "message",
+        "text": "Build the checker part and share it.",
+        "to": "checker",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.973976+00:00",
+        "message_id": "5fbc9ecd773c4d1fa8c3bf17eaa57cce"
+      },
+      "idle_note": "lead: waiting for the next part",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "checker",
+        "kind": "work_request",
+        "text": "Build the checker part and share it.",
+        "at": "2026-10-09T21:33:49.973976+00:00",
+        "message_id": "5fbc9ecd773c4d1fa8c3bf17eaa57cce"
+      },
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T21:33:49.992563+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 1,
+      "cost_usd": 50.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.985060+00:00",
+        "ended_at": "2026-10-09T21:33:49.992986+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-09T21:33:49.993987+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the builder part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.972662+00:00",
+        "message_id": "a3d9a7fb2e4c4269b35a1aef6d6ca846"
+      },
+      "idle_note": "builder: waiting for the next part",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": {
+        "version_no": 1,
+        "commit_short": "25dd471efc58",
+        "note": "Builder's part is shared",
+        "at": "2026-10-09T21:33:50.095533+00:00"
+      },
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T21:33:50.095533+00:00"
+    },
+    {
+      "name": "checker",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 1,
+      "cost_usd": 50.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.988341+00:00",
+        "ended_at": "2026-10-09T21:33:49.994563+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-09T21:33:49.995525+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the checker part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.973976+00:00",
+        "message_id": "5fbc9ecd773c4d1fa8c3bf17eaa57cce"
+      },
+      "idle_note": "checker: waiting for the next part",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T21:33:49.995619+00:00"
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-09T21:33:49.967474+00:00",
+        "data": {
+          "message_id": "f11a9515ff074fd08ff3cf004262e0df",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.971103+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-09T21:33:49.971103+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-09T21:33:49.971103+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.971946+00:00",
+        "data": {
+          "seq": 3,
+          "at": "2026-10-09T21:33:49.971946+00:00",
+          "kind": "idle",
+          "member": "checker",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 3,
+        "at": "2026-10-09T21:33:49.971946+00:00",
+        "kind": "idle",
+        "member": "checker",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.972662+00:00",
+        "data": {
+          "message_id": "a3d9a7fb2e4c4269b35a1aef6d6ca846",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the builder part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.973455+00:00",
+        "data": {
+          "seq": 5,
+          "at": "2026-10-09T21:33:49.973455+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 5,
+        "at": "2026-10-09T21:33:49.973455+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "lead"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.973976+00:00",
+        "data": {
+          "message_id": "5fbc9ecd773c4d1fa8c3bf17eaa57cce",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the checker part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.974715+00:00",
+        "data": {
+          "seq": 7,
+          "at": "2026-10-09T21:33:49.974715+00:00",
+          "kind": "wake",
+          "member": "checker",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 7,
+        "at": "2026-10-09T21:33:49.974715+00:00",
+        "kind": "wake",
+        "member": "checker",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T21:33:49.979553+00:00",
+        "data": {
+          "turn_id": "0a59050ca65d4ac2aeee839f9a088869",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.990222+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.985060+00:00",
+        "data": {
+          "turn_id": "37a8eae4440e447c8a9a73b70ef0a392",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.992986+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.988341+00:00",
+        "data": {
+          "turn_id": "76bfc3ba8f7a44b3986532e1824e9262",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.994563+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T21:33:49.992563+00:00",
+        "data": {
+          "seq": 12,
+          "at": "2026-10-09T21:33:49.992563+00:00",
+          "kind": "idle",
+          "member": "lead",
+          "note": "lead: waiting for the next part",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 12,
+        "at": "2026-10-09T21:33:49.992563+00:00",
+        "kind": "idle",
+        "member": "lead",
+        "note": "lead: waiting for the next part",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.994124+00:00",
+        "data": {
+          "seq": 14,
+          "at": "2026-10-09T21:33:49.994124+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": "builder: waiting for the next part",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 14,
+        "at": "2026-10-09T21:33:49.994124+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": "builder: waiting for the next part",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.995619+00:00",
+        "data": {
+          "seq": 16,
+          "at": "2026-10-09T21:33:49.995619+00:00",
+          "kind": "idle",
+          "member": "checker",
+          "note": "checker: waiting for the next part",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 16,
+        "at": "2026-10-09T21:33:49.995619+00:00",
+        "kind": "idle",
+        "member": "checker",
+        "note": "checker: waiting for the next part",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "share",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:50.095533+00:00",
+        "data": {
+          "seq": 17,
+          "at": "2026-10-09T21:33:50.095533+00:00",
+          "kind": "share",
+          "member": "builder",
+          "version_no": 1,
+          "commit_short": "25dd471efc58",
+          "note": "Builder's part is shared",
+          "files_changed": 1
+        },
+        "entry": "share",
+        "seq": 17,
+        "at": "2026-10-09T21:33:50.095533+00:00",
+        "kind": "share",
+        "member": "builder",
+        "version_no": 1,
+        "commit_short": "25dd471efc58",
+        "note": "Builder's part is shared",
+        "files_changed": 1
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "working",
+    "words": "0 of 3 members are working",
+    "since": null,
+    "running": 0,
+    "asked": false,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-09T21:33:50.098977+00:00",
+  "started_at": "2026-10-09T21:32:49.972222+00:00",
+  "elapsed_s": 60,
+  "last_activity_at": "2026-10-09T21:33:50.095533+00:00",
+  "spend": {
+    "cost_usd": 105.0,
+    "pause_every_usd": 100.0,
+    "last_check_in_usd": 0.0,
+    "next_check_in_usd": 100.0,
+    "since_check_in_usd": 105.0,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 3,
+    "working": 0,
+    "ready": 0,
+    "idle": 3,
+    "held": 0,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "count": 1,
+      "last_at": "2026-10-09T21:33:49.972662+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "checker",
+      "count": 1,
+      "last_at": "2026-10-09T21:33:49.973976+00:00"
+    }
+  ],
+  "work": {
+    "latest": {
+      "version_no": 1,
+      "commit": "25dd471efc58f1310add9b21d4e84ce62ca795e1",
+      "commit_short": "25dd471efc58",
+      "by": "builder",
+      "at": "2026-10-09T21:33:50.095533+00:00",
+      "note": "Builder's part is shared",
+      "files_changed": 1,
+      "files_total": 2
+    },
+    "shares": [
+      {
+        "version_no": 1,
+        "commit": "25dd471efc58f1310add9b21d4e84ce62ca795e1",
+        "commit_short": "25dd471efc58",
+        "by": "builder",
+        "at": "2026-10-09T21:33:50.095533+00:00",
+        "note": "Builder's part is shared",
+        "files_changed": 1,
+        "files_total": 2
+      }
+    ],
+    "shares_total": 1,
+    "summary": null
+  },
+  "events_cursor": 17,
+  "events_total": 17
+}

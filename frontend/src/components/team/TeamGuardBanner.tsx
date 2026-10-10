@@ -16,7 +16,7 @@ const WORDS: Record<'record' | 'off', { lead: string; rest: string }> = {
   },
   off: {
     lead: "Answers, messages and stops aren't limited to you.",
-    rest: '#45 is off: anyone who can reach Temper can answer, message or stop a project.',
+    rest: '#45 is off: anyone who can reach Temper can answer, message or stop a project. One sent without your credential shows as "unknown caller".',
   },
 };
 

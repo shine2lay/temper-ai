@@ -379,6 +379,16 @@ test.describe('regression', () => {
         await openAgent(page, 'writer');
         await openOut(page);
         await openFold(page, 'reasoning');
+        // Opening the view and fold fades their opacity. Measure final colours,
+        // not an arbitrary frame in that fade (which varied under the full suite).
+        // Leave motion enabled; wait only for finite animations, never spinners.
+        await page.evaluate(async () => {
+          const fades = document.getAnimations().filter((animation) =>
+            (animation.playState === 'running' || animation.pending) &&
+            animation.effect?.getTiming().iterations !== Infinity,
+          );
+          await Promise.all(fades.map((animation) => animation.finished.catch(() => {})));
+        });
         const result = await new AxeBuilder({ page }).withTags(AXE_TAGS).include('[data-testid="bv-out-body"]').include('[data-testid="bv-fold-reasoning"]').analyze();
         expect.soft(result.violations.map((v) => `${theme} run: ${v.id}`)).toEqual([]);
         attempts += run.contentAttempts();

@@ -12,6 +12,7 @@ import { liveAgents } from '@/lib/liveAgents';
 import { isGoing } from '@/lib/runStatus';
 import { useGates } from '@/hooks/useGates';
 import { TeamRunViewLink } from '@/components/team/TeamRunViewLink';
+import { useRunActionsAllowed } from '@/hooks/useTeamRunRead';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -28,6 +29,8 @@ export function WorkflowHeader() {
 
   const { gates } = useGates(workflow?.id);
   const isGated = (gates?.length ?? 0) > 0;
+  // An old review-round team run is read-only: Temper refuses its re-run.
+  const rerunAllowed = useRunActionsAllowed(workflow?.id ?? '');
   // Waiting on a person is still going: the server says "waiting" then.
   const isRunning = isGoing(workflow?.status);
   // A live event may still say "running" while a gate is open (the attempt
@@ -417,7 +420,7 @@ export function WorkflowHeader() {
             {cancelling ? 'Cancelling…' : 'Cancel'}
           </button>
         )}
-        {workflow && !isRunning && (
+        {workflow && !isRunning && rerunAllowed && (
           <button
             onClick={handleRerun}
             disabled={rerunning}

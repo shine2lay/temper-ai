@@ -5,7 +5,7 @@
  * other; the page shows those as sub-rows under their trial.
  */
 import { formatNumber, WAIT_STATES } from './teamText';
-import type { TeamTrialItem } from '@/types/team';
+import type { TeamRunKind, TeamTrialItem } from '@/types/team';
 
 export const TRIALS_PAGE_SIZE = 25;
 
@@ -73,6 +73,16 @@ export function trialGroups(rows: TrialRow[]): TrialGroup[] {
   return groups;
 }
 
+/** A free-flowing team (kind 'flow') has no rounds: its row says nothing about them. */
+export function hasRounds(item: Pick<TeamTrialItem, 'kind'>): boolean {
+  return item.kind !== 'flow';
+}
+
+/** The Round column keeps its name unless every row on the page is a free-flowing team. */
+export function roundColumnNamed(rows: readonly TrialRow[]): boolean {
+  return rows.length === 0 || rows.some((row) => hasRounds(row.item));
+}
+
 /** Whether the row waits for the owner: amber tint and the "needs you" chip. */
 export function trialNeedsYou(item: Pick<TeamTrialItem, 'state'>): boolean {
   return WAIT_STATES.has(item.state);
@@ -85,14 +95,16 @@ const RUN_STATUS_OF: Record<string, string> = { done: 'completed', failed: 'fail
  * The muted line under a row's state badge (board T1). A stopped row
  * always says the run list's own status, never a guess: a stop reads
  * cancelled, a stop at a member's failed or unfinished turn failed (E18).
+ * An old review-round run (kind "rounds", said only by the new engine)
+ * can't be resumed (Design's SPEC 14 b 7).
  */
-export function trialPhrase(item: Pick<TeamTrialItem, 'state' | 'run_status'>): string | null {
+export function trialPhrase(item: Pick<TeamTrialItem, 'state' | 'run_status' | 'kind'>): string | null {
   const status = item.run_status ?? null;
   switch (item.state) {
     case 'quiet':
       return 'nothing left to do';
     case 'interrupted':
-      return 'resume it from the run page';
+      return item.kind === 'rounds' ? "interrupted; this Temper can't resume a round run" : 'resume it from the run page';
     case 'settings_changed':
       return 'settings changed while it waited';
     case 'didnt_start':
@@ -127,6 +139,17 @@ export function trialPeople(item: Pick<TeamTrialItem, 'leader' | 'members'>): {
 /** "maker (backend)" when the team name isn't the role id, else just the name. */
 export function personWords(person: TrialPerson): string {
   return person.role && person.role !== person.name ? `${person.name} (${person.role})` : person.name;
+}
+
+/**
+ * The line under "No projects yet" when there are none. The new engine's
+ * (Design's SPEC 14 b 6) says how a free-flowing team starts; today's
+ * server keeps today's words.
+ */
+export function noProjectsWords(engine: TeamRunKind): string {
+  return engine === 'flow'
+    ? 'Start one: the leader gets your goal and messages the others their work, and Temper checks in with you as spend grows.'
+    : "A project puts a few pi roles on one goal. They work in rounds, review each other's work and stop when the leader's version is approved. Start one with New project at the top right.";
 }
 
 /** The footer: "Showing 1–25 of 57 · newest first". */

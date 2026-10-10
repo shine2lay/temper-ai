@@ -1,0 +1,211 @@
+{
+  "_fixture": "derived from working: the leader's turn 1 ends and releases 7 messages at once (each its own message_id); the leader idle, builder and checker still in turn 1",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T21:33:49.546312+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "158c1723a418498ba0826e39dfce0825",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T21:33:49.549725+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T21:33:49.550627+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T21:33:49.551641+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "5429aa1828d743719812b63b60a29dbe",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T21:33:49.552003+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T21:33:49.552925+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "b1300f3942b64d519863d6f4df9b6132",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T21:33:49.553336+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T21:33:49.561406+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T21:33:49.565610+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T21:33:49.568862+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T21:34:24.601571+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 5,
+      "tool_calls": 6
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T21:34:24.602571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "info",
+      "text": "Start with one line that says what the project does.",
+      "message_id": "1f9530791d692cfd96b5496fe50c5564",
+      "mid_turn": false
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T21:34:24.603571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "info",
+      "text": "Check that every command in the README runs as written.",
+      "message_id": "28bfb28419fae3c2f0c8073dbcaf24ad",
+      "mid_turn": false
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T21:34:24.604571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "info",
+      "text": "Add an Install section with the two setup commands.",
+      "message_id": "b7a48e3f816aae06db612ebbd6d42e97",
+      "mid_turn": false
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T21:34:24.605571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "info",
+      "text": "Flag any step that needs a tool the project does not list.",
+      "message_id": "c709eaabb82fba506ce9a156cb124dd8",
+      "mid_turn": false
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T21:34:24.606571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "info",
+      "text": "Keep it under 40 lines.",
+      "message_id": "a059936fcb3c47baa1519b97c3186ee3",
+      "mid_turn": false
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T21:34:24.607571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "info",
+      "text": "Read it once as someone new to the project.",
+      "message_id": "edc967c1521fbf9de27e638e462af143",
+      "mid_turn": false
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T21:34:24.608571+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "info",
+      "text": "Use the project's name as the title.",
+      "message_id": "80abfa8378ca48628032858c5a89ec67",
+      "mid_turn": false
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T21:34:24.610571+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the parts",
+      "reason": "idle_call"
+    }
+  ],
+  "cursor": 19,
+  "more": false,
+  "as_of": "2026-10-09T21:34:29.610571+00:00"
+}

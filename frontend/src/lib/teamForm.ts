@@ -5,6 +5,11 @@
  * Run trial ask the server, the one place the rules live. Its problems and
  * notes are placed by their field and member (contract E20), never by
  * their text, and shown word for word.
+ *
+ * Which form shows follows the server, so either can land first: the new
+ * engine (free-flowing teams) says its check-in default in the status, and
+ * gets Check in every (in dollars) and Max members at once; today's server
+ * keeps the rounds field and gets exactly what it gets today.
  */
 import { TeamApiError } from '@/lib/teamApi';
 import { refusalWords } from '@/lib/teamAnswer';
@@ -34,10 +39,42 @@ export interface TrialForm {
   members: FormMember[];
   /** The leader row's key. */
   leader: string;
-  /** The pause field as typed: '' when empty. There is no default. */
+  /** The rounds pause field as typed (today's server): '' when empty. There is no default. */
   pause: string;
+  /** Check in every (dollars) as typed (the new engine); null until the owner types in it: Temper's default shows. */
+  pauseEvery: string | null;
+  /** Max members at once as typed (the new engine): '' for every member. */
+  maxParallel: string;
   communication: string;
   project: string;
+}
+
+/** Which form the server takes: 'flow' for the new engine (free-flowing teams), 'rounds' for today's. */
+export type FormKind = 'flow' | 'rounds';
+
+/** The new engine's status has a check-in default (contract FLOW 2); today's has none. */
+export function formKind(status: Pick<TeamStatus, 'defaults'> | null): FormKind {
+  return status?.defaults?.pause_every_usd !== undefined ? 'flow' : 'rounds';
+}
+
+/** Temper's check-in default as the field shows it, or '' when it doesn't say. */
+export function pauseEveryDefault(status: Pick<TeamStatus, 'defaults'> | null): string {
+  const value = status?.defaults?.pause_every_usd;
+  return typeof value === 'number' ? String(value) : '';
+}
+
+/** Check in every (dollars) as the field shows it: as typed, else Temper's default. */
+export function pauseEveryShown(form: Pick<TrialForm, 'pauseEvery'>, status: Pick<TeamStatus, 'defaults'> | null): string {
+  return form.pauseEvery ?? pauseEveryDefault(status);
+}
+
+/**
+ * A number field as sent: null when empty. Temper then uses its default
+ * (Check in every: $100; Max members at once: every member) or, for the
+ * rounds field, says what's wrong.
+ */
+function numberOrNull(typed: string): number | null {
+  return typed.trim() === '' ? null : Number(typed);
 }
 
 let rowCount = 0;
@@ -48,7 +85,10 @@ export function newMember(status: Pick<TeamStatus, 'tools'> | null, key?: string
   return { key: key ?? `m${rowCount}`, role: '', name: '', named: false, tools: [...(status?.tools.default ?? FALLBACK_TOOLS)] };
 }
 
-/** The empty form (board F1): one member, who leads; no pause; all can message all. */
+/**
+ * The empty form (board F1): one member, who leads; no rounds pause; the
+ * check-in at Temper's default; every member at once; all can message all.
+ */
 export function emptyForm(status: Pick<TeamStatus, 'tools' | 'communication'> | null): TrialForm {
   const first = newMember(status);
   return {
@@ -56,6 +96,8 @@ export function emptyForm(status: Pick<TeamStatus, 'tools' | 'communication'> | 
     members: [first],
     leader: first.key,
     pause: '',
+    pauseEvery: null,
+    maxParallel: '',
     communication: status?.communication.available[0] ?? 'all',
     project: '',
   };
@@ -93,23 +135,50 @@ export function teamNameOf(member: Pick<FormMember, 'role' | 'name'>): string {
 
 /**
  * What Check and Run trial send. Names go as typed (left out when empty:
- * Temper then uses the role id); an empty pause field goes as null, so
- * Temper says what's missing.
+ * Temper then uses the role id); an empty number field goes as null
+ * (Check in every: $100, Max members at once: every member; the rounds
+ * field: Temper says what's missing). Today's server gets
+ * pause_after_rounds and nothing new; the new engine gets pause_every_usd
+ * and max_parallel and never pause_after_rounds, whose value it refuses
+ * ("start a new Project").
  */
-export function trialInput(form: TrialForm): TeamTrialInput {
+export function trialInput(form: TrialForm, status: Pick<TeamStatus, 'defaults'> | null = null): TeamTrialInput {
   const leader = form.members.find((m) => m.key === form.leader);
+  const goal = form.goal;
+  const members = form.members.map((m) => ({
+    role: m.role,
+    ...(m.name.trim() !== '' ? { name: m.name } : {}),
+    tools: [...m.tools],
+  }));
+  const leaderName = leader ? teamNameOf(leader) : '';
+  const project_path = form.project === '' ? null : form.project;
+  if (formKind(status) === 'rounds') {
+    return {
+      goal,
+      members,
+      leader: leaderName,
+      pause_after_rounds: numberOrNull(form.pause),
+      communication: form.communication,
+      project_path,
+    };
+  }
   return {
-    goal: form.goal,
-    members: form.members.map((m) => ({
-      role: m.role,
-      ...(m.name.trim() !== '' ? { name: m.name } : {}),
-      tools: [...m.tools],
-    })),
-    leader: leader ? teamNameOf(leader) : '',
-    pause_after_rounds: form.pause.trim() === '' ? null : Number(form.pause),
+    goal,
+    members,
+    leader: leaderName,
+    pause_every_usd: numberOrNull(pauseEveryShown(form, status)),
+    max_parallel: numberOrNull(form.maxParallel),
     communication: form.communication,
-    project_path: form.project === '' ? null : form.project,
+    project_path,
   };
+}
+
+/**
+ * The help under Max members at once (Design's SPEC 14 b 3): the range
+ * follows the members chosen.
+ */
+export function maxParallelHelp(members: number): string {
+  return `How many members may work at the same moment: 1 to ${members.toLocaleString('en-US')}. Leave it empty for all of them.`;
 }
 
 /** Each row's team name as sent, to place the answer's member problems. */
@@ -123,13 +192,21 @@ export function sentRows(form: TrialForm): SentRow[] {
 }
 
 /** The form's places a problem or note can sit, besides a member row. */
-export type FormField = 'goal' | 'pause_after_rounds' | 'communication' | 'project_path' | 'members';
+export type FormField =
+  | 'goal'
+  | 'pause_after_rounds'
+  | 'pause_every_usd'
+  | 'max_parallel'
+  | 'communication'
+  | 'project_path'
+  | 'members';
 
 export type Place = { kind: 'field'; field: FormField } | { kind: 'row'; key: string } | { kind: 'top' };
 
 /**
  * Where a problem or note goes, from its field and member only (SPEC 3,
- * contract E20): goal, pause, communication and project under their
+ * contract E20): goal, pause (rounds), check-in and members at once (the
+ * new engine), communication and project under their
  * field; leader, and members without a member (or a name not on the page),
  * in the Members section's own list; a member's problem at the foot of the
  * row whose team name it names; anything else (field null: roles, safety)
@@ -139,6 +216,8 @@ export function placeFinding(finding: Pick<TeamFinding, 'field' | 'member'>, row
   switch (finding.field) {
     case 'goal':
     case 'pause_after_rounds':
+    case 'pause_every_usd':
+    case 'max_parallel':
     case 'communication':
     case 'project_path':
       return { kind: 'field', field: finding.field };
@@ -168,7 +247,15 @@ export interface PlacedFindings {
 export function placeFindings(findings: readonly TeamFinding[], rows: readonly SentRow[]): PlacedFindings {
   const placed: PlacedFindings = {
     all: [],
-    fields: { goal: [], pause_after_rounds: [], communication: [], project_path: [], members: [] },
+    fields: {
+      goal: [],
+      pause_after_rounds: [],
+      pause_every_usd: [],
+      max_parallel: [],
+      communication: [],
+      project_path: [],
+      members: [],
+    },
     rows: {},
   };
   for (const finding of findings) {
@@ -207,6 +294,8 @@ export function goToAnchor(anchor: string): boolean {
 export const FIELD_ANCHORS: Record<FormField, string> = {
   goal: 'team-goal',
   pause_after_rounds: 'team-pause',
+  pause_every_usd: 'team-pause-every',
+  max_parallel: 'team-max-parallel',
   communication: 'team-communication',
   project_path: 'team-project',
   members: 'team-members-problems',

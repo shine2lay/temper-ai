@@ -1,0 +1,443 @@
+{
+  "_fixture": "derived from working: a team of 6 at the start: the leader in turn 1 on the goal, the five others idle (start); feed cut to the goal and the start idles",
+  "execution_id": "fixture-flow-working",
+  "kind": "flow",
+  "trial_id": "fixture-working",
+  "workflow": "fixture-flow",
+  "run_status": "running",
+  "state": "running",
+  "cost_usd": 0,
+  "account": {
+    "slot": "anthropic-4",
+    "picked_at": "2026-10-09T13:35:28.770682+00:00",
+    "by": "settings_order",
+    "capacity": "not_checked",
+    "room": null
+  },
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "checker",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "designer",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "tester",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "writer",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100,
+    "max_parallel": 6,
+    "communication": "all",
+    "project": {
+      "source": "/work/fixture",
+      "start_commit": null
+    },
+    "started_at": "2026-10-09 13:35:28.770682+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-working"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:28.770710+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:28.770710+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "goal",
+        "text": "This tiny project has no README. Write a short one.",
+        "from": "temper",
+        "at": "2026-10-09T13:36:28.765983+00:00",
+        "message_id": "b90e03c355ce45b8aa40369dc79a48f6"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.770710+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": null,
+      "state": "idle",
+      "since": "2026-10-09T13:36:28.769601+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": "start",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.769601+00:00"
+    },
+    {
+      "name": "checker",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": null,
+      "state": "idle",
+      "since": "2026-10-09T13:36:28.770510+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": "start",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.770510+00:00"
+    },
+    {
+      "name": "designer",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": null,
+      "state": "idle",
+      "since": "2026-10-09T13:36:28.770610+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": "start",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.770610+00:00"
+    },
+    {
+      "name": "tester",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": null,
+      "state": "idle",
+      "since": "2026-10-09T13:36:28.770710+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": "start",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.770710+00:00"
+    },
+    {
+      "name": "writer",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": null,
+      "state": "idle",
+      "since": "2026-10-09T13:36:28.770810+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": "start",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:28.770810+00:00"
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-09T13:36:28.764572+00:00",
+        "data": {
+          "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T13:36:28.769601+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-09T13:36:28.769601+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-09T13:36:28.769601+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T13:36:28.770510+00:00",
+        "data": {
+          "seq": 3,
+          "at": "2026-10-09T13:36:28.770510+00:00",
+          "kind": "idle",
+          "member": "checker",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 3,
+        "at": "2026-10-09T13:36:28.770510+00:00",
+        "kind": "idle",
+        "member": "checker",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "designer",
+        "timestamp": "2026-10-09T13:36:28.770610+00:00",
+        "data": {
+          "seq": 4,
+          "at": "2026-10-09T13:36:28.770610+00:00",
+          "kind": "idle",
+          "member": "designer",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 4,
+        "at": "2026-10-09T13:36:28.770610+00:00",
+        "kind": "idle",
+        "member": "designer",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T13:36:28.770710+00:00",
+        "data": {
+          "turn_id": "bed569b176e2d1e11ae42c259b3fe971",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "tester",
+        "timestamp": "2026-10-09T13:36:28.770710+00:00",
+        "data": {
+          "seq": 5,
+          "at": "2026-10-09T13:36:28.770710+00:00",
+          "kind": "idle",
+          "member": "tester",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 5,
+        "at": "2026-10-09T13:36:28.770710+00:00",
+        "kind": "idle",
+        "member": "tester",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "writer",
+        "timestamp": "2026-10-09T13:36:28.770810+00:00",
+        "data": {
+          "seq": 6,
+          "at": "2026-10-09T13:36:28.770810+00:00",
+          "kind": "idle",
+          "member": "writer",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 6,
+        "at": "2026-10-09T13:36:28.770810+00:00",
+        "kind": "idle",
+        "member": "writer",
+        "note": null,
+        "reason": "start"
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "working",
+    "words": "1 of 6 members are working",
+    "since": null,
+    "running": 1,
+    "asked": false,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-09T13:36:28.771810+00:00",
+  "started_at": "2026-10-09T13:35:28.770682+00:00",
+  "elapsed_s": 60,
+  "last_activity_at": "2026-10-09T13:36:28.770810+00:00",
+  "spend": {
+    "cost_usd": 0,
+    "pause_every_usd": 100,
+    "last_check_in_usd": 0,
+    "next_check_in_usd": 100,
+    "since_check_in_usd": 0,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 6,
+    "working": 1,
+    "ready": 0,
+    "idle": 5,
+    "held": 0,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [],
+  "work": {
+    "latest": null,
+    "shares": [],
+    "shares_total": 0,
+    "summary": null
+  },
+  "events_cursor": 6,
+  "events_total": 6
+}

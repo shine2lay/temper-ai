@@ -1,0 +1,299 @@
+{
+  "_fixture": "derived from working: a team of 4 read 50 minutes in: the leader's first work requests are old; 4 member messages in the last 10 minutes; links counted from the feed for the hour before as_of",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T13:36:28.765983+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T13:36:28.769601+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T13:36:28.770510+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T13:36:28.770610+00:00",
+      "kind": "idle",
+      "member": "designer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T13:36:28.771628+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "da622e0c17c5437996aba62cbed0a571",
+      "mid_turn": false
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T13:36:28.772019+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T13:36:28.773063+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "d9ca0c5bfcb34f04877b4b4d87abe15f",
+      "mid_turn": false
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T13:36:28.773423+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T13:36:28.782013+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T13:36:28.786441+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T13:36:28.789792+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T13:37:58.816519+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T13:37:58.817519+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "designer",
+      "message_kind": "work_request",
+      "text": "Design the README layout and share it.",
+      "message_id": "f981fd2ac511f00040c7c0ade8aa0a89",
+      "mid_turn": false
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T13:37:58.817719+00:00",
+      "kind": "wake",
+      "member": "designer",
+      "by": "lead"
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T13:37:58.817919+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T13:37:58.819519+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the parts",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T14:18:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T14:18:28.817519+00:00",
+      "kind": "message",
+      "member": "builder",
+      "from": "builder",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "info",
+      "text": "Please run my install steps.",
+      "message_id": "3cf6941317406beddf97f89b54033564",
+      "mid_turn": false
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T14:18:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T14:20:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "designer",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-09T14:20:28.817519+00:00",
+      "kind": "message",
+      "member": "designer",
+      "from": "designer",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "info",
+      "text": "The layout is shared; check the headings.",
+      "message_id": "5778e387f3bbbe2959e3005b6d7b5a27",
+      "mid_turn": false
+    },
+    {
+      "seq": 22,
+      "at": "2026-10-09T14:20:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 23,
+      "at": "2026-10-09T14:22:28.816519+00:00",
+      "kind": "turn_end",
+      "member": "designer",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 24,
+      "at": "2026-10-09T14:22:28.817519+00:00",
+      "kind": "message",
+      "member": "designer",
+      "from": "designer",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The layout is shared.",
+      "message_id": "a71904b6e2ae779c69157ca24264c9c3",
+      "mid_turn": false
+    },
+    {
+      "seq": 25,
+      "at": "2026-10-09T14:22:28.817719+00:00",
+      "kind": "wake",
+      "member": "lead",
+      "by": "designer"
+    },
+    {
+      "seq": 26,
+      "at": "2026-10-09T14:22:28.817919+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 27,
+      "at": "2026-10-09T14:22:28.820519+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 3,
+      "retry_of": null
+    },
+    {
+      "seq": 28,
+      "at": "2026-10-09T14:25:48.816519+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 29,
+      "at": "2026-10-09T14:25:48.817519+00:00",
+      "kind": "message",
+      "member": "builder",
+      "from": "builder",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "The builder part is shared.",
+      "message_id": "0ce1e8c19126971d17936becf73f96ae",
+      "mid_turn": false
+    },
+    {
+      "seq": 30,
+      "at": "2026-10-09T14:25:48.820519+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 3,
+      "retry_of": null
+    }
+  ],
+  "cursor": 30,
+  "more": false,
+  "as_of": "2026-10-09T14:26:28.825519+00:00"
+}

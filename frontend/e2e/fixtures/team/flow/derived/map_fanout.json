@@ -1,0 +1,801 @@
+{
+  "_fixture": "derived from working: map_fanout_before, then the leader's turn 1 ends with a work request to each of the five members in one second; each wakes and starts turn 1; the leader waits",
+  "execution_id": "fixture-flow-working",
+  "kind": "flow",
+  "trial_id": "fixture-working",
+  "workflow": "fixture-flow",
+  "run_status": "running",
+  "state": "running",
+  "cost_usd": 1,
+  "account": {
+    "slot": "anthropic-4",
+    "picked_at": "2026-10-09T13:35:28.770682+00:00",
+    "by": "settings_order",
+    "capacity": "not_checked",
+    "room": null
+  },
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "checker",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "designer",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "tester",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "writer",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100,
+    "max_parallel": 6,
+    "communication": "all",
+    "project": {
+      "source": "/work/fixture",
+      "start_commit": null
+    },
+    "started_at": "2026-10-09 13:35:28.770682+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-working"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "idle",
+      "turns": 1,
+      "cost_usd": 1,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T13:36:28.770710+00:00",
+        "ended_at": "2026-10-09T13:36:58.770810+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-09T13:36:58.777810+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "message",
+        "text": "Write the Usage section and share it.",
+        "to": "writer",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.775810+00:00",
+        "message_id": "61da529422c07b98e19116f871c62288"
+      },
+      "idle_note": "lead: waiting for the parts",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "writer",
+        "kind": "work_request",
+        "text": "Write the Usage section and share it.",
+        "at": "2026-10-09T13:36:58.775810+00:00",
+        "message_id": "61da529422c07b98e19116f871c62288"
+      },
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.777810+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:58.772210+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:58.772210+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the builder part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.771810+00:00",
+        "message_id": "7c067fd6052bcd6c246a30c67bd812df"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.772210+00:00"
+    },
+    {
+      "name": "checker",
+      "role": "scout",
+      "leader": false,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:58.773210+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:58.773210+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the checker part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.772810+00:00",
+        "message_id": "be362fd912b61b3c9eb53cfea52f12b6"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.773210+00:00"
+    },
+    {
+      "name": "designer",
+      "role": "scout",
+      "leader": false,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:58.774210+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:58.774210+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "work_request",
+        "text": "Design the README layout and share it.",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.773810+00:00",
+        "message_id": "fd02aed31081c54cdc87a9f769fcef52"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.774210+00:00"
+    },
+    {
+      "name": "tester",
+      "role": "scout",
+      "leader": false,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:58.775210+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:58.775210+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "work_request",
+        "text": "Test the README steps on a clean machine.",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.774810+00:00",
+        "message_id": "7a73ecebab5df1aa692118e3567a3f39"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.775210+00:00"
+    },
+    {
+      "name": "writer",
+      "role": "scout",
+      "leader": false,
+      "activity": "working",
+      "turns": 1,
+      "cost_usd": 0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": null,
+      "last_turn": {
+        "turn_no": 1,
+        "state": "running",
+        "started_at": "2026-10-09T13:36:58.776210+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-09T13:36:58.776210+00:00",
+      "turn_no": 1,
+      "on": {
+        "kind": "work_request",
+        "text": "Write the Usage section and share it.",
+        "from": "lead",
+        "at": "2026-10-09T13:36:58.775810+00:00",
+        "message_id": "61da529422c07b98e19116f871c62288"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T13:36:58.776210+00:00"
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-09T13:36:28.764572+00:00",
+        "data": {
+          "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T13:36:28.769601+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-09T13:36:28.769601+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-09T13:36:28.769601+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T13:36:28.770510+00:00",
+        "data": {
+          "seq": 3,
+          "at": "2026-10-09T13:36:28.770510+00:00",
+          "kind": "idle",
+          "member": "checker",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 3,
+        "at": "2026-10-09T13:36:28.770510+00:00",
+        "kind": "idle",
+        "member": "checker",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "designer",
+        "timestamp": "2026-10-09T13:36:28.770610+00:00",
+        "data": {
+          "seq": 4,
+          "at": "2026-10-09T13:36:28.770610+00:00",
+          "kind": "idle",
+          "member": "designer",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 4,
+        "at": "2026-10-09T13:36:28.770610+00:00",
+        "kind": "idle",
+        "member": "designer",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T13:36:28.770710+00:00",
+        "data": {
+          "turn_id": "bed569b176e2d1e11ae42c259b3fe971",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T13:36:58.770810+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "tester",
+        "timestamp": "2026-10-09T13:36:28.770710+00:00",
+        "data": {
+          "seq": 5,
+          "at": "2026-10-09T13:36:28.770710+00:00",
+          "kind": "idle",
+          "member": "tester",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 5,
+        "at": "2026-10-09T13:36:28.770710+00:00",
+        "kind": "idle",
+        "member": "tester",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "writer",
+        "timestamp": "2026-10-09T13:36:28.770810+00:00",
+        "data": {
+          "seq": 6,
+          "at": "2026-10-09T13:36:28.770810+00:00",
+          "kind": "idle",
+          "member": "writer",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 6,
+        "at": "2026-10-09T13:36:28.770810+00:00",
+        "kind": "idle",
+        "member": "writer",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "builder",
+        "timestamp": "2026-10-09T13:36:58.771810+00:00",
+        "data": {
+          "message_id": "7c067fd6052bcd6c246a30c67bd812df",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the builder part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T13:36:58.772010+00:00",
+        "data": {
+          "seq": 9,
+          "at": "2026-10-09T13:36:58.772010+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 9,
+        "at": "2026-10-09T13:36:58.772010+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T13:36:58.772210+00:00",
+        "data": {
+          "turn_id": "1c4bdb46bb4946a43a584c7ea594d853",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "checker",
+        "timestamp": "2026-10-09T13:36:58.772810+00:00",
+        "data": {
+          "message_id": "be362fd912b61b3c9eb53cfea52f12b6",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the checker part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T13:36:58.773010+00:00",
+        "data": {
+          "seq": 12,
+          "at": "2026-10-09T13:36:58.773010+00:00",
+          "kind": "wake",
+          "member": "checker",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 12,
+        "at": "2026-10-09T13:36:58.773010+00:00",
+        "kind": "wake",
+        "member": "checker",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T13:36:58.773210+00:00",
+        "data": {
+          "turn_id": "0577673c71f2a21041fae14bbc09ac3e",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "designer",
+        "timestamp": "2026-10-09T13:36:58.773810+00:00",
+        "data": {
+          "message_id": "fd02aed31081c54cdc87a9f769fcef52",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Design the README layout and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "designer",
+        "timestamp": "2026-10-09T13:36:58.774010+00:00",
+        "data": {
+          "seq": 15,
+          "at": "2026-10-09T13:36:58.774010+00:00",
+          "kind": "wake",
+          "member": "designer",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 15,
+        "at": "2026-10-09T13:36:58.774010+00:00",
+        "kind": "wake",
+        "member": "designer",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "designer",
+        "timestamp": "2026-10-09T13:36:58.774210+00:00",
+        "data": {
+          "turn_id": "0fb050e63b46936ce1a3f68e59b8c05e",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "tester",
+        "timestamp": "2026-10-09T13:36:58.774810+00:00",
+        "data": {
+          "message_id": "7a73ecebab5df1aa692118e3567a3f39",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Test the README steps on a clean machine."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "tester",
+        "timestamp": "2026-10-09T13:36:58.775010+00:00",
+        "data": {
+          "seq": 18,
+          "at": "2026-10-09T13:36:58.775010+00:00",
+          "kind": "wake",
+          "member": "tester",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 18,
+        "at": "2026-10-09T13:36:58.775010+00:00",
+        "kind": "wake",
+        "member": "tester",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "tester",
+        "timestamp": "2026-10-09T13:36:58.775210+00:00",
+        "data": {
+          "turn_id": "1ae521b050882130e15c41c1ca48ba5e",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "writer",
+        "timestamp": "2026-10-09T13:36:58.775810+00:00",
+        "data": {
+          "message_id": "61da529422c07b98e19116f871c62288",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Write the Usage section and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "writer",
+        "timestamp": "2026-10-09T13:36:58.776010+00:00",
+        "data": {
+          "seq": 21,
+          "at": "2026-10-09T13:36:58.776010+00:00",
+          "kind": "wake",
+          "member": "writer",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 21,
+        "at": "2026-10-09T13:36:58.776010+00:00",
+        "kind": "wake",
+        "member": "writer",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: running",
+        "from_agent": "writer",
+        "timestamp": "2026-10-09T13:36:58.776210+00:00",
+        "data": {
+          "turn_id": "0ca30f4145a37677ac411fb74dbfdf08",
+          "turn_no": 1,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T13:36:58.777810+00:00",
+        "data": {
+          "seq": 23,
+          "at": "2026-10-09T13:36:58.777810+00:00",
+          "kind": "idle",
+          "member": "lead",
+          "note": "lead: waiting for the parts",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 23,
+        "at": "2026-10-09T13:36:58.777810+00:00",
+        "kind": "idle",
+        "member": "lead",
+        "note": "lead: waiting for the parts",
+        "reason": "idle_call"
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "working",
+    "words": "5 of 6 members are working",
+    "since": null,
+    "running": 5,
+    "asked": false,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-09T13:37:00.770810+00:00",
+  "started_at": "2026-10-09T13:35:28.770682+00:00",
+  "elapsed_s": 92,
+  "last_activity_at": "2026-10-09T13:36:58.777810+00:00",
+  "spend": {
+    "cost_usd": 1,
+    "pause_every_usd": 100,
+    "last_check_in_usd": 0,
+    "next_check_in_usd": 100,
+    "since_check_in_usd": 1,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 6,
+    "working": 5,
+    "ready": 0,
+    "idle": 1,
+    "held": 0,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "count": 1,
+      "last_at": "2026-10-09T13:36:58.771810+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "checker",
+      "count": 1,
+      "last_at": "2026-10-09T13:36:58.772810+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "designer",
+      "count": 1,
+      "last_at": "2026-10-09T13:36:58.773810+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "tester",
+      "count": 1,
+      "last_at": "2026-10-09T13:36:58.774810+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "writer",
+      "count": 1,
+      "last_at": "2026-10-09T13:36:58.775810+00:00"
+    }
+  ],
+  "work": {
+    "latest": null,
+    "shares": [],
+    "shares_total": 0,
+    "summary": null
+  },
+  "events_cursor": 23,
+  "events_total": 23
+}

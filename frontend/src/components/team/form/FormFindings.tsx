@@ -15,8 +15,10 @@ export function FindingLink({ placed }: { placed: PlacedFinding }) {
       onClick={(event) => {
         if (goToAnchor(anchor)) event.preventDefault();
       }}
-      // inline-block + min-h-6: a 24 px target (WCAG 2.5.8) for a one-line problem.
-      className="inline-block min-h-6 py-[3px] break-words text-temper-text underline decoration-[var(--badge-failed-border)] underline-offset-2 hover:decoration-temper-text"
+      // A 26 px target for a one-line problem (WCAG 2.5.8: 3 + 20 + 3). Top-aligned in a 26 px line, so its
+      // first line sits on the list's own baseline: a wrapped problem keeps its bullet on its first line
+      // (Design's SPEC 14 b 8). An inline-block's baseline is its last line's, which moved the bullet down.
+      className="inline-block py-[3px] align-top leading-5 break-words text-temper-text underline decoration-[var(--badge-failed-border)] underline-offset-2 hover:decoration-temper-text"
     >
       {placed.finding.text}
     </a>
@@ -53,7 +55,8 @@ export function FindingsSummary({
           {title}
         </h2>
         <p className="m-0 mt-1 text-xs text-temper-text-muted">Nothing was saved. Your inputs are kept below.</p>
-        <ul className="m-0 mt-2 flex list-disc flex-col gap-1.5 pl-5">
+        {/* 26 px lines to match FindingLink: (26 - 20) / 2 = its 3 px top padding. */}
+        <ul className="m-0 mt-2 flex list-disc flex-col gap-1.5 pl-5 leading-[26px]">
           {placed.map((p, i) => (
             <li key={i}>
               <FindingLink placed={p} />

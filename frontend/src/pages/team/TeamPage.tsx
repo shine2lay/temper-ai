@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useTeamStatus } from '@/hooks/useTeamStatus';
 import { useTeamRoles, useTeamTrials } from '@/hooks/useTeamLists';
+import { formKind } from '@/lib/teamForm';
 import { lastTrialsPage } from '@/lib/teamTrials';
 import { TeamGuardBanner } from '@/components/team/TeamGuardBanner';
 import { TeamPageHeader, type TeamTab } from '@/components/team/TeamPageHeader';
@@ -53,7 +54,13 @@ export default function TeamPage({ tab }: { tab: TeamTab }) {
       <div className="flex flex-col gap-4 px-6 py-4">
         <TeamGuardBanner mode={status?.guard_mode} />
         {tab === 'trials' ? (
-          <TrialsList read={trials} rows={trials.rows} page={page} onPage={goTo} />
+          <TrialsList
+            read={trials}
+            rows={trials.rows}
+            page={page}
+            onPage={goTo}
+            engine={status ? formKind(status) : null}
+          />
         ) : (
           <RolesTable read={roles} />
         )}

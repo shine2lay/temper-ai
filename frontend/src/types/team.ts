@@ -31,13 +31,27 @@ export interface TeamLimits {
   stop_reason_max_chars: number;
   name_pattern: string;
   reserved_names: string[];
+  /** Free-flowing teams only (the new engine): the check-in amount's range, in US dollars. */
+  pause_every_usd?: { min: number; max: number };
 }
 
 export interface TeamStatus {
   api_version: string;
   roles_configured: boolean;
   roles_problem: string | null;
-  defaults: { provider: string; model: string; thinking: string; source: string };
+  defaults: {
+    provider: string;
+    model: string;
+    thinking: string;
+    source: string;
+    /**
+     * Free-flowing teams only (the new engine): the check-in amount, in US
+     * dollars. Today's server leaves it out: its form keeps the rounds field.
+     */
+    pause_every_usd?: number;
+    /** Free-flowing teams only: how many members may work at once; null is every member. */
+    max_parallel?: number | null;
+  };
   tools: {
     available: string[];
     default: string[];
@@ -63,7 +77,12 @@ export interface TeamTrial {
   goal: string;
   leader: string;
   members: TeamTrialMember[];
-  pause_after_rounds: number;
+  /** A round team's pause (today's server and old runs); a free-flowing team has none. */
+  pause_after_rounds?: number;
+  /** A free-flowing team's check-in amount, in US dollars. */
+  pause_every_usd?: number;
+  /** A free-flowing team's members at once, as stored: the number in force. */
+  max_parallel?: number | null;
   communication: string;
   project: { source: string | null; start_commit: string | null } | null;
   started_at: string | null;
@@ -134,6 +153,11 @@ export interface TeamWait {
   why: string | null;
   asked_again: number | null;
   opened_at: string | null;
+  /**
+   * Temper's fixed line under a member's own question ("the words are the
+   * member's, not Temper's"); null for every other wait. Free-flowing teams only.
+   */
+  note?: string | null;
   /** Only on a settings wait; null for every other kind. */
   settings_changes?: TeamSettingsChange[] | null;
   pins?: TeamSettingsPin[] | null;
@@ -315,10 +339,18 @@ export interface TeamOutcome {
   done?: TeamDone | null;
 }
 
+/**
+ * Which engine ran a team: 'flow' for a free-flowing team, 'rounds' for an
+ * old review-round run, which Temper keeps read-only (no resume, re-run or
+ * fork). Today's server doesn't say.
+ */
+export type TeamRunKind = 'flow' | 'rounds';
+
 export interface TeamRun {
   execution_id: string;
   trial_id: string;
   workflow: string;
+  kind?: TeamRunKind | string;
   /** The run's own status, as the run list shows it. */
   run_status: string;
   state: TeamState;
@@ -375,7 +407,10 @@ export interface TeamCancelResult {
 
 /** A problem or note from the check or a start: placed by field and member, never by its text. */
 export interface TeamFinding {
-  /** goal, members, leader, pause_after_rounds, communication, project_path; null for the whole request. */
+  /**
+   * goal, members, leader, pause_after_rounds (rounds) or pause_every_usd and
+   * max_parallel (free-flowing), communication, project_path; null for the whole request.
+   */
   field: string | null;
   /** The member's team name as sent, for a members problem about one member. */
   member?: string | null;
@@ -401,8 +436,16 @@ export interface TeamTrialInput {
   goal: string;
   members: TeamTrialMemberInput[];
   leader: string;
-  /** As typed: a number, or null when the field is empty (the server says what's wrong). */
-  pause_after_rounds: number | null;
+  /**
+   * Today's server only: as typed, a number, or null when the field is empty
+   * (the server says what's wrong). Never sent to the new engine, which
+   * refuses any value here ("start a new Project").
+   */
+  pause_after_rounds?: number | null;
+  /** The new engine only: as typed, or null when the field is empty, which Temper takes as its default ($100). */
+  pause_every_usd?: number | null;
+  /** The new engine only: as typed, or null when it is empty (every member). */
+  max_parallel?: number | null;
   communication: string;
   project_path: string | null;
 }
@@ -430,12 +473,13 @@ export interface TeamTrialItem {
   goal_first_line: string;
   leader: string | null;
   members: Array<{ name: string; role: string }>;
+  kind?: TeamRunKind | string;
   state: TeamState | string;
   /** The run list's own status for this run. */
   run_status: string | null;
   decision: string | null;
-  /** 0 before the first review round. */
-  round: number;
+  /** 0 before the first review round. A free-flowing team's item has none. */
+  round?: number;
   cost_usd: number | null;
   started_at: string | null;
   started_by: string | null;

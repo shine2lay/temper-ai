@@ -10,6 +10,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { authFetch } from '@/lib/authFetch';
 import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
 import { isGoing } from '@/lib/runStatus';
+import { useRunActionsAllowed } from '@/hooks/useTeamRunRead';
 import { ResumeDialog } from './ResumeDialog';
 import { HoldBanner } from './HoldBanner';
 import { AttemptsBanner } from './AttemptsBanner';
@@ -91,6 +92,8 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
   const navigate = useNavigate();
   const executionId = workflow?.id;
   const workflowName = workflow?.workflow_name;
+  // An old review-round team run is read-only: Temper refuses its resume and fork.
+  const actionsAllowed = useRunActionsAllowed(executionId ?? '');
 
   const { data, isLoading, error } = useQuery<CheckpointResponse>({
     queryKey: ['checkpoints', executionId],
@@ -138,10 +141,11 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
   }
   const hasFailed = [...latestStatusByNode.values()].includes('failed');
   const canResume =
-    workflow?.status === 'failed' ||
-    workflow?.status === 'cancelled' ||
-    workflow?.status === 'interrupted' ||
-    (isTerminal && hasFailed);
+    actionsAllowed &&
+    (workflow?.status === 'failed' ||
+      workflow?.status === 'cancelled' ||
+      workflow?.status === 'interrupted' ||
+      (isTerminal && hasFailed));
   const hasCheckpoints = checkpoints.length > 0;
   const isPreviewActive = checkpointPreview !== null;
 
@@ -234,7 +238,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
                   const isCompleted = cp.status === 'completed';
                   const isFailed = cp.status === 'failed';
                   const isRewind = cp.event_type === 'loop_rewind';
-                  const canFork = isTerminal && !!workflowName && (isCompleted || isFailed);
+                  const canFork = actionsAllowed && isTerminal && !!workflowName && (isCompleted || isFailed);
                   const isPreviewed = checkpointPreview?.sequence === cp.sequence;
 
                   return (

@@ -1,0 +1,61 @@
+{
+  "_fixture": "derived from working: a team of 6 at the start: the leader in turn 1 on the goal, the five others idle (start); feed cut to the goal and the start idles",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T13:36:28.765983+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T13:36:28.769601+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T13:36:28.770510+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T13:36:28.770610+00:00",
+      "kind": "idle",
+      "member": "designer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T13:36:28.770710+00:00",
+      "kind": "idle",
+      "member": "tester",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T13:36:28.770810+00:00",
+      "kind": "idle",
+      "member": "writer",
+      "note": null,
+      "reason": "start"
+    }
+  ],
+  "cursor": 6,
+  "more": false,
+  "as_of": "2026-10-09T13:36:28.780810+00:00"
+}

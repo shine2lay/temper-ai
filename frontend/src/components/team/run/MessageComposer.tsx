@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { RefreshCw, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DEFAULT_MESSAGE_MAX_CHARS } from '@/lib/teamMessage';
@@ -72,10 +72,13 @@ export function MessageComposer({
   run,
   limit,
   sender,
+  hint,
 }: {
   run: TeamRun;
   limit: number | undefined;
   sender: TeamMessageSender;
+  /** The hint under the box for the chosen member (the glance page's D56); the round page keeps its own. */
+  hint?: (to: string) => ReactNode;
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
@@ -151,7 +154,11 @@ export function MessageComposer({
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3">
         <p id={helpId} className="m-0 flex-1 text-xs text-temper-text-muted">
-          {waitOpen ? 'Held until you answer the open question.' : 'Reaches the member at its next turn.'}
+          {hint
+            ? hint(to)
+            : waitOpen
+              ? 'Held until you answer the open question.'
+              : 'Reaches the member at its next turn.'}
         </p>
         {/* While a question waits, Send answer is the page's main action (O2). */}
         <button

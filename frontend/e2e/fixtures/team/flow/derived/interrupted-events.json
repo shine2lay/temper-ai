@@ -1,0 +1,101 @@
+{
+  "_fixture": "derived from working: the run ended without the team ending (Temper restarted under 3 running turns): phase interrupted, no outcome, elapsed_s frozen at the end while as_of is 5 min later",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T21:33:49.546312+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "158c1723a418498ba0826e39dfce0825",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T21:33:49.549725+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T21:33:49.550627+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T21:33:49.551641+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "5429aa1828d743719812b63b60a29dbe",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T21:33:49.552003+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T21:33:49.552925+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "b1300f3942b64d519863d6f4df9b6132",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T21:33:49.553336+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T21:33:49.561406+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T21:33:49.565610+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T21:33:49.568862+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    }
+  ],
+  "cursor": 10,
+  "more": false,
+  "as_of": "2026-10-09T21:38:59.610571+00:00"
+}

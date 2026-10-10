@@ -111,6 +111,15 @@ export function fetchTeamRun(executionId: string): Promise<TeamRun> {
   return readJson<TeamRun>(`/api/team/runs/${encodeURIComponent(executionId)}`);
 }
 
+/**
+ * GET /api/team/runs/{id}/events?after=&limit=: a free-flowing team's event
+ * feed after a cursor. Returned as sent: teamGlanceAdapter.ts reads it.
+ */
+export function fetchTeamEvents(executionId: string, after: number, limit: number): Promise<unknown> {
+  const query = new URLSearchParams({ after: String(after), limit: String(limit) });
+  return readJson<unknown>(`/api/team/runs/${encodeURIComponent(executionId)}/events?${query.toString()}`);
+}
+
 /** GET /api/team/runs/{id}/messages/{message_id}: one message's full body. */
 export function fetchTeamMessage(executionId: string, messageId: string): Promise<TeamMessage> {
   return readJson<TeamMessage>(

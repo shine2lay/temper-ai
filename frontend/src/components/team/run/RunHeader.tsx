@@ -63,14 +63,20 @@ export function RunHeader({
         </span>
       ),
     },
-    {
-      key: 'pause',
-      node: (
-        <span>
-          Pauses after <b className="font-semibold text-temper-text">{trial.pause_after_rounds}</b> rounds without done
-        </span>
-      ),
-    },
+    // A round team's pause; a team without one (free-flowing) has no such fact.
+    ...(trial.pause_after_rounds !== undefined
+      ? [
+          {
+            key: 'pause',
+            node: (
+              <span>
+                Pauses after <b className="font-semibold text-temper-text">{trial.pause_after_rounds}</b> rounds
+                without done
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'talk',
       node: (

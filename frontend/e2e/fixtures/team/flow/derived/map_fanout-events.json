@@ -1,0 +1,220 @@
+{
+  "_fixture": "derived from working: map_fanout_before, then the leader's turn 1 ends with a work request to each of the five members in one second; each wakes and starts turn 1; the leader waits",
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-09T13:36:28.765983+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "b90e03c355ce45b8aa40369dc79a48f6",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-09T13:36:28.769601+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-09T13:36:28.770510+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-09T13:36:28.770610+00:00",
+      "kind": "idle",
+      "member": "designer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-09T13:36:28.770710+00:00",
+      "kind": "idle",
+      "member": "tester",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-09T13:36:28.770810+00:00",
+      "kind": "idle",
+      "member": "writer",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-09T13:36:58.770810+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 1,
+      "tool_calls": 3
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-09T13:36:58.771810+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "7c067fd6052bcd6c246a30c67bd812df",
+      "mid_turn": false
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-09T13:36:58.772010+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-09T13:36:58.772210+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-09T13:36:58.772810+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "be362fd912b61b3c9eb53cfea52f12b6",
+      "mid_turn": false
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-09T13:36:58.773010+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-09T13:36:58.773210+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-09T13:36:58.773810+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "designer",
+      "message_kind": "work_request",
+      "text": "Design the README layout and share it.",
+      "message_id": "fd02aed31081c54cdc87a9f769fcef52",
+      "mid_turn": false
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-09T13:36:58.774010+00:00",
+      "kind": "wake",
+      "member": "designer",
+      "by": "lead"
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-09T13:36:58.774210+00:00",
+      "kind": "turn_start",
+      "member": "designer",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-09T13:36:58.774810+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "tester",
+      "message_kind": "work_request",
+      "text": "Test the README steps on a clean machine.",
+      "message_id": "7a73ecebab5df1aa692118e3567a3f39",
+      "mid_turn": false
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-09T13:36:58.775010+00:00",
+      "kind": "wake",
+      "member": "tester",
+      "by": "lead"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T13:36:58.775210+00:00",
+      "kind": "turn_start",
+      "member": "tester",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T13:36:58.775810+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "writer",
+      "message_kind": "work_request",
+      "text": "Write the Usage section and share it.",
+      "message_id": "61da529422c07b98e19116f871c62288",
+      "mid_turn": false
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-09T13:36:58.776010+00:00",
+      "kind": "wake",
+      "member": "writer",
+      "by": "lead"
+    },
+    {
+      "seq": 22,
+      "at": "2026-10-09T13:36:58.776210+00:00",
+      "kind": "turn_start",
+      "member": "writer",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 23,
+      "at": "2026-10-09T13:36:58.777810+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the parts",
+      "reason": "idle_call"
+    }
+  ],
+  "cursor": 23,
+  "more": false,
+  "as_of": "2026-10-09T13:37:00.779810+00:00"
+}

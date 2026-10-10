@@ -11,8 +11,11 @@ import {
   emptyForm,
   FALLBACK_TOOLS,
   findingIds,
+  formKind,
+  maxParallelHelp,
   memberAnchor,
   newMember,
+  pauseEveryShown,
   pickRole,
   placeFindings,
   sentRows,
@@ -115,7 +118,9 @@ export default function TeamNewTrial() {
   const bashAllowed = status?.tools.bash_allowed ?? false;
   const roleList = roles.data?.configured ? roles.data.roles : [];
   const busy = starter.busy;
-  const input = useMemo(() => trialInput(form), [form]);
+  // The new engine (free-flowing teams) or today's server: read again with every status read.
+  const kind = formKind(status);
+  const input = useMemo(() => trialInput(form, status), [form, status]);
   const retry = busy === null ? starter.retrying(input) : null;
 
   const value = result?.value ?? null;
@@ -140,12 +145,12 @@ export default function TeamNewTrial() {
 
   async function onCheck() {
     const rows = sentRows(form);
-    show(checkResult(await starter.check(trialInput(form)), rows));
+    show(checkResult(await starter.check(trialInput(form, status)), rows));
   }
 
   async function onRun() {
     const rows = sentRows(form);
-    const outcome = await starter.start(trialInput(form));
+    const outcome = await starter.start(trialInput(form, status));
     if (outcome.kind === 'started') {
       navigate(`/team/runs/${encodeURIComponent(outcome.started.execution_id)}`);
       return;
@@ -173,6 +178,9 @@ export default function TeamNewTrial() {
 
   const goalProblems = problems.fields.goal;
   const pauseProblems = problems.fields.pause_after_rounds;
+  const everyProblems = problems.fields.pause_every_usd;
+  const atOnceProblems = problems.fields.max_parallel;
+  const everyLimits = status?.limits.pause_every_usd;
   const commProblems = problems.fields.communication;
   const projectProblems = problems.fields.project_path;
   const membersProblems = problems.fields.members;
@@ -329,31 +337,115 @@ export default function TeamNewTrial() {
               <h2 id="team-how-title" className="m-0 text-sm font-semibold text-temper-text">
                 How the team works
               </h2>
-              <div className="mt-3 flex items-baseline gap-2">
-                <label htmlFor="team-pause" className="text-sm font-semibold text-temper-text">
-                  Pause after this many rounds without done
-                </label>
-                <span className={teamFieldTag}>required</span>
-              </div>
-              <input
-                id="team-pause"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={1}
-                value={form.pause}
-                disabled={busy !== null}
-                aria-invalid={pauseProblems.length > 0 || undefined}
-                aria-describedby={describedBy('team-pause', pauseProblems, notes.fields.pause_after_rounds, 'team-pause-help')}
-                onChange={(event) => setForm((f) => ({ ...f, pause: event.target.value }))}
-                className={cn(teamField, 'mt-2 w-32', pauseProblems.length > 0 && teamFieldBad)}
-              />
-              <FieldProblems id="team-pause" problems={pauseProblems} className="mt-1.5" />
-              <FieldNotes id="team-pause" notes={notes.fields.pause_after_rounds} className="mt-1.5" />
-              <p id="team-pause-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
-                No default. The team pauses for you when it has kept going this many rounds in a row without the
-                leader saying done.
-              </p>
+              {kind === 'rounds' ? (
+                <>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <label htmlFor="team-pause" className="text-sm font-semibold text-temper-text">
+                      Pause after this many rounds without done
+                    </label>
+                    <span className={teamFieldTag}>required</span>
+                  </div>
+                  <input
+                    id="team-pause"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={form.pause}
+                    disabled={busy !== null}
+                    aria-invalid={pauseProblems.length > 0 || undefined}
+                    aria-describedby={describedBy('team-pause', pauseProblems, notes.fields.pause_after_rounds, 'team-pause-help')}
+                    onChange={(event) => setForm((f) => ({ ...f, pause: event.target.value }))}
+                    className={cn(teamField, 'mt-2 w-32', pauseProblems.length > 0 && teamFieldBad)}
+                  />
+                  <FieldProblems id="team-pause" problems={pauseProblems} className="mt-1.5" />
+                  <FieldNotes id="team-pause" notes={notes.fields.pause_after_rounds} className="mt-1.5" />
+                  <p id="team-pause-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                    No default. The team pauses for you when it has kept going this many rounds in a row without the
+                    leader saying done.
+                  </p>
+                </>
+              ) : (
+                <>
+                  {/* Design's SPEC 14 b 1-2: required like the other required fields; whole dollars
+                      above 0; the "$" is a decoration inside the field, so the input's name says the unit.
+                      aria-label, not a visually hidden span in the label: the browser joins a hidden
+                      span with a space ("Check in every , in dollars"). */}
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <label htmlFor="team-pause-every" className="text-sm font-semibold text-temper-text">
+                      Check in every
+                    </label>
+                    <span className={teamFieldTag}>required</span>
+                  </div>
+                  <div className="relative mt-2 w-32">
+                    <input
+                      id="team-pause-every"
+                      aria-label="Check in every, in dollars"
+                      type="number"
+                      inputMode="numeric"
+                      min={everyLimits?.min ?? 1}
+                      max={everyLimits?.max}
+                      step={1}
+                      value={pauseEveryShown(form, status)}
+                      disabled={busy !== null}
+                      aria-invalid={everyProblems.length > 0 || undefined}
+                      aria-describedby={describedBy(
+                        'team-pause-every',
+                        everyProblems,
+                        notes.fields.pause_every_usd,
+                        'team-pause-every-help',
+                      )}
+                      onChange={(event) => setForm((f) => ({ ...f, pauseEvery: event.target.value }))}
+                      className={cn(teamField, 'peer pl-7', everyProblems.length > 0 && teamFieldBad)}
+                    />
+                    <span
+                      aria-hidden="true"
+                      data-prefix=""
+                      className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-temper-text-muted peer-disabled:opacity-55"
+                    >
+                      $
+                    </span>
+                  </div>
+                  <FieldProblems id="team-pause-every" problems={everyProblems} className="mt-1.5" />
+                  <FieldNotes id="team-pause-every" notes={notes.fields.pause_every_usd} className="mt-1.5" />
+                  <p id="team-pause-every-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                    When spend grows by this much, the team pauses and asks you to continue, guide or stop.
+                  </p>
+
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <label
+                      htmlFor="team-max-parallel"
+                      className="inline-flex items-baseline gap-2 text-sm font-semibold text-temper-text"
+                    >
+                      Max members at once <span className={teamFieldTag}>(optional)</span>
+                    </label>
+                  </div>
+                  <input
+                    id="team-max-parallel"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={n}
+                    step={1}
+                    value={form.maxParallel}
+                    disabled={busy !== null}
+                    aria-invalid={atOnceProblems.length > 0 || undefined}
+                    aria-describedby={describedBy(
+                      'team-max-parallel',
+                      atOnceProblems,
+                      notes.fields.max_parallel,
+                      'team-max-parallel-help',
+                    )}
+                    onChange={(event) => setForm((f) => ({ ...f, maxParallel: event.target.value }))}
+                    className={cn(teamField, 'mt-2 w-32', atOnceProblems.length > 0 && teamFieldBad)}
+                  />
+                  <FieldProblems id="team-max-parallel" problems={atOnceProblems} className="mt-1.5" />
+                  <FieldNotes id="team-max-parallel" notes={notes.fields.max_parallel} className="mt-1.5" />
+                  <p id="team-max-parallel-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                    {maxParallelHelp(n)}
+                  </p>
+                </>
+              )}
 
               <fieldset
                 id="team-communication"
@@ -462,7 +554,8 @@ export default function TeamNewTrial() {
                       <p className="m-0 mt-1 text-xs text-temper-text-muted">
                         Temper&apos;s note, so a passed check doesn&apos;t promise the start:
                       </p>
-                      <ul className="m-0 mt-1.5 list-disc pl-5 text-xs">
+                      {/* 26 px lines: a wrapped note keeps its bullet on its first line (FindingLink). */}
+                      <ul className="m-0 mt-1.5 list-disc pl-5 text-xs leading-[26px]">
                         {value.notes.all.map((p, i) => (
                           <li key={i}>
                             <FindingLink placed={p} />
@@ -549,8 +642,17 @@ export default function TeamNewTrial() {
                   Temper starts one run named <code className="font-mono">team-trial-…</code>; it shows in Workflows
                   too.
                 </li>
-                <li>Members take turns, ask each other for review and send work back.</li>
-                <li>Temper asks you when the team pauses, has nothing to do, or a member needs you.</li>
+                {kind === 'rounds' ? (
+                  <>
+                    <li>Members take turns, ask each other for review and send work back.</li>
+                    <li>Temper asks you when the team pauses, has nothing to do, or a member needs you.</li>
+                  </>
+                ) : (
+                  <>
+                    <li>The leader gets the goal first and messages the others their work; then they work side by side.</li>
+                    <li>Temper checks in with you each time spend grows by your check-in amount, and asks you when a member needs you.</li>
+                  </>
+                )}
                 <li>You can message a member or stop the run at any time.</li>
               </ol>
             </section>

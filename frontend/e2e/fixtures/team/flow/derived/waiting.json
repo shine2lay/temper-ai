@@ -1,0 +1,549 @@
+{
+  "_fixture": "derived from idle: the leader's and the checker's turns end with a question to you each (native ask_owner: the turn completes, no idle, a member-scope question wait opens; oldest first); builder idle; nothing runs",
+  "execution_id": "fixture-flow-idle",
+  "kind": "flow",
+  "trial_id": "fixture-idle",
+  "workflow": "fixture-flow",
+  "run_status": "running",
+  "state": "member_waiting",
+  "cost_usd": 105,
+  "account": {
+    "slot": "anthropic-4",
+    "picked_at": "2026-10-09T21:32:49.775725+00:00",
+    "by": "settings_order",
+    "capacity": "not_checked",
+    "room": null
+  },
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "checker",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100,
+    "max_parallel": 3,
+    "communication": "all",
+    "project": {
+      "source": "/work/fixture",
+      "start_commit": null
+    },
+    "started_at": "2026-10-09 21:32:49.775725+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-idle"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "waiting_on_owner",
+      "turns": 1,
+      "cost_usd": 5,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.783021+00:00",
+        "ended_at": "2026-10-09T21:33:49.793931+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "held",
+      "since": "2026-10-09T21:33:49.796544+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "message",
+        "text": "Build the checker part and share it.",
+        "to": "checker",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.777474+00:00",
+        "message_id": "c00b0ddaf5a249f7b51567f0859b9103"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "checker",
+        "kind": "work_request",
+        "text": "Build the checker part and share it.",
+        "at": "2026-10-09T21:33:49.777474+00:00",
+        "message_id": "c00b0ddaf5a249f7b51567f0859b9103"
+      },
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": "a8e306627dbebe268eb28d40ea61a4e7",
+      "last_activity_at": "2026-10-09T21:33:49.796544+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 1,
+      "cost_usd": 50,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.788644+00:00",
+        "ended_at": "2026-10-09T21:33:49.796982+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-09T21:33:49.798010+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the builder part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.776159+00:00",
+        "message_id": "c60e1db8ec4d4a9a83dd7c74668d2ead"
+      },
+      "idle_note": "builder: waiting for the next part",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-09T21:33:49.798123+00:00"
+    },
+    {
+      "name": "checker",
+      "role": "scout",
+      "leader": false,
+      "activity": "waiting_on_owner",
+      "turns": 1,
+      "cost_usd": 50,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "unknown",
+        "thinking": "unknown"
+      },
+      "last_turn": {
+        "turn_no": 1,
+        "state": "completed",
+        "started_at": "2026-10-09T21:33:49.792063+00:00",
+        "ended_at": "2026-10-09T21:33:49.798525+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "held",
+      "since": "2026-10-09T21:33:49.799564+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Build the checker part and share it.",
+        "from": "lead",
+        "at": "2026-10-09T21:33:49.777474+00:00",
+        "message_id": "c00b0ddaf5a249f7b51567f0859b9103"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": "41af8f4fdef9b406497379f5d4157c27",
+      "last_activity_at": "2026-10-09T21:33:49.799564+00:00"
+    }
+  ],
+  "open_waits": [
+    {
+      "wait_id": "a8e306627dbebe268eb28d40ea61a4e7",
+      "event_id": "fixture-gate-a8e306",
+      "node_name": "build.team~ask-a8e306627dbebe268eb28d40ea61a4e7",
+      "asked": true,
+      "kind": "question",
+      "header": "lead asks",
+      "question": "Should the README cover Windows setup too, or only macOS and Linux? The project has no Windows notes yet.",
+      "reply_hint": null,
+      "answers": [
+        {
+          "answer": "reply",
+          "needs_text": "required",
+          "means": "lead gets your reply at its next turn."
+        }
+      ],
+      "words": "Should the README cover Windows setup too, or only macOS and Linux? The project has no Windows notes yet.",
+      "scope": "member",
+      "at_usd": null,
+      "next_check_in_usd": null,
+      "member": "lead",
+      "turn_no": 1,
+      "why": null,
+      "note": "A team member's words, not Temper's. Never put a key or password in an answer.",
+      "account_slot": null,
+      "limit": null,
+      "resets": null,
+      "asked_again": 0,
+      "settings_changes": null,
+      "pins": null,
+      "opened_at": "2026-10-09T21:33:49.796544+00:00"
+    },
+    {
+      "wait_id": "41af8f4fdef9b406497379f5d4157c27",
+      "event_id": "fixture-gate-41af8f",
+      "node_name": "build.team~ask-41af8f4fdef9b406497379f5d4157c27",
+      "asked": true,
+      "kind": "question",
+      "header": "checker asks",
+      "question": "Is it fine to run the install commands on this machine to check them? They download about 200 MB.",
+      "reply_hint": null,
+      "answers": [
+        {
+          "answer": "reply",
+          "needs_text": "required",
+          "means": "checker gets your reply at its next turn."
+        }
+      ],
+      "words": "Is it fine to run the install commands on this machine to check them? They download about 200 MB.",
+      "scope": "member",
+      "at_usd": null,
+      "next_check_in_usd": null,
+      "member": "checker",
+      "turn_no": 1,
+      "why": null,
+      "note": "A team member's words, not Temper's. Never put a key or password in an answer.",
+      "account_slot": null,
+      "limit": null,
+      "resets": null,
+      "asked_again": 0,
+      "settings_changes": null,
+      "pins": null,
+      "opened_at": "2026-10-09T21:33:49.799564+00:00"
+    }
+  ],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-09T21:33:49.770697+00:00",
+        "data": {
+          "message_id": "ebbfa88ca4ab4f51a1dd2dd65b63fc89",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.774722+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-09T21:33:49.774722+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-09T21:33:49.774722+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.775560+00:00",
+        "data": {
+          "seq": 3,
+          "at": "2026-10-09T21:33:49.775560+00:00",
+          "kind": "idle",
+          "member": "checker",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 3,
+        "at": "2026-10-09T21:33:49.775560+00:00",
+        "kind": "idle",
+        "member": "checker",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.776159+00:00",
+        "data": {
+          "message_id": "c60e1db8ec4d4a9a83dd7c74668d2ead",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the builder part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.776949+00:00",
+        "data": {
+          "seq": 5,
+          "at": "2026-10-09T21:33:49.776949+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 5,
+        "at": "2026-10-09T21:33:49.776949+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "lead"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.777474+00:00",
+        "data": {
+          "message_id": "c00b0ddaf5a249f7b51567f0859b9103",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Build the checker part and share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.778216+00:00",
+        "data": {
+          "seq": 7,
+          "at": "2026-10-09T21:33:49.778216+00:00",
+          "kind": "wake",
+          "member": "checker",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 7,
+        "at": "2026-10-09T21:33:49.778216+00:00",
+        "kind": "wake",
+        "member": "checker",
+        "by": "lead"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "lead",
+        "timestamp": "2026-10-09T21:33:49.783021+00:00",
+        "data": {
+          "turn_id": "b37b50dfb5ba465598ac28df45f8c412",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.793931+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.788644+00:00",
+        "data": {
+          "turn_id": "e9887fc36ab24d07980afe327df514ed",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.796982+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "checker",
+        "timestamp": "2026-10-09T21:33:49.792063+00:00",
+        "data": {
+          "turn_id": "f4052bc9ab714e3e8b9b4b5707b0eae4",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-09T21:33:49.798525+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "owner wait: owner",
+        "from_agent": "temper",
+        "to_agent": "owner",
+        "timestamp": "2026-10-09T21:33:49.796544+00:00",
+        "data": {
+          "wait_id": "a8e306627dbebe268eb28d40ea61a4e7",
+          "state": "open",
+          "member": "lead",
+          "turn_no": 1,
+          "header": "lead asks"
+        },
+        "entry": "owner_wait",
+        "wait_kind": "question"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-09T21:33:49.798123+00:00",
+        "data": {
+          "seq": 14,
+          "at": "2026-10-09T21:33:49.798123+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": "builder: waiting for the next part",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 14,
+        "at": "2026-10-09T21:33:49.798123+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": "builder: waiting for the next part",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "owner wait: owner",
+        "from_agent": "temper",
+        "to_agent": "owner",
+        "timestamp": "2026-10-09T21:33:49.799564+00:00",
+        "data": {
+          "wait_id": "41af8f4fdef9b406497379f5d4157c27",
+          "state": "open",
+          "member": "checker",
+          "turn_no": 1,
+          "header": "checker asks"
+        },
+        "entry": "owner_wait",
+        "wait_kind": "question"
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "waiting_for_owner",
+    "words": "Waiting for you: 2 questions",
+    "since": "2026-10-09T21:33:49.796544+00:00",
+    "running": 0,
+    "asked": true,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-09T21:34:34.802840+00:00",
+  "started_at": "2026-10-09T21:32:49.775725+00:00",
+  "elapsed_s": 105,
+  "last_activity_at": "2026-10-09T21:33:49.799317+00:00",
+  "spend": {
+    "cost_usd": 105,
+    "pause_every_usd": 100,
+    "last_check_in_usd": 0,
+    "next_check_in_usd": 100,
+    "since_check_in_usd": 105,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 2,
+    "first": {
+      "wait_id": "a8e306627dbebe268eb28d40ea61a4e7",
+      "kind": "question",
+      "member": "lead",
+      "header": "lead asks",
+      "words": "Should the README cover Windows setup too, or only macOS and Linux? The project has no Windows notes yet.",
+      "opened_at": "2026-10-09T21:33:49.796544+00:00"
+    }
+  },
+  "counts": {
+    "members": 3,
+    "working": 0,
+    "ready": 0,
+    "idle": 1,
+    "held": 2,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "count": 1,
+      "last_at": "2026-10-09T21:33:49.776159+00:00"
+    },
+    {
+      "from": "lead",
+      "to": "checker",
+      "count": 1,
+      "last_at": "2026-10-09T21:33:49.777474+00:00"
+    }
+  ],
+  "work": {
+    "latest": null,
+    "shares": [],
+    "shares_total": 0,
+    "summary": null
+  },
+  "events_cursor": 16,
+  "events_total": 16
+}

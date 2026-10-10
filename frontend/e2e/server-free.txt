@@ -14,6 +14,10 @@ liveview.spec.ts
 piA2.spec.ts
 safeRendering.spec.ts
 team-c.spec.ts
+team-form-flow.spec.ts
+team-glance-map.spec.ts
+team-glance-words.spec.ts
+team-glance.spec.ts
 team-journey.spec.ts
 team-status.spec.ts
 team.spec.ts

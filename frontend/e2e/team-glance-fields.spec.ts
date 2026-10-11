@@ -130,6 +130,48 @@ for (const theme of ['dark', 'light']) for (const [width, height] of [[1440, 900
     expect(sent).toEqual(nothingSent());
   });
 
+  test(`H17 ordinary multiline Now reasons, unchanged activity and token classification, ${theme}, ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+    const sent = nothingSent();
+    const state = { run: sample('real-g7/stopped'), feed: sample('real-g7/stopped', true) };
+    await serveTeam(page, { run: () => ({ route: '', status: 200, body: state.run }) });
+    await serveActions(page, sent, {});
+    await page.route(/\/api\/team\/runs\/[^/]+\/events(\?|$)/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state.feed) }));
+    for (const [phase, supplied] of [
+      ['stopped', 'the owner cancelled it.\nThe CSV is kept.\n'],
+      ['failed', 'account refused the call.\nThe recorded work is kept.\n'],
+      ['failed', 'account_refused\nThe genuine supplied explanation.\n'],
+    ]) {
+      state.run = sample(`real-g7/${phase}`);
+      state.feed = sample(`real-g7/${phase}`, true);
+      (state.run.phase as Raw).reason = supplied;
+      const ending = (state.feed.events as Raw[]).find((e) => e.kind === 'ended');
+      expect(ending).toBeTruthy();
+      ending!.reason = supplied;
+      await page.goto(`/app/team/runs/${state.run.execution_id as string}`);
+      await expect(page.getByTestId('glance-page')).toHaveAttribute('data-phase', phase);
+      await glanceFontsSettled(page);
+      // textContent, not whitespace-normalised toHaveText: the final newline is part of the contract.
+      const wanted = supplied.replace(/^./u, (first) => first.toUpperCase());
+      expect(await page.getByTestId('glance-now-sentence').textContent()).toBe(wanted);
+      const activity = page.getByRole('region', { name: 'All activity' });
+      // Activity classifies its first line, unchanged: the token-only first line is suppressed there.
+      const row = activity.locator(`[data-row="a${ending!.seq as number}"]`);
+      if (supplied.startsWith('account_refused')) await expect(row).not.toContainText('account_refused');
+      else await expect(row).toContainText(supplied.split('\n')[0]);
+      await expect(row).not.toContainText(supplied.split('\n')[1]);
+      const showAll = row.getByRole('button', { name: 'Show all' });
+      await showAll.click();
+      await expect(row).toContainText(supplied.split('\n')[1]);
+      await expect(page.getByRole('button', { name: 'Stop project', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('switch', { name: 'Animate messages' })).toHaveCount(0);
+      await sound(page);
+      await shot(page, `h17-${phase}${supplied.startsWith('account_refused') ? '-token-text' : ''}-${theme}-${width}`);
+    }
+    expect(sent).toEqual(nothingSent());
+  });
+
   test(`D123 scoped stop confirmations: cancel, pending, refusal, both routes and settings, ${theme}, ${width}`, async ({ page }) => {
     test.setTimeout(180_000);
     await page.setViewportSize({ width, height });

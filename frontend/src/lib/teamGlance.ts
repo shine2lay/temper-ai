@@ -1723,9 +1723,13 @@ export function endReason(reason: string | null | undefined, whole = false): str
   return bare === 'account_refused' ? 'the model account refused a call.' : s;
 }
 
-/** D119: only a reason on Now's own line gains an initial capital; activity text stays verbatim. */
+/** D119/H17: Now preserves the whole genuine reason, changing only its initial letter; activity stays verbatim. */
 function nowEndReason(reason: string | null | undefined): string | null {
-  return endReason(reason)?.replace(/^./u, (first) => first.toUpperCase()) ?? null;
+  // Classify the whole reason, not its first line: a token followed by an explanation is genuine text.
+  const classified = endReason(reason, true);
+  // endReason trims for classification. Genuine text keeps every supplied character, including a final newline.
+  const explanation = classified === reason?.trim() ? reason : classified;
+  return explanation?.replace(/^./u, (first) => first.toUpperCase()) ?? null;
 }
 
 /** D119: any status in Temper's generic interruption template, case/end punctuation ignored, is no reason. */

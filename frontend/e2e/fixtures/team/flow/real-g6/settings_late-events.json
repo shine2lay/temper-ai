@@ -2,7 +2,7 @@
   "events": [
     {
       "seq": 1,
-      "at": "2026-10-10T03:49:33.474995+00:00",
+      "at": "2026-10-10T18:37:53.838661+00:00",
       "kind": "message",
       "member": "temper",
       "from": "temper",
@@ -10,12 +10,12 @@
       "to": "lead",
       "message_kind": "goal",
       "text": "This tiny project has no README. Write a short one.",
-      "message_id": "8682a9c9a1f54df38898e35401bca227",
+      "message_id": "1a05fa61ef754c14855534cdfc994731",
       "mid_turn": false
     },
     {
       "seq": 2,
-      "at": "2026-10-10T03:49:33.478379+00:00",
+      "at": "2026-10-10T18:37:53.839976+00:00",
       "kind": "idle",
       "member": "builder",
       "note": null,
@@ -23,7 +23,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-10T03:49:33.479379+00:00",
+      "at": "2026-10-10T18:37:53.840349+00:00",
       "kind": "idle",
       "member": "checker",
       "note": null,
@@ -31,7 +31,7 @@
     },
     {
       "seq": 4,
-      "at": "2026-10-10T03:49:33.480425+00:00",
+      "at": "2026-10-10T18:37:53.840792+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -39,19 +39,19 @@
       "to": "builder",
       "message_kind": "work_request",
       "text": "Build the builder part and share it.",
-      "message_id": "2faacec6382c4646926bb5990ff3d8bb",
+      "message_id": "6d3b7f590a98423baf97649a4b9b7a2b",
       "mid_turn": false
     },
     {
       "seq": 5,
-      "at": "2026-10-10T03:49:33.480929+00:00",
+      "at": "2026-10-10T18:37:53.840932+00:00",
       "kind": "wake",
       "member": "builder",
       "by": "lead"
     },
     {
       "seq": 6,
-      "at": "2026-10-10T03:49:33.481848+00:00",
+      "at": "2026-10-10T18:37:53.841317+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -59,19 +59,19 @@
       "to": "checker",
       "message_kind": "work_request",
       "text": "Build the checker part and share it.",
-      "message_id": "bcd0017f4d734eb8b5eba2746dce4d45",
+      "message_id": "019959ec3db84284aee86429d51629b2",
       "mid_turn": false
     },
     {
       "seq": 7,
-      "at": "2026-10-10T03:49:33.482394+00:00",
+      "at": "2026-10-10T18:37:53.841449+00:00",
       "kind": "wake",
       "member": "checker",
       "by": "lead"
     },
     {
       "seq": 8,
-      "at": "2026-10-10T03:49:33.491303+00:00",
+      "at": "2026-10-10T18:37:53.844681+00:00",
       "kind": "turn_start",
       "member": "lead",
       "turn_no": 1,
@@ -79,7 +79,7 @@
     },
     {
       "seq": 9,
-      "at": "2026-10-10T03:49:33.495904+00:00",
+      "at": "2026-10-10T18:37:53.846402+00:00",
       "kind": "turn_start",
       "member": "builder",
       "turn_no": 1,
@@ -87,7 +87,7 @@
     },
     {
       "seq": 10,
-      "at": "2026-10-10T03:49:33.499938+00:00",
+      "at": "2026-10-10T18:37:53.847643+00:00",
       "kind": "turn_start",
       "member": "checker",
       "turn_no": 1,
@@ -95,7 +95,7 @@
     },
     {
       "seq": 11,
-      "at": "2026-10-10T03:49:33.503335+00:00",
+      "at": "2026-10-10T18:37:53.848837+00:00",
       "kind": "turn_end",
       "member": "lead",
       "turn_no": 1,
@@ -106,7 +106,7 @@
     },
     {
       "seq": 12,
-      "at": "2026-10-10T03:49:33.503656+00:00",
+      "at": "2026-10-10T18:37:53.848951+00:00",
       "kind": "idle",
       "member": "lead",
       "note": "lead: waiting for the next part",
@@ -114,7 +114,7 @@
     },
     {
       "seq": 13,
-      "at": "2026-10-10T03:49:33.504973+00:00",
+      "at": "2026-10-10T18:37:53.849435+00:00",
       "kind": "turn_end",
       "member": "builder",
       "turn_no": 1,
@@ -125,7 +125,7 @@
     },
     {
       "seq": 14,
-      "at": "2026-10-10T03:49:33.505238+00:00",
+      "at": "2026-10-10T18:37:53.849528+00:00",
       "kind": "idle",
       "member": "builder",
       "note": "builder: waiting for the next part",
@@ -133,7 +133,7 @@
     },
     {
       "seq": 15,
-      "at": "2026-10-10T03:49:33.506906+00:00",
+      "at": "2026-10-10T18:37:53.849941+00:00",
       "kind": "turn_end",
       "member": "checker",
       "turn_no": 1,
@@ -144,7 +144,7 @@
     },
     {
       "seq": 16,
-      "at": "2026-10-10T03:49:33.507186+00:00",
+      "at": "2026-10-10T18:37:53.850035+00:00",
       "kind": "idle",
       "member": "checker",
       "note": "checker: waiting for the next part",
@@ -152,34 +152,36 @@
     },
     {
       "seq": 17,
-      "at": "2026-10-10T03:49:33.509428+00:00",
+      "at": "2026-10-10T18:37:53.850789+00:00",
       "kind": "wait_opened",
       "member": null,
-      "wait_id": "32fd9fd98936413f8663849f8fc70295",
+      "wait_id": "195dd0b86f9b4764b02d41ee93b69007",
       "wait_kind": "settings",
       "words": "The team's settings changed since its conversations started: builder: box image sha256:000000000000 -> temper-pi-box:fixture-2"
     },
     {
       "seq": 18,
-      "at": "2026-10-10T03:49:33.512287+00:00",
+      "at": "2026-10-10T18:37:53.852179+00:00",
       "kind": "wait_answered",
       "member": null,
-      "wait_id": "32fd9fd98936413f8663849f8fc70295",
+      "wait_id": "195dd0b86f9b4764b02d41ee93b69007",
       "wait_kind": "settings",
       "answer": "go on",
-      "by": "owner"
+      "by": "owner",
+      "applied": false,
+      "why": "the settings changed again before this answer was applied"
     },
     {
       "seq": 19,
-      "at": "2026-10-10T03:49:33.513571+00:00",
+      "at": "2026-10-10T18:37:53.852674+00:00",
       "kind": "wait_opened",
       "member": null,
-      "wait_id": "b3192ba145644041985e8733d0f586a6",
+      "wait_id": "ec0dc27554ff43bcac6f91e088e6d438",
       "wait_kind": "settings",
       "words": "The team's settings changed since its conversations started: builder: box image sha256:000000000000 -> temper-pi-box:fixture-3"
     }
   ],
   "cursor": 19,
   "more": false,
-  "as_of": "2026-10-10T03:49:33.529876+00:00"
+  "as_of": "2026-10-10T18:37:53.857757+00:00"
 }

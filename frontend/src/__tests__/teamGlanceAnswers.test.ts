@@ -2,7 +2,9 @@
  * Design's real-run words, D102 and D104-D110 (Design's home decisions of
  * 2026-10-10 06:00; Frontend task #26), on Temper's own samples: its G6 runs
  * (e2e/fixtures/team/flow/real-g6), its earlier real runs (real/) and the
- * derived flow states (derived/). A state no sample shows is a pure transform
+ * derived flow states (derived/), refreshed to f928ed03 for #28. D114–D119
+ * supersede only their named wording/fields; older absent-field fallbacks remain covered.
+ * A state no sample shows is a pure transform
  * of one: an existing field takes another value, or an existing event is
  * copied; no key is invented (`patch` checks it).
  * D104's day words follow the viewer's calendar, so this file sets TZ itself
@@ -179,18 +181,19 @@ describe('D104: a future time gets its day, by Temper’s clock, on the viewer�
   });
 
   it('restart_deferred (real-g6): Now, the composer, Latest and All activity give the check its day', () => {
-    // Temper's clock: Fri Oct 9, 8:59 PM; its next allowance check: Mon Oct 12, 8:59 PM.
+    // f928ed03: Sat Oct10, 11:37 AM; next check Tue Oct13, 11:38 AM (exact raw resumes_at).
     const s = story('real-g6/restart_deferred');
-    expect(nowOf(s).sentence).toContain(' Next allowance check Mon at 8:59 PM.');
-    expect(composerHint(s.run, null, s.now).text).toContain(' No new turn starts before Mon at 8:59 PM.');
-    const row = /^Usage limit: next allowance check Mon at 8:59 PM(;|$)/;
+    expect((s.raw.phase as Raw).resumes_at).toBe('2026-10-13T18:38:23.453783+00:00');
+    expect(nowOf(s).sentence).toContain(' Next allowance check Tue at 11:38 AM.');
+    expect(composerHint(s.run, null, s.now).text).toContain(' No new turn starts before Tue at 11:38 AM.');
+    const row = /^Usage limit: next allowance check Tue at 11:38 AM(;|$)/;
     expect(latest(s)).toContainEqual(expect.stringMatching(row));
     expect(activity(s)).toContainEqual(expect.stringMatching(row));
   });
 
   it.each([
-    ['2026-10-12T03:59:08.000000+00:00', 'tomorrow at 8:59 PM'],
-    ['2026-10-06T03:59:08.000000+00:00', 'Mon Oct 12 at 8:59 PM'],
+    ['2026-10-13T03:59:08.000000+00:00', 'tomorrow at 11:38 AM'],
+    ['2026-10-06T03:59:08.000000+00:00', 'Tue Oct 13 at 11:38 AM'],
   ])('restart_deferred read at %s: "Next allowance check %s."', (asOf, words) => {
     const s = story('real-g6/restart_deferred', (raw, _events, feed) => {
       patch(raw, { as_of: asOf });
@@ -228,33 +231,33 @@ describe('D105: an ended run reads as ended', () => {
     expect(s.run.elapsedS).toBeNull();
     expect(nowOf(s)).toMatchObject({
       word: 'Interrupted',
-      sentence: 'Last activity 8:40 PM. Temper didn\u2019t record when it ended.',
-      reason: 'the run ended (interrupted) without the team ending',
+      sentence: 'Last activity 11:37 AM. Temper didn\u2019t record when it ended.',
     });
+    expect(nowOf(s).reason).toBeUndefined(); // D119: the engine template is not an explanation.
   });
 
   it('"Last activity" is the newest time in the reply and the feed: a member’s turn, an event', () => {
     const turn = story('real-g6/interrupted_no_end', (raw) => {
-      patch((raw.members as Raw[])[1].last_turn as Raw, { ended_at: '2026-10-10T03:52:00.000000+00:00' });
+      patch((raw.members as Raw[])[1].last_turn as Raw, { ended_at: la('2026-10-10T11:52:00') });
     });
-    expect(nowOf(turn).sentence).toBe('Last activity 8:52 PM. Temper didn\u2019t record when it ended.');
+    expect(nowOf(turn).sentence).toBe('Last activity 11:52 AM. Temper didn\u2019t record when it ended.');
     const event = story('real-g6/interrupted_no_end', (_raw, events) => {
-      patch(events[events.length - 1], { at: '2026-10-10T03:45:00.000000+00:00' });
+      patch(events[events.length - 1], { at: la('2026-10-10T11:45:00') });
     });
-    expect(nowOf(event).sentence).toBe('Last activity 8:45 PM. Temper didn\u2019t record when it ended.');
+    expect(nowOf(event).sentence).toBe('Last activity 11:45 AM. Temper didn\u2019t record when it ended.');
     expect(nowCell(event.run, event.now, false, null).sentence).toBe('Temper didn\u2019t record when it ended.');
   });
 
-  it('interrupted (real-g6): Temper’s reason is Now’s second line and, with no time, the newest row of All activity', () => {
+  it('interrupted (real-g6): D119 omits the engine template in Now and gives the no-reason row, with no time', () => {
     const s = story('real-g6/interrupted');
     expect(nowOf(s)).toMatchObject({
       word: 'Interrupted',
       sentence: 'The run ended without the team ending.',
-      reason: 'the run ended (interrupted) without the team ending',
     });
+    expect(nowOf(s).reason).toBeUndefined();
     const rows = activityOf(s);
     expect(rows[0]).toMatchObject({ key: REASON_ROW_KEY, at: null });
-    expect(textOf(rows[0])).toBe('Interrupted: the run ended (interrupted) without the team ending');
+    expect(textOf(rows[0])).toBe('Interrupted. Temper gave no reason.');
     expect(rows.filter((r) => r.key === REASON_ROW_KEY)).toHaveLength(1);
   });
 
@@ -290,7 +293,8 @@ describe('D105: an ended run reads as ended', () => {
   it.each(['derived/stopped', 'derived/run_failed'])('%s: the reason stays where it shows, in Now; no reason row', (name) => {
     const s = story(name);
     const reason = String((s.raw.phase as Raw).reason);
-    expect(nowOf(s).sentence).toContain(reason.slice(0, 30));
+    // D119 applies to the independent Now line; no other reason text changes.
+    expect(nowOf(s).sentence).toBe(reason.replace(/^./u, (first) => first.toUpperCase()));
     expect(activityOf(s).some((r) => r.key === REASON_ROW_KEY)).toBe(false);
   });
 });
@@ -299,7 +303,7 @@ describe('D106: a turn ended at its cap', () => {
   it('retry (real-g6): the tool-call limit, with no number (tool_calls counts the calls made)', () => {
     const rows = activity(story('real-g6/retry'));
     expect(rows.filter((r) => /limit/.test(r))).toEqual(['checker\u2019s turn 1 ended at its tool-call limit.']);
-    expect(rows).toContain('lead ended turn 1: completed (no tool call)');
+    expect(rows).toContain('lead finished turn 1.'); // D118; cap wording above is unchanged.
   });
 
   it('time_limit, by analogy (the same turn, ended by its time limit)', () => {
@@ -313,24 +317,26 @@ describe('D106: a turn ended at its cap', () => {
 describe('D107: a share Temper refused', () => {
   const noReason = 'checker\u2019s version wasn\u2019t shared. Temper gave no reason.';
 
-  it('conflict (real-g6): Temper’s why is only the verb, so it gave no reason', () => {
+  it('conflict (real-g6): D114 reads the supplied reason, not the refusal kind', () => {
     const s = story('real-g6/conflict');
-    expect(one(feedOf(s), 'share_refused').why).toBe('refused');
-    expect(activity(s)).toContain(noReason);
+    const row = one(feedOf(s), 'share_refused');
+    expect(row.why).toBe('refused');
+    expect(row.reason).toBe("Not shared: these files still hold git's conflict markers: part.md");
+    expect(activity(s)).toContain("checker’s version wasn’t shared: Not shared: these files still hold git's conflict markers: part.md");
   });
 
   it.each([null, '', '  ', 'Refused.', ' share refused ', 'Share refused!', 'share_refused', 'SHARE_REFUSED\u2026'])(
     'why %j is no reason',
     (why) => {
       expect(refusalWhy(why)).toBeNull();
-      const s = story('real-g6/conflict', (_raw, events) => void patch(one(events, 'share_refused'), { why }));
+      const s = story('real-g6/conflict', (_raw, events) => void patch(one(events, 'share_refused'), { why, reason: null }));
       expect(activity(s)).toContain(noReason);
     },
   );
 
   it('a real reason is given word for word', () => {
     const why = 'part.md changed on the shared branch while checker worked';
-    const s = story('real-g6/conflict', (_raw, events) => void patch(one(events, 'share_refused'), { why }));
+    const s = story('real-g6/conflict', (_raw, events) => void patch(one(events, 'share_refused'), { reason: why }));
     expect(activity(s)).toContain(`checker\u2019s version wasn\u2019t shared: ${why}`);
     expect(refusalWhy('refused twice')).toBe('refused twice');
   });
@@ -368,18 +374,27 @@ describe('D108: an answer or a message', () => {
     const s = story('derived/resumed');
     const rows = activity(s);
     const guided = 'You messaged lead: \u201cKeep the README under 40 lines and add a Usage section.\u201d';
-    expect(rows).toEqual(expect.arrayContaining(['You answered: guide', guided]));
-    expect(rows.indexOf('You answered: guide') - rows.indexOf(guided)).toBe(1);
+    expect(rows).toEqual(expect.arrayContaining(['You answered Temper: guide', guided]));
+    expect(rows.indexOf('You answered Temper: guide') - rows.indexOf(guided)).toBe(1);
     expect(rows).toContainEqual(expect.stringMatching(/^Temper asked you: \u201cThe team has spent \$105\.00/));
-    expect(latest(s)).toContain('You answered: guide');
+    expect(latest(s)).toContain('You answered Temper: guide');
   });
 });
 
 describe('D109: the usage limit is over', () => {
-  it('limit_ended (real-g6): when the team carried on, naming nobody (Temper’s event has no `by`)', () => {
+  it('limit_ended (real-g6): D115 names the recorded owner, at the supplied time', () => {
     const s = story('real-g6/limit_ended');
-    expect(Object.hasOwn(one(feedOf(s), 'limit_over'), 'by')).toBe(false);
-    const words = 'The usage limit is over. The team carried on at 8:40 PM.';
+    expect(one(feedOf(s), 'limit_over')).toMatchObject({ by: 'owner', at: '2026-10-10T18:37:53.332194+00:00' });
+    const words = 'The usage limit is over. You restarted the team at 11:37 AM.';
+    expect(latest(s)).toContain(words);
+    expect(activity(s)).toContain(words);
+  });
+
+  it('the older no-by reply retains D109’s unnamed fallback', () => {
+    const s = story('real-g6/limit_ended', (_raw, events) => {
+      delete one(events, 'limit_over').by;
+    });
+    const words = 'The usage limit is over. The team carried on at 11:37 AM.';
     expect(latest(s)).toContain(words);
     expect(activity(s)).toContain(words);
   });

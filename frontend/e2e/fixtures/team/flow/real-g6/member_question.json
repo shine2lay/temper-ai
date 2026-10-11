@@ -8,7 +8,7 @@
   "cost_usd": 105.0,
   "account": {
     "slot": "anthropic-4",
-    "picked_at": "2026-10-10T03:48:33.208331+00:00",
+    "picked_at": "2026-10-10T18:36:52.208614+00:00",
     "by": "settings_order",
     "capacity": "not_checked",
     "room": null
@@ -55,7 +55,7 @@
       "source": "/work/fixture",
       "start_commit": null
     },
-    "started_at": "2026-10-10 03:48:33.208331+00:00",
+    "started_at": "2026-10-10 18:36:52.208614+00:00",
     "started_by": "owner",
     "request_id": "fixture-member_question"
   },
@@ -76,23 +76,23 @@
       "last_turn": {
         "turn_no": 1,
         "state": "completed",
-        "started_at": "2026-10-10T03:49:33.216938+00:00",
-        "ended_at": "2026-10-10T03:49:33.231374+00:00",
+        "started_at": "2026-10-10T18:37:52.218041+00:00",
+        "ended_at": "2026-10-10T18:37:52.231306+00:00",
         "error": null,
         "account_slot": null,
         "retry_of": null,
         "ended_by": null
       },
       "state": "idle",
-      "since": "2026-10-10T03:49:33.233925+00:00",
+      "since": "2026-10-10T18:37:52.234080+00:00",
       "turn_no": null,
       "on": {
         "kind": "message",
         "text": "Build the checker part and share it.",
         "to": "checker",
         "from": "lead",
-        "at": "2026-10-10T03:49:33.210357+00:00",
-        "message_id": "c42fba44a27a4723b736d7296a91b101"
+        "at": "2026-10-10T18:37:52.210697+00:00",
+        "message_id": "28dee7c1f61446c4878d680b7f4753a5"
       },
       "idle_note": "lead: waiting for the next part",
       "idle_reason": "idle_call",
@@ -102,13 +102,13 @@
         "to": "checker",
         "kind": "work_request",
         "text": "Build the checker part and share it.",
-        "at": "2026-10-10T03:49:33.210357+00:00",
-        "message_id": "c42fba44a27a4723b736d7296a91b101"
+        "at": "2026-10-10T18:37:52.210697+00:00",
+        "message_id": "28dee7c1f61446c4878d680b7f4753a5"
       },
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-10T03:49:33.234050+00:00"
+      "last_activity_at": "2026-10-10T18:37:52.234243+00:00"
     },
     {
       "name": "builder",
@@ -126,22 +126,22 @@
       "last_turn": {
         "turn_no": 1,
         "state": "completed",
-        "started_at": "2026-10-10T03:49:33.224515+00:00",
-        "ended_at": "2026-10-10T03:49:33.234509+00:00",
+        "started_at": "2026-10-10T18:37:52.225066+00:00",
+        "ended_at": "2026-10-10T18:37:52.234758+00:00",
         "error": null,
         "account_slot": null,
         "retry_of": null,
         "ended_by": null
       },
       "state": "held",
-      "since": "2026-10-10T03:49:33.235568+00:00",
+      "since": "2026-10-10T18:37:52.235930+00:00",
       "turn_no": null,
       "on": {
         "kind": "work_request",
         "text": "Build the builder part and share it.",
         "from": "lead",
-        "at": "2026-10-10T03:49:33.208797+00:00",
-        "message_id": "81e0d7120aca4d63a32a3a9c0d3bc264"
+        "at": "2026-10-10T18:37:52.209144+00:00",
+        "message_id": "64c9ae7e46784867af5462546a0b3aac"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -150,8 +150,8 @@
       "last_sent": null,
       "last_share": null,
       "conflicts": [],
-      "wait_id": "2ba79d4b99b7469b8cb172f5cc935941",
-      "last_activity_at": "2026-10-10T03:49:33.236695+00:00"
+      "wait_id": "393b37782a8a4f4b9e3bf30b73a6d21d",
+      "last_activity_at": "2026-10-10T18:37:52.237001+00:00"
     },
     {
       "name": "checker",
@@ -169,22 +169,22 @@
       "last_turn": {
         "turn_no": 1,
         "state": "completed",
-        "started_at": "2026-10-10T03:49:33.229127+00:00",
-        "ended_at": "2026-10-10T03:49:33.237266+00:00",
+        "started_at": "2026-10-10T18:37:52.229020+00:00",
+        "ended_at": "2026-10-10T18:37:52.237590+00:00",
         "error": null,
         "account_slot": null,
         "retry_of": null,
         "ended_by": null
       },
       "state": "ready",
-      "since": "2026-10-10T03:49:33.237266+00:00",
+      "since": "2026-10-10T18:37:52.237590+00:00",
       "turn_no": null,
       "on": {
         "kind": "work_request",
         "text": "Build the checker part and share it.",
         "from": "lead",
-        "at": "2026-10-10T03:49:33.210357+00:00",
-        "message_id": "c42fba44a27a4723b736d7296a91b101"
+        "at": "2026-10-10T18:37:52.210697+00:00",
+        "message_id": "28dee7c1f61446c4878d680b7f4753a5"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -194,14 +194,14 @@
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-10T03:49:33.241197+00:00"
+      "last_activity_at": "2026-10-10T18:37:52.240630+00:00"
     }
   ],
   "open_waits": [
     {
-      "wait_id": "2ba79d4b99b7469b8cb172f5cc935941",
+      "wait_id": "393b37782a8a4f4b9e3bf30b73a6d21d",
       "event_id": "fixture-gate-0",
-      "node_name": "build.team~ask-2ba79d4b99b7469b8cb172f5cc935941",
+      "node_name": "build.team~ask-393b37782a8a4f4b9e3bf30b73a6d21d",
       "asked": true,
       "kind": "question",
       "header": "builder asks",
@@ -228,7 +228,7 @@
       "asked_again": null,
       "settings_changes": null,
       "pins": null,
-      "opened_at": "2026-10-10T03:49:33.235568+00:00"
+      "opened_at": "2026-10-10T18:37:52.235930+00:00"
     }
   ],
   "timeline": {
@@ -237,9 +237,9 @@
         "event_type": "message: goal",
         "from_agent": "temper",
         "to_agent": "lead",
-        "timestamp": "2026-10-10T03:49:33.201412+00:00",
+        "timestamp": "2026-10-10T18:37:52.201981+00:00",
         "data": {
-          "message_id": "19bf8429db72499d902727d3e727412f",
+          "message_id": "bffc0aafb3954dc1b0f47ce88e8adcea",
           "state": "consumed",
           "deliveries": 1,
           "preview": "This tiny project has no README. Write a short one."
@@ -250,10 +250,10 @@
       {
         "event_type": "idle",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:49:33.207234+00:00",
+        "timestamp": "2026-10-10T18:37:52.207346+00:00",
         "data": {
           "seq": 2,
-          "at": "2026-10-10T03:49:33.207234+00:00",
+          "at": "2026-10-10T18:37:52.207346+00:00",
           "kind": "idle",
           "member": "builder",
           "note": null,
@@ -261,7 +261,7 @@
         },
         "entry": "idle",
         "seq": 2,
-        "at": "2026-10-10T03:49:33.207234+00:00",
+        "at": "2026-10-10T18:37:52.207346+00:00",
         "kind": "idle",
         "member": "builder",
         "note": null,
@@ -270,10 +270,10 @@
       {
         "event_type": "idle",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:49:33.208169+00:00",
+        "timestamp": "2026-10-10T18:37:52.208423+00:00",
         "data": {
           "seq": 3,
-          "at": "2026-10-10T03:49:33.208169+00:00",
+          "at": "2026-10-10T18:37:52.208423+00:00",
           "kind": "idle",
           "member": "checker",
           "note": null,
@@ -281,7 +281,7 @@
         },
         "entry": "idle",
         "seq": 3,
-        "at": "2026-10-10T03:49:33.208169+00:00",
+        "at": "2026-10-10T18:37:52.208423+00:00",
         "kind": "idle",
         "member": "checker",
         "note": null,
@@ -291,9 +291,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "builder",
-        "timestamp": "2026-10-10T03:49:33.208797+00:00",
+        "timestamp": "2026-10-10T18:37:52.209144+00:00",
         "data": {
-          "message_id": "81e0d7120aca4d63a32a3a9c0d3bc264",
+          "message_id": "64c9ae7e46784867af5462546a0b3aac",
           "state": "consumed",
           "deliveries": 1,
           "preview": "Build the builder part and share it."
@@ -304,17 +304,17 @@
       {
         "event_type": "wake",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:49:33.209632+00:00",
+        "timestamp": "2026-10-10T18:37:52.210059+00:00",
         "data": {
           "seq": 5,
-          "at": "2026-10-10T03:49:33.209632+00:00",
+          "at": "2026-10-10T18:37:52.210059+00:00",
           "kind": "wake",
           "member": "builder",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 5,
-        "at": "2026-10-10T03:49:33.209632+00:00",
+        "at": "2026-10-10T18:37:52.210059+00:00",
         "kind": "wake",
         "member": "builder",
         "by": "lead"
@@ -323,9 +323,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "checker",
-        "timestamp": "2026-10-10T03:49:33.210357+00:00",
+        "timestamp": "2026-10-10T18:37:52.210697+00:00",
         "data": {
-          "message_id": "c42fba44a27a4723b736d7296a91b101",
+          "message_id": "28dee7c1f61446c4878d680b7f4753a5",
           "state": "consumed",
           "deliveries": 1,
           "preview": "Build the checker part and share it."
@@ -336,17 +336,17 @@
       {
         "event_type": "wake",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:49:33.211118+00:00",
+        "timestamp": "2026-10-10T18:37:52.211573+00:00",
         "data": {
           "seq": 7,
-          "at": "2026-10-10T03:49:33.211118+00:00",
+          "at": "2026-10-10T18:37:52.211573+00:00",
           "kind": "wake",
           "member": "checker",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 7,
-        "at": "2026-10-10T03:49:33.211118+00:00",
+        "at": "2026-10-10T18:37:52.211573+00:00",
         "kind": "wake",
         "member": "checker",
         "by": "lead"
@@ -354,12 +354,12 @@
       {
         "event_type": "turn 1: completed",
         "from_agent": "lead",
-        "timestamp": "2026-10-10T03:49:33.216938+00:00",
+        "timestamp": "2026-10-10T18:37:52.218041+00:00",
         "data": {
-          "turn_id": "f87a1d657fdc458384a184a450f5b1b4",
+          "turn_id": "d44eabce7e4d43f6859e9ecd4919e3a2",
           "turn_no": 1,
           "state": "completed",
-          "ended_at": "2026-10-10T03:49:33.231374+00:00",
+          "ended_at": "2026-10-10T18:37:52.231306+00:00",
           "account_slot": null
         },
         "entry": "member_turn"
@@ -367,12 +367,12 @@
       {
         "event_type": "turn 1: completed",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:49:33.224515+00:00",
+        "timestamp": "2026-10-10T18:37:52.225066+00:00",
         "data": {
-          "turn_id": "af2dbd5c566e457da72dce0664a83a44",
+          "turn_id": "5f09e2e9fb514009a07e46123febf0b0",
           "turn_no": 1,
           "state": "completed",
-          "ended_at": "2026-10-10T03:49:33.234509+00:00",
+          "ended_at": "2026-10-10T18:37:52.234758+00:00",
           "account_slot": null
         },
         "entry": "member_turn"
@@ -380,12 +380,12 @@
       {
         "event_type": "turn 1: completed",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:49:33.229127+00:00",
+        "timestamp": "2026-10-10T18:37:52.229020+00:00",
         "data": {
-          "turn_id": "0840bb61a9b341d798323be7074e988a",
+          "turn_id": "f3db9c3ea9824434bcb98ea1f00f8fc9",
           "turn_no": 1,
           "state": "completed",
-          "ended_at": "2026-10-10T03:49:33.237266+00:00",
+          "ended_at": "2026-10-10T18:37:52.237590+00:00",
           "account_slot": null
         },
         "entry": "member_turn"
@@ -393,10 +393,10 @@
       {
         "event_type": "idle",
         "from_agent": "lead",
-        "timestamp": "2026-10-10T03:49:33.234050+00:00",
+        "timestamp": "2026-10-10T18:37:52.234243+00:00",
         "data": {
           "seq": 12,
-          "at": "2026-10-10T03:49:33.234050+00:00",
+          "at": "2026-10-10T18:37:52.234243+00:00",
           "kind": "idle",
           "member": "lead",
           "note": "lead: waiting for the next part",
@@ -404,7 +404,7 @@
         },
         "entry": "idle",
         "seq": 12,
-        "at": "2026-10-10T03:49:33.234050+00:00",
+        "at": "2026-10-10T18:37:52.234243+00:00",
         "kind": "idle",
         "member": "lead",
         "note": "lead: waiting for the next part",
@@ -414,9 +414,9 @@
         "event_type": "owner wait: owner",
         "from_agent": "temper",
         "to_agent": "owner",
-        "timestamp": "2026-10-10T03:49:33.235568+00:00",
+        "timestamp": "2026-10-10T18:37:52.235930+00:00",
         "data": {
-          "wait_id": "2ba79d4b99b7469b8cb172f5cc935941",
+          "wait_id": "393b37782a8a4f4b9e3bf30b73a6d21d",
           "state": "open",
           "member": "builder",
           "turn_no": 1,
@@ -429,9 +429,9 @@
         "event_type": "owner wait: owner",
         "from_agent": "temper",
         "to_agent": "owner",
-        "timestamp": "2026-10-10T03:49:33.238405+00:00",
+        "timestamp": "2026-10-10T18:37:52.238753+00:00",
         "data": {
-          "wait_id": "f93ec6a1766f40ce8c2baf7ba5ac3946",
+          "wait_id": "c5ccfb27154e4abb81723aa57a9e1d43",
           "state": "decided",
           "member": "checker",
           "turn_no": 1,
@@ -445,9 +445,9 @@
         "event_type": "owner answer: given",
         "from_agent": "owner",
         "to_agent": "temper",
-        "timestamp": "2026-10-10T03:49:33.240788+00:00",
+        "timestamp": "2026-10-10T18:37:52.240422+00:00",
         "data": {
-          "wait_id": "f93ec6a1766f40ce8c2baf7ba5ac3946",
+          "wait_id": "c5ccfb27154e4abb81723aa57a9e1d43",
           "answer": "given",
           "answered_by": "owner",
           "answered_source": "unknown",
@@ -463,9 +463,9 @@
         "event_type": "message: owner_reply",
         "from_agent": "owner",
         "to_agent": "checker",
-        "timestamp": "2026-10-10T03:49:33.241867+00:00",
+        "timestamp": "2026-10-10T18:37:52.240845+00:00",
         "data": {
-          "message_id": "6fbf28b01c3140ae98d18a6bb9b5d0af",
+          "message_id": "386aff7bdd194131a4e3fb7c7b344382",
           "state": "pending",
           "deliveries": 0,
           "preview": "yes"
@@ -478,13 +478,13 @@
   },
   "owner_actions": [
     {
-      "at": "2026-10-10T03:49:33.240788+00:00",
+      "at": "2026-10-10T18:37:52.240422+00:00",
       "kind": "answer",
       "by": "owner",
       "source": "unknown",
       "request_id": "fixture-answer",
       "detail": {
-        "wait_id": "f93ec6a1766f40ce8c2baf7ba5ac3946",
+        "wait_id": "c5ccfb27154e4abb81723aa57a9e1d43",
         "wait_kind": "question",
         "answer": "given"
       }
@@ -505,10 +505,10 @@
     "resume_verified": false,
     "blocked_windows": []
   },
-  "as_of": "2026-10-10T03:49:33.276782+00:00",
-  "started_at": "2026-10-10T03:48:33.208331+00:00",
+  "as_of": "2026-10-10T18:37:52.256748+00:00",
+  "started_at": "2026-10-10T18:36:52.208614+00:00",
   "elapsed_s": 60,
-  "last_activity_at": "2026-10-10T03:49:33.242310+00:00",
+  "last_activity_at": "2026-10-10T18:37:52.241044+00:00",
   "spend": {
     "cost_usd": 105.0,
     "pause_every_usd": 100.0,
@@ -520,12 +520,12 @@
   "you": {
     "count": 1,
     "first": {
-      "wait_id": "2ba79d4b99b7469b8cb172f5cc935941",
+      "wait_id": "393b37782a8a4f4b9e3bf30b73a6d21d",
       "kind": "question",
       "member": "builder",
       "header": "builder asks",
       "words": "May I rename the docs folder to guide? Three links in the README would change with it, and the old name stays as a redirect page.",
-      "opened_at": "2026-10-10T03:49:33.235568+00:00"
+      "opened_at": "2026-10-10T18:37:52.235930+00:00"
     }
   },
   "counts": {
@@ -542,13 +542,13 @@
       "from": "lead",
       "to": "builder",
       "count": 1,
-      "last_at": "2026-10-10T03:49:33.208797+00:00"
+      "last_at": "2026-10-10T18:37:52.209144+00:00"
     },
     {
       "from": "lead",
       "to": "checker",
       "count": 1,
-      "last_at": "2026-10-10T03:49:33.210357+00:00"
+      "last_at": "2026-10-10T18:37:52.210697+00:00"
     }
   ],
   "work": {

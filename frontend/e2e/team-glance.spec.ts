@@ -538,9 +538,9 @@ for (const theme of ['dark', 'light'] as const) {
       await goTo(page, state, 'working');
       await expect(teamCount(page)).toHaveText('3 working', { timeout: 12_000 });
       await expect(nowSentence(page)).toHaveText('3 of 3 members working. Last activity 0 s ago.');
-      // The goal and the leader's two work requests were released in the same second: a burst (D74).
+      // f928ed03's goal from Temper is a start row, not an owner message; the two leader requests are the burst (D74).
       await expect(justSent(page)).toContainText(
-        'Just sent · 3 messages in the same second, last: lead → checker: “Build the checker part and share it.”',
+        'Just sent · 2 messages in the same second, last: lead → checker: “Build the checker part and share it.”',
       );
       await expect(page.getByTestId('glance-sent-dot')).toHaveAttribute('data-tone', 'accent');
       await expect(members(page, wide).getByTestId('glance-chip').filter({ hasText: /^Working/ })).toHaveCount(3);
@@ -639,7 +639,7 @@ for (const theme of ['dark', 'light'] as const) {
       await expect(spend(page)).toContainText('At $205 the team pauses and asks you.');
       await expect(teamCount(page)).toHaveText('1 working · 2 idle');
       await expect(justSent(page)).toContainText(`You → lead: “${GUIDE}”`, { timeout: 12_000 });
-      await expect(latestFirst(page)).toContainText('You answered: guide');
+      await expect(latestFirst(page)).toContainText('You answered Temper: guide');
       // The owner's first message flies from the You hub (D5).
       if (wide) await expect.poll(() => dotsLaunched(page)).toBe('3');
       await expectSound(page);

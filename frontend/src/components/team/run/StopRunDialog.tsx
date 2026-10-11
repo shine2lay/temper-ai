@@ -37,6 +37,7 @@ export function StopRunDialog({
   workflow,
   reasonLimit,
   onStopped,
+  projectContext = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +46,8 @@ export function StopRunDialog({
   reasonLimit: number | null | undefined;
   /** Read the run again: after a stop, and at once when it had already ended. */
   onStopped: () => void;
+  /** D123: only Projects glance callers opt into project words and 44px actions. */
+  projectContext?: boolean;
 }) {
   const ids = useId();
   const reasonId = `${ids}-reason`;
@@ -107,31 +110,33 @@ export function StopRunDialog({
       initialFocus={reasonBox}
       focusWhenGone={runResultHeading}
       testId="team-stop-run-dialog"
-      title={
+      projectActions={projectContext}
+      title={projectContext ? 'Stop this project?' : (
         <>
           Stop run: <span className="font-mono font-semibold">{workflow}</span>
         </>
-      }
-      subtitle="Ends the team and cancels the run."
+      )}
+      subtitle={projectContext ? 'Ends this project and cancels its run.' : 'Ends the team and cancels the run.'}
       hint="You can't undo this."
       buttons={
         ended ? (
-          <TeamDialogCancel ref={closeButton} className={teamBtn.secondaryMd}>
+          <TeamDialogCancel ref={closeButton} className={cn(teamBtn.secondaryMd, projectContext && 'min-h-11 min-w-11 whitespace-normal py-2')}>
             Close
           </TeamDialogCancel>
         ) : (
           <>
-            <TeamDialogCancel className={teamBtn.secondaryMd} disabled={sending}>
-              Keep running
+            <TeamDialogCancel className={cn(teamBtn.secondaryMd, projectContext && 'min-h-11 min-w-11 whitespace-normal py-2')} disabled={sending}>
+              {projectContext ? 'Cancel' : 'Keep running'}
             </TeamDialogCancel>
-            <button type="button" className={teamBtn.dangerMd} onClick={() => void stop()} disabled={sending}>
+            <button type="button" className={cn(teamBtn.dangerMd, projectContext && 'min-h-11 min-w-11 whitespace-normal py-2')} onClick={() => void stop()} disabled={sending}>
               <Square className="h-4 w-4" aria-hidden="true" />
-              <span>{sending ? 'Stopping…' : 'Stop run'}</span>
+              <span>{sending ? 'Stopping…' : projectContext ? 'Stop project' : 'Stop run'}</span>
             </button>
           </>
         )
       }
     >
+      {projectContext && <><TeamDialogLabel>Workflow</TeamDialogLabel><p className="m-0 font-mono text-sm font-semibold break-words">{workflow}</p></>}
       <TeamDialogLabel>What stops</TeamDialogLabel>
       <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-sm text-temper-text">
         <li>Every member&apos;s turn ends, and any open question is closed with your reason.</li>

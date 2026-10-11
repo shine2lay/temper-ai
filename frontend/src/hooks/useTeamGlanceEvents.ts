@@ -56,7 +56,7 @@ export interface GlanceFeed {
 
 const EMPTY: GlanceFeed = { events: [], fresh: [], freshKey: 0, ready: false, failed: false, asOf: null };
 
-export function useTeamGlanceEvents(executionId: string | undefined, runCursor: number | null): GlanceFeed {
+export function useTeamGlanceEvents(executionId: string | undefined, runCursor: number | null, terminal = false): GlanceFeed {
   const [feed, setFeed] = useState<GlanceFeed>(EMPTY);
   // Goes up 5 s after a failed read, so an ended run (no more polls) still tries again.
   const [retry, setRetry] = useState(0);
@@ -136,7 +136,8 @@ export function useTeamGlanceEvents(executionId: string | undefined, runCursor: 
         if (!alive.current) return;
         lastFailed.current = true;
         setFeed((f) => ({ ...f, failed: true, ready: f.ready || loaded.current }));
-        window.setTimeout(() => {
+        // Terminal runs are historical, not an automatic retry loop (D121).
+        if (!terminal) window.setTimeout(() => {
           if (alive.current) setRetry((r) => r + 1);
         }, 5000);
       } finally {
@@ -158,7 +159,7 @@ export function useTeamGlanceEvents(executionId: string | undefined, runCursor: 
       }
     };
     void read();
-  }, [executionId, runCursor, retry]);
+  }, [executionId, runCursor, retry, terminal]);
 
   return feed;
 }

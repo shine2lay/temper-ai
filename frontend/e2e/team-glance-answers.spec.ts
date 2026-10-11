@@ -143,25 +143,23 @@ for (const theme of ['dark', 'light'] as const) {
       };
 
       await test.step('D104: a check 3 days away gets its day', async () => {
-        // Temper's clock: Fri Oct 9, 8:59 PM; its next allowance check: Mon Oct 12, 8:59 PM.
+        // Final export: Sat Oct 10, 11:37 AM; next allowance check Tue Oct 13, 11:38 AM.
         await go('real-g6/restart_deferred');
-        await expect.soft(status(page).getByTestId('glance-now-sentence')).toContainText('Next allowance check Mon at 8:59 PM.');
-        await expect.soft(latest(page).getByRole('listitem').first()).toContainText('Usage limit: next allowance check Mon at 8:59 PM');
-        await expect.soft(activity(page)).toContainText('Usage limit: next allowance check Mon at 8:59 PM');
-        await expect.soft(page.locator('#glance-message')).toContainText('No new turn starts before Mon at 8:59 PM.');
+        await expect.soft(status(page).getByTestId('glance-now-sentence')).toContainText('Next allowance check Tue at 11:38 AM.');
+        await expect.soft(latest(page).getByRole('listitem').first()).toContainText('Usage limit: next allowance check Tue at 11:38 AM');
+        await expect.soft(activity(page)).toContainText('Usage limit: next allowance check Tue at 11:38 AM');
+        await expect.soft(page.locator('#glance-message')).toContainText('No new turn starts before Tue at 11:38 AM.');
       });
 
       await test.step('D105: an interrupted run reads as ended, with Temper\u2019s reason', async () => {
         await go('real-g6/interrupted');
         await expect.soft(status(page).getByTestId('glance-now-word')).toHaveText('Interrupted');
         await expect.soft(status(page).getByTestId('glance-now-sentence')).toHaveText('The run ended without the team ending.');
-        await expect
-          .soft(status(page).getByTestId('glance-now-reason'))
-          .toHaveText('the run ended (interrupted) without the team ending');
+        await expect.soft(status(page).getByTestId('glance-now-reason')).toHaveCount(0);
         await expectCardsEnded(page, wide, 'real-g6/interrupted');
         // Temper gave no time for its reason: the last row of the run, with no time.
         const first = activity(page).getByRole('listitem').first();
-        await expect.soft(first).toHaveText('Interrupted: the run ended (interrupted) without the team ending');
+        await expect.soft(first).toHaveText('Interrupted. Temper gave no reason.');
         await expect.soft(first.locator('time')).toHaveCount(0);
       });
 
@@ -170,7 +168,7 @@ for (const theme of ['dark', 'light'] as const) {
         await expect.soft(status(page).getByTestId('glance-now-word')).toHaveText('Interrupted');
         await expect
           .soft(status(page).getByTestId('glance-now-sentence'))
-          .toHaveText('Last activity 8:40 PM. Temper didn\u2019t record when it ended.');
+          .toHaveText('Last activity 11:37 AM. Temper didn\u2019t record when it ended.');
         await expectCardsEnded(page, wide, 'real-g6/interrupted_no_end');
       });
 
@@ -179,9 +177,13 @@ for (const theme of ['dark', 'light'] as const) {
           await go(name);
           await expectCardsEnded(page, wide, name);
           const reason = (sample(name).phase as Raw).reason as string | undefined;
-          if (reason) {
-            // Their reason shows as before: Now's sentence, and Temper's own row once in All activity; no second row.
-            await expect.soft(status(page).getByTestId('glance-now-sentence'), name).toContainText(reason);
+          if (name === 'real/done') {
+            expect.soft(await activityRows(page)).toContain('Project ended.');
+            await expect.soft(page.getByRole('main')).not.toContainText(/team_done|run_completed/);
+          } else if (reason) {
+            // D119 changes only the first letter in Now. Temper's raw row remains exact and appears once.
+            const nowReason = reason.replace(/^./u, (first) => first.toUpperCase());
+            await expect.soft(status(page).getByTestId('glance-now-sentence'), name).toHaveText(nowReason);
             expect.soft((await activityRows(page)).filter((r) => r.includes(reason)), name).toHaveLength(1);
           }
         }
@@ -193,9 +195,11 @@ for (const theme of ['dark', 'light'] as const) {
         expect.soft(await activityRows(page)).toContain('checker\u2019s turn 1 ended at its tool-call limit.');
       });
 
-      await test.step('D107: a share Temper refused without a reason', async () => {
+      await test.step('D114: a share Temper refused with its supplied reason', async () => {
         await go('real-g6/conflict');
-        expect.soft(await activityRows(page)).toContain('checker\u2019s version wasn\u2019t shared. Temper gave no reason.');
+        expect.soft(await activityRows(page)).toContain(
+          'checker\u2019s version wasn\u2019t shared: Not shared: these files still hold git\'s conflict markers: part.md',
+        );
         await expect.soft(page.getByRole('main')).not.toContainText(/refused: refused/i);
       });
 
@@ -205,22 +209,23 @@ for (const theme of ['dark', 'light'] as const) {
         await expect.soft(latest(page)).toContainText(asked);
         const rows = await activityRows(page);
         expect.soft(rows).toContain(asked);
-        expect.soft(rows).toContain('You answered checker: \u201cyes\u201d');
+        expect.soft(rows.filter((r) => r.startsWith('You answered'))).toEqual(['You answered checker: \u201cyes\u201d']);
+        await expect.soft(latest(page).getByRole('listitem').first()).toContainText('You answered checker: \u201cyes\u201d');
       });
 
       await test.step('D108, D110: Temper\u2019s check-in answered with Guide, then the guide\u2019s words', async () => {
         await go('derived/resumed');
-        await expect.soft(latest(page)).toContainText('You answered: guide');
+        await expect.soft(latest(page)).toContainText('You answered Temper: guide');
         const rows = await activityRows(page);
         const guided = rows.indexOf('You messaged lead: \u201cKeep the README under 40 lines and add a Usage section.\u201d');
         expect.soft(guided, 'the guide\u2019s words').toBeGreaterThanOrEqual(0);
-        expect.soft(rows[guided + 1], 'right under them, the answer to the check-in').toBe('You answered: guide');
+        expect.soft(rows[guided + 1], 'right under them, the answer to the check-in').toBe('You answered Temper: guide');
         expect.soft(rows).toContainEqual(expect.stringMatching(/^Temper asked you: \u201cThe team has spent \$105\.00/));
       });
 
       await test.step('D109: the usage limit is over, and when the team carried on', async () => {
         await go('real-g6/limit_ended');
-        const over = 'The usage limit is over. The team carried on at 8:40 PM.';
+        const over = 'The usage limit is over. You restarted the team at 11:37 AM.';
         await expect.soft(latest(page).getByRole('listitem').first()).toContainText(over);
         expect.soft(await activityRows(page)).toContain(over);
       });

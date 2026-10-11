@@ -10,7 +10,7 @@ import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { latestAgo, latestMoments, limitCheckShown, type GlanceEvent, type GlanceRun } from '@/lib/teamGlance';
 import { teamCard, teamLink } from '@/components/team/teamUi';
-import { GIcon, PathText } from './glanceUi';
+import { GIcon, MomentText } from './glanceUi';
 import { glanceCardHead } from './glanceStyle';
 
 export function LatestMoments({
@@ -55,17 +55,7 @@ export function LatestMoments({
               </span>
               <GIcon name={m.icon} className="mt-0.5 h-4 w-4 shrink-0 text-temper-text-muted" />
               <span className="min-w-0 break-words text-temper-text">
-                {m.parts.map((p, i) =>
-                  p.strong ? (
-                    <b key={i} className="font-semibold">
-                      {p.text}
-                    </b>
-                  ) : (
-                    <span key={i}>
-                      <PathText text={p.text} />
-                    </span>
-                  ),
-                )}
+                <MomentText parts={m.parts} />
               </span>
             </li>
           ))}

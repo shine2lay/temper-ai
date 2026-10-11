@@ -23,7 +23,7 @@
  * - Design's phone table (HANDOFF-D88-D99): with a shared version the band
  *   still ends on a 390x844 first screen, in both themes.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectAxeClean, expectTargets, glanceFontsSettled, nothingSent, serveActions, serveTeam, type Fixture } from './team-helpers';
@@ -340,6 +340,134 @@ test('contract: a phone lists one busy row and counts the rest; under the stale 
   expect(await bandEnd(page), 'band end, stale').toBeLessThanOrEqual(844);
   await expectAxeClean(page);
 });
+
+/** Item 14: emoji, a skin-tone ZWJ sequence, a family ZWJ sequence and combining accents early in a long note. */
+const UNICODE_NOTE =
+  'CSV [grin] cafe\u0301 [coder] and [family] export: the writer quotes every field, the button sits in the toolbar, and the tests cover both.'
+    .replace('[grin]', '\u{1F600}')
+    .replace('[coder]', '\u{1F469}\u{1F3FD}\u200D\u{1F4BB}')
+    .replace('[family]', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}');
+const graphemeEnds = (s: string) => {
+  const ends = new Set<number>([0]);
+  for (const g of new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(s)) ends.add(g.index + g.segment.length);
+  return ends;
+};
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+for (const theme of ['dark', 'light'] as const) {
+  test(`contract: a long Unicode note is cut only between whole characters, refits on resize, whole in its title and All activity (item 14), ${theme}`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+    await page.setViewportSize({ width: 320, height: 844 });
+    await open(page, 'share', {
+      run: withVersion(UNICODE_NOTE),
+      feed: (feed) => {
+        for (const e of feed.events) if (e.kind === 'share') e.note = UNICODE_NOTE;
+      },
+    });
+    const line2 = page.getByTestId('glance-version-line2');
+    const note = line2.getByTestId('glance-version-note');
+    const ends = graphemeEnds(UNICODE_NOTE);
+    const lengths: number[] = [];
+    for (const width of [320, 390, 1024, 390]) {
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 768 });
+      await glanceFontsSettled(page);
+      // D111's responsive shape must be in place before measuring the room left.
+      if (width < 768) await expect(line2).toContainText(/4.min.ago/);
+      else await expect(line2).not.toContainText(/4.min.ago/);
+      // The sidebar really animates between its 56px phone rail and 200px wide panel.
+      // Measure only its finished room, not a native maximum that changes afterward.
+      const sidebar = page.getByRole('complementary').filter({ has: page.getByRole('navigation', { name: 'Main navigation' }) });
+      await expect(sidebar).toHaveCSS('width', width < 768 ? '56px' : '200px');
+      // Map readiness is not the note's ResizeObserver completion signal on a phone.
+      // Independently measure whole grapheme prefixes in the same native font, then
+      // await the EXACT longest fitting result (no sleeps, looser cut or overflow bar).
+      const fitted = await line2.evaluate(async (v2, whole) => {
+        await document.fonts.ready;
+        const t = v2.querySelector<HTMLElement>('[data-testid="glance-version-note"]')!;
+        const room = v2.getBoundingClientRect().width - [...v2.children]
+          .filter((c) => c !== t).reduce((w, c) => w + c.getBoundingClientRect().width, 0);
+        const css = getComputedStyle(t);
+        const probe = document.createElement('span');
+        Object.assign(probe.style, { position: 'fixed', left: '-10000px', top: '0', whiteSpace: 'nowrap' });
+        for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch', 'fontKerning',
+          'fontVariant', 'fontFeatureSettings', 'fontVariationSettings', 'letterSpacing', 'wordSpacing', 'textTransform'] as const) {
+          probe.style[key] = css[key];
+        }
+        document.body.append(probe);
+        let expected = '\u201c\u2026\u201d';
+        try {
+          const limits = [0, ...[...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(whole)]
+            .map((g) => g.index + g.segment.length)];
+          for (const end of limits) {
+            const candidate = end === whole.length ? `\u201c${whole}\u201d` : `\u201c${whole.slice(0, end).trimEnd()}\u2026\u201d`;
+            probe.textContent = candidate;
+            if (probe.getBoundingClientRect().width <= room + 0.01) expected = candidate;
+          }
+          return { expected, room, font: css.font, children: [...v2.children].map((c) => ({
+            text: c.textContent, width: c.getBoundingClientRect().width,
+          })) };
+        } finally { probe.remove(); }
+      }, UNICODE_NOTE);
+      await test.info().attach(`unicode-fit-${width}-${lengths.length}`, {
+        body: Buffer.from(JSON.stringify(fitted, null, 2)), contentType: 'application/json',
+      });
+      await expect(note, `native maximum fit at ${width}`).toHaveText(fitted.expected);
+      await expect(note).toHaveText(/^\u201c.+\u2026\u201d$/);
+      const shown = /^\u201c(.*)\u2026\u201d$/.exec((await note.textContent()) ?? '')?.[1] ?? '';
+      expect(UNICODE_NOTE.startsWith(shown), `"${shown}" starts the note at ${width}`).toBe(true);
+      expect(ends.has(shown.length), `"${shown}" ends on a whole character at ${width}`).toBe(true);
+      expect(LONE_SURROGATE.test(shown), `no half character at ${width}`).toBe(false);
+      expect(await note.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), `the cut fits at ${width}`).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no sideways scroll at ${width}`).toBe(true);
+      await expect(line2).toHaveAttribute('title', UNICODE_NOTE);
+      lengths.push(shown.length);
+    }
+    expect(lengths[2], 'wider window shows more of the note').toBeGreaterThan(lengths[1]);
+    expect(lengths[3], 'back to the phone, the same cut').toBe(lengths[1]);
+    await expect(activity(page)).toContainText(`builder shared v1: \u201c${UNICODE_NOTE}\u201d`);
+    await expectAxeClean(page);
+  });
+
+  test(`contract: the stale note is red with a warning sign; words, frozen page, retry and fit unchanged (D122), ${theme}`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { state, sent } = await open(page, 'working', { run: withVersion() });
+    const asked = await page.getByTestId('glance-answers').count();
+    state.down = true;
+    const stale = page.locator('[data-note]').filter({ hasText: /^Temper hasn.t answered for / });
+    await expect(stale).toBeVisible({ timeout: 15_000 });
+    await expect(stale).toHaveAttribute('data-note', 'bad');
+    expect(await fillOf(stale), 'red tint').toBe(await cssColor(page, 'var(--badge-failed-bg)'));
+    expect(await fillOf(stale), 'not the answer-request yellow').not.toBe(await cssColor(page, 'var(--badge-waiting-bg)'));
+    const sign = stale.locator('svg').first();
+    expect(await colorOf(sign), 'red warning sign').toBe(await cssColor(page, 'var(--badge-failed-text)'));
+    await expect(stale).toContainText('This is what it said last; nothing below moves until it answers again.');
+    await expect(nowWord(page)).toHaveText(/^Last seen: /);
+    await expect(page.getByTestId('glance-answers')).toHaveCount(asked);
+    const retry = stale.getByRole('button', { name: 'Try again' });
+    for (const [width, height] of [[1440, 900], [390, 844], [320, 844]] as const) {
+      await page.setViewportSize({ width, height });
+      const box = await boxOf(retry);
+      expect(box.height, `Try again 44 px at ${width}`).toBeGreaterThanOrEqual(44);
+      expect(await fillOf(retry), 'outline, not solid').not.toBe(await cssColor(page, 'var(--temper-accent)'));
+      expect(await stale.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), `note fits at ${width}`).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no sideways scroll at ${width}`).toBe(true);
+      await expectTargets(page);
+      await expectAxeClean(page);
+      if (process.env.FIELDS_SHOTS) mkdirSync(process.env.FIELDS_SHOTS, { recursive: true });
+      if (process.env.FIELDS_SHOTS) await page.screenshot({ path: path.join(process.env.FIELDS_SHOTS, `d122-stale-${theme}-${width}.png`) });
+    }
+    state.down = false;
+    await retry.click();
+    await expect(stale).toHaveCount(0, { timeout: 15_000 });
+    await expect(nowWord(page)).not.toHaveText(/^Last seen: /);
+    expect(sent).toEqual(nothingSent());
+  });
+}
 
 test('contract: "No one is working until you answer." only while you are asked and no one works (D95, D112)', async ({ context }) => {
   test.setTimeout(150_000);

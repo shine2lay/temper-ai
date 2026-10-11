@@ -8,7 +8,7 @@
   "cost_usd": 65.0,
   "account": {
     "slot": "anthropic-4",
-    "picked_at": "2026-10-10T03:39:51.454427+00:00",
+    "picked_at": "2026-10-10T18:36:52.355641+00:00",
     "by": "settings_order",
     "capacity": "not_checked",
     "room": null
@@ -55,7 +55,7 @@
       "source": "/work/fixture",
       "start_commit": null
     },
-    "started_at": "2026-10-10 03:39:51.454427+00:00",
+    "started_at": "2026-10-10 18:36:52.355641+00:00",
     "started_by": "owner",
     "request_id": "fixture-retry"
   },
@@ -76,23 +76,23 @@
       "last_turn": {
         "turn_no": 1,
         "state": "completed",
-        "started_at": "2026-10-10T03:40:51.462173+00:00",
-        "ended_at": "2026-10-10T03:40:51.475244+00:00",
+        "started_at": "2026-10-10T18:37:52.362864+00:00",
+        "ended_at": "2026-10-10T18:37:52.374320+00:00",
         "error": null,
         "account_slot": null,
         "retry_of": null,
         "ended_by": "no_tool_call"
       },
       "state": "idle",
-      "since": "2026-10-10T03:40:51.477858+00:00",
+      "since": "2026-10-10T18:37:52.376817+00:00",
       "turn_no": null,
       "on": {
         "kind": "message",
         "text": "Build the checker part and share it.",
         "to": "checker",
         "from": "lead",
-        "at": "2026-10-10T03:40:51.456311+00:00",
-        "message_id": "287806ec242c402c8c40fd7406036794"
+        "at": "2026-10-10T18:37:52.357442+00:00",
+        "message_id": "15edeee3a4744e3786c2129934be8eb5"
       },
       "idle_note": null,
       "idle_reason": "no_tool_call",
@@ -102,13 +102,13 @@
         "to": "checker",
         "kind": "work_request",
         "text": "Build the checker part and share it.",
-        "at": "2026-10-10T03:40:51.456311+00:00",
-        "message_id": "287806ec242c402c8c40fd7406036794"
+        "at": "2026-10-10T18:37:52.357442+00:00",
+        "message_id": "15edeee3a4744e3786c2129934be8eb5"
       },
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-10T03:40:51.477980+00:00"
+      "last_activity_at": "2026-10-10T18:37:52.376935+00:00"
     },
     {
       "name": "builder",
@@ -126,7 +126,7 @@
       "last_turn": {
         "turn_no": 2,
         "state": "running",
-        "started_at": "2026-10-10T03:40:51.484612+00:00",
+        "started_at": "2026-10-10T18:37:52.383296+00:00",
         "ended_at": null,
         "error": null,
         "account_slot": null,
@@ -134,14 +134,14 @@
         "ended_by": null
       },
       "state": "working",
-      "since": "2026-10-10T03:40:51.484612+00:00",
+      "since": "2026-10-10T18:37:52.383296+00:00",
       "turn_no": 2,
       "on": {
         "kind": "work_request",
         "text": "Build the builder part and share it.",
         "from": "lead",
-        "at": "2026-10-10T03:40:51.454898+00:00",
-        "message_id": "7addeb780fb443bd935b70f2b623e59c"
+        "at": "2026-10-10T18:37:52.356079+00:00",
+        "message_id": "832a9d138e1d4389ad23f7fd64d47dbb"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -160,7 +160,7 @@
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-10T03:40:51.485918+00:00"
+      "last_activity_at": "2026-10-10T18:37:52.384528+00:00"
     },
     {
       "name": "checker",
@@ -178,22 +178,22 @@
       "last_turn": {
         "turn_no": 1,
         "state": "completed",
-        "started_at": "2026-10-10T03:40:51.473186+00:00",
-        "ended_at": "2026-10-10T03:40:51.478448+00:00",
+        "started_at": "2026-10-10T18:37:52.372271+00:00",
+        "ended_at": "2026-10-10T18:37:52.377397+00:00",
         "error": null,
         "account_slot": null,
         "retry_of": null,
         "ended_by": "call_cap"
       },
       "state": "idle",
-      "since": "2026-10-10T03:40:51.479535+00:00",
+      "since": "2026-10-10T18:37:52.378452+00:00",
       "turn_no": null,
       "on": {
         "kind": "work_request",
         "text": "Build the checker part and share it.",
         "from": "lead",
-        "at": "2026-10-10T03:40:51.456311+00:00",
-        "message_id": "287806ec242c402c8c40fd7406036794"
+        "at": "2026-10-10T18:37:52.357442+00:00",
+        "message_id": "15edeee3a4744e3786c2129934be8eb5"
       },
       "idle_note": "checker: waiting for the next part",
       "idle_reason": "idle_call",
@@ -203,7 +203,7 @@
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-10T03:40:51.479639+00:00"
+      "last_activity_at": "2026-10-10T18:37:52.378558+00:00"
     }
   ],
   "open_waits": [],
@@ -213,9 +213,9 @@
         "event_type": "message: goal",
         "from_agent": "temper",
         "to_agent": "lead",
-        "timestamp": "2026-10-10T03:40:51.448928+00:00",
+        "timestamp": "2026-10-10T18:37:52.350406+00:00",
         "data": {
-          "message_id": "aec2b83e48e34d0cb3692f2cc446dee7",
+          "message_id": "0532528e92d247dab37ac56ba42f7e9f",
           "state": "consumed",
           "deliveries": 1,
           "preview": "This tiny project has no README. Write a short one."
@@ -226,10 +226,10 @@
       {
         "event_type": "idle",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:40:51.453325+00:00",
+        "timestamp": "2026-10-10T18:37:52.354608+00:00",
         "data": {
           "seq": 2,
-          "at": "2026-10-10T03:40:51.453325+00:00",
+          "at": "2026-10-10T18:37:52.354608+00:00",
           "kind": "idle",
           "member": "builder",
           "note": null,
@@ -237,7 +237,7 @@
         },
         "entry": "idle",
         "seq": 2,
-        "at": "2026-10-10T03:40:51.453325+00:00",
+        "at": "2026-10-10T18:37:52.354608+00:00",
         "kind": "idle",
         "member": "builder",
         "note": null,
@@ -246,10 +246,10 @@
       {
         "event_type": "idle",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:40:51.454259+00:00",
+        "timestamp": "2026-10-10T18:37:52.355482+00:00",
         "data": {
           "seq": 3,
-          "at": "2026-10-10T03:40:51.454259+00:00",
+          "at": "2026-10-10T18:37:52.355482+00:00",
           "kind": "idle",
           "member": "checker",
           "note": null,
@@ -257,7 +257,7 @@
         },
         "entry": "idle",
         "seq": 3,
-        "at": "2026-10-10T03:40:51.454259+00:00",
+        "at": "2026-10-10T18:37:52.355482+00:00",
         "kind": "idle",
         "member": "checker",
         "note": null,
@@ -267,9 +267,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "builder",
-        "timestamp": "2026-10-10T03:40:51.454898+00:00",
+        "timestamp": "2026-10-10T18:37:52.356079+00:00",
         "data": {
-          "message_id": "7addeb780fb443bd935b70f2b623e59c",
+          "message_id": "832a9d138e1d4389ad23f7fd64d47dbb",
           "state": "consumed",
           "deliveries": 2,
           "preview": "Build the builder part and share it."
@@ -280,17 +280,17 @@
       {
         "event_type": "wake",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:40:51.455741+00:00",
+        "timestamp": "2026-10-10T18:37:52.356863+00:00",
         "data": {
           "seq": 5,
-          "at": "2026-10-10T03:40:51.455741+00:00",
+          "at": "2026-10-10T18:37:52.356863+00:00",
           "kind": "wake",
           "member": "builder",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 5,
-        "at": "2026-10-10T03:40:51.455741+00:00",
+        "at": "2026-10-10T18:37:52.356863+00:00",
         "kind": "wake",
         "member": "builder",
         "by": "lead"
@@ -299,9 +299,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "checker",
-        "timestamp": "2026-10-10T03:40:51.456311+00:00",
+        "timestamp": "2026-10-10T18:37:52.357442+00:00",
         "data": {
-          "message_id": "287806ec242c402c8c40fd7406036794",
+          "message_id": "15edeee3a4744e3786c2129934be8eb5",
           "state": "consumed",
           "deliveries": 1,
           "preview": "Build the checker part and share it."
@@ -312,17 +312,17 @@
       {
         "event_type": "wake",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:40:51.457078+00:00",
+        "timestamp": "2026-10-10T18:37:52.358206+00:00",
         "data": {
           "seq": 7,
-          "at": "2026-10-10T03:40:51.457078+00:00",
+          "at": "2026-10-10T18:37:52.358206+00:00",
           "kind": "wake",
           "member": "checker",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 7,
-        "at": "2026-10-10T03:40:51.457078+00:00",
+        "at": "2026-10-10T18:37:52.358206+00:00",
         "kind": "wake",
         "member": "checker",
         "by": "lead"
@@ -330,12 +330,12 @@
       {
         "event_type": "turn 1: completed",
         "from_agent": "lead",
-        "timestamp": "2026-10-10T03:40:51.462173+00:00",
+        "timestamp": "2026-10-10T18:37:52.362864+00:00",
         "data": {
-          "turn_id": "1fec191616bc4af196672418d6dbec61",
+          "turn_id": "08e9fe40a7ae47b3a1f38329dbadfe79",
           "turn_no": 1,
           "state": "completed",
-          "ended_at": "2026-10-10T03:40:51.475244+00:00",
+          "ended_at": "2026-10-10T18:37:52.374320+00:00",
           "account_slot": null
         },
         "entry": "member_turn"
@@ -343,12 +343,12 @@
       {
         "event_type": "turn 1: superseded",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:40:51.469390+00:00",
+        "timestamp": "2026-10-10T18:37:52.368835+00:00",
         "data": {
-          "turn_id": "cf2f20c905be4a6aa4a758090f13f50e",
+          "turn_id": "53f55eeda9304c06989d35ffe32cbc62",
           "turn_no": 1,
           "state": "superseded",
-          "ended_at": "2026-10-10T03:40:51.480089+00:00",
+          "ended_at": "2026-10-10T18:37:52.378992+00:00",
           "account_slot": null,
           "error": "builder turn 1: the box stopped before the turn finished"
         },
@@ -357,12 +357,12 @@
       {
         "event_type": "turn 1: completed",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:40:51.473186+00:00",
+        "timestamp": "2026-10-10T18:37:52.372271+00:00",
         "data": {
-          "turn_id": "04d247df0120492980d6603ade2db659",
+          "turn_id": "a9c991018f1c4bf59399aea143f3df93",
           "turn_no": 1,
           "state": "completed",
-          "ended_at": "2026-10-10T03:40:51.478448+00:00",
+          "ended_at": "2026-10-10T18:37:52.377397+00:00",
           "account_slot": null
         },
         "entry": "member_turn"
@@ -370,10 +370,10 @@
       {
         "event_type": "idle",
         "from_agent": "lead",
-        "timestamp": "2026-10-10T03:40:51.477980+00:00",
+        "timestamp": "2026-10-10T18:37:52.376935+00:00",
         "data": {
           "seq": 12,
-          "at": "2026-10-10T03:40:51.477980+00:00",
+          "at": "2026-10-10T18:37:52.376935+00:00",
           "kind": "idle",
           "member": "lead",
           "note": null,
@@ -381,7 +381,7 @@
         },
         "entry": "idle",
         "seq": 12,
-        "at": "2026-10-10T03:40:51.477980+00:00",
+        "at": "2026-10-10T18:37:52.376935+00:00",
         "kind": "idle",
         "member": "lead",
         "note": null,
@@ -390,10 +390,10 @@
       {
         "event_type": "idle",
         "from_agent": "checker",
-        "timestamp": "2026-10-10T03:40:51.479639+00:00",
+        "timestamp": "2026-10-10T18:37:52.378558+00:00",
         "data": {
           "seq": 14,
-          "at": "2026-10-10T03:40:51.479639+00:00",
+          "at": "2026-10-10T18:37:52.378558+00:00",
           "kind": "idle",
           "member": "checker",
           "note": "checker: waiting for the next part",
@@ -401,7 +401,7 @@
         },
         "entry": "idle",
         "seq": 14,
-        "at": "2026-10-10T03:40:51.479639+00:00",
+        "at": "2026-10-10T18:37:52.378558+00:00",
         "kind": "idle",
         "member": "checker",
         "note": "checker: waiting for the next part",
@@ -410,9 +410,9 @@
       {
         "event_type": "turn 2: running",
         "from_agent": "builder",
-        "timestamp": "2026-10-10T03:40:51.484612+00:00",
+        "timestamp": "2026-10-10T18:37:52.383296+00:00",
         "data": {
-          "turn_id": "40afd55e301740218909dfb883e0546e",
+          "turn_id": "d67106da337544fa918d4218c45ace19",
           "turn_no": 2,
           "state": "running",
           "ended_at": null,
@@ -439,10 +439,10 @@
     "resume_verified": false,
     "blocked_windows": []
   },
-  "as_of": "2026-10-10T03:40:51.490344+00:00",
-  "started_at": "2026-10-10T03:39:51.454427+00:00",
+  "as_of": "2026-10-10T18:37:52.388601+00:00",
+  "started_at": "2026-10-10T18:36:52.355641+00:00",
   "elapsed_s": 60,
-  "last_activity_at": "2026-10-10T03:40:51.485918+00:00",
+  "last_activity_at": "2026-10-10T18:37:52.384528+00:00",
   "spend": {
     "cost_usd": 65.0,
     "pause_every_usd": 100.0,
@@ -469,13 +469,13 @@
       "from": "lead",
       "to": "builder",
       "count": 1,
-      "last_at": "2026-10-10T03:40:51.454898+00:00"
+      "last_at": "2026-10-10T18:37:52.356079+00:00"
     },
     {
       "from": "lead",
       "to": "checker",
       "count": 1,
-      "last_at": "2026-10-10T03:40:51.456311+00:00"
+      "last_at": "2026-10-10T18:37:52.357442+00:00"
     }
   ],
   "work": {

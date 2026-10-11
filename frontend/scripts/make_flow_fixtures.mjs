@@ -38,6 +38,37 @@ const REAL_STATES = ['working', 'idle', 'share', 'check_in', 'closing', 'done', 
 
 // Import only a complete supplied snapshot. Read and validate every source
 // before writing anything; never generate, run or edit Temper's serializers.
+// --import-snapshot binds the final FLOW, G6 and G7 synthetic exports to their
+// unchanged manifests. api-fields.md's documented wording amendment is not a sample.
+if (process.argv[2] === '--import-snapshot') {
+  if (process.argv.length !== 4) throw new Error('usage: make_flow_fixtures.mjs --import-snapshot <snapshot-folder>');
+  const groups = [
+    ['INPUTS-f928ed03.sha256', 'api-fixtures', 'real'],
+    ['G6-INPUTS.sha256', 'api-fixtures-g6', 'real-g6'],
+    ['G7-INPUTS.sha256', 'api-fixtures-g7', 'real-g7'],
+  ];
+  const pending = [];
+  for (const [manifest, source, dest] of groups) {
+    const bytes = readFileSync(join(process.argv[3], manifest));
+    const lines = bytes.toString('utf8').split('\n').map((line) => /^([0-9a-f]{64}) [ *](.+)$/.exec(line)).filter(Boolean);
+    for (const [, hash, name] of lines) {
+      if (name === 'api-fields.md') continue; // Separately reviewed documentation amendment.
+      const sample = readFileSync(join(process.argv[3], name));
+      if (createHash('sha256').update(sample).digest('hex') !== hash) throw new Error(`snapshot hash mismatch: ${name}`);
+      if (!name.startsWith(`${source}/`)) continue;
+      const body = JSON.parse(sample.toString('utf8'));
+      if (name.endsWith('-events.json') ? !Array.isArray(body.events) : body.kind !== 'flow') throw new Error(`invalid reply: ${name}`);
+      pending.push({ file: join(FLOW, dest, name.slice(source.length + 1)), bytes: sample });
+    }
+    pending.push({ file: join(FLOW, dest, manifest), bytes });
+  }
+  for (const { file, bytes } of pending) {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
+  }
+  console.log(`Bound ${pending.length - groups.length} unchanged serializer replies and ${groups.length} manifests.`);
+  process.exit(0); // Preserve the older, explicitly derived scenario inputs.
+}
 if (process.argv.length > 2) {
   if (process.argv.length !== 4 || process.argv[2] !== '--import-real') {
     throw new Error('usage: make_flow_fixtures.mjs [--import-real <serializer-replies-folder>]');

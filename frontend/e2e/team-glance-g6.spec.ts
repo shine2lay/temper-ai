@@ -124,12 +124,11 @@ const TRUTH: Record<Run, Truth> = {
       checker: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message' },
       lead: { chip: /^Idle \u00b7 / },
     },
-    latestFirst: 'You answered: a reply',
+    latestFirst: 'You answered checker: \u201cyes\u201d',
     latest: ['checker asked you: \u201cShould the checks also cover the example scripts?\u201d'],
     activity: [
       // D108: your words to checker right after your answer to its own question answer it.
       'You answered checker: \u201cyes\u201d',
-      'You answered: a reply',
       'checker asked you: \u201cShould the checks also cover the example scripts?\u201d',
     ],
   },
@@ -150,7 +149,7 @@ const TRUTH: Record<Run, Truth> = {
       'builder ended turn 1: failed',
       'checker\u2019s turn 1 ended at its tool-call limit.',
       'lead went idle without a note',
-      'lead ended turn 1: completed (no tool call)',
+      'lead finished turn 1.',
     ],
   },
   interrupted: {
@@ -163,19 +162,19 @@ const TRUTH: Record<Run, Truth> = {
     // D105: an ended run's cards read "Ended"; Temper's reason ends All activity.
     cards: { lead: { chip: 'Ended' }, builder: { chip: 'Ended' }, checker: { chip: 'Ended' } },
     latestFirst: 'builder shared v1',
-    activity: ['Interrupted: the run ended (interrupted) without the team ending', 'builder shared v1'],
+    activity: ['Interrupted. Temper gave no reason.', 'builder shared v1'],
   },
   interrupted_no_end: {
     phase: 'interrupted',
     // D105: Temper recorded no end, so Now gives the newest time it did record.
-    now: ['Interrupted', 'Last activity 8:40 PM. Temper didn\u2019t record when it ended.'],
+    now: ['Interrupted', `Last activity ${clock(g6('interrupted_no_end').last_activity_at as string)}. Temper didn\u2019t record when it ended.`],
     team: '3 members \u00b7 all ended',
     you: 'Nothing needs you',
     youLine: ENDED_LINE,
     spend: ['$105.00', 'Spent in all. 0 check-ins, none to come \u00b7 1 shared version.'],
     cards: { lead: { chip: 'Ended' }, builder: { chip: 'Ended' }, checker: { chip: 'Ended' } },
     latestFirst: 'builder shared v1',
-    activity: ['Interrupted: the run ended (interrupted) without the team ending', 'builder shared v1'],
+    activity: ['Interrupted. Temper gave no reason.', 'builder shared v1'],
   },
   limit_waiting: {
     phase: 'limit',
@@ -229,9 +228,9 @@ const TRUTH: Record<Run, Truth> = {
     you: 'Nothing needs you',
     spend: [spent('limit_ended')],
     cards: { builder: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message' } },
-    latestFirst: 'The usage limit is over. The team carried on at 8:40 PM.',
+    latestFirst: 'The usage limit is over. You restarted the team at 11:37 AM.',
     latest: ['Usage limit'],
-    activity: ['The usage limit is over. The team carried on at 8:40 PM.', 'Usage limit'],
+    activity: ['The usage limit is over. You restarted the team at 11:37 AM.', 'Usage limit'],
     never: LIMIT_NEVER,
   },
   restart_deferred: {
@@ -239,16 +238,16 @@ const TRUTH: Record<Run, Truth> = {
     now: [
       'Usage limit',
       // D104: Temper's next check is 3 days on (Fri Oct 9 to Mon Oct 12 in Los Angeles), so it gets its day.
-      `The account hit its weekly limit; the team waits, then asks you before restarting. Next allowance check Mon at ${nextCheck('restart_deferred')}.`,
+      `The account hit its weekly limit; the team waits, then asks you before restarting. Next allowance check Tue at ${nextCheck('restart_deferred')}.`,
     ],
     team: '1 paused \u00b7 2 idle',
     you: 'Nothing needs you',
     youLine: STOP_LINE,
     spend: [spent('restart_deferred')],
     cards: { builder: { chip: 'Paused: usage limit' } },
-    latestFirst: `Usage limit: next allowance check Mon at ${nextCheck('restart_deferred')}`,
-    latest: [`You answered: restart. ${NOT_APPLIED_RESTART}`],
-    activity: [`You answered: restart. ${NOT_APPLIED_RESTART}`],
+    latestFirst: `Usage limit: next allowance check Tue at ${nextCheck('restart_deferred')}`,
+    latest: [`You answered Temper: restart. ${NOT_APPLIED_RESTART}`],
+    activity: [`You answered Temper: restart. ${NOT_APPLIED_RESTART}`],
     never: LIMIT_NEVER,
   },
   conflict: {
@@ -260,8 +259,8 @@ const TRUTH: Record<Run, Truth> = {
     cards: { checker: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message', has: '1 file in conflict' } },
     latestFirst: 'checker has 1 file in conflict after a sync',
     activity: [
-      // D107: Temper's why is only the verb.
-      'checker\u2019s version wasn\u2019t shared. Temper gave no reason.',
+      // D114: supplied reason (the notice's first sentence) is separate from the refusal kind.
+      'checker\u2019s version wasn\u2019t shared: Not shared: these files still hold git\'s conflict markers: part.md',
       'Temper told checker: \u201cNot shared: these files still hold git\'s conflict markers: part.md. Remove the markers and share again.\u201d',
       'checker has 1 file in conflict after a sync',
     ],
@@ -275,11 +274,10 @@ const TRUTH: Record<Run, Truth> = {
     cards: { lead: { chip: /^Idle/ } },
     // The feed's own words for the question Temper asked again; the You cell shows the open wait's whole question.
     latestFirst: `Temper asked you: \u201c${lastAsk('settings_late')}\u201d`,
-    latest: ['You answered: go on'],
-    activity: [`Temper asked you: \u201c${lastAsk('settings_late')}\u201d`, 'You answered: go on'],
+    // D86 is fixed copy whenever settings go on has applied=false; the supplied why does not replace it.
+    latest: ['You answered Temper: go on. Not applied: the settings changed before the answer took effect.'],
+    activity: [`Temper asked you: \u201c${lastAsk('settings_late')}\u201d`, 'You answered Temper: go on. Not applied: the settings changed before the answer took effect.'],
     answers: ['Go on', 'Stop project'],
-    // D86: without `applied` the go on is an ordinary one.
-    never: /Not applied/,
   },
   invalid: {
     phase: 'check_in',
@@ -288,8 +286,8 @@ const TRUTH: Record<Run, Truth> = {
     you: 'Needs you: carry on?',
     spend: [spent('invalid'), 'If you continue, the next check-in is at $205.'],
     cards: { lead: { chip: /^Idle/ } },
-    latestFirst: `You answered. ${NOT_APPLIED_INVALID}`,
-    activity: [`You answered. ${NOT_APPLIED_INVALID}`],
+    latestFirst: `You answered Temper. ${NOT_APPLIED_INVALID}`,
+    activity: [`You answered Temper. ${NOT_APPLIED_INVALID}`],
     answers: ['Continue', 'Guide\u2026', 'Stop project'],
   },
 };

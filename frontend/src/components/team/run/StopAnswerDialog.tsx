@@ -1,4 +1,5 @@
 import { Square } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { stopAnswerRunList, stopAnswerWords } from '@/lib/teamOutcome';
 import type { TeamWait } from '@/types/team';
 import { TeamDialog, TeamDialogCancel, TeamDialogLabel } from '../TeamDialog';
@@ -20,6 +21,7 @@ export function StopAnswerDialog({
   answerLabel = 'stop',
   words,
   onConfirm,
+  projectContext = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -29,23 +31,31 @@ export function StopAnswerDialog({
   answerLabel?: string;
   words: string;
   onConfirm: () => void;
+  /** D123: leave legacy callers unchanged. */
+  projectContext?: boolean;
 }) {
-  const runList = stopAnswerRunList(waitKind);
-  const { title, ends } = stopAnswerWords(waitKind);
+  const listWords = stopAnswerRunList(waitKind);
+  const runList = projectContext ? listWords?.replace('like Stop run', 'like Stop project') : listWords;
+  const legacy = stopAnswerWords(waitKind);
+  const { title, ends } = projectContext ? {
+    title: waitKind === 'settings' ? 'Stop this project at the settings check?' : 'Stop this project at this question?',
+    ends: waitKind === 'settings' ? 'The project ends here, before anything runs with the new settings. Your last answer is not applied, and nothing more is spent.' : 'The project ends here and nothing more is spent.',
+  } : legacy;
   return (
     <TeamDialog
       open={open}
       onOpenChange={onOpenChange}
       testId="team-stop-answer-dialog"
+      projectActions={projectContext}
       title={title}
       subtitle="Your answer: stop"
       hint="You can't undo this."
       buttons={
         <>
-          <TeamDialogCancel className={teamBtn.secondaryMd}>Keep the team</TeamDialogCancel>
-          <button type="button" className={teamBtn.dangerMd} onClick={onConfirm}>
+          <TeamDialogCancel className={cn(teamBtn.secondaryMd, projectContext && 'min-h-11 min-w-11 whitespace-normal py-2')}>{projectContext ? 'Cancel' : 'Keep the team'}</TeamDialogCancel>
+          <button type="button" className={cn(teamBtn.dangerMd, projectContext && 'min-h-11 min-w-11 whitespace-normal py-2')} onClick={onConfirm}>
             <Square className="h-4 w-4" aria-hidden="true" />
-            <span>Stop the team</span>
+            <span>{projectContext ? 'Stop project' : 'Stop the team'}</span>
           </button>
         </>
       }

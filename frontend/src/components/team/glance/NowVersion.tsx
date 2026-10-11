@@ -68,7 +68,11 @@ function useFitNote(note: string | null, layout: string) {
   return { line, trunc };
 }
 
-export function NowVersion({ latest, agesAt }: { latest: GlanceShare | null; agesAt: number | null }) {
+export function NowVersion({ latest, agesAt, failedToStart = false }: {
+  latest: GlanceShare | null;
+  agesAt: number | null;
+  failedToStart?: boolean;
+}) {
   const narrow = useIsNarrow();
   const v = versionLines(latest, agesAt);
   const note = v?.note ?? null;
@@ -76,7 +80,7 @@ export function NowVersion({ latest, agesAt }: { latest: GlanceShare | null; age
   if (!v) {
     return (
       <p className="m-0 text-[15px] text-temper-text-muted" data-testid="glance-version">
-        No shared version yet.
+        {failedToStart ? 'No shared version.' : 'No shared version yet.'}
       </p>
     );
   }

@@ -71,6 +71,7 @@ const PHASES: ReadonlySet<string> = new Set([
   'done',
   'stopped',
   'failed',
+  'didnt_start',
   'interrupted',
 ]);
 
@@ -218,7 +219,7 @@ function memberOf(v: unknown, waitWords: Map<string, string>, waitKinds: Map<str
     leader: bool(m.leader) ?? false,
     state: memberState,
     since: str(m.since),
-    turnNo: num(m.turn_no),
+    turnNo: memberState === 'ended' ? null : num(m.turn_no),
     on:
       on && str(on.text)
         ? {
@@ -230,9 +231,9 @@ function memberOf(v: unknown, waitWords: Map<string, string>, waitKinds: Map<str
             messageId: str(on.message_id),
           }
         : null,
-    idleNote: str(m.idle_note),
-    idleReason: idleReason(m.idle_reason),
-    toolsNow: tools,
+    idleNote: memberState === 'ended' ? null : str(m.idle_note),
+    idleReason: memberState === 'ended' ? null : idleReason(m.idle_reason),
+    toolsNow: memberState === 'ended' ? null : tools,
     readyMessages: num(m.ready_messages) ?? 0,
     lastSent:
       sent && str(sent.to) && str(sent.text)
@@ -246,10 +247,12 @@ function memberOf(v: unknown, waitWords: Map<string, string>, waitKinds: Map<str
         : null,
     lastShareNote: share ? str(share.note) : null,
     conflicts: arr(m.conflicts).length,
-    waitId,
-    waitWords: waitId ? (waitWords.get(waitId) ?? null) : null,
-    waitKind: waitId ? (waitKinds.get(waitId) ?? null) : null,
+    waitId: memberState === 'ended' ? null : waitId,
+    waitWords: memberState !== 'ended' && waitId ? (waitWords.get(waitId) ?? null) : null,
+    waitKind: memberState !== 'ended' && waitId ? (waitKinds.get(waitId) ?? null) : null,
     turns: num(m.turns) ?? 0,
+    turnsSupplied: num(m.turns) !== null,
+    hasTurnHistory: turn !== null,
     cost: num(m.cost_usd),
     retryOf: num(turn?.retry_of),
     // Carried as Temper sends it; the card shows it while the turn has failed.
@@ -294,6 +297,13 @@ function shareOf(v: unknown): GlanceShare | null {
 export function toGlanceRun(raw: unknown): GlanceRun {
   const r = obj(raw) ?? {};
   const trial = obj(r.trial) ?? {};
+  const phase = phaseOf(r.phase);
+  if (phase.name === 'didnt_start') {
+    // D121: no diagnosis generated, no duplicate words. Missing is not loading.
+    const supplied = (v: unknown) => { const s = str(v); return s?.trim() ? s : null; };
+    phase.reason = supplied(phase.reason) ?? supplied(obj(r.outcome)?.reason) ??
+      supplied(phase.words?.replace(/^Failed:/, '').trim()) ?? "The project couldn't start. Temper gave no reason.";
+  }
   const waitWords = waitWordsOf(r);
   const waitKinds = waitKindsOf(r);
   const members = arr(r.members)
@@ -320,7 +330,7 @@ export function toGlanceRun(raw: unknown): GlanceRun {
     project: project ? str(project.source) : null,
     asOf: str(r.as_of),
     maxParallel: num(trial.max_parallel),
-    phase: phaseOf(r.phase),
+    phase,
     spend: spendOf(r.spend, num(r.cost_usd)),
     you: { count: num(you?.count) ?? 0, first: questionOf(you?.first) },
     counts: countsOf(r.counts, members),
@@ -387,7 +397,7 @@ export function toGlanceEvent(raw: unknown): GlanceEvent | null {
         filesChanged: num(e.files_changed),
       };
     case 'share_refused':
-      return { ...base, kind, why: firstLine(str(e.why)) };
+      return { ...base, kind, why: firstLine(str(e.why)), reason: Object.hasOwn(e, 'reason') ? firstLine(str(e.reason)) : undefined, paths: arr(e.paths).filter((p): p is string => typeof p === 'string') };
     case 'conflict':
       return { ...base, kind, paths: arr(e.paths).length, atStep: str(e.at_step) };
     case 'idle':
@@ -431,7 +441,7 @@ export function toGlanceEvent(raw: unknown): GlanceEvent | null {
     case 'limit':
       return { ...base, kind, resumesAt: str(e.resumes_at), resetsKnown: bool(e.resets_known) };
     case 'limit_over':
-      return { ...base, kind };
+      return { ...base, kind, by: str(e.by) };
     case 'limit_checked':
       // Temper's hidden bookkeeping for an allowance check: never a feed row,
       // a big moment or a reason to think the team may carry on.

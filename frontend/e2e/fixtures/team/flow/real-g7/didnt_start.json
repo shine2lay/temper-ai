@@ -1,0 +1,216 @@
+{
+  "execution_id": "fixture-flow-didnt_start",
+  "kind": "flow",
+  "trial_id": "fixture-didnt_start",
+  "workflow": "fixture-flow",
+  "run_status": "failed",
+  "state": "didnt_start",
+  "cost_usd": 0.0,
+  "account": {
+    "slot": "anthropic-4",
+    "picked_at": "2026-10-10T17:00:00.150000+00:00",
+    "by": "settings_order",
+    "capacity": "not_checked",
+    "room": null
+  },
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      },
+      {
+        "name": "checker",
+        "role": "scout",
+        "tools": [
+          "Read",
+          "Edit",
+          "Write"
+        ],
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100.0,
+    "max_parallel": 3,
+    "communication": "all",
+    "project": {
+      "source": "/work/fixture",
+      "start_commit": null
+    },
+    "started_at": "2026-10-10 17:00:00.150000+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-didnt_start"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": null,
+      "thinking": null,
+      "effective": null,
+      "last_turn": null,
+      "state": "ended",
+      "since": "2026-10-10T17:00:00.300000+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": null
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": null,
+      "thinking": null,
+      "effective": null,
+      "last_turn": null,
+      "state": "ended",
+      "since": "2026-10-10T17:00:00.300000+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": null
+    },
+    {
+      "name": "checker",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 0,
+      "cost_usd": 0,
+      "model": null,
+      "thinking": null,
+      "effective": null,
+      "last_turn": null,
+      "state": "ended",
+      "since": "2026-10-10T17:00:00.300000+00:00",
+      "turn_no": null,
+      "on": null,
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": null
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [],
+    "not_shown": 0
+  },
+  "owner_actions": [
+    {
+      "at": "2026-10-10T17:00:00.200000+00:00",
+      "kind": "start",
+      "by": "owner",
+      "source": "team_page",
+      "request_id": "fixture-didnt_start",
+      "detail": {
+        "workflow": "fixture-flow",
+        "trial_id": "fixture-didnt_start"
+      }
+    }
+  ],
+  "outcome": {
+    "decision": "didnt_start",
+    "reason": "the team can't start: goal: required: give the run a 'goal' input or map it in the stage's input_map",
+    "owner_words": null,
+    "problems": [
+      "goal: required: give the run a 'goal' input or map it in the stage's input_map"
+    ],
+    "by": null,
+    "at": "2026-10-10T17:00:00.250000+00:00",
+    "done": null
+  },
+  "phase": {
+    "name": "didnt_start",
+    "words": "Failed: the team can't start: goal: required: give the run a 'goal' input or map it in the stage's input_map",
+    "since": "2026-10-10T17:00:00.250000+00:00",
+    "running": 0,
+    "asked": false,
+    "reason": "the team can't start: goal: required: give the run a 'goal' input or map it in the stage's input_map",
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-10T17:00:00.350000+00:00",
+  "started_at": "2026-10-10T17:00:00.150000+00:00",
+  "elapsed_s": 0,
+  "last_activity_at": null,
+  "spend": {
+    "cost_usd": 0.0,
+    "pause_every_usd": 100.0,
+    "last_check_in_usd": 0.0,
+    "next_check_in_usd": 100.0,
+    "since_check_in_usd": 0.0,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 3,
+    "working": 0,
+    "ready": 0,
+    "idle": 0,
+    "held": 0,
+    "failed": 0,
+    "ended": 3
+  },
+  "links": [],
+  "work": {
+    "latest": null,
+    "shares": [],
+    "shares_total": 0,
+    "summary": null
+  },
+  "events_cursor": 0,
+  "events_total": 0
+}

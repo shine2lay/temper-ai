@@ -28,6 +28,7 @@ export type GlancePhaseName =
   | 'done'
   | 'stopped'
   | 'failed'
+  | 'didnt_start'
   | 'interrupted'
   | 'unknown';
 
@@ -162,6 +163,9 @@ export interface GlanceMember {
   /** That wait's kind (`question` for a member's own question); null when Temper sent none. */
   waitKind?: string | null;
   turns: number;
+  /** Missing turn evidence is not evidence that no work started (D121). */
+  turnsSupplied?: boolean;
+  hasTurnHistory?: boolean;
   cost: number | null;
   /** The running or last turn retries this turn number by itself (Temper's one automatic retry). */
   retryOf: number | null;
@@ -202,6 +206,8 @@ export interface GlanceRun {
   leader: string;
   startedAt: string | null;
   startedBy: string | null;
+  /** The starter's title from the existing roles list, when supplied. */
+  starterTitle?: string | null;
   /** Seconds from the start to the reply (as_of) while live; frozen at the end once ended. */
   elapsedS: number | null;
   lastActivityAt: string | null;
@@ -262,7 +268,7 @@ export type GlanceEvent =
       note: string | null;
       filesChanged: number | null;
     })
-  | (EventBase & { kind: 'share_refused'; why: string | null })
+  | (EventBase & { kind: 'share_refused'; why: string | null; reason?: string | null; paths?: string[] })
   | (EventBase & { kind: 'conflict'; paths: number; atStep: string | null })
   | (EventBase & { kind: 'idle'; note: string | null; reason: GlanceIdleReason })
   | (EventBase & { kind: 'wake'; by: string | null })
@@ -283,7 +289,7 @@ export type GlanceEvent =
     })
   | (EventBase & { kind: 'check_in'; atUsd: number | null })
   | (EventBase & { kind: 'limit'; resumesAt: string | null; resetsKnown: boolean | null })
-  | (EventBase & { kind: 'limit_over' })
+  | (EventBase & { kind: 'limit_over'; by?: string | null })
   | (EventBase & { kind: 'ended'; decision: string; reason: string | null })
   | (EventBase & { kind: 'other'; raw: string });
 
@@ -299,7 +305,7 @@ export interface GlanceEventPage {
 
 // --- small helpers -------------------------------------------------------------------
 
-const ENDED_PHASES: ReadonlySet<GlancePhaseName> = new Set(['done', 'stopped', 'failed', 'interrupted']);
+const ENDED_PHASES: ReadonlySet<GlancePhaseName> = new Set(['done', 'stopped', 'failed', 'didnt_start', 'interrupted']);
 
 export function phaseEnded(name: GlancePhaseName): boolean {
   return ENDED_PHASES.has(name);
@@ -481,6 +487,22 @@ export function atWords(iso: string | null | undefined, now: number | null): str
   if (clock === null) return null;
   const day = dayWords(iso, now);
   return day ? `${day} at ${clock}` : `at ${clock}`;
+}
+
+/**
+ * The header's running time. Live: started_at to as_of; a start after Temper's clock has no age (D22),
+ * it shows its clock time, with its day after today (D104). Ended: the frozen elapsed_s (G5), never the
+ * clock. A project that didn't start has none: a request time is not working time (D121).
+ */
+export function runningWords(run: GlanceRun, now: number | null): string | null {
+  if (run.phase.name === 'didnt_start') return null;
+  const start = msOf(run.startedAt);
+  if (!phaseEnded(run.phase.name)) {
+    if (start === null || now === null) return null;
+    return start > now ? `started ${atWords(run.startedAt, now)}` : `running ${durationWords(now - start)}`;
+  }
+  if (run.elapsedS !== null) return `ran ${durationWords(run.elapsedS * 1000)}`;
+  return null;
 }
 
 /** D104 where a bare clock time stands: "8:59 PM" today, "tomorrow at 8:59 PM" (and so on) after today; null without a time. */
@@ -711,9 +733,18 @@ export function versionLines(latest: GlanceShare | null, now: number | null): Ve
  * after the ellipsis ("\u201cExport button and CSV wri\u2026\u201d"), with no space or stray comma before the ellipsis.
  * `keep` is how many of the note's characters stay.
  */
+const noteGraphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
 export function cutNote(note: string, keep: number): string {
   if (keep >= note.length) return `\u201c${note}\u201d`;
-  return `\u201c${note.slice(0, Math.max(0, keep)).replace(/[\s,;:\u2013\u2014-]+$/, '')}\u2026\u201d`;
+  // Keep the existing UTF-16 room budget and ASCII output; floor it to a whole visible character.
+  let end = 0;
+  for (const { index, segment } of noteGraphemes.segment(note)) {
+    const boundary = index + segment.length;
+    if (boundary > Math.max(0, keep)) break;
+    end = boundary;
+  }
+  return `\u201c${note.slice(0, end).replace(/[\s,;:\u2013\u2014-]+$/, '')}\u2026\u201d`;
 }
 
 function phaseNowCell(run: GlanceRun, now: number | null, stale: boolean, lastAt?: string | null): NowCell {
@@ -827,13 +858,16 @@ function phaseNowCell(run: GlanceRun, now: number | null, stale: boolean, lastAt
     case 'done':
       return { word: 'Done', sentence: null, countLine: null, edge: 'green', icon: 'check' };
     case 'stopped':
-      return { word: 'Stopped', sentence: phase.reason, countLine: null, edge: 'grey', icon: 'stop' };
+      return { word: 'Stopped', sentence: nowEndReason(phase.reason), countLine: null, edge: 'grey', icon: 'stop' };
     case 'failed':
-      return { word: 'Failed', sentence: phase.reason, countLine: null, edge: 'red', icon: 'alert' };
+      return { word: 'Failed', sentence: nowEndReason(phase.reason), countLine: null, edge: 'red', icon: 'alert' };
+    case 'didnt_start':
+      // D121: failure before a turn is terminal; the adapter resolves only supplied reason fallbacks.
+      return { word: 'Failed to start', sentence: phase.reason ?? "The project couldn't start. Temper gave no reason.", countLine: null, edge: 'red', icon: 'alert' };
     case 'interrupted': {
-      // D105: Temper's reason is the sentence's second line, cut at 80 characters (D62's cut).
-      const reason = firstLineOf(phase.reason);
-      const second = reason ? { reason: cutAt(reason, 80) } : {};
+      // D119: Temper's generic run-status template is no explanation. Capitalise a real second line's first letter only.
+      const reason = interruptionReason(phase.reason);
+      const second = reason ? { reason: cutAt(reason.charAt(0).toUpperCase() + reason.slice(1), 80) } : {};
       if (run.elapsedS === null) {
         // D105: Temper recorded no end time; the newest time it recorded stands in.
         const last = clockDayOf(lastAt === undefined ? lastRecordedAt(run, []) : lastAt, now);
@@ -901,15 +935,18 @@ function calm(title: string, line: string | null, extra: Partial<YouCell> = {}):
 export function youCell(run: GlanceRun, staleFor: string | null = null): YouCell {
   const { phase, you } = run;
   if (phase.name === 'done') return calm('Nothing needs you', null, { action: run.work.summary ? 'summary' : null });
+  if (phase.name === 'didnt_start') return calm('Nothing needs you', 'You can start a new project.', { tone: 'ended', action: 'next' });
   if (phaseEnded(phase.name)) {
     // D16: nothing waits on the owner once it ended; the next action is optional. D90: sentence case.
     return calm('Nothing needs you', 'Read what it made below, or start a new project.', { tone: 'ended', action: 'next' });
   }
-  const first = you.first;
+  // G7 keeps the pause wait in `you` while turns finish. It is not answerable
+  // until phase.asked; a member's own question in this phase still is (D27).
+  const first = phase.name === 'check_in' && !phase.asked && you.first?.kind === 'pause' ? null : you.first;
   if (you.count > 0 && first) {
     const more = Math.max(0, you.count - 1);
     const needs = { tone: 'needs' as const, line: null, hint: false, from: null, waitId: first.waitId, more, action: 'answers' as const };
-    if (phase.name === 'check_in' || first.kind === 'pause') return { ...needs, title: 'Needs you: carry on?' };
+    if (first.kind === 'pause') return { ...needs, title: 'Needs you: carry on?' };
     // D94: quotes mark a person's words only; Temper's own questions are not quoted, and each ends with "?".
     if (phase.name === 'quiet' || first.kind === 'stalled') return { ...needs, title: 'Needs you: nudge the team or stop?' };
     if (phase.name === 'settings' || first.kind === 'settings') return { ...needs, title: 'Needs you: go on or stop?' };
@@ -1057,7 +1094,7 @@ export function memberChip(m: GlanceMember, cardPhase: CardPhase, now: number | 
   const p = phaseOf(cardPhase);
   const phase = p.name;
   // D105: once the run has ended in any way, every card reads Ended, in the neutral tone, with no live duration.
-  if (phaseEnded(phase)) return { ...ENDED_CHIP };
+  if (phaseEnded(phase) || m.state === 'ended') return { ...ENDED_CHIP };
   const since = sinceWords(m.since, now);
   const how = since ? ` \u00b7 ${since}` : '';
   switch (m.state) {
@@ -1086,8 +1123,6 @@ export function memberChip(m: GlanceMember, cardPhase: CardPhase, now: number | 
     case 'failed':
       // D18: the retry has not started; a running retry is "Working on a retry".
       return { text: 'Turn failed \u00b7 retry pending', icon: 'retry', ring: 'dashed-red', tone: 'red', busy: false };
-    case 'ended':
-      return { ...ENDED_CHIP };
     default:
       return { text: 'State not known', icon: 'circle', ring: 'thin-grey', tone: 'grey', busy: false };
   }
@@ -1127,8 +1162,12 @@ export function memberLine(m: GlanceMember, cardPhase?: CardPhase): MemberLine |
   // message count (SPEC 244), even on an interrupted run whose member still had messages waiting.
   if ((phase !== null && phaseEnded(phase)) || m.state === 'ended') {
     const sent = m.leader ? lastSentOf(m) : null;
-    const text = sent?.text || onText(m);
-    return text ? { label: 'Last:', text, quoted: true } : null;
+    // D121: an assigned goal before any turn is not work performed. Keep actual supplied historical work.
+    const noTurns = m.turns === 0 && m.turnsSupplied !== false && !m.hasTurnHistory && !m.lastTurnAt;
+    const on = phase === 'didnt_start' && noTurns && m.on?.kind === 'goal' ? null : m.on?.text;
+    const text = sent?.text || on || m.lastShareNote || m.idleNote;
+    if (text) return { label: 'Last:', text, quoted: true };
+    return { label: 'Last:', text: phase === 'didnt_start' && noTurns ? 'No work started.' : 'No last work recorded.', quoted: false };
   }
   const line = liveMemberLine(m);
   // D95: a ready member's waiting messages move from the chip to this line.
@@ -1631,6 +1670,8 @@ function sameSecond(events: GlanceEvent[], newest: GlanceMessageEvent): number {
 export interface MomentPart {
   text: string;
   strong?: boolean;
+  /** S2: an exact supplied file name, rendered as literal React text in a code span. */
+  code?: boolean;
 }
 
 /**
@@ -1671,7 +1712,27 @@ export function messageWholeParts(more: { lead: MomentPart[]; shown: string }, b
   return [...more.lead, { text: `: ${q(whole)}` }];
 }
 
-const ENDED_LABELS: Record<string, string> = { done: 'Ended: done', stopped: 'Stopped', cancelled: 'Cancelled', failed: 'Failed' };
+const ENDED_LABELS: Record<string, string> = { done: 'Project ended', stopped: 'Stopped', cancelled: 'Cancelled', failed: 'Failed' };
+const END_TOKENS: ReadonlySet<string> = new Set(['team_done', 'run_completed', 'team_stopped', 'run_cancelled']);
+
+/** D118: an engine end token is not a human reason. Preserve every genuine reason. */
+export function endReason(reason: string | null | undefined, whole = false): string | null {
+  const s = whole ? (reason ?? '').trim() : firstLineOf(reason);
+  const bare = s.toLowerCase().replace(/[\s.!?\u2026:;,]+$/, '');
+  if (!bare || END_TOKENS.has(bare)) return null;
+  return bare === 'account_refused' ? 'the model account refused a call.' : s;
+}
+
+/** D119: only a reason on Now's own line gains an initial capital; activity text stays verbatim. */
+function nowEndReason(reason: string | null | undefined): string | null {
+  return endReason(reason)?.replace(/^./u, (first) => first.toUpperCase()) ?? null;
+}
+
+/** D119: any status in Temper's generic interruption template, case/end punctuation ignored, is no reason. */
+export function interruptionReason(reason: string | null | undefined): string | null {
+  const s = firstLineOf(reason);
+  return !s || /^the run ended \([^)]+\) without the team ending[\s.!?\u2026:;,]*$/i.test(s) ? null : s;
+}
 
 /**
  * An ended row (D41): its label, then the reason's first line; a reason
@@ -1680,8 +1741,8 @@ const ENDED_LABELS: Record<string, string> = { done: 'Ended: done', stopped: 'St
 export function endedWords(decision: string | null | undefined, reason: string | null | undefined, whole = false): string {
   const label = (decision && ENDED_LABELS[decision]) || 'Ended';
   // D85: `whole` gives the whole reason (the row's Show all).
-  const why = whole ? (reason ?? '').trim() : firstLineOf(reason);
-  if (!why) return label;
+  const why = endReason(reason, whole);
+  if (!why) return decision === 'done' ? `${label}.` : label;
   return why.toLowerCase().startsWith(label.toLowerCase()) ? why : `${label}: ${why}`;
 }
 /**
@@ -1777,7 +1838,8 @@ function isBigMoment(e: GlanceEvent): boolean {
  * there is never opened (Show all is All activity's).
  */
 function bigMoment(e: GlanceEvent, run: RowRun, liveLimit: boolean, extra: RowExtra): Moment | null {
-  if (!isBigMoment(e)) return null;
+  if (e.kind === 'wait_answered' && extra.pairedAnswers?.has(e.seq)) return null;
+  if (!isBigMoment(e) && !(e.kind === 'message' && extra.answers?.has(e.seq))) return null;
   const row = activityRow(e, run, liveLimit, extra);
   return { key: `e${e.seq}`, at: row.at, icon: e.kind === 'done_refused' ? 'alert' : row.icon, parts: row.parts };
 }
@@ -1816,8 +1878,8 @@ export function latestMoments(
   extra: RowExtra = {},
 ): Moment[] {
   const rowRun: RowRun = run ?? { startedBy: null, members: members ? [...members].map((name) => ({ name })) : null };
-  // D108 as All activity finds it, so the two lists never differ on answered vs messaged.
-  const rowExtra: RowExtra = { ...extra, answers: extra.answers ?? answerSeqs(events) };
+  // D117: pair member answers once, with the same context and words in both lists.
+  const rowExtra: RowExtra = { ...answerContext(events), ...extra };
   const momentOf = (e: GlanceEvent) => bigMoment(e, rowRun, liveLimit, rowExtra);
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   const out: Moment[] = [];
@@ -1898,6 +1960,7 @@ const MESSAGE_VERBS: Record<string, string> = {
 /** The run as a row's words need it: who started it, and the team's cards (a receiver with none is named so, D33). */
 export interface RowRun {
   startedBy: string | null;
+  starterTitle?: string | null;
   /** Null: the cards aren't known, so every receiver keeps its name. */
   members: readonly { name: string }[] | null;
 }
@@ -1908,6 +1971,9 @@ export interface RowExtra {
   now?: number | null;
   /** D108: the owner's messages that answer their receiver's question (answerSeqs of the loaded feed). */
   answers?: ReadonlySet<number>;
+  /** D117: wait rows replaced by their owner's reply in both lists. */
+  pairedAnswers?: ReadonlySet<number>;
+  answerAskers?: ReadonlyMap<number, string>;
 }
 
 function fromOwner(e: GlanceMessageEvent): boolean {
@@ -1926,19 +1992,61 @@ const GIVEN_ANSWERS: ReadonlySet<string> = new Set(['given', 'reply']);
  * answer, or the question it answers, names M as the member.
  */
 export function answerSeqs(events: readonly GlanceEvent[]): Set<number> {
+  return answerContext(events).answers;
+}
+
+/** D117: combine a recorded member-wait answer and its subsequent owner reply, never free messages or guides. */
+function answerContext(events: readonly GlanceEvent[]) {
   const askers = new Map<string, string>();
   for (const e of events) if (e.kind === 'wait_opened' && e.waitId && e.member) askers.set(e.waitId, e.member);
-  const answered = new Set<string>();
-  const out = new Set<number>();
+  const pending = new Map<string, number>();
+  const answers = new Set<number>();
+  const pairedAnswers = new Set<number>();
+  const answerAskers = new Map<number, string>();
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
-    if (e.kind === 'wait_answered' && GIVEN_ANSWERS.has(e.answer)) {
-      const asker = e.member ?? (e.waitId ? askers.get(e.waitId) : undefined);
-      if (asker) answered.add(asker);
-    } else if (e.kind === 'message' && fromOwner(e) && answered.delete(e.to)) {
-      out.add(e.seq);
+    if (e.kind === 'wait_answered') {
+      const asker = isMemberQuestion(e.waitKind) ? (e.member ?? (e.waitId ? askers.get(e.waitId) : undefined)) : undefined;
+      answerAskers.set(e.seq, asker ?? 'Temper');
+      if (asker && GIVEN_ANSWERS.has(e.answer)) pending.set(asker, e.seq);
+    } else if (e.kind === 'message' && fromOwner(e)) {
+      const answer = pending.get(e.to);
+      if (answer !== undefined) {
+        pending.delete(e.to);
+        answers.add(e.seq);
+        pairedAnswers.add(answer);
+      }
     }
   }
-  return out;
+  return { answers, pairedAnswers, answerAskers };
+}
+
+/** Existing role title when known; otherwise the supplied id, never an invented actor. */
+export function starterName(run: Pick<RowRun, 'startedBy' | 'starterTitle'>): string | null {
+  return run.startedBy === 'owner' ? 'You' : run.startedBy ? (run.starterTitle || run.startedBy) : null;
+}
+
+/** D121: distinguish a recorded request from a successful start; omit absent attribution. */
+export function starterAttribution(run: Pick<GlanceRun, 'startedBy' | 'starterTitle' | 'phase'>): string | null {
+  const who = starterName(run);
+  if (!who) return null;
+  return run.phase.name === 'didnt_start' ? `Start requested by ${run.startedBy === 'owner' ? 'you' : who}` : `Started by ${who}`;
+}
+
+/** S2: exact supplied names, longest first, plain parts only; no markdown or link parser. */
+export function fileNameParts(text: string, paths: readonly string[]): MomentPart[] {
+  const names = [...new Set(paths.filter(Boolean))].sort((a, b) => b.length - a.length);
+  const parts: MomentPart[] = [];
+  let plain = '';
+  for (let at = 0; at < text.length;) {
+    const name = names.find((path) => text.startsWith(path, at));
+    if (!name) { plain += text[at++]; continue; }
+    if (plain) parts.push({ text: plain });
+    plain = '';
+    parts.push({ text: name, code: true });
+    at += name.length;
+  }
+  if (plain) parts.push({ text: plain });
+  return parts;
 }
 
 /** D107: a refused share's reason as Temper gives it; null when it gives none or only repeats the verb. */
@@ -1972,7 +2080,7 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
   switch (e.kind) {
     case 'message': {
       if (e.messageKind === 'goal') {
-        const by = run.startedBy ? whoName(run.startedBy) : 'Someone';
+        const by = starterName(run) ?? 'Someone';
         return {
           key,
           at: e.at,
@@ -1992,7 +2100,7 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
         key,
         at: e.at,
         icon: 'message',
-        parts: [...lead, { text: `: ${q(shown)}` }],
+        parts: [...lead, { text: shown ? `: ${q(shown)}` : '.' }],
         // D85: the feed carries Temper's first line of the message; its body may say more.
         ...(e.messageId ? { more: { messageId: e.messageId, lead, shown } } : {}),
       };
@@ -2019,13 +2127,15 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
         parts: [{ text: who, strong: true }, { text: ` has ${plural(e.paths, 'file', 'files')} in conflict after a ${e.atStep === 'share' ? 'share' : 'sync'}` }],
       };
     case 'share_refused': {
-      // D107: never the verb as the reason.
-      const why = refusalWhy(e.why);
+      // D114: reason is the explanation; why is the refusal kind. S2 keeps exact file names literal.
+      const why = refusalWhy(e.reason === undefined && e.why !== 'conflict' ? e.why : e.reason);
+      const paths = e.paths ?? [];
+      const reason = why ?? (e.why === 'conflict' ? `it clashes with the shared version${paths.length === 1 ? ` in ${paths[0]}` : paths.length > 1 ? ` in ${paths.length} files` : ''}.` : null);
       return {
         key,
         at: e.at,
         icon: 'conflict',
-        parts: [{ text: who, strong: true }, { text: why ? `\u2019s version wasn\u2019t shared: ${why}` : '\u2019s version wasn\u2019t shared. Temper gave no reason.' }],
+        parts: [{ text: who, strong: true }, ...fileNameParts(reason ? `\u2019s version wasn\u2019t shared: ${reason}` : '\u2019s version wasn\u2019t shared. Temper gave no reason.', paths)],
       };
     }
     case 'idle':
@@ -2040,7 +2150,7 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
             ...(hasMoreThanFirstLine(e.note) ? { more: { whole: [{ text: who, strong: true }, { text: ` went idle: ${q(e.note.trim())}` }] } } : {}),
           };
     case 'wake':
-      return { key, at: e.at, icon: 'play', parts: [{ text: who, strong: true }, { text: ' woke up: a message from ' }, { text: whoName(e.by), strong: true }] };
+      return { key, at: e.at, icon: 'play', parts: [{ text: who, strong: true }, { text: ' woke up: a message from ' }, { text: e.by === 'owner' ? 'you' : whoName(e.by), strong: true }] };
     case 'turn_start': {
       const n = e.turnNo ?? '?';
       return {
@@ -2054,15 +2164,9 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
       const icon = e.ended === 'failed' ? 'alert' : 'stop';
       const cap = e.endedBy ? TURN_CAPS[e.endedBy] : undefined;
       if (cap) return { key, at: e.at, icon, parts: [{ text: who, strong: true }, { text: `\u2019s turn ${e.turnNo ?? '?'} ended at ${cap}.` }] };
-      return {
-        key,
-        at: e.at,
-        icon,
-        parts: [
-          { text: who, strong: true },
-          { text: ` ended turn ${e.turnNo ?? '?'}: ${e.ended}${e.endedBy ? ` (${e.endedBy.replace(/_/g, ' ')})` : ''}` },
-        ],
-      };
+      if (e.ended === 'completed') return { key, at: e.at, icon, parts: [{ text: who, strong: true }, { text: ` finished turn ${e.turnNo ?? '?'}.` }] };
+      // D118 changes completed turns; retain the existing words for other recorded turn outcomes.
+      return { key, at: e.at, icon, parts: [{ text: who, strong: true }, { text: ` ended turn ${e.turnNo ?? '?'}: ${e.ended}${e.endedBy ? ` (${e.endedBy.replace(/_/g, ' ')})` : ''}` }] };
     }
     case 'wait_opened': {
       // D110: the asker is named: the member for its own question, Temper for its own waits.
@@ -2077,11 +2181,14 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
     }
     case 'wait_answered': {
       const word = answerWord(e.answer);
+      const asker = extra.answerAskers?.get(e.seq) ?? (isMemberQuestion(e.waitKind) && e.member ? who : 'Temper');
+      const reply = GIVEN_ANSWERS.has(e.answer);
+      const mark = markParts(e);
       return {
         key,
         at: e.at,
         icon: 'check',
-        parts: [{ text: e.by ? whoName(e.by) : 'Someone', strong: true }, { text: word ? ` answered: ${word}` : ' answered' }, ...markParts(e)],
+        parts: [{ text: e.by ? whoName(e.by) : 'Someone', strong: true }, { text: ' answered ' }, { text: asker, strong: true }, { text: reply || !word ? (mark.length ? '' : '.') : `: ${word}` }, ...mark],
       };
     }
     case 'check_in':
@@ -2101,9 +2208,10 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
       return { key, at: e.at, icon: 'clock', parts: [{ text }] };
     }
     case 'limit_over': {
-      // D109: Temper's limit_over has no `by`, so nobody is named as restarting it.
+      // D115: name the supplied restarter only, retaining D109 for older samples without it.
       const at = atWords(e.at, extra.now ?? null);
-      return { key, at: e.at, icon: 'play', parts: [{ text: `The usage limit is over. The team carried on${at ? ` ${at}` : ''}.` }] };
+      const restart = e.by === 'owner' ? 'You restarted the team' : e.by === 'temper' ? 'Temper restarted the team' : 'The team carried on';
+      return { key, at: e.at, icon: 'play', parts: [{ text: `The usage limit is over. ${restart}${at ? ` ${at}` : ''}.` }] };
     }
     case 'closing': {
       const summary = firstLineOf(e.summary);
@@ -2146,8 +2254,9 @@ export const REASON_ROW_KEY = 'reason';
  * it shows already (Now's sentence, their ended row).
  */
 export function reasonRow(phase: Pick<GlancePhase, 'name' | 'reason' | 'since'>): Moment | null {
-  const reason = firstLineOf(phase.reason);
-  if (phase.name !== 'interrupted' || !reason) return null;
+  if (phase.name !== 'interrupted') return null;
+  const reason = interruptionReason(phase.reason);
+  if (!reason) return { key: REASON_ROW_KEY, at: phase.since, icon: 'alert', parts: [{ text: 'Interrupted. Temper gave no reason.' }] };
   return {
     key: REASON_ROW_KEY,
     at: phase.since,
@@ -2169,8 +2278,8 @@ export function activityRows(
   liveLimit = false,
   extra: RowExtra = {},
 ): Moment[] {
-  const rowExtra: RowExtra = { ...extra, answers: extra.answers ?? answerSeqs(events) };
-  const rows = [...events].sort((a, b) => b.seq - a.seq).map((e) => activityRow(e, run, liveLimit, rowExtra));
+  const rowExtra: RowExtra = { ...answerContext(events), ...extra };
+  const rows = [...events].filter((e) => e.kind !== 'wait_answered' || !rowExtra.pairedAnswers?.has(e.seq)).sort((a, b) => b.seq - a.seq).map((e) => activityRow(e, run, liveLimit, rowExtra));
   const reason = run.phase ? reasonRow(run.phase) : null;
   if (!reason) return rows;
   const t = msOf(reason.at);

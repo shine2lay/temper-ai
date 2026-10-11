@@ -11,6 +11,7 @@ import {
   conflictLine,
   memberChip,
   memberLine,
+  phaseEnded,
   toolsLine,
   turnsLine,
   type CardPhase,
@@ -37,7 +38,7 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
 ) {
   const chip = memberChip(m, phase, now);
   const line = memberLine(m, phase);
-  const tools = toolsLine(m);
+  const tools = phaseEnded(typeof phase === 'string' ? phase : phase.name) ? null : toolsLine(m);
   const conflict = conflictLine(m);
   return (
     <div

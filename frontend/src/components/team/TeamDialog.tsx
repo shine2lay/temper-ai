@@ -26,6 +26,7 @@ export function TeamDialog({
   focusWhenGone,
   busy = false,
   testId,
+  projectActions = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,6 +39,8 @@ export function TeamDialog({
   focusWhenGone?: () => HTMLElement | null;
   busy?: boolean;
   testId?: string;
+  /** D123: glance-owned shells only; all legacy geometry remains the default. */
+  projectActions?: boolean;
 }) {
   const opener = useRef<HTMLElement | null>(null);
   return (
@@ -72,11 +75,11 @@ export function TeamDialog({
             if (busy) event.preventDefault();
           }}
         >
-          <div className="flex items-center gap-2 border-b border-temper-border px-4 py-3">
+          <div className={cn('flex items-center gap-2 border-b border-temper-border px-4 py-3', projectActions && 'flex-wrap')}>
             <Square className="h-4 w-4 shrink-0 text-[var(--badge-failed-text)]" aria-hidden="true" />
-            <Dialog.Title className="m-0 min-w-0 text-sm font-semibold text-temper-text">{title}</Dialog.Title>
+            <Dialog.Title className={cn('m-0 min-w-0 text-sm font-semibold text-temper-text', projectActions && 'flex-1')}>{title}</Dialog.Title>
             {subtitle ? (
-              <Dialog.Description className="m-0 min-w-0 flex-1 truncate text-xs text-temper-text-muted">
+              <Dialog.Description className={cn('m-0 min-w-0 flex-1 truncate text-xs text-temper-text-muted', projectActions && 'order-3 basis-full whitespace-normal text-sm [overflow:visible] [text-overflow:clip]')}>
                 {subtitle}
               </Dialog.Description>
             ) : (
@@ -85,7 +88,7 @@ export function TeamDialog({
             <Dialog.Cancel
               aria-label="Close"
               disabled={busy}
-              className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent text-temper-text-muted hover:bg-temper-surface hover:text-temper-text disabled:cursor-not-allowed disabled:opacity-55"
+              className={cn('inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent text-temper-text-muted hover:bg-temper-surface hover:text-temper-text disabled:cursor-not-allowed disabled:opacity-55', projectActions && 'h-11 w-11 min-h-11 min-w-11')}
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </Dialog.Cancel>

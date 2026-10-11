@@ -30,7 +30,7 @@ import {
 } from '@/lib/teamGlance';
 import { formatNumber } from '@/lib/teamText';
 import { teamCard, teamLink } from '@/components/team/teamUi';
-import { GIcon, PathText } from './glanceUi';
+import { GIcon, MomentText } from './glanceUi';
 import { glanceBtn, glanceCardHead } from './glanceStyle';
 
 export function AllActivity({
@@ -59,7 +59,8 @@ export function AllActivity({
   const liveLimit = limitCheckShown(run.phase);
   const rows = useMemo(() => activityRows(events, run, liveLimit, { now }), [events, run, liveLimit, now]);
   // D105's reason row is the page's own, not one of Temper's events: the count stays Temper's (D14).
-  const own = rows.length - events.length;
+  // D117 combines an answer's two events into one visible row, not an extra event or a changed total.
+  const own = rows.filter((r) => r.key === 'reason').length;
   const total = run.eventsTotal ?? events.length;
   const shown = older ? rows : rows.slice(0, ACTIVITY_FIRST);
   const more = Math.max(0, total + own - shown.length);
@@ -153,17 +154,7 @@ function ActivityRow({
       <GIcon name={row.icon} className="mt-0.5 h-4 w-4 shrink-0 text-temper-text-muted" />
       <span className={cn('min-w-0 break-words text-temper-text', expanded && 'whitespace-pre-wrap')}>
         <span id={textId}>
-          {parts.map((p, i) =>
-            p.strong ? (
-              <b key={i} className="font-semibold">
-                {p.text}
-              </b>
-            ) : (
-              <span key={i}>
-                <PathText text={p.text} />
-              </span>
-            ),
-          )}
+          <MomentText parts={parts} />
         </span>
         {whole !== null && (
           // D85: a real button after the text: keyboard, aria-expanded, a 24 px target, the global focus ring.

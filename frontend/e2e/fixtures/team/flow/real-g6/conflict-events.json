@@ -2,7 +2,7 @@
   "events": [
     {
       "seq": 1,
-      "at": "2026-10-10T03:40:53.029502+00:00",
+      "at": "2026-10-10T18:37:53.567313+00:00",
       "kind": "message",
       "member": "temper",
       "from": "temper",
@@ -10,12 +10,12 @@
       "to": "lead",
       "message_kind": "goal",
       "text": "This tiny project has no README. Write a short one.",
-      "message_id": "5cb87654ce09415a87afae25b520b991",
+      "message_id": "6b611ebeefb54576b90a979684895827",
       "mid_turn": false
     },
     {
       "seq": 2,
-      "at": "2026-10-10T03:40:53.032099+00:00",
+      "at": "2026-10-10T18:37:53.570074+00:00",
       "kind": "idle",
       "member": "builder",
       "note": null,
@@ -23,7 +23,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-10T03:40:53.032933+00:00",
+      "at": "2026-10-10T18:37:53.570923+00:00",
       "kind": "idle",
       "member": "checker",
       "note": null,
@@ -31,7 +31,7 @@
     },
     {
       "seq": 4,
-      "at": "2026-10-10T03:40:53.033926+00:00",
+      "at": "2026-10-10T18:37:53.571954+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -39,19 +39,19 @@
       "to": "builder",
       "message_kind": "work_request",
       "text": "Build the builder part and share it.",
-      "message_id": "f98f25ae724a4d7782a61525302b2f5b",
+      "message_id": "4e289d831e3b471a94689587dc627160",
       "mid_turn": false
     },
     {
       "seq": 5,
-      "at": "2026-10-10T03:40:53.034297+00:00",
+      "at": "2026-10-10T18:37:53.572349+00:00",
       "kind": "wake",
       "member": "builder",
       "by": "lead"
     },
     {
       "seq": 6,
-      "at": "2026-10-10T03:40:53.035525+00:00",
+      "at": "2026-10-10T18:37:53.573320+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -59,19 +59,19 @@
       "to": "checker",
       "message_kind": "work_request",
       "text": "Build the checker part and share it.",
-      "message_id": "ca6482863eb44b0abf2d5d7471b7e038",
+      "message_id": "0e1ba3d4d9ce4ddaa6776077bde1f3f2",
       "mid_turn": false
     },
     {
       "seq": 7,
-      "at": "2026-10-10T03:40:53.035903+00:00",
+      "at": "2026-10-10T18:37:53.573685+00:00",
       "kind": "wake",
       "member": "checker",
       "by": "lead"
     },
     {
       "seq": 8,
-      "at": "2026-10-10T03:40:53.042812+00:00",
+      "at": "2026-10-10T18:37:53.586429+00:00",
       "kind": "turn_start",
       "member": "lead",
       "turn_no": 1,
@@ -79,7 +79,7 @@
     },
     {
       "seq": 9,
-      "at": "2026-10-10T03:40:53.047439+00:00",
+      "at": "2026-10-10T18:37:53.591106+00:00",
       "kind": "turn_start",
       "member": "builder",
       "turn_no": 1,
@@ -87,7 +87,7 @@
     },
     {
       "seq": 10,
-      "at": "2026-10-10T03:40:53.050679+00:00",
+      "at": "2026-10-10T18:37:53.594776+00:00",
       "kind": "turn_start",
       "member": "checker",
       "turn_no": 1,
@@ -95,7 +95,7 @@
     },
     {
       "seq": 11,
-      "at": "2026-10-10T03:40:53.053694+00:00",
+      "at": "2026-10-10T18:37:53.598072+00:00",
       "kind": "turn_end",
       "member": "lead",
       "turn_no": 1,
@@ -106,7 +106,7 @@
     },
     {
       "seq": 12,
-      "at": "2026-10-10T03:40:53.054123+00:00",
+      "at": "2026-10-10T18:37:53.598391+00:00",
       "kind": "idle",
       "member": "lead",
       "note": "lead: waiting for the next part",
@@ -114,7 +114,7 @@
     },
     {
       "seq": 13,
-      "at": "2026-10-10T03:40:53.055417+00:00",
+      "at": "2026-10-10T18:37:53.599722+00:00",
       "kind": "turn_end",
       "member": "builder",
       "turn_no": 1,
@@ -125,7 +125,7 @@
     },
     {
       "seq": 14,
-      "at": "2026-10-10T03:40:53.055675+00:00",
+      "at": "2026-10-10T18:37:53.599991+00:00",
       "kind": "idle",
       "member": "builder",
       "note": "builder: waiting for the next part",
@@ -133,7 +133,7 @@
     },
     {
       "seq": 15,
-      "at": "2026-10-10T03:40:53.056853+00:00",
+      "at": "2026-10-10T18:37:53.601261+00:00",
       "kind": "turn_end",
       "member": "checker",
       "turn_no": 1,
@@ -144,7 +144,7 @@
     },
     {
       "seq": 16,
-      "at": "2026-10-10T03:40:53.057107+00:00",
+      "at": "2026-10-10T18:37:53.601523+00:00",
       "kind": "idle",
       "member": "checker",
       "note": "checker: waiting for the next part",
@@ -152,17 +152,17 @@
     },
     {
       "seq": 17,
-      "at": "2026-10-10T03:40:53.135590+00:00",
+      "at": "2026-10-10T18:37:53.667098+00:00",
       "kind": "share",
       "member": "builder",
       "version_no": 1,
-      "commit_short": "894ab4181fef",
+      "commit_short": "70d9eca1923e",
       "note": "Builder's part is shared",
       "files_changed": 1
     },
     {
       "seq": 18,
-      "at": "2026-10-10T03:40:53.137299+00:00",
+      "at": "2026-10-10T18:37:53.669561+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -170,19 +170,19 @@
       "to": "checker",
       "message_kind": "work_request",
       "text": "Check the builder's part.",
-      "message_id": "c5c032d5d72746e6b7d6e1359f6e80b2",
+      "message_id": "fdd4ca78f456432ca70b7497b8b2f6e4",
       "mid_turn": false
     },
     {
       "seq": 19,
-      "at": "2026-10-10T03:40:53.137701+00:00",
+      "at": "2026-10-10T18:37:53.670007+00:00",
       "kind": "wake",
       "member": "checker",
       "by": "lead"
     },
     {
       "seq": 20,
-      "at": "2026-10-10T03:40:53.141528+00:00",
+      "at": "2026-10-10T18:37:53.673346+00:00",
       "kind": "turn_start",
       "member": "checker",
       "turn_no": 2,
@@ -190,7 +190,7 @@
     },
     {
       "seq": 21,
-      "at": "2026-10-10T03:40:53.198631+00:00",
+      "at": "2026-10-10T18:37:53.718381+00:00",
       "kind": "conflict",
       "member": "checker",
       "paths": [
@@ -203,7 +203,7 @@
     },
     {
       "seq": 22,
-      "at": "2026-10-10T03:40:53.200529+00:00",
+      "at": "2026-10-10T18:37:53.720329+00:00",
       "kind": "turn_end",
       "member": "checker",
       "turn_no": 2,
@@ -214,7 +214,7 @@
     },
     {
       "seq": 23,
-      "at": "2026-10-10T03:40:53.206537+00:00",
+      "at": "2026-10-10T18:37:53.726957+00:00",
       "kind": "message",
       "member": "temper",
       "from": "temper",
@@ -222,21 +222,22 @@
       "to": "checker",
       "message_kind": "notice",
       "text": "Not shared: these files still hold git's conflict markers: part.md. Remove the markers and share again.",
-      "message_id": "71a9131533984e0a91b0a81978d05af5",
+      "message_id": "e8a65c9e1d074d2487395ecade957cd8",
       "mid_turn": false
     },
     {
       "seq": 24,
-      "at": "2026-10-10T03:40:53.206816+00:00",
+      "at": "2026-10-10T18:37:53.727252+00:00",
       "kind": "share_refused",
       "member": "checker",
       "why": "refused",
       "paths": [
         "part.md"
-      ]
+      ],
+      "reason": "Not shared: these files still hold git's conflict markers: part.md"
     }
   ],
   "cursor": 24,
   "more": false,
-  "as_of": "2026-10-10T03:40:53.218829+00:00"
+  "as_of": "2026-10-10T18:37:53.739931+00:00"
 }

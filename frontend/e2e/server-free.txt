@@ -16,6 +16,7 @@ safeRendering.spec.ts
 team-c.spec.ts
 team-form-flow.spec.ts
 team-glance-answers.spec.ts
+team-glance-fields.spec.ts
 team-glance-g6.spec.ts
 team-glance-map.spec.ts
 team-glance-status.spec.ts

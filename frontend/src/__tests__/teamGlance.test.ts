@@ -547,7 +547,8 @@ describe('Now: phase -> word, sentence and band edge', () => {
     ['settings', 'Settings changed', 'No one is working until you answer.', 'yellow', 'settings'],
     ['draining', 'Temper is restarting', 'The team carries on after it.', 'grey', 'restart'],
     ['stopped', 'Stopped', 'The owner stopped the team.', 'grey', 'stop'],
-    ['run_failed', 'Failed', "builder's turn 1 failed after its automatic retry, and you stopped the team.", 'red', 'alert'],
+    // D119: initial capital only for a genuine reason on Now's own line.
+    ['run_failed', 'Failed', "Builder's turn 1 failed after its automatic retry, and you stopped the team.", 'red', 'alert'],
     // SPEC Now table: one fixed sentence, whatever Temper's phase.reason says.
     ['interrupted', 'Interrupted', 'The run ended without the team ending.', 'red', 'alert'],
   ];
@@ -988,9 +989,9 @@ describe('Latest: big moments only, newest first, at most 5', () => {
   });
 
   it("the owner's answers and the end", () => {
-    expect(momentText(story('resumed'))[0]).toBe('You answered: guide');
+    expect(momentText(story('resumed'))[0]).toBe('You answered Temper: guide');
     // D41: the label once, then the reason.
-    expect(momentText(story('stopped')).slice(0, 2)).toEqual(['Stopped: The owner stopped the team.', 'You answered: stop']);
+    expect(momentText(story('stopped')).slice(0, 2)).toEqual(['Stopped: The owner stopped the team.', 'You answered Temper: stop']);
     expect(momentText(story('run_failed'))[0]).toMatch(/^Failed: builder's turn 1 failed/);
   });
 });

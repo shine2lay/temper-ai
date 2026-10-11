@@ -2,7 +2,7 @@
   "events": [
     {
       "seq": 1,
-      "at": "2026-10-10T03:59:08.476291+00:00",
+      "at": "2026-10-10T18:37:53.945108+00:00",
       "kind": "message",
       "member": "temper",
       "from": "temper",
@@ -10,12 +10,12 @@
       "to": "lead",
       "message_kind": "goal",
       "text": "This tiny project has no README. Write a short one.",
-      "message_id": "7879ebc6330c4aa4bf190d985f1e7360",
+      "message_id": "2d8fe2affbbe4e4fa7a198202b4eb6a2",
       "mid_turn": false
     },
     {
       "seq": 2,
-      "at": "2026-10-10T03:59:08.478995+00:00",
+      "at": "2026-10-10T18:37:53.946546+00:00",
       "kind": "idle",
       "member": "builder",
       "note": null,
@@ -23,7 +23,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-10T03:59:08.479896+00:00",
+      "at": "2026-10-10T18:37:53.946902+00:00",
       "kind": "idle",
       "member": "checker",
       "note": null,
@@ -31,7 +31,7 @@
     },
     {
       "seq": 4,
-      "at": "2026-10-10T03:59:08.481023+00:00",
+      "at": "2026-10-10T18:37:53.947348+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -39,19 +39,19 @@
       "to": "builder",
       "message_kind": "work_request",
       "text": "Build the builder part and share it.",
-      "message_id": "e4a76188f8154deca9b0151556dc6702",
+      "message_id": "ddf46412509443448ded74ffd729afaf",
       "mid_turn": false
     },
     {
       "seq": 5,
-      "at": "2026-10-10T03:59:08.481395+00:00",
+      "at": "2026-10-10T18:37:53.947486+00:00",
       "kind": "wake",
       "member": "builder",
       "by": "lead"
     },
     {
       "seq": 6,
-      "at": "2026-10-10T03:59:08.482289+00:00",
+      "at": "2026-10-10T18:37:53.947850+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -59,19 +59,19 @@
       "to": "checker",
       "message_kind": "work_request",
       "text": "Build the checker part and share it.",
-      "message_id": "114a1a8528e54eb8bf25af04059441aa",
+      "message_id": "ae4a8044ff894be3bd7055a7676fc825",
       "mid_turn": false
     },
     {
       "seq": 7,
-      "at": "2026-10-10T03:59:08.482628+00:00",
+      "at": "2026-10-10T18:37:53.947977+00:00",
       "kind": "wake",
       "member": "checker",
       "by": "lead"
     },
     {
       "seq": 8,
-      "at": "2026-10-10T03:59:08.489911+00:00",
+      "at": "2026-10-10T18:37:53.951046+00:00",
       "kind": "turn_start",
       "member": "lead",
       "turn_no": 1,
@@ -79,7 +79,7 @@
     },
     {
       "seq": 9,
-      "at": "2026-10-10T03:59:08.494576+00:00",
+      "at": "2026-10-10T18:37:53.952748+00:00",
       "kind": "turn_start",
       "member": "builder",
       "turn_no": 1,
@@ -87,7 +87,7 @@
     },
     {
       "seq": 10,
-      "at": "2026-10-10T03:59:08.498007+00:00",
+      "at": "2026-10-10T18:37:53.953973+00:00",
       "kind": "turn_start",
       "member": "checker",
       "turn_no": 1,
@@ -95,7 +95,7 @@
     },
     {
       "seq": 11,
-      "at": "2026-10-10T03:59:08.501207+00:00",
+      "at": "2026-10-10T18:37:53.955174+00:00",
       "kind": "turn_end",
       "member": "lead",
       "turn_no": 1,
@@ -106,7 +106,7 @@
     },
     {
       "seq": 12,
-      "at": "2026-10-10T03:59:08.501501+00:00",
+      "at": "2026-10-10T18:37:53.955289+00:00",
       "kind": "idle",
       "member": "lead",
       "note": "lead: waiting for the next part",
@@ -114,7 +114,7 @@
     },
     {
       "seq": 13,
-      "at": "2026-10-10T03:59:08.502750+00:00",
+      "at": "2026-10-10T18:37:53.955759+00:00",
       "kind": "turn_end",
       "member": "builder",
       "turn_no": 1,
@@ -125,7 +125,7 @@
     },
     {
       "seq": 14,
-      "at": "2026-10-10T03:59:08.503044+00:00",
+      "at": "2026-10-10T18:37:53.955852+00:00",
       "kind": "idle",
       "member": "builder",
       "note": "builder: waiting for the next part",
@@ -133,7 +133,7 @@
     },
     {
       "seq": 15,
-      "at": "2026-10-10T03:59:08.504275+00:00",
+      "at": "2026-10-10T18:37:53.956276+00:00",
       "kind": "turn_end",
       "member": "checker",
       "turn_no": 1,
@@ -144,7 +144,7 @@
     },
     {
       "seq": 16,
-      "at": "2026-10-10T03:59:08.504520+00:00",
+      "at": "2026-10-10T18:37:53.956362+00:00",
       "kind": "idle",
       "member": "checker",
       "note": "checker: waiting for the next part",
@@ -152,51 +152,51 @@
     },
     {
       "seq": 17,
-      "at": "2026-10-10T03:59:08.614218+00:00",
+      "at": "2026-10-10T18:37:54.013346+00:00",
       "kind": "share",
       "member": "builder",
       "version_no": 1,
-      "commit_short": "462123fa7314",
+      "commit_short": "70d9eca1923e",
       "note": "Builder's part is shared",
       "files_changed": 1
     },
     {
       "seq": 18,
-      "at": "2026-10-10T03:59:08.623952+00:00",
+      "at": "2026-10-10T18:37:54.016182+00:00",
       "kind": "wait_opened",
       "member": null,
-      "wait_id": "0b00c329e44f43d1a7a3fccb9e6e3fd2",
+      "wait_id": "42253a627483401595ebe76da8319e26",
       "wait_kind": "pause",
       "words": "The team has spent $105.00 (check-in at $100)"
     },
     {
       "seq": 19,
-      "at": "2026-10-10T03:59:08.624204+00:00",
+      "at": "2026-10-10T18:37:54.016469+00:00",
       "kind": "check_in",
       "member": null,
       "at_usd": 100.0
     },
     {
       "seq": 20,
-      "at": "2026-10-10T03:59:08.625499+00:00",
+      "at": "2026-10-10T18:37:54.018720+00:00",
       "kind": "wait_answered",
       "member": null,
-      "wait_id": "0b00c329e44f43d1a7a3fccb9e6e3fd2",
+      "wait_id": "42253a627483401595ebe76da8319e26",
       "wait_kind": "pause",
       "answer": "invalid",
       "by": "owner"
     },
     {
       "seq": 21,
-      "at": "2026-10-10T03:59:08.625715+00:00",
+      "at": "2026-10-10T18:37:54.019256+00:00",
       "kind": "wait_opened",
       "member": null,
-      "wait_id": "f397e53ef28e41499b11c8b3573e5ba9",
+      "wait_id": "18f487ff84d742f9880c555050d565e3",
       "wait_kind": "pause",
       "words": "The team has spent $105.00 (check-in at $100)"
     }
   ],
   "cursor": 21,
   "more": false,
-  "as_of": "2026-10-10T03:59:08.637604+00:00"
+  "as_of": "2026-10-10T18:37:54.031777+00:00"
 }

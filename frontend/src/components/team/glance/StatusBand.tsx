@@ -111,7 +111,7 @@ function NowBox({ run, agesAt, stale, lastAt }: { run: GlanceRun; agesAt: number
       )}
       {cell.countLine && <p className="m-0 text-[15px] text-temper-text-muted">{cell.countLine}</p>}
       <WorkingList run={run} stale={stale} />
-      <NowVersion latest={run.work.latest} agesAt={agesAt} />
+      <NowVersion latest={run.work.latest} agesAt={agesAt} failedToStart={run.phase.name === 'didnt_start'} />
     </div>
   );
 }
@@ -393,6 +393,7 @@ function YouBox({
       )}
       {shownWait && (
         <StopAnswerDialog
+          projectContext
           open={stopOpen}
           onOpenChange={setStopOpen}
           waitTitle={shownWait.header || cell.title}

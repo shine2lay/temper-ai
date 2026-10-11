@@ -17,21 +17,23 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, RefreshCw, Square, WifiOff } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { fetchTeamRoles, teamKeys } from '@/lib/teamApi';
+import { CircleAlert, MessageSquare, RefreshCw, Square } from 'lucide-react';
 import type { TeamRunRead } from '@/hooks/useTeamRun';
 import type { TeamAnswerSender } from '@/hooks/useTeamAnswer';
 import type { TeamMessageSender } from '@/hooks/useTeamMessage';
 import { useTeamGlanceEvents } from '@/hooks/useTeamGlanceEvents';
 import { toGlanceRun } from '@/lib/teamGlanceAdapter';
 import {
-  atWords,
   composerHint,
   durationWords,
   glanceClock,
   lastRecordedAt,
-  msOf,
   nowCountsMembers,
   phaseEnded,
+  runningWords,
+  starterAttribution,
   type GlanceRun,
 } from '@/lib/teamGlance';
 import { teamWaits } from '@/lib/teamAnswer';
@@ -101,21 +103,6 @@ function folderName(path: string | null): string | null {
   return parts[parts.length - 1] ?? path;
 }
 
-/**
- * Live: started_at to as_of; a start after Temper's clock has no age (D22),
- * it shows its clock time, with its day after today (D104). Ended: the
- * frozen elapsed_s (G5), never the clock.
- */
-function runningWords(run: GlanceRun, now: number | null): string | null {
-  const start = msOf(run.startedAt);
-  if (!phaseEnded(run.phase.name)) {
-    if (start === null || now === null) return null;
-    return start > now ? `started ${atWords(run.startedAt, now)}` : `running ${durationWords(now - start)}`;
-  }
-  if (run.elapsedS !== null) return `ran ${durationWords(run.elapsedS * 1000)}`;
-  return null;
-}
-
 /** The page's breadcrumbs, also on its loading and error views (SPEC 10). */
 export function GlanceCrumbs() {
   // D35: every target at least 24 x 24 px, the breadcrumbs too.
@@ -145,7 +132,7 @@ function GlanceHeader({
   onStop?: () => void;
 }) {
   const facts = [
-    run.startedBy ? `Started by ${run.startedBy === 'owner' ? 'You' : run.startedBy}` : null,
+    starterAttribution(run),
     runningWords(run, now),
     run.leader ? `leader ${run.leader}` : null,
     {
@@ -210,8 +197,15 @@ export function GlanceRunView({
   onStopOpenChange: (open: boolean) => void;
   canStop: boolean;
 }) {
-  const run = useMemo(() => toGlanceRun(raw), [raw]);
-  const feed = useTeamGlanceEvents(run.executionId, run.eventsCursor);
+  const adapted = useMemo(() => toGlanceRun(raw), [raw]);
+  // Item 11: the same role title shown on Roles; one read, no new route or polling/retry.
+  const roles = useQuery({
+    queryKey: teamKeys.roles, queryFn: fetchTeamRoles,
+    enabled: !!adapted.startedBy && adapted.startedBy !== 'owner',
+    staleTime: Infinity, retry: false, refetchOnWindowFocus: false,
+  });
+  const run = useMemo(() => ({ ...adapted, starterTitle: roles.data?.roles.find((r) => r.id === adapted.startedBy)?.title ?? null }), [adapted, roles.data]);
+  const feed = useTeamGlanceEvents(run.executionId, run.eventsCursor, phaseEnded(run.phase.name));
   const now = glanceClock(run.asOf, feed.asOf);
   const [animate, setAnimate] = useAnimatePref();
   const reducedMotion = useReducedMotion();
@@ -223,7 +217,7 @@ export function GlanceRunView({
   const agesAt = now !== null ? now + staleMs : null;
   // D105: an interrupted run without an end time says when Temper last recorded anything.
   const lastAt = useMemo(() => lastRecordedAt(run, feed.events), [run, feed.events]);
-  const messaging = canMessage(raw);
+  const messaging = !phaseEnded(run.phase.name) && canMessage(raw);
 
   const toComposer = useCallback(() => {
     const box = document.getElementById('glance-message');
@@ -243,6 +237,7 @@ export function GlanceRunView({
       />
       {/* Stays open when the run ends meanwhile: Temper's answer is read in it. */}
       <StopRunDialog
+        projectContext
         open={stopOpen}
         onOpenChange={onStopOpenChange}
         executionId={raw.execution_id}
@@ -258,8 +253,8 @@ export function GlanceRunView({
         </p>
         {staleFor !== null && (
           <TeamNote
-            tone="warn"
-            icon={WifiOff}
+            tone="bad"
+            icon={CircleAlert}
             // SPEC 3: the stale note's words are 15 px. As the reference, Try again follows the words (not a column
             // beside them), so on a phone the note stays short and the band ends on the first screen (D84).
             className="text-[15px] max-md:px-2.5"
@@ -302,7 +297,7 @@ export function GlanceRunView({
         </div>
         {/* The one history and the one count (home decision 3): no Timeline card on this page. */}
         <AllActivity run={run} events={feed.events} ready={feed.ready} now={agesAt} />
-        {(messaging || messenger.result !== null) && (
+        {run.phase.name !== 'didnt_start' && (messaging || messenger.result !== null) && (
           <div id="glance-message" className="min-w-0">
             <MessageComposer
               textScale="glance"

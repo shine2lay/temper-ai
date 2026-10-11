@@ -23,7 +23,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { GlanceIcon, Moment } from '@/lib/teamGlance';
+import type { GlanceIcon, Moment, MomentPart } from '@/lib/teamGlance';
 
 const GLANCE_ICONS: Record<GlanceIcon | Moment['icon'], LucideIcon> = {
   play: Play,
@@ -46,6 +46,17 @@ const GLANCE_ICONS: Record<GlanceIcon | Moment['icon'], LucideIcon> = {
   start: CirclePlay,
   conflict: TriangleAlert,
 };
+
+/** S2: all parts are plain React text; exact file names are code, never links or markup. */
+export function MomentText({ parts }: { parts: readonly MomentPart[] }) {
+  return <>{parts.map((p, i) => p.code ? (
+    <code key={i} className="font-mono [overflow-wrap:anywhere]">{p.text}</code>
+  ) : p.strong ? (
+    <b key={i} className="font-semibold">{p.text}</b>
+  ) : (
+    <span key={i}><PathText text={p.text} /></span>
+  ))}</>;
+}
 
 export function GIcon({ name, className }: { name: GlanceIcon | Moment['icon']; className?: string }) {
   const Icon = GLANCE_ICONS[name] ?? Circle;

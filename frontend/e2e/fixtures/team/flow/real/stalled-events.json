@@ -2,7 +2,7 @@
   "events": [
     {
       "seq": 1,
-      "at": "2026-10-09T21:33:51.681494+00:00",
+      "at": "2026-10-10T18:37:51.500276+00:00",
       "kind": "message",
       "member": "temper",
       "from": "temper",
@@ -10,12 +10,12 @@
       "to": "lead",
       "message_kind": "goal",
       "text": "This tiny project has no README. Write a short one.",
-      "message_id": "22e70a150341438c91a0eb91607d5b3d",
+      "message_id": "d5b9a8408f6d4edf95a08a6e68865052",
       "mid_turn": false
     },
     {
       "seq": 2,
-      "at": "2026-10-09T21:33:51.684317+00:00",
+      "at": "2026-10-10T18:37:51.501591+00:00",
       "kind": "idle",
       "member": "builder",
       "note": null,
@@ -23,7 +23,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-09T21:33:51.685161+00:00",
+      "at": "2026-10-10T18:37:51.501936+00:00",
       "kind": "idle",
       "member": "checker",
       "note": null,
@@ -31,7 +31,7 @@
     },
     {
       "seq": 4,
-      "at": "2026-10-09T21:33:51.686200+00:00",
+      "at": "2026-10-10T18:37:51.502383+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -39,19 +39,19 @@
       "to": "builder",
       "message_kind": "work_request",
       "text": "Build the builder part and share it.",
-      "message_id": "1993e7d3e6a542309881c50d847606a7",
+      "message_id": "23195b2e759e4d13ba675af41effa149",
       "mid_turn": false
     },
     {
       "seq": 5,
-      "at": "2026-10-09T21:33:51.686565+00:00",
+      "at": "2026-10-10T18:37:51.502519+00:00",
       "kind": "wake",
       "member": "builder",
       "by": "lead"
     },
     {
       "seq": 6,
-      "at": "2026-10-09T21:33:51.687536+00:00",
+      "at": "2026-10-10T18:37:51.502881+00:00",
       "kind": "message",
       "member": "lead",
       "from": "lead",
@@ -59,19 +59,19 @@
       "to": "checker",
       "message_kind": "work_request",
       "text": "Build the checker part and share it.",
-      "message_id": "b6b7caf53f5d4769b302600ab52f766a",
+      "message_id": "5901ff085a1a433cb410606021a3247c",
       "mid_turn": false
     },
     {
       "seq": 7,
-      "at": "2026-10-09T21:33:51.687883+00:00",
+      "at": "2026-10-10T18:37:51.503004+00:00",
       "kind": "wake",
       "member": "checker",
       "by": "lead"
     },
     {
       "seq": 8,
-      "at": "2026-10-09T21:33:51.702915+00:00",
+      "at": "2026-10-10T18:37:51.532067+00:00",
       "kind": "turn_start",
       "member": "lead",
       "turn_no": 1,
@@ -79,7 +79,7 @@
     },
     {
       "seq": 9,
-      "at": "2026-10-09T21:33:51.707365+00:00",
+      "at": "2026-10-10T18:37:51.534213+00:00",
       "kind": "turn_start",
       "member": "builder",
       "turn_no": 1,
@@ -87,7 +87,7 @@
     },
     {
       "seq": 10,
-      "at": "2026-10-09T21:33:51.710708+00:00",
+      "at": "2026-10-10T18:37:51.535523+00:00",
       "kind": "turn_start",
       "member": "checker",
       "turn_no": 1,
@@ -95,7 +95,7 @@
     },
     {
       "seq": 11,
-      "at": "2026-10-09T21:33:51.713897+00:00",
+      "at": "2026-10-10T18:37:51.536747+00:00",
       "kind": "turn_end",
       "member": "lead",
       "turn_no": 1,
@@ -106,7 +106,7 @@
     },
     {
       "seq": 12,
-      "at": "2026-10-09T21:33:51.714217+00:00",
+      "at": "2026-10-10T18:37:51.536861+00:00",
       "kind": "idle",
       "member": "lead",
       "note": "lead: waiting for the next part",
@@ -114,7 +114,7 @@
     },
     {
       "seq": 13,
-      "at": "2026-10-09T21:33:51.715571+00:00",
+      "at": "2026-10-10T18:37:51.537334+00:00",
       "kind": "turn_end",
       "member": "builder",
       "turn_no": 1,
@@ -125,7 +125,7 @@
     },
     {
       "seq": 14,
-      "at": "2026-10-09T21:33:51.715836+00:00",
+      "at": "2026-10-10T18:37:51.537427+00:00",
       "kind": "idle",
       "member": "builder",
       "note": "builder: waiting for the next part",
@@ -133,7 +133,7 @@
     },
     {
       "seq": 15,
-      "at": "2026-10-09T21:33:51.717135+00:00",
+      "at": "2026-10-10T18:37:51.537846+00:00",
       "kind": "turn_end",
       "member": "checker",
       "turn_no": 1,
@@ -144,7 +144,7 @@
     },
     {
       "seq": 16,
-      "at": "2026-10-09T21:33:51.717392+00:00",
+      "at": "2026-10-10T18:37:51.537933+00:00",
       "kind": "idle",
       "member": "checker",
       "note": "checker: waiting for the next part",
@@ -152,15 +152,15 @@
     },
     {
       "seq": 17,
-      "at": "2026-10-09T21:33:51.771069+00:00",
+      "at": "2026-10-10T18:37:51.538504+00:00",
       "kind": "wait_opened",
       "member": null,
-      "wait_id": "15995a4f8f384d9e9f95ed4f55962816",
+      "wait_id": "e58084ca5db2466ca8686724ab9bf428",
       "wait_kind": "stalled",
       "words": "The team is stalled: nothing is running, nothing is waiting to be delivered and lead has not said done."
     }
   ],
   "cursor": 17,
   "more": false,
-  "as_of": "2026-10-09T21:33:51.783511+00:00"
+  "as_of": "2026-10-10T18:37:51.543459+00:00"
 }

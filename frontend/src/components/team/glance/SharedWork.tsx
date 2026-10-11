@@ -77,7 +77,7 @@ export function SharedWork({ run, now }: { run: GlanceRun; now: number | null })
         </div>
       ) : (
         <p className="m-0 text-sm text-temper-text-muted" data-testid="glance-work-empty">
-          No shared version yet. When a member shares its work it shows here as v1, v2 and so on.
+          {run.phase.name === 'didnt_start' ? 'No shared version.' : 'No shared version yet. When a member shares its work it shows here as v1, v2 and so on.'}
         </p>
       )}
       {older.length > 0 && (

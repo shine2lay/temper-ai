@@ -1,0 +1,119 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-10T17:00:00.500000+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "1e9fdc5bf2c64eb9bddf832447951ab3",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-10T17:00:00.600000+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-10T17:00:00.700000+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-10T17:00:00.950000+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-10T17:00:01.050000+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "7b4e6ee339fc4031a9f2980453c852e7",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-10T17:00:01.100000+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-10T17:00:01.200000+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "2a51664a515f4d5cb7dc548b3af5f522",
+      "mid_turn": false
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-10T17:00:01.250000+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-10T17:00:01.400000+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-10T17:00:01.550000+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-10T17:00:01.700000+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 5.0,
+      "tool_calls": 1
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-10T17:00:01.800000+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the next part",
+      "reason": "idle_call"
+    }
+  ],
+  "cursor": 14,
+  "more": false,
+  "as_of": "2026-10-10T17:00:01.950000+00:00"
+}

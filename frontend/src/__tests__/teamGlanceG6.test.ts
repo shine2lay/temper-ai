@@ -51,7 +51,7 @@ const JSONS = import.meta.glob<Raw>('../../e2e/fixtures/team/flow/real-g6/*.json
 
 /** Temper's manifest, as g6/INPUTS.md entry 3 pins it (Temper rm-ceebbee9, backend 76a1d5c7). */
 const MANIFEST = 'G6-INPUTS.sha256';
-const MANIFEST_SHA256 = '5aa6d58995145faa60598cb67b32074ffa4c044a07dbbd3353a1d0eea5e828f3';
+const MANIFEST_SHA256 = '06ad0fd4d2036f07b5d8c6e0b0e3afbd7564be136912fe0ef3271887ed561c5a';
 
 const RUNS = [
   'member_question',
@@ -294,18 +294,18 @@ const latestOf = (e: GlanceEvent) => latestMoments([e], RUN.leader).map(textOf)[
 
 describe('answer words: every answer Temper records (api-fields:260), never a raw code word', () => {
   it.each([
-    ['continue', 'You answered: continue'],
-    ['guide', 'You answered: guide'],
-    ['stop', 'You answered: stop'],
-    ['nudge', 'You answered: nudge'],
-    ['accept', 'You answered: accept'],
-    ['retry', 'You answered: retry'],
-    ['go on', 'You answered: go on'],
-    // The owner replied to a member's question: as the old `reply` (D86 note 6).
-    ['given', 'You answered: a reply'],
-    ['reply', 'You answered: a reply'],
-    ['invalid', `You answered. ${NOT_APPLIED.invalid}`],
-    ['restart_deferred', `You answered: restart. ${NOT_APPLIED.restartDeferred}`],
+    ['continue', 'You answered Temper: continue'],
+    ['guide', 'You answered Temper: guide'],
+    ['stop', 'You answered Temper: stop'],
+    ['nudge', 'You answered Temper: nudge'],
+    ['accept', 'You answered Temper: accept'],
+    ['retry', 'You answered Temper: retry'],
+    ['go on', 'You answered Temper: go on'],
+    // No member recorded in this isolated event: do not invent one.
+    ['given', 'You answered Temper.'],
+    ['reply', 'You answered Temper.'],
+    ['invalid', `You answered Temper. ${NOT_APPLIED.invalid}`],
+    ['restart_deferred', `You answered Temper: restart. ${NOT_APPLIED.restartDeferred}`],
   ])('%s', (word, row) => {
     expect(rowOf(answer(word))).toBe(row);
     // D110: Latest words an event as All activity does.
@@ -315,15 +315,16 @@ describe('answer words: every answer Temper records (api-fields:260), never a ra
   it('an answer the page has no words for says who answered, without the word', () => {
     expect(answerWord('later_maybe')).toBeNull();
     expect(answerWord('constructor')).toBeNull();
-    expect(rowOf(answer('later_maybe'))).toBe('You answered');
-    expect(latestOf(answer('later_maybe'))).toBe('You answered');
+    expect(rowOf(answer('later_maybe'))).toBe('You answered Temper.');
+    expect(latestOf(answer('later_maybe'))).toBe('You answered Temper.');
   });
 
   it('member_question: the owner\u2019s reply reads as a reply, then his words answer checker (D108)', () => {
     const s = story('member_question');
     const rows = activity(s);
-    expect(rows.slice(0, 2)).toEqual(['You answered checker: \u201cyes\u201d', 'You answered: a reply']);
-    expect(latest(s)[0]).toBe('You answered: a reply');
+    expect(rows[0]).toBe('You answered checker: \u201cyes\u201d');
+    expect(rows.filter((r) => r.startsWith('You answered'))).toHaveLength(1);
+    expect(latest(s)[0]).toBe('You answered checker: \u201cyes\u201d');
     for (const text of [...rows, ...latest(s)]) expect(text).not.toMatch(/\bgiven\b/);
   });
 
@@ -342,8 +343,8 @@ describe('D86: an answer that wasn\u2019t applied says so (g6/TEMPER-D86.md)', (
   it('1. a settings go on with applied false: one fixed sentence, whatever Temper\u2019s why', () => {
     for (const why of ['the settings changed again before the answer took effect', null]) {
       const s = late(false, why);
-      expect(activity(s)).toContain(`You answered: go on. ${NOT_APPLIED.settingsLate}`);
-      expect(latest(s)).toContain(`You answered: go on. ${NOT_APPLIED.settingsLate}`);
+      expect(activity(s)).toContain(`You answered Temper: go on. ${NOT_APPLIED.settingsLate}`);
+      expect(latest(s)).toContain(`You answered Temper: go on. ${NOT_APPLIED.settingsLate}`);
     }
     expect(NOT_APPLIED.settingsLate).toBe('Not applied: the settings changed before the answer took effect.');
     // The mark is its own part after the answer, in normal text (not bold).
@@ -352,38 +353,38 @@ describe('D86: an answer that wasn\u2019t applied says so (g6/TEMPER-D86.md)', (
   });
 
   it('1b. without applied (the real sample) or with applied true: an ordinary go on, never inferred from the next question', () => {
-    for (const s of [story('settings_late'), late(true, null)]) {
-      expect(activity(s)).toContain('You answered: go on');
-      expect(latest(s)).toContain('You answered: go on');
+    for (const s of [late(undefined, null), late(true, null)]) {
+      expect(activity(s)).toContain('You answered Temper: go on');
+      expect(latest(s)).toContain('You answered Temper: go on');
       expect([...activity(s), ...latest(s)].join('\n')).not.toMatch(/Not applied/);
     }
     // The real sample: the go on, then the new settings question (Temper asked again) with its own words.
     const rows = activity(story('settings_late'));
-    // D110: Temper asked it (a settings question is Temper's own wait).
-    expect(rows.slice(0, 2)).toEqual([expect.stringMatching(/^Temper asked you: .*fixture-3\u201d$/), 'You answered: go on']);
+    // The refreshed sample records applied=false; older absent-applied evidence is tested above.
+    expect(rows.slice(0, 2)).toEqual([expect.stringMatching(/^Temper asked you: .*fixture-3\u201d$/), `You answered Temper: go on. ${NOT_APPLIED.settingsLate}`]);
   });
 
   it('2. invalid (the real sample): who answered, no word, then the mark', () => {
     const s = story('invalid');
-    expect(activity(s)).toContain(`You answered. ${NOT_APPLIED.invalid}`);
-    expect(latest(s)[0]).toBe(`You answered. ${NOT_APPLIED.invalid}`);
+    expect(activity(s)).toContain(`You answered Temper. ${NOT_APPLIED.invalid}`);
+    expect(latest(s)[0]).toBe(`You answered Temper. ${NOT_APPLIED.invalid}`);
     expect(NOT_APPLIED.invalid).toBe('Not applied: the answer didn\u2019t match any of the choices. Temper asked again.');
   });
 
   it('3. restart_deferred (the real sample): answered restart, then the mark', () => {
     const s = story('restart_deferred');
-    expect(activity(s)).toContain(`You answered: restart. ${NOT_APPLIED.restartDeferred}`);
-    expect(latest(s)).toContain(`You answered: restart. ${NOT_APPLIED.restartDeferred}`);
+    expect(activity(s)).toContain(`You answered Temper: restart. ${NOT_APPLIED.restartDeferred}`);
+    expect(latest(s)).toContain(`You answered Temper: restart. ${NOT_APPLIED.restartDeferred}`);
     expect(NOT_APPLIED.restartDeferred).toBe('Not applied: Temper couldn\u2019t confirm the usage limit has reset.');
   });
 
   it('4. applied false on any other answer: "Not applied", plus Temper\u2019s why word for word', () => {
     const withWhy = answer('continue', { applied: false, why: 'the check-in had already closed' });
-    expect(rowOf(withWhy)).toBe('You answered: continue. Not applied: the check-in had already closed');
-    expect(latestOf(withWhy)).toBe('You answered: continue. Not applied: the check-in had already closed');
+    expect(rowOf(withWhy)).toBe('You answered Temper: continue. Not applied: the check-in had already closed');
+    expect(latestOf(withWhy)).toBe('You answered Temper: continue. Not applied: the check-in had already closed');
     const bare = answer('continue', { applied: false });
-    expect(rowOf(bare)).toBe('You answered: continue. Not applied.');
-    expect(latestOf(bare)).toBe('You answered: continue. Not applied.');
+    expect(rowOf(bare)).toBe('You answered Temper: continue. Not applied.');
+    expect(latestOf(bare)).toBe('You answered Temper: continue. Not applied.');
     // A go on to a question that isn't a settings one is "any other row".
     expect(answerMark({ waitKind: 'pause', answer: 'go on', applied: false, why: null })).toBe('Not applied.');
     expect(answerMark({ waitKind: 'settings', answer: 'go on', applied: null, why: 'x' })).toBeNull();
@@ -421,7 +422,6 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
       expect(nowCell(s.run, s.now), name).toMatchObject({
         word: 'Interrupted',
         sentence,
-        reason: 'the run ended (interrupted) without the team ending',
         edge: 'red',
       });
       expect(youCell(s.run), name).toMatchObject({
@@ -487,7 +487,7 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
     // Temper leaves an interrupted run's members idle; the run has ended all the same.
     for (const name of ['interrupted', 'interrupted_no_end'] as const) {
       const s = story(name);
-      expect(s.run.members.every((m) => m.state === 'idle'), name).toBe(true);
+      expect(s.run.members.every((m) => m.state === 'ended'), name).toBe(true);
       expect(teamCountWords(s.run), name).toBe('3 members \u00b7 all ended');
     }
     expect(teamCountWords(story('member_question').run)).toBe('1 ready \u00b7 1 idle \u00b7 1 needs you');
@@ -500,10 +500,10 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
     expect(latest(s)[0]).toBe('checker has 1 file in conflict after a sync');
     expect(latest(s).join('\n')).not.toMatch(/refused|shared\./);
     expect(activity(s).slice(0, 4)).toEqual([
-      // D107: Temper's why only repeats the verb.
-      'checker\u2019s version wasn\u2019t shared. Temper gave no reason.',
+      // D114: Temper now sends its reason (the notice's first sentence) separately from its refusal kind.
+      'checker\u2019s version wasn\u2019t shared: Not shared: these files still hold git\'s conflict markers: part.md',
       'Temper told checker: \u201cNot shared: these files still hold git\'s conflict markers: part.md. Remove the markers and share again.\u201d',
-      'checker ended turn 2: completed',
+      'checker finished turn 2.',
       'checker has 1 file in conflict after a sync',
     ]);
   });
@@ -542,7 +542,7 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
       'checker went idle: \u201cchecker: waiting for the next part\u201d',
       'checker\u2019s turn 1 ended at its tool-call limit.',
       'lead went idle without a note',
-      'lead ended turn 1: completed (no tool call)',
+      'lead finished turn 1.',
     ]);
   });
 
@@ -578,8 +578,8 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
 
   it('limit_ended: the limit and its end, never a reset time', () => {
     const s = story('limit_ended');
-    // D109: no `by`, so nobody is named.
-    const over = `The usage limit is over. The team carried on at ${clockOf(eventsOf(s, 'limit_over')[0].at)}.`;
+    // D115: the refreshed real event names the owner.
+    const over = `The usage limit is over. You restarted the team at ${clockOf(eventsOf(s, 'limit_over')[0].at)}.`;
     expect(activity(s).slice(0, 2)).toEqual([over, 'Usage limit']);
     expect(latest(s).slice(0, 2)).toEqual([over, 'Usage limit']);
     expect([...activity(s), ...latest(s)].join('\n')).not.toMatch(/reset at|carries on at/i);

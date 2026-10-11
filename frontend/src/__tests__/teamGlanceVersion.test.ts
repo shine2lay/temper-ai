@@ -69,6 +69,16 @@ describe('a share note cut to the room left (D97, D111)', () => {
     expect(cutNote(note, 999)).toBe('\u201cExport button and CSV writer, tests pass\u201d');
   });
 
+  it('never splits an emoji, combining accent, skin-tone or ZWJ sequence (item 14)', () => {
+    expect(cutNote('CSV 😀 ready', 5)).toBe('“CSV…”');
+    expect(cutNote('CSV 😀 ready', 6)).toBe('“CSV 😀…”');
+    expect(cutNote('Cafe\u0301 ready', 4)).toBe('“Caf…”');
+    expect(cutNote('Cafe\u0301 ready', 5)).toBe('“Cafe\u0301…”');
+    const emoji = '👩🏽‍💻';
+    for (let keep = 4; keep < 4 + emoji.length; keep++) expect(cutNote(`CSV ${emoji} ready`, keep)).toBe('“CSV…”');
+    expect(cutNote(`CSV ${emoji} ready`, 4 + emoji.length)).toBe(`“CSV ${emoji}…”`);
+  });
+
   it('cuts with an ellipsis inside the closing quote, never after a space or a comma', () => {
     expect(cutNote(note, 10)).toBe('\u201cExport but\u2026\u201d');
     // "Export button and CSV writer," -> the comma goes, the quote closes.

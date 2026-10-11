@@ -8,7 +8,7 @@
   "cost_usd": 0.0,
   "account": {
     "slot": "anthropic-4",
-    "picked_at": "2026-10-09T21:32:49.550786+00:00",
+    "picked_at": "2026-10-10T18:36:50.218633+00:00",
     "by": "settings_order",
     "capacity": "not_checked",
     "room": null
@@ -55,7 +55,7 @@
       "source": "/work/fixture",
       "start_commit": null
     },
-    "started_at": "2026-10-09 21:32:49.550786+00:00",
+    "started_at": "2026-10-10 18:36:50.218633+00:00",
     "started_by": "owner",
     "request_id": "fixture-working"
   },
@@ -73,7 +73,7 @@
       "last_turn": {
         "turn_no": 1,
         "state": "running",
-        "started_at": "2026-10-09T21:33:49.558689+00:00",
+        "started_at": "2026-10-10T18:37:50.222020+00:00",
         "ended_at": null,
         "error": null,
         "account_slot": null,
@@ -81,15 +81,15 @@
         "ended_by": null
       },
       "state": "working",
-      "since": "2026-10-09T21:33:49.558689+00:00",
+      "since": "2026-10-10T18:37:50.222020+00:00",
       "turn_no": 1,
       "on": {
         "kind": "message",
         "text": "Build the checker part and share it.",
         "to": "checker",
         "from": "lead",
-        "at": "2026-10-09T21:33:49.552550+00:00",
-        "message_id": "b1300f3942b64d519863d6f4df9b6132"
+        "at": "2026-10-10T18:37:50.219344+00:00",
+        "message_id": "93ce110b83034f7b9789da215955ad25"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -108,13 +108,13 @@
         "to": "checker",
         "kind": "work_request",
         "text": "Build the checker part and share it.",
-        "at": "2026-10-09T21:33:49.552550+00:00",
-        "message_id": "b1300f3942b64d519863d6f4df9b6132"
+        "at": "2026-10-10T18:37:50.219344+00:00",
+        "message_id": "93ce110b83034f7b9789da215955ad25"
       },
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-09T21:33:49.561406+00:00"
+      "last_activity_at": "2026-10-10T18:37:50.223299+00:00"
     },
     {
       "name": "builder",
@@ -129,7 +129,7 @@
       "last_turn": {
         "turn_no": 1,
         "state": "running",
-        "started_at": "2026-10-09T21:33:49.564592+00:00",
+        "started_at": "2026-10-10T18:37:50.224657+00:00",
         "ended_at": null,
         "error": null,
         "account_slot": null,
@@ -137,14 +137,14 @@
         "ended_by": null
       },
       "state": "working",
-      "since": "2026-10-09T21:33:49.564592+00:00",
+      "since": "2026-10-10T18:37:50.224657+00:00",
       "turn_no": 1,
       "on": {
         "kind": "work_request",
         "text": "Build the builder part and share it.",
         "from": "lead",
-        "at": "2026-10-09T21:33:49.551235+00:00",
-        "message_id": "5429aa1828d743719812b63b60a29dbe"
+        "at": "2026-10-10T18:37:50.218813+00:00",
+        "message_id": "d29ee5c123e7455096d036eb69335f20"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -163,7 +163,7 @@
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-09T21:33:49.565610+00:00"
+      "last_activity_at": "2026-10-10T18:37:50.225077+00:00"
     },
     {
       "name": "checker",
@@ -178,7 +178,7 @@
       "last_turn": {
         "turn_no": 1,
         "state": "running",
-        "started_at": "2026-10-09T21:33:49.567931+00:00",
+        "started_at": "2026-10-10T18:37:50.225966+00:00",
         "ended_at": null,
         "error": null,
         "account_slot": null,
@@ -186,14 +186,14 @@
         "ended_by": null
       },
       "state": "working",
-      "since": "2026-10-09T21:33:49.567931+00:00",
+      "since": "2026-10-10T18:37:50.225966+00:00",
       "turn_no": 1,
       "on": {
         "kind": "work_request",
         "text": "Build the checker part and share it.",
         "from": "lead",
-        "at": "2026-10-09T21:33:49.552550+00:00",
-        "message_id": "b1300f3942b64d519863d6f4df9b6132"
+        "at": "2026-10-10T18:37:50.219344+00:00",
+        "message_id": "93ce110b83034f7b9789da215955ad25"
       },
       "idle_note": null,
       "idle_reason": null,
@@ -212,7 +212,7 @@
       "last_share": null,
       "conflicts": [],
       "wait_id": null,
-      "last_activity_at": "2026-10-09T21:33:49.568862+00:00"
+      "last_activity_at": "2026-10-10T18:37:50.226357+00:00"
     }
   ],
   "open_waits": [],
@@ -222,9 +222,9 @@
         "event_type": "message: goal",
         "from_agent": "temper",
         "to_agent": "lead",
-        "timestamp": "2026-10-09T21:33:49.545212+00:00",
+        "timestamp": "2026-10-10T18:37:50.215976+00:00",
         "data": {
-          "message_id": "158c1723a418498ba0826e39dfce0825",
+          "message_id": "7b14bf67d24f4013a879e88a5f75c068",
           "state": "consumed",
           "deliveries": 1,
           "preview": "This tiny project has no README. Write a short one."
@@ -235,10 +235,10 @@
       {
         "event_type": "idle",
         "from_agent": "builder",
-        "timestamp": "2026-10-09T21:33:49.549725+00:00",
+        "timestamp": "2026-10-10T18:37:50.218184+00:00",
         "data": {
           "seq": 2,
-          "at": "2026-10-09T21:33:49.549725+00:00",
+          "at": "2026-10-10T18:37:50.218184+00:00",
           "kind": "idle",
           "member": "builder",
           "note": null,
@@ -246,7 +246,7 @@
         },
         "entry": "idle",
         "seq": 2,
-        "at": "2026-10-09T21:33:49.549725+00:00",
+        "at": "2026-10-10T18:37:50.218184+00:00",
         "kind": "idle",
         "member": "builder",
         "note": null,
@@ -255,10 +255,10 @@
       {
         "event_type": "idle",
         "from_agent": "checker",
-        "timestamp": "2026-10-09T21:33:49.550627+00:00",
+        "timestamp": "2026-10-10T18:37:50.218564+00:00",
         "data": {
           "seq": 3,
-          "at": "2026-10-09T21:33:49.550627+00:00",
+          "at": "2026-10-10T18:37:50.218564+00:00",
           "kind": "idle",
           "member": "checker",
           "note": null,
@@ -266,7 +266,7 @@
         },
         "entry": "idle",
         "seq": 3,
-        "at": "2026-10-09T21:33:49.550627+00:00",
+        "at": "2026-10-10T18:37:50.218564+00:00",
         "kind": "idle",
         "member": "checker",
         "note": null,
@@ -276,9 +276,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "builder",
-        "timestamp": "2026-10-09T21:33:49.551235+00:00",
+        "timestamp": "2026-10-10T18:37:50.218813+00:00",
         "data": {
-          "message_id": "5429aa1828d743719812b63b60a29dbe",
+          "message_id": "d29ee5c123e7455096d036eb69335f20",
           "state": "consumed",
           "deliveries": 1,
           "preview": "Build the builder part and share it."
@@ -289,17 +289,17 @@
       {
         "event_type": "wake",
         "from_agent": "builder",
-        "timestamp": "2026-10-09T21:33:49.552003+00:00",
+        "timestamp": "2026-10-10T18:37:50.219145+00:00",
         "data": {
           "seq": 5,
-          "at": "2026-10-09T21:33:49.552003+00:00",
+          "at": "2026-10-10T18:37:50.219145+00:00",
           "kind": "wake",
           "member": "builder",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 5,
-        "at": "2026-10-09T21:33:49.552003+00:00",
+        "at": "2026-10-10T18:37:50.219145+00:00",
         "kind": "wake",
         "member": "builder",
         "by": "lead"
@@ -308,9 +308,9 @@
         "event_type": "message: work_request",
         "from_agent": "lead",
         "to_agent": "checker",
-        "timestamp": "2026-10-09T21:33:49.552550+00:00",
+        "timestamp": "2026-10-10T18:37:50.219344+00:00",
         "data": {
-          "message_id": "b1300f3942b64d519863d6f4df9b6132",
+          "message_id": "93ce110b83034f7b9789da215955ad25",
           "state": "consumed",
           "deliveries": 1,
           "preview": "Build the checker part and share it."
@@ -321,17 +321,17 @@
       {
         "event_type": "wake",
         "from_agent": "checker",
-        "timestamp": "2026-10-09T21:33:49.553336+00:00",
+        "timestamp": "2026-10-10T18:37:50.219638+00:00",
         "data": {
           "seq": 7,
-          "at": "2026-10-09T21:33:49.553336+00:00",
+          "at": "2026-10-10T18:37:50.219638+00:00",
           "kind": "wake",
           "member": "checker",
           "by": "lead"
         },
         "entry": "wake",
         "seq": 7,
-        "at": "2026-10-09T21:33:49.553336+00:00",
+        "at": "2026-10-10T18:37:50.219638+00:00",
         "kind": "wake",
         "member": "checker",
         "by": "lead"
@@ -339,9 +339,9 @@
       {
         "event_type": "turn 1: running",
         "from_agent": "lead",
-        "timestamp": "2026-10-09T21:33:49.558689+00:00",
+        "timestamp": "2026-10-10T18:37:50.222020+00:00",
         "data": {
-          "turn_id": "66335c27892d4dbf8aed73ceec65393d",
+          "turn_id": "5373a0907fee4da697b7e8e1e33c8126",
           "turn_no": 1,
           "state": "running",
           "ended_at": null,
@@ -352,9 +352,9 @@
       {
         "event_type": "turn 1: running",
         "from_agent": "builder",
-        "timestamp": "2026-10-09T21:33:49.564592+00:00",
+        "timestamp": "2026-10-10T18:37:50.224657+00:00",
         "data": {
-          "turn_id": "5a302f146c8f46c496d452cabf7dcb0a",
+          "turn_id": "89e7f86fa5d44b34a15d49001c2ea93c",
           "turn_no": 1,
           "state": "running",
           "ended_at": null,
@@ -365,9 +365,9 @@
       {
         "event_type": "turn 1: running",
         "from_agent": "checker",
-        "timestamp": "2026-10-09T21:33:49.567931+00:00",
+        "timestamp": "2026-10-10T18:37:50.225966+00:00",
         "data": {
-          "turn_id": "a72e062efed1497fa756afb663d27638",
+          "turn_id": "41fcc99ad2954acca1fd10e6ea5c4d38",
           "turn_no": 1,
           "state": "running",
           "ended_at": null,
@@ -394,10 +394,10 @@
     "resume_verified": false,
     "blocked_windows": []
   },
-  "as_of": "2026-10-09T21:33:49.601571+00:00",
-  "started_at": "2026-10-09T21:32:49.550786+00:00",
+  "as_of": "2026-10-10T18:37:50.242395+00:00",
+  "started_at": "2026-10-10T18:36:50.218633+00:00",
   "elapsed_s": 60,
-  "last_activity_at": "2026-10-09T21:33:49.568862+00:00",
+  "last_activity_at": "2026-10-10T18:37:50.226357+00:00",
   "spend": {
     "cost_usd": 0.0,
     "pause_every_usd": 100.0,
@@ -424,13 +424,13 @@
       "from": "lead",
       "to": "builder",
       "count": 1,
-      "last_at": "2026-10-09T21:33:49.551235+00:00"
+      "last_at": "2026-10-10T18:37:50.218813+00:00"
     },
     {
       "from": "lead",
       "to": "checker",
       "count": 1,
-      "last_at": "2026-10-09T21:33:49.552550+00:00"
+      "last_at": "2026-10-10T18:37:50.219344+00:00"
     }
   ],
   "work": {

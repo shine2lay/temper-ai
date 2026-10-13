@@ -104,6 +104,16 @@ function Frame({ children, quietTitle = false }: { children: ReactNode; quietTit
  */
 export default function TeamRunView() {
   const { executionId = '' } = useParams();
+  return <ProjectRunOwner key={executionId} executionId={executionId} />;
+}
+
+/**
+ * Everything that lives for one execution belongs below this route-keyed owner,
+ * including send/answer/refresh/stop callbacks and both FLOW and legacy children.
+ * A poll of this execution keeps its drafts and retry IDs; navigating to another
+ * execution retires this owner, not any work already accepted by the server.
+ */
+function ProjectRunOwner({ executionId }: { executionId: string }) {
   const read = useTeamRun(executionId);
   const { run } = read;
   const { status } = useTeamStatus();

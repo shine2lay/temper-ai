@@ -35,6 +35,8 @@ function MessageResultNote({
             <b className="font-semibold">Sent: held until you answer the open question.</b>
             {paused && <> The team is paused, so no member takes a turn until then.</>}
           </>
+        ) : glance ? (
+          `Temper accepted your message for ${outcome.to}.`
         ) : (
           <>
             <b className="font-semibold">Sent.</b> {outcome.to} gets it at its next turn.
@@ -151,8 +153,14 @@ export function MessageComposer({
         aria-describedby={`${countId} ${helpId}`}
         className={cn(teamField, 'min-h-[88px] resize-y')}
       />
-      {/* One live region that stays, so every new result is read out (SPEC 6: polite). */}
-      <div aria-live="polite" data-testid="team-message-result" className="empty:hidden">
+      {/* Keep the glance region available before results; seq keys refresh only its content,
+          including identical receipts. Atomic reads the whole sentence, never a prefix alone. */}
+      <div
+        aria-live="polite"
+        aria-atomic={glance || undefined}
+        data-testid="team-message-result"
+        className={glance ? '[overflow-wrap:anywhere]' : 'empty:hidden'}
+      >
         {result && (
           <MessageResultNote
             key={result.seq}

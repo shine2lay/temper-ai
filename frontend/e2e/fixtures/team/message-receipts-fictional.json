@@ -1,0 +1,49 @@
+{
+  "pending": {
+    "route": "POST /api/team/runs/{execution_id}/messages",
+    "status": 201,
+    "body": {
+      "message_id": "fictional-receipt-1",
+      "to": "maker",
+      "state": "pending",
+      "delivers": "next_turn",
+      "repeated": false,
+      "by": "fictional owner",
+      "at": "2026-10-12T18:00:00+00:00"
+    }
+  },
+  "repeated": {
+    "route": "POST /api/team/runs/{execution_id}/messages",
+    "status": 201,
+    "body": {
+      "message_id": "fictional-receipt-1",
+      "to": "maker",
+      "state": "pending",
+      "delivers": "next_turn",
+      "repeated": true,
+      "by": "fictional owner",
+      "at": "2026-10-12T18:00:00+00:00"
+    }
+  },
+  "held": {
+    "route": "POST /api/team/runs/{execution_id}/messages",
+    "status": 201,
+    "body": {
+      "message_id": "fictional-held-1",
+      "to": "maker",
+      "state": "held",
+      "delivers": "after_open_wait",
+      "repeated": false,
+      "by": "fictional owner",
+      "at": "2026-10-12T18:00:00+00:00"
+    }
+  },
+  "refused": {
+    "route": "POST /api/team/runs/{execution_id}/messages",
+    "status": 409,
+    "body": {
+      "reason": "member_ended",
+      "message": "Fictional member has ended."
+    }
+  }
+}

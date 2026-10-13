@@ -25,9 +25,9 @@ class NotifyCopy(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("key", "via", "target", name="uq_notify_copy"),)
 
     id: int | None = Field(default=None, primary_key=True)
-    # q:<waiting event id> | end:<run>@<end time> | stuck:<run>@<last event>
+    # q:<waiting event id> | end:<run>@<end time> | stuck:<run>@<last event> | tw:<team wait id>
     key: str = Field(index=True)
-    kind: str = ""                 # question | stuck | failed | finished
+    kind: str = ""                 # question | stuck | failed | finished | team_wait
     execution_id: str = Field(default="", index=True)
     node: str = ""                 # a question's gated node
     event_id: str = ""             # a question's waiting event

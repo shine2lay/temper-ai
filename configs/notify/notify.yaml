@@ -12,6 +12,10 @@
 #   stuck     a running run has written no event for stuck_after
 #   failed    a run failed
 #   finished  a run ended any other way (completed, cancelled)
+#   team_wait a free-flowing team asks you something on its Team page: one
+#             fixed sentence (which kind of wait) and the Team-page link,
+#             never the member's words; Slack only, and off until a block
+#             names it (e.g. defaults: {team_wait: slack})
 #
 # A route is `origin` (back where the run was started: its Slack thread or
 # Telegram chat), a place name, a list of those, or `off`. A run started
@@ -52,7 +56,7 @@ notify:
     repo_answer: off    # answers to repo questions come back as the answer itself
 
   # Hold notices while people sleep; they go out together when it ends.
-  # quiet_hours: {from: "22:00", to: "07:00", zone: America/Los_Angeles, still_ping: [question]}
+  # quiet_hours: {from: "22:00", to: "07:00", zone: America/Los_Angeles, still_ping: [question, team_wait]}
 
   # A question nobody has answered after a while also goes to another place, once.
   # nudge: {after: 30m, to: telegram}

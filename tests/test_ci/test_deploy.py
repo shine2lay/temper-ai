@@ -1013,7 +1013,8 @@ def test_the_live_check_asks_seven_things_in_order_then_shows_the_pins(dep, monk
     assert out["ok"] is True, out["parts"]
     assert [p["name"] for p in out["parts"]] == [*COUNTED, "the Pi pins"]
     assert [w for w, _ in fake.started()] == ["smoke_test", "ci_box_env", "ci_slow", "gate_smoke"]
-    assert all(notify == {"question": "off", "stuck": "off", "failed": "off", "finished": "off"}
+    assert all(notify == {"question": "off", "stuck": "off", "failed": "off", "finished": "off",
+                          "team_wait": "off"}
                for _, notify in fake.started())
     assert fake.going() == []
     assert deploy.CI_CALLER == "temper-ci"

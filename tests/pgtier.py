@@ -47,6 +47,7 @@ TIER = (
     "tests/test_runner/",                         # runs
     "tests/test_integrations/test_inbox.py",      # the event inbox
     "tests/test_integrations/test_notify_loop.py",  # notify copies and the notify store
+    "tests/test_integrations/test_team_wait_notices.py",  # team alerts: notify copies, Pi waits
     "tests/test_integrations/test_telegram.py",   # telegram threads and updates
     "tests/test_integrations/test_slack_door.py",
     "tests/test_integrations/test_slack_handlers.py",

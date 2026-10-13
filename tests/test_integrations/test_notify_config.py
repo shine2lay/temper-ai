@@ -58,7 +58,7 @@ class TestRoutes:
 
     def test_a_route_is_origin_a_place_a_list_or_off_and_never_an_id(self):
         assert parse_block({"question": [ORIGIN, "telegram", "telegram"]}).routes["question"] == (ORIGIN, "telegram")
-        assert parse_block("off").routes == {k: () for k in ("question", "stuck", "failed", "finished")}
+        assert parse_block("off").routes == {k: () for k in ("question", "stuck", "failed", "finished", "team_wait")}
         for bad in ("U0OWNER01", "C0RUNS001", 8000000001, "#runs", {"dm": "U0OWNER01"}):
             with pytest.raises(NotifyConfigError, match="place name"):
                 parse_block({"failed": bad})

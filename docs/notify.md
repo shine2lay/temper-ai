@@ -19,6 +19,7 @@ runs, gates ──▶ notify loop (in the server, every 15 s) ──▶ Slack   
 | `stuck` | a running run has written no event for `stuck_after`, or for its workflow's own `quiet_after` | **Stop run** |
 | `failed` | a run failed; the message quotes the failed step's own error | |
 | `finished` | a run completed or was cancelled | |
+| `team_wait` | a free-flowing team asks you something on its Team page ([below](#team-alerts)) | open the Team page and answer there |
 
 The run waits at its gate until someone answers, as long as that takes and
 across restarts. The next step gets the answers (`gate.text`,
@@ -50,7 +51,8 @@ The most specific setting wins, one kind at a time:
 1. the run's own: `POST /api/runs {"workflow": …, "notify": {"finished": "off"}}`;
 2. its workflow file's `notify:` block;
 3. `workflows:` in the notify file;
-4. `defaults:` in the notify file (a kind named nowhere goes to `origin`).
+4. `defaults:` in the notify file (a kind named nowhere goes to `origin`,
+   except `team_wait`, which goes nowhere until a block names it).
 
 In a workflow file:
 
@@ -94,6 +96,7 @@ notify:
     stuck: origin
     failed: [origin, telegram]
     finished: origin
+    team_wait: slack         # Slack places only; off when named nowhere
 
   fallback:                  # when a run's route comes to nothing (no origin)
     question: slack
@@ -106,7 +109,7 @@ notify:
     repo_answer: off         # the answer to a code question is the message
     nightly_report: {finished: runs}
 
-  quiet_hours: {from: "22:00", to: "07:00", zone: America/Los_Angeles, still_ping: [question]}
+  quiet_hours: {from: "22:00", to: "07:00", zone: America/Los_Angeles, still_ping: [question, team_wait]}
   nudge: {after: 30m, to: telegram}
 
   agents: [telegram]         # where the TelegramSend tool may post
@@ -115,15 +118,17 @@ notify:
 ### Quiet hours
 
 Between `from` and `to` (in `zone`), messages are held and go out together
-when the window ends. The kinds in `still_ping` (by default just `question`)
-go out anyway. In Telegram, finished messages are always sent silently (no
+when the window ends. The kinds in `still_ping` (by default `question` and
+`team_wait`, the ones that ask you something) go out anyway. A held team
+alert goes out at the window's end only if its team still asks; one whose
+wait closed meanwhile is never sent. In Telegram, finished messages are always sent silently (no
 sound); questions, failures and stuck runs make a sound.
 
 ### Nudges
 
 A question nobody has answered after `after` is also sent to `to`, once,
 marked "Nobody has answered this for 30 min". Answering either copy closes
-both.
+both. Team alerts are never nudged.
 
 Both can be set in the file (for every run), per workflow in `workflows:`,
 in a workflow file, or for one run; `quiet_hours: off` / `nudge: off` turns
@@ -194,6 +199,52 @@ itself ends the spell and nothing more is said about it; if it goes quiet
 again later, that is a new spell and a new message. The same rule
 (`temper_ai/runner/quiet.py`) decides the badge and the message, so the
 screen and your phone never disagree.
+
+## Team alerts
+
+A free-flowing team (FLOW, [pi-team-messages.md](pi-team-messages.md)) asks
+its owner on its Team page. Each wait it asks is a waiting gate, but for a
+free-flowing team run the notify loop never sends it as a `question`: the
+member's own words would go out in it, with Approve / Reject buttons that
+don't fit a team. It sends a `team_wait` alert instead: one fixed sentence
+and a link to the run's Team page (`<dashboard_url>/app/team/runs/<run>`).
+
+| The Team page asks | The alert says |
+|---|---|
+| a member's question | The team is waiting for you: a member's question. Answer on the Team page. |
+| a $100 spending check-in | … a spending check-in … |
+| whether to restart after a weekly limit | … a usage-limit restart decision … |
+| anything else it asks you | … an owner decision … |
+
+- **Only what the page asks.** The rule is the Team page's own (waits you
+  can answer now): a five-hour limit resumes by itself and asks nothing; a
+  check-in isn't asked while running work finishes; a closed wait or an
+  ended team asks nothing. Teams that work in rounds keep ordinary
+  `question` messages, as do gates outside a team.
+- **Nothing a member wrote goes out:** no question, detail, answer, tool
+  output, member name or goal, in the message, its closing edit or the
+  `notify_copies` row (which keeps the wait id, the fixed reason and the
+  link). You answer on the Team page; the message has no answer buttons.
+- **Once per wait and place**, across restarts. When the wait closes
+  (answered, stopped, or the team ended), the message is edited to "No
+  longer waiting for you: …". A send Slack rejects, times out on, or
+  doesn't confirm is marked failed and not sent again.
+- **Slack only**, until a Telegram version of the same alert is built and
+  tested: a route naming a Telegram or Notion place sends nothing there.
+  With no route (`team_wait` named nowhere) nothing is sent anywhere.
+- **Going back to an older temper:** a server from before team alerts
+  doesn't know `team_wait`, so it won't use a notify file that names it,
+  and sends nothing at all. Take `team_wait` out of the file before such a
+  rollback.
+- **Read only:** the loop never answers, resumes or retries a team. With the
+  Pi step switched off it looks at nothing and every gate goes the ordinary
+  way. If it can't read the teams' waits, it sends no team alert, closes
+  none, and holds back every step's own wait from the ordinary questions
+  until it can.
+- **Receipts:** Slack's confirmation (the posted message's `ts`) is kept as
+  the time you were told. `temper pi team-alerts <run>` (inside the server
+  container) prints them as `{"notices": [{"wait_id", "at", "channel"}]}`,
+  one per wait, for FLOW's measure.
 
 ## Status and checks
 

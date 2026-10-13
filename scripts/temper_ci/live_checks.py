@@ -58,7 +58,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 # notify off for every kind (docs/notify.md): the run's own block wins over every other.
-QUIET = {"question": "off", "stuck": "off", "failed": "off", "finished": "off"}
+QUIET = {"question": "off", "stuck": "off", "failed": "off", "finished": "off", "team_wait": "off"}
 # The statuses of a run that is not over yet: the same list the deploy waits on
 # (deploy.LIVE_STATUSES; a test keeps the two equal). Anything else is over.
 NOT_OVER = ("pending", "queued", "running", "waiting", "cancelling")

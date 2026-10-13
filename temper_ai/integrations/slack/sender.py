@@ -2,7 +2,9 @@
 
 Every notice about a run goes into that run's thread in each channel or
 DM (``store.thread_for``), started by its first notice there. Questions,
-failures and quiet runs are also shown in the channel (``reply_broadcast``).
+failures and quiet runs are also shown in the channel (``reply_broadcast``),
+and so are team alerts (``send_team_wait``: a fixed sentence and the
+Team-page link, given as they are; nothing else is added).
 """
 
 from __future__ import annotations
@@ -58,6 +60,16 @@ def render(notice: Notice) -> dict[str, Any]:
     return blocks.ended(summary, notice.url)
 
 
+def team_wait_message(text: str, url: str, *, closed: bool = False) -> dict[str, Any]:
+    """A team alert ({text, blocks}): its fixed sentence and a link to the Team page, nothing
+    else (no buttons that answer anything)."""
+    emoji = ":white_check_mark:" if closed else ":raising_hand:"
+    body = [blocks.section(f"{emoji} {blocks.esc(text)}")]
+    if url:
+        body.append({"type": "actions", "elements": [blocks.button("Open the Team page", "open_run", url=url)]})
+    return {"text": text, "blocks": body}
+
+
 def decision_line(decision: Decision) -> str:
     emoji = VERDICT_EMOJI.get(decision.verdict, ":information_source:")
     line = f"{emoji} {blocks.esc(decision.line())}"
@@ -97,6 +109,28 @@ class SlackSender:
         if not thread and ts:
             store.save_thread(notice.execution_id, channel, ts)
         return f"{channel}:{ts}"
+
+    def send_team_wait(self, execution_id: str, text: str, url: str, target: str) -> str:
+        """Post a team alert (notify kind ``team_wait``) to ``target``: in the run's thread
+        like every notice, and shown in the channel too. Returns ``channel:ts``; the ts is
+        empty when Slack gave no message back."""
+        message = team_wait_message(text, url)
+        channel = self.canonical(target)
+        thread = store.thread_for(execution_id, channel)
+        answer = self.client.post(channel, message["text"], message["blocks"], thread_ts=thread,
+                                  broadcast=bool(thread))
+        ts = str(answer.get("ts") or "")
+        if not thread and ts:
+            store.save_thread(execution_id, channel, ts)
+        return f"{channel}:{ts}"
+
+    def close_team_wait(self, copy: Copy, text: str, url: str) -> None:
+        """Edit a sent team alert to its fixed closing line."""
+        channel, _, ts = copy.ref.partition(":")
+        if not ts:
+            return
+        message = team_wait_message(text, url, closed=True)
+        self.client.update(channel, ts, message["text"], message["blocks"])
 
     def close_question(self, copy: Copy, notice: Notice, decision: Decision) -> None:
         channel, _, ts = copy.ref.partition(":")

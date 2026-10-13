@@ -360,6 +360,18 @@ temper-deploy recreates `pi-worker` only while `active` is empty, with
 starts it when it isn't running; its own `SERVICES` stay `server worker`. A parked run doesn't
 block an update: its resume records the commit it resumes on.
 
+## team-alerts: for FLOW's measure
+
+```bash
+docker compose exec -T server /app/.venv/bin/temper pi team-alerts <execution_id>
+```
+
+Which of a free-flowing team run's waits its owner was told about in Slack, and when Slack
+confirmed each (notify kind `team_wait`, [notify.md](notify.md#team-alerts)): one entry per
+wait, `{"ok": true, "execution_id": "...", "notices": [{"wait_id": "...", "at": "<UTC ISO
+time>", "channel": "slack"}]}`. It reads `notify_copies` only and never creates a table. A send
+Slack didn't confirm is not a notice. Failures exit 2 as lane-status does.
+
 ## Rollback
 
 `docker compose --profile pi stop pi-worker`. The main worker keeps refusing Pi runs; they wait

@@ -29,7 +29,9 @@ format and sends nothing. Changes are picked up without a restart::
       agents: [telegram]        # where the TelegramSend tool may post
 
 Kinds: ``question`` (a gate is waiting), ``stuck``, ``failed`` and
-``finished`` (completed or cancelled). A route is ``origin``, a place
+``finished`` (completed or cancelled), and ``team_wait`` (a free-flowing
+team asks its owner something: a fixed alert with the Team-page link,
+Slack only; off unless a block names it). A route is ``origin``, a place
 name, a list of those, or ``off``. A workflow file may carry the same
 settings under its own ``notify:`` key (see :func:`parse_block`); only
 place names go there, never ids.
@@ -49,7 +51,12 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("question", "stuck", "failed", "finished")
+KINDS = ("question", "stuck", "failed", "finished", "team_wait")
+#: Kinds that go nowhere until a block names them (no origin by default): a team alert goes
+#: only where its owner asked for it.
+OFF_UNLESS_NAMED = frozenset({"team_wait"})
+#: What quiet hours still let through when ``still_ping`` isn't given: whatever asks you.
+STILL_PING = ("question", "team_wait")
 ORIGIN = "origin"
 VIAS = ("slack", "telegram", "notion")
 DEFAULT_STUCK_AFTER = timedelta(minutes=45)
@@ -88,7 +95,7 @@ class QuietHours:
     start: time
     end: time
     zone: str = DEFAULT_ZONE
-    still_ping: tuple[str, ...] = ("question",)
+    still_ping: tuple[str, ...] = STILL_PING
 
     def _local(self, now: datetime) -> datetime:
         return now.astimezone(ZoneInfo(self.zone))
@@ -179,11 +186,12 @@ class NotifyConfig:
     def route(self, kind: str, workflow: str | None, workflow_block: Block | None = None,
               run_block: Block | None = None) -> tuple[str, ...]:
         """Where a ``kind`` notice about a run goes, before origin and names
-        are looked up. () means off."""
+        are looked up. () means off. A kind named nowhere goes back to its
+        origin, except :data:`OFF_UNLESS_NAMED`'s, which go nowhere."""
         for block in self.layers(workflow, workflow_block, run_block):
             if kind in block.routes:
                 return block.routes[kind]
-        return (ORIGIN,)
+        return () if kind in OFF_UNLESS_NAMED else (ORIGIN,)
 
     def quiet_hours(self, workflow: str | None, workflow_block: Block | None = None,
                     run_block: Block | None = None) -> QuietHours | None:
@@ -264,7 +272,7 @@ def parse_quiet_hours(value: Any, where: str) -> QuietSetting:
         raise NotifyConfigError(f"{where}: unknown key(s) {', '.join(sorted(unknown))}")
     if "from" not in value or "to" not in value:
         raise NotifyConfigError(f"{where}: needs both from and to")
-    still = value.get("still_ping", ["question"])
+    still = value.get("still_ping", list(STILL_PING))
     still_items = () if _is_off(still) else tuple(str(k) for k in (still if isinstance(still, list) else [still]))
     for kind in still_items:
         if kind not in KINDS:

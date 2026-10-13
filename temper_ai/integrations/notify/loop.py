@@ -5,6 +5,9 @@ Checked every ``TICK_S`` in a daemon thread, from the database, so runs in
 worker processes are seen the same as in-process ones. Occasions:
 
 * a question: a gate is waiting (its questions, and Approve / Reject);
+* a team wait: a free-flowing team asks its owner something on the Team page
+  (``team_waits``: a fixed sentence and the Team-page link, never the member's
+  words; its waits are left out of the questions);
 * stuck: a running run has written no event for ``stuck_after`` -- or for
   the ``quiet_after`` its own workflow sets, since a long silence is normal
   in a build and alarming in a one-minute run;
@@ -32,7 +35,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any
 
-from temper_ai.integrations.notify import store
+from temper_ai.integrations.notify import store, team_waits
 from temper_ai.integrations.notify.config import (
     ORIGIN,
     Block,
@@ -149,6 +152,9 @@ class Notifier:
         self._workflow_blocks: dict[str, tuple[float, Block | None]] = {}
         self._migrated = False
         self._interrupted_at: dict[str, datetime] = {}
+        # Read once per tick (under _tick_lock): the waiting gates, and the team waits among them.
+        self._tick_gates: list[dict[str, Any]] | None = None
+        self._tick_team: team_waits.TeamScan | None = None
         self.last_tick_at: str | None = None
         self.last_error: str | None = None
         self.sent = 0
@@ -290,9 +296,12 @@ class Notifier:
                     logger.warning("notify: moving Slack's open notices over failed: %s", exc)
             runs = {r["id"]: r for r in self.ops.recent() if r.get("id")}
             since = state_for(STATE_NAME, now)[0] - LOOKBACK
+            self._tick_gates = None
+            self._tick_team = None
             out: list[dict[str, Any]] = []
             steps: list[tuple[str, Callable[[], list[dict[str, Any]]]]] = [
                 ("questions", lambda: self._questions(cfg, now, since, runs)),
+                ("team waits", lambda: self._team_waits(cfg, now, since, runs)),
                 ("answered", lambda: self._close_answered(cfg)),
                 ("nudges", lambda: self._nudges(cfg, now, runs)),
                 ("ends", lambda: self._ends(cfg, now, since, runs)),
@@ -308,11 +317,15 @@ class Notifier:
             self.last_tick_at = now.isoformat(timespec="seconds")
             return out
 
-    def _deliver(self, cfg: NotifyConfig, notice: Notice | Callable[[], Notice], key: str, kind: str,
+    def _deliver(self, cfg: NotifyConfig, notice: Notice | Callable[[], Notice] | None, key: str, kind: str,
                  workflow: str, execution_id: str, targets: list[tuple[str, str]], now: datetime, *,
                  node: str = "", event_id: str = "", nudge: bool = False,
-                 state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """Claim and send one occasion to each target (held in quiet hours)."""
+                 state: dict[str, Any] | None = None,
+                 send: Callable[[Copy], dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """Claim and send one occasion to each target (held in quiet hours). With ``send``,
+        each claimed copy is sent by it instead of as ``notice``."""
+        if notice is None and send is None:
+            raise ValueError(f"a {kind} occasion needs a notice or a send function")
         if not targets:
             return []
         wf_block, run_block = self._blocks(workflow, execution_id)
@@ -337,8 +350,13 @@ class Notifier:
                 out.append({"kind": kind, "execution_id": execution_id, "via": via, "target": target,
                             "held_until": hold_until.isoformat()})
                 continue
+            if send is not None:
+                out.append(send(copy))
+                continue
             if built is None:
                 built = notice() if callable(notice) else notice
+            if built is None:   # unreachable: checked above
+                raise ValueError(f"a {kind} occasion needs a notice or a send function")
             out.append(self._send(copy, built))
         return out
 
@@ -376,12 +394,36 @@ class Notifier:
                         nudged_after_min: int = 0) -> Notice:
         return question_notice(cfg, execution_id, workflow, event, nudged_after_min)
 
+    def _waiting_gates(self) -> list[dict[str, Any]]:
+        """The waiting gate events, newest first: read once per tick."""
+        if self._tick_gates is None:
+            self._tick_gates = list(self.ops.waiting_gates())
+        return self._tick_gates
+
+    def _team_scan(self, cfg: NotifyConfig, runs: dict[str, dict[str, Any]]) -> team_waits.TeamScan:
+        """The free-flowing teams' waits: read once per tick (see ``team_waits``)."""
+        if self._tick_team is None and not team_waits.switched_on():
+            self._tick_team = team_waits.TeamScan(on=False)
+        if self._tick_team is None:
+            try:
+                gates = self._waiting_gates()
+                also = {c.execution_id for c in store.copies(kind=team_waits.KIND)}
+            except Exception as exc:  # noqa: BLE001 - fail closed, as team_waits.scan does
+                logger.warning("notify: could not read the waits for team alerts: %s", exc)
+                self._tick_team = team_waits.TeamScan(failed=True)
+            else:
+                self._tick_team = team_waits.scan(gates, runs, cfg.dashboard_url, also)
+        return self._tick_team
+
     def _questions(self, cfg: NotifyConfig, now: datetime, since: datetime,
                    runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
         # One question per open wait of a step: grouped by the step's path, so two steps of
         # one name in different stages are two questions.
         newest: dict[tuple[str, str], dict[str, Any]] = {}
-        for ev in self.ops.waiting_gates():     # newest first
+        team = self._team_scan(cfg, runs)
+        for ev in self._waiting_gates():     # newest first
+            if team.skips(ev):      # a free-flowing team's wait: a team alert instead
+                continue
             eid = str(ev.get("execution_id") or "")
             path = gate_path(ev.get("data") or {})
             if eid and path:
@@ -417,6 +459,83 @@ class Notifier:
             targets = self.targets(cfg, "question", workflow, eid)
             out += self._deliver(cfg, partial(self.question_notice, cfg, eid, workflow, ev), key,
                                  "question", workflow, eid, targets, now, node=node, event_id=event_id)
+        return out
+
+    # -- team waits ----------------------------------------------------------------------
+
+    def _team_waits(self, cfg: NotifyConfig, now: datetime, since: datetime,
+                    runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """A fixed alert for each wait a free-flowing team asks its owner now, once per wait
+        and place; the alert closes when its wait does (or its team ends)."""
+        team = self._team_scan(cfg, runs)
+        if not team.settled:
+            return []
+        out: list[dict[str, Any]] = []
+        for alert in team.alerts:
+            if alert.asked_at is not None and alert.asked_at < since and not store.has_copies(alert.key):
+                continue
+            workflow = self._workflow_of(alert.execution_id, runs)
+            targets = []
+            for via, target in self.targets(cfg, team_waits.KIND, workflow, alert.execution_id):
+                if via in team_waits.VIAS:
+                    targets.append((via, target))
+                else:
+                    logger.info("notify: team alerts go to Slack only, so %s %s gets none", via, target)
+            out += self._deliver(cfg, None, alert.key, team_waits.KIND, workflow, alert.execution_id, targets,
+                                 now, event_id=alert.event_id, state=alert.state,
+                                 send=partial(self._send_team_wait, alert=alert))
+        out += self._close_team_waits(team)
+        return out
+
+    def _send_team_wait(self, copy: Copy, alert: team_waits.TeamAlert) -> dict[str, Any]:
+        """Send one fixed team alert. Sent means Slack gave the message back (its ``ts``): that
+        time is kept as ``acked_at``. Anything else is failed and never sent again."""
+        result = {"kind": copy.kind, "execution_id": copy.execution_id, "via": copy.via, "target": copy.target}
+        send = getattr(self.senders.get(copy.via), "send_team_wait", None)
+        if send is None:
+            store.mark(copy.id, "failed", detail=f"{copy.via} can't send team alerts")
+            return {**result, "error": f"{copy.via} can't send team alerts"}
+        try:
+            ref = str(send(alert.execution_id, team_waits.alert_text(alert.reason), alert.url, copy.target) or "")
+        except Exception as exc:  # noqa: BLE001 - one bad place must not stop the rest
+            store.mark(copy.id, "failed", detail=f"{type(exc).__name__}: {exc}")
+            logger.warning("notify: could not send the team alert for %s to %s %s: %s",
+                           copy.execution_id[:8], copy.via, copy.target, exc)
+            return {**result, "error": str(exc)}
+        if not ref.partition(":")[2]:
+            store.mark(copy.id, "failed", ref=ref or None, detail="not confirmed: no message came back")
+            logger.warning("notify: %s did not confirm the team alert for %s", copy.via, copy.execution_id[:8])
+            return {**result, "error": "not confirmed"}
+        store.mark(copy.id, "sent", ref=ref,
+                   state={**(copy.state or {}), "acked_at": self._clock().astimezone(UTC).isoformat()})
+        self.sent += 1
+        logger.info("notify: team alert for %s -> %s %s", copy.execution_id[:8], copy.via, ref)
+        return {**result, "ref": ref}
+
+    def _close_team_waits(self, team: team_waits.TeamScan) -> list[dict[str, Any]]:
+        """Open team alerts whose wait is no longer open (answered, closed, or the team
+        ended): a sent one is edited to a fixed closing line; a held one is never sent."""
+        out: list[dict[str, Any]] = []
+        for c in store.copies(kind=team_waits.KIND):
+            if team_waits.wait_of(c.key, c.state) in team.open_waits:
+                continue
+            state = c.state or {}
+            if c.status == "sent":
+                if not store.mark(c.id, "closed", detail="no longer waiting", only_from=("sent",)):
+                    continue
+                close = getattr(self.senders.get(c.via), "close_team_wait", None)
+                if close is not None:
+                    try:
+                        close(c, team_waits.closed_text(str(state.get("reason") or team_waits.OTHER_REASON)),
+                              str(state.get("url") or ""))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("notify: could not close the team alert %s in %s: %s", c.id, c.via, exc)
+            elif c.status == "held":
+                if not store.mark(c.id, "closed", detail="(not sent)", only_from=("held",)):
+                    continue
+            elif not store.mark(c.id, "closed", detail="send not confirmed", only_from=("sending",)):
+                continue
+            out.append({"kind": "team_wait_closed", "execution_id": c.execution_id, "via": c.via})
         return out
 
     def _close_answered(self, cfg: NotifyConfig) -> list[dict[str, Any]]:
@@ -634,6 +753,9 @@ class Notifier:
     def _release(self, cfg: NotifyConfig, now: datetime, runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for c in store.due_held(now):
+            if c.kind == team_waits.KIND:
+                out += self._release_team_wait(cfg, c, runs)
+                continue
             if not store.mark(c.id, "sending", only_from=("held",)):
                 continue
             workflow = self._workflow_of(c.execution_id, runs)
@@ -659,6 +781,22 @@ class Notifier:
                 continue
             out.append(self._send(c, notice))
         return out
+
+    def _release_team_wait(self, cfg: NotifyConfig, c: Copy, runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """A team alert held for quiet hours: sent if the Team page still asks its wait, kept
+        held while the wait is open but not asked (or the waits can't be read), else closed."""
+        team = self._team_scan(cfg, runs)
+        if not team.settled:
+            return []
+        wait_id = team_waits.wait_of(c.key, c.state)
+        alert = next((a for a in team.alerts if a.wait_id == wait_id), None)
+        if alert is None:
+            if wait_id not in team.open_waits:
+                store.mark(c.id, "closed", detail="over before quiet hours ended", only_from=("held",))
+            return []
+        if not store.mark(c.id, "sending", only_from=("held",)):
+            return []
+        return [self._send_team_wait(c, alert)]
 
 
 def migrate_slack_notices() -> int:

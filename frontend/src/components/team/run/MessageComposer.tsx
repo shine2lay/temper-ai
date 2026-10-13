@@ -154,12 +154,15 @@ export function MessageComposer({
         className={cn(teamField, 'min-h-[88px] resize-y')}
       />
       {/* Keep the glance region available before results; seq keys refresh only its content,
-          including identical receipts. Atomic reads the whole sentence, never a prefix alone. */}
+          including identical receipts. Atomic reads the whole sentence, never a prefix alone.
+          Until the first result the same node is only visually hidden (still in the accessibility
+          tree), so it is no flex item and adds no second gap under the box. Pretty wrapping keeps
+          the receipt's last word off a line of its own. */}
       <div
         aria-live="polite"
         aria-atomic={glance || undefined}
         data-testid="team-message-result"
-        className={glance ? '[overflow-wrap:anywhere]' : 'empty:hidden'}
+        className={glance ? cn('[overflow-wrap:anywhere] text-pretty', !result && 'sr-only') : 'empty:hidden'}
       >
         {result && (
           <MessageResultNote

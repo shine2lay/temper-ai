@@ -156,6 +156,31 @@ async function picture(composer: Locator, name: string) {
   await composer.screenshot({ path: path.join(SHOTS, `${name}.png`) });
 }
 
+/** Top and bottom edges in CSS px; attached-only, so a clipped or empty region still measures. */
+const edges = (el: Locator) => el.evaluate((node) => {
+  const b = node.getBoundingClientRect();
+  return { top: b.top, bottom: b.bottom, height: b.height };
+});
+
+/** The receipt's drawn lines, top to bottom, and the word count of the last one. */
+async function receiptLines(receipt: Locator) {
+  return receipt.locator('[data-note]').evaluate((note) => {
+    const rows = new Map<number, string>();
+    const walker = document.createTreeWalker(note, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent ?? '';
+      for (let i = 0; i < text.length; i++) {
+        const range = document.createRange();
+        range.setStart(node, i); range.setEnd(node, i + 1);
+        const box = Array.from(range.getClientRects()).find((r) => r.width > 0);
+        if (box) rows.set(Math.round(box.top), (rows.get(Math.round(box.top)) ?? '') + text[i]);
+      }
+    }
+    const lines = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, t]) => t.trim());
+    return { lines, lastWords: (lines.at(-1) ?? '').split(/\s+/).filter(Boolean).length };
+  });
+}
+
 for (const theme of ['dark', 'light'] as const) {
   test(`isolated receipt fit checker: clean / ellipsis / nowrap / restored, ${theme}, 320`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 844 });
@@ -306,4 +331,51 @@ for (const theme of ['dark', 'light'] as const) {
     expect(sent.messages[6]).toEqual(sent.messages[5]);
     await expectAxeClean(page); await expectTargets(page);
   });
+
+  // Design S1/C1 on 8856ba92: before any result the glance region stays a polite atomic live
+  // region but takes no room, so the box -> footer gap is the section's one 12 px gap-3 (24 px
+  // when the empty region was a flex item). The receipt keeps 12 px either side of it, and at
+  // 390 its last line is not a lone word.
+  for (const width of [320, 390, 1440]) {
+    test(`no-result composer gap, persistent region and receipt lines, ${theme}, ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 });
+      await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+      const answer = latch();
+      const { sent, composer } = await open(page, true, [{ until: answer.until, then: receipts.pending }]);
+      const receipt = result(page);
+      const box = composer.getByRole('textbox', { name: 'Message' });
+      const send = composer.getByRole('button', { name: 'Send message' });
+      const footer = send.locator('..');
+
+      const live = await receipt.evaluate((node) => {
+        const s = getComputedStyle(node);
+        return { polite: node.getAttribute('aria-live'), atomic: node.getAttribute('aria-atomic'), ariaHidden: node.getAttribute('aria-hidden'),
+          display: s.display, visibility: s.visibility, inert: node.closest('[inert]') !== null, text: node.textContent };
+      });
+      const { display, ...exposed } = live;
+      expect(display, 'region never display:none').not.toBe('none');
+      expect(exposed, 'region present before any result: polite, atomic, exposed, empty').toEqual({ polite: 'polite', atomic: 'true',
+        ariaHidden: null, visibility: 'visible', inert: false, text: '' });
+      const empty = { box: await edges(box), region: await edges(receipt), footer: await edges(footer) };
+      const gap = Math.round((empty.footer.top - empty.box.bottom) * 100) / 100;
+      expect.soft(gap, 'no-result box -> footer gap (px)').toBeCloseTo(12, 1);
+      await expectAxeClean(page);
+      await picture(composer, `${theme}-${width}-no-result`);
+
+      await watch(page);
+      await box.fill('Fictional gap message.'); await send.click();
+      await expect.poll(() => sent.messages.length).toBe(1);
+      await box.focus(); answer.release();
+      await expect(receipt).toHaveText(ACCEPTED); await expect(box).toBeFocused();
+      expect(await probe(page), 'same region node, one whole-sentence update').toEqual({ same: true, updates: [ACCEPTED], atomic: 'true', polite: 'polite', nested: 0 });
+      const shown = { box: await edges(box), region: await edges(receipt), footer: await edges(footer) };
+      expect(shown.region.top - shown.box.bottom, 'box -> receipt gap (px)').toBeCloseTo(12, 1);
+      expect(shown.footer.top - shown.region.bottom, 'receipt -> footer gap (px)').toBeCloseTo(12, 1);
+      const lines = await receiptLines(receipt);
+      if (width === 390) expect.soft(lines.lastWords, `last receipt line at 390: ${JSON.stringify(lines.lines)}`).toBeGreaterThanOrEqual(2);
+      if (width < 1440) await fit(receipt, 'maker');
+      await picture(composer, `${theme}-${width}-receipt`);
+      await test.info().attach('composer-gap-measurements', { body: Buffer.from(JSON.stringify({ theme, width, live, empty, gap, shown, lines }, null, 2)), contentType: 'application/json' });
+    });
+  }
 }

@@ -14,6 +14,8 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +32,31 @@ def _short_command(seconds: float = 0.2) -> list[str]:
 def _long_command() -> list[str]:
     """A child that sleeps long enough for is_alive/kill tests."""
     return [sys.executable, "-c", "import time; time.sleep(60)"]
+
+
+#: How long a test waits for a child to do what it was told (exit, die). Polled, so a quiet
+#: machine waits no longer than the child takes, and a busy one (the full suite beside other
+#: work) gets room instead of a fixed half second.
+WAIT_S = 30.0
+
+
+def _wait_for(condition: Callable[[], bool], timeout: float = WAIT_S) -> bool:
+    """Poll ``condition`` until it holds or ``timeout`` passes; return whether it held."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
+    return True
+
+
+def _until_told_command(flag: Path) -> list[str]:
+    """A child that runs until ``flag`` exists, then exits 0: alive for as long as a test needs."""
+    return [
+        sys.executable,
+        "-c",
+        f"import os, time\nwhile not os.path.exists({str(flag)!r}): time.sleep(0.01)",
+    ]
 
 
 def _make_spawner_with_command(cmd: list[str]) -> SubprocessSpawner:
@@ -100,31 +127,34 @@ def test_spawn_returns_handle_with_pid(spawner):
     assert handle.metadata["execution_id"] == "test-1"
 
 
-def test_is_alive_true_for_running_then_false_after_exit(spawner):
+def test_is_alive_true_for_running_then_false_after_exit(tmp_path):
+    # The child runs until told to exit, so "alive" can't race its own end, and its exit is
+    # waited for, not given a fixed half second (a busy machine took longer, 2026-10-13).
+    flag = tmp_path / "exit-now"
+    spawner = _make_spawner_with_command(_until_told_command(flag))
     handle = spawner.spawn("test-2")
-    assert spawner.is_alive(handle) is True
-    # Wait for the short child to exit
-    time.sleep(0.5)
-    assert spawner.is_alive(handle) is False
+    try:
+        assert spawner.is_alive(handle) is True
+        flag.touch()
+        assert _wait_for(lambda: not spawner.is_alive(handle))
+        assert spawner.is_alive(handle) is False
+    finally:
+        spawner.kill(handle, force=True)
 
 
 def test_kill_terminates_running_worker(long_spawner):
     handle = long_spawner.spawn("test-3")
     assert long_spawner.is_alive(handle) is True
     long_spawner.kill(handle)
-    # SIGTERM should kill the python child within a tick
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        if not long_spawner.is_alive(handle):
-            break
-        time.sleep(0.05)
+    # SIGTERM kills the python child within a tick on a quiet machine; waited for, not timed
+    _wait_for(lambda: not long_spawner.is_alive(handle))
     assert long_spawner.is_alive(handle) is False
 
 
 def test_kill_already_dead_is_idempotent(spawner):
     """SIGTERM on a dead process is a no-op, not an error."""
     handle = spawner.spawn("test-4")
-    time.sleep(0.5)  # let it exit
+    _wait_for(lambda: not spawner.is_alive(handle))  # let it exit
     assert spawner.is_alive(handle) is False
     spawner.kill(handle)  # must not raise
     spawner.kill(handle, force=True)  # must not raise
@@ -133,17 +163,13 @@ def test_kill_already_dead_is_idempotent(spawner):
 def test_force_kill_uses_sigkill(long_spawner):
     handle = long_spawner.spawn("test-5")
     long_spawner.kill(handle, force=True)
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        if not long_spawner.is_alive(handle):
-            break
-        time.sleep(0.05)
+    _wait_for(lambda: not long_spawner.is_alive(handle))
     assert long_spawner.is_alive(handle) is False
 
 
 def test_reap_returns_exit_code(spawner):
-    spawner.spawn("test-6")
-    time.sleep(0.5)
+    handle = spawner.spawn("test-6")
+    _wait_for(lambda: not spawner.is_alive(handle))  # let it exit
     code = spawner.reap("test-6")
     assert code == 0
     # After reap, no longer tracked
@@ -202,7 +228,7 @@ def test_a_box_that_ends_its_run_itself_leaves_no_zombie(tmp_path):
     spawner = SubprocessSpawner(python_executable=_box_that_ends_its_run_itself(tmp_path))
     handle = spawner.spawn("self-ending")
     pid = int(handle.handle)
-    deadline = time.time() + 5.0
+    deadline = time.time() + WAIT_S
     while time.time() < deadline and (os.path.exists(f"/proc/{pid}") and not _zombie(pid)):
         time.sleep(0.02)  # still running
     while time.time() < deadline and (_zombie(pid) or spawner._processes):
@@ -220,9 +246,7 @@ def test_a_box_spawned_again_for_the_same_run_is_tracked_afresh(tmp_path):
     stand in for the new one."""
     spawner = SubprocessSpawner(python_executable=_box_that_ends_its_run_itself(tmp_path))
     first = spawner.spawn("again")
-    deadline = time.time() + 5.0
-    while time.time() < deadline and spawner.is_alive(first):
-        time.sleep(0.02)
+    _wait_for(lambda: not spawner.is_alive(first))
     assert spawner.is_alive(first) is False
     long_script = tmp_path / "long.sh"
     long_script.write_text("#!/bin/sh\nexec sleep 60\n")
@@ -233,8 +257,7 @@ def test_a_box_spawned_again_for_the_same_run_is_tracked_afresh(tmp_path):
         assert spawner.is_alive(second) is True
     finally:
         spawner.kill(second, force=True)
-    while time.time() < deadline and spawner.is_alive(second):
-        time.sleep(0.02)
+    _wait_for(lambda: not spawner.is_alive(second))
     assert spawner.is_alive(second) is False
     assert not _zombie(int(second.handle))
 

@@ -7,14 +7,13 @@ Or: docker-compose up
 import datetime as _dt
 import logging
 import os
-import stat
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -594,41 +593,6 @@ def health() -> dict:
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 
 
-def _file_inside_dist_or_404(root: Path, request_path: str) -> Path | None:
-    """The regular file in the dashboard build that /app/<request_path> names, if any.
-
-    `root` is the build folder, already resolved. `request_path` is the rest of
-    the URL after /app/, which the server has percent-decoded: %2e%2e arrives
-    here as `..` and %2F as `/`. Returns the file's real path when that is a
-    regular file inside `root`. Returns None when the path stays inside `root`
-    but no file is there (an app route such as runs/123): the caller answers
-    with the app shell.
-
-    Raises a 404 for every path that could leave `root`: an absolute path or one
-    with a `..` part (no page route needs either); one whose real path, symlinks
-    followed, lies outside `root` (compared part by part, so a sibling such as
-    dist-evil is outside dist); and one that can't be checked.
-    """
-    rel = PurePosixPath(request_path)
-    if rel.is_absolute() or ".." in rel.parts:
-        raise HTTPException(status_code=404)
-    try:
-        # Not strict: a missing path resolves too, so where it would be is checked.
-        # Python 3.11 and 3.12 raise RuntimeError on a symlink loop (3.13: OSError below).
-        target = (root / rel).resolve()
-    except (OSError, ValueError, RuntimeError):
-        raise HTTPException(status_code=404) from None
-    if not target.is_relative_to(root):
-        raise HTTPException(status_code=404)
-    try:
-        mode = target.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    except (OSError, ValueError):
-        raise HTTPException(status_code=404) from None
-    return target if stat.S_ISREG(mode) else None
-
-
 def mount_frontend(app: FastAPI, dist: Path) -> bool:
     """Serve the built dashboard from `dist` if there is one. Returns whether it was mounted.
 
@@ -653,19 +617,16 @@ def mount_frontend(app: FastAPI, dist: Path) -> bool:
     # forever; only the shell needs this. ETag keeps revalidation a 304.
     shell_headers = {"Cache-Control": "no-cache"}
 
-    # Serve static assets (JS, CSS, images). StaticFiles keeps to its own folder.
+    # Serve static assets (JS, CSS, images)
     app.mount("/app/assets", StaticFiles(directory=str(dist / "assets")), name="frontend-assets")
 
-    # Resolved once: every file served from /app must lie inside it.
-    root = dist.resolve()
-
-    # SPA catch-all: a real file in the build (the font licence texts), else
-    # index.html for any /app/* route; a path that would leave the build is 404.
+    # SPA catch-all: serve index.html for any /app/* route
     @app.get("/app/{full_path:path}")
     async def serve_spa(full_path: str):
-        """Serve a file from the build, or index.html for client-side routes."""
-        file_path = _file_inside_dist_or_404(root, full_path)
-        if file_path is not None:
+        """Serve index.html for all frontend routes (SPA client-side routing)."""
+        # Check if it's a real static file first
+        file_path = dist / full_path
+        if file_path.is_file():
             return FileResponse(str(file_path))
         # Otherwise serve index.html (React Router handles the route)
         return FileResponse(str(dist / "index.html"), headers=shell_headers)

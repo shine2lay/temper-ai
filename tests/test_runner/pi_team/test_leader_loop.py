@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from temper_ai.pi_agent import team_flow
 from temper_ai.pi_agent.ledger import acts
 from temper_ai.pi_agent.team_flow import FlowTeam
 from temper_ai.pi_agent.team_leader import TOOLS_NOTE, tools_note
@@ -138,6 +139,10 @@ def test_e18_a_stop_with_no_words_keeps_none(led, box, run_id, tmp_path, monkeyp
 def test_b11_a_cut_off_turn_pauses_the_team_and_retry_resends_the_same_messages(
         led, box, run_id, tmp_path, monkeypatch):
     owner = ls.Owner(led, "retry").install(monkeypatch)
+    # The owner's answer comes only once nothing runs. Picked up while the checker runs
+    # (every POLL_ASK_S, so it depends on the machine's speed), the retried builder holds
+    # the oldest message and goes before the leader: also right, but not this order.
+    monkeypatch.setattr(team_flow, "POLL_ASK_S", float("inf"))
     work_scripts()
     ts.SCRIPTS["builder"][:0] = [[{"die": 1}], [{"die": 1}]]
     team = open_flow(led, box, run_id, tmp_path)

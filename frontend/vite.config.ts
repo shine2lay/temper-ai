@@ -1,12 +1,33 @@
 /// <reference types="vitest/config" />
+import fs from 'fs'
 import path from 'path'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// The fonts are under the SIL Open Font License 1.1, which asks that the
+// licence travel with them. Each licence text kept next to the fonts
+// (src/assets/fonts/*.txt) is emitted unchanged, read as bytes, to
+// dist/licenses/<same name>, which the server hands out at
+// /app/licenses/<name>. One source, so no copy can drift from it;
+// `npm run check:fonts` checks the copies byte for byte, and the fonts
+// against their manifests.
+function fontLicences(): Plugin {
+  const fonts = path.resolve(__dirname, './src/assets/fonts')
+  return {
+    name: 'temper-font-licences',
+    apply: 'build',
+    generateBundle() {
+      for (const name of fs.readdirSync(fonts).filter((f) => f.endsWith('.txt')).sort()) {
+        this.emitFile({ type: 'asset', fileName: `licenses/${name}`, source: fs.readFileSync(path.join(fonts, name)) })
+      }
+    },
+  }
+}
+
 export default defineConfig({
   base: '/app/',
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), fontLicences()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

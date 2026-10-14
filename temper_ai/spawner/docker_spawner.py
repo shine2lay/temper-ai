@@ -124,6 +124,9 @@ RUN_COMMAND = ["uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow"
 # How long a run waits for a template container that can't be read (it is
 # being recreated, say) when there is no earlier look to fall back on.
 TEMPLATE_GRACE_SECONDS = 120.0
+# A cancelled run can finish before Docker removes its --rm box. Never reuse
+# that name while the old box remains; the queue watcher retries this bounded wait.
+OLD_BOX_GRACE_SECONDS = 120.0
 #: A host path, set on the worker (the spawner's side): the Claude login file every legacy
 #: box gets, read-only, at LOGIN_FILE_TARGET (docs/boxes.md, "The login file"). Read once,
 #: when the spawner is made. Sealed boxes never get it.
@@ -587,6 +590,7 @@ class DockerSpawner(Spawner):
         self._image_env_seen: dict[str, list[str]] = {}
         self._template: Template | None = None
         self._template_missing_since: float | None = None
+        self._old_box_since: dict[str, float] = {}
 
     # -- Spawner contract -----------------------------------------------------
 
@@ -594,6 +598,7 @@ class DockerSpawner(Spawner):
         workspace_path = self._workspace_lookup(execution_id)
         if workspace_path is None:
             raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
+        self._wait_for_old_box_to_go(execution_id)
         settings = box_profile.install_settings()
         template = self.template()
         name = container_name(execution_id)
@@ -620,14 +625,54 @@ class DockerSpawner(Spawner):
         result = self._docker_run(cmd)
         return self._handle(execution_id, result, self._image_override or template.image, record)
 
+    def _wait_for_old_box_to_go(self, execution_id: str) -> None:
+        """One look, no sleep: the watcher puts a busy run back unclaimed.
+
+        Exited is not gone. Only Docker's explicit no-such-container answer
+        allows a start; an unavailable daemon proves nothing. Both launch
+        paths come through here, before profiles or one-shot secrets are made.
+        """
+        name = container_name(execution_id)
+        try:
+            result = self._docker_run(
+                [self._docker, "inspect", "--format", "{{.State.Status}}", name],
+            )
+        except SpawnerError as exc:
+            self._old_box_busy(execution_id, f"can't confirm gone: {exc}")
+            return
+        if result.returncode == 0:
+            self._old_box_busy(execution_id, result.stdout.strip() or "unknown")
+        elif not _says_gone(result.stderr):
+            self._old_box_busy(execution_id, f"can't confirm gone: {result.stderr.strip()}")
+        # Keep the clock until a successful start: a late name conflict after
+        # this no-box look must not restart a previously opened wait.
+
+    def _old_box_busy(self, execution_id: str, state: str) -> None:
+        name = container_name(execution_id)
+        now = self._clock()
+        since = self._old_box_since.setdefault(execution_id, now)
+        reason = f"its last box {name} is still there ({state})"
+        if now - since < OLD_BOX_GRACE_SECONDS:
+            logger.info("Not starting run container %s: %s; waiting for it to go", name, reason)
+            raise SpawnerBusy(reason)
+        self._old_box_since.pop(execution_id, None)
+        raise SpawnerError(
+            f"{reason} after {OLD_BOX_GRACE_SECONDS:g} s; not starting a second one",
+        )
+
     def _handle(self, execution_id: str, result: subprocess.CompletedProcess, image: str,
                 record: dict | None) -> ProcessHandle:
         name = container_name(execution_id)
         if result.returncode != 0:
+            said = result.stderr.lower()
+            if "the container name" in said and "is already in use" in said:
+                self._old_box_busy(execution_id, "Docker name conflict")
+            self._old_box_since.pop(execution_id, None)
             raise SpawnerError(
                 f"docker run failed for {execution_id} (exit {result.returncode}): "
                 f"{result.stderr.strip()}",
             )
+        self._old_box_since.pop(execution_id, None)
         container_id = result.stdout.strip()
         logger.info(
             "Spawned run container %s (%s) for execution_id=%s",

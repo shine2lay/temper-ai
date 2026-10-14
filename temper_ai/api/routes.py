@@ -1030,10 +1030,17 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    pi_run = is_pi_workflow(nodes)
+    if not pi_run and (result.get("status") in {"queued", "running", "waiting"}
+                       or execution_id in _state().running):
+        # Before checkpoint/hold take-over or queueing: a plain Resume must
+        # neither replace nor fail an attempt that is still going. Pi's parked
+        # carry-on and one-copy claims below keep their existing behaviour.
+        raise HTTPException(status_code=409, detail="still running: stop it first")
+
     # Reconstruct state from checkpoints
     checkpoint_svc = CheckpointService(execution_id)
     restored_outputs = checkpoint_svc.reconstruct()
-    pi_run = is_pi_workflow(nodes)
 
     # A Pi run often starts by asking the owner something, so it can be resumed before its
     # first step has finished: it starts again from its first step, and a wait it had opened

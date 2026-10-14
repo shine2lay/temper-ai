@@ -125,6 +125,87 @@ def _add_row(execution_id: str, **fields) -> None:
         session.add(WorkflowRun(execution_id=execution_id, workflow_name="wf", **fields))
 
 
+def test_stop_then_resume_waits_for_its_old_box_then_starts_once(external, monkeypatch):
+    """The CI incident's timeline, through the real Resume and queue watcher.
+
+    Docker would return exit 125/Conflict if run is called before --rm finishes.
+    Master does exactly that and marks this cancelled run failed on its first scan.
+    """
+    from temper_ai.api import routes
+    from temper_ai.cli.watch_queue import _scan_and_dispatch
+    from temper_ai.spawner.docker_spawner import container_name
+    from tests.test_spawner.test_docker_spawner import (
+        FakeDocker,
+        _inspect_json,
+        _spawner,
+    )
+
+    eid = "stop-resume-replay"
+    name = container_name(eid)
+    _add_row(eid, status="cancelled", spawner_kind="docker", spawner_handle=name,
+             cancel_requested=True, error={"message": "Cancelled", "kind": "cancelled"})
+    _checkpoint(eid, "plan")
+    _earlier_attempt(monkeypatch, id=eid, status="cancelled")
+    # Seconds in the 20:47 minute of the recorded incident. No live/model run.
+    now = [47.375]
+    docker = FakeDocker(
+        answers={"inspect": [(0, _inspect_json(), "")], "run": [(0, "resumed-cid", "")]},
+        old_boxes={name: "exited"},
+    )
+    spawner = _spawner(docker, "", clock=lambda: now[0])
+    assert routes.get_workflow(eid)["status"] == "cancelled"
+
+    now[0] = 49.708
+    assert routes.resume_run(eid).status == "queued"
+    now[0] = 50.276
+    assert _scan_and_dispatch(spawner) == 0
+    waiting = _row(eid)
+    assert waiting["status"] == "queued", waiting["error"]
+    assert (waiting["spawner_kind"], waiting["spawner_handle"]) == (None, None)
+    assert waiting["error"] is None
+    assert waiting["spawner_metadata"] == {"start": "resume"}
+    assert docker.commands("run") == []
+    now[0] = 52.276  # another scan while Docker still holds the name
+    assert _scan_and_dispatch(spawner) == 0
+    assert docker.commands("run") == []
+
+    now[0] = 54.276
+    docker.old_boxes.clear()
+    assert _scan_and_dispatch(spawner) == 1
+    assert _scan_and_dispatch(spawner) == 0  # claimed; cannot start it twice
+    assert len(docker.commands("run")) == 1
+    assert _row(eid)["spawner_handle"] == name
+    assert _row(eid)["spawner_metadata"]["start"] == "resume"
+    assert external.running == {}
+
+
+def test_old_box_expiry_fails_only_the_queued_attempt(external, monkeypatch):
+    from temper_ai.api import routes
+    from temper_ai.cli.watch_queue import _scan_and_dispatch
+    from temper_ai.spawner.docker_spawner import container_name
+    from tests.test_spawner.test_docker_spawner import FakeDocker, _spawner
+
+    name = container_name("expired")
+    _add_row("expired", status="cancelled")
+    _checkpoint("expired", "plan")
+    _earlier_attempt(monkeypatch, status="cancelled")
+    now = [0.0]
+    docker = FakeDocker(old_boxes={name: "exited"})
+    spawner = _spawner(docker, "", clock=lambda: now[0])
+    assert routes.resume_run("expired").status == "queued"
+    assert _scan_and_dispatch(spawner) == 0
+    assert _row("expired")["status"] == "queued"
+    now[0] = 120.0
+    assert _scan_and_dispatch(spawner) == 0
+    refused = _row("expired")
+    assert refused["status"] == "failed"
+    assert refused["error"] == {
+        "kind": "spawn",
+        "message": f"its last box {name} is still there (exited) after 120 s; not starting a second one",
+    }
+    assert docker.commands("run") == []
+
+
 def test_a_resume_is_queued_for_a_box_not_run_in_the_server(external, monkeypatch):
     from temper_ai.api import routes
 
@@ -180,6 +261,59 @@ def test_a_run_still_waiting_for_or_in_its_box_is_not_resumed_twice(external, mo
 
     assert refused.value.status_code == 409
     assert _row("run-3")["spawner_metadata"] in (None, {})
+
+
+@pytest.mark.parametrize("status", ["queued", "running"])
+@pytest.mark.parametrize("in_process", [False, True])
+def test_active_resume_is_refused_before_hold_takeover_or_queue(
+    external, monkeypatch, status, in_process,
+):
+    from fastapi import HTTPException
+
+    from temper_ai.api import routes
+
+    eid = "active"
+    _add_row(eid, status=status)
+    _checkpoint(eid, "plan")
+    _earlier_attempt(monkeypatch, id=eid, status=status)
+    if in_process:
+        monkeypatch.setenv("TEMPER_EXECUTION_MODE", "in-process")
+        external.running[eid] = object()
+    before = _row(eid)
+    takeovers = []
+    monkeypatch.setattr(routes.holds, "take_over", lambda *a, **k: takeovers.append((a, k)))
+    with pytest.raises(HTTPException) as refused:
+        routes.resume_run(eid)
+    assert refused.value.status_code == 409
+    assert "stop it first" in refused.value.detail
+    assert takeovers == []
+    assert _row(eid) == before
+    assert not in_process or eid in external.running
+
+
+@pytest.mark.parametrize("status", ["cancelled", "failed", "completed"])
+def test_terminal_main_lane_resume_still_queues(external, monkeypatch, status):
+    from temper_ai.api import routes
+
+    _add_row("terminal", status=status)
+    _checkpoint("terminal", "plan")
+    _earlier_attempt(monkeypatch, status=status)
+    assert routes.resume_run("terminal").status == "queued"
+    assert _row("terminal")["status"] == "queued"
+
+
+def test_active_main_lane_resume_without_checkpoints_is_still_a_conflict(external, monkeypatch):
+    from fastapi import HTTPException
+
+    from temper_ai.api import routes
+
+    _add_row("no-checkpoints", status="running")
+    _earlier_attempt(monkeypatch, status="running")
+    with pytest.raises(HTTPException) as refused:
+        routes.resume_run("no-checkpoints")
+    assert refused.value.status_code == 409
+    assert "stop it first" in refused.value.detail
+    assert _row("no-checkpoints")["status"] == "running"
 
 
 def test_a_resume_with_nothing_saved_is_refused_before_it_is_queued(external, monkeypatch):

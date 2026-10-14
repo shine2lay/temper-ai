@@ -404,7 +404,7 @@ class BoxDocker:
 
     def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
         cmd = list(cmd)
-        if cmd[1] == "inspect":
+        if cmd[1] == "inspect" and not cmd[-1].startswith("temper-run-"):
             return subprocess.CompletedProcess(cmd, 0, stdout=self.install.inspect(), stderr="")
         if cmd[1] != "run":
             return subprocess.run(cmd, capture_output=True, text=True, timeout=60)

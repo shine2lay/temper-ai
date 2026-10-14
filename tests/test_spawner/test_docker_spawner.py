@@ -69,15 +69,36 @@ class FakeDocker:
 
     answers: dict[str, list[tuple[int, str, str]]] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
+    old_boxes: dict[str, str] = field(default_factory=dict)
 
     def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
         self.calls.append(list(cmd))
+        if cmd[1:4] == ["inspect", "--format", "{{.State.Status}}"]:
+            scripted = self.answers.get("box-inspect", [])
+            if scripted:
+                rc, out, err = scripted.pop(0)
+                return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
+            state = self.old_boxes.get(cmd[-1])
+            return subprocess.CompletedProcess(
+                cmd, 0 if state else 1, stdout=state or "",
+                stderr="" if state else f"Error: No such object: {cmd[-1]}",
+            )
+        if cmd[1] == "run" and "--name" in cmd:
+            name = cmd[cmd.index("--name") + 1]
+            if name in self.old_boxes:
+                return subprocess.CompletedProcess(cmd, 125, stdout="", stderr=name_conflict(name))
         queue = self.answers.get(cmd[1], [])
         code, out, err = queue.pop(0) if queue else (0, "", "")
         return subprocess.CompletedProcess(cmd, code, stdout=out, stderr=err)
 
     def commands(self, sub: str) -> list[list[str]]:
         return [c for c in self.calls if c[1] == sub]
+
+
+def name_conflict(name: str) -> str:
+    return (f'docker: Error response from daemon: Conflict. The container name "/{name}" '
+            'is already in use by container "old-cid". You have to remove (or rename) '
+            'that container to be able to reuse that name.')
 
 
 @pytest.fixture
@@ -259,7 +280,7 @@ class TestRunContainer:
         spawner = _spawner(docker, str(workspace))
         spawner.spawn("exec-1")
         spawner.spawn("exec-2")
-        assert len(docker.commands("inspect")) == 2
+        assert len([c for c in docker.commands("inspect") if c[-1] == "worker-self"]) == 2
         first, second = docker.commands("run")
         assert "temper-ai-worker" in first
         assert "temper-ai-server:new" in second and "KEY=new" in _envs(second)
@@ -703,6 +724,140 @@ def _box_spawner(install: Install, store: MemoryStore, docker: FakeDocker, **kwa
 def _sealed(monkeypatch) -> None:
     monkeypatch.setenv(box_profile.BOUNDARY_ENV, "sealed")
     monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", SEALED_RUN)
+
+
+@pytest.fixture(params=["legacy", "sealed"])
+def old_box_start(install, monkeypatch, request):
+    if request.param == "sealed":
+        _sealed(monkeypatch)
+    store = MemoryStore()
+    store.add("old-box", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = FakeDocker()
+    now = [0.0]
+    spawner = _box_spawner(install, store, docker, clock=lambda: now[0])
+    return spawner, docker, store, now, container_name("old-box")
+
+
+@pytest.mark.parametrize("state", ["created", "running", "paused", "restarting", "exited", "dead", "removing"])
+def test_any_old_box_waits_before_profile_or_run(old_box_start, state):
+    spawner, docker, store, now, name = old_box_start
+    docker.old_boxes[name] = state
+    with pytest.raises(SpawnerBusy, match=name):
+        spawner.spawn("old-box")
+    assert docker.commands("run") == []
+    assert "box_profile" not in store.rows["old-box"]["metadata"]
+    now[0] = 119.9
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("old-box")
+    docker.old_boxes.clear()
+    handle = spawner.spawn("old-box")
+    assert handle.handle == name and len(docker.commands("run")) == 1
+    assert store.record("old-box")["generation"] == 1
+
+
+@pytest.mark.parametrize("state", ["running", "exited", "removing"])
+def test_old_box_grace_expires_without_a_run(old_box_start, state):
+    spawner, docker, store, now, name = old_box_start
+    docker.old_boxes[name] = state
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("old-box")
+    now[0] = 120.0
+    with pytest.raises(SpawnerError) as refused:
+        spawner.spawn("old-box")
+    assert not isinstance(refused.value, SpawnerBusy)
+    assert str(refused.value) == (
+        f"its last box {name} is still there ({state}) after 120 s; not starting a second one"
+    )
+    assert docker.commands("run") == []
+    assert "box_profile" not in store.rows["old-box"]["metadata"]
+
+
+def test_late_name_conflicts_share_a_bound_across_no_box_looks(old_box_start):
+    spawner, docker, _, now, name = old_box_start
+    # The name appears between inspect and run, three times. A fresh no-box look
+    # must not reset the clock: otherwise a repeated late collision waits forever.
+    docker.answers["run"] = [(125, "", name_conflict(name))] * 3
+    with pytest.raises(SpawnerBusy, match=name):
+        spawner.spawn("old-box")
+    now[0] = 119.9
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("old-box")
+    now[0] = 120.0
+    with pytest.raises(SpawnerError, match="after 120 s; not starting a second one") as refused:
+        spawner.spawn("old-box")
+    assert not isinstance(refused.value, SpawnerBusy)
+    assert len(docker.commands("run")) == 3
+    # No new box was created; the final refusal clears the finished wait.
+    docker.answers["run"] = [(0, "cid-ok", "")]
+    now[0] = 240.0
+    assert spawner.spawn("old-box").handle == name
+
+
+def test_success_clears_the_old_box_wait_and_clocks_are_per_run(old_box_start):
+    spawner, docker, store, now, name = old_box_start
+    docker.old_boxes[name] = "exited"
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("old-box")
+    now[0] = 119.0
+    docker.old_boxes.clear()
+    spawner.spawn("old-box")
+    now[0] = 241.0
+    docker.old_boxes[name] = "exited"
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("old-box")  # a new wait, not the old expired one
+    store.add("another", workflow="sealed_probe", workspace=store.rows["old-box"]["workspace"])
+    docker.old_boxes[container_name("another")] = "exited"
+    now[0] = 300.0
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("another")
+    now[0] = 361.0
+    with pytest.raises(SpawnerError) as refused:
+        spawner.spawn("old-box")
+    assert not isinstance(refused.value, SpawnerBusy)
+    with pytest.raises(SpawnerBusy):
+        spawner.spawn("another")
+
+
+def test_no_old_box_adds_one_inspect_and_no_wait(old_box_start, monkeypatch):
+    spawner, docker, _, _, name = old_box_start
+    monkeypatch.setattr(ds.time, "sleep", lambda *a: pytest.fail("no old box: must not sleep"))
+    template = spawner.template()
+    expected = spawner.run_command("old-box", spawner._workspace_lookup("old-box"), template)
+    docker.calls.clear()
+    handle = spawner.spawn("old-box")
+    assert handle.handle == name
+    assert docker.calls[:2] == [
+        ["docker", "inspect", "--format", "{{.State.Status}}", name],
+        ["docker", "inspect", "worker-self"],
+    ]
+    assert len(docker.commands("run")) == 1
+    if handle.metadata["box_profile"]["doc"]["boundary"] == "legacy":
+        assert _without_profile(docker.commands("run")[0]) == expected
+    else:
+        assert "--name" in docker.commands("run")[0]
+        assert handle.metadata["box_profile"]["generation"] == 1
+
+
+def test_cant_tell_box_is_gone_waits_then_refuses(old_box_start):
+    spawner, docker, _, now, name = old_box_start
+    docker.answers["box-inspect"] = [(1, "", "Cannot connect to the Docker daemon")] * 2
+    with pytest.raises(SpawnerBusy, match=name):
+        spawner.spawn("old-box")
+    now[0] = 120.0
+    with pytest.raises(SpawnerError) as refused:
+        spawner.spawn("old-box")
+    assert not isinstance(refused.value, SpawnerBusy)
+    assert "after 120 s" in str(refused.value)
+    assert "Cannot connect" in str(refused.value)
+    assert docker.commands("run") == []
+
+
+def test_port_conflict_is_not_an_old_box_wait(old_box_start):
+    spawner, docker, _, _, _ = old_box_start
+    docker.answers["run"] = [(125, "", "port 8420 is already in use")]
+    with pytest.raises(SpawnerError, match="port 8420") as refused:
+        spawner.spawn("old-box")
+    assert not isinstance(refused.value, SpawnerBusy)
 
 
 @pytest.mark.parametrize("launch", CURRENT, ids=[launch.workflow for launch in CURRENT])

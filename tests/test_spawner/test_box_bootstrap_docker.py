@@ -228,7 +228,7 @@ class OneshotDocker:
 
     def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
         cmd = list(cmd)
-        if cmd[1] == "inspect":
+        if cmd[1] == "inspect" and not cmd[-1].startswith("temper-run-"):
             return subprocess.CompletedProcess(cmd, 0, stdout=self.install.inspect(), stderr="")
         if cmd[1] == "run" and "--name" in cmd:
             cmd = [c for c in cmd if c != "--rm"]

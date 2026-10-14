@@ -561,6 +561,7 @@ def revert_to(good: str, bad: str, reason: str) -> dict:
             return out
         push = sh("git", "-C", str(MAIN_REPO), "push", "-q", "origin", "master", timeout=300)
         out["pushed"] = push.returncode == 0
+        out["push_error"] = push.stderr.strip()[-600:] if push.returncode else ""
         ask_restart(sha, f"temper-ci: reverting {bad[:12]} after its live check failed")
         out["ok"] = True
         return out
@@ -888,12 +889,17 @@ def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
         data.pop("revert_waits", None)
     save(data)
     subjects = sh("git", "-C", str(MAIN_REPO), "log", "--format=%h %s", f"{good}..{sha}").stdout.strip()
+    push_error = " ".join(str(back.get("push_error") or back.get("detail") or "push did not complete").splitlines())
+    github = ("GitHub: pushed" if back.get("pushed") else
+              f"GitHub: NOT pushed ({push_error}). Push by hand: git -C ~/temper-ai push origin master")
+    log(github)
     dm("temper: the live check failed after the last land, so master has been put back.\n"
        f"• what failed: {bad_parts}\n"
        f"• taken back out:\n{subjects or f'  {sha[:12]}'}\n"
        f"• master is now the files of {good[:12]}"
        f"{' (revert ' + back['revert'][:12] + ')' if back.get('revert') else ''}\n"
        f"• temper is restarting onto it{'' if back.get('ok') else ' — THE REVERT ITSELF DID NOT GO THROUGH: ' + str(back.get('detail'))}\n"
+       f"{github}\n"
        f"• report: {report.url(sha)}")
     return out
 

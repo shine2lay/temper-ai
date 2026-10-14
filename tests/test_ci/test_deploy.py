@@ -307,6 +307,79 @@ def test_the_revert_is_the_good_tree_on_master_without_any_commit_hook(dep, monk
     assert all("--no-verify" not in a for a in ran)
 
 
+@pytest.mark.parametrize(("push_code", "stderr", "push_error", "github_line"), [
+    (0, "a harmless push warning", "", "GitHub: pushed"),
+    (1, "Permission denied (publickey)", "Permission denied (publickey)",
+     "GitHub: NOT pushed (Permission denied (publickey)). "
+     "Push by hand: git -C ~/temper-ai push origin master"),
+    (1, "earlier output " * 100 + "Permission denied (publickey)",
+     ("earlier output " * 100 + "Permission denied (publickey)")[-600:],
+     "GitHub: NOT pushed (" + ("earlier output " * 100 + "Permission denied (publickey)")[-600:] + "). "
+     "Push by hand: git -C ~/temper-ai push origin master"),
+    (1, "", "", "GitHub: NOT pushed (push did not complete). "
+     "Push by hand: git -C ~/temper-ai push origin master"),
+], ids=["pushed", "not-pushed", "stderr-tail", "no-stderr"])
+def test_a_revert_records_and_says_if_github_got_it(
+        dep, monkeypatch, capsys, push_code, stderr, push_error, github_line):
+    """The whole rollback path, with no real push, gate, restart or DM."""
+    deploy, _ = dep
+    good, bad, revert = "4" * 40, "5" * 40, "9" * 40
+    out = {"sha": bad, "ok": False, "restarted": True,
+           "live": {"ok": False, "parts": [{"name": "hooks", "ok": False}]}}
+    deploy.save({"last_good": good, "deployed": bad, "last_deploy": out})
+    monkeypatch.setattr(deploy, "master_sha", lambda: bad)
+    calls = []
+
+    def fake_sh(*args, **kwargs):
+        calls.append(args)
+        if args[0] == "rm":
+            return subprocess.CompletedProcess(args, 0, "", "")
+        assert args[:3] == ("git", "-C", str(deploy.MAIN_REPO))
+        command = args[3]
+        if command == "commit-tree":
+            return subprocess.CompletedProcess(args, 0, revert + "\n", "")
+        if command == "push":
+            assert args[4:] == ("-q", "origin", "master")
+            assert kwargs["timeout"] == 300
+            return subprocess.CompletedProcess(args, push_code, "", stderr)
+        if command == "log":
+            return subprocess.CompletedProcess(args, 0, "5555555 Bad\n", "")
+        assert command in ("worktree", "branch", "merge")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(deploy, "sh", fake_sh)
+    asked = []
+    monkeypatch.setattr(deploy.gate, "ask_for", lambda *a: asked.append(a))
+    checked = []
+    monkeypatch.setattr(deploy.gate, "check", lambda *a: (checked.append(a), {"ok": True})[1])
+    restarted = []
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: restarted.append(sha))
+    said = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+
+    result = deploy._go_back(bad, good, "hooks", out)
+
+    # Inspect the actual saved JSON, not just the in-memory return value.
+    data = json.loads(deploy.DEPLOY_STATE.read_text(encoding="utf-8"))
+    back = data["last_deploy"]["rollback"]
+    assert back == result["rollback"]
+    assert back["pushed"] is (push_code == 0)
+    assert back["push_error"] == push_error
+    assert len(back["push_error"]) <= 600
+    assert set(back) == {"at", "good", "bad", "reason", "ok", "revert", "gate_ok",
+                         "pushed", "push_error"}
+    assert len(said) == 1 and github_line in said[0].splitlines()
+    assert github_line in capsys.readouterr().out
+    assert github_line in deploy.paths.LOG.read_text(encoding="utf-8")
+    # Publication failure must not change local recovery, the gate, or the single push.
+    assert back["ok"] is True and back["gate_ok"] is True
+    assert data["deployed"] == revert and data["last_good"] == good
+    assert data["handled"] == bad and data["revert_outstanding"] == ""
+    assert asked == [(revert, "master", f"revert of {bad[:12]}")]
+    assert checked == [(revert, "master")] and restarted == [revert]
+    assert len([a for a in calls if a[0] == "git" and a[3] == "push"]) == 1
+
+
 @pytest.mark.parametrize("waiting", [False, True], ids=["immediate", "waiting"])
 @pytest.mark.parametrize("error", [
     subprocess.TimeoutExpired(["git", "commit-tree"], 120),

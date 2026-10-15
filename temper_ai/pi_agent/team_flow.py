@@ -74,6 +74,7 @@ from temper_ai.pi_agent.shared_version import (
 )
 from temper_ai.pi_agent.team import ROUNDS_TEAM
 from temper_ai.pi_agent.team_leader import (
+    EVIDENCE_HANDOFF_NOTE,
     MAX_NOTE,
     MAX_SUMMARY,
     NOT_NOW,
@@ -183,7 +184,7 @@ def flow_framing(name: str, leader: str, roster: list[str], tools: list[str]) ->
     text += ("\nIf only the owner can answer, call ask_owner with your question and finish "
              "this turn. Only you wait for the answer; the other members carry on. Your "
              "send_message calls reach their recipients only after your turn finishes.")
-    return text + "\n" + tools_note(tools)
+    return text + "\n" + EVIDENCE_HANDOFF_NOTE + "\n" + tools_note(tools)
 
 
 class FlowTeam(LeaderTeam):

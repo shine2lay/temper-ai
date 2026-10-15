@@ -134,6 +134,15 @@ TOOLS_NOTE = ("Temper note: in this Temper run your tools are: {tools}. Chat not
               "If ask_owner is listed, use it for owner-only questions and finish this turn; "
               "otherwise put questions in your reply.")
 
+EVIDENCE_HANDOFF_NOTE = (
+    "Evidence and handoff: Distinguish checks you actually run from code review, fixtures, "
+    "and proposed checks. Name each executed check, its result, and artifact/reference when "
+    "available. NOT CHECKED means not run; BLOCKED means missing access or prerequisites; "
+    "FAILED means an observed failed check. A screenshot alone does not prove interactions "
+    "or persistence. Keep the final handoff concise: what works (observed versus inferred), "
+    "what was checked, and what remains unknown. Leads: preserve verifier limitations; do "
+    "not turn code review or missing evidence into verified success.")
+
 
 def tools_note(tools: list[str]) -> str:
     """The fixed note in every member's framing: exactly the member's tools, and what a Temper
@@ -164,6 +173,7 @@ def framing(name: str, leader: str, roster: list[str], tools: list[str]) -> str:
             "what to change.")
     lines.append("Use send_message to message another member; Temper delivers it at their next "
                  "turn.")
+    lines.append(EVIDENCE_HANDOFF_NOTE)
     lines.append(tools_note(tools))
     return "\n".join(lines)
 

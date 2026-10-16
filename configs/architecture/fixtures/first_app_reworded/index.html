@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My tasks (synthetic checker control, reworded)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>My tasks</h1>
+  <form id="add-form" autocomplete="off">
+    <label for="new-item">Task</label>
+    <input id="new-item" type="text">
+    <button type="submit">Add task</button>
+  </form>
+  <p id="empty">No tasks yet. Write one above, then press Enter or Add task.</p>
+  <ul id="list" data-delete-word="Remove"></ul>
+  <p id="warning" role="alert" hidden></p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

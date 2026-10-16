@@ -1,0 +1,26 @@
+{
+ "origin": "https://spark.tailbb5055.ts.net:8999",
+ "pins": {
+  "index.html": "1d0bf2f6de555e55a4c57f024ebd5dd44988baa8a38b6c22b05d7a0317bdef9a",
+  "style.css": "df12062cc1e11455fdfba8d1a99f79d2e8fe0f0b88e3e86291210f11edd131a9",
+  "app.js": "cb34fcd27e09f0d37b5aaee323fd99efff26585484880753eaaf7eec5ad4061f"
+ },
+ "kit_id": "qa-first-app-critical-v1",
+ "kit_sha256": "49813ec9b0d3890be27404f9e0e9f385a3e01ab78acac771ad428494f6d6180a",
+ "kit_not_checked": [
+  "blank/UTF16-200/320px",
+  "literal HTML input",
+  "seeded malformed storage",
+  "storage-fault injection",
+  "long-directory browser negative",
+  "cross-browser/offline/accessibility/AT/multi-tab",
+  "Design and owner observation"
+ ],
+ "wording": {
+  "heading": "My tasks",
+  "textbox": "Task",
+  "add_button": "Add task",
+  "delete_button": "Remove {item}",
+  "empty_text": "No tasks yet. Write one above, then press Enter or Add task."
+ }
+}

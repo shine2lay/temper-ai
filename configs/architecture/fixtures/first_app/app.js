@@ -6,7 +6,9 @@
 //   wrong_order      a new item goes to the top                              -> FAIL at C1-3
 //   wrong_focus      after adding, focus goes to Add, not New item           -> FAIL at C1-2
 //   page_error       ticking a checkbox throws and leaves it unticked        -> FAIL at C1-4
-//   outside_request  asks another origin for an image when the page loads    -> FAIL at C1-1
+//   outside_request  asks another origin for an image when the page loads    -> traffic gate FAIL at C1-1
+// The delete buttons' word comes from the page (data-delete-word on the list, default "Delete"), so
+// fixtures/first_app_reworded/index.html can reword the whole page for the profile controls (#92).
 "use strict";
 const VARIANT = "clean";
 const KEY = "first-app-check-control-items";
@@ -17,6 +19,7 @@ const addButton = form.querySelector("button");
 const list = document.getElementById("list");
 const empty = document.getElementById("empty");
 const warning = document.getElementById("warning");
+const DELETE_WORD = list.dataset.deleteWord || "Delete";
 
 function load() {
   if (VARIANT === "forget_reload") return [];
@@ -56,8 +59,8 @@ function render() {
     label.textContent = item.text;
     const del = document.createElement("button");
     del.type = "button";
-    del.textContent = "Delete";
-    del.setAttribute("aria-label", "Delete " + item.text);
+    del.textContent = DELETE_WORD;
+    del.setAttribute("aria-label", DELETE_WORD + " " + item.text);
     if (item.done) li.className = "done";
     box.addEventListener("click", (e) => {
       if (VARIANT === "page_error") {

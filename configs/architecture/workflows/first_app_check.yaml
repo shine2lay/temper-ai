@@ -2,24 +2,36 @@ workflow:
   name: first_app_check
   version: 1
   description: |
-    System architecture's direct browser check of the Team's first app (Architecture queue #91,
-    2026-10-16): QA's frozen critical journey (kit qa-first-app-critical-v1, 8 rows) run with no
-    model in temper's playwright-mcp browser against Project d9f807c3's to-do list as served at
-    https://spark.tailbb5055.ts.net:8960/, after an in-browser hash check of its three files.
+    System architecture's direct browser check of the Team's to-do app (Architecture queues #91,
+    #92, 2026-10-16): QA's frozen critical journey (kit qa-first-app-critical-v1, 8 rows) run with
+    no model in temper's playwright-mcp browser, after an in-browser hash check of the app's three
+    files and of the "/" document. By default it checks the first app (Project d9f807c3) as served
+    at https://spark.tailbb5055.ts.net:8960/. A new build is checked through profile (mode=live
+    only): one JSON object as text with origin (https://spark.tailbb5055.ts.net:<port> only),
+    pins (index.html, style.css, app.js SHA256), kit_id, kit_sha256, kit_not_checked and wording
+    (heading, textbox, add_button, delete_button "... {item} ...", empty_text); anything missing,
+    extra or malformed is REFUSED before the browser is contacted. Today's values in that form:
+    first_app_check.py --print-default-profile.
     mode=controls proves the checker first: a synthetic working page passes all 8 rows, each broken
-    variant fails at its row, a wrong pin is refused. mode=live checks the served app once.
-    PASS covers only these 8 rows plus the traffic, error and cleanup gates; not full QA,
-    accessibility, mobile, offline or owner acceptance. QA reads the receipts and gives its own
-    verdict. Network is observed, not blocked.
+    variant fails at its row, outside traffic fails the traffic gate, a wrong pin is refused, a
+    reworded page passes with its profile and fails without it, a bad profile is refused unseen.
+    mode=live checks the served app once. PASS covers only these 8 rows plus the traffic, error
+    and cleanup gates; not full QA, accessibility, mobile, offline or owner acceptance (receipts
+    list the kit's NOT CHECKED items). QA reads the receipts and gives its own verdict. Network is
+    observed, not blocked.
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
-    mode: {type: string, required: true}   # controls | live
+    mode: {type: string, required: true}      # controls | live
+    profile: {type: string, required: false}  # live only; left out = the first app, exactly as before
   outputs:
     mode: check.structured.mode
     verdict: check.structured.verdict
     why: check.structured.why
     rows: check.structured.rows
+    traffic_gate: check.structured.traffic_gate
+    traffic_gates: check.structured.traffic_gates
+    profile: check.structured.profile
     all_ok: check.structured.all_ok
     verdicts: check.structured.verdicts
     summary_path: check.structured.summary_path
@@ -31,3 +43,4 @@ workflow:
       agent: first_app_check
       input_map:
         mode: input.mode
+        profile: input.profile

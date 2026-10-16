@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>To-do list (synthetic checker control)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>To-do list</h1>
+  <form id="add-form" autocomplete="off">
+    <label for="new-item">New item</label>
+    <input id="new-item" type="text">
+    <button type="submit">Add</button>
+  </form>
+  <p id="empty">Your list is empty. Type an item above, then press Enter or Add.</p>
+  <ul id="list"></ul>
+  <p id="warning" role="alert" hidden></p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

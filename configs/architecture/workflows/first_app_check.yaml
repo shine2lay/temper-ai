@@ -1,0 +1,33 @@
+workflow:
+  name: first_app_check
+  version: 1
+  description: |
+    System architecture's direct browser check of the Team's first app (Architecture queue #91,
+    2026-10-16): QA's frozen critical journey (kit qa-first-app-critical-v1, 8 rows) run with no
+    model in temper's playwright-mcp browser against Project d9f807c3's to-do list as served at
+    https://spark.tailbb5055.ts.net:8960/, after an in-browser hash check of its three files.
+    mode=controls proves the checker first: a synthetic working page passes all 8 rows, each broken
+    variant fails at its row, a wrong pin is refused. mode=live checks the served app once.
+    PASS covers only these 8 rows plus the traffic, error and cleanup gates; not full QA,
+    accessibility, mobile, offline or owner acceptance. QA reads the receipts and gives its own
+    verdict. Network is observed, not blocked.
+    Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
+    (the receipt, summary, screenshot and log land in its check/ folder).
+  inputs:
+    mode: {type: string, required: true}   # controls | live
+  outputs:
+    mode: check.structured.mode
+    verdict: check.structured.verdict
+    why: check.structured.why
+    rows: check.structured.rows
+    all_ok: check.structured.all_ok
+    verdicts: check.structured.verdicts
+    summary_path: check.structured.summary_path
+    workspace: check.structured.workspace
+
+  nodes:
+    - name: check
+      type: agent
+      agent: first_app_check
+      input_map:
+        mode: input.mode

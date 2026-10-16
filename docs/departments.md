@@ -29,7 +29,7 @@ role tests and lands a change.
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. Its focus workflow (see "One workflow at a time" below) is the market scan, `scan_market`, which also covers a single sector when its `frame` names one. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
-| `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader. |
+| `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader, and the no-model browser check of the Team's first app (`first_app_check`). |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
@@ -498,7 +498,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_grade.yaml` | agent |
 | `design/agents/design_score.yaml` | agent (script) |
 
-### architecture (34)
+### architecture (38)
 
 | Config | Kind |
 |---|---|
@@ -513,6 +513,10 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/agents/arch_land_grade_score.yaml` | agent (script) |
 | `architecture/bin/land_check_intake.py` | script |
 | `architecture/bin/land_check_rubric.md` | land-check method |
+| `architecture/workflows/first_app_check.yaml` | workflow |
+| `architecture/agents/first_app_check.yaml` | agent (script) |
+| `architecture/bin/first_app_check.py` | script |
+| `architecture/fixtures/first_app/` | checker controls (synthetic page) |
 | `epd/workflows/epd_pattern_audit.yaml` | workflow |
 | `epd/workflows/epd_plan.yaml` | workflow |
 | `epd/workflows/epd_plan_grade.yaml` | workflow |

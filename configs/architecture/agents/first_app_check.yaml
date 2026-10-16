@@ -1,0 +1,52 @@
+# System architecture, first_app_check (Architecture queue #91, 2026-10-16). No model.
+#
+# QA's frozen critical journey (kit qa-first-app-critical-v1, CASE-KIT.json SHA256 49813ec9...) run in
+# temper's playwright-mcp browser by configs/architecture/bin/first_app_check.py, against the Team's first
+# app (Project d9f807c3, the offline to-do list) as served at https://spark.tailbb5055.ts.net:8960/.
+#   mode=controls: the checker's own controls on a synthetic to-do page written from the kit's wording
+#     (configs/architecture/fixtures/first_app, served from this run's container): the working page must
+#     PASS all 8 rows, each broken variant FAIL at its row, the wrong pin be REFUSED before any row.
+#   mode=live: the served app, once: in-browser SHA-256 of index.html, style.css and app.js against the
+#     frozen pins (mismatch = REFUSED, no row run), then the 8 rows in a fresh 1280x800 en-US UTC context,
+#     each read back from the rendered page, stop at the first failure, screenshot after the reload rows,
+#     every request and page error recorded, browser closed and confirmed.
+# Writes check/ in the workspace: receipt.json + summary.md + after-reload.png (live), or one folder per
+# control plus controls.json. A FAIL, REFUSED or BLOCKED verdict is a result, not a step failure: the step
+# fails only when the checker gives no result at all.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: first_app_check
+  version: 1
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    set -e
+    WS="{{ workspace_path }}"
+    [ -n "$WS" ] || { echo "first_app_check needs the run's workspace_path (its check/ folder holds the receipt)" >&2; exit 2; }
+    cd "$WS"
+    mkdir -p check
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import json
+    import os
+    import subprocess
+    import sys
+
+    mode = (os.environ.get("{{ mode | env }}") or "").strip()
+    if mode not in ("controls", "live"):
+        raise SystemExit("first_app_check needs mode = controls or live, got %r" % mode)
+    script = "/app/configs/architecture/bin/first_app_check.py"
+    res = subprocess.run([sys.executable, "-u", script, "--mode", mode, "--out", "check"],
+                         capture_output=True, text=True, timeout=840)
+    log = [x for x in res.stdout.strip().splitlines() if not x.startswith("{")]
+    sys.stderr.write("\n".join(log)[-40000:] + "\n" + res.stderr[-20000:])
+    with open("check/run.log", "w", encoding="utf-8") as f:
+        f.write(res.stdout + res.stderr)
+    lines = [x for x in res.stdout.strip().splitlines() if x.startswith("{")]
+    if not lines:
+        raise SystemExit("first_app_check.py gave no result (exit %d)" % res.returncode)
+    out = json.loads(lines[-1])
+    out.update({"status": "completed", "exit_code": res.returncode, "workspace": os.getcwd(),
+                "summary_path": "check/summary.md" if mode == "live" else "check/controls.json"})
+    print(json.dumps(out))
+    PYEOF

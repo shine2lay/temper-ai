@@ -14,12 +14,18 @@
 # temper_ai; inheriting a stray value once pointed a trim at the wrong
 # database entirely. This command trims *temper's* database or none. To aim
 # it somewhere else on purpose, set TEMPER_TRIM_DATABASE_URL.
+#
+# If temper's database doesn't answer yet (the weekly timer can fire at boot,
+# before Docker has started it), it waits up to TEMPER_TRIM_WAIT_S seconds
+# (600 by default), then stops with exit 75 and nothing trimmed.
 set -euo pipefail
 
 # Always the main checkout, so this keeps working after a worktree lands.
 repo="${TEMPER_REPO:-$HOME/temper-ai}"
 cd "$repo"
 
+db_host="localhost"
+db_port="" # stays empty for TEMPER_TRIM_DATABASE_URL: then there is no wait
 if [[ -n "${TEMPER_TRIM_DATABASE_URL:-}" ]]; then
     export TEMPER_DATABASE_URL="$TEMPER_TRIM_DATABASE_URL"
 else
@@ -32,7 +38,8 @@ else
         from_env="$(grep -E '^POSTGRES_PORT=' .env | tail -1 | cut -d= -f2- || true)"
         [[ -n "$from_env" ]] && port="$from_env"
     fi
-    export TEMPER_DATABASE_URL="postgresql://temper_ai:${password}@localhost:${port}/temper_ai"
+    db_port="$port"
+    export TEMPER_DATABASE_URL="postgresql://temper_ai:${password}@${db_host}:${port}/temper_ai"
 fi
 
 # Say plainly what is missing. Under systemd the PATH is not a login shell's,
@@ -41,6 +48,22 @@ if ! command -v uv >/dev/null 2>&1; then
     echo "temper-trim: uv is not on PATH ($PATH)." >&2
     echo "temper-trim: install it, or point the unit's PATH at the directory holding uv." >&2
     exit 127
+fi
+
+if [[ -n "$db_port" ]]; then
+    wait_s="${TEMPER_TRIM_WAIT_S:-600}"
+    waited=0
+    until (exec 3<>"/dev/tcp/${db_host}/${db_port}") 2>/dev/null; do
+        if (( waited >= wait_s )); then
+            echo "temper-trim: the database at ${db_host}:${db_port} did not answer within ${wait_s} s; nothing was trimmed. Is Docker running?" >&2
+            exit 75
+        fi
+        if (( waited == 0 )); then
+            echo "temper-trim: waiting up to ${wait_s} s for the database at ${db_host}:${db_port}" >&2
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
 fi
 
 exec uv run --quiet python -m temper_ai.cli.main trim "$@"

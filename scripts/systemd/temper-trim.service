@@ -8,8 +8,12 @@ Description=temper trim: drop old runs' sent material, keep every outcome
 # re-read just before each run is touched, each run commits on its own,
 # and the VACUUM afterwards is the plain kind, which takes no exclusive
 # lock. Stopping it half way loses nothing.
-Requires=docker.service
-After=docker.service
+#
+# This is a user unit, so it must not name docker.service: the user's systemd
+# can't see the system's units. Requires=docker.service made the timer fail
+# with "Unit docker.service not found", so no weekly pass ever ran. The
+# temper-trim wrapper waits for the database itself instead, for when the
+# timer fires at boot before Docker has the database up.
 
 [Service]
 Type=oneshot

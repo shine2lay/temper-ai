@@ -73,6 +73,12 @@ It says nothing on success. `~/.local/state/temper-trim/trim.log` gets one JSON
 line per pass: how many runs, how many events, how many bytes, and what was
 kept whole and why.
 
+The timer is a user unit, so it can't wait for the system's `docker.service`.
+Instead `temper-trim` waits up to 10 minutes (`TEMPER_TRIM_WAIT_S`) for the
+database to answer, which covers a pass that fires at boot. If it still doesn't
+answer, the pass fails with exit 75, nothing is trimmed, and the timer tries
+again the next Sunday.
+
 ## Safe to run while temper is busy
 
 - a run that has not completed is never chosen;

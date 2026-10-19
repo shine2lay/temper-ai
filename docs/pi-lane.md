@@ -329,6 +329,14 @@ is let go to wait, any other is interrupted); and picks up the Pi runs a stop cu
 last 12 h, from their ledger, through the same one-claim resume as Resume (SW-80). A turn that
 was cut off mid-way becomes a recovery wait when the run resumes (`Ledger.take_over`).
 
+**A stop that needs force**: a stopped run whose process ignores SIGTERM for the reaper's 30 s
+grace is killed (SIGKILL) and marked cancelled, and its process can no longer remove its member
+boxes. So the lane's reaper then stops and removes them itself
+(`pi_lane.remove_member_boxes_of_killed_run`): only that run's, the boxes its unsettled ledger
+turns name, each by its exact name (never a prune). The turns stay as they are. A box Docker
+can't confirm gone is logged, and the start-up sweep above tries it again. The main lane's
+reaper never does this. Test: `tests/test_runner/pi_lane/test_forced_stop.py`.
+
 ## lane-status: for temper-deploy
 
 ```bash

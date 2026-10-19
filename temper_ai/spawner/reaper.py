@@ -11,7 +11,9 @@ worker's watch-queue in external mode). Periodically:
      ends the run's event the same way); a handed-over row whose box is
      gone before it started the run is marked 'failed' (or 'cancelled')
   4. Honors cancel_requested by sending SIGTERM (cooperative); escalates
-     to SIGKILL after a grace period if the worker still hasn't exited
+     to SIGKILL after a grace period if the worker still hasn't exited.
+     In the Pi lane it then also removes the killed run's member boxes,
+     which the killed worker can no longer remove itself
 
 The reaper is the *only* server-side code that mutates WorkflowRun rows
 for running workers — the worker itself owns the terminal write. This
@@ -294,6 +296,19 @@ class Reaper:
             if self._mark_status(execution_id, "cancelled"):
                 settle_run_event(execution_id, "cancelled", "Cancelled: stopped by force.")
             self._termed_at.pop(execution_id, None)
+            self._remove_pi_member_boxes_after_force(execution_id)
+
+    def _remove_pi_member_boxes_after_force(self, execution_id: str) -> None:
+        """Pi lane only (its reaper runs where the Pi lane runs Docker): remove the member boxes
+        of a run whose process was just killed, since only that process removes them on a
+        normal end. After the run is marked cancelled, so a Docker error never keeps it open."""
+        from temper_ai.runner.lanes import PI_LANE
+
+        if self._lane != PI_LANE:
+            return
+        from temper_ai.runner.pi_lane import remove_member_boxes_of_killed_run
+
+        remove_member_boxes_of_killed_run(execution_id)
 
     def _mark_orphaned(self, execution_id: str, *, reason: str) -> None:
         """Best-effort terminal write. Idempotent — if the row is already

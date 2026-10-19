@@ -556,7 +556,41 @@ def sweep_member_boxes(*, docker: Callable[..., Any] | None = None) -> list[dict
             for name in sorted(names) if pibox.BOX_NAME.match(name)]
 
 
-def _ledger_box_names() -> list[str]:
+def remove_member_boxes_of_killed_run(execution_id: str, *,
+                                      docker: Callable[..., Any] | None = None) -> list[dict]:
+    """After the reaper killed a stopped run's process (it ignored SIGTERM for the grace period):
+    stop and remove that run's member boxes, which the killed process can no longer remove
+    itself. Only the boxes the ledger names for this run's unsettled turns, each by its exact
+    name (``stop_leftover_box``; never a prune, never another run's box). The turns themselves
+    stay as they are. A box that is already gone counts as gone; one that Docker couldn't
+    confirm gone is logged, and the next start-up sweep tries it again. Never raises."""
+    from temper_ai.pi_agent import box as pibox
+
+    try:
+        names = sorted(set(_ledger_box_names(run_id=execution_id)))
+    except Exception:  # noqa: BLE001
+        logger.error("Pi lane: couldn't read %s's member boxes after the forced stop",
+                     execution_id, exc_info=True)
+        return []
+    out = []
+    for name in names:
+        try:
+            got = pibox.stop_leftover_box(name, docker=docker)
+        except Exception as exc:  # noqa: BLE001 - one box must not keep the others
+            got = {"box": name, "confirmed": False, "error": type(exc).__name__}
+        if not got.get("confirmed"):
+            logger.warning("Pi lane: %s's member box %s isn't confirmed gone after the forced "
+                           "stop (%s); the next start-up sweep tries again",
+                           execution_id, name, got.get("error"))
+        out.append(got)
+    if out:
+        logger.info("Pi lane: forced stop of %s: %d of %d member box(es) confirmed gone",
+                    execution_id, sum(bool(g.get("confirmed")) for g in out), len(out))
+    return out
+
+
+def _ledger_box_names(*, run_id: str | None = None) -> list[str]:
+    """The box names of the ledger's unsettled turns: every run's, or only ``run_id``'s."""
     import sqlalchemy as sa
 
     from temper_ai.database import get_database
@@ -565,9 +599,12 @@ def _ledger_box_names() -> list[str]:
     engine = get_database().engine
     if not sa.inspect(engine).has_table(turns.name):
         return []
+    query = sa.select(turns.c.box_name).where(
+        turns.c.state.in_(UNSETTLED), turns.c.box_name.is_not(None))
+    if run_id is not None:
+        query = query.where(turns.c.run_id == run_id)
     with engine.connect() as conn:
-        rows = conn.execute(sa.select(turns.c.box_name).where(
-            turns.c.state.in_(UNSETTLED), turns.c.box_name.is_not(None))).all()
+        rows = conn.execute(query).all()
     return [str(r[0]) for r in rows if r[0]]
 
 

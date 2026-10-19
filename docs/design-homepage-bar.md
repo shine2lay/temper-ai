@@ -196,5 +196,18 @@ pages between them break every part-1 check at least once. The meter is right on
 failing rows equal the key exactly on every page, in two runs, and its two `bars.json` files are
 byte-identical. When they differ, the meter is fixed, never the key.
 
+Two fixture pages were corrected after the key was committed (2026-10-18, before any real page was
+measured), so that each page is what the key says it is; the key itself never changed:
+
+- `base.css` (so `clean.html`): the footer's top padding went from 32 to 48 px. The band-to-footer
+  gap was 34 px against a median inside gap of 18.4 px, below 2x, so the "clean" page really broke
+  A2 rhythm at 1440 and 390.
+- `p-access.html`: the footer links' rows were set to 16 px with line height 1. The planted
+  undersized links were 24 px or more apart from centre to centre, so they passed 2.5.8 by spacing
+  and the plant did not break A4 targets as the key says.
+
+Result: both proof runs (2026-10-18) matched the key exactly on all 7 pages, and every page's
+`bars.json` and `raw.json` were byte-identical between the runs.
+
 ## Changes to definitions
 None yet.

@@ -11,11 +11,16 @@ the prose gives the same measured problem different levels from run to run. This
 the same rules as code, so a measured problem gets the same finding and level every time, and the
 critics are left to judge what no tool measures.
 
-Output: review/critic/measured.json, {"version", "primary_action", "pages", "counts", "findings"}.
-Each finding: id, page, viewport, width, element (a selector, or a place for an empty column),
-check, criterion, evidence (the measured numbers), rule (a key of RULES), level 0-4 and grade
-(Must, Should or Could, handbook section 4.5), and a note where a reviewer could still weigh
-something the rule leaves to judgment. The same review folder always gives byte-identical output.
+Output: review/measured.json, {"version", "primary_action", "pages", "viewports", "counts", "findings"}
+(W4e moved it out of review/critic/, where the merge reads every file as a critic's run). Each finding:
+id, page, viewport, width, element (a selector), check, criterion, evidence (the measured numbers),
+rule (a key of RULES), severity 0-4 (W4e: the same field name the critics and the merge use) and
+grade (Must, Should or Could, handbook section 4.5), and a note where a reviewer could still weigh
+something the rule leaves to judgment. Where the brief names no primary action and a finding's level
+would rise on it, the finding carries an "ask": a fenced yes/no the merge answers and a script
+applies. Empty columns are not findings but craft_candidates() for the craft critic's yes/no.
+Findings come only for the pages and viewports in the review's own capture.json. The same review
+folder always gives byte-identical output.
 
 RULES below is the rules table: each rule quotes the prompt lines it comes from (the quote is
 checked against the prompt files by tests/test_design_measured_findings.py) and says what the
@@ -310,7 +315,7 @@ def _finding(view: dict, check: str, element: str, evidence: dict, rule: str, le
              note: str = "", criterion: str = "") -> dict:
     f = {"page": view["page"], "viewport": view["viewport"], "width": view["width"], "element": element,
          "check": check, "criterion": criterion or WCAG[check], "evidence": evidence, "rule": rule,
-         "level": level, "kind": "measured"}
+         "severity": level, "kind": "measured"}
     if note:
         f["note"] = note
     return f
@@ -396,9 +401,12 @@ def view_findings(view: dict, facts: dict, primary: str, t: dict) -> list[dict]:
         if level == 2:
             note = ("3 if this is the page's primary action (the brief names none)" if not primary
                     else f'3 if this is the page\'s primary action (the brief names "{primary}")')
-        add(_finding(view, "focus-visible", r["sel"], {
+        f = _finding(view, "focus-visible", r["sel"], {
             "name": _short(r.get("name")), "outline": r.get("outline"), "box_shadow": r.get("box_shadow"),
-            "main_navigation": in_nav, "primary_action": is_primary}, "B-focus-visible", level, note))
+            "main_navigation": in_nav, "primary_action": is_primary}, "B-focus-visible", level, note)
+        if level == 2 and not primary:
+            f["ask"] = ask(f'Is "{_short(r.get("name"))}" ({r["sel"]}) the page\'s primary action?', 3)
+        add(f)
 
     for ln in facts.get("long_lines") or []:
         add(_finding(view, "long-lines", ln["sel"], {"chars_per_line": ln["chars_per_line"],
@@ -468,12 +476,15 @@ def page_check_findings(view: dict, facts: dict, raw: dict, primary: str, t: dic
         without = cues.get("without") or []
         all_bare = cues.get("without_count") == cues.get("checked")
         primary_bare = bool(primary) and any(_same(x.get("text"), primary) for x in without)
-        out.append(_finding(view, "signifier", without[0]["sel"] if without else "", {
+        f = _finding(view, "signifier", without[0]["sel"] if without else "", {
             "without_count": cues.get("without_count"), "checked": cues.get("checked"),
             "elements": [{"sel": x["sel"], "text": _short(x.get("text"), 40), "section": x.get("section")}
                          for x in without[:12]],
             "primary_action_without_cue": primary_bare},
-            "E-signifier", 3 if all_bare or primary_bare else 2))
+            "E-signifier", 3 if all_bare or primary_bare else 2)
+        if f["severity"] == 2 and not primary:
+            f["ask"] = ask("Is one of the elements in evidence.elements the page's primary action?", 3)
+        out.append(f)
 
     if "text-over-image" in fired:
         pixels = raw.get("pixels") or {}
@@ -517,8 +528,37 @@ def _order(f: dict, pages: list[str], views: dict[str, list[str]]) -> tuple:
             check, f["element"], json.dumps(f["evidence"], sort_keys=True))
 
 
+def ask(question: str, if_yes: int) -> dict:
+    """A fenced yes/no for the merge when the brief names no primary action (H5, W4e): the script, not the
+    model, applies the level (design_homepage_next.merge_join)."""
+    return {"question": question, "answers": ["yes", "no"], "if_yes": if_yes}
+
+
+# W4e (H5, home's decision): an empty column is never a measured Must. The page check still finds it, and the
+# craft critic answers a fenced yes/no (dead space, or purposeful layout?); only a confirmed one becomes a
+# finding, at the level the craft critic's rule gives (CRAFT lines 111-112). The W4b screen's three false
+# alarms were all purposeful layouts: morrow rooms and settings, fernway signup.
+CANDIDATE_CHECKS = ("empty-column",)
+CANDIDATE_QUESTION = ("Is this column dead space (an empty area that looks unfinished or wastes the screen) "
+                      "rather than purposeful layout (a deliberate two-column split, an image or artifact column, "
+                      "a short label column)?")
+
+
 def measured_findings(review: pathlib.Path, primary_action: str | None = None) -> dict:
-    """All measured findings of one review folder (capture.json + facts/)."""
+    """All measured findings of one review folder (capture.json + facts/), without the craft candidates."""
+    result = _measure(review, primary_action)
+    found = [f for f in result.pop("all") if f["check"] not in CANDIDATE_CHECKS]
+    counts = {g: sum(f["grade"] == g for f in found) for g in ("Must", "Should", "Could")}
+    return {**result, "counts": counts, "findings": found}
+
+
+def craft_candidates(review: pathlib.Path, primary_action: str | None = None) -> list[dict]:
+    """The empty columns the page check measured, as candidates for the craft critic's yes/no."""
+    return [{**f, "question": CANDIDATE_QUESTION, "answers": ["yes", "no"], "if_yes": f["severity"]}
+            for f in _measure(review, primary_action)["all"] if f["check"] in CANDIDATE_CHECKS]
+
+
+def _measure(review: pathlib.Path, primary_action: str | None = None) -> dict:
     review = pathlib.Path(review)
     cap = json.loads((review / "capture.json").read_text(encoding="utf-8"))
     primary = primary_action if primary_action is not None else ((cap.get("page_checks") or {}).get("primary_action") or "")
@@ -545,9 +585,11 @@ def measured_findings(review: pathlib.Path, primary_action: str | None = None) -
         on_pages.setdefault(same(f), set()).add(f["page"])
     for f in found:
         n = len(on_pages[same(f)])
-        if n >= 3 and n * 2 > len(pages) and f["level"] < 3:
-            f["level"] += 1
+        if n >= 3 and n * 2 > len(pages) and f["severity"] < 3:
+            f["severity"] += 1
             f["raised"] = f"C-pages: measured on {n} of {len(pages)} reviewed pages"
+        if "ask" in f and f["severity"] >= f["ask"]["if_yes"]:
+            del f["ask"]  # already at the level a yes would give: nothing left to ask
 
     found.sort(key=lambda f: _order(f, pages, views))
     seen: dict[tuple, int] = {}
@@ -555,10 +597,9 @@ def measured_findings(review: pathlib.Path, primary_action: str | None = None) -
         key = (f["page"], f["viewport"], f["check"])
         seen[key] = seen.get(key, 0) + 1
         f["id"] = f"{names[f['page']]}-{f['viewport']}-{f['check'].replace(':', '-')}-{seen[key]}"
-        f["grade"] = grade(f["check"], f["level"], f["evidence"], f["criterion"])
-    counts = {g: sum(f["grade"] == g for f in found) for g in ("Must", "Should", "Could")}
-    return {"version": VERSION, "primary_action": primary, "pages": len(pages), "counts": counts,
-            "findings": found}
+        f["grade"] = grade(f["check"], f["severity"], f["evidence"], f["criterion"])
+    return {"version": VERSION, "primary_action": primary, "pages": len(pages),
+            "viewports": {names[p]: views[p] for p in pages}, "all": found}
 
 
 def dumps(result: dict) -> str:
@@ -566,9 +607,10 @@ def dumps(result: dict) -> str:
 
 
 def write(review: pathlib.Path, out: pathlib.Path | None = None, primary_action: str | None = None) -> pathlib.Path:
-    """Write review/critic/measured.json (or out) and return its path."""
+    """Write review/measured.json (or out) and return its path. Never inside review/critic/: the merge and
+    design_review_verify read every file there as a critic's run (W4e)."""
     review = pathlib.Path(review)
-    out = pathlib.Path(out) if out else review / "critic" / "measured.json"
+    out = pathlib.Path(out) if out else review / "measured.json"
     result = measured_findings(review, primary_action)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(dumps(result), encoding="utf-8")
@@ -578,7 +620,7 @@ def write(review: pathlib.Path, out: pathlib.Path | None = None, primary_action:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("review", type=pathlib.Path, help="review folder holding capture.json and facts/")
-    ap.add_argument("--out", type=pathlib.Path, help="output file (default REVIEW/critic/measured.json)")
+    ap.add_argument("--out", type=pathlib.Path, help="output file (default REVIEW/measured.json)")
     ap.add_argument("--primary-action", default=None,
                     help="the page's primary action label (default: capture.json page_checks.primary_action)")
     args = ap.parse_args(argv)

@@ -1,0 +1,17 @@
+{
+  "product": "Fernlight",
+  "fictional": true,
+  "disclosure": "Fictional design study — there is no app to download and no accounts; the care plan is a sample.",
+  "category": "Consumer app: houseplant care reminders",
+  "audience": "Someone in their 20s to 40s with 3-10 houseplants who has lost a few to over- or under-watering and wants a calm helper that does not nag; browsing on a phone in the evening.",
+  "purpose": "Make the reader feel this would keep their plants alive without nagging them, show how a watering schedule is set from their light and the season, and get them to open the sample care plan.",
+  "cta": "See a sample care plan",
+  "facts": [
+    "What it does: add a plant by photo or by name and Fernlight sets a watering schedule from the plant, the window it sits by and the season, then reminds you on the day each plant needs water. One tap logs a watering.",
+    "How it works: add a plant (photo or search; about 600 common houseplants in this study); describe its spot (which way the window faces and how far away the plant is); Fernlight sets the schedule and adjusts it as the seasons change.",
+    "Example care card (sample): Monstera, east window, 1 m away: water every 9 days in spring (next: Thursday); bright, indirect light; feed once a month from April to September.",
+    "Example prices (illustrative only): free for up to 5 plants; Fernlight Plus at $3 a month for unlimited plants and a photo check when a leaf looks wrong. No ads.",
+    "FAQ: Is this a real app? No, Fernlight is a fictional design study and there is nothing to download. Will it tell me exactly when to water? It suggests a schedule; always check the soil first, and the app says so. Do I need an account? No account in this study."
+  ],
+  "brand": {}
+}

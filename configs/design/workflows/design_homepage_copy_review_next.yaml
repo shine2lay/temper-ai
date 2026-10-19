@@ -1,0 +1,69 @@
+# CANDIDATE content review of a copy deck (Design, W4e, hypothesis H7; for W11). The copy-review part
+# of design_homepage_v2_next on a given deck: the brief, the deck seeded as the workflow's own
+# homepage/copy/copy.json, the fixed word rules (copy_check, draft phase), the countable word checks
+# (deck_words), the candidate content critic on the deck, and copy_review_join:
+#
+#   brief -> copy_seed -> copy_check_draft -> deck_words (script)
+#     -> copy_review (design_homepage_content_critic_v2_next, target deck) -> copy_review_join (script)
+#
+# deck_words writes homepage/copy/words.json (CTA length and opening verb, names no brief fact holds);
+# the critic takes it as given and judges only what no script counts; copy_review_join writes
+# homepage/copy/review.json, the file copy_check's final phase reads, with the word findings beside
+# the critic's (a word finding copy_check already lists in check.json is kept once, there).
+# No revision: W11 grades the review on its own. The deck is given as data (never a key or a
+# planted-case file name). mode bench (fictional briefs) by default; real for a real brief.
+workflow:
+  name: design_homepage_copy_review_next
+  version: 1
+  description: |
+    CANDIDATE content review of a homepage copy deck with the countable word checks done by a
+    script (W4e): the brief and the deck go in, the fixed word rules and the word checks run, the
+    candidate content critic judges what no script counts, and a join writes
+    homepage/copy/review.json with one finding per problem.
+  inputs:
+    brief_json:
+      type: string
+      required: true    # the homepage brief (design_homepage_v2's brief contract)
+    copy_json:
+      type: string
+      required: true    # the copy deck to review (design_homepage_v2's copy.json shape)
+    mode:
+      type: string
+      default: bench    # bench for fictional briefs; real for a real product's brief
+  outputs:
+    review_path: copy_review_join.structured.review_path
+    findings: copy_review_join.structured.findings
+    words: copy_review_join.structured.words
+    covered_by_contract: copy_review_join.structured.covered_by_contract
+    critic_findings: copy_review_join.structured.critic_findings
+    contract_problems: copy_check_draft.structured.problems
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v2
+      input_map: {stage: brief, mode: input.mode, data: input.brief_json}
+    - name: copy_seed
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [brief]
+      input_map: {stage: copy_seed, mode: input.mode, data: input.copy_json}
+    - name: copy_check_draft
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_seed]
+      input_map: {stage: copy_check, mode: input.mode, phase: draft}
+    - name: deck_words
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [copy_check_draft]
+      input_map: {stage: deck_words, mode: input.mode}
+    - name: copy_review
+      type: agent
+      agent: design_homepage_content_critic_v2_next
+      depends_on: [deck_words]
+      input_map: {target: deck}
+    - name: copy_review_join
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [copy_review]
+      input_map: {stage: copy_review_join, mode: input.mode}

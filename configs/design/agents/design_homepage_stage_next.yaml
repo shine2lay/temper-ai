@@ -1,0 +1,40 @@
+# @description Candidate script steps of design_homepage_v2_next and its test twins (Design, W4e,
+# hypotheses H4-H7): the measured findings, craft anchors and word checks as files the critics take as
+# given, and the joins that put the scripts' findings beside the critics' (one finding per problem) in
+# the files the live combine, copy_check and graders read. Also the measure stage with the spacing
+# share counted from 4 px up, and the seeding steps of the benchmark twins. Runs
+# bin/design_homepage_next.py, which imports design_homepage_v2.py and never changes it. No model;
+# standard library + the shared playwright-mcp browser. Never puts credentials in a task or output.
+agent:
+  name: design_homepage_stage_next
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    site = os.environ.get("{{ site | default('', true) | env }}", "")
+    page = os.environ.get("{{ page | default('', true) | env }}", "")
+    if not stage or not workspace:
+        raise SystemExit("homepage stage/workspace required")
+    if mode not in ("real", "fixture", "pilot", "bench"):
+        raise SystemExit("mode is real, fixture, pilot or bench")
+    os.environ["HOMEPAGE_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_homepage_next.py", stage, "--workspace", workspace]
+    if mode in ("fixture", "pilot", "bench"):
+        cmd.append("--" + mode)
+    if site:
+        cmd += ["--site", site]
+    if page:
+        cmd += ["--page", page]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

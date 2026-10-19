@@ -9,14 +9,18 @@ applying them itself can give the same number a different finding or level from 
 script applies those anchors as code, so a measured craft problem gets the same finding and level
 every time, and the critic is left to judge what no number settles.
 
-Output: review/craft/anchors.json, {"version", "page", "widths", "counts", "checks", "findings"}.
-checks: every rule below with its number at each width and the level that number gives (0: it sets
-no level; null: not measured). Each finding: id, page, width (the width whose number sets the
-level), viewport (desktop, mobile, or all when the number crosses a line at both widths), element,
-check (the critic's check: space, scale or type), metric (the craft-metrics.json key), value (its
-number at that width), threshold (the band the value falls in, in the prompt's words), level (2 or
-3), rule (a key of RULES) and evidence (the numbers at every width). counts has the critic's
-severity_counts form. The same review folder always gives byte-identical output.
+Output: review/anchors.json, {"version", "page", "widths", "counts", "checks", "findings", "candidates"}
+(W4e moved it out of review/craft/, where the homepage's combine stage reads every file as a craft
+critic's review). checks: every rule below with its number at each width and the severity that number
+gives (0: it sets none; null: not measured). Each finding: id, page, width (the width whose number
+sets the level), viewport (desktop, mobile, or all when the number crosses a line at both widths),
+element, check (the critic's check: space, scale or type), metric (the craft-metrics.json key), value
+(its number at that width), threshold (the band the value falls in, in the prompt's words), severity
+(2 or 3; W4e: the field name the critics use), rule (a key of RULES) and evidence (the numbers at
+every width). counts has the critic's severity_counts form. candidates (W4e, H5): the empty columns
+the page checks measured (design_measured_findings.craft_candidates), each a fenced yes/no for the
+craft critic (dead space, or purposeful layout?) with the level a yes gives; empty when the folder
+has no capture.json. The same review folder always gives byte-identical output.
 
 RULES below is the rules table: each rule quotes the prompt lines it comes from (the quote is
 checked against the prompt by tests/test_design_craft_anchors.py) and says what the script does
@@ -35,6 +39,9 @@ import argparse
 import json
 import pathlib
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import design_measured_findings as mf  # noqa: E402 - sits next to this script; the empty-column candidates
 
 VERSION = 1
 CRAFT = "configs/design/agents/design_homepage_craft_critic_v2.yaml"
@@ -101,7 +108,8 @@ ANCHORS = [name for name, rule in RULES.items() if "metric" in rule]
 # Items of the prompt's SEVERITY ANCHORS list that no rule above applies, by how the item begins, and why
 # the critic keeps them. Every item of that list is either cited by a rule or named here (the tests check).
 LEFT = {
-    "an empty column measured by facts.md": "a facts.md page check, not a craft-metrics.json number",
+    "an empty column measured by facts.md": "a facts.md page check, not a craft-metrics.json number; since W4e "
+    "listed under candidates, at the level this anchor gives, for the critic's yes/no",
     "visual-purpose:": "what a section is for and what shows it are judged; no number settles them",
 }
 
@@ -166,7 +174,9 @@ def _evidence(rule: str, widths: list[tuple[int, dict]], values: dict[int, objec
         if v is None:
             continue
         if rule == "spacing-grid":
-            parts.append(f"{v} at {width}")
+            hairlines = entry.get("spacing_hairlines")  # W4e: the candidate measure counts values from 4 px up
+            parts.append(f"{v} at {width}" + (f" ({hairlines} hairline values under 4 px not counted)"
+                                               if _number(hairlines) else ""))
         elif rule == "scale-ratio":
             parts.append(f"{v}x at {width} (body text {entry.get('body_px')} px, largest text "
                          f"{entry.get('display_px')} px)")
@@ -189,9 +199,9 @@ def anchors(metrics: dict) -> dict:
         levels = {w: (level_of(rule, v)[0] if v is not None else None) for w, v in values.items()}
         measured = [w for w in values if values[w] is not None]
         top = max((levels[w] for w in measured), default=0)
-        checks.append({"rule": rule, "metric": r["metric"], "level": top,
+        checks.append({"rule": rule, "metric": r["metric"], "severity": top,
                        "values": {str(w): values[w] for w, _ in widths},
-                       "levels": {str(w): levels[w] for w, _ in widths}})
+                       "severities": {str(w): levels[w] for w, _ in widths}})
         if top == 0:
             continue
         at = [w for w in measured if levels[w] == top]
@@ -216,22 +226,26 @@ def anchors(metrics: dict) -> dict:
             "metric": r["metric"],
             "value": value,
             "threshold": level_of(rule, values[width])[1],
-            "level": top,
+            "severity": top,
             "rule": rule,
             "evidence": _evidence(rule, widths, values),
         })
-    counts = {str(n): sum(f["level"] == n for f in findings) for n in (4, 3, 2, 1)}
+    counts = {str(n): sum(f["severity"] == n for f in findings) for n in (4, 3, 2, 1)}
     return {"version": VERSION, "page": PAGE, "widths": [w for w, _ in widths], "counts": counts,
             "checks": checks, "findings": findings}
 
 
 def craft_anchor_findings(review: pathlib.Path) -> dict:
-    """The anchored craft findings of one review folder (its craft-metrics.json)."""
+    """The anchored craft findings of one review folder (its craft-metrics.json), with the empty-column
+    candidates of its capture (none without capture.json)."""
     path = pathlib.Path(review) / "craft-metrics.json"
     metrics = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(metrics, dict) or not _widths(metrics):
         raise ValueError(f"{path} holds no measured widths")
-    return anchors(metrics)
+    result = anchors(metrics)
+    has_capture = (pathlib.Path(review) / "capture.json").is_file()
+    result["candidates"] = mf.craft_candidates(pathlib.Path(review)) if has_capture else []
+    return result
 
 
 def dumps(result: dict) -> str:
@@ -239,9 +253,10 @@ def dumps(result: dict) -> str:
 
 
 def write(review: pathlib.Path, out: pathlib.Path | None = None) -> pathlib.Path:
-    """Write review/craft/anchors.json (or out) and return its path."""
+    """Write review/anchors.json (or out) and return its path. Never inside review/craft/: the homepage's
+    combine stage reads every file there as a craft critic's review (W4e)."""
     review = pathlib.Path(review)
-    out = pathlib.Path(out) if out else review / "craft" / "anchors.json"
+    out = pathlib.Path(out) if out else review / "anchors.json"
     result = craft_anchor_findings(review)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(dumps(result), encoding="utf-8")
@@ -251,7 +266,7 @@ def write(review: pathlib.Path, out: pathlib.Path | None = None) -> pathlib.Path
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("review", type=pathlib.Path, help="review folder holding craft-metrics.json")
-    ap.add_argument("--out", type=pathlib.Path, help="output file (default REVIEW/craft/anchors.json)")
+    ap.add_argument("--out", type=pathlib.Path, help="output file (default REVIEW/anchors.json)")
     args = ap.parse_args(argv)
     if not (args.review / "craft-metrics.json").is_file():
         print(f"no craft-metrics.json in {args.review}", file=sys.stderr)
@@ -263,7 +278,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     res = json.loads(out.read_text(encoding="utf-8"))
     c = res["counts"]
-    print(f"{len(res['findings'])} craft anchor findings (level 3: {c['3']}, level 2: {c['2']}) -> {out}")
+    print(f"{len(res['findings'])} craft anchor findings (level 3: {c['3']}, level 2: {c['2']}), "
+          f"{len(res['candidates'])} empty-column candidates -> {out}")
     return 0
 
 

@@ -273,7 +273,10 @@ def test_live_workflows_run_the_page_checks_and_leave_no_candidate_copy():
     assert '"--page-checks"' in stage
     leftovers = sorted(p.name for p in DESIGN.rglob("*_next.yaml")
                        if re.match(r"design_(review|capture|critic|merge|homepage_craft_critic|craft_bench)", p.name))
-    assert leftovers == []
+    # W4e (2026-10-19): the homepage candidate's critics, merge and craft benchmark twin, on trial until
+    # W8 and W10 grade them (tests/test_design_homepage_next.py); the live files above stay as they are.
+    assert leftovers == ["design_craft_bench_next.yaml", "design_critic_next.yaml",
+                         "design_homepage_craft_critic_v2_next.yaml", "design_merge_next.yaml"]
 
 
 def test_live_homepage_rounds_give_the_critics_the_page_checks():

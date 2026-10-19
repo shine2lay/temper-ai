@@ -1,0 +1,72 @@
+# CANDIDATE craft-critic benchmark (Design, W4e, hypothesis H6; for W10). Twin of design_craft_bench
+# with the homepage candidate's craft wiring (design_homepage_v2_next): the page is captured and
+# measured as in a candidate round (the spacing share counted from 4 px up), the settled craft numbers
+# (review/anchors.json) and the measured problems (review/measured.json) come from scripts, the
+# candidate craft critic takes the numbers as given and answers the empty-column candidates, and
+# craft_join writes review/craft/craft.json:
+#
+#   prepare (script) -> craft_anchors + measured (scripts) -> craft (design_homepage_craft_critic_v2_next)
+#     -> craft_join (script) -> collect (script)
+#
+# The benchmark grades the merged review: review/craft/craft.json (anchors + confirmed candidates +
+# the critic's findings) and, for the key's measured plants (page 09's CTA text contrast), the
+# measured findings in review/measured.json; the critic's own findings are counted beside it for the
+# judged plants. The answer key stays on the host (~/design-lab/answers/). Live design_craft_bench and
+# its agents are unchanged.
+workflow:
+  name: design_craft_bench_next
+  version: 3
+  description: |
+    CANDIDATE benchmark of the homepage craft critic on one test page with the scripts first (W4e):
+    the page is captured and measured as in a design_homepage_v2_next review round; scripts write
+    the settled craft numbers (review/anchors.json) and the measured problems (review/measured.json);
+    the candidate craft critic judges what no script measures and answers the empty-column
+    candidates; craft_join writes review/craft/craft.json and collect summarises it with the
+    measured counts. Graded on the host against a key the box never sees.
+  inputs:
+    site:
+      type: string
+      required: true    # a craft test site folder inside the run container, e.g. /app/configs/design/testpages/craft-v1
+    page:
+      type: string
+      required: true    # one page of that site, e.g. page-03
+  outputs:
+    craft_path: collect.structured.craft_path
+    findings: collect.structured.findings
+    severity_counts: collect.structured.severity_counts
+    checks: collect.structured.checks
+    measured_path: collect.structured.measured_path
+    measured: collect.structured.measured
+    measured_checks: collect.structured.measured_checks
+    anchored: craft_join.structured.anchored
+    candidates_confirmed: craft_join.structured.candidates_confirmed
+    candidates_declined: craft_join.structured.candidates_declined
+  nodes:
+    - name: prepare
+      type: agent
+      agent: design_homepage_stage_next
+      input_map: {stage: bench_prepare, site: input.site, page: input.page}
+    - name: craft_anchors
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [prepare]
+      input_map: {stage: craft_anchors}
+    - name: measured
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [prepare]
+      input_map: {stage: measured}
+    - name: craft
+      type: agent
+      agent: design_homepage_craft_critic_v2_next
+      depends_on: [craft_anchors, measured]
+    - name: craft_join
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [craft]
+      input_map: {stage: craft_join}
+    - name: collect
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [craft_join]
+      input_map: {stage: bench_collect}

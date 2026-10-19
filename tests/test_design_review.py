@@ -74,7 +74,13 @@ def test_review_agents_import(name):
 # sites before anything replaces the live reviewer. Promotion renames it to the live names and
 # empties this (queue #33's severity candidate became design_review v3 on 2026-10-05; queue #39's
 # research and page checks became design_review v4 the same day).
-CANDIDATE_ON_TRIAL: dict[str, str] = {}
+# W4e (2026-10-19): the homepage candidate's usability critic and merge (H4, H5), graded by W8 on
+# design_homepage_review_next; the live design_review and its agents stay as they are
+# (tests/test_design_homepage_next.py pins them).
+CANDIDATE_ON_TRIAL: dict[str, str] = {
+    "design_critic_next.yaml": "design_critic",
+    "design_merge_next.yaml": "design_merge",
+}
 
 
 def test_review_steps_run_the_promoted_scripts():

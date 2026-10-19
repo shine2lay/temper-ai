@@ -1,0 +1,66 @@
+# CANDIDATE content review of a built homepage (Design, W4e, hypothesis H7; for W11). The page part of
+# a design_homepage_v2_next review round on a given page: the brief, the approved deck and the built
+# page go in; the page is captured (screenshots) and read in a real browser (review/page-text.md, as
+# the runtime step reads it); the countable word checks run on its text (page_words); the candidate
+# content critic reads the page; content_join writes review/content/content.json:
+#
+#   brief -> page_prepare (script) -> page_words (script)
+#     -> content (design_homepage_content_critic_v2_next, target page) -> content_join (script)
+#
+# page_words writes review/words.json (CTA length and opening verb, names no brief fact or deck text
+# holds, paragraphs over three lines at 1440 px, deck terms renamed on the page); the critic takes it
+# as given and judges only what no script counts; content_join puts the word findings beside the
+# critic's in the file combine reads. The page is a folder inside the run container holding
+# index.html (given as site); the deck is given as data. mode bench (fictional briefs) by default.
+workflow:
+  name: design_homepage_content_next
+  version: 1
+  description: |
+    CANDIDATE content review of a built homepage with the countable word checks done by a script
+    (W4e): the brief, the approved deck and the page go in, the page is captured and its text
+    read in a real browser, the word checks run, the candidate content critic judges what no
+    script counts, and a join writes review/content/content.json with one finding per problem.
+  inputs:
+    brief_json:
+      type: string
+      required: true    # the homepage brief (design_homepage_v2's brief contract)
+    copy_json:
+      type: string
+      required: true    # the approved copy deck the page was built from
+    site:
+      type: string
+      required: true    # a folder inside the run container holding the built page's index.html
+    mode:
+      type: string
+      default: bench    # bench for fictional briefs; real for a real product's brief
+  outputs:
+    findings_path: content_join.structured.findings_path
+    findings: content_join.structured.findings
+    words: content_join.structured.words
+    critic_findings: content_join.structured.critic_findings
+    shots: page_prepare.structured.shots
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v2
+      input_map: {stage: brief, mode: input.mode, data: input.brief_json}
+    - name: page_prepare
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [brief]
+      input_map: {stage: page_prepare, mode: input.mode, site: input.site, data: input.copy_json}
+    - name: page_words
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [page_prepare]
+      input_map: {stage: page_words, mode: input.mode}
+    - name: content
+      type: agent
+      agent: design_homepage_content_critic_v2_next
+      depends_on: [page_words]
+      input_map: {target: page}
+    - name: content_join
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [content]
+      input_map: {stage: content_join, mode: input.mode}

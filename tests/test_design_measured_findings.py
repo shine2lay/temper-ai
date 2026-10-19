@@ -100,7 +100,7 @@ def fired(monkeypatch):
 
 
 def _levels(found):
-    return [(f["check"], f["level"], f["grade"]) for f in found]
+    return [(f["check"], f["severity"], f["grade"]) for f in found]
 
 
 # ---------------------------------------------------------------- rule A
@@ -128,7 +128,7 @@ def test_text_contrast_levels(tmp_path, contrast, needs, level):
 ])
 def test_text_contrast_under_3_is_2_on_incidental_text(tmp_path, change, level):
     found = _findings(tmp_path, {"contrast_failures": [_text(2.5, **change)]})
-    assert [f["level"] for f in found] == [level]
+    assert [f["severity"] for f in found] == [level]
     assert ("note" in found[0]) == (level == 2)
 
 
@@ -182,7 +182,7 @@ def test_target_size_follows_the_measured_lists_at_23_and_24_px(tmp_path):
 ])
 def test_label_levels(tmp_path, fields, levels):
     found = _findings(tmp_path, {"fields": fields})
-    assert [f["level"] for f in found] == levels
+    assert [f["severity"] for f in found] == levels
     assert all(f["check"] == "labels" and f["grade"] == "Must" for f in found)
 
 
@@ -192,8 +192,8 @@ def test_text_alternative_levels(tmp_path):
         {"sel": "#customers > div.wrap > img:nth-of-type(1)", "tag": "img", "src": "logo-acme.svg", "box": [0, 0, 120, 40]},
     ]}
     found = {f["element"].split(" > ")[0]: f for f in _findings(tmp_path, facts)}
-    assert (found["tbody"]["level"], "note" in found["tbody"]) == (3, False)
-    assert (found["#customers"]["level"], "note" in found["#customers"]) == (2, True)
+    assert (found["tbody"]["severity"], "note" in found["tbody"]) == (3, False)
+    assert (found["#customers"]["severity"], "note" in found["#customers"]) == (2, True)
 
 
 # ---------------------------------------------------------------- rule B
@@ -207,11 +207,17 @@ def test_focus_levels(tmp_path):
         _ring("main > section.hero > a.button", "Book a pickup \u2192"),
     ]}
     found = {f["evidence"]["name"]: f for f in _findings(tmp_path / "a", facts, primary="Book a pickup")}
-    assert {n: f["level"] for n, f in found.items()} == {"Product": 3, "Privacy": 2, "Choose Cedar": 2,
-                                                       "Book a pickup \u2192": 3}
+    assert {n: f["severity"] for n, f in found.items()} == {"Product": 3, "Privacy": 2, "Choose Cedar": 2,
+                                                          "Book a pickup \u2192": 3}
     assert '"Book a pickup"' in found["Choose Cedar"]["note"]
+    assert not any("ask" in f for f in found.values())  # the brief names the primary action: nothing to ask
     bare = {f["evidence"]["name"]: f for f in _findings(tmp_path / "b", facts)}
-    assert bare["Book a pickup \u2192"]["level"] == 2 and "names none" in bare["Book a pickup \u2192"]["note"]
+    assert bare["Book a pickup \u2192"]["severity"] == 2 and "names none" in bare["Book a pickup \u2192"]["note"]
+    # W4e (H5): the brief names none, so the merge answers a fenced yes/no and a script applies the level
+    assert {n: f.get("ask", {}).get("if_yes") for n, f in bare.items()} == {
+        "Product": None, "Privacy": 3, "Choose Cedar": 3, "Book a pickup \u2192": 3}
+    assert bare["Choose Cedar"]["ask"] == {"question": 'Is "Choose Cedar" (#choose-cedar) the page\'s primary action?',
+                                         "answers": ["yes", "no"], "if_yes": 3}
 
 
 def test_focus_in_the_navigation_the_page_checks_found(tmp_path, fired):
@@ -221,7 +227,7 @@ def test_focus_in_the_navigation_the_page_checks_found(tmp_path, fired):
                                _ring("footer.site > ul.menu > li:nth-of-type(1) > a", "Help"),
                                _ring("main > nav.tabs > a:nth-of-type(2)", "Week")],
              "page_checks": {"nav": {"found": True, "sel": "header.bar > div.wrap > ul.menu"}}}
-    found = {f["evidence"]["name"]: f["level"] for f in _findings(tmp_path, facts)}
+    found = {f["evidence"]["name"]: f["severity"] for f in _findings(tmp_path, facts)}
     assert found == {"Team": 3, "Reports": 3, "Help": 2, "Week": 2}
 
 
@@ -233,11 +239,13 @@ def test_rule_c_raises_a_problem_on_most_pages(tmp_path):
     views = {(f"p{i}.html", "desktop"): ring for i in range(3)}
     views[("p3.html", "desktop")] = {}
     found = mf.measured_findings(_review(tmp_path / "most", views))["findings"]
-    assert [(f["level"], f["raised"]) for f in found] == [(3, "C-pages: measured on 3 of 4 reviewed pages")] * 3
+    assert [(f["severity"], f["raised"]) for f in found] == [(3, "C-pages: measured on 3 of 4 reviewed pages")] * 3
+    assert not any("ask" in f for f in found)  # raised to 3 already: a yes would change nothing
     two = mf.measured_findings(_review(tmp_path / "two", {k: v for k, v in list(views.items())[1:]}))["findings"]
-    assert [f["level"] for f in two] == [2, 2]  # one or two pages: no change
+    assert [f["severity"] for f in two] == [2, 2]  # one or two pages: no change
+    assert [f["ask"]["if_yes"] for f in two] == [3, 3]
     half = {**views, **{(f"q{i}.html", "desktop"): {} for i in range(2)}}
-    assert {f["level"] for f in mf.measured_findings(_review(tmp_path / "half", half))["findings"]} == {2}  # 3 of 6 is not most
+    assert {f["severity"] for f in mf.measured_findings(_review(tmp_path / "half", half))["findings"]} == {2}  # 3 of 6 is not most
 
 
 def test_rule_c_needs_the_same_problem(tmp_path, fired, monkeypatch):
@@ -248,7 +256,7 @@ def test_rule_c_needs_the_same_problem(tmp_path, fired, monkeypatch):
     views = {(f"p{i}.html", "desktop"): {"page_checks": {"copy": []}} for i in range(3)}
     views[("p3.html", "desktop")] = {}
     found = mf.measured_findings(_review(tmp_path, views))["findings"]
-    assert [(f["check"], f["level"], "raised" in f) for f in found] == [("repeated-copy", 1, False)] * 3
+    assert [(f["check"], f["severity"], "raised" in f) for f in found] == [("repeated-copy", 1, False)] * 3
 
 
 def test_long_lines_are_cosmetic(tmp_path):
@@ -265,7 +273,7 @@ def test_axe_rules_a_direct_measure_covers_are_not_counted_twice(tmp_path):
     region = {"id": "region", "impact": "moderate", "help": "All page content should be contained by landmarks",
               "wcag": [], "nodes": [{"target": "div.promo", "summary": ""}]}
     found = _findings(tmp_path / "a", {"axe": [contrast, name, region], "contrast_failures": [_text(4.23)]})
-    assert [(f["check"], f["level"], f["grade"], f["criterion"]) for f in found] == [
+    assert [(f["check"], f["severity"], f["grade"], f["criterion"]) for f in found] == [
         ("text-contrast", 2, "Must", "WCAG 1.4.3"), ("axe:button-name", 2, "Must", "WCAG 4.1.2"),
         ("axe:region", 2, "Should", "axe region")]
     alone = _findings(tmp_path / "b", {"axe": [contrast]})  # no direct measure listed: axe's own finding
@@ -301,13 +309,19 @@ def test_first_screen_action_levels(tmp_path, fired, heading_top, level):
 @pytest.mark.parametrize("top,beside,level", [
     (3014, "What can go in?", 2), (799, "What can go in?", 3), (800, "What can go in?", 2), (3014, "Book a pickup", 3),
 ])
-def test_empty_column_levels(tmp_path, fired, top, beside, level):
+def test_empty_column_is_a_craft_candidate_never_a_measured_finding(tmp_path, fired, top, beside, level):
+    """W4e (H5, home's decision): the page check fires on purposeful layouts too (the W4b screen's three false
+    alarms), so an empty column goes to the craft critic as a fenced yes/no, at the craft rule's fixed level."""
     fired["judge"] = ["empty-column"]
     raw = {"columns": [{"width": 477, "share": 0.43, "side": "left", "height": 560, "beside": beside,
                         "section": "Questions", "top": top}], "frame": [80, 1200]}
-    found = _findings(tmp_path, {"page_checks": raw}, primary="Book a pickup")
-    assert _levels(found) == [("empty-column", level, "Must" if level == 3 else "Should")]
-    assert found[0]["evidence"]["content_width"] == 1120
+    review = _review(tmp_path, {("index.html", "desktop"): {"page_checks": raw}}, "Book a pickup")
+    assert mf.measured_findings(review)["findings"] == []
+    cands = mf.craft_candidates(review)
+    assert [(c["check"], c["severity"], c["if_yes"], c["answers"]) for c in cands] == [
+        ("empty-column", level, level, ["yes", "no"])]
+    assert cands[0]["evidence"]["content_width"] == 1120 and cands[0]["question"] == mf.CANDIDATE_QUESTION
+    assert "dead space" in mf.CANDIDATE_QUESTION and "purposeful layout" in mf.CANDIDATE_QUESTION
 
 
 @pytest.mark.parametrize("bare,primary,level", [(14, "", 2), (15, "", 3), (1, "Review roll order", 3), (1, "Export", 2)])
@@ -317,7 +331,11 @@ def test_signifier_levels(tmp_path, fired, bare, primary, level):
     without += [{"sel": f"td > a:nth-of-type({i})", "text": f"Row {i}", "section": "Positions"} for i in range(1, bare)]
     raw = {"cues": {"checked": 15, "nav_links": 3, "without": without, "without_count": bare, "by_cue": {}}}
     found = _findings(tmp_path, {"page_checks": raw}, primary=primary)
-    assert [(f["check"], f["level"]) for f in found] == [("signifier", level)]
+    assert [(f["check"], f["severity"]) for f in found] == [("signifier", level)]
+    # W4e (H5): a 2 that the primary action would raise asks the merge, only when the brief names none
+    assert ("ask" in found[0]) == (level == 2 and not primary)
+    if "ask" in found[0]:
+        assert found[0]["ask"]["if_yes"] == 3 and "evidence.elements" in found[0]["ask"]["question"]
 
 
 @pytest.mark.parametrize("ratio,needs,level", [(4.5, 4.5, None), (4.49, 4.5, 2), (3.0, 4.5, 2), (2.99, 4.5, 3),
@@ -350,7 +368,7 @@ def test_repeated_copy_levels(tmp_path, fired, phrases, level):
     fired["copy"] = phrases
     found = mf.measured_findings(_review(tmp_path, {("index.html", "desktop"): {"page_checks": {"copy": []}},
                                                     ("index.html", "mobile"): {"page_checks": {"copy": []}}}))["findings"]
-    assert [(f["check"], f["viewport"], f["level"]) for f in found] == [("repeated-copy", "desktop", level)]
+    assert [(f["check"], f["viewport"], f["severity"]) for f in found] == [("repeated-copy", "desktop", level)]
 
 
 # ---------------------------------------------------------------- the rules table
@@ -429,8 +447,10 @@ def _matches(plant, f):
 
 def _in_scope(plant):
     """Plants of a type this script measures: measured plants on a check it makes (quarry's craft
-    spacing plant is measured by the craft metrics, W4c)."""
-    return plant.get("kind") == "measured" and (not plant.get("check") or plant["check"] in mf.CHECK_ORDER)
+    spacing plant is measured by the craft metrics, W4c). Since W4e an empty column is a craft
+    candidate the craft critic confirms (H5), not a measured finding: its plants are tested below."""
+    return plant.get("kind") == "measured" and (not plant.get("check") or (
+        plant["check"] in mf.CHECK_ORDER and plant["check"] not in mf.CANDIDATE_CHECKS))
 
 
 def _agreement():
@@ -449,7 +469,7 @@ def _agreement():
             else:
                 found = [f for (s, run), fs in results.items() if s == site for f in fs if f["page"] == plant["page"]]
             hits = [f for f in found if _matches(plant, f)]
-            level = max((f["level"] for f in hits), default=None)
+            level = max((f["severity"] for f in hits), default=None)
             accept = plant.get("accept_severity") or [plant["severity"], plant["severity"]]
             rows.append({"site": site, "plant": plant["id"], "key": plant["severity"], "accept": accept,
                          "level": level, "agree": level is not None and accept[0] <= level <= accept[1],
@@ -477,8 +497,38 @@ def test_keyed_sites_find_measured_plants_at_the_keys_level():
     print("measured plants outside this script (other modules):", skipped)
     if os.environ.get("W4B_AGREEMENT"):
         pathlib.Path(os.environ["W4B_AGREEMENT"]).write_text(json.dumps({"rows": rows, "skipped": skipped}, indent=1))
-    assert len(rows) >= 20
+    # 21 rows at W4b; W4e (2026-10-19) took two out: the key fix made one fernway plant judged (the measure
+    # lists it as passing WCAG 2.5.8 by the spacing exception), and empty columns went to the craft critic.
+    assert len(rows) >= 19
     assert len(bad) <= 0.10 * len(rows)
+
+
+@needs_keys
+def test_keyed_empty_column_plants_wait_for_the_craft_critic_at_the_keys_level():
+    """A planted empty column is a craft candidate on the plant's viewports, and a yes from the craft
+    critic gives a level inside the key's range."""
+    key = _key("quarry-v1")
+    plants = [p for p in _plants(key) if p.get("kind") == "measured" and p.get("check") in mf.CANDIDATE_CHECKS]
+    assert plants
+    for plant in plants:
+        folders = [d for site, run, d in _folders() if site == "quarry-v1" and run.endswith("-" + plant["page"])]
+        assert folders
+        lo, hi = plant.get("accept_severity") or [plant["severity"], plant["severity"]]
+        for folder in folders:
+            cands = [c for c in mf.craft_candidates(folder) if c["viewport"] in (plant.get("viewports") or [c["viewport"]])]
+            assert cands and all(lo <= c["if_yes"] <= hi for c in cands), folder.name
+
+
+@needs_keys
+def test_keyed_measured_plants_are_not_listed_as_passing_by_a_wcag_exception():
+    """The key fix (2026-10-19): a plant that design_measure.js lists as passing a WCAG criterion by its
+    exception can't be a measured failure of it; such a plant is judged, with a dated note."""
+    fixed = [(site, plant) for site in SITES for plant in _plants(_key(site))
+             if "spacing exception" in str(plant.get("note") or "")]
+    assert fixed  # the key fix is in
+    for site, plant in fixed:
+        assert plant["kind"] == "judged" and "2.5.8" in plant["note"], (site, plant["id"])
+        assert re.search(r"\b2026-\d\d-\d\d\b", plant["note"]), (site, plant["id"])
 
 
 def _reviewed(product):
@@ -512,7 +562,7 @@ def test_every_measured_problem_design_capture_lists_becomes_a_finding():
     cap = _load("design_capture")
     t = mf.pc.thresholds()
     for site, run, folder in _folders():
-        out = mf.measured_findings(folder)["findings"]
+        out = mf.measured_findings(folder)["findings"] + mf.craft_candidates(folder)
         capture = json.loads((folder / "capture.json").read_text())
         for p in capture["pages"]:
             for v in p["views"]:
@@ -539,11 +589,16 @@ def test_findings_are_complete_and_graded():
         assert len(ids) == len(set(ids)), (site, run)
         assert res["counts"] == {g: sum(f["grade"] == g for f in res["findings"]) for g in ("Must", "Should", "Could")}
         for f in res["findings"]:
-            assert {"id", "page", "viewport", "width", "element", "check", "criterion", "evidence", "rule", "level",
-                    "grade", "kind"} <= set(f)
-            assert f["rule"] in mf.RULES and 0 <= f["level"] <= 4 and f["kind"] == "measured"
-            assert f["grade"] == ("Must" if f["level"] >= 3 or f["check"] in mf.HARD_RULE
-                                  or f["criterion"].startswith("WCAG") else "Should" if f["level"] == 2 else "Could")
+            assert {"id", "page", "viewport", "width", "element", "check", "criterion", "evidence", "rule",
+                    "severity", "grade", "kind"} <= set(f)
+            assert "level" not in f  # W4e (H5): one field name for the level, the one the critics use
+            assert f["rule"] in mf.RULES and 0 <= f["severity"] <= 4 and f["kind"] == "measured"
+            assert f["check"] not in mf.CANDIDATE_CHECKS
+            assert f["grade"] == ("Must" if f["severity"] >= 3 or f["check"] in mf.HARD_RULE
+                                  or f["criterion"].startswith("WCAG") else "Should" if f["severity"] == 2 else "Could")
+            if "ask" in f:
+                assert not res["primary_action"] and f["severity"] < f["ask"]["if_yes"]
+                assert f["check"] in ("focus-visible", "signifier") and f["ask"]["answers"] == ["yes", "no"]
 
 
 def test_two_runs_are_byte_identical(tmp_path):
@@ -558,13 +613,49 @@ def test_two_runs_are_byte_identical(tmp_path):
         assert outs[0] == mf.dumps(mf.measured_findings(folder)).encode()
 
 
-def test_cli_writes_critic_measured_json_by_default(tmp_path):
+def test_cli_writes_review_measured_json_by_default(tmp_path):
+    """W4e: outside review/critic/, where the merge and design_review_verify read every file as a critic's run."""
     review = shutil.copytree(FIX / "morrow-v2", tmp_path / "review")
     done = subprocess.run([sys.executable, str(BIN / "design_measured_findings.py"), str(review)],
                           capture_output=True, text=True, check=True)
-    out = review / "critic" / "measured.json"
+    out = review / "measured.json"
     assert out.is_file() and str(out) in done.stdout
+    assert not (review / "critic" / "measured.json").exists()
     assert json.loads(out.read_text())["findings"] == mf.measured_findings(review)["findings"]
     empty = subprocess.run([sys.executable, str(BIN / "design_measured_findings.py"), str(tmp_path / "none")],
                            capture_output=True, text=True)
     assert empty.returncode == 2 and "no capture.json" in empty.stderr
+
+
+# ---------------------------------------------------------------- W4e (H5's stage results)
+
+
+def test_findings_follow_the_viewports_the_review_captures(tmp_path):
+    """Only the views the review's own capture.json lists are measured: a facts file left from another
+    capture (a phone view the brief doesn't review) gives no finding."""
+    ring = {"no_focus_ring": [_ring("main > a.more", "Learn more")]}
+    review = _review(tmp_path, {("index.html", "desktop"): ring})
+    (review / "facts" / "index-mobile.json").write_text(json.dumps({"viewport": [390, 844], **ring}))
+    res = mf.measured_findings(review)
+    assert res["viewports"] == {"index": ["desktop"]}
+    assert [(f["viewport"], f["check"]) for f in res["findings"]] == [("desktop", "focus-visible")]
+
+
+def test_keyed_sites_send_their_empty_columns_to_the_craft_critic():
+    """The W4b screen's three empty-column false alarms (morrow rooms and settings, fernway signup: all
+    purposeful layouts) are no longer measured findings; they wait for the craft critic's yes/no."""
+    morrow, fernway = FIX / "morrow-v2", FIX / "fernway-v1"
+    for folder in (morrow, fernway, *(d for _, _, d in _folders())):
+        assert not [f for f in mf.measured_findings(folder)["findings"] if f["check"] == "empty-column"]
+    assert [c["id"] for c in mf.craft_candidates(morrow)] == ["rooms-desktop-empty-column-1",
+                                                            "settings-desktop-empty-column-1"]
+    assert [c["id"] for c in mf.craft_candidates(fernway)] == ["signup-desktop-empty-column-1"]
+
+
+def test_morrow_asks_the_merge_about_the_rooms_button_the_brief_does_not_name():
+    """morrow-v2's brief names no primary action: the Choose Cedar focus finding stays at 2 and carries the
+    merge's fenced question (a yes gives 3)."""
+    res = mf.measured_findings(FIX / "morrow-v2")
+    asked = {f["id"]: (f["severity"], f["ask"]["if_yes"]) for f in res["findings"] if "ask" in f}
+    assert res["primary_action"] == "" and asked == {"rooms-desktop-focus-visible-1": (2, 3),
+                                                    "rooms-mobile-focus-visible-1": (2, 3)}

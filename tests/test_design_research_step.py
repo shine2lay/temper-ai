@@ -491,8 +491,17 @@ def test_logo_save_refuses_a_logo_colour_outside_the_approved_palette(tmp_path, 
         j.save_files()
 
 
+# W4e (2026-10-19): the homepage candidate (H4-H7) and its test twins, on trial until W8, W10 and W11
+# grade them (tests/test_design_homepage_next.py); nothing else may sit under a _next name.
+W4E_WORKFLOWS = {"design_homepage_v2_next.yaml", "design_homepage_review_next.yaml", "design_craft_bench_next.yaml",
+                 "design_homepage_copy_review_next.yaml", "design_homepage_content_next.yaml"}
+W4E_AGENTS = {"design_critic_next.yaml", "design_merge_next.yaml", "design_homepage_craft_critic_v2_next.yaml",
+              "design_homepage_content_critic_v2_next.yaml", "design_homepage_stage_next.yaml"}
+
+
 def test_candidates_promoted_and_benchmark_twins_keep_the_pre_research_agents():
-    assert not list(WF.glob("*_next*.yaml")) and not list(AGENTS.glob("design_*_next.yaml"))
+    assert {p.name for p in WF.glob("*_next*.yaml")} <= W4E_WORKFLOWS
+    assert {p.name for p in AGENTS.glob("design_*_next.yaml")} <= W4E_AGENTS
     for name in ("design_homepage_v2", "design_logo_v1"):
         _, n = nodes(name)
         assert "research" in n and "save_files" in n

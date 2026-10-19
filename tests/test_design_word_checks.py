@@ -183,7 +183,7 @@ def test_clean_page_gives_no_findings():
 
 def test_cta_length_catch_deck_41_characters():
     found = rules(wc.check_deck(deck(ctas__secondary=CTA_41), BRIEF), "cta_length")
-    assert [(f["field"], f["level"], f["grade"]) for f in found] == [("ctas.secondary", 2, "Must")]
+    assert [(f["field"], f["severity"], f["grade"]) for f in found] == [("ctas.secondary", 2, "Must")]
     assert found[0]["evidence"].startswith("41 characters")
 
 
@@ -211,7 +211,7 @@ def test_cta_length_trap_arrows_and_spaces_are_not_counted(label):
 
 def test_cta_verb_catch_deck_primary_level_3_other_level_2():
     report = wc.check_deck(deck(ctas__primary="Your first paddle", ctas__secondary="Pricing"), BRIEF)
-    found = [(f["field"], f["level"], f["grade"]) for f in rules(report, "cta_verb")]
+    found = [(f["field"], f["severity"], f["grade"]) for f in rules(report, "cta_verb")]
     assert found == [("ctas.primary", 3, "Must"), ("ctas.secondary", 2, "Must")]
 
 
@@ -223,7 +223,7 @@ def test_cta_verb_catch_labels_that_are_not_actions(label):
 def test_cta_verb_catch_page_hero_button_that_drifted_from_the_deck():
     lines = page(("Plan your first paddle", "Your first paddle"))
     found = rules(wc.check_page(lines, DECK, BRIEF), "cta_verb")
-    assert [(f["element"], f["level"]) for f in found] == [("hero [a]", 3)]
+    assert [(f["element"], f["severity"]) for f in found] == [("hero [a]", 3)]
     assert found[0]["evidence"].endswith("also at line 23 (closing [a])")
 
 
@@ -264,7 +264,7 @@ def test_cta_verb_trap_page_without_named_sections_has_no_hero():
     assert wc.check_page(rows, DECK, BRIEF)["findings"] == []
     rows[1] = {**rows[1], "text": "Your first paddle"}  # the deck's primary CTA, drifted: still caught
     found = rules(wc.check_page(rows, DECK, BRIEF), "cta_verb")
-    assert [(f["line"], f["level"]) for f in found] == [(2, 3)]
+    assert [(f["line"], f["severity"]) for f in found] == [(2, 3)]
 
 
 def test_cta_verb_trap_page_hero_link_starting_with_a_question_word():
@@ -278,7 +278,7 @@ def test_cta_verb_trap_page_hero_link_starting_with_a_question_word():
 def test_unsourced_name_catch_deck_name_mid_sentence():
     d = deck(proof_points__1__text="Plans sync between phone and watch, and the Kayak Club of Wales uses it.")
     found = rules(wc.check_deck(d, BRIEF), "unsourced_name")
-    assert [(f["field"], f["text"], f["level"], f["grade"]) for f in found] == [
+    assert [(f["field"], f["text"], f["severity"], f["grade"]) for f in found] == [
         ("proof_points[2].text", "Kayak Club of Wales", 4, "Must")]
 
 
@@ -343,6 +343,41 @@ def test_unsourced_name_trap_capitals_that_are_not_names(field, text):
     assert rules(wc.check_deck(deck(**{field: text}), BRIEF), "unsourced_name") == []
 
 
+# W4e screen (2026-10-19): the v2.2 morrow deck and page said "Shortest Cedar booking: 1 hour x $18 = $18." and
+# "Shortest Atlas booking: ...", where the brief lists the rooms ("Three demo rooms: Cedar (4 people, ...), Oak
+# (...) and Atlas (...)"). The sentence's first word joined the room name in one run, and "Shortest Cedar" was
+# flagged as a name no fact holds: a false alarm. The same shape, made up for Tidebook:
+HARBOURS = {**BRIEF, "facts": BRIEF["facts"] + ["Example harbours: Falmouth (12 moorings) and Looe (6 moorings)"]}
+
+
+@pytest.mark.parametrize("text", [
+    "Shortest Falmouth trip: 40 minutes on the ebb.",
+    "Busiest Looe weekend: plan two tide windows.",
+    "Plans sync between phone and watch. Shortest Falmouth trip: 40 minutes.",
+])
+def test_unsourced_name_trap_sentence_opening_word_before_a_name_the_brief_holds(text):
+    assert rules(wc.check_deck(deck(subhead=text), HARBOURS), "unsourced_name") == []
+    lines = page(("Plans sync between phone and watch.", text))
+    assert rules(wc.check_page(lines, DECK, HARBOURS), "unsourced_name") == []
+
+
+@pytest.mark.parametrize("text, name", [
+    ("Shortest Penzance trip: 40 minutes on the ebb.", "Shortest Penzance"),  # the rest is no name the brief holds
+    ("Our Shortest Falmouth trip takes 40 minutes.", "Shortest Falmouth"),  # mid-sentence capitals: a name
+    ("Trips from Falmouth Quay take 40 minutes.", "Falmouth Quay"),  # one word more than the brief holds
+])
+def test_unsourced_name_boundary_sentence_opening_rule_keeps_other_names(text, name):
+    assert texts(wc.check_deck(deck(subhead=text), HARBOURS), "unsourced_name") == [name]
+
+
+def test_name_runs_at_gives_the_rest_only_for_a_run_opening_its_sentence():
+    assert wc.name_runs_at("Shortest Falmouth trip. We met the Kayak Club of Wales.") == [
+        ("Shortest Falmouth", "Falmouth"), ("Kayak Club of Wales", None)]
+    assert wc.name_runs_at("Kayak Club of Wales trips") == [("Kayak Club of Wales", "Club of Wales")]
+    assert wc.name_runs("Shortest Falmouth trip.") == ["Shortest Falmouth"]
+    assert ("falmouth",) in wc.source_names(HARBOURS["facts"]) and ("looe",) in wc.source_names(HARBOURS["facts"])
+
+
 def test_unsourced_name_trap_title_case_heading_keeps_a_name_inside_it():
     found = texts(wc.check_deck(deck(proof_points__0__title="Trusted by Harbour Masters"), BRIEF), "unsourced_name")
     assert found == ["Harbour Masters"]
@@ -364,7 +399,7 @@ def test_paragraph_helper_lengths():
 
 def test_long_paragraph_catch_271_and_400_characters():
     report = wc.check_page(lines_of(("p", _para(271)), ("li", _para(400))), DECK, BRIEF)
-    found = [(f["line"], f["level"], f["grade"]) for f in rules(report, "long_paragraph")]
+    found = [(f["line"], f["severity"], f["grade"]) for f in rules(report, "long_paragraph")]
     assert found == [(1, 2, "Should"), (2, 2, "Should")]
     assert rules(report, "long_paragraph")[1]["evidence"].startswith("400 characters: 5 lines")
 
@@ -398,7 +433,7 @@ def test_renamed_term_catch_one_word_changed_in_the_hero_is_level_3():
     found = rules(wc.check_page(lines, DECK, BRIEF), "renamed_term")
     assert len(found) == 1
     f = found[0]
-    assert (f["term"], f["text"], f["element"], f["level"], f["grade"]) == (
+    assert (f["term"], f["text"], f["element"], f["severity"], f["grade"]) == (
         "tide window", "slack window", "hero [p]", 3, "Must")
     assert f["line"] == 5
     assert f["evidence"].endswith("also at line 9 (proof [h3]), line 16 (example [p]), line 20 (faq [summary])")
@@ -416,7 +451,7 @@ def test_renamed_term_catch_another_phrase_in_the_terms_place_is_level_2():
                   "High water at 9:10 gives a safe slot from 8:30 to 9:50."),
                  ("What is a tide window?", "What is a safe slot?"))
     found = rules(wc.check_page(lines, DECK, BRIEF), "renamed_term")
-    assert [(f["text"], f["element"], f["level"], f["grade"]) for f in found] == [
+    assert [(f["text"], f["element"], f["severity"], f["grade"]) for f in found] == [
         ("safe slot", "example [p]", 2, "Should")]
 
 
@@ -482,7 +517,7 @@ def test_findings_have_the_workflow_shape_and_unique_ids():
         ids = [f["id"] for f in report["findings"]]
         assert len(ids) == len(set(ids))
         for f in report["findings"]:
-            assert {"id", "target", where, "rule", "check", "text", "evidence", "level", "grade", "kind"} <= set(f)
+            assert {"id", "target", where, "rule", "check", "text", "evidence", "severity", "grade", "kind"} <= set(f)
             assert f["rule"] in wc.RULES and f["check"] == wc.RULES[f["rule"]]["check"]
             assert re.fullmatch(rf"{report['target']}-{f['rule']}-\d+", f["id"])
     page_rules = {f["rule"] for f in wc.check_page(lines, DECK, BRIEF)["findings"]}

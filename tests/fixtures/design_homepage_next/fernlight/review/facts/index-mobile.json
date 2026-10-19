@@ -1,0 +1,2292 @@
+{
+ "url": "/index.html",
+ "title": "Fernlight \u2014 Keep your plants alive without the nagging.",
+ "viewport": [
+  390,
+  844
+ ],
+ "page_height": 10144,
+ "contrast_failures": [],
+ "contrast_exempt": [],
+ "type_styles": [
+  {
+   "style": "52px 400",
+   "count": 2
+  },
+  {
+   "style": "44px 400",
+   "count": 1
+  },
+  {
+   "style": "40px 400",
+   "count": 2
+  },
+  {
+   "style": "36px 400",
+   "count": 6
+  },
+  {
+   "style": "32px 400",
+   "count": 3
+  },
+  {
+   "style": "30px 400",
+   "count": 2
+  },
+  {
+   "style": "28px 400",
+   "count": 12
+  },
+  {
+   "style": "24px 400",
+   "count": 5
+  },
+  {
+   "style": "22px 400",
+   "count": 2
+  },
+  {
+   "style": "20px 700",
+   "count": 10
+  },
+  {
+   "style": "20px 400",
+   "count": 1
+  },
+  {
+   "style": "18px 400",
+   "count": 6
+  },
+  {
+   "style": "18px 700",
+   "count": 5
+  },
+  {
+   "style": "17px 700",
+   "count": 16
+  },
+  {
+   "style": "17px 400",
+   "count": 24
+  },
+  {
+   "style": "16px 400",
+   "count": 2
+  },
+  {
+   "style": "16px 700",
+   "count": 19
+  }
+ ],
+ "largest_text": [
+  {
+   "sel": "#hero-title > span:nth-of-type(1)",
+   "tag": "span",
+   "text": "Keep your plants alive",
+   "size": 52,
+   "weight": 400,
+   "color": "rgb(251,241,222)",
+   "transform": "none",
+   "box": [
+    24,
+    175,
+    342,
+    102
+   ]
+  },
+  {
+   "sel": "#hero-title > span.h1-lit:nth-of-type(2)",
+   "tag": "span",
+   "text": "without the nagging.",
+   "size": 52,
+   "weight": 400,
+   "color": "rgb(198,232,106)",
+   "transform": "none",
+   "box": [
+    24,
+    277,
+    342,
+    102
+   ]
+  },
+  {
+   "sel": "div.wrap > div.plan:nth-of-type(2) > article.care-card > p.card-name:nth-of-type(2)",
+   "tag": "p",
+   "text": "Monstera",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(126,47,28)",
+   "transform": "none",
+   "box": [
+    51,
+    4726,
+    288,
+    44
+   ]
+  },
+  {
+   "sel": "div:nth-of-type(2) > ul.ledger > li.plan-row:nth-of-type(1) > p.plan-price",
+   "tag": "p",
+   "text": "$0",
+   "size": 40,
+   "weight": 400,
+   "color": "rgb(43,27,20)",
+   "transform": "none",
+   "box": [
+    47,
+    6850,
+    54,
+    40
+   ]
+  },
+  {
+   "sel": "div:nth-of-type(2) > ul.ledger > li.plan-row.plan-row-plus:nth-of-type(2) > p.plan-price",
+   "tag": "p",
+   "text": "$3",
+   "size": 40,
+   "weight": 400,
+   "color": "rgb(43,27,20)",
+   "transform": "none",
+   "box": [
+    47,
+    7128,
+    132,
+    40
+   ]
+  },
+  {
+   "sel": "#value-title",
+   "tag": "h2",
+   "text": "For anyone who has watered too much, or too little.",
+   "size": 36,
+   "weight": 400,
+   "color": "rgb(126,47,28)",
+   "transform": "none",
+   "box": [
+    24,
+    1245,
+    342,
+    147
+   ]
+  },
+  {
+   "sel": "#how-title",
+   "tag": "h2",
+   "text": "Your window and the season set the schedule.",
+   "size": 36,
+   "weight": 400,
+   "color": "rgb(126,47,28)",
+   "transform": "none",
+   "box": [
+    24,
+    2740,
+    342,
+    110
+   ]
+  },
+  {
+   "sel": "#plan-title",
+   "tag": "h2",
+   "text": "Stop guessing when to water.",
+   "size": 36,
+   "weight": 400,
+   "color": "rgb(126,47,28)",
+   "transform": "none",
+   "box": [
+    24,
+    4327,
+    342,
+    73
+   ]
+  }
+ ],
+ "headings": [
+  {
+   "level": 1,
+   "text": "Keep your plants alive without the nagging.",
+   "size": 52,
+   "weight": 400,
+   "box": [
+    24,
+    175,
+    342,
+    204
+   ]
+  },
+  {
+   "level": 2,
+   "text": "For anyone who has watered too much, or too little.",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    24,
+    1245,
+    342,
+    147
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Set by your window and the season",
+   "size": 24,
+   "weight": 400,
+   "box": [
+    55,
+    1628,
+    249,
+    55
+   ]
+  },
+  {
+   "level": 3,
+   "text": "One tap, then quiet",
+   "size": 24,
+   "weight": 400,
+   "box": [
+    86,
+    1989,
+    249,
+    28
+   ]
+  },
+  {
+   "level": 3,
+   "text": "A care card for every plant",
+   "size": 24,
+   "weight": 400,
+   "box": [
+    55,
+    2322,
+    249,
+    55
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Your window and the season set the schedule.",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    24,
+    2740,
+    342,
+    110
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Add a plant",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    100,
+    2976,
+    266,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Describe its spot",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    100,
+    3128,
+    266,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Fernlight sets the schedule",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    100,
+    3254,
+    266,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Water on watering day",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    100,
+    3458,
+    266,
+    25
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Stop guessing when to water.",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    24,
+    4327,
+    342,
+    73
+   ]
+  },
+  {
+   "level": 3,
+   "text": "WATERING SCHEDULE",
+   "size": 16,
+   "weight": 700,
+   "box": [
+    51,
+    5265,
+    288,
+    20
+   ]
+  },
+  {
+   "level": 3,
+   "text": "FEEDING",
+   "size": 16,
+   "weight": 700,
+   "box": [
+    51,
+    5525,
+    288,
+    20
+   ]
+  },
+  {
+   "level": 2,
+   "text": "What does it cost?",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    24,
+    6454,
+    342,
+    73
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Free",
+   "size": 28,
+   "weight": 400,
+   "box": [
+    47,
+    6773,
+    296,
+    31
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Fernlight Plus",
+   "size": 28,
+   "weight": 400,
+   "box": [
+    47,
+    6941,
+    296,
+    31
+   ]
+  },
+  {
+   "level": 3,
+   "text": "PRICE",
+   "size": 16,
+   "weight": 700,
+   "box": [
+    51,
+    7254,
+    288,
+    20
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Questions, answered plainly.",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    24,
+    7559,
+    342,
+    110
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Will it nag me?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    7856,
+    342,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "How does it know when to water?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    8027,
+    342,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Will it tell me exactly when to water?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    8303,
+    342,
+    50
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Which plants can I add?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    8473,
+    342,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "What is in the sample care plan?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    8618,
+    342,
+    25
+   ]
+  },
+  {
+   "level": 3,
+   "text": "What does it cost?",
+   "size": 20,
+   "weight": 700,
+   "box": [
+    24,
+    8868,
+    342,
+    25
+   ]
+  },
+  {
+   "level": 2,
+   "text": "One quiet reminder, on the day it counts.",
+   "size": 36,
+   "weight": 400,
+   "box": [
+    47,
+    9436,
+    296,
+    147
+   ]
+  }
+ ],
+ "long_lines": [],
+ "controls": [
+  {
+   "sel": "header.site-header.on-dark > div.masthead.wrap > a.brand:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "Fernlight",
+   "name_from": "content",
+   "box": [
+    24,
+    95,
+    187,
+    44
+   ]
+  },
+  {
+   "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.btn:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "See a sample care plan",
+   "name_from": "content",
+   "box": [
+    24,
+    1002,
+    263,
+    56
+   ]
+  },
+  {
+   "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.link-down:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "Read how your schedule works",
+   "name_from": "content",
+   "box": [
+    24,
+    1078,
+    273,
+    44
+   ]
+  },
+  {
+   "sel": "#start > div.wrap:nth-of-type(2) > div.closing-arch > a.btn",
+   "tag": "a",
+   "role": "",
+   "name": "See a sample care plan",
+   "name_from": "content",
+   "box": [
+    64,
+    9719,
+    263,
+    56
+   ]
+  },
+  {
+   "sel": "footer.site-footer.on-dark > div.wrap.footer-grid > a.brand",
+   "tag": "a",
+   "role": "",
+   "name": "Fernlight",
+   "name_from": "content",
+   "box": [
+    24,
+    9863,
+    187,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(1) > a",
+   "tag": "a",
+   "role": "",
+   "name": "How it works",
+   "name_from": "content",
+   "box": [
+    24,
+    10008,
+    102,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(2) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Care plan",
+   "name_from": "content",
+   "box": [
+    150,
+    10008,
+    75,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(3) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Price",
+   "name_from": "content",
+   "box": [
+    249,
+    10008,
+    41,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(4) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Questions",
+   "name_from": "content",
+   "box": [
+    24,
+    10052,
+    82,
+    44
+   ]
+  }
+ ],
+ "small_targets": [],
+ "targets_pass": [],
+ "weak_boundaries": [],
+ "fields": [],
+ "unnamed_graphics": [],
+ "page_width": {
+  "scroll": 390,
+  "viewport": 390,
+  "overflows": false
+ },
+ "landmarks": [
+  {
+   "tag": "header",
+   "label": ""
+  },
+  {
+   "tag": "main",
+   "label": ""
+  },
+  {
+   "tag": "footer",
+   "label": ""
+  },
+  {
+   "tag": "nav",
+   "label": "Footer"
+  }
+ ],
+ "text_count": 118,
+ "axe": [],
+ "tab_stops": [
+  {
+   "sel": "header.site-header.on-dark > div.masthead.wrap > a.brand:nth-of-type(1)",
+   "name": "Fernlight",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    95,
+    187,
+    44
+   ]
+  },
+  {
+   "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.btn:nth-of-type(1)",
+   "name": "See a sample care plan",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "rgb(43, 27, 20) 5px 5px 0px 0px",
+   "box": [
+    24,
+    1002,
+    263,
+    56
+   ]
+  },
+  {
+   "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.link-down:nth-of-type(2)",
+   "name": "Read how your schedule works",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    1078,
+    273,
+    44
+   ]
+  },
+  {
+   "sel": "#start > div.wrap:nth-of-type(2) > div.closing-arch > a.btn",
+   "name": "See a sample care plan",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "rgb(43, 27, 20) 5px 5px 0px 0px",
+   "box": [
+    64,
+    9719,
+    263,
+    56
+   ]
+  },
+  {
+   "sel": "footer.site-footer.on-dark > div.wrap.footer-grid > a.brand",
+   "name": "Fernlight",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    9863,
+    187,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(1) > a",
+   "name": "How it works",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    10008,
+    102,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(2) > a",
+   "name": "Care plan",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    150,
+    10008,
+    75,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(3) > a",
+   "name": "Price",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    249,
+    10008,
+    41,
+    44
+   ]
+  },
+  {
+   "sel": "nav.footer-nav > ul > li:nth-of-type(4) > a",
+   "name": "Questions",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    10052,
+    82,
+    44
+   ]
+  }
+ ],
+ "no_focus_ring": [],
+ "tiles": [
+  {
+   "file": "shots/index-mobile-1.png",
+   "y": 0,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-2.png",
+   "y": 844,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-3.png",
+   "y": 1688,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-4.png",
+   "y": 2532,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-5.png",
+   "y": 3376,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-6.png",
+   "y": 4220,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-7.png",
+   "y": 5064,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-8.png",
+   "y": 5908,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-9.png",
+   "y": 6752,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-10.png",
+   "y": 7596,
+   "height": 844
+  }
+ ],
+ "page_checks": {
+  "viewport": [
+   390,
+   844
+  ],
+  "page_height": 10144,
+  "sections": [
+   {
+    "name": "Header",
+    "chrome": true,
+    "box": [
+     0,
+     0,
+     390,
+     151
+    ]
+   },
+   {
+    "name": "Hero",
+    "chrome": false,
+    "box": [
+     0,
+     151,
+     390,
+     1030
+    ]
+   },
+   {
+    "name": "Value",
+    "chrome": false,
+    "box": [
+     0,
+     1181,
+     390,
+     1492
+    ]
+   },
+   {
+    "name": "How it works",
+    "chrome": false,
+    "box": [
+     0,
+     2673,
+     390,
+     1537
+    ]
+   },
+   {
+    "name": "Sample care plan",
+    "chrome": false,
+    "box": [
+     0,
+     4210,
+     390,
+     2181
+    ]
+   },
+   {
+    "name": "Price",
+    "chrome": false,
+    "box": [
+     0,
+     6390,
+     390,
+     1102
+    ]
+   },
+   {
+    "name": "FAQ",
+    "chrome": false,
+    "box": [
+     0,
+     7492,
+     390,
+     1637
+    ]
+   },
+   {
+    "name": "Closing CTA",
+    "chrome": false,
+    "box": [
+     0,
+     9129,
+     390,
+     687
+    ]
+   },
+   {
+    "name": "Footer",
+    "chrome": true,
+    "box": [
+     0,
+     9815,
+     390,
+     329
+    ]
+   }
+  ],
+  "dark": false,
+  "action": {
+   "label": "See a sample care plan",
+   "found": 2,
+   "first": {
+    "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.btn:nth-of-type(1)",
+    "text": "See a sample care plan",
+    "top": 1002,
+    "bottom": 1058,
+    "whole": true,
+    "section": "Hero"
+   },
+   "screen_height": 844
+  },
+  "nav": {
+   "found": false
+  },
+  "cues": {
+   "checked": 3,
+   "nav_links": 6,
+   "without": [],
+   "without_count": 0,
+   "by_cue": {
+    "fill": 2,
+    "border": 2,
+    "shadow": 2,
+    "underline": 1,
+    "icon": 1
+   }
+  },
+  "visuals": {
+   "sections": [
+    {
+     "name": "Header",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "Hero",
+     "chrome": false,
+     "count": 4,
+     "share": 0.31,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        317,
+        364
+       ],
+       "top": 399,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        71,
+        143
+       ],
+       "top": 620,
+       "name": "",
+       "decorative": false
+      },
+      {
+       "kind": "svg",
+       "size": [
+        140,
+        168
+       ],
+       "top": 595,
+       "name": "",
+       "decorative": false
+      },
+      {
+       "kind": "svg",
+       "size": [
+        65,
+        101
+       ],
+       "top": 662,
+       "name": "",
+       "decorative": false
+      }
+     ]
+    },
+    {
+     "name": "Value",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "How it works",
+     "chrome": false,
+     "count": 1,
+     "share": 0.12,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        296,
+        224
+       ],
+       "top": 3668,
+       "name": "Plan of a room from above: light falls through the east wind",
+       "decorative": false
+      }
+     ]
+    },
+    {
+     "name": "Sample care plan",
+     "chrome": false,
+     "count": 10,
+     "share": 0.05,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 5897,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 5897,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 5897,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 5897,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 5897,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 6139,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 6139,
+       "name": "",
+       "decorative": true
+      },
+      {
+       "kind": "svg",
+       "size": [
+        56,
+        60
+       ],
+       "top": 6139,
+       "name": "",
+       "decorative": true
+      }
+     ]
+    },
+    {
+     "name": "Price",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "FAQ",
+     "chrome": false,
+     "count": 1,
+     "share": 0.01,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        80,
+        96
+       ],
+       "top": 7693,
+       "name": "",
+       "decorative": true
+      }
+     ]
+    },
+    {
+     "name": "Closing CTA",
+     "chrome": false,
+     "count": 1,
+     "share": 0.18,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        296,
+        148
+       ],
+       "top": 9264,
+       "name": "",
+       "decorative": true
+      }
+     ]
+    },
+    {
+     "name": "Footer",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    }
+   ],
+   "first_screen_share": 0.37,
+   "none": [
+    "Value",
+    "Price"
+   ]
+  },
+  "overlays": [
+   {
+    "id": 0,
+    "sel": "#hero-title > span:nth-of-type(1)",
+    "text": "Keep your plants alive",
+    "size": 52,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      24,
+      184,
+      275,
+      32
+     ],
+     [
+      24,
+      235,
+      318,
+      32
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 1,
+    "sel": "#hero-title > span.h1-lit:nth-of-type(2)",
+    "text": "without the nagging.",
+    "size": 52,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     198,
+     232,
+     106,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 4.33,
+    "lines": [
+     [
+      24,
+      285,
+      314,
+      32
+     ],
+     [
+      24,
+      336,
+      243,
+      32
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 2,
+    "sel": "li.plant.plant-monstera:nth-of-type(2) > span.stake.stake-lit > span.stake-tag:nth-of-type(1) > span.stake-k:nth-of-type(1)",
+    "text": "Watering day",
+    "size": 16,
+    "weight": 700,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "picture",
+    "declared": 11.93,
+    "lines": [
+     [
+      171,
+      579,
+      100,
+      10
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 3,
+    "sel": "li.plant.plant-monstera:nth-of-type(2) > span.stake.stake-lit > span.stake-tag:nth-of-type(1) > span.stake-v:nth-of-type(2)",
+    "text": "Thursday",
+    "size": 22,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "picture",
+    "declared": 11.93,
+    "lines": [
+     [
+      164,
+      598,
+      114,
+      14
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 4,
+    "sel": "#top > div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > p.subhead.lead",
+    "text": "Add a plant by photo or name. Say which way the window faces",
+    "size": 18,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      24,
+      869,
+      321,
+      11
+     ],
+     [
+      24,
+      896,
+      341,
+      11
+     ],
+     [
+      24,
+      923,
+      309,
+      11
+     ],
+     [
+      24,
+      950,
+      302,
+      11
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 5,
+    "sel": "div.hero-grid.wrap > div.hero-copy:nth-of-type(3) > div.actions > a.link-down:nth-of-type(2)",
+    "text": "Read how your schedule works",
+    "size": 17,
+    "weight": 700,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      24,
+      1094,
+      247,
+      11
+     ],
+     [
+      279,
+      1095,
+      18,
+      11
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 6,
+    "sel": "#value-title",
+    "text": "For anyone who has watered too much, or too little.",
+    "size": 36,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 8.11,
+    "lines": [
+     [
+      24,
+      1251,
+      307,
+      22
+     ],
+     [
+      24,
+      1288,
+      305,
+      22
+     ],
+     [
+      24,
+      1325,
+      241,
+      22
+     ],
+     [
+      24,
+      1362,
+      98,
+      22
+     ]
+    ],
+    "section": "Value"
+   },
+   {
+    "id": 7,
+    "sel": "#value > div.wrap > div.value-head > p.lead",
+    "text": "Fernlight tells you which plant needs water today, based on ",
+    "size": 18,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 14.76,
+    "lines": [
+     [
+      24,
+      1419,
+      337,
+      11
+     ],
+     [
+      24,
+      1446,
+      341,
+      11
+     ],
+     [
+      24,
+      1473,
+      282,
+      11
+     ]
+    ],
+    "section": "Value"
+   },
+   {
+    "id": 8,
+    "sel": "div.wrap.how-grid > div.plan-view:nth-of-type(2) > figure.plan-figure > span.plan-pill.pill-window:nth-of-type(1)",
+    "text": "East window",
+    "size": 16,
+    "weight": 700,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "picture",
+    "declared": 14.76,
+    "lines": [
+     [
+      228,
+      3692,
+      95,
+      10
+     ]
+    ],
+    "section": "How it works"
+   },
+   {
+    "id": 9,
+    "sel": "div.wrap.how-grid > div.plan-view:nth-of-type(2) > figure.plan-figure > span.plan-pill.pill-distance:nth-of-type(2)",
+    "text": "1 m",
+    "size": 16,
+    "weight": 700,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "picture",
+    "declared": 8.04,
+    "lines": [
+     [
+      232,
+      3842,
+      26,
+      10
+     ]
+    ],
+    "section": "How it works"
+   },
+   {
+    "id": 10,
+    "sel": "#price-title",
+    "text": "What does it cost?",
+    "size": 36,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      24,
+      6460,
+      234,
+      22
+     ],
+     [
+      24,
+      6497,
+      105,
+      22
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 11,
+    "sel": "div.wrap.price-grid > div.price-copy:nth-of-type(1) > div.price-notes > p.lead:nth-of-type(1)",
+    "text": "Your first 5 plants cost nothing. You pick Fernlight Plus fo",
+    "size": 18,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      24,
+      6559,
+      319,
+      11
+     ],
+     [
+      24,
+      6586,
+      325,
+      11
+     ],
+     [
+      24,
+      6613,
+      51,
+      11
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 12,
+    "sel": "div.wrap.price-grid > div.price-copy:nth-of-type(1) > div.price-notes > p.no-ads:nth-of-type(2)",
+    "text": "No ads.",
+    "size": 24,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      43,
+      6668,
+      89,
+      15
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 13,
+    "sel": "div.wrap.price-grid > div:nth-of-type(2) > div.price-example > h3",
+    "text": "PRICE",
+    "size": 16,
+    "weight": 700,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      51,
+      7258,
+      52,
+      10
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 14,
+    "sel": "div.wrap.price-grid > div:nth-of-type(2) > div.price-example > p",
+    "text": "Up to 5 plants: Free, $0. For a 6th plant or more, you pick ",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      51,
+      7288,
+      254,
+      11
+     ],
+     [
+      51,
+      7315,
+      279,
+      11
+     ],
+     [
+      51,
+      7341,
+      233,
+      11
+     ],
+     [
+      51,
+      7379,
+      288,
+      11
+     ],
+     [
+      51,
+      7379,
+      198,
+      11
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 15,
+    "sel": "div:nth-of-type(2) > div.price-example > p > span.sum",
+    "text": "$3 x 12 = $36.",
+    "size": 28,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     251,
+     241,
+     222,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 5.35,
+    "lines": [
+     [
+      51,
+      7375,
+      198,
+      17
+     ]
+    ],
+    "section": "Price"
+   },
+   {
+    "id": 16,
+    "sel": "#faq-title",
+    "text": "Questions, answered plainly.",
+    "size": 36,
+    "weight": 400,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      7565,
+      202,
+      22
+     ],
+     [
+      24,
+      7602,
+      189,
+      22
+     ],
+     [
+      24,
+      7638,
+      147,
+      22
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 17,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(1) > h3",
+    "text": "Will it nag me?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      7862,
+      143,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 18,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(1) > p",
+    "text": "No. You hear from Fernlight on the day a plant needs water. ",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      7896,
+      302,
+      11
+     ],
+     [
+      24,
+      7922,
+      337,
+      11
+     ],
+     [
+      24,
+      7949,
+      298,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 19,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(2) > h3",
+    "text": "How does it know when to water?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      8033,
+      310,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 20,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(2) > p",
+    "text": "Fernlight starts with the plant. Then it looks at the window",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      8067,
+      326,
+      11
+     ],
+     [
+      24,
+      8093,
+      320,
+      11
+     ],
+     [
+      24,
+      8120,
+      322,
+      11
+     ],
+     [
+      24,
+      8146,
+      315,
+      11
+     ],
+     [
+      24,
+      8172,
+      271,
+      11
+     ],
+     [
+      24,
+      8199,
+      280,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 21,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(3) > h3",
+    "text": "Will it tell me exactly when to water?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      8309,
+      280,
+      12
+     ],
+     [
+      24,
+      8334,
+      63,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 22,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(3) > p",
+    "text": "It suggests a day, not an order. Always check the soil first",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      8368,
+      338,
+      11
+     ],
+     [
+      24,
+      8395,
+      296,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 23,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(4) > h3",
+    "text": "Which plants can I add?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      8479,
+      227,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 24,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(4) > p",
+    "text": "About 600 common houseplants. Take a photo of the plant or s",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      8513,
+      302,
+      11
+     ],
+     [
+      24,
+      8539,
+      321,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 25,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(5) > h3",
+    "text": "What is in the sample care plan?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      8624,
+      308,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 26,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(5) > p",
+    "text": "A care plan puts all your plants' care cards and watering da",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      8658,
+      321,
+      11
+     ],
+     [
+      24,
+      8684,
+      330,
+      11
+     ],
+     [
+      24,
+      8710,
+      336,
+      11
+     ],
+     [
+      24,
+      8737,
+      333,
+      11
+     ],
+     [
+      24,
+      8763,
+      294,
+      11
+     ],
+     [
+      24,
+      8789,
+      58,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 27,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(6) > h3",
+    "text": "What does it cost?",
+    "size": 20,
+    "weight": 700,
+    "large": true,
+    "needs": 3,
+    "color": [
+     126,
+     47,
+     28,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 7.14,
+    "lines": [
+     [
+      24,
+      8874,
+      177,
+      12
+     ]
+    ],
+    "section": "FAQ"
+   },
+   {
+    "id": 28,
+    "sel": "div.wrap > div.faq-list:nth-of-type(2) > div.faq-item:nth-of-type(6) > p",
+    "text": "Free covers up to 5 plants. Fernlight Plus is $3 a month for",
+    "size": 17,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     43,
+     27,
+     20,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 13,
+    "lines": [
+     [
+      24,
+      8908,
+      326,
+      11
+     ],
+     [
+      24,
+      8934,
+      325,
+      11
+     ],
+     [
+      24,
+      8960,
+      293,
+      11
+     ],
+     [
+      24,
+      8987,
+      320,
+      11
+     ],
+     [
+      24,
+      9013,
+      293,
+      11
+     ]
+    ],
+    "section": "FAQ"
+   }
+  ],
+  "small_dark": [],
+  "pixels": {
+   "0": {
+    "ratio": 5.35,
+    "bg": "rgb(168,67,42)"
+   },
+   "1": {
+    "ratio": 4.33,
+    "bg": "rgb(168,67,42)"
+   },
+   "2": {
+    "ratio": 11.93,
+    "bg": "rgb(198,232,106)"
+   },
+   "3": {
+    "ratio": 11.93,
+    "bg": "rgb(198,232,106)"
+   },
+   "4": {
+    "ratio": 4.85,
+    "bg": "rgb(177,73,44)"
+   },
+   "5": {
+    "ratio": 4.68,
+    "bg": "rgb(180,76,45)"
+   },
+   "6": {
+    "ratio": 7.64,
+    "bg": "rgb(247,234,211)"
+   },
+   "7": {
+    "ratio": 13.63,
+    "bg": "rgb(246,232,207)"
+   },
+   "8": {
+    "ratio": 14.76,
+    "bg": "rgb(251,241,222)"
+   },
+   "9": {
+    "ratio": 8.04,
+    "bg": "rgb(233,169,59)"
+   },
+   "10": {
+    "ratio": 4.67,
+    "bg": "rgb(180,76,45)"
+   },
+   "11": {
+    "ratio": 4.78,
+    "bg": "rgb(178,74,44)"
+   },
+   "12": {
+    "ratio": 4.93,
+    "bg": "rgb(175,72,44)"
+   },
+   "13": {
+    "ratio": 5.35,
+    "bg": "rgb(168,67,42)"
+   },
+   "14": {
+    "ratio": 5.35,
+    "bg": "rgb(168,67,42)"
+   },
+   "15": {
+    "ratio": 5.35,
+    "bg": "rgb(168,67,42)"
+   },
+   "16": {
+    "ratio": 6.96,
+    "bg": "rgb(246,223,174)"
+   },
+   "17": {
+    "ratio": 6.96,
+    "bg": "rgb(246,223,174)"
+   },
+   "18": {
+    "ratio": 13,
+    "bg": "rgb(247,226,181)"
+   },
+   "19": {
+    "ratio": 6.96,
+    "bg": "rgb(246,223,174)"
+   },
+   "20": {
+    "ratio": 12.57,
+    "bg": "rgb(246,222,172)"
+   },
+   "21": {
+    "ratio": 7.05,
+    "bg": "rgb(247,224,177)"
+   },
+   "22": {
+    "ratio": 12.67,
+    "bg": "rgb(246,223,174)"
+   },
+   "23": {
+    "ratio": 6.96,
+    "bg": "rgb(246,223,174)"
+   },
+   "24": {
+    "ratio": 12.57,
+    "bg": "rgb(246,222,172)"
+   },
+   "25": {
+    "ratio": 6.87,
+    "bg": "rgb(246,221,170)"
+   },
+   "26": {
+    "ratio": 12.75,
+    "bg": "rgb(246,224,176)"
+   },
+   "27": {
+    "ratio": 7.01,
+    "bg": "rgb(246,224,176)"
+   },
+   "28": {
+    "ratio": 12.57,
+    "bg": "rgb(246,222,172)"
+   }
+  }
+ }
+}

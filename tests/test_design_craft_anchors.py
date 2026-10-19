@@ -46,7 +46,7 @@ def _load(name):
 
 
 ca = _load("design_craft_anchors")
-FIELDS = {"id", "page", "width", "viewport", "element", "check", "metric", "value", "threshold", "level", "rule",
+FIELDS = {"id", "page", "width", "viewport", "element", "check", "metric", "value", "threshold", "severity", "rule",
           "evidence"}
 
 
@@ -87,7 +87,7 @@ def test_spacing_share_levels(share, level, band):
         if not level:
             assert f is None, at
             continue
-        assert (f["level"], f["threshold"], f["check"], f["value"], f["viewport"]) == (level, band, "space", share,
+        assert (f["severity"], f["threshold"], f["check"], f["value"], f["viewport"]) == (level, band, "space", share,
                                                                                       viewport), at
 
 
@@ -95,7 +95,7 @@ def test_spacing_share_levels(share, level, band):
 def test_scale_ratio_levels(ratio, level):
     f = _only(ca.anchors(_metrics(scale_ratio=(None, ratio))))
     if level:
-        assert (f["level"], f["threshold"], f["check"], f["width"], f["value"]) == (3, "below 2x", "scale", 390, ratio)
+        assert (f["severity"], f["threshold"], f["check"], f["width"], f["value"]) == (3, "below 2x", "scale", 390, ratio)
     else:
         assert f is None
 
@@ -106,7 +106,7 @@ def test_scale_ratio_levels(ratio, level):
 def test_text_size_levels(sizes, level, band):
     f = _only(ca.anchors(_metrics(text_sizes=(sizes, None))))
     if level:
-        assert (f["level"], f["threshold"], f["check"], f["width"], f["value"], f["viewport"]) == (
+        assert (f["severity"], f["threshold"], f["check"], f["width"], f["value"], f["viewport"]) == (
             level, band, "type", 1440, sizes, "desktop")
     else:
         assert f is None
@@ -115,18 +115,18 @@ def test_text_size_levels(sizes, level, band):
 def test_a_font_family_that_failed_to_load_is_3_and_reported_once():
     assert _only(ca.anchors(_metrics(unloaded_families=([], [])))) is None
     f = _only(ca.anchors(_metrics(unloaded_families=(["Sans"], ["Serif", "Sans"]))))
-    assert (f["level"], f["check"], f["value"], f["width"], f["viewport"]) == (3, "type", ["Sans", "Serif"], 1440, "all")
+    assert (f["severity"], f["check"], f["value"], f["width"], f["viewport"]) == (3, "type", ["Sans", "Serif"], 1440, "all")
     assert "Sans, Serif" in f["element"] and f["threshold"] == "a family failed to load"
 
 
 def test_one_finding_at_the_worse_of_the_two_widths():
     f = _only(ca.anchors(_metrics(spacing_on_4px=(0.7, 0.5))))  # 2 at 1440, 3 at 390: the worse width sets it
-    assert (f["level"], f["width"], f["value"], f["viewport"], f["threshold"]) == (3, 390, 0.5, "all", "below 0.6")
+    assert (f["severity"], f["width"], f["value"], f["viewport"], f["threshold"]) == (3, 390, 0.5, "all", "below 0.6")
     assert f["evidence"] == "craft-metrics.json: share on a 4 px grid 0.7 at 1440 and 0.5 at 390"
     f = _only(ca.anchors(_metrics(spacing_on_4px=(0.5, 0.5))))  # equal numbers: the wider width
     assert (f["width"], f["viewport"]) == (1440, "all")
     f = _only(ca.anchors(_metrics(text_sizes=(9, 7))))
-    assert (f["level"], f["width"], f["value"], f["viewport"]) == (3, 1440, 9, "all")
+    assert (f["severity"], f["width"], f["value"], f["viewport"]) == (3, 1440, 9, "all")
     f = _only(ca.anchors(_metrics(scale_ratio=(1.67, 1.53))))
     assert (f["width"], f["value"]) == (390, 1.53)
     assert f["evidence"] == ("craft-metrics.json: scale ratio 1.67x at 1440 (body text 18 px, largest text 76 px) and "
@@ -137,7 +137,7 @@ def test_a_clean_page_gives_every_check_and_no_finding():
     res = ca.anchors(_metrics())
     assert res["findings"] == [] and res["counts"] == {"4": 0, "3": 0, "2": 0, "1": 0}
     assert [c["rule"] for c in res["checks"]] == ca.ANCHORS == ["spacing-grid", "scale-ratio", "text-sizes", "font-loading"]
-    assert all(c["level"] == 0 and set(c["values"]) == {"1440", "390"} for c in res["checks"])
+    assert all(c["severity"] == 0 and set(c["values"]) == {"1440", "390"} for c in res["checks"])
     assert res["widths"] == [1440, 390] and res["page"] == "index.html"
 
 
@@ -151,7 +151,7 @@ def test_a_width_without_a_number_is_left_out():
     assert f["evidence"] == "craft-metrics.json: share on a 4 px grid 0.4 at 390"
     checks = {c["rule"]: c for c in res["checks"]}
     assert checks["spacing-grid"]["values"] == {"1440": None, "390": 0.4}
-    assert checks["text-sizes"]["levels"] == {"1440": None, "390": 0}
+    assert checks["text-sizes"]["severities"] == {"1440": None, "390": 0}
     assert ca.anchors({"1440": "not measured", "note": 3})["findings"] == []
 
 
@@ -164,7 +164,7 @@ def test_findings_carry_the_agreed_fields():
         assert set(f) == FIELDS
         rule = ca.RULES[f["rule"]]
         assert (f["check"], f["metric"], f["id"]) == (rule["check"], rule["metric"], "craft-" + f["rule"])
-        assert ca.level_of(f["rule"], f["value"] if f["rule"] != "font-loading" else ["x"]) == (f["level"], f["threshold"])
+        assert ca.level_of(f["rule"], f["value"] if f["rule"] != "font-loading" else ["x"]) == (f["severity"], f["threshold"])
         assert f["evidence"].startswith("craft-metrics.json: ")
 
 
@@ -204,6 +204,34 @@ def test_every_severity_anchor_of_the_prompt_is_applied_or_left_to_the_critic():
     assert all(any(text.startswith(k) for _, _, text in items) for k in ca.LEFT)
 
 
+# ---------------------------------------------------------------- W4e: candidates and hairlines
+
+
+def test_anchors_json_lists_the_captures_empty_columns_as_candidates(tmp_path):
+    """W4e (H5): the page checks' empty columns reach the craft critic as fenced yes/no candidates, at the
+    level a yes gives; a folder without capture.json has none."""
+    review = shutil.copytree(ROOT / "tests" / "fixtures" / "design_measured_findings" / "morrow-v2",
+                             tmp_path / "review")
+    shutil.copyfile(FIX / MANIFEST["pages"][0] / "craft-metrics.json", review / "craft-metrics.json")
+    res = ca.craft_anchor_findings(review)
+    assert res["candidates"] and res["candidates"] == ca.mf.craft_candidates(review)
+    for c in res["candidates"]:
+        assert c["check"] == "empty-column" and c["answers"] == ["yes", "no"]
+        assert c["if_yes"] == c["severity"] in (2, 3) and "dead space" in c["question"]
+    assert ca.craft_anchor_findings(FIX / MANIFEST["pages"][0])["candidates"] == []
+
+
+def test_spacing_evidence_says_how_many_hairline_values_were_left_out():
+    """The candidate measure (design_homepage_next.py) counts spacing values from 4 px up and says how
+    many 1-3 px values it left out; the anchors quote that number."""
+    m = _metrics(spacing_on_4px=(0.89, 1.0))
+    m["1440"]["spacing_hairlines"], m["390"]["spacing_hairlines"] = 4, 31
+    f = _only(ca.anchors(m))
+    assert (f["severity"], f["width"]) == (2, 1440)
+    assert f["evidence"] == ("craft-metrics.json: share on a 4 px grid 0.89 at 1440 (4 hairline values under 4 px "
+                             "not counted) and 1.0 at 390 (31 hairline values under 4 px not counted)")
+
+
 # ---------------------------------------------------------------- craft-v1
 
 
@@ -234,12 +262,12 @@ def test_two_runs_are_byte_identical(tmp_path):
         assert outs[0] == ca.dumps(ca.craft_anchor_findings(folder)).encode()
 
 
-def test_cli_writes_craft_anchors_json_by_default(tmp_path):
+def test_cli_writes_anchors_json_outside_the_craft_folder_by_default(tmp_path):
     review = shutil.copytree(FIX / MANIFEST["pages"][0], tmp_path / "review")
     done = subprocess.run([sys.executable, str(BIN / "design_craft_anchors.py"), str(review)],
                           capture_output=True, text=True, check=True)
-    out = review / "craft" / "anchors.json"
-    assert out.is_file() and str(out) in done.stdout
+    out = review / "anchors.json"  # W4e: combine reads every file in review/craft/ as a craft critic's review
+    assert out.is_file() and str(out) in done.stdout and not (review / "craft" / "anchors.json").exists()
     assert json.loads(out.read_text()) == ca.craft_anchor_findings(review)
     empty = subprocess.run([sys.executable, str(BIN / "design_craft_anchors.py"), str(tmp_path / "none")],
                            capture_output=True, text=True)
@@ -267,7 +295,7 @@ def _graded():
         plant = str(key["pages"][page]["plant"])
         rule = MEASURES.get(plant)
         res = ca.craft_anchor_findings(folder)
-        found = [f for f in res["findings"] if rule and f["rule"] == rule and f["level"] >= 3]
+        found = [f for f in res["findings"] if rule and f["rule"] == rule and f["severity"] >= 3]
         rows.append({"page": page, "plant": plant, "control": plant.startswith("none"), "rule": rule,
                      "findings": res["findings"], "found": found,
                      "false": [f for f in res["findings"] if f["rule"] != rule],
@@ -280,7 +308,7 @@ def test_craft_v1_measured_plants_are_found_at_level_3_or_more_and_controls_stay
     key, rows = _graded()
     print("\npage     plant                 anchor rule         found                                false  missed")
     for r in rows:
-        found = ", ".join(f"{f['id']} {f['level']} ({f['value']} at {f['width']})" for f in r["found"]) or "-"
+        found = ", ".join(f"{f['id']} {f['severity']} ({f['value']} at {f['width']})" for f in r["found"]) or "-"
         rule = r["rule"] or ("(clean control)" if r["control"] else "left to the critic")
         print(f"{r['page']:<8} {r['plant']:<21} {rule:<19} {found:<36} {len(r['false']):<6} "
               f"{'MISSED' if r['missed'] else '-'}")
@@ -304,7 +332,7 @@ def test_craft_v1_key_measures_and_the_anchors_agree_on_every_page():
         metrics = json.loads((FIX / r["page"] / "craft-metrics.json").read_text())
         for kind, rule in MEASURES.items():
             fired = [f for f in r["findings"] if f["rule"] == rule]
-            assert (measured[kind]["verdict"] == "flawed") == bool(fired and fired[0]["level"] >= 3), (r["page"], kind)
+            assert (measured[kind]["verdict"] == "flawed") == bool(fired and fired[0]["severity"] >= 3), (r["page"], kind)
             assert (measured[kind]["verdict"] == "clean") == (not fired), (r["page"], kind)
             name, metric = KEY_NUMBERS[kind]
             for w in ("1440", "390"):  # the fixtures hold the numbers the key was written from

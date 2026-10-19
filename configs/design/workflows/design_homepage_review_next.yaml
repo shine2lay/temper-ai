@@ -1,0 +1,98 @@
+# CANDIDATE usability review in the homepage's own wiring (Design, W4e, hypotheses H4 and H5; for W8).
+# The review part of a design_homepage_v2_next round, on a planted-problem test site: the same
+# capture and facts.md as the homepage's measure step (page checks, the brief's primary action),
+# the measured problems from a script, the two candidate critics, the facts check and the candidate
+# merge, then merge_join:
+#
+#   capture (script) -> measured (script) -> [ critic_a | critic_b ] (design_critic_next)
+#     -> review_verify (design_verify, script) -> merge (design_merge_next) -> merge_join (script)
+#
+# measured writes review/measured.json: every measured problem of the captured viewports, levelled by
+# the severity rules (design_measured_findings); empty columns are left to the craft review. The
+# critics take it as given and judge only what no script measures; the merge never re-rates or
+# repeats a measured finding, answers the script's fenced yes/no questions (is this element the
+# page's primary action?) and writes review/merge.json; merge_join writes review/findings.json and
+# review/report.md (one finding per measured problem, beside the merge's judged findings), the files
+# design_review_grade reads. The merge has no fallback: without review/verify.json the run fails.
+# Live design_review and its agents are unchanged. About the cost of a design_review run.
+#
+# provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
+workflow:
+  name: design_homepage_review_next
+  version: 1
+  description: |
+    CANDIDATE design review in the homepage candidate's wiring (W4e): screenshots and measured
+    facts per viewport, the measured problems levelled by a script (review/measured.json), two
+    independent critics who judge only what no script measures, a no-model facts check of their
+    claims, a merge of their judged findings that also answers the script's yes/no questions, and
+    a join that writes review/findings.json and review/report.md with one finding per measured
+    problem beside the judged ones.
+  inputs:
+    brief:
+      type: string
+      required: true    # what the product is, who uses it, what the pages are for (a "Primary action:" line names it)
+    pages:
+      type: string
+      required: true    # comma-separated paths relative to the site, e.g. "index.html,pricing.html"
+    site:
+      type: string
+      default: ""       # a folder inside the run container to serve, e.g. a test site under /app/configs/design/testpages
+    base_url:
+      type: string
+      default: ""       # or a deployed site (the browser must reach it)
+    viewports:
+      type: string
+      default: "desktop,mobile"
+  outputs:
+    report_path: merge_join.structured.report_path
+    findings_path: merge_join.structured.findings_path
+    confirmed: merge_join.structured.confirmed
+    single: merge_join.structured.single
+    rejected: merge_join.structured.rejected
+    dropped_by_facts: merge_join.structured.dropped_by_facts
+    severity_counts: merge_join.structured.severity_counts
+    measured: merge_join.structured.measured
+    measured_groups: merge_join.structured.measured_groups
+    asks_answered: merge_join.structured.asks_answered
+    asks_unanswered: merge_join.structured.asks_unanswered
+    left_to_craft_review: merge_join.structured.left_to_craft_review
+    contradicted_claims: review_verify.structured.contradicted
+    partly_contradicted_claims: review_verify.structured.partly_contradicted
+    screenshots: capture.structured.screenshots
+    measured_items: capture.structured.measured_items
+  nodes:
+    - name: capture
+      type: agent
+      agent: design_capture
+      input_map:
+        brief: input.brief
+        pages: input.pages
+        site: input.site
+        base_url: input.base_url
+        viewports: input.viewports
+    - name: measured
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [capture]
+      input_map: {stage: measured}
+    - name: critic_a
+      type: agent
+      agent: design_critic_next
+      depends_on: [measured]
+    - name: critic_b
+      type: agent
+      agent: design_critic_next
+      depends_on: [measured]
+    - name: review_verify
+      type: agent
+      agent: design_verify
+      depends_on: [critic_a, critic_b]
+    - name: merge
+      type: agent
+      agent: design_merge_next
+      depends_on: [review_verify]
+    - name: merge_join
+      type: agent
+      agent: design_homepage_stage_next
+      depends_on: [merge]
+      input_map: {stage: merge_join}

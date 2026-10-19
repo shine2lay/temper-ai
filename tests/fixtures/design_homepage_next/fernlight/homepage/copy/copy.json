@@ -1,0 +1,90 @@
+{
+  "promise": "Fernlight tells you which plant needs water today, based on its window and the season, and stays quiet the rest of the time.",
+  "headlines": [
+    {"text": "Keep your plants alive without the nagging.", "angle": "outcome"},
+    {"text": "Stop guessing when to water.", "angle": "problem"},
+    {"text": "Your window and the season set the schedule.", "angle": "how it works"},
+    {"text": "For anyone who has watered too much, or too little.", "angle": "who it is for"},
+    {"text": "One quiet reminder, on the day it counts.", "angle": "calm tone"}
+  ],
+  "subhead": "Add a plant by photo or name. Say which way the window faces and how far the plant sits from it. Fernlight sets the schedule and reminds you only on watering day.",
+  "proof_points": [
+    {
+      "title": "Set by your window and the season",
+      "text": "Your schedule comes from the plant, the window it sits by and the season. When spring turns to summer, Fernlight adjusts it for you.",
+      "facts": [1, 2]
+    },
+    {
+      "title": "One tap, then quiet",
+      "text": "Fernlight reminds you on the day a plant needs water. Check the soil, water the plant, then tap once to log the watering. That is all until the next one.",
+      "facts": [1, 5]
+    },
+    {
+      "title": "A care card for every plant",
+      "text": "Monstera, east window, 1 m away: water every 9 days in spring, next on Thursday. Bright, indirect light. Feed once a month from April to September. Your care plan puts every care card in one place.",
+      "facts": [3]
+    }
+  ],
+  "ctas": {
+    "primary": "See a sample care plan",
+    "secondary": "Read how your schedule works"
+  },
+  "faq": [
+    {
+      "q": "Will it nag me?",
+      "a": "No. You hear from Fernlight on the day a plant needs water. Log the watering with one tap and it goes quiet until the next one.",
+      "facts": [1]
+    },
+    {
+      "q": "How does it know when to water?",
+      "a": "It starts with the plant. Then it looks at the window: which way it faces and how far the plant sits from it. Fernlight adds the season itself, and that sets the schedule. As the seasons change, the schedule changes with them.",
+      "facts": [1, 2]
+    },
+    {
+      "q": "Will it tell me exactly when to water?",
+      "a": "It suggests a day, not an order. Always check the soil first. Fernlight tells you this too.",
+      "facts": [5]
+    },
+    {
+      "q": "Which plants can I add?",
+      "a": "About 600 common houseplants. Take a photo of the plant or search for it by name.",
+      "facts": [2]
+    },
+    {
+      "q": "What is in the sample care plan?",
+      "a": "A care plan puts all your plants' care cards and watering days in one place. A care card is one plant's page: how often to water it, the light it likes and when to feed it. The sample starts with a Monstera by an east window.",
+      "facts": [3]
+    },
+    {
+      "q": "What does it cost?",
+      "a": "Free covers up to 5 plants. Fernlight Plus is $3 a month for unlimited plants and a photo check: send a photo of a leaf that looks wrong. Adding plants by photo comes with every plan. There are no ads.",
+      "facts": [1, 4]
+    }
+  ],
+  "voice": [
+    "Talk like a calm friend who knows plants: warm, brief, never bossy.",
+    "Speak about the reader's plants and windows: name the plant, the window and the day, never 'smart' or 'personalised'.",
+    "One idea per sentence; short, common words; no exclamation marks.",
+    "Never guilt the reader about plants they have lost; the problem is guessing, not them.",
+    "Say the notice once at the top; every other line speaks plainly, with no hedging.",
+    "Set the secondary CTA as a quieter text link with a down arrow that scrolls to the how-it-works section on this page."
+  ],
+  "terms": [
+    {"term": "schedule", "meaning": "How often a plant needs water, set from the plant, the window it sits by and the season."},
+    {"term": "watering day", "meaning": "The day a plant's schedule says it needs water. It is the only day Fernlight reminds you."},
+    {"term": "care card", "meaning": "One plant's page: its schedule, the light it likes and when to feed it."},
+    {"term": "care plan", "meaning": "All your plants' care cards and watering days in one place."},
+    {"term": "log a watering", "meaning": "One tap to record that you watered a plant, so the next watering day is set."},
+    {"term": "Free", "meaning": "Fernlight for up to 5 plants, at no cost."},
+    {"term": "Fernlight Plus", "meaning": "$3 a month for unlimited plants and a photo check."},
+    {"term": "photo check", "meaning": "Part of Fernlight Plus: send a photo of a leaf that looks wrong. Adding a plant by photo is different and comes with every plan."}
+  ],
+  "notices": [
+    {"id": "fictional", "text": "Fictional design study — there is no app to download and no accounts; the care plan is a sample.", "placement": "header"}
+  ],
+  "worked_examples": [
+    {"topic": "Watering schedule", "example": "Monstera, east window, 1 m away, in spring: water every 9 days. Watered on a Tuesday: 7 days brings you to the next Tuesday, 2 more is Thursday. 7 + 2 = 9 days."},
+    {"topic": "Feeding", "example": "Feed once a month, April to September: 1 feed x 6 months = 6 feeds a year."},
+    {"topic": "Price", "example": "Up to 5 plants: Free, $0. For a 6th plant or more, you pick Fernlight Plus at $3 a month. Over 12 months: $3 x 12 = $36."}
+  ]
+}

@@ -306,12 +306,12 @@ def _cta_problems(label: str, primary: bool) -> list[dict]:
     text = label_text(label)
     out = []
     if len(text) > CTA_MAX_CHARS:
-        out.append({"rule": "cta_length", "level": 2,
+        out.append({"rule": "cta_length", "severity": 2,
                     "evidence": f"{len(text)} characters; A5 allows {CTA_MAX_CHARS} or fewer"})
     if not starts_with_verb(text):
         w = first_word(text)
         said = f"the first word '{w}' is not an action verb" if w else "it has no word"
-        out.append({"rule": "cta_verb", "level": 3 if primary else 2,
+        out.append({"rule": "cta_verb", "severity": 3 if primary else 2,
                     "evidence": f"{said} (configs/design/knowledge/cta-verbs.txt); A5 asks a call to action to "
                                 f"start with a verb" + ("; this is the primary action" if primary else "")})
     return out
@@ -480,7 +480,18 @@ def name_runs(text: str, title_like: bool = False) -> list[str]:
     written in title case (title_like, or a label before a colon) every run that starts it (after any small
     words like "A") or has one word.
     """
-    out: list[str] = []
+    return [name for name, _ in name_runs_at(text, title_like)]
+
+
+def _words(segment: str) -> list[re.Match]:
+    return [m for m in NAME_TOKEN.finditer(segment) if any(c.isalpha() for c in m.group(0)) and not m.group(0)[0].isdigit()]
+
+
+def name_runs_at(text: str, title_like: bool = False) -> list[tuple[str, str | None]]:
+    """name_runs, each with what follows its first word when the run opens its sentence ("Shortest Cedar" ->
+    "Cedar"), else None: a sentence's first word has a capital only because it opens the sentence, so it may
+    be an ordinary word joined to a name (W4e screen, the v2.2 morrow deck and page)."""
+    out: list[tuple[str, str | None]] = []
     for segment, label in segments(text):
         words = [m for m in NAME_TOKEN.finditer(segment)
                  if any(c.isalpha() for c in m.group(0)) and not m.group(0)[0].isdigit()]
@@ -496,7 +507,24 @@ def name_runs(text: str, title_like: bool = False) -> list[str]:
             if run[0] == 0 and len(named) == 1 and not _camel(ws[0]):
                 continue
             name = segment[words[run[0]].start():words[run[-1]].end()]
-            out.append(re.sub(r"['\u2019]s$", "", name))
+            rest_at = list(run[1:])
+            while rest_at and (ws[rest_at[0]] in BRIDGES or ws[rest_at[0]] == "the"):
+                rest_at.pop(0)
+            rest = (re.sub(r"['\u2019]s$", "", segment[words[rest_at[0]].start():words[run[-1]].end()])
+                    if run[0] == 0 and rest_at and not _camel(ws[0]) else None)
+            out.append((re.sub(r"['\u2019]s$", "", name), rest))
+    return out
+
+
+def source_names(sources: list[str]) -> set[tuple[str, ...]]:
+    """Every run of capitalised words in the sources, wherever it stands (a sentence's first word too)."""
+    out: set[tuple[str, ...]] = set()
+    for s in sources:
+        for segment, _ in segments(clean(s)):
+            words = _words(segment)
+            for run in _runs(segment, words):
+                name = segment[words[run[0]].start():words[run[-1]].end()]
+                out.add(tuple(tokens(re.sub(r"['\u2019]s$", "", name))))
     return out
 
 
@@ -509,6 +537,7 @@ def name_findings(items: list[tuple[Any, str, bool]], sources: list[str], pool: 
     """One finding per name that no source contains. items are (where, text, title_like) in reading order;
     pool holds every text whose lower-case words show which capitalised words are common words."""
     source_tokens = [tokens(s) for s in sources if clean(s)]
+    held = source_names(sources)
     lower = lowercase_stems(pool)
 
     def sourced(part: list[str]) -> bool:
@@ -516,10 +545,12 @@ def name_findings(items: list[tuple[Any, str, bool]], sources: list[str], pool: 
 
     seen: dict[tuple[str, ...], dict] = {}
     for where, text, title_like in items:
-        for name in name_runs(text, title_like):
+        for name, rest in name_runs_at(text, title_like):
             key = tuple(tokens(name))
             if not key or sourced(list(key)):
                 continue
+            if rest and tuple(tokens(rest)) in held:
+                continue  # "Shortest Cedar is ...": a sentence opening on a word before a name the sources hold
             parts = [tokens(p) for p in re.split(r"\s+(?:of the|of|de|da|di|du|la|le|van|von|der|den)\s+", name)]
             if len(parts) > 1 and all(sourced(p) for p in parts):
                 continue  # names the sources hold one by one: "Ada Lovelace of the Bank of England"
@@ -529,7 +560,7 @@ def name_findings(items: list[tuple[Any, str, bool]], sources: list[str], pool: 
             if key in seen:
                 seen[key]["also"].append(where)
                 continue
-            seen[key] = {"rule": "unsourced_name", "level": 4, "where": where, "text": name, "also": []}
+            seen[key] = {"rule": "unsourced_name", "severity": 4, "where": where, "text": name, "also": []}
     return list(seen.values())
 
 
@@ -563,7 +594,7 @@ def paragraph_findings(lines: list[dict]) -> list[dict]:
         n = len(text)
         if n > PARAGRAPH_MAX_CHARS:
             lines_at = math.ceil(n / LINE_MAX_CHARS)
-            out.append({"rule": "long_paragraph", "level": 2, "line": i, "text": text,
+            out.append({"rule": "long_paragraph", "severity": 2, "line": i, "text": text,
                         "evidence": f"{n} characters: {lines_at} lines at 1440 px even at {LINE_MAX_CHARS} "
                                     f"characters a line (more than {PARAGRAPH_MAX_LINES})"})
     return out
@@ -700,7 +731,7 @@ def term_findings(lines: list[dict], deck: dict) -> list[dict]:
         variants = list(seen.values())
         first = variants[0]
         others = [f"'{v['phrase']}'" for v in variants[1:]]
-        out.append({"rule": "renamed_term", "level": 3 if any(v["main"] for v in variants) else 2,
+        out.append({"rule": "renamed_term", "severity": 3 if any(v["main"] for v in variants) else 2,
                     "line": first["lines"][0], "text": first["phrase"], "term": term,
                     "also_lines": [li for v in variants for li in v["lines"]][1:],
                     "evidence": f"the deck's term '{term}' is not on the page; '{first['phrase']}' stands in its place"
@@ -724,7 +755,7 @@ def _finish(target: str, findings: list[tuple[int, dict]]) -> dict:
     for f in ordered:
         per_rule[f["rule"]] = per_rule.get(f["rule"], 0) + 1
         f.update({"id": f"{target}-{f['rule']}-{per_rule[f['rule']]}", "target": target, "kind": "word",
-                  "check": RULES[f["rule"]]["check"], "grade": _grade(f["rule"], f["level"])})
+                  "check": RULES[f["rule"]]["check"], "grade": _grade(f["rule"], f["severity"])})
     return {"version": VERSION, "target": target,
             "limits": {"cta_max_chars": CTA_MAX_CHARS, "paragraph_max_chars": PARAGRAPH_MAX_CHARS,
                        "paragraph_max_lines": PARAGRAPH_MAX_LINES, "line_max_chars": LINE_MAX_CHARS,
@@ -781,7 +812,7 @@ def check_page(lines: list[dict], deck: dict, brief: dict) -> dict:
             key = (f["rule"], f["text"].lower())
             if key in first_cta:
                 first = first_cta[key]
-                first["level"] = max(first["level"], f["level"])
+                first["severity"] = max(first["severity"], f["severity"])
                 first["evidence"] += f"; also at line {f['line']} ({f['element']})"
                 continue
             first_cta[key] = f

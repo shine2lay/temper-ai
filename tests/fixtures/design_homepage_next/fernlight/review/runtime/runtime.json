@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "page": "index.html",
+  "checks": {
+    "focus": {
+      "tested": 14,
+      "findings": 0,
+      "status": "pass"
+    },
+    "order": {
+      "tested": 14,
+      "findings": 0,
+      "status": "pass"
+    },
+    "names": {
+      "tested": 16,
+      "findings": 0,
+      "status": "pass"
+    },
+    "reflow": {
+      "tested": 1,
+      "findings": 0,
+      "status": "pass"
+    },
+    "zoom": {
+      "tested": 1,
+      "findings": 0,
+      "status": "pass"
+    },
+    "spacing": {
+      "tested": 241,
+      "findings": 0,
+      "status": "pass"
+    },
+    "motion": {
+      "tested": 14,
+      "findings": 0,
+      "status": "pass"
+    },
+    "hover": {
+      "tested": 14,
+      "findings": 0,
+      "status": "pass"
+    }
+  },
+  "findings": [],
+  "kept_text": {
+    "status": "not run",
+    "note": "first round: nothing to compare",
+    "viewports": {}
+  },
+  "failures": 0,
+  "errors": [],
+  "notes": [],
+  "tab_order": [
+    {
+      "stop": 1,
+      "element": "a \"Fernlight\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 2,
+      "element": "a \"How it works\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 3,
+      "element": "a \"Care plan\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 4,
+      "element": "a \"Price\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 5,
+      "element": "a \"Questions\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 6,
+      "element": "a \"See a sample care plan\" (Header)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 7,
+      "element": "a \"See a sample care plan\" (Hero)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 8,
+      "element": "a \"Read how your schedule works\" (Hero)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 9,
+      "element": "a \"See a sample care plan\" (Closing CTA)",
+      "focus_change": "outline none 0px -> solid 3px rgb(43, 27, 20)"
+    },
+    {
+      "stop": 10,
+      "element": "a \"Fernlight\" (Footer)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 11,
+      "element": "a \"How it works\" (Footer)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 12,
+      "element": "a \"Care plan\" (Footer)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 13,
+      "element": "a \"Price\" (Footer)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    },
+    {
+      "stop": 14,
+      "element": "a \"Questions\" (Footer)",
+      "focus_change": "outline none 0px -> solid 3px rgb(198, 232, 106)"
+    }
+  ],
+  "text_lines": 106
+}

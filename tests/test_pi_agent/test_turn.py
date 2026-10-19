@@ -139,7 +139,7 @@ def test_the_turn_never_raises(tmp_path):
     cfg = sup.box_config(tmp_path / "box")
 
     class Broken(FakeBox):
-        def start(self, sink):
+        def start(self, sink, *, fence):
             raise RuntimeError("boom")
     report = run_turn(cfg, _req(tmp_path, Recorder()), Ledger(), box_factory=Broken)
     assert report.state == "failed" and report.error == "turn runner error: RuntimeError"

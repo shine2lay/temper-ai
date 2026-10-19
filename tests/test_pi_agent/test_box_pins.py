@@ -67,7 +67,7 @@ def _worker(path: Path, tmp_path: Path) -> WorkerBox:
 
 def _start(box: WorkerBox) -> str:
     with pytest.raises(BoxError) as caught:
-        box.start(lambda _record: None)
+        box.start(lambda _record: None, fence=lambda: True)
     return caught.value.code
 
 
@@ -154,7 +154,7 @@ def test_the_refusal_names_the_pin_and_no_path(tmp_path, short_root):
     box = _worker(path, tmp_path)
     _change(tmp_path / "identity-config" / "pi-identity.json")
     with pytest.raises(BoxError) as caught:
-        box.start(lambda _record: None)
+        box.start(lambda _record: None, fence=lambda: True)
     assert str(caught.value).endswith(
         "Pi worker box: identity_settings no longer read back with the pinned digest")
     assert str(tmp_path) not in str(caught.value)

@@ -106,6 +106,18 @@ class BoxError(Exception):
         self.code = code
 
 
+FENCE_TAKEN = "the turn was taken over by another attempt after its box was created"
+
+
+class BoxFenced(BoxError):
+    """The box's turn was no longer its attempt's when the box was about to start (#110):
+    the created container was removed (or, if Docker wouldn't, left created with no process
+    in it) and never started."""
+
+    def __init__(self, message: str):
+        super().__init__("turn_taken_over", message)
+
+
 @dataclass(frozen=True)
 class Route:
     provider: str
@@ -782,6 +794,46 @@ def stop_leftover_box(name: str, docker: Callable[..., Any] | None = None) -> di
     return result
 
 
+class BoxesUnknown(Exception):
+    """Docker could not say which worker boxes a run has: it failed, took too long, could not
+    run, or answered with a line Temper can't read. The caller treats it as a refusal."""
+
+
+#: One line per box: its name, state and turn label, each as JSON, so no value can split a line.
+_BOX_ROW = '{{json .Names}}\t{{json .State}}\t{{json (.Label "temper.pi.turn")}}'
+
+
+def boxes_of_run(run_id: str, docker: Callable[..., Any] | None = None) -> list[dict[str, str]]:
+    """Every worker box Docker holds for ``run_id``, in any state (created, running, paused,
+    restarting, removing, exited, dead): its name, state and turn label. Matched by the exact
+    labels :meth:`WorkerBox.create_args` gives every box (``temper.pi.box=1`` and the run's
+    ``temper.pi.run``), never by a name prefix. Raises :class:`BoxesUnknown` when Docker can't
+    say (M1, Security's B1: git over a member's folder waits for no box of that member)."""
+    run = docker or _docker_cli
+    try:
+        got = run("ps", "--all", "--no-trunc", "--filter", "label=temper.pi.box=1",
+                  "--filter", f"label=temper.pi.run={run_id[:36]}", "--format", _BOX_ROW,
+                  timeout=30)
+    except subprocess.TimeoutExpired:
+        raise BoxesUnknown("docker ps took too long") from None
+    except (OSError, subprocess.SubprocessError):
+        raise BoxesUnknown("docker ps could not run") from None
+    if got.returncode != 0:
+        raise BoxesUnknown(f"docker ps failed with exit {got.returncode}")
+    boxes = []
+    for line in (got.stdout or "").splitlines():
+        if not line.strip():
+            continue
+        try:
+            name, state, turn = (json.loads(part) for part in line.split("\t"))
+        except ValueError:
+            name = state = turn = None
+        if not all(isinstance(v, str) for v in (name, state, turn)):
+            raise BoxesUnknown("docker ps answered with a line Temper can't read")
+        boxes.append({"name": name, "state": state, "turn": turn})
+    return boxes
+
+
 class WorkerBox:
     """One container and its two host-side sockets, for one turn. Not reused."""
 
@@ -816,6 +868,8 @@ class WorkerBox:
         self.created = False
         self.rpc: Rpc | None = None
         self.inspected: dict | None = None
+        #: Set when the fence before the start refused it (:meth:`_fence_before_start`).
+        self.fenced: dict | None = None
         #: How the container was really started, read back from Docker: the ``--extension``
         #: entries of Pi's command line and the environment (the turn checks the add-ons).
         self.launched: dict | None = None
@@ -1054,8 +1108,12 @@ class WorkerBox:
         return read
 
     def start(self, event_sink: Callable[[dict], None],
-              command: list[str] | None = None) -> Rpc:
-        """Create, check and start the container; its attached stdio is the RPC channel."""
+              command: list[str] | None = None, *, fence: Callable[[], bool]) -> Rpc:
+        """Create, check and start the container; its attached stdio is the RPC channel.
+
+        ``fence`` is asked right before the created container starts and must answer True
+        (a turn's: is the turn still this attempt's); anything else removes the container
+        and raises :class:`BoxFenced` (#110)."""
         self._check_search_tools()
         self.pins_read_back = self._read_back_pins()
         # The participant's folder is the member's to write (mounted at /w): Temper makes,
@@ -1077,11 +1135,48 @@ class WorkerBox:
             raise BoxError("box_create_failed", "the worker container could not be created")
         self.created = True
         self.inspected = self._inspect()
+        self._fence_before_start(fence)
         env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
         env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
         self.rpc = Rpc(["docker", "start", "--attach", "--interactive", self.name],
                        cwd=str(self.pdir), env=env, event_sink=event_sink)
         return self.rpc
+
+    def _fence_before_start(self, fence: Callable[[], bool]) -> None:
+        """Ask once more, right before the created container starts, whether it may (#110).
+
+        An older attempt's turn thread can name its box, stall, and create the container
+        after a newer attempt took the turn over and found no container to stop. Started, it
+        would be a second writer in the member's folder, one Temper's git check could miss if
+        it started between the check and git. Only an explicit True starts the box; a no, or
+        no answer (a database error), removes the container and starts nothing. A container
+        Docker won't remove is left created, with no process in it."""
+        try:
+            held, why = fence() is True, FENCE_TAKEN
+        except Exception as exc:  # noqa: BLE001 - no answer is a no: never start unconfirmed
+            held, why = False, ("Temper couldn't confirm the turn is still this attempt's "
+                                f"after its box was created ({type(exc).__name__})")
+        if held:
+            return
+        removed = self._remove_container()
+        self.fenced = {"why": why, "started": False, "removed": removed}
+        if removed:
+            raise BoxFenced(f"{why}; the box was removed and never started")
+        self.fenced["left"] = ("created, with no process in it: Temper's git check refuses the "
+                               "member's folder while it is there; a forced stop's reaper or "
+                               f"docker rm --force {self.name} removes it")
+        raise BoxFenced(f"{why}; the box was never started, but Docker didn't remove it, so "
+                        "it is left created with no process in it")
+
+    def _remove_container(self) -> bool:
+        """``docker rm --force``, then Docker asked by exact name: True only once it's gone."""
+        try:
+            self._docker("rm", "--force", self.name, timeout=60)
+            left = self._docker("ps", "-a", "--filter", f"name=^{self.name}$",
+                                "--format", "{{.ID}}", timeout=30)
+            return left.returncode == 0 and not left.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return False
 
     def _inspect(self) -> dict:
         """Refuse to start a container that is not sealed exactly as asked."""
@@ -1256,16 +1351,10 @@ class WorkerBox:
                 receipt["rpc"] = self.rpc.close()
         except Exception:  # noqa: BLE001
             receipt["rpc"] = {"errors": ["rpc_close_failed"]}
-        removed = not self.created
-        if self.created:
-            try:
-                self._docker("rm", "--force", self.name, timeout=60)
-                left = self._docker("ps", "-a", "--filter", f"name=^{self.name}$",
-                                    "--format", "{{.ID}}", timeout=30)
-                removed = left.returncode == 0 and not left.stdout.strip()
-            except (OSError, subprocess.TimeoutExpired):
-                removed = False
+        removed = self._remove_container() if self.created else True
         receipt["container_removed"] = removed
+        if self.fenced is not None:
+            receipt["fenced"] = self.fenced
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             with self.lock:

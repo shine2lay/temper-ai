@@ -79,8 +79,14 @@ def make_leader(led: Ledger, box: Any, *, run_id: str, source: Path | None = Non
                       workflow="team_test", cancel_event=cancel_event, account=account,
                       leader=s["mode"]["leader"], pause_after=s["pause_after_rounds"],
                       goal=goal, project=None)  # type: ignore[arg-type]
-    team.project = ProjectCopies(team.root, source)
+    team.project = ProjectCopies(team.root, source, writer_check=team.writer_in_member_folder)
     return team
+
+
+def no_writer(folder: Path) -> None:
+    """The writer check for copies made outside a team (no ledger, no boxes): nothing else
+    writes in the folder."""
+    return None
 
 
 def open_leader(led: Ledger, box: Any, **kw: Any) -> LeaderTeam:
@@ -144,7 +150,7 @@ def open_flow(led: Ledger, box: Any, *, run_id: str, source: Path | None = None,
                     workflow="team_test", cancel_event=cancel_event, account=account,
                     leader=s["mode"]["leader"], pause_every_usd=s.get("pause_every_usd", 100.0),
                     max_parallel=s.get("max_parallel"), goal=goal, project=None)
-    team.project = ProjectCopies(team.root, source)
+    team.project = ProjectCopies(team.root, source, writer_check=team.writer_in_member_folder)
     refusal = team.open({"goal": goal})
     assert refusal is None, refusal
     for name, row in team._member_rows().items():

@@ -50,6 +50,7 @@ import threading
 import uuid
 from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -77,6 +78,9 @@ metadata = sa.MetaData()
 
 _LOCK = threading.RLock()
 _BOOT = uuid.uuid4().hex[:12]
+#: The team transaction this thread is inside, as (engine, connection): set by ``_team_tx``
+#: so a read made under it (``git_writers``) uses the same connection and sees what it holds.
+_TEAM_CONN: ContextVar[tuple[Any, Any] | None] = ContextVar("pi_team_conn", default=None)
 
 #: Member states. ``idle``: no box, its conversation on disk. ``uncertain``: its last turn was
 #: cut off and the owner decides. ``ended``: the team ended (cancelled or done).
@@ -712,7 +716,29 @@ class Ledger:
                 # A write statement that changes nothing still takes SQLite's write lock.
                 conn.execute(participants.update().where(sa.false()).values(
                     epoch=participants.c.epoch))
-            yield conn
+            held = _TEAM_CONN.set((self.engine, conn))
+            try:
+                yield conn
+            finally:
+                _TEAM_CONN.reset(held)
+
+    def git_writers(self, run_id: str, host_path: str) -> tuple[list[dict], list[dict]]:
+        """The team's members, and every turn of the run (of any team in it: a worker box's
+        turn label names one), for the check that nothing may still write in a member's folder
+        while Temper's git runs over it (M1, Security's B1). Read on the team transaction this
+        thread is inside, if any, so the check sees what the team lock holds; else on its own."""
+        held = _TEAM_CONN.get()
+        if held is not None and held[0] is self.engine:
+            return self._git_writers(held[1], run_id, host_path)
+        with _LOCK, self._tx() as conn:
+            return self._git_writers(conn, run_id, host_path)
+
+    @classmethod
+    def _git_writers(cls, conn: Any, run_id: str, host_path: str) -> tuple[list[dict], list[dict]]:
+        rows = conn.execute(sa.select(
+            turns.c.turn_id, turns.c.participant_id, turns.c.turn_no, turns.c.state,
+            turns.c.box_name).where(turns.c.run_id == run_id)).mappings().all()
+        return cls._members(conn, run_id, host_path), [dict(r) for r in rows]
 
     def _team_of(self, table: sa.Table, column: sa.Column, key: str) -> tuple[str, str] | None:
         """(run, team) of a turn or wait: fixed when the row is made, read before locking."""
@@ -1204,7 +1230,8 @@ class Ledger:
             ).values(**values)).rowcount == 1
 
     def record_box(self, turn_id: str, epoch: int | None, box_name: str | None) -> bool:
-        """The worker box's name, written before the box is created (C1)."""
+        """The worker box's name, written before the box is created (C1), and again as the
+        fence right before it starts (#110)."""
         return self._fenced(turn_id, epoch, box_name=box_name)
 
     def set_turn_agent_event(self, turn_id: str, agent_event_id: str, *,

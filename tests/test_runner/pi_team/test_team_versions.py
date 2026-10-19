@@ -38,7 +38,8 @@ def _no_remembered_tokens():
 
 def _copy(tmp_path: Path, files: dict[str, str] | None = None, *, source: bool = True):
     src = ls.project(tmp_path / "proj", files) if source else None
-    copies = ProjectCopies(tmp_path / "team", str(src) if src else None)
+    copies = ProjectCopies(tmp_path / "team", str(src) if src else None,
+                           writer_check=ls.no_writer)
     pdir = tmp_path / "team" / "members" / "lead"
     pdir.mkdir(parents=True)
     copies.ensure("lead", pdir)

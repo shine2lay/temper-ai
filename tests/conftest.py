@@ -196,3 +196,14 @@ def _no_docker_socket_for_the_subprocess_spawner(monkeypatch):
     monkeypatch.setattr(factory, "DOCKER_HOST_ENVS", ())
     monkeypatch.delenv("TEMPER_LANE", raising=False)
     monkeypatch.delenv("TEMPER_PI_DRAIN_MARK", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_worker_boxes(monkeypatch):
+    """Before each git call over a member's folder a team asks Docker for the run's worker
+    boxes (M1, Security's B1), and refuses when Docker can't be asked. Tests' boxes are stand-ins
+    Docker never holds, so the listing is empty unless a test answers it (Docker in
+    tests/test_runner/pi_team/test_member_git_check.py)."""
+    from temper_ai.pi_agent.team_leader import LeaderTeam
+
+    monkeypatch.setattr(LeaderTeam, "list_boxes", staticmethod(lambda run_id: []))

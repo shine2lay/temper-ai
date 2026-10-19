@@ -83,6 +83,7 @@ from temper_ai.pi_agent.team_leader import (
     Outcome,
     TeamFailure,
     answer_who,
+    git_for_own_turn,
     owner_words,
     tools_note,
 )
@@ -239,7 +240,8 @@ class FlowTeam(LeaderTeam):
         pdir = self._pdir(part)
         recorded = [Conflict.from_dict(c) for c in part.get("conflicts") or []]
         git_started = time.monotonic()
-        with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
+        with (_LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn,
+              git_for_own_turn(turn["turn_id"])):
             synced = self.shared.sync(member.name, pdir, recorded)
             conn.execute(participants.update().where(
                 participants.c.participant_id == turn["participant_id"]).values(

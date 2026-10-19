@@ -14,17 +14,24 @@ M4 ADR-M4-08. Both are about links, and both never follow one.
   following any link: each path component below the folder is opened no-follow and only a
   regular file is read. A link on the way is refused (:class:`MemberLink`) -- to ``/etc``, to
   another member's folder, or anywhere else -- never followed.
+* **A .git of a member's own (M1).** Temper runs git on the host over a member's folder; git
+  takes a ``.git`` below the folder's top (a ``gitdir:`` file, a link, a folder) for another
+  repository and follows it. :func:`nested_git` finds every one without following anything,
+  so the caller can refuse before git starts.
 """
 
 from __future__ import annotations
 
 import errno
 import hashlib
+import json
 import os
 import shutil
 import stat
+import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 #: The temporary copy is ``.<target name>.partial-<id>``, next to the target.
 PARTIAL = ".partial-"
@@ -454,6 +461,133 @@ def list_member_dir(root: Path | str, rel: str | Path) -> list[tuple[str, str]]:
         return sorted(out)
     finally:
         os.close(fd)
+
+
+# --- a .git of a member's own (M1) ------------------------------------------------------------
+
+#: The most :func:`nested_git` looks at: entries, folders deep and seconds. Past any of them it
+#: refuses (:class:`GitCheckUnfinished`): git never runs over a folder nobody checked. The
+#: clock is read after every entry, so one slow system call can still run past
+#: GIT_CHECK_SECONDS: it bounds the walk, it is not a hard deadline.
+GIT_CHECK_ENTRIES = 500_000
+GIT_CHECK_DEPTH = 64
+GIT_CHECK_SECONDS = 20.0
+#: The walk stops once it has found this many: five to name, one to say there are more.
+GIT_CHECK_FOUND = 6
+#: The most characters of a member-written path a message shows (the middle is cut).
+SHOWN_PATH_CHARS = 60
+
+
+class GitCheckUnfinished(Exception):
+    """The walk for a .git could not finish (a cap, or a folder it could not read); the
+    message is the plain problem, with any path in it quoted (:func:`quoted_member_path`)."""
+
+
+def quoted_member_path(rel: str) -> str:
+    """A path the member wrote, as safe text for a message: at most
+    :data:`SHOWN_PATH_CHARS` characters of it (the middle cut to ``...``), JSON-quoted, with
+    every control, non-ASCII, quote and backslash character escaped. Data to read, never a
+    command to run."""
+    if len(rel) > SHOWN_PATH_CHARS:
+        rel = rel[:28] + "..." + rel[-29:]
+    return json.dumps(rel, ensure_ascii=True)
+
+
+def nested_git(root: Path | str) -> list[str]:
+    """Entries named ``.git`` (any letter case, any kind: file, folder, link, other) below the
+    top of ``root``, sorted, as paths relative to it; the walk stops at
+    :data:`GIT_CHECK_FOUND` of them. Only the top's own entry spelled exactly ``.git`` is
+    passed by: Temper always names the git dir and git passes that name by, so it never reads
+    it. Any other spelling at the top (``.GIT``) is an ordinary folder to git here, which it
+    walks into and whose own ``.git`` it follows, so it is reported (Security's B4). Nothing
+    is followed: every folder is opened no-follow
+    by its parent's descriptor, a link is never entered and a ``.git`` folder is not looked
+    into. It streams, depth first: one folder listing is open per level on the way down (the
+    descriptors held grow with depth, not with how many folders a level holds), and entries
+    are counted and the clock read as they come. Raises :class:`GitCheckUnfinished` past a
+    cap (:data:`GIT_CHECK_ENTRIES`, :data:`GIT_CHECK_DEPTH`, :data:`GIT_CHECK_SECONDS`) or
+    when a folder can't be opened, listed or looked at; a missing ``root`` holds nothing."""
+    start = time.monotonic()
+    try:
+        top = os.open(root, _DIR_FLAGS)
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        raise GitCheckUnfinished(_cannot_read("", exc)) from None
+    found: list[str] = []
+    seen = 0
+    levels: list[tuple[int, Any, str]] = []     # (descriptor, its listing, path): top first
+    try:
+        _open_listing(levels, top, "")
+        while levels and len(found) < GIT_CHECK_FOUND:
+            fd, listing, rel_dir = levels[-1]
+            try:
+                entry = next(listing, None)
+            except OSError as exc:
+                raise GitCheckUnfinished(_cannot_read(rel_dir, exc)) from None
+            if entry is None:
+                _close_listing(levels.pop())
+                continue
+            seen += 1
+            if seen > GIT_CHECK_ENTRIES:
+                raise GitCheckUnfinished(
+                    f"it holds more than {GIT_CHECK_ENTRIES} entries, the most Temper checks "
+                    "for a .git of its own")
+            if time.monotonic() - start >= GIT_CHECK_SECONDS:
+                raise GitCheckUnfinished(
+                    f"checking it for a .git of its own took longer than "
+                    f"{GIT_CHECK_SECONDS:g} seconds")
+            rel = f"{rel_dir}/{entry.name}" if rel_dir else entry.name
+            if entry.name.lower() == ".git":
+                # Passed by only as the top's own, spelled exactly ".git" (B4).
+                if rel_dir or entry.name != ".git":
+                    found.append(rel)
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError as exc:
+                raise GitCheckUnfinished(_cannot_read(rel, exc)) from None
+            if not is_dir:
+                continue
+            if len(levels) > GIT_CHECK_DEPTH:
+                raise GitCheckUnfinished(
+                    f"it nests folders deeper than {GIT_CHECK_DEPTH}, the most Temper checks "
+                    "for a .git of its own")
+            try:
+                sub = os.open(entry.name, _DIR_FLAGS, dir_fd=fd)
+            except FileNotFoundError:
+                continue                            # gone since it was listed: nothing there
+            except OSError as exc:
+                raise GitCheckUnfinished(_cannot_read(rel, exc)) from None
+            _open_listing(levels, sub, rel)
+    finally:
+        while levels:
+            _close_listing(levels.pop())
+    return sorted(found)
+
+
+def _open_listing(levels: list[tuple[int, Any, str]], fd: int, rel: str) -> None:
+    """Put folder ``fd``'s listing on ``levels``; closes ``fd`` when it can't be listed."""
+    try:
+        listing = os.scandir(fd)
+    except OSError as exc:
+        os.close(fd)
+        raise GitCheckUnfinished(_cannot_read(rel, exc)) from None
+    levels.append((fd, listing, rel))
+
+
+def _close_listing(level: tuple[int, Any, str]) -> None:
+    fd, listing, _rel = level
+    try:
+        listing.close()
+    finally:
+        os.close(fd)
+
+
+def _cannot_read(rel: str, exc: OSError) -> str:
+    code = errno.errorcode.get(exc.errno or 0, exc.__class__.__name__)
+    where = quoted_member_path(rel) if rel else "the folder"
+    return f"it can't read {where} ({code}) to check it for a .git of its own"
 
 
 def write_member_file(root: Path | str, rel: str | Path, text: str) -> bool:

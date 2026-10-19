@@ -36,7 +36,7 @@ def test_w1_only_committed_content_is_copied_never_untracked_or_ignored_files(tm
     src = ls.project(tmp_path / "proj", {"app.py": "print('hello')\n", ".gitignore": ".env\n"})
     (src / ".env").write_text(SECRET)            # ignored
     (src / "notes.txt").write_text("draft\n")    # untracked
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdirs = _member_dirs(tmp_path / "team", "lead", "builder")
 
     heads = {name: copies.ensure(name, pdir) for name, pdir in pdirs.items()}
@@ -60,7 +60,7 @@ def test_w1_only_committed_content_is_copied_never_untracked_or_ignored_files(tm
 
 def test_w1_a_copy_that_exists_is_never_reset(tmp_path):
     src = ls.project(tmp_path / "proj")
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
     first = copies.ensure("lead", pdir)
     (ProjectCopies.worktree(pdir) / "README.md").write_text("# work in progress\n")
@@ -72,7 +72,7 @@ def test_w1_a_copy_that_exists_is_never_reset(tmp_path):
 def test_w1_a_workspace_with_uncommitted_changes_to_tracked_files_is_refused(tmp_path):
     src = ls.project(tmp_path / "proj")
     (src / "app.py").write_text("print('changed, not committed')\n")
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
 
     with pytest.raises(CopyError, match="uncommitted changes to tracked files"):
@@ -89,7 +89,7 @@ def test_w1_a_workspace_the_team_cannot_copy_is_refused_with_a_plain_reason(
         tmp_path, make, reason):
     src = tmp_path / "proj"
     make(src)
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
 
     with pytest.raises(CopyError, match=reason):
@@ -97,7 +97,7 @@ def test_w1_a_workspace_the_team_cannot_copy_is_refused_with_a_plain_reason(
 
 
 def test_w1_without_a_workspace_every_member_starts_from_an_empty_commit(tmp_path):
-    copies = ProjectCopies(tmp_path / "team", None)
+    copies = ProjectCopies(tmp_path / "team", None, writer_check=ls.no_writer)
     pdirs = _member_dirs(tmp_path / "team", "lead", "builder")
 
     for name, pdir in pdirs.items():
@@ -113,7 +113,7 @@ def test_a_reviewers_copy_is_moved_to_exactly_the_review_commit(tmp_path):
     """Temper commits the leader's copy and moves a reviewer's copy to that commit, dropping
     whatever the reviewer had changed or added (W2: everyone sees exactly that version)."""
     src = ls.project(tmp_path / "proj")
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdirs = _member_dirs(tmp_path / "team", "lead", "builder")
     for name, pdir in pdirs.items():
         copies.ensure(name, pdir)
@@ -143,7 +143,7 @@ def test_sw51_git_is_never_given_a_working_folder_that_is_a_link(tmp_path, targe
     member's copy. git would follow it: commit /etc into a review, or reset and clean the other
     member's work. Each git step checks the folder without following links, and refuses."""
     src = ls.project(tmp_path / "proj")
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdirs = _member_dirs(tmp_path / "team", "lead", "victim", "mallory")
     for name in ("lead", "victim") if step == "ensure" else ("lead", "victim", "mallory"):
         copies.ensure(name, pdirs[name])
@@ -205,7 +205,7 @@ def test_sw34_a_submodule_and_an_lfs_file_reach_a_copy_as_their_ids_never_their_
         tmp_path):
     src = _with_submodule_and_lfs(tmp_path)
     assert (src / "vendor" / "sub" / "inside.txt").read_text() == SUB_CONTENT
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
 
     head = copies.ensure("lead", pdir)
@@ -228,7 +228,7 @@ def test_sw34_no_file_of_a_copy_shares_its_inode_with_the_workspace(tmp_path):
     """git's own transfer, never hard links: a member changing a copy's file can never
     change the workspace's."""
     src = _with_submodule_and_lfs(tmp_path)
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     for name, pdir in _member_dirs(tmp_path / "team", "lead", "builder").items():
         copies.ensure(name, pdir)
 
@@ -244,7 +244,7 @@ def test_sw34_a_repository_format_git_can_t_read_is_named_before_anything_is_cop
     src = ls.project(tmp_path / "proj")
     ls.git(src, "config", "core.repositoryformatversion", "1")
     ls.git(src, "config", "extensions.temperTestUnknown", "true")
-    copies = ProjectCopies(tmp_path / "team", str(src))
+    copies = ProjectCopies(tmp_path / "team", str(src), writer_check=ls.no_writer)
     pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
 
     with pytest.raises(CopyFormatError, match="uses a format this git can't read"):

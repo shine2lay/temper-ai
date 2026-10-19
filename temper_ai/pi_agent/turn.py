@@ -48,6 +48,7 @@ from temper_ai.pi_agent.box import (
     STATE_FILE,
     BoxConfig,
     BoxError,
+    BoxFenced,
     BoxSpec,
     WorkerBox,
     check_session,
@@ -397,12 +398,19 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         box = box_factory(cfg, req.spec, redactor)
         # The box's name is on the turn before its container exists, so a takeover can always
         # find and stop it (R2 C1); a turn that is no longer this owner's starts nothing.
-        if not ledger.record_box(req.turn["turn_id"], req.turn.get("epoch"),
-                                 getattr(box, "name", None)):
+        turn_id, epoch, box_name = (req.turn["turn_id"], req.turn.get("epoch"),
+                                    getattr(box, "name", None))
+        if not ledger.record_box(turn_id, epoch, box_name):
             raise TurnFailure("turn_taken_over", "the turn was taken over by another attempt; "
                               "no worker was started")
         box.allow(0)
-        rpc = box.start(sink)
+        # The same fenced write, again right before the created container starts (#110): an
+        # attempt that stalled after the write above while a newer one took the turn over and
+        # found no container never starts a second writer in the member's folder.
+        try:
+            rpc = box.start(sink, fence=lambda: ledger.record_box(turn_id, epoch, box_name))
+        except BoxFenced as exc:
+            raise TurnFailure("turn_taken_over", str(exc)) from None
         report.checks["sealed"] = box.inspected
         # The identity and login digests the start read back (M2-roles D3, SW-26).
         report.checks["pins_read_back"] = getattr(box, "pins_read_back", None)

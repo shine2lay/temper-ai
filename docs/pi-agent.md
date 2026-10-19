@@ -258,6 +258,11 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
 - Taking over a turn whose run was cut off first makes sure its old worker box is gone:
   the box's name is recorded on the turn before the box is created, and the box is killed
   and removed if it is still there. If that can't be confirmed the step fails red.
+  The old attempt's turn is asked again right before its created container starts (the
+  same fenced write of the name, `WorkerBox.start(fence=...)`): a turn taken over in
+  between, or a fence that can't be asked, removes the container and starts nothing
+  (`turn_taken_over`). Docker refusing the removal leaves it created, with no process in
+  it, and named in the turn's receipt (`fenced`).
 
 ### A replaced attempt stands down
 

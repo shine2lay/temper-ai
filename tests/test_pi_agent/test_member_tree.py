@@ -555,7 +555,7 @@ def test_sw51_a_box_never_starts_over_a_member_folder_that_is_a_link(tmp_path, s
     box = _worker_box(tmp_path, short_root, pdir)
     box._docker = lambda *a, **k: pytest.fail("Docker was asked to start a box")
     with pytest.raises(BoxError) as err:
-        box.start(lambda _event: None)
+        box.start(lambda _event: None, fence=lambda: True)
     assert err.value.code == "member_link_refused"
     assert str(err.value).endswith(f"the participant's {sub} folder is a link; Temper does not "
                                    "follow links in a member's folder")

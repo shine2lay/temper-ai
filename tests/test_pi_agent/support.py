@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from temper_ai.agent.base import AgentABC
-from temper_ai.pi_agent.box import BoxConfig, BoxSpec
+from temper_ai.pi_agent.box import BoxConfig, BoxFenced, BoxSpec
 from temper_ai.pi_agent.rpc import RpcError
 from temper_ai.shared.types import AgentResult, Status
 from temper_ai.stage.agent_node import AgentNode
@@ -295,7 +295,7 @@ class FakeBox:
     def allow(self, count: int) -> None:
         self.allowance = count
 
-    def start(self, sink: Callable[[dict], None]) -> FakeRpc:
+    def start(self, sink: Callable[[dict], None], *, fence: Callable[[], bool]) -> FakeRpc:
         for sub in ("sessions", "workspace", "state", "memory/identities"):
             (self.pdir / sub).mkdir(parents=True, exist_ok=True)
         for stale in ("box-state.json", "box-blocked.json", "box-rewind.json"):
@@ -313,6 +313,10 @@ class FakeBox:
         elif FakeBox.lie == "image_trim_off":
             env["PI_IMAGE_TRIM"] = "off"
         self.launched = {"extensions": extensions, "env": env}
+        # As the real box, the turn is asked once more right before the start (#110).
+        if fence() is not True:
+            raise BoxFenced("the turn was taken over by another attempt after its box was "
+                            "created; the box was removed and never started")
         self.rpc = FakeRpc(self, sink)
         return self.rpc
 

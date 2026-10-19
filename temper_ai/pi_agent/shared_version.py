@@ -257,6 +257,8 @@ class SharedVersion:
         if git_dir is not None:
             cmd.append(f"--git-dir={git_dir}")
         if work_tree is not None:
+            # M1: refused (a VersionError) while the member's folder holds a .git of its own
+            self.project.refuse_git_over_member_folder(work_tree, git_dir, env=env)
             cmd.append(f"--work-tree={work_tree}")
         cmd += args
         full_env = {**git_env(str(self.root)), **(env or {})}

@@ -47,20 +47,25 @@ import re
 import subprocess
 import time
 import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import sqlalchemy as sa
 
 from temper_ai.pi_agent import team_versions, token_scan
 from temper_ai.pi_agent.accounts import refusal_problem, run_account
+from temper_ai.pi_agent.box import BoxesUnknown, boxes_of_run
 from temper_ai.pi_agent.event_guard import guarded_context
 from temper_ai.pi_agent.host import INVALID, _slug, ask_text, owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     _LOCK,
     ACCOUNT_REFUSED,
+    UNSETTLED,
     Binding,
     Ledger,
     LedgerLayoutError,
@@ -74,7 +79,12 @@ from temper_ai.pi_agent.ledger import (
     turns,
     waits,
 )
-from temper_ai.pi_agent.member_tree import member_entry
+from temper_ai.pi_agent.member_tree import (
+    GitCheckUnfinished,
+    member_entry,
+    nested_git,
+    quoted_member_path,
+)
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait
 from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import IDENTITY_CLAIMS, Refusal, content_digest
@@ -88,6 +98,7 @@ from temper_ai.pi_agent.settings_wait import (
     settings_word,
     team_subject,
 )
+from temper_ai.pi_agent.shared_version import VersionError
 from temper_ai.pi_agent.team_folders import GIT, NOT_GIT, format_problem
 from temper_ai.pi_agent.team_runtime import (
     Team,
@@ -225,7 +236,51 @@ class TeamFailure(Exception):
     """The team can't go on (a copy failed, another attempt holds the team): red."""
 
 
+class MemberGitRefused(CopyError, VersionError):
+    """Temper refused to run git over a member's folder (M1): it holds a .git of its own, its
+    copy's index holds a gitlink the Project didn't start with, or the check could not finish.
+    Both wrappers' git error, so every caller fails the way it fails on a git error."""
+
+
+_GITLINK_MODE = (0o160000).to_bytes(4, "big")
+
+
+def _named(paths: list[str], *, all_found: bool = True) -> str:
+    """Up to five member-written paths, each quoted and escaped (:func:`quoted_member_path`):
+    data to read, never a command. ``all_found`` False: the list stopped early, so the rest
+    is not counted."""
+    shown = ", ".join(quoted_member_path(p) for p in paths[:5])
+    if len(paths) > 5:
+        shown += f" and {len(paths) - 5} more" if all_found else " and more"
+    return shown
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    """Whether ``path`` is ``folder`` or below it, compared as written (nothing followed)."""
+    p, f = os.path.abspath(path), os.path.abspath(folder)
+    return os.path.commonpath([p, f]) == f
+
+
 _GIT = GIT  # the hardened git command line, shared with the folder checks and the branch
+
+#: The turn whose own git this thread runs: set by :func:`git_for_own_turn`.
+_GIT_FOR_TURN: ContextVar[str | None] = ContextVar("pi_git_for_turn", default=None)
+
+
+@contextmanager
+def git_for_own_turn(turn_id: str) -> Iterator[None]:
+    """Git run inside is for this turn of the member, before its box is made (its sync): that
+    turn in flight is not another writer in the folder while it has no box named."""
+    held = _GIT_FOR_TURN.set(turn_id)
+    try:
+        yield
+    finally:
+        _GIT_FOR_TURN.reset(held)
+
+
+def _plain(text: str) -> str:
+    """A name Docker gave, shown as data: letters, digits, dot, dash, underscore; cut short."""
+    return re.sub(r"[^A-Za-z0-9._-]", "?", str(text))[:64]
 
 
 class ProjectCopies:
@@ -233,12 +288,18 @@ class ProjectCopies:
     working folder, mounted only into that member's box (W3). Only committed content is copied:
     the run's workspace at its HEAD, never untracked or ignored files (W1); without a workspace
     every member starts from an empty commit. The copies have no remote and no hooks, and their
-    git data lives under ``<team root>/git``, outside every member's folder."""
+    git data lives under ``<team root>/git``, outside every member's folder.
 
-    def __init__(self, root: Path, source: str | None):
+    ``writer_check`` says what may still write in a member's folder (its box, a turn of it in
+    flight), as the end of a refusal, or None: asked right before each git call over the
+    folder (M1, Security's B1). The team gives :meth:`LeaderTeam.writer_in_member_folder`."""
+
+    def __init__(self, root: Path, source: str | None, *,
+                 writer_check: Callable[[Path], str | None]):
         self.root = Path(root)
         self.source = source
         self.record_path = self.root / "project.json"
+        self.writer_check = writer_check
 
     def git_dir(self, member: str) -> Path:
         return self.root / "git" / f"{_slug_name(member)}.git"
@@ -270,6 +331,7 @@ class ProjectCopies:
         if git_dir is not None:
             cmd.append(f"--git-dir={git_dir}")
         if work_tree is not None:
+            self.refuse_git_over_member_folder(work_tree, git_dir, cwd=cwd)
             cmd.append(f"--work-tree={work_tree}")
         cmd += args
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -289,6 +351,78 @@ class ProjectCopies:
             err = stderr.strip().splitlines()
             raise CopyError(f"git {args[0]} failed: {(err[-1] if err else '')[:200]}")
         return done.stdout
+
+    def refuse_git_over_member_folder(self, work_tree: Path, git_dir: Path | None, *,
+                                      cwd: Path | None = None,
+                                      env: dict[str, str] | None = None) -> None:
+        """M1: raise :class:`MemberGitRefused` -- before any git runs over ``work_tree`` (a
+        member's folder) -- unless git is told the copy's own git dir (``git_dir``, outside
+        the folder), runs from the folder's top (``cwd``) and gets no ``GIT_*`` variable that
+        could point it elsewhere (``env``), so git never looks for a repository itself; while
+        something may still write in the folder (``writer_check``: a box of that member, a
+        turn of it in flight, Docker that can't be asked), so nothing is planted between this
+        check and git; while the folder holds a .git of its own below its top (looked for
+        without following anything, :func:`nested_git`); or while the copy's index (read from
+        ``git_dir`` with no work tree) holds a gitlink the Project's start commit doesn't hold
+        at the same path and commit. Never touches the member's files."""
+        if (git_dir is None or _inside(git_dir, work_tree)
+                or (cwd is not None and os.path.abspath(cwd) != os.path.abspath(work_tree))
+                or any(name.startswith("GIT_") for name in env or {})):
+            raise MemberGitRefused(
+                "Temper won't run git over your folder unless git is told the copy's own git "
+                "dir, outside the folder, and runs from the folder's top.")
+        writer = self.writer_check(Path(work_tree))
+        if writer is not None:
+            raise MemberGitRefused(f"Temper won't run git over your folder{writer}.")
+        try:
+            planted = nested_git(work_tree)
+        except GitCheckUnfinished as exc:
+            raise MemberGitRefused(f"Temper won't run git over your folder: {exc}.") from None
+        if planted:
+            raise MemberGitRefused(
+                "Temper won't run git over your folder while it holds a .git of its own: "
+                f"{_named(planted, all_found=False)}. Remove them and try again.")
+        if not self._index_may_hold_gitlink(Path(git_dir)):
+            return
+        held = self._gitlinks(git_dir, ["ls-files", "-s", "-z"], oid_at=1)
+        if not held:
+            return
+        start = self.recorded(self.root).get("commit")
+        own: set[tuple[str, str]] = set()
+        if isinstance(start, str) and start:
+            try:
+                own = self._gitlinks(git_dir, ["ls-tree", "-r", "-z", start], oid_at=2)
+            except CopyError:
+                own = set()     # the start commit isn't in this copy yet: none is its own
+        other = sorted(path for path, oid in held - own)
+        if other:
+            raise MemberGitRefused(
+                "Temper won't run git over your folder while your copy holds a gitlink the "
+                f"Project didn't start with: {_named(other)}. It has to be removed from the "
+                "copy's index on the host first.")
+
+    @staticmethod
+    def _index_may_hold_gitlink(git_dir: Path) -> bool:
+        """False only when no entry of the copy's index can be a gitlink, so ``ls-files`` need
+        not run: every index entry stores its mode as 4 big-endian bytes (``00 00 e0 00`` for
+        a gitlink, in index versions 2 to 4), and the bytes aren't in the file. A split index
+        keeps entries in ``sharedindex.*`` too, so then it always says True."""
+        try:
+            data = (git_dir / "index").read_bytes()
+        except FileNotFoundError:
+            return False
+        return _GITLINK_MODE in data or any(git_dir.glob("sharedindex.*"))
+
+    def _gitlinks(self, git_dir: Path, args: list[str], *, oid_at: int) -> set[tuple[str, str]]:
+        """The (path, commit) of each gitlink (mode 160000) that ``git <args>`` lists from
+        ``git_dir`` alone, with no work tree: ``ls-files -s -z`` (index) or ``ls-tree -r -z``."""
+        found: set[tuple[str, str]] = set()
+        for record in self._g(args, git_dir=git_dir).split(b"\0"):
+            meta, tab, path = record.partition(b"\t")
+            fields = meta.split()
+            if tab and fields and fields[0] == b"160000" and len(fields) > oid_at:
+                found.add((path.decode("utf-8", "surrogateescape"), fields[oid_at].decode()))
+        return found
 
     def _head(self, git_dir: Path) -> str | None:
         if not (git_dir / "HEAD").exists():
@@ -582,6 +716,9 @@ class LeaderTeam(TeamRows, Team):
     """#37's team, driven by the leader loop. Everything is read from and written to the
     ledger, so a later attempt (a resume after a park, a restart) carries on from the tables."""
 
+    #: Lists a run's worker boxes as :func:`boxes_of_run` does (None: ask Docker; tests stand in).
+    list_boxes: ClassVar[Callable[[str], list[dict]] | None] = None
+
     def __init__(self, *args: Any, leader: str, pause_after: int, goal: str,
                  project: ProjectCopies, **kwargs: Any):
         super().__init__(*args, **kwargs)
@@ -589,6 +726,47 @@ class LeaderTeam(TeamRows, Team):
         self.pause_after = int(pause_after)
         self.goal = goal
         self.project = project
+
+    def writer_in_member_folder(self, folder: Path) -> str | None:
+        """What may still write in ``folder``, a member's working folder, as the end of
+        Temper's refusal to run git over it; None when nothing may (M1, Security's B1). Asked
+        right before each git call over the folder: a turn of that member in flight (running
+        or uncertain), other than the turn the git is for while that one has no box named
+        (:func:`git_for_own_turn`); a worker box Docker lists for this run in any state but
+        exited or dead whose turn is that member's, or no turn of the run (it might be
+        anyone's); Docker that can't be asked. A folder that is no member's is refused too.
+
+        Its limits (Security's B1 conditions): it sees Temper's own worker boxes only, not a
+        process on the host or a container started by hand without Temper's labels; the leader
+        review paths (:meth:`commit_review`, :meth:`move_to`, :meth:`differs`) take no team
+        lock, so they must not run beside the flow's git on the same folder; and it is no
+        isolation from other programs running on the host as the same user."""
+        members, run_turns = self.ledger.git_writers(self.run_id, self.host_path)
+        target = os.path.abspath(folder)
+        owners = [m["participant_id"] for m in members
+                  if os.path.abspath(ProjectCopies.worktree(self._pdir(m))) == target]
+        if len(owners) != 1:
+            return ": it can't tell which member's folder it is"
+        own = _GIT_FOR_TURN.get()
+        for t in run_turns:
+            if (t["participant_id"] == owners[0] and t["state"] in UNSETTLED
+                    and not (t["turn_id"] == own and t["box_name"] is None)):
+                return f" while a turn of yours is still in flight: turn {t['turn_no']} ({t['state']})"
+        try:
+            boxes = (type(self).list_boxes or boxes_of_run)(self.run_id)
+        except BoxesUnknown as exc:
+            return f": it can't ask Docker which boxes are live ({exc})"
+        for b in boxes:
+            if b["state"] in ("exited", "dead"):
+                continue
+            whose = {t["participant_id"] for t in run_turns
+                     if b["turn"] and t["turn_id"][:16] == b["turn"]}
+            shown = f"{_plain(b['name'])} ({_plain(b['state'])})"
+            if not whose:
+                return f" while a box of this run that Temper can't place is live: {shown}"
+            if owners[0] in whose:
+                return f" while a box of yours is still live: {shown}"
+        return None
 
     # --- Team seams -------------------------------------------------------------------
 
@@ -1621,7 +1799,8 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
         # The run's one account, settled when the Pi lane claimed the run (ADR-M4-09).
         account=run_account(context.run_id),
         project=None)
-    team.project = ProjectCopies(team.root, context.workspace_path)
+    team.project = ProjectCopies(team.root, context.workspace_path,
+                                 writer_check=team.writer_in_member_folder)
     refusal = team.open({"goal": goal, **(input_data or {})})
     if refusal:
         return failed(f"the team can't open: {refusal}")

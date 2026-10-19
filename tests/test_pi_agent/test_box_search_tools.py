@@ -183,7 +183,7 @@ def test_grep_or_find_without_its_pinned_binary_is_refused_before_docker(
         tmp_path, short_root, tools, drop, said):
     box = _worker(tmp_path, short_root, tools, drop=drop)
     with pytest.raises(BoxError) as caught:
-        box.start(lambda _record: None)
+        box.start(lambda _record: None, fence=lambda: True)
     assert caught.value.code == "search_tool_missing"
     assert said in str(caught.value) and SCRIPT in str(caught.value)
     assert box.docker_calls == []
@@ -195,7 +195,7 @@ def test_grep_and_find_with_rg_and_fd_pinned_go_on_to_create_the_box(tmp_path, s
     box = _worker(tmp_path, short_root, ["read", "grep", "find"])
     try:
         with pytest.raises(BoxError) as caught:
-            box.start(lambda _record: None)
+            box.start(lambda _record: None, fence=lambda: True)
         # The stand-in docker refuses the create: the search tools check was passed.
         assert caught.value.code == "box_create_failed"
         assert box.docker_calls[0][0] == "create"
@@ -213,7 +213,7 @@ def test_a_tool_set_without_grep_or_find_needs_no_pins(tmp_path, short_root):
     box = _worker(tmp_path, short_root, ["read", "ls"], drop=("rg", "fd"))
     try:
         with pytest.raises(BoxError) as caught:
-            box.start(lambda _record: None)
+            box.start(lambda _record: None, fence=lambda: True)
         assert caught.value.code == "box_create_failed"
     finally:
         box.close()
@@ -225,7 +225,7 @@ def test_a_binary_changed_after_the_config_loaded_is_refused_at_the_next_start(
     with open(tmp_path / "runtime" / "rg", "ab") as fh:
         fh.write(b"# swapped after load\n")
     with pytest.raises(BoxError) as caught:
-        box.start(lambda _record: None)
+        box.start(lambda _record: None, fence=lambda: True)
     assert caught.value.code == "search_tool_changed"
     assert "search tool rg: pinned binary changed" in str(caught.value)
     assert box.docker_calls == []
@@ -512,7 +512,8 @@ def test_pi_grep_and_find_work_offline_in_the_box(tmp_path, short_root):
     try:
         # The box's own create args, mounts and environment; only the command is the probe's.
         rpc = box.start(records.append, command=[
-            "-c", "import os; os.execv('/pi-runtime/node', ['node', '/w/tmp/probe.mjs'])"])
+            "-c", "import os; os.execv('/pi-runtime/node', ['node', '/w/tmp/probe.mjs'])"],
+            fence=lambda: True)
         deadline = time.monotonic() + 120
         while not any(r.get("done") for r in records):
             try:

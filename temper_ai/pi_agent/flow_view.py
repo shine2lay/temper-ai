@@ -294,8 +294,11 @@ class FlowRead:
         closing = [e for e in self.events if e["kind"] == "closing"]
         summary = ((outcome or {}).get("done") or {}).get("summary") or (
             closing[-1]["data"].get("summary") if closing else None)
+        # a cut turn's unsaved work, kept on a stopped/ branch when the team ended (H-STOP-2)
+        kept = [k for e in self.events if e["kind"] == "ended"
+                for k in (e["data"].get("kept_work") or [])]
         return {"latest": shares[0] if shares else None, "shares": shares[:SHARES_SHOWN],
-                "shares_total": len(shares), "summary": summary}
+                "shares_total": len(shares), "summary": summary, "kept_work": kept}
 
     # --- the phase -----------------------------------------------------------------------
 
@@ -497,7 +500,7 @@ def _event(e: dict, waits_by_id: dict[str, dict],
         return {**base, "decision": {"team_done": "done", "team_stopped": "stopped",
                                      "run_cancelled": "cancelled"}.get(d.get("reason") or "",
                                                                        "failed"),
-                "reason": d.get("reason")}
+                "reason": d.get("reason"), "kept_work": d.get("kept_work") or []}
     return None  # handed_in and other bookkeeping: not on the page
 
 

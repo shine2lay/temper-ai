@@ -417,6 +417,26 @@ def member_entry(root: Path | str, rel: str | Path) -> str:
     return "dir" if stat.S_ISDIR(st.st_mode) else "other"
 
 
+def member_file_size(root: Path | str, rel: str | Path) -> int | None:
+    """The size of the regular file ``root/rel``, looked at without following any link: None
+    when it is missing, a link or not a regular file. Raises :class:`MemberLink` when a link
+    or a file is on the way to it."""
+    parts = _parts(rel)
+    try:
+        dfd = _open_dir(Path(root), parts[:-1])
+    except MemberLink:
+        raise
+    except OSError:  # a folder on the way is missing (or cannot be read)
+        return None
+    try:
+        st = os.stat(parts[-1], dir_fd=dfd, follow_symlinks=False)
+    except OSError:
+        return None
+    finally:
+        os.close(dfd)
+    return st.st_size if stat.S_ISREG(st.st_mode) else None
+
+
 def list_member_dir(root: Path | str, rel: str | Path) -> list[tuple[str, str]]:
     """``(name, kind)`` of each entry of the folder ``root/rel``, read without following any
     link (kinds as :func:`member_entry`). Raises :class:`MemberLink` when the folder itself, or

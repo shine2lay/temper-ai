@@ -215,7 +215,9 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
 Flow replies also include `phase` (name/words/since/running/asked/reset information),
 `as_of`, `started_at`, frozen ended `elapsed_s`, `last_activity_at`, `spend` (total, baseline,
 next check-in and history), `you` (count/first owner question), `counts`, `links`, `work`
-(latest shared version and share history), `events_cursor` and visible `events_total`.
+(latest shared version, share history and `kept_work`: the unsaved work of turns the end cut,
+each on its own `stopped/<turn_id>` branch, as docs/pi-team-runtime.md describes; the feed's
+`ended` event carries the same list), `events_cursor` and visible `events_total`.
 A stopped team's phase words name who stopped it, from the outcome's `by`: "Stopped by the
 owner" (a name in `owner_callers`: his key, or his `slack:<id>` or `telegram:<id>` when
 listed there), "Stopped by <name>" for another key (a role's), "Stopped by an unknown

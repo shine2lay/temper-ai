@@ -41,7 +41,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from temper_ai.pi_agent import host_helper, team_versions
+from temper_ai.pi_agent import host_helper, stopped_work, team_versions
 from temper_ai.pi_agent.accounts import (
     FIVE_HOUR,
     call_trouble,
@@ -855,8 +855,45 @@ class FlowTeam(LeaderTeam):
             self._confirm_turn_box_gone(turn)
         self._pending_end = None
         out = super().end(reason)
-        self.ledger.record_event(self.run_id, self.host_path, "ended", None, reason=reason)
-        return out
+        kept = self._keep_cut_turns_unsaved_work(out.get("cancelled_turns") or [], reason)
+        self.ledger.record_event(self.run_id, self.host_path, "ended", None, reason=reason,
+                                 **({"kept_work": kept} if kept else {}))
+        return {**out, "kept_work": kept}
+
+    def _keep_cut_turns_unsaved_work(self, turn_ids: list[str], reason: str) -> list[dict]:
+        """H-STOP-2: each turn this end cut keeps its member's unsaved edits on
+        ``stopped/<turn_id>`` in the member's own copy (stopped_work), once every box is
+        confirmed gone. Returns the ``kept_work`` entries; nothing unsaved -> no entry. A save
+        that fails or runs out of time is logged and recorded for its member, never raised:
+        the team still ends. All of them fit in ``stopped_work.TOTAL_SECONDS``."""
+        if not turn_ids or getattr(self, "project", None) is None:
+            return []
+        deadline = time.monotonic() + stopped_work.TOTAL_SECONDS
+        kept: list[dict] = []
+        for turn in self._rows(turns, turns.c.turn_id.in_(turn_ids), order=turns.c.started_at):
+            part = self.ledger.participant(turn["participant_id"])
+            member: str | None = part["member"] if part else None
+            try:
+                left = deadline - time.monotonic()
+                if part is None or member is None:
+                    raise stopped_work.StoppedWorkError("its member's record is missing")
+                if left <= 0:
+                    raise stopped_work.StoppedWorkError(
+                        f"no time left (all saves of one end get "
+                        f"{stopped_work.TOTAL_SECONDS:g} s)")
+                entry = stopped_work.save_unsaved_work_to_stopped_branch(
+                    self.project, member, self._pdir(part), turn["turn_id"], reason=reason,
+                    seconds=min(stopped_work.MEMBER_SECONDS, left))
+            except Exception as exc:  # the files stay in the folder; the end goes on
+                logger.warning("pi team: %s's unsaved work from cut turn %s was not kept: %s",
+                               member, turn["turn_id"], exc)
+                entry = stopped_work.not_kept_entry(member, turn["turn_id"], exc)
+            if entry is not None:
+                if entry["branch"]:
+                    logger.info("pi team: %s's unsaved work from cut turn %s kept on %s (%s)",
+                                member, turn["turn_id"], entry["branch"], entry["commit"])
+                kept.append(entry)
+        return kept
 
     def _drive(self, context: Any) -> Outcome:
         self.ledger.record_event(self.run_id, self.host_path, "driver_started", None)

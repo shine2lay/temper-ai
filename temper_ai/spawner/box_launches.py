@@ -669,6 +669,7 @@ ENGINE_LAUNCHES: dict[str, str] = {
     "temper_ai/pi_agent/rpc.py::Rpc.__init__": _PI,
     "temper_ai/pi_agent/rpc.py::Rpc.close": _PI,
     "temper_ai/pi_agent/shared_version.py::SharedVersion._git": _PI,
+    "temper_ai/pi_agent/stopped_work.py::_git": _PI,
     "temper_ai/pi_agent/team_folders.py::run_git": (
         "legacy: the Pi team's folder checks, in the Pi lane (M4), which only legacy boxes "
         "run, or in the trusted server (the Team page's check and a trial's start)"),

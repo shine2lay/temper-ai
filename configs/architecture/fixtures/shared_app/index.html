@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>To-do list</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <!-- Synthetic shared to-do page for first_app_check's controls (System architecture, queue #97): the kit
+       qa-project2-critical-v1's wording on Project 2's page structure (ids, roles, labels). Not the team's code. -->
+  <main class="app">
+    <h1>To-do list</h1>
+    <p class="subtitle">One shared list. Reload the page to see other people's changes.</p>
+    <div class="messages">
+      <div id="banner" class="banner" role="alert"></div>
+      <div id="notice" class="notice" role="status"></div>
+    </div>
+
+    <form id="name-form" class="name-form" novalidate hidden>
+      <label class="field-label" for="name-input">Your name</label>
+      <p id="name-hint" class="hint">Shown next to the items you add. This browser remembers it.</p>
+      <div class="row">
+        <input id="name-input" type="text" autocomplete="nickname" spellcheck="false" aria-describedby="name-hint name-msg">
+        <button type="submit" class="primary">Save name</button>
+      </div>
+      <p id="name-msg" class="msg" aria-live="polite"></p>
+    </form>
+
+    <div id="list-view" hidden>
+      <p id="whoami" class="whoami">You are <strong id="whoami-name" class="whoami-name" dir="auto"></strong> <span aria-hidden="true">·</span> <button type="button" id="change-name" class="link-button">Change name</button></p>
+
+      <form id="add-form" class="add-form" novalidate>
+        <label class="field-label" for="item-input">New item</label>
+        <div class="row">
+          <input id="item-input" type="text" autocomplete="off" aria-describedby="item-msg">
+          <button type="submit" id="add-button" class="primary">Add</button>
+        </div>
+        <p id="item-msg" class="msg" aria-live="polite"></p>
+      </form>
+
+      <p id="list-loading" class="status" hidden>Loading the list…</p>
+      <div id="load-error" class="load-error" hidden>
+        <p id="load-error-text" role="alert"></p>
+      </div>
+      <p id="list-empty" class="status" hidden>No items yet. Add the first one above.</p>
+      <ul id="items" class="items" aria-label="To-do items" hidden></ul>
+    </div>
+  </main>
+</body>
+</html>

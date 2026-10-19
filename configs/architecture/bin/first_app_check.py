@@ -57,6 +57,13 @@ items, inputs, order, checks, viewport, locale, timing, allowed paths and cleanu
 
 Writes DIR/receipt.json, DIR/summary.md and DIR/after-reload.png (controls: one folder per case plus
 DIR/controls.json); prints a one-line JSON summary last.
+
+The shared journey (queue #97, 2026-10-18): Team Project 2's shared to-do list, QA's kit
+qa-project2-critical-v1, with two people (and a third for typed HTML) in separate browser contexts and
+the host's restart and stop in the middle. A profile with "journey": "shared" (mode=live) selects it;
+mode=controls_shared runs its controls on a synthetic page and server (fixtures/shared_app). That code is
+in first_app_shared.py, next to this script, loaded only then; see its docstring and
+--print-shared-profile. A profile without a journey key, and mode=controls, run exactly as above.
 """
 
 import argparse
@@ -1035,7 +1042,32 @@ async def controls(args, out: pathlib.Path) -> int:
     return 0 if summary["all_ok"] else 1
 
 
+def shared_module():
+    """first_app_shared.py (the shared journey, queue #97), loaded only for it; it reads this module's helpers."""
+    if __name__ in sys.modules:
+        sys.modules.setdefault("first_app_check", sys.modules[__name__])
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import first_app_shared
+
+    return first_app_shared
+
+
+def wants_shared(text: str | None) -> bool:
+    """A profile selects the shared journey by being a JSON object with a "journey" key; anything else takes
+    the first app's path, unchanged."""
+    if text is None or not text.strip() or len(text) > PROFILE_MAX_CHARS:
+        return False
+    try:
+        p = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(p, dict) and "journey" in p
+
+
 async def live(args, out: pathlib.Path) -> int:
+    if wants_shared(args.profile):
+        return await shared_module().live(args, out)
     if (out / "receipt.json").exists():
         raise SystemExit(f"{out}/receipt.json exists: one live run per folder (no retry-until-green)")
     r = await check_profile(args.browser, args.profile, out, "live")
@@ -1050,22 +1082,28 @@ async def live(args, out: pathlib.Path) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--mode", choices=("live", "controls"))
+    ap.add_argument("--mode", choices=("live", "controls", "controls_shared"))
     ap.add_argument("--out")
     ap.add_argument("--profile", default=None, help="live: a new build's profile, one JSON object as text")
     ap.add_argument("--print-default-profile", action="store_true", help="print today's constants as a profile")
+    ap.add_argument("--print-shared-profile", action="store_true",
+                    help="print the shared journey's profile: Project 2's kit, pins and origin")
     ap.add_argument("--browser", default="http://playwright-mcp:8931/mcp")
     ap.add_argument("--serve-ip", default="", help="controls: the address the browser reaches this process at")
     a = ap.parse_args()
     if a.print_default_profile:
         print(json.dumps(default_profile(), indent=1))
         return 0
+    if a.print_shared_profile:
+        return shared_module().print_profile()
     if not a.mode or not a.out:
         ap.error("--mode and --out are required")
-    if a.mode == "controls" and a.profile:
+    if a.mode != "live" and a.profile:
         ap.error("--profile is for --mode live; the controls bring their own profiles")
     out = pathlib.Path(a.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    if a.mode == "controls_shared":
+        return asyncio.run(shared_module().controls(a, out))
     return asyncio.run(live(a, out) if a.mode == "live" else controls(a, out))
 
 

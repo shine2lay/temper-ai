@@ -19,10 +19,16 @@ workflow:
     and cleanup gates; not full QA, accessibility, mobile, offline or owner acceptance (receipts
     list the kit's NOT CHECKED items). QA reads the receipts and gives its own verdict. Network is
     observed, not blocked.
+    Shared journey (queue #97, 2026-10-18): Team Project 2's shared to-do list, QA's kit
+    qa-project2-critical-v1 (30 browser and host rows), three people in separate browser contexts, the
+    host (Ops) restarting and stopping the app in the middle (the check waits for its receipts in
+    check/host/). mode=controls_shared proves it on a synthetic shared server first (18 controls);
+    mode=live with a profile holding "journey": "shared" checks the served app (profile form:
+    first_app_check.py --print-shared-profile). Without a journey key nothing changes.
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
-    mode: {type: string, required: true}      # controls | live
+    mode: {type: string, required: true}      # controls | live | controls_shared
     profile: {type: string, required: false}  # live only; left out = the first app, exactly as before
   outputs:
     mode: check.structured.mode
@@ -36,6 +42,10 @@ workflow:
     verdicts: check.structured.verdicts
     summary_path: check.structured.summary_path
     workspace: check.structured.workspace
+    journey: check.structured.journey
+    pins_ok: check.structured.pins_ok
+    list_equal_after_restart: check.structured.list_equal_after_restart
+    cleanup_confirmed: check.structured.cleanup_confirmed
 
   nodes:
     - name: check

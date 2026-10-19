@@ -1,12 +1,18 @@
 """What a run spent, read from its recorded events: one rule for every reader.
 
 A run's workflow event carries its totals (``cost_usd``, ``total_tokens``) once the executor
-has written them: at a normal end (``_build_final_result``), a park (in the ``parked`` note),
-a stand-down, or a graph thrown out (``_end_graph``). Runs whose event has none (every run
-cancelled or failed before the end wrote them, a run whose box died before any ending) are
-read here instead, by the rule the executor uses for a completed run: everything its steps
-spent, rewound (retired) attempts included, plus what a step in flight had spent when the
-run was thrown out.
+has written them: at a normal end (``_build_final_result``), a stand-down, or a graph thrown
+out (``_end_graph``). Runs whose event has none (every run cancelled or failed before the end
+wrote them, a run whose box died before any ending) are read here instead, by the rule the
+executor uses for a completed run: everything its steps spent, rewound (retired) attempts
+included, plus what a step in flight had spent when the run was thrown out.
+
+A park writes totals too, in its ``parked`` note, but of the finished steps only
+(``_note_parked``): the step that parked is still in flight, and what it spent so far is only
+in its recorded calls. ``cancel_parked`` ends such a run without new totals. So a note's
+figure is a floor (``stored_totals`` says which kind a figure is): a run waiting on the owner,
+or cancelled while it waited, is read here as well, and the larger of the two counts, cost
+and tokens each (queue #104).
 
 Per agent the spend is the larger of what its end event says and what its model calls
 (``llm.call.completed`` / ``llm.call.failed``) add up to: an agent that finished says what it
@@ -54,16 +60,39 @@ class _AgentSpend:
         return Spend(max(end.cost_usd, self.llm.cost_usd), max(end.total_tokens, self.llm.total_tokens))
 
 
-def stored_totals(data: dict | None) -> Spend | None:
-    """The totals a workflow event carries itself, or None when it has none.
+END_TOTALS = "end_totals"
+PARKED_NOTE = "parked_note"
 
-    Top-level ``cost_usd`` / ``total_tokens`` (a run that ended), else the ``parked`` note's
-    (a run waiting on a person).
+
+@dataclass(frozen=True)
+class StoredTotals:
+    """Totals a workflow event carries itself, and where they came from.
+
+    ``END_TOTALS``: top-level, written when the run ended; the run's figure.
+    ``PARKED_NOTE``: the ``parked`` note's, the finished steps only; a floor under what the
+    run's recorded events say it spent (see the module's docstring).
+    """
+
+    spend: Spend
+    source: str
+
+    @property
+    def is_floor(self) -> bool:
+        return self.source == PARKED_NOTE
+
+
+def stored_totals(data: dict | None) -> StoredTotals | None:
+    """The totals a workflow event carries itself and where they came from, or None.
+
+    Top-level ``cost_usd`` / ``total_tokens`` (a run that ended: ``END_TOTALS``), else the
+    ``parked`` note's (a run waiting on a person, or cancelled while it waited:
+    ``PARKED_NOTE``, a floor).
     """
     data = data or {}
-    for source in (data, data.get("parked") or {}):
-        if isinstance(source, dict) and source.get("cost_usd") is not None:
-            return Spend(float(source.get("cost_usd") or 0), int(source.get("total_tokens") or 0))
+    for source, totals in ((END_TOTALS, data), (PARKED_NOTE, data.get("parked") or {})):
+        if isinstance(totals, dict) and totals.get("cost_usd") is not None:
+            spend = Spend(float(totals.get("cost_usd") or 0), int(totals.get("total_tokens") or 0))
+            return StoredTotals(spend, source)
     return None
 
 

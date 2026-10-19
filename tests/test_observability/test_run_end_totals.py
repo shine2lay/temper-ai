@@ -11,7 +11,14 @@ Now:
   (finished steps, rewound attempts) plus what the step in flight had spent;
 - a run whose event has none (every run from before, a box that died) is read through one
   rule (observability/run_totals.py), the same for the list and the page, one query a page;
-- completed and parked runs keep the totals their events carry.
+- runs that ended keep the totals their events carry.
+
+Queue #104 (Frontend's page-truth check rm-3423c6d1): Team run 38ba79c6 parked on the owner
+with its team's step in flight, then was cancelled, and listed $0 while its model calls add
+up to $10.22. A park note counts the finished steps only (``_note_parked``) and
+``cancel_parked`` writes no totals, so a note's figure is now a floor: a run waiting on the
+owner, or cancelled while it waited, shows the larger of the note's and its recorded spend,
+cost and tokens each, read in the same one query.
 
 Model-free: every step is an agent node whose run is a function that records what a real
 agent records (its start, its model calls with their cost, its end) and hands a result back.
@@ -34,6 +41,7 @@ from temper_ai.api.data_service import (
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import get_events, record
+from temper_ai.runner import parked
 from temper_ai.shared.types import (
     AgentResult,
     ExecutionContext,
@@ -43,6 +51,7 @@ from temper_ai.shared.types import (
 )
 from temper_ai.stage import executor as executor_mod
 from temper_ai.stage.agent_node import AgentNode
+from temper_ai.stage.exceptions import RunParked
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.models import NodeConfig
 
@@ -233,21 +242,6 @@ def test_a_completed_run_keeps_the_totals_its_end_wrote():
     _list_and_page_agree(0.65, 800)
 
 
-def test_a_parked_run_shows_what_its_park_note_says_it_spent():
-    """A run waiting on a person: its park note says what the attempt cost (_note_parked)."""
-    wf = record(EventType.WORKFLOW_STARTED, execution_id=RUN, status="waiting",
-                data={"name": "wf", "parked": {"cost_usd": 0.3, "total_tokens": 300},
-                      "duration_seconds": 3.0})
-    stage = record(EventType.STAGE_STARTED, parent_id=wf, execution_id=RUN, status="completed",
-                   data={"name": "draft", "type": "agent"})
-    agent = record(EventType.AGENT_STARTED, parent_id=stage, execution_id=RUN, status="running")
-    # A model call the park note doesn't speak for: the note's figure is the run's.
-    record(EventType.LLM_CALL_COMPLETED, parent_id=agent, execution_id=RUN, status="completed",
-           data={"iteration": 1, "cost_usd": 5.0, "total_tokens": 5000})
-
-    _list_and_page_agree(0.3, 300)
-
-
 def test_the_list_reads_its_page_s_runs_without_totals_in_one_query(monkeypatch):
     for n in range(3):
         wf = record(EventType.WORKFLOW_STARTED, execution_id=f"old-{n}", status="cancelled",
@@ -256,6 +250,11 @@ def test_the_list_reads_its_page_s_runs_without_totals_in_one_query(monkeypatch)
                status="completed", data={"cost_usd": 0.1 * (n + 1), "total_tokens": n + 1})
     record(EventType.WORKFLOW_STARTED, execution_id="new", status="completed",
            data={"name": "wf", "cost_usd": 2.0, "total_tokens": 20})
+    # A run waiting on the owner: its note is a floor, read in the same query (#104).
+    wf = record(EventType.WORKFLOW_STARTED, execution_id="parked", status="waiting",
+                data={"name": "wf", "parked": {"cost_usd": 0.05, "total_tokens": 5}})
+    record(EventType.LLM_CALL_COMPLETED, parent_id=wf, execution_id="parked",
+           status="completed", data={"cost_usd": 0.5, "total_tokens": 50})
     asked: list[list[str]] = []
     real = data_service.run_spend
 
@@ -267,7 +266,101 @@ def test_the_list_reads_its_page_s_runs_without_totals_in_one_query(monkeypatch)
 
     runs = {r["id"]: r for r in list_workflow_executions(limit=50)["runs"]}
 
-    assert asked == [["old-0", "old-1", "old-2"]]
+    assert asked == [["old-0", "old-1", "old-2", "parked"]]
     assert runs["old-2"]["total_cost_usd"] == pytest.approx(0.3)
     assert runs["old-2"]["total_tokens"] == 3
     assert runs["new"]["total_cost_usd"] == 2.0 and runs["new"]["total_tokens"] == 20
+    assert runs["parked"]["total_cost_usd"] == pytest.approx(0.5)
+    assert runs["parked"]["total_tokens"] == 50
+
+
+# Queue #104: a park note's figure is a floor.
+
+
+def _waits_on_the_owner(ctx: ExecutionContext, agent_id: str) -> NodeResult:
+    """The step asks the owner from inside its work, as a Pi team's wait does
+    (stage/step_waits.py), after one of its members finished a turn: the run parks with the
+    step in flight, and the step's result is never handed back."""
+    member = ctx.event_recorder.record(
+        EventType.AGENT_STARTED, parent_id=ctx.parent_event_id, execution_id=ctx.run_id,
+        status="running", data={"agent_name": "member"})
+    ctx.event_recorder.record(
+        EventType.LLM_CALL_COMPLETED, parent_id=member, execution_id=ctx.run_id,
+        status="completed", data={"iteration": 1, "cost_usd": 0.15, "total_tokens": 150})
+    ctx.event_recorder.record(
+        EventType.AGENT_COMPLETED, parent_id=member, execution_id=ctx.run_id, status="completed",
+        data={"agent_name": "member", "cost_usd": 0.15, "tokens": 150})
+    raise RunParked(event_id=f"wait-of-{agent_id}", node="team", path="team", round=1,
+                    checkpoint_id="cp-team", wait_id="ask-1")
+
+
+def test_a_run_cancelled_while_it_waited_on_the_owner_shows_what_its_step_in_flight_spent():
+    """As 38ba79c6: parked with the team's step in flight, then cancelled. Waiting and after
+    the cancel, the list and the page show the finished step and the calls the step in
+    flight recorded, not the note's finished steps alone."""
+    draft = _step("draft", 0.25, 300)
+    team = _step("team", 0.4, 500, depends_on=["draft"], then=_waits_on_the_owner)
+    ship = _step("ship", 9.0, 9000, depends_on=["team"])
+
+    with pytest.raises(RunParked):
+        execute_graph([draft, team, ship], {}, _context(), graph_name="wf", is_workflow=True)
+
+    assert ship.run.call_count == 0
+    event = _run_event()
+    assert event["status"] == "waiting"
+    # The note counts the finished step only (no change to how runs park).
+    assert event["data"]["parked"]["cost_usd"] == pytest.approx(0.25)
+    assert event["data"]["parked"]["total_tokens"] == 300
+    # draft's $0.25, the team step's own $0.40 call, its member's $0.15 turn.
+    _list_and_page_agree(0.8, 950)
+
+    assert parked.cancel_parked(RUN, "not now") is True
+
+    event = _run_event()
+    assert event["status"] == Status.CANCELLED.value
+    # The cancel writes no totals (no change to how runs cancel): the reader finds them.
+    assert "cost_usd" not in event["data"]
+    _list_and_page_agree(0.8, 950)
+
+
+def test_a_park_note_above_what_the_run_recorded_is_the_floor_cost_and_tokens_each():
+    """A note can say more than the run's own calls (a fork's kept steps were paid in its
+    source run): each field is the larger of the two."""
+    wf = record(EventType.WORKFLOW_STARTED, execution_id=RUN, status="waiting",
+                data={"name": "wf", "parked": {"cost_usd": 0.3, "total_tokens": 100},
+                      "duration_seconds": 3.0})
+    stage = record(EventType.STAGE_STARTED, parent_id=wf, execution_id=RUN, status="waiting",
+                   data={"name": "team", "type": "agent"})
+    agent = record(EventType.AGENT_STARTED, parent_id=stage, execution_id=RUN, status="running",
+                   data={"agent_name": "team"})
+    record(EventType.LLM_CALL_COMPLETED, parent_id=agent, execution_id=RUN, status="completed",
+           data={"iteration": 1, "cost_usd": 0.1, "total_tokens": 500})
+
+    # The note's cost, the recorded tokens.
+    _list_and_page_agree(0.3, 500)
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+def test_a_run_that_ended_keeps_its_end_totals_whatever_its_calls_add_up_to(status):
+    """End totals are the run's figure, never a floor, even beside a park note: a completed,
+    failed or live-cancelled run lists what it listed before #104."""
+    wf = record(EventType.WORKFLOW_STARTED, execution_id=RUN, status=status,
+                data={"name": "wf", "cost_usd": 0.5, "total_tokens": 500, "duration_seconds": 3.0,
+                      "parked": {"cost_usd": 0.05, "total_tokens": 50}})
+    stage = record(EventType.STAGE_STARTED, parent_id=wf, execution_id=RUN, status=status,
+                   data={"name": "draft", "type": "agent"})
+    agent = record(EventType.AGENT_STARTED, parent_id=stage, execution_id=RUN, status="running",
+                   data={"agent_name": "draft"})
+    record(EventType.LLM_CALL_COMPLETED, parent_id=agent, execution_id=RUN, status="completed",
+           data={"iteration": 1, "cost_usd": 5.0, "total_tokens": 5000})
+
+    _list_and_page_agree(0.5, 500)
+
+
+def test_a_parked_run_with_no_events_recorded_shows_its_note():
+    """Nothing to read (no call recorded, or its events trimmed): the note's figure stands."""
+    record(EventType.WORKFLOW_STARTED, execution_id=RUN, status="waiting",
+           data={"name": "wf", "parked": {"cost_usd": 0.2, "total_tokens": 200},
+                 "duration_seconds": 1.0})
+
+    _list_and_page_agree(0.2, 200)

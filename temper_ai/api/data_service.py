@@ -699,17 +699,30 @@ def list_workflow_executions(
 def run_totals(event_data: dict[str, dict | None]) -> dict[str, Spend]:
     """Each run's totals, from its speaking workflow event's data, by execution id.
 
-    The event's own totals when it has them (a run that ended or parked, since queue #65 every
-    way of ending). Otherwise, for runs from before that and runs whose box died before any
-    end, what the run's recorded events say it spent (observability/run_totals.py: the
-    completed-run rule, rewound attempts and a step in flight included), one query for all.
-    The run list and the run's page both read their totals here, so they agree.
+    The event's own end totals when it has them (a run that ended; since queue #65 every way
+    of ending writes them). Otherwise what the run's recorded events say it spent
+    (observability/run_totals.py: the completed-run rule, rewound attempts and a step in
+    flight included): runs from before #65, runs whose box died before any end, and runs whose
+    figure is a ``parked`` note's, waiting on the owner or cancelled while they waited. A note
+    counts only the steps that had finished, not the one that parked, so it is a floor: cost
+    and tokens are each the larger of the note's and the recorded figure (queue #104). A
+    fork's kept steps were paid in its source run, so a parked fork's figure is still a floor.
+    One query for all of them. The run list and the run's page both read their totals here,
+    so they agree.
     """
-    found = {eid: stored_totals(data) for eid, data in event_data.items()}
-    missing = [eid for eid, spend in found.items() if spend is None]
-    from_events = run_spend(missing) if missing else {}
-    return {eid: spend if spend is not None else from_events.get(eid, Spend())
-            for eid, spend in found.items()}
+    stored = {eid: stored_totals(data) for eid, data in event_data.items()}
+    to_read = [eid for eid, totals in stored.items() if totals is None or totals.is_floor]
+    recorded = run_spend(to_read) if to_read else {}
+    found: dict[str, Spend] = {}
+    for eid, totals in stored.items():
+        if totals is not None and not totals.is_floor:
+            found[eid] = totals.spend
+            continue
+        floor = totals.spend if totals is not None else Spend()
+        spent = recorded.get(eid, Spend())
+        found[eid] = Spend(max(floor.cost_usd, spent.cost_usd),
+                           max(floor.total_tokens, spent.total_tokens))
+    return found
 
 
 def _start_completeness(ev: dict) -> tuple:

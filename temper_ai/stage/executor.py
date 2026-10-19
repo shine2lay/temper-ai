@@ -297,9 +297,11 @@ def _note_parked(
     """Write a graph down as waiting on the owner, with what carrying it on needs.
 
     The run's own event (``workflow.started``) gets status ``waiting`` and a ``parked`` note:
-    which wait, where, the round, the checkpoint, when, what the attempt cost, and what a
-    cancel must hold (no worker is left to work that out then). Nothing is settled: the run
-    is not over. A stage's event just says it is waiting. runner/parked.py reads the note.
+    which wait, where, the round, the checkpoint, when, what the attempt's finished steps cost,
+    and what a cancel must hold (no worker is left to work that out then). The step that
+    parked is still in flight and not in that cost, so readers take it as a floor
+    (observability/run_totals.py). Nothing is settled: the run is not over. A stage's event
+    just says it is waiting. runner/parked.py reads the note.
     """
     duration = time.monotonic() - start
     if not is_workflow:

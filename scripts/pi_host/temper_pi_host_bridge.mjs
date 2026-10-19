@@ -346,6 +346,10 @@ async function mint(slot) {
     // Never pass the SDK's error text on: a refresh error can carry the token endpoint's reply.
     return refuse(/credential store/i.test(String(error?.message)) ? "auth_failed" : "refresh_failed");
   }
+  // Only an OAuth login is ever served.  The base slot's built-in provider also resolves an API
+  // key (a stored one, or one from the environment): should account 1's entry turn into a key
+  // between the list above and this read, the key is refused here, never handed out.
+  if (auth && auth.source !== "OAuth") return refuse("not_oauth");
   const token = auth?.auth?.apiKey ?? bearer(auth?.auth?.headers);
   if (typeof token !== "string" || !token) return refuse("no_token");
   return { ok: true, slot, token };

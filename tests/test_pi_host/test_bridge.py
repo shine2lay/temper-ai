@@ -170,6 +170,20 @@ def test_a_base_slot_login_near_expiry_is_refreshed_once_and_no_other_entry_chan
     assert host.refreshes() == 1
 
 
+def test_a_base_slot_login_that_turns_into_an_api_key_before_the_read_is_refused(host, bridges):
+    """Security's N1 on 6cf3d458: the base slot's built-in provider also resolves an API key.
+    Should account 1's entry become one between the bridge's list and its read, the key is
+    refused, never handed out."""
+    host.write_auth({BASE: login(host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    host.control(after_list={BASE: {"type": "api_key", "key": "STUB-API-KEY"}})
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
+    bridge.start()
+    answer = bridge.request("token", BASE, 10)
+    assert answer == {"id": answer["id"], "ok": False, "slot": BASE, "reason": "not_oauth"}
+    assert host.read_auth()[BASE] == {"type": "api_key", "key": "STUB-API-KEY"}  # the race happened
+    assert host.refreshes() == 0
+
+
 def test_a_login_near_expiry_is_refreshed_once_through_the_sdk(host, bridges):
     host.write_auth({SLOT: login("old-access", "old-refresh", 10 * 60 * 1000)})  # 10 min < 30 min
     host.control(next_access="new-access", next_refresh="new-refresh")

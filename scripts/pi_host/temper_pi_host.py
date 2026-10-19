@@ -1267,7 +1267,13 @@ export class ModelRuntime {
   }
   async listCredentials() {
     note("list-credentials");
-    return Object.entries(readAuth(this.authPath)).map(([providerId, c]) => ({ providerId, type: c?.type }));
+    const listed = Object.entries(readAuth(this.authPath)).map(([providerId, c]) => ({ providerId, type: c?.type }));
+    // Tests: entries rewritten in the moment after the list (a chat's login landing then).
+    const after = control().after_list;
+    if (after) {
+      fs.writeFileSync(this.authPath, JSON.stringify({ ...readAuth(this.authPath), ...after }, null, 2), { mode: 0o600 });
+    }
+    return listed;
   }
   async getAuth(id, options = {}) {
     note("get-auth " + id);
@@ -1276,6 +1282,9 @@ export class ModelRuntime {
     const builtin = provider ? undefined : this.builtins.get(id)?.auth?.oauth;
     if (!provider && !builtin) throw new Error("Unknown provider " + id);
     const stored = readAuth(this.authPath)[id];
+    // As in the real SDK, a built-in provider with an API-key flow resolves a stored key too.
+    const builtinKey = provider ? undefined : this.builtins.get(id)?.auth?.apiKey;
+    if (stored?.type === "api_key" && builtinKey) return builtinKey.resolve({ credential: stored });
     if (!stored || stored.type !== "oauth") return undefined;
     const minimum = Math.max(5 * 60_000, options.minOAuthValidityMs ?? 0);
     let current = stored;
@@ -1324,6 +1333,12 @@ export function builtinProviders() {
       return { type: "oauth", access: c.next_access ?? "stub-access-next", refresh: c.next_refresh ?? "stub-refresh-next",
                expires: Date.now() + (c.expires_in_s ?? 3600) * 1000 };
     },
+  },
+  // Like the real built-in provider, it also takes an API key (here only a stored one).
+  apiKey: {
+    name: "Stub API key",
+    resolve: async ({ credential }) =>
+      credential?.key ? { auth: { apiKey: credential.key }, source: "stored credential" } : undefined,
   } } }];
 }
 

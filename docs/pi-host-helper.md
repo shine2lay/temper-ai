@@ -292,7 +292,10 @@ bridge checks that auth.json holds an OAuth login for the slot, then asks
 `ModelRuntime.getAuth(<slot>, {minOAuthValidityMs: 1800000})`. A login that expires within
 30 minutes is refreshed by the SDK's credential-modify path: under auth.json's lock it
 reads the file again and refreshes only if the login still expires soon, so the chats and
-the helper refresh once between them, and both get the same new login.
+the helper refresh once between them, and both get the same new login. Only what the SDK
+resolved as an OAuth login is served: the base slot's built-in provider also takes an API
+key, and should account 1's entry turn into one between the check and the read, the key is
+refused (`has no OAuth login`), never handed out.
 
 ## The journal
 

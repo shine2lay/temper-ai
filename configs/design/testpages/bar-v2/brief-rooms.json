@@ -1,0 +1,16 @@
+{
+  "product": "Lumen Rooms",
+  "fictional": true,
+  "disclosure": "Fictional demo — no real rooms or payments.",
+  "category": "Work room booking",
+  "audience": "A person who needs a quiet room to work in for a few hours.",
+  "purpose": "Show the rooms and get the visitor to explore the demo rooms.",
+  "cta": "Explore demo rooms",
+  "facts": [
+    "Lumen Rooms rents quiet work rooms by the hour.",
+    "Every room has a desk, a screen and fast Wi-Fi.",
+    "Rooms seat up to 4 people.",
+    "Booking takes about 2 minutes."
+  ],
+  "brand": {}
+}

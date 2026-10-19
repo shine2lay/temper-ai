@@ -1,0 +1,161 @@
+{
+  "version": 2,
+  "written": "2026-10-19, before the v2 definitions were coded in design_homepage_bar.js and design_homepage_bar.py (queue #91, H3b)",
+  "rule": "For each page, the exact set of failing (bar, check, width) rows, where failing means pass is false or null, and each listed row as described: pass, value when given, and every listed evidence item found among the row's evidence (selector equal when given, text equal when 'text' is given, text containing 'text_has' when that is given). The meter is right only when every page matches. When they differ, the meter is fixed, never this key.",
+  "site": "configs/design/testpages",
+  "widths": ["1440x900", "1024x768", "768x1024", "390x844", "320x568"],
+  "pages": {
+    "bar-v2/a-steps.html": {
+      "case": "(a) A5 numbers: a steps page with 01/02/03 step labels, a run of '1. 2. 3.' items, an ol, and number words restated as numerals ('7 days' for 'seven days', '10 years' for 'ten-year'): no unsourced number.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": true, "value": 0}
+      ]
+    },
+    "bar-v2/b-steps-price.html": {
+      "case": "(b) A5 numbers: page (a) plus one unsourced price, $97: exactly that number is found.",
+      "brief": "bar-v2/brief.json",
+      "failing": [["A5", "numbers", "all"]],
+      "rows": [
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": false, "value": 1,
+         "evidence": [{"selector": "(page text)", "text": "$97"}]}
+      ]
+    },
+    "bar-v2/c-derived-ok/index.html": {
+      "case": "(c) A5 numbers: $10 worked out from two brief facts ($4 + $6), listed in the folder's derivations.json with the right operation: sourced.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": true, "value": 0}
+      ]
+    },
+    "bar-v2/c-derived-wrong/index.html": {
+      "case": "(c) A5 numbers: the same $10 with a derivations.json whose operation does not give $10 (multiply): unsourced, and the evidence shows the possible derivation.",
+      "brief": "bar-v2/brief.json",
+      "failing": [["A5", "numbers", "all"]],
+      "rows": [
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": false, "value": 1,
+         "evidence": [{"selector": "(page text)", "text_has": "$10 = $4 + $6"}]}
+      ]
+    },
+    "bar-v2/d-mock-role.html": {
+      "case": "(d) A1 visual anchor: an HTML-built ledger mock, role=img with a name, painted cards on a panel: anchor met; the mock's own numerals belong to the picture.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A1", "check": "visual-anchor", "width": "1440x900", "pass": true,
+         "evidence": [{"selector": "#mock", "text_has": "html picture"}]},
+        {"bar": "A1", "check": "visual-anchor", "width": "390x844", "pass": true,
+         "evidence": [{"selector": "#mock", "text_has": "html picture"}]},
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": true, "value": 0}
+      ]
+    },
+    "bar-v2/d-mock-figure.html": {
+      "case": "(d) A1 visual anchor: the same mock as a figure with a figcaption: anchor met.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A1", "check": "visual-anchor", "width": "1440x900", "pass": true,
+         "evidence": [{"selector": "#mock", "text_has": "html picture"}]},
+        {"bar": "A1", "check": "visual-anchor", "width": "390x844", "pass": true,
+         "evidence": [{"selector": "#mock", "text_has": "html picture"}]},
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": true, "value": 0}
+      ]
+    },
+    "bar-v2/e-mock-unlabelled.html": {
+      "case": "(e) A1 visual anchor: the same mock as a figure with no figcaption or aria-labelledby: not exposed as an image, so no anchor, and its numerals count as page text.",
+      "brief": "bar-v2/brief.json",
+      "failing": [["A1", "visual-anchor", "1440x900"], ["A1", "visual-anchor", "390x844"], ["A5", "numbers", "all"]],
+      "rows": [
+        {"bar": "A1", "check": "visual-anchor", "width": "1440x900", "pass": false, "value": 0,
+         "evidence": [{"selector": "#mock", "text_has": "not exposed as an image"}]},
+        {"bar": "A1", "check": "visual-anchor", "width": "390x844", "pass": false, "value": 0,
+         "evidence": [{"selector": "#mock", "text_has": "not exposed as an image"}]},
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": false, "value": 3,
+         "evidence": [{"selector": "(page text)", "text": "$1,240"}, {"selector": "(page text)", "text": "$385"},
+                      {"selector": "(page text)", "text": "$96"}]}
+      ]
+    },
+    "bar-v2/f-numerals-role.html": {
+      "case": "(f) A1 visual anchor: a role=img wrapper around big numerals only, nothing painted: type alone is not an anchor.",
+      "brief": "bar-v2/brief.json",
+      "failing": [["A1", "visual-anchor", "1440x900"], ["A1", "visual-anchor", "390x844"]],
+      "rows": [
+        {"bar": "A1", "check": "visual-anchor", "width": "1440x900", "pass": false, "value": 0,
+         "evidence": [{"selector": "#numerals", "text_has": "painted 0%"}]},
+        {"bar": "A1", "check": "visual-anchor", "width": "390x844", "pass": false, "value": 0,
+         "evidence": [{"selector": "#numerals", "text_has": "painted 0%"}]},
+        {"bar": "A5", "check": "numbers", "width": "all", "pass": true, "value": 0}
+      ]
+    },
+    "bar-v2/g-cta-arrow.html": {
+      "case": "(g) A1 CTA: hero button 'Explore demo rooms ↓', brief CTA 'Explore demo rooms': the hero button matches after the arrow is dropped, is measured, and its wording passes.",
+      "brief": "bar-v2/brief-rooms.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A1", "check": "cta-in-view", "width": "1440x900", "pass": true,
+         "evidence": [{"selector": "#hero-cta"}, {"selector": "(picked by)", "text": "brief wording"}]},
+        {"bar": "A1", "check": "cta-in-view", "width": "390x844", "pass": true,
+         "evidence": [{"selector": "#hero-cta"}, {"selector": "(picked by)", "text": "brief wording"}]},
+        {"bar": "A5", "check": "cta-wording", "width": "all", "pass": true, "value": "Explore demo rooms ↓"}
+      ]
+    },
+    "bar-v2/h-cta-other.html": {
+      "case": "(h) A1 CTA: hero button 'Try a sample booking' and a closing button with the brief's wording far below: the hero button is the most prominent filled button in the first screen, so it is measured, and cta-wording fails.",
+      "brief": "bar-v2/brief-rooms.json",
+      "failing": [["A5", "cta-wording", "all"]],
+      "rows": [
+        {"bar": "A1", "check": "cta-in-view", "width": "1440x900", "pass": true,
+         "evidence": [{"selector": "#hero-cta"}, {"selector": "(picked by)", "text": "most prominent filled button in the first screen"}]},
+        {"bar": "A1", "check": "cta-in-view", "width": "390x844", "pass": true,
+         "evidence": [{"selector": "#hero-cta"}, {"selector": "(picked by)", "text": "most prominent filled button in the first screen"}]},
+        {"bar": "A5", "check": "cta-wording", "width": "all", "pass": false, "value": "Try a sample booking"}
+      ]
+    },
+    "bar-v2/i-header-flush.html": {
+      "case": "(i) A2 rhythm: the page header sits flush on the hero; the other sections are evenly spaced: the header gap is skipped and rhythm passes.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A2", "check": "rhythm", "width": "1440x900", "pass": true},
+        {"bar": "A2", "check": "rhythm", "width": "390x844", "pass": true}
+      ]
+    },
+    "bar-v2/j-flap-cells.html": {
+      "case": "(j) A3 measure: one-character split-flap cells beside good paragraphs: the cells are not running text, measure passes.",
+      "brief": "bar-v2/brief.json",
+      "failing": [],
+      "rows": [
+        {"bar": "A3", "check": "measure", "width": "1440x900", "pass": true}
+      ]
+    },
+    "bar-v2/k-long-word.html": {
+      "case": "(k) A7 word-split: 'Telecommunications' breaks mid-word without a hyphen at 320 only; a soft-hyphen break and a hyphens:auto break draw a hyphen and are not findings.",
+      "brief": "bar-v2/brief.json",
+      "failing": [["A7", "word-split", "320x568"]],
+      "rows": [
+        {"bar": "A7", "check": "word-split", "width": "1440x900", "pass": true, "value": 0},
+        {"bar": "A7", "check": "word-split", "width": "1024x768", "pass": true, "value": 0},
+        {"bar": "A7", "check": "word-split", "width": "768x1024", "pass": true, "value": 0},
+        {"bar": "A7", "check": "word-split", "width": "390x844", "pass": true, "value": 0},
+        {"bar": "A7", "check": "word-split", "width": "320x568", "pass": false, "value": 1,
+         "evidence": [{"selector": "#split-heading", "text": "Telecommunicatio / ns"}]}
+      ]
+    }
+  },
+  "bar-v1": {
+    "note": "The seven bar-v1 pages keep their own key, bar-v1/expected.json, unchanged, for the checks it covers. The two rows v2 adds are keyed here: the exact set of failing new rows per page.",
+    "brief": "bar-v1/brief.json",
+    "checks": [["A5", "cta-wording"], ["A7", "word-split"]],
+    "pages": {
+      "bar-v1/clean.html": [],
+      "bar-v1/p-firstscreen.html": [],
+      "bar-v1/p-hierarchy.html": [],
+      "bar-v1/p-spacing.html": [],
+      "bar-v1/p-reading.html": [],
+      "bar-v1/p-access.html": [],
+      "bar-v1/p-structure.html": [["A5", "cta-wording", "all"]]
+    }
+  }
+}

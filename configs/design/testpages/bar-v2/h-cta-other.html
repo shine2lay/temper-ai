@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Rooms: quiet rooms to work in, by the hour</title>
+<!-- bar-v2 case (h), queue #91, A1 call to action (brief-rooms.json, CTA "Explore demo rooms"): the hero's
+     filled button says something else ("Try a sample booking"); only the closing button far below reads the
+     brief's words. Nothing in the first screen matches the brief, so the most prominent filled button there,
+     the hero's, is the one measured: cta-in-view is met on #hero-cta, and the new cta-wording row fails. -->
+<link rel="stylesheet" href="base.css">
+<style>
+.closing { padding: 64px 0; }
+.closing h2 { margin-bottom: 32px; }
+.cta-dark { background: #0f172a; }
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Rooms</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#features">Rooms</a></li>
+        <li><a href="#rooms">Demo</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1>Quiet rooms to work in, by the hour</h1>
+        <p class="lede">Every room has a desk, a screen and fast Wi-Fi. Book one in about 2 minutes.</p>
+        <a class="cta" id="hero-cta" href="#rooms">Try a sample booking</a>
+      </div>
+      <svg class="art" role="img" aria-label="Floor plan of three quiet work rooms" viewBox="0 0 320 320">
+        <rect width="320" height="320" rx="24" fill="#eff6ff"/>
+        <rect x="40" y="40" width="112" height="112" rx="8" fill="#93c5fd"/>
+        <rect x="168" y="40" width="112" height="112" rx="8" fill="#60a5fa"/>
+        <rect x="40" y="168" width="240" height="112" rx="8" fill="#3b82f6"/>
+      </svg>
+    </div>
+  </section>
+  <section class="features" id="features">
+    <div class="wrap">
+      <h2>What you get</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>Book by the hour</h3>
+          <p>Pick a room and the hours you need, and pay only for that time. There is no monthly fee.</p>
+        </article>
+        <article class="card">
+          <h3>Room for a small team</h3>
+          <p>Each room seats up to 4 people, so a small team can meet and work side by side.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+  <section class="band" id="prices">
+    <div class="wrap">
+      <h2>Plain prices, no fees</h2>
+      <p>You pay only for the hours you book. Booking takes about 2 minutes.</p>
+    </div>
+  </section>
+  <section class="closing" id="rooms">
+    <div class="wrap">
+      <h2>See the rooms for yourself</h2>
+      <a class="cta cta-dark" id="closing-cta" href="#demo">Explore demo rooms</a>
+    </div>
+  </section>
+</main>
+<footer class="site-foot" id="help">
+  <div class="wrap">
+    <p>Fictional demo — no real rooms or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+    </ul>
+    <p>© 2026 Lumen Rooms</p>
+  </div>
+</footer>
+</body>
+</html>

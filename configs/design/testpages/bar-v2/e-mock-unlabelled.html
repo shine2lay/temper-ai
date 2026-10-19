@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-v2 case (e), queue #91, A1 visual anchor and A5 numbers: case (d-figure)'s ledger mock without its
+     figcaption (and no aria-labelledby), so it is not exposed as an image. The anchor is not met at 1440 or
+     390, and the evidence says why; its three amounts are now page text, so they are unsourced claims. -->
+<link rel="stylesheet" href="base.css">
+<style>
+.mock { width: 320px; height: 320px; padding: 24px; display: flex; flex-direction: column; justify-content: center; gap: 16px; background: #eff6ff; border-radius: 24px; }
+.mock-card { display: flex; justify-content: space-between; align-items: center; height: 56px; padding: 0 16px; background: #ffffff; border-radius: 8px; }
+.mock-label { font-size: 16px; color: #374151; }
+.mock-amount { font-weight: 700; color: #111827; }
+@media (max-width: 767px) {
+  .mock { width: 240px; height: 240px; padding: 16px; gap: 8px; }
+  .mock-card { height: 40px; }
+}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1>Know where your household money goes</h1>
+        <p class="lede">Lumen Ledger sorts your bills into 12 clear groups, so you can see each month at a glance.</p>
+        <a class="cta" href="#start">Start a free ledger</a>
+      </div>
+      <figure class="mock" id="mock">
+        <div class="mock-card"><span class="mock-label">Rent</span><span class="mock-amount">$1,240</span></div>
+        <div class="mock-card"><span class="mock-label">Food</span><span class="mock-amount">$385</span></div>
+        <div class="mock-card"><span class="mock-label">Travel</span><span class="mock-amount">$96</span></div>
+      </figure>
+    </div>
+  </section>
+  <section class="features" id="features">
+    <div class="wrap">
+      <h2>What it does for you</h2>
+      <div class="cards">
+        <article class="card">
+          <img class="card-icon" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Ccircle cx='24' cy='24' r='20' fill='%2393c5fd'/%3E%3C/svg%3E">
+          <h3>Sorts every bill</h3>
+          <p>Each bill lands in one of 12 groups, like rent, food or travel. You do not have to set up any rules first.</p>
+        </article>
+        <article class="card">
+          <h3>Shows each month</h3>
+          <p>See what you spent this month next to last month. Big changes stand out, and you can <a href="#help">read the short guide</a> to learn more.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+  <section class="band" id="pricing">
+    <div class="wrap">
+      <h2>Plain numbers, no jargon</h2>
+      <p>Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-foot" id="help">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+    </ul>
+    <p>© 2026 Lumen Ledger</p>
+  </div>
+</footer>
+</body>
+</html>

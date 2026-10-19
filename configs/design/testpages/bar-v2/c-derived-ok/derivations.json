@@ -1,0 +1,13 @@
+{
+  "derivations": [
+    {
+      "shown": "$10",
+      "operation": "add",
+      "operands": ["$4", "$6"],
+      "facts": [
+        "Plans cost $4 a month after a 30-day free trial.",
+        "The family add-on is $6 a month for up to four people."
+      ]
+    }
+  ]
+}

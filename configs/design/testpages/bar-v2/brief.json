@@ -1,0 +1,19 @@
+{
+  "product": "Lumen Ledger",
+  "fictional": true,
+  "disclosure": "Fictional demo — no real accounts or payments.",
+  "category": "Household bill tracking",
+  "audience": "A person who pays the household bills and wants to see where the money goes each month.",
+  "purpose": "Show what the ledger does and get the visitor to start a free ledger.",
+  "cta": "Start a free ledger",
+  "facts": [
+    "Lumen Ledger sorts every bill into one of 12 groups, such as rent, food and travel.",
+    "Setup takes about 5 minutes.",
+    "Plans cost $4 a month after a 30-day free trial.",
+    "It compares this month's spending with last month's.",
+    "A reminder arrives seven days before each bill is due.",
+    "Each ledger keeps a ten-year history.",
+    "The family add-on is $6 a month for up to four people."
+  ],
+  "brand": {}
+}

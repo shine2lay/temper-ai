@@ -1,0 +1,148 @@
+{
+  "390": {
+    "width": 390,
+    "body_px": 18,
+    "display_px": 44,
+    "scale_ratio": 2.44,
+    "text_sizes": 9,
+    "families": [
+      "Atkinson Hyperlegible"
+    ],
+    "loaded_families": [
+      "Atkinson Hyperlegible"
+    ],
+    "unloaded_families": [],
+    "weights": 2,
+    "text_colors": 11,
+    "background_colors": 10,
+    "gradients": 0,
+    "background_images": 1,
+    "images": 1,
+    "svgs": 0,
+    "animated_elements": 0,
+    "sections": [
+      {
+        "name": "header",
+        "height": 57,
+        "signature": "flex-row | rgba(0, 0, 0, 0) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 367,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | mid"
+      },
+      {
+        "name": "this term",
+        "height": 401,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | mid"
+      },
+      {
+        "name": "glazes",
+        "height": 254,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "kiln room",
+        "height": 329,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "open studio",
+        "height": 182,
+        "signature": "flow | image | - | short"
+      },
+      {
+        "name": "small print",
+        "height": 223,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "footer",
+        "height": 128,
+        "signature": "flow | rgb(248, 250, 252) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 5,
+    "consecutive_repeats": 2,
+    "spacing_values": 11,
+    "spacing_on_4px": 0.88,
+    "h1_px": 44,
+    "hero_height": 57,
+    "page_height": 1941,
+    "overflow_x": false
+  },
+  "1440": {
+    "width": 1440,
+    "body_px": 18,
+    "display_px": 44,
+    "scale_ratio": 2.44,
+    "text_sizes": 9,
+    "families": [
+      "Atkinson Hyperlegible"
+    ],
+    "loaded_families": [
+      "Atkinson Hyperlegible"
+    ],
+    "unloaded_families": [],
+    "weights": 2,
+    "text_colors": 11,
+    "background_colors": 10,
+    "gradients": 0,
+    "background_images": 1,
+    "images": 1,
+    "svgs": 0,
+    "animated_elements": 0,
+    "sections": [
+      {
+        "name": "header",
+        "height": 57,
+        "signature": "flex-row | rgba(0, 0, 0, 0) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 257,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "this term",
+        "height": 337,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "glazes",
+        "height": 227,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "kiln room",
+        "height": 423,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | mid"
+      },
+      {
+        "name": "open studio",
+        "height": 155,
+        "signature": "flow | image | - | short"
+      },
+      {
+        "name": "small print",
+        "height": 223,
+        "signature": "flow | rgba(0, 0, 0, 0) | start | short"
+      },
+      {
+        "name": "footer",
+        "height": 107,
+        "signature": "flow | rgb(248, 250, 252) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 5,
+    "consecutive_repeats": 2,
+    "spacing_values": 11,
+    "spacing_on_4px": 0.88,
+    "h1_px": 44,
+    "hero_height": 57,
+    "page_height": 1785,
+    "overflow_x": false
+  }
+}

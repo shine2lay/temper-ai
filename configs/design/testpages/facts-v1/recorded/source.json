@@ -1,0 +1,14 @@
+{
+ "about": "Measurements of facts-v1 by a real browser, replayed by tests/test_design_facts_counts.py.",
+ "recorded": "2026-10-19",
+ "browser": "local @playwright/mcp (http://127.0.0.1:8957/mcp)",
+ "page_sha256": "57d567602d8468f3ea63fd9570d93bf58349bfab885ecfb87e2c29646304410b",
+ "meter_sha256": {
+  "design_capture.py": "4fad3c0aaf58bc9ca03082bd1209f928e1dac228be3cabc3a00b5fc19ad5179d",
+  "design_measure.js": "8161a897c28c2b3819cfc38dd5c3b236df7bccc2bd0f90a7573231ee5361c0b5",
+  "design_page_checks.py": "449aec5dcb6b13e64ff5e8ed124d44d2b74356ce9a56f7caeadd1773cada3892",
+  "design_page_checks.js": "d64a3eccb1afd0b86a90c9146aef34fd8bf990990ac6db3d9035f86826a15440",
+  "design_page_checks_thresholds.json": "1c5477287aba97f7833c56102c778fc98cfc4061b2c98b6e8938c7786a42d4f5",
+  "vendor/axe-4.13.0.min.js": "6a9044f388fee53e33ba80776af049389ec16011bbe24d729d253d52cd68a063"
+ }
+}

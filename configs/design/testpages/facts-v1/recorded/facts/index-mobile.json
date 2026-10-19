@@ -1,0 +1,1148 @@
+{
+ "url": "/index.html",
+ "title": "Larkspur Clay Studio: evening pottery classes",
+ "viewport": [
+  390,
+  844
+ ],
+ "page_height": 1941,
+ "contrast_failures": [
+  {
+   "sel": "#term-badge",
+   "tag": "span",
+   "text": "New term",
+   "size": 16,
+   "weight": 700,
+   "color": "rgb(255,255,255)",
+   "background": "rgb(245,158,11)",
+   "contrast": 2.15,
+   "needs": 4.5,
+   "line_height": "24px",
+   "transform": "none",
+   "box": [
+    24,
+    528,
+    96,
+    28
+   ],
+   "inactive": false
+  },
+  {
+   "sel": "#term-note",
+   "tag": "p",
+   "text": "Classes run on Tuesday and Thursday evenings from six until nine.",
+   "size": 18,
+   "weight": 400,
+   "color": "rgb(156,163,175)",
+   "background": "rgb(255,255,255)",
+   "contrast": 2.54,
+   "needs": 4.5,
+   "line_height": "27px",
+   "transform": "none",
+   "box": [
+    24,
+    572,
+    342,
+    54
+   ],
+   "inactive": false
+  },
+  {
+   "sel": "#kiln-caption",
+   "tag": "figcaption",
+   "text": "Our two electric kilns fire to cone six.",
+   "size": 15,
+   "weight": 400,
+   "color": "rgb(161,161,170)",
+   "background": "rgb(255,255,255)",
+   "contrast": 2.56,
+   "needs": 4.5,
+   "line_height": "22.5px",
+   "transform": "none",
+   "box": [
+    24,
+    1338,
+    342,
+    23
+   ],
+   "inactive": false
+  },
+  {
+   "sel": "#fine-print",
+   "tag": "p",
+   "text": "Clay and firing fees are included. Cancel up to two days before a class for a full refund.",
+   "size": 13,
+   "weight": 400,
+   "color": "rgb(163,163,163)",
+   "background": "rgb(241,245,249)",
+   "contrast": 2.3,
+   "needs": 4.5,
+   "line_height": "19.5px",
+   "transform": "none",
+   "box": [
+    40,
+    1710,
+    310,
+    39
+   ],
+   "inactive": false
+  }
+ ],
+ "contrast_exempt": [
+  {
+   "sel": "#waitlist",
+   "tag": "button",
+   "text": "Waitlist full",
+   "size": 16,
+   "weight": 700,
+   "color": "rgb(184,184,184)",
+   "background": "rgb(243,244,246)",
+   "contrast": 1.8,
+   "needs": 4.5,
+   "why": "inactive (disabled) control"
+  }
+ ],
+ "type_styles": [
+  {
+   "style": "44px 700",
+   "count": 1
+  },
+  {
+   "style": "32px 700",
+   "count": 4
+  },
+  {
+   "style": "28px 400",
+   "count": 1
+  },
+  {
+   "style": "20px 400",
+   "count": 2
+  },
+  {
+   "style": "18px 400",
+   "count": 3
+  },
+  {
+   "style": "16px 700",
+   "count": 6
+  },
+  {
+   "style": "15px 400",
+   "count": 1
+  },
+  {
+   "style": "14px 400",
+   "count": 4
+  },
+  {
+   "style": "13px 400",
+   "count": 1
+  }
+ ],
+ "largest_text": [
+  {
+   "sel": "#hero-title",
+   "tag": "h1",
+   "text": "Throw your first pot this spring",
+   "size": 44,
+   "weight": 700,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    105,
+    342,
+    101
+   ]
+  },
+  {
+   "sel": "#term-title",
+   "tag": "h2",
+   "text": "This term",
+   "size": 32,
+   "weight": 700,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    472,
+    342,
+    40
+   ]
+  },
+  {
+   "sel": "#glazes-title",
+   "tag": "h2",
+   "text": "Glazes",
+   "size": 32,
+   "weight": 700,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    873,
+    342,
+    40
+   ]
+  },
+  {
+   "sel": "#kiln-title",
+   "tag": "h2",
+   "text": "The kiln room",
+   "size": 32,
+   "weight": 700,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    1127,
+    342,
+    40
+   ]
+  },
+  {
+   "sel": "#small-print-title",
+   "tag": "h2",
+   "text": "Small print",
+   "size": 32,
+   "weight": 700,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    1638,
+    342,
+    40
+   ]
+  },
+  {
+   "sel": "#term-date",
+   "tag": "p",
+   "text": "Term starts on the third of March",
+   "size": 28,
+   "weight": 400,
+   "color": "rgb(138,138,138)",
+   "transform": "none",
+   "box": [
+    24,
+    642,
+    342,
+    73
+   ]
+  },
+  {
+   "sel": "#logo",
+   "tag": "a",
+   "text": "Larkspur",
+   "size": 20,
+   "weight": 400,
+   "color": "rgb(17,24,39)",
+   "transform": "none",
+   "box": [
+    24,
+    9,
+    77,
+    38
+   ]
+  },
+  {
+   "sel": "#hero-lead",
+   "tag": "p",
+   "text": "Small evening classes for complete beginners, in a sunny studio by the river.",
+   "size": 20,
+   "weight": 400,
+   "color": "rgb(55,65,81)",
+   "transform": "none",
+   "box": [
+    24,
+    222,
+    342,
+    90
+   ]
+  }
+ ],
+ "headings": [
+  {
+   "level": 1,
+   "text": "Throw your first pot this spring",
+   "size": 44,
+   "weight": 700,
+   "box": [
+    24,
+    105,
+    342,
+    101
+   ]
+  },
+  {
+   "level": 2,
+   "text": "This term",
+   "size": 32,
+   "weight": 700,
+   "box": [
+    24,
+    472,
+    342,
+    40
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Glazes",
+   "size": 32,
+   "weight": 700,
+   "box": [
+    24,
+    873,
+    342,
+    40
+   ]
+  },
+  {
+   "level": 2,
+   "text": "The kiln room",
+   "size": 32,
+   "weight": 700,
+   "box": [
+    24,
+    1127,
+    342,
+    40
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Small print",
+   "size": 32,
+   "weight": 700,
+   "box": [
+    24,
+    1638,
+    342,
+    40
+   ]
+  }
+ ],
+ "long_lines": [],
+ "controls": [
+  {
+   "sel": "#logo",
+   "tag": "a",
+   "role": "",
+   "name": "Larkspur",
+   "name_from": "content",
+   "box": [
+    24,
+    9,
+    77,
+    38
+   ]
+  },
+  {
+   "sel": "#nav-classes",
+   "tag": "a",
+   "role": "",
+   "name": "Classes",
+   "name_from": "content",
+   "box": [
+    165,
+    8,
+    73,
+    40
+   ]
+  },
+  {
+   "sel": "#nav-glazes",
+   "tag": "a",
+   "role": "",
+   "name": "Glazes",
+   "name_from": "content",
+   "box": [
+    246,
+    8,
+    64,
+    40
+   ]
+  },
+  {
+   "sel": "#nav-visit",
+   "tag": "a",
+   "role": "",
+   "name": "Visit",
+   "name_from": "content",
+   "box": [
+    318,
+    8,
+    48,
+    40
+   ]
+  },
+  {
+   "sel": "#cta",
+   "tag": "a",
+   "role": "",
+   "name": "Book a class",
+   "name_from": "content",
+   "box": [
+    24,
+    328,
+    144,
+    48
+   ]
+  },
+  {
+   "sel": "#waitlist",
+   "tag": "button",
+   "role": "",
+   "name": "Waitlist full",
+   "name_from": "content",
+   "box": [
+    24,
+    731,
+    131,
+    46
+   ],
+   "disabled": true
+  },
+  {
+   "sel": "#swatch-ash",
+   "tag": "button",
+   "role": "",
+   "name": "Ash glaze",
+   "name_from": "aria-label",
+   "box": [
+    24,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-celadon",
+   "tag": "button",
+   "role": "",
+   "name": "Celadon glaze",
+   "name_from": "aria-label",
+   "box": [
+    42,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-tenmoku",
+   "tag": "button",
+   "role": "",
+   "name": "Tenmoku glaze",
+   "name_from": "aria-label",
+   "box": [
+    60,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-cobalt",
+   "tag": "button",
+   "role": "",
+   "name": "Cobalt glaze",
+   "name_from": "aria-label",
+   "box": [
+    78,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#foot-top",
+   "tag": "a",
+   "role": "",
+   "name": "Back to top",
+   "name_from": "content",
+   "box": [
+    24,
+    1888,
+    88,
+    29
+   ]
+  },
+  {
+   "sel": "#foot-times",
+   "tag": "a",
+   "role": "",
+   "name": "Class times",
+   "name_from": "content",
+   "box": [
+    120,
+    1888,
+    89,
+    29
+   ]
+  },
+  {
+   "sel": "#foot-find",
+   "tag": "a",
+   "role": "",
+   "name": "Find us",
+   "name_from": "content",
+   "box": [
+    217,
+    1888,
+    63,
+    29
+   ]
+  }
+ ],
+ "small_targets": [
+  {
+   "sel": "#swatch-ash",
+   "name": "Ash glaze",
+   "box": [
+    24,
+    999,
+    16,
+    16
+   ],
+   "too_close_to": {
+    "sel": "#swatch-celadon",
+    "name": "Celadon glaze",
+    "edge": 10,
+    "centre": 18
+   },
+   "hit": "target"
+  },
+  {
+   "sel": "#swatch-celadon",
+   "name": "Celadon glaze",
+   "box": [
+    42,
+    999,
+    16,
+    16
+   ],
+   "too_close_to": {
+    "sel": "#swatch-ash",
+    "name": "Ash glaze",
+    "edge": 10,
+    "centre": 18
+   },
+   "hit": "target"
+  },
+  {
+   "sel": "#swatch-tenmoku",
+   "name": "Tenmoku glaze",
+   "box": [
+    60,
+    999,
+    16,
+    16
+   ],
+   "too_close_to": {
+    "sel": "#swatch-celadon",
+    "name": "Celadon glaze",
+    "edge": 10,
+    "centre": 18
+   },
+   "hit": "target"
+  },
+  {
+   "sel": "#swatch-cobalt",
+   "name": "Cobalt glaze",
+   "box": [
+    78,
+    999,
+    16,
+    16
+   ],
+   "too_close_to": {
+    "sel": "#swatch-tenmoku",
+    "name": "Tenmoku glaze",
+    "edge": 10,
+    "centre": 18
+   },
+   "hit": "target"
+  }
+ ],
+ "targets_pass": [],
+ "weak_boundaries": [],
+ "fields": [],
+ "unnamed_graphics": [
+  {
+   "sel": "#kiln-photo",
+   "tag": "img",
+   "src": "images/kiln.svg",
+   "box": [
+    24,
+    1183,
+    342,
+    147
+   ]
+  }
+ ],
+ "page_width": {
+  "scroll": 390,
+  "viewport": 390,
+  "overflows": false
+ },
+ "landmarks": [
+  {
+   "tag": "header",
+   "label": ""
+  },
+  {
+   "tag": "nav",
+   "label": "Main"
+  },
+  {
+   "tag": "main",
+   "label": ""
+  },
+  {
+   "tag": "footer",
+   "label": ""
+  },
+  {
+   "tag": "nav",
+   "label": "Footer"
+  }
+ ],
+ "text_count": 23,
+ "axe": [
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "wcag": [
+    "wcag2aa",
+    "wcag143"
+   ],
+   "nodes": [
+    {
+     "target": "#term-badge",
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.14 (foreground color: #ffffff, background color: #f59e0b, font size: 12.0pt (16px), font weight: bold). Expected contrast ratio of 4.5:1"
+    },
+    {
+     "target": "#term-note",
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.53 (foreground color: #9ca3af, background color: #ffffff, font size: 13.5pt (18px), font weight: normal). Expected contrast ratio of 4.5:1"
+    },
+    {
+     "target": "#kiln-caption",
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.56 (foreground color: #a1a1aa, background color: #ffffff, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1"
+    },
+    {
+     "target": "#fine-print",
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.3 (foreground color: #a3a3a3, background color: #f1f5f9, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ]
+  },
+  {
+   "id": "image-alt",
+   "impact": "critical",
+   "help": "Images must have alternative text",
+   "wcag": [
+    "wcag2a",
+    "wcag111"
+   ],
+   "nodes": [
+    {
+     "target": "#kiln-photo",
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics "
+    }
+   ]
+  },
+  {
+   "id": "target-size",
+   "impact": "serious",
+   "help": "All touch targets must be 24px large, or leave sufficient space",
+   "wcag": [
+    "wcag22aa",
+    "wcag258"
+   ],
+   "nodes": [
+    {
+     "target": "#swatch-ash",
+     "summary": "Fix any of the following:\n  Target has insufficient size (16px by 16px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 12px instead of at least 24px."
+    },
+    {
+     "target": "#swatch-celadon",
+     "summary": "Fix any of the following:\n  Target has insufficient size (16px by 16px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 12px instead of at least 24px."
+    },
+    {
+     "target": "#swatch-tenmoku",
+     "summary": "Fix any of the following:\n  Target has insufficient size (16px by 16px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 12px instead of at least 24px."
+    },
+    {
+     "target": "#swatch-cobalt",
+     "summary": "Fix any of the following:\n  Target has insufficient size (16px by 16px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 12px instead of at least 24px."
+    }
+   ]
+  }
+ ],
+ "tab_stops": [
+  {
+   "sel": "#logo",
+   "name": "Larkspur",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    9,
+    77,
+    38
+   ]
+  },
+  {
+   "sel": "#nav-classes",
+   "name": "Classes",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    165,
+    8,
+    73,
+    40
+   ]
+  },
+  {
+   "sel": "#nav-glazes",
+   "name": "Glazes",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    246,
+    8,
+    64,
+    40
+   ]
+  },
+  {
+   "sel": "#nav-visit",
+   "name": "Visit",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    318,
+    8,
+    48,
+    40
+   ]
+  },
+  {
+   "sel": "#cta",
+   "name": "Book a class",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    328,
+    144,
+    48
+   ]
+  },
+  {
+   "sel": "#swatch-ash",
+   "name": "Ash glaze",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-celadon",
+   "name": "Celadon glaze",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    42,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-tenmoku",
+   "name": "Tenmoku glaze",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    60,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#swatch-cobalt",
+   "name": "Cobalt glaze",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    78,
+    999,
+    16,
+    16
+   ]
+  },
+  {
+   "sel": "#foot-top",
+   "name": "Back to top",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    24,
+    1888,
+    88,
+    29
+   ]
+  },
+  {
+   "sel": "#foot-times",
+   "name": "Class times",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    120,
+    1888,
+    89,
+    29
+   ]
+  },
+  {
+   "sel": "#foot-find",
+   "name": "Find us",
+   "ring": true,
+   "outline": "auto 1px",
+   "box_shadow": "none",
+   "box": [
+    217,
+    1888,
+    63,
+    29
+   ]
+  }
+ ],
+ "no_focus_ring": [],
+ "tiles": [
+  {
+   "file": "shots/index-mobile-1.png",
+   "y": 0,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-2.png",
+   "y": 844,
+   "height": 844
+  },
+  {
+   "file": "shots/index-mobile-3.png",
+   "y": 1688,
+   "height": 253
+  }
+ ],
+ "page_checks": {
+  "viewport": [
+   390,
+   844
+  ],
+  "page_height": 1941,
+  "sections": [
+   {
+    "name": "header",
+    "chrome": true,
+    "box": [
+     0,
+     0,
+     390,
+     57
+    ]
+   },
+   {
+    "name": "hero",
+    "chrome": false,
+    "box": [
+     0,
+     57,
+     390,
+     367
+    ]
+   },
+   {
+    "name": "this term",
+    "chrome": false,
+    "box": [
+     0,
+     424,
+     390,
+     401
+    ]
+   },
+   {
+    "name": "glazes",
+    "chrome": false,
+    "box": [
+     0,
+     825,
+     390,
+     254
+    ]
+   },
+   {
+    "name": "kiln room",
+    "chrome": false,
+    "box": [
+     0,
+     1079,
+     390,
+     329
+    ]
+   },
+   {
+    "name": "open studio",
+    "chrome": false,
+    "box": [
+     0,
+     1408,
+     390,
+     182
+    ]
+   },
+   {
+    "name": "small print",
+    "chrome": false,
+    "box": [
+     0,
+     1590,
+     390,
+     223
+    ]
+   },
+   {
+    "name": "footer",
+    "chrome": true,
+    "box": [
+     0,
+     1813,
+     390,
+     128
+    ]
+   }
+  ],
+  "dark": false,
+  "action": {
+   "label": "Book a class",
+   "found": 1,
+   "first": {
+    "sel": "#cta",
+    "text": "Book a class",
+    "top": 328,
+    "bottom": 376,
+    "whole": true,
+    "section": "hero"
+   },
+   "screen_height": 844
+  },
+  "nav": {
+   "found": true,
+   "sel": "header > div.wrap.bar > nav.nav",
+   "header_height": 57,
+   "links": [
+    {
+     "text": "Classes",
+     "box": [
+      165,
+      8,
+      73,
+      40
+     ]
+    },
+    {
+     "text": "Glazes",
+     "box": [
+      246,
+      8,
+      64,
+      40
+     ]
+    },
+    {
+     "text": "Visit",
+     "box": [
+      318,
+      8,
+      48,
+      40
+     ]
+    }
+   ],
+   "lines": 1,
+   "rows": [
+    [
+     "Classes",
+     "Glazes",
+     "Visit"
+    ]
+   ],
+   "wrapped": [],
+   "overflow": []
+  },
+  "cues": {
+   "checked": 6,
+   "nav_links": 7,
+   "without": [],
+   "without_count": 0,
+   "by_cue": {
+    "fill": 6,
+    "border": 1
+   }
+  },
+  "visuals": {
+   "sections": [
+    {
+     "name": "header",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "hero",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "this term",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "glazes",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "kiln room",
+     "chrome": false,
+     "count": 1,
+     "share": 0.43,
+     "items": [
+      {
+       "kind": "img",
+       "size": [
+        342,
+        147
+       ],
+       "top": 1183,
+       "name": "Our two electric kilns fire to cone six.",
+       "decorative": false
+      }
+     ]
+    },
+    {
+     "name": "open studio",
+     "chrome": false,
+     "count": 1,
+     "share": 1,
+     "items": [
+      {
+       "kind": "background image",
+       "size": [
+        390,
+        182
+       ],
+       "top": 1408,
+       "name": "",
+       "decorative": false
+      }
+     ]
+    },
+    {
+     "name": "small print",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "footer",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    }
+   ],
+   "first_screen_share": 0,
+   "none": [
+    "hero",
+    "this term",
+    "glazes",
+    "small print"
+   ]
+  },
+  "overlays": [
+   {
+    "id": 0,
+    "sel": "#banner-text",
+    "text": "Open studio every Sunday afternoon, bring a friend.",
+    "size": 18,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     255,
+     255,
+     255,
+     1
+    ],
+    "kind": "image",
+    "declared": 17.85,
+    "lines": [
+     [
+      24,
+      1479,
+      339,
+      11
+     ],
+     [
+      24,
+      1506,
+      65,
+      11
+     ]
+    ],
+    "section": "open studio"
+   }
+  ],
+  "small_dark": [],
+  "pixels": {
+   "0": {
+    "ratio": 1.07,
+    "bg": "rgb(240,249,255)"
+   }
+  }
+ }
+}

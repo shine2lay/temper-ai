@@ -1,0 +1,73 @@
+{
+ "about": "Answer key for the keyed facts page facts-v1 (queue #87, W3). index.html carries known counts; tests/test_design_facts_counts.py runs the homepage workflow's own measure code on it (design_homepage_v2.write_review_inputs with page checks: design_capture.py, axe-core, design_measure.js, design_page_checks, craft metrics) and asserts that facts.md, capture.json, facts/<page>-<view>.json, craft-metrics.json and craft-facts.md report exactly these numbers. Written from the page's source before any measure ran; a mismatch is explained in ~/design-lab/homepage-workflow/wave2/W3-REPORT.md (page wrong or meter wrong), never fixed by editing this key to match a meter.",
+ "written": "2026-10-19",
+ "page": "index.html",
+ "viewports": ["desktop", "mobile"],
+ "craft_widths": ["1440", "390"],
+ "brief": {
+  "product": "Larkspur Clay Studio",
+  "audience": "adults who have never thrown a pot",
+  "purpose": "get a beginner to book an evening class",
+  "cta": "Book a class",
+  "fictional": true,
+  "disclosure": "Larkspur Clay Studio is a made-up studio for a measuring test page."
+ },
+ "counts": {
+  "axe_rule_ids": 3,
+  "failing_contrast_pairs": 5,
+  "small_targets": 4,
+  "text_sizes": 9
+ },
+ "axe": {
+  "about": "Distinct axe rule ids failing, the same in both views, with the elements each one names.",
+  "color-contrast": ["#term-badge", "#term-note", "#kiln-caption", "#fine-print"],
+  "target-size": ["#swatch-ash", "#swatch-celadon", "#swatch-tenmoku", "#swatch-cobalt"],
+  "image-alt": ["#kiln-photo"]
+ },
+ "contrast_pairs": {
+  "about": "Text that fails WCAG 1.4.3 in both views. P1-P4 fail on their declared colours (design_measure.js contrast_failures; ratios from the WCAG formula). P5 is white text on a dark declared background colour (17.85:1, a pass on paper) painted over a light background image, so only the pixel check sees it (design_page_checks text-over-image; behind it #f0f9ff or #e0f2fe, 1.07-1.15:1).",
+  "pairs": [
+   {"id": "P1", "sel": "#term-badge", "text": "New term", "size": 16, "weight": 700, "fg": "#ffffff", "bg": "#f59e0b", "ratio": 2.15, "needs": 4.5, "meter": "contrast_failures"},
+   {"id": "P2", "sel": "#term-note", "text": "Classes run on Tuesday and Thursday evenings from six until nine.", "size": 18, "weight": 400, "fg": "#9ca3af", "bg": "#ffffff", "ratio": 2.54, "needs": 4.5, "meter": "contrast_failures"},
+   {"id": "P3", "sel": "#kiln-caption", "text": "Our two electric kilns fire to cone six.", "size": 15, "weight": 400, "fg": "#a1a1aa", "bg": "#ffffff", "ratio": 2.56, "needs": 4.5, "meter": "contrast_failures"},
+   {"id": "P4", "sel": "#fine-print", "text": "Clay and firing fees are included. Cancel up to two days before a class for a full refund.", "size": 13, "weight": 400, "fg": "#a3a3a3", "bg": "#f1f5f9", "ratio": 2.3, "needs": 4.5, "meter": "contrast_failures"},
+   {"id": "P5", "sel": "#banner-text", "text": "Open studio every Sunday afternoon, bring a friend.", "size": 18, "weight": 400, "fg": "#ffffff", "bg": "images/glaze-light.svg over #0f172a", "ratio_range": [1.07, 1.15], "declared_ratio": 17.85, "needs": 4.5, "meter": "page check text-over-image"}
+  ]
+ },
+ "small_targets": {
+  "about": "Targets under 24x24 px whose 24 px circles overlap (WCAG 2.5.8), in both views: four 16x16 swatch buttons 2 px apart.",
+  "targets": [
+   {"sel": "#swatch-ash", "name": "Ash glaze", "box": [16, 16]},
+   {"sel": "#swatch-celadon", "name": "Celadon glaze", "box": [16, 16]},
+   {"sel": "#swatch-tenmoku", "name": "Tenmoku glaze", "box": [16, 16]},
+   {"sel": "#swatch-cobalt", "name": "Cobalt glaze", "box": [16, 16]}
+  ]
+ },
+ "text_sizes": {
+  "about": "Exactly nine text sizes, one weight each, so nine type styles; the same at every width (no media queries, no fluid sizes). Counts are text elements per style (design_measure.js type_styles).",
+  "sizes": [44, 32, 28, 20, 18, 16, 15, 14, 13],
+  "type_styles": {
+   "44px 700": 1,
+   "32px 700": 4,
+   "28px 400": 1,
+   "20px 400": 2,
+   "18px 400": 3,
+   "16px 700": 6,
+   "15px 400": 1,
+   "14px 400": 4,
+   "13px 400": 1
+  }
+ },
+ "must_pass": [
+  {"sel": "#term-date", "why": "28 px grey #8a8a8a on white is 3.45:1: large text needs 3:1, so neither axe nor design_measure.js may report it."},
+  {"sel": "#waitlist", "why": "Text of a disabled button (#b8b8b8 on #f3f4f6, 1.80:1) has no contrast requirement: design_measure.js lists it under contrast_exempt, axe skips it."},
+  {"sel": "#banner-text", "why": "Its declared colours (white on #0f172a, 17.85:1) pass: design_measure.js and axe must not count it; the pixel check alone fails it (P5)."},
+  {"sel": "#logo, #nav-classes, #nav-glazes, #nav-visit, #cta, #foot-top, #foot-times, #foot-find, #waitlist", "why": "Every other target is at least 24 px tall and wide, so the swatches are the only small targets."}
+ ],
+ "also_measured": {
+  "about": "Other facts the page plants or implies; not part of the four keyed counts.",
+  "unnamed_graphics": ["#kiln-photo"],
+  "text_over_image_candidates_per_view": 1,
+  "html_problems": []
+ }
+}

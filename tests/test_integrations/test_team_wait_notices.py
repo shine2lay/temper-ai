@@ -38,8 +38,15 @@ from temper_ai.integrations.slack.ops import TemperOps
 from temper_ai.integrations.slack.sender import SlackSender
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.observability.event_types import EventType
+from temper_ai.pi_agent.accounts import (
+    limit_after_check,
+    limit_details,
+    limit_restart_ready,
+    limit_resume,
+)
 from temper_ai.pi_agent.ledger import Ledger, _now, trials, waits
 from temper_ai.pi_agent.owner_waits import ask_owner_for_wait
+from temper_ai.pi_agent.settings_wait import SETTINGS, team_subject
 from temper_ai.shared.types import ExecutionContext
 from tests.test_integrations.conftest import NOTIFY_YAML, OWNER, FakeSlack
 
@@ -118,6 +125,15 @@ class Team:
 
     def end(self, status: str = "completed") -> None:
         self.ops.runs[self.eid]["status"] = status
+
+
+def recheck(team: Team, wait_id: str, used_7d: int) -> None:
+    """A fresh usage check of the held limit wait, as the team's driver records it (same wait)."""
+    (row,) = [w for w in team.ledger.open_waits(team.eid, HOST) if w["wait_id"] == wait_id]
+    reading = {"status": "ok", "windows": [{"key": "5h", "used_percent": 10},
+                                         {"key": "7d", "used_percent": used_7d}]}
+    assert team.ledger.update_limit_wait(wait_id, row["subject"],
+                                         limit_after_check(row["subject"], reading, now=T0))
 
 
 def plain_gate(ops: Ops) -> str:
@@ -324,6 +340,101 @@ def test_a_wait_closed_or_a_team_ended_before_the_alert_went_out_sends_nothing(w
     assert n.tick() == []
     assert slack.posts == [] and team_copies() == []
     assert store.copies(kind="question", statuses=None) == []
+
+
+def test_settings_limits_without_a_reset_closing_checks_and_cancel_time_waits_get_what_the_page_asks(world):
+    """H-NOTICE-1 for the wait kinds no other test covers: one alert for each wait the Team
+    page asks, none for a wait it never asks, and nothing new when a cancel opens and closes
+    waits (S-G5: 92f0123a's stop opened 4 recovery waits, cancelled 0.04-0.26 s later)."""
+    ops, slack, n = world["ops"], world["slack"], world["n"]
+
+    def kinds(out: list[dict[str, Any]], team: Team) -> list[str]:
+        return [o["kind"] for o in out if o["execution_id"] == team.eid]
+
+    def alerted(team: Team) -> dict[str, str]:
+        return {team_waits.wait_of(c.key, c.state): c.status for c in team_copies(team.eid)}
+
+    # 1. Settings changed mid-conversation: the settings wait is asked first and gets one
+    #    alert. The member's question alerted before it keeps its one alert, never a second,
+    #    while the settings wait holds it back and after the settings wait is answered.
+    s = Team(ops)
+    question = s.wait("owner")
+    at(world, 1)
+    assert kinds(n.tick(), s) == [team_waits.KIND]
+    subject = team_subject([("scout", "p-scout", {"team": "a", "model": "m1"}, {"team": "a", "model": "m2"})])
+    assert subject["header"] == SETTINGS and subject["pins"]
+    settings = s.wait(SETTINGS, subject)
+    later = s.wait("owner")                     # a running turn's question, asked meanwhile
+    at(world, 2)
+    assert kinds(n.tick(), s) == [team_waits.KIND]
+    assert alerted(s) == {question: "sent", settings: "sent"}
+    assert len(posts_to(slack, ALERT.format("an owner decision"))) == 1
+    s.answer(settings)
+    at(world, 3)
+    assert kinds(n.tick(), s) == [team_waits.KIND, "team_wait_closed"]
+    assert alerted(s) == {question: "sent", settings: "closed", later: "sent"}
+    assert slack.updates[-1]["text"] == "No longer waiting for you: an owner decision."
+
+    # 2. A usage limit whose words give no reset time: weekly, a re-check in 15 minutes, not
+    #    verified. Nothing to answer (no alert, even with its gate waiting) until a fresh check
+    #    shows room; then exactly one, kept through later checks that take room away and back.
+    details = limit_details("acct-1", "Claude usage limit reached.")
+    resume = limit_resume(details, now=T0)
+    assert details["resets"] is None and resume["how"] == "recheck" and resume["kind"] == "weekly"
+    lim = Team(ops)
+    limit = lim.wait("limit", {**details, **resume, "label": "usage-limit"})
+    assert not limit_restart_ready(lim.ledger.open_waits(lim.eid, HOST)[0]["subject"])
+    recheck(lim, limit, 100)                     # still no room, and still no reset time
+    at(world, 4)
+    assert kinds(n.tick(), lim) == [] and alerted(lim) == {}
+    recheck(lim, limit, 20)                      # room: now the owner decides the restart
+    lim.ask(limit)
+    at(world, 5)
+    assert kinds(n.tick(), lim) == [team_waits.KIND] and alerted(lim) == {limit: "sent"}
+    recheck(lim, limit, 100)
+    at(world, 6)
+    assert kinds(n.tick(), lim) == []
+    recheck(lim, limit, 20)
+    lim.ask(limit)
+    at(world, 7)
+    assert kinds(n.tick(), lim) == [] and alerted(lim) == {limit: "sent"}
+    assert len(posts_to(slack, ALERT.format("a usage-limit restart decision"))) == 1
+
+    # 3. Temper's own closing check: the owner never answers it, so no alert and no ordinary
+    #    question, even with a gate waiting for it; Temper settling it closes nothing.
+    c = Team(ops)
+    closing = c.wait("closing", {"label": "closing", "stage": "finishing"})
+    at(world, 8)
+    assert kinds(n.tick(), c) == []
+    c.answer(closing)
+    at(world, 9)
+    assert kinds(n.tick(), c) == [] and alerted(c) == {}
+
+    # 4. The owner stops the team: the stop opens 4 recovery waits for the cut turns and
+    #    cancels them with every other open wait within a second. A tick inside that second
+    #    sends nothing for them; the end closes the one earlier alert and sends nothing new.
+    x = Team(ops)
+    asked = x.wait("owner")
+    at(world, 10)
+    assert kinds(n.tick(), x) == [team_waits.KIND]
+    cut = [x.wait("recovery", {"turn_no": i, "why": "cancelled", "options": ["accept", "retry"]}, ask=False)
+           for i in range(1, 5)]
+    at(world, 11)
+    assert kinds(n.tick(), x) == []
+    ended = x.ledger.end_team(x.eid, HOST, "run_cancelled", "attempt-1")
+    assert {w["wait_id"] for w in ended["cancelled_waits"]} == {asked, *cut}
+    x.end("cancelled")
+    at(world, 12)
+    assert kinds(n.tick(), x) == ["team_wait_closed"] and alerted(x) == {asked: "closed"}
+
+    # In all: one alert per asked wait (3 + 1 + 0 + 1), each with the Team-page link; no other.
+    alerts = [p for p in slack.posts if p["text"].startswith("The team is waiting")]
+    assert len(alerts) == len(slack.posts) == 5
+    for post in alerts:
+        (link,) = [e["url"] for b in post["blocks"] if b["type"] == "actions" for e in b["elements"]]
+        assert link.startswith(TEAM_PAGE) and slack.buttons(post) == ["open_run"]
+    assert store.copies(kind="question", statuses=None) == []
+    assert WORDS not in json.dumps(slack.posts + slack.updates)
 
 
 # --- Quiet hours ----------------------------------------------------------------------------

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-v1 planted page (queue #78): accessibility.
+     P1 axe: the viewport meta tag blocks zoom (axe meta-viewport); P2's grey text is also an axe
+        colour-contrast violation.
+     P2 text-contrast: the copyright line is #9ca3af on white (2.5:1).
+     P3 targets: the footer links are 16 px tall and stacked with no space between them (2.5.8).
+     P4 no-hscroll: a 600 px wide picture in the features section, wider than the phone widths.
+     P5 headings: the cards' headings are h4 right after the h2 (a skipped level).
+     P6 img-alt: the first card's icon has no alt attribute (role=presentation, so axe accepts it).
+     P7 svg-names: a 64 px svg in the second card with no role, no name and no aria-hidden. -->
+<link rel="stylesheet" href="base.css">
+<style>
+.site-foot p.faint { color: #9ca3af; }
+.foot-links { flex-direction: column; gap: 0; }
+.foot-links a { padding: 0; line-height: 1; }
+.wide-strip { display: block; margin-top: 32px; }
+.card-mark { display: block; width: 64px; height: 64px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1>Know where your household money goes</h1>
+        <p class="lede">Lumen Ledger sorts your bills into 12 clear groups, so you can see each month at a glance.</p>
+        <a class="cta" href="#start">Start a free ledger</a>
+      </div>
+      <svg class="art" role="img" aria-label="Bar chart of a month of household spending" viewBox="0 0 320 320">
+        <rect width="320" height="320" rx="24" fill="#eff6ff"/>
+        <rect x="48" y="176" width="40" height="96" rx="6" fill="#93c5fd"/>
+        <rect x="112" y="128" width="40" height="144" rx="6" fill="#60a5fa"/>
+        <rect x="176" y="80" width="40" height="192" rx="6" fill="#3b82f6"/>
+        <rect x="240" y="152" width="40" height="120" rx="6" fill="#1d4ed8"/>
+      </svg>
+    </div>
+  </section>
+  <section class="features" id="features">
+    <div class="wrap">
+      <h2>What it does for you</h2>
+      <div class="cards">
+        <article class="card">
+          <img class="card-icon" role="presentation" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Ccircle cx='24' cy='24' r='20' fill='%2393c5fd'/%3E%3C/svg%3E">
+          <h4>Sorts every bill</h4>
+          <p>Each bill lands in one of 12 groups, like rent, food or travel. You do not have to set up any rules first.</p>
+        </article>
+        <article class="card">
+          <svg class="card-mark" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#bfdbfe"/><rect x="20" y="28" width="24" height="8" rx="4" fill="#1d4ed8"/></svg>
+          <h4>Shows each month</h4>
+          <p>See what you spent this month next to last month. Big changes stand out, and you can <a href="#help">read the short guide</a> to learn more.</p>
+        </article>
+      </div>
+      <img class="wide-strip" alt="" width="600" height="120" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='120'%3E%3Crect width='600' height='120' rx='12' fill='%23dbeafe'/%3E%3C/svg%3E">
+    </div>
+  </section>
+  <section class="band" id="pricing">
+    <div class="wrap">
+      <h2>Plain numbers, no jargon</h2>
+      <p>Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-foot" id="help">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+    </ul>
+    <p class="faint">© 2026 Lumen Ledger</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-v1 planted page (queue #78): hierarchy.
+     P1 one-h1 and headings: a second h1 in the band (styled at the h2 size, so no new font size).
+     P2 primary-per-window: a second button in the primary CTA's colour right next to it.
+     P3 font-sizes: footer small print at 12, 13 and 14 px (9 sizes on the page; the footer has 4).
+     P4 section-sizes: the features section gets a 16 px kicker and a 20 px note (5 sizes there).
+     P5 section-colours: the second card's paragraph is #4b5563 (4 text colours in features). -->
+<link rel="stylesheet" href="base.css">
+<style>
+.band h1.band-title { font-size: 30px; color: #ffffff; margin-bottom: 16px; }
+.cta + .cta { margin-left: 16px; }
+.kicker { font-size: 16px; margin-bottom: 8px; }
+.note { font-size: 20px; margin-top: 32px; }
+.card:nth-child(2) p { color: #4b5563; }
+.fine-12 { font-size: 12px; }
+.site-foot p.fine-13 { font-size: 13px; }
+.site-foot p.fine-14 { font-size: 14px; }
+.site-foot p.fine-12 { font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1>Know where your household money goes</h1>
+        <p class="lede">Lumen Ledger sorts your bills into 12 clear groups, so you can see each month at a glance.</p>
+        <a class="cta" href="#start">Start a free ledger</a><a class="cta" href="#pricing">See the plans</a>
+      </div>
+      <svg class="art" role="img" aria-label="Bar chart of a month of household spending" viewBox="0 0 320 320">
+        <rect width="320" height="320" rx="24" fill="#eff6ff"/>
+        <rect x="48" y="176" width="40" height="96" rx="6" fill="#93c5fd"/>
+        <rect x="112" y="128" width="40" height="144" rx="6" fill="#60a5fa"/>
+        <rect x="176" y="80" width="40" height="192" rx="6" fill="#3b82f6"/>
+        <rect x="240" y="152" width="40" height="120" rx="6" fill="#1d4ed8"/>
+      </svg>
+    </div>
+  </section>
+  <section class="features" id="features">
+    <div class="wrap">
+      <p class="kicker">Two simple tools</p>
+      <h2>What it does for you</h2>
+      <div class="cards">
+        <article class="card">
+          <img class="card-icon" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Ccircle cx='24' cy='24' r='20' fill='%2393c5fd'/%3E%3C/svg%3E">
+          <h3>Sorts every bill</h3>
+          <p>Each bill lands in one of 12 groups, like rent, food or travel. You do not have to set up any rules first.</p>
+        </article>
+        <article class="card">
+          <h3>Shows each month</h3>
+          <p>See what you spent this month next to last month. Big changes stand out, and you can <a href="#help">read the short guide</a> to learn more.</p>
+        </article>
+      </div>
+      <p class="note">Both tools are free to try.</p>
+    </div>
+  </section>
+  <section class="band" id="pricing">
+    <div class="wrap">
+      <h1 class="band-title">Plain numbers, no jargon</h1>
+      <p>Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-foot" id="help">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+    </ul>
+    <p class="fine-14">Made by a small team.</p>
+    <p class="fine-13">Built with care for busy homes.</p>
+    <p class="fine-12">© 2026 Lumen Ledger</p>
+  </div>
+</footer>
+</body>
+</html>

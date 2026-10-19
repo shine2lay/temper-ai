@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "written": "2026-10-18, before design_homepage_bar.js and design_homepage_bar.py existed",
+  "rule": "For each page, the exact set of failing (bar, check, width) rows, where failing means pass is false or null. The meter is right only when its failing rows equal this set exactly on every page. When they differ, the meter is fixed, never this key.",
+  "site": "configs/design/testpages",
+  "brief": "bar-v1/brief.json",
+  "widths": ["1440x900", "1024x768", "768x1024", "390x844", "320x568"],
+  "pages": {
+    "bar-v1/clean.html": [],
+    "bar-v1/p-firstscreen.html": [
+      ["A1", "product-name", "1440x900"], ["A1", "product-name", "390x844"],
+      ["A1", "h1-words", "1440x900"], ["A1", "h1-words", "390x844"],
+      ["A1", "visual-anchor", "1440x900"], ["A1", "visual-anchor", "390x844"],
+      ["A2", "h1-largest", "1440x900"], ["A2", "h1-largest", "390x844"],
+      ["A4", "text-contrast", "1440x900"], ["A4", "text-contrast", "1024x768"], ["A4", "text-contrast", "768x1024"],
+      ["A4", "text-contrast", "390x844"], ["A4", "text-contrast", "320x568"]
+    ],
+    "bar-v1/p-hierarchy.html": [
+      ["A2", "one-h1", "1440x900"], ["A2", "one-h1", "390x844"],
+      ["A4", "headings", "1440x900"], ["A4", "headings", "390x844"],
+      ["A2", "primary-per-window", "1440x900"], ["A2", "primary-per-window", "1024x768"], ["A2", "primary-per-window", "768x1024"],
+      ["A2", "primary-per-window", "390x844"], ["A2", "primary-per-window", "320x568"],
+      ["A2", "font-sizes", "1440x900"], ["A2", "font-sizes", "1024x768"], ["A2", "font-sizes", "768x1024"],
+      ["A2", "font-sizes", "390x844"], ["A2", "font-sizes", "320x568"],
+      ["A2", "section-sizes", "1440x900"], ["A2", "section-sizes", "1024x768"], ["A2", "section-sizes", "768x1024"],
+      ["A2", "section-sizes", "390x844"], ["A2", "section-sizes", "320x568"],
+      ["A2", "section-colours", "1440x900"], ["A2", "section-colours", "1024x768"], ["A2", "section-colours", "768x1024"],
+      ["A2", "section-colours", "390x844"], ["A2", "section-colours", "320x568"]
+    ],
+    "bar-v1/p-spacing.html": [
+      ["A2", "spacing-grid", "1440x900"], ["A2", "spacing-grid", "1024x768"], ["A2", "spacing-grid", "768x1024"],
+      ["A2", "spacing-grid", "390x844"], ["A2", "spacing-grid", "320x568"],
+      ["A2", "rhythm", "1440x900"], ["A2", "rhythm", "390x844"],
+      ["A3", "body-size", "1440x900"], ["A3", "body-size", "1024x768"], ["A3", "body-size", "768x1024"],
+      ["A3", "body-size", "390x844"], ["A3", "body-size", "320x568"],
+      ["A3", "line-height", "1440x900"], ["A3", "line-height", "1024x768"], ["A3", "line-height", "768x1024"],
+      ["A3", "line-height", "390x844"], ["A3", "line-height", "320x568"]
+    ],
+    "bar-v1/p-reading.html": [
+      ["A3", "measure", "1440x900"],
+      ["A3", "fk-grade", "1440x900"],
+      ["A5", "numbers", "all"],
+      ["A5", "placeholders", "all"],
+      ["A5", "disclosure", "all"]
+    ],
+    "bar-v1/p-access.html": [
+      ["A4", "axe", "1440x900"], ["A4", "axe", "390x844"],
+      ["A4", "text-contrast", "1440x900"], ["A4", "text-contrast", "1024x768"], ["A4", "text-contrast", "768x1024"],
+      ["A4", "text-contrast", "390x844"], ["A4", "text-contrast", "320x568"],
+      ["A4", "targets", "1440x900"], ["A4", "targets", "1024x768"], ["A4", "targets", "768x1024"],
+      ["A4", "targets", "390x844"], ["A4", "targets", "320x568"],
+      ["A4", "no-hscroll", "390x844"], ["A4", "no-hscroll", "320x568"],
+      ["A4", "headings", "1440x900"], ["A4", "headings", "390x844"],
+      ["A4", "img-alt", "1440x900"], ["A4", "img-alt", "390x844"],
+      ["A4", "svg-names", "1440x900"], ["A4", "svg-names", "390x844"]
+    ],
+    "bar-v1/p-structure.html": [
+      ["A4", "lang", "1440x900"], ["A4", "lang", "390x844"],
+      ["A4", "axe", "1440x900"], ["A4", "axe", "390x844"],
+      ["A4", "landmarks", "1440x900"], ["A4", "landmarks", "390x844"],
+      ["A1", "cta-in-view", "1440x900"], ["A1", "cta-in-view", "390x844"],
+      ["A5", "cta-length", "all"],
+      ["A5", "cta-verb", "all"],
+      ["A7", "overlap", "1440x900"], ["A7", "overlap", "1024x768"], ["A7", "overlap", "768x1024"],
+      ["A7", "overlap", "390x844"], ["A7", "overlap", "320x568"],
+      ["A7", "clipped", "1440x900"], ["A7", "clipped", "1024x768"], ["A7", "clipped", "768x1024"],
+      ["A7", "clipped", "390x844"], ["A7", "clipped", "320x568"]
+    ]
+  }
+}

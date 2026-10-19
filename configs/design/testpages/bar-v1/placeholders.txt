@@ -1,0 +1,25 @@
+# Placeholder text (A5 placeholders). Frozen 2026-10-18, written before any real page was
+# measured. One Python regular expression per line, matched against each line of the page's
+# text; case-sensitive unless the line starts with (?i). A change is a new list with a dated
+# reason in docs/design-homepage-bar.md, never to make a page pass.
+(?i)\blorem\b
+(?i)\bipsum\b
+(?i)\bdolor sit amet\b
+\bTODO\b
+\bTBD\b
+\bFIXME\b
+\bXXX\b
+\{\{.*?\}\}
+\{%.*?%\}
+\$\{[^}]*\}
+(?i)\bexample\.(com|org|net)\b
+(?i)\byour (company|product|brand|business|name|logo|headline|tagline|text) here\b
+(?i)\[(insert|your|placeholder|name|company|product|title|date|link|image|cta|headline|tagline|text)\b[^\]]*\]
+(?i)\b(insert|add) (text|copy|image|headline|content) here\b
+(?i)\bplaceholder\b
+(?i)\bsample text\b
+(?i)\bcoming soon\b
+\bundefined\b
+\bNaN\b
+\[object Object\]
+(?i)\basdf\b

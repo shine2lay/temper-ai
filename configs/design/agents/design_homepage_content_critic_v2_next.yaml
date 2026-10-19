@@ -1,7 +1,8 @@
 # CANDIDATE content critic (W4e, hypothesis H7: scripts first). Copy of
 # design_homepage_content_critic_v2 for design_homepage_v2_next and its W11 twins: the countable
 # word checks (design_word_checks.py: call-to-action length and opening verb, names no source
-# holds, paragraphs over three lines at 1440 px, deck terms renamed on the page) come settled in
+# holds, paragraphs over three lines at 1440 px, deck terms renamed on the page and brief names
+# renamed in the deck (W4d2)) come settled in
 # words.json, so this checklist drops them and takes the script's findings as given. Writes
 # homepage/copy/review-critic.json (deck) or review/content-critic.json (page); the
 # copy_review_join / content_join scripts write review.json / content/content.json. Live critic
@@ -39,7 +40,8 @@ agent:
     - a call to action longer than a button holds, or one not opening with an action verb;
     - a capitalised name that no brief fact, product name or deck text holds;
     - a paragraph over three lines at 1440 px;
-    - a deck term renamed on the page.
+    - a deck term renamed on the page, or a name the brief uses renamed in the deck
+      (gone from it, with a near variant in its place).
     Everything below is what no script counts: judge it.
 
     Checks (use exactly these names):

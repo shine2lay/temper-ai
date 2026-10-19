@@ -13,8 +13,10 @@ this script checks those parts with fixed rules, and the critic can keep to mean
   long_paragraph  page only: a paragraph over three lines at 1440 px, that is     critic 'scannability'
                   more than 270 characters at the 90-character measure the
                   workflow allows
-  renamed_term    page only: a term from the deck's terms list that the page      critic 'terms',
-                  never uses, while a near variant stands in its place             'drift'
+  renamed_term    a name gone, while a near variant stands in its place:          critic 'terms',
+                  on the page, a term from the deck's terms list; on the deck,    'drift'
+                  a name the brief uses that the deck's terms list defines
+                  (as written, or renamed in the terms list itself)
 
 RULES below gives each rule's level, grade and the lines it comes from. What copy_contract and
 page_copy_problems in design_homepage_v2.py already check (words per field, generic CTAs, numbers
@@ -107,12 +109,16 @@ RULES: dict[str, dict[str, Any]] = {
             {"file": CRITIC, "quote": "2 = slows or confuses some visitors"},
         ],
     },
-    "renamed_term": {
-        "check": "drift", "targets": ["page"], "level": "3 in the hero or on a link or button, 2 elsewhere",
+    "renamed_term": {  # the critic's drift check is page only; on the deck a rename is its terms check
+        "check": "drift", "deck_check": "terms", "targets": ["deck", "page"],
+        "level": "3 in the hero or on a link or button (deck: in a headline or a call to action), 2 elsewhere",
         "grade": "Must at 3, Should at 2",
         "rule": "a term from the deck's terms list missing from the page, while a near variant appears outside "
                 "quotation marks: in the term's place in a deck sentence, or the term with one word other than its "
-                "last changed, in a phrase the deck never writes",
+                "last changed, in a phrase the deck never writes. On the deck the same, with the brief as the "
+                "source: a name the brief uses that the deck's terms list also defines (a term of two words or "
+                "more that the brief writes, or else the one phrase of the brief it renames) missing from the "
+                "deck's visible fields, while a near variant stands in them",
         "sources": [
             {"file": CRITIC, "quote": "terms: one thing named two ways, or one word used for two things."},
             {"file": CRITIC, "quote": "drift (page only): the page departing from the approved deck in a way "
@@ -616,13 +622,16 @@ def _quoted_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _line_words(line: dict) -> tuple[list[str], list[tuple[int, int]], list[bool]]:
-    text = line["text"]
+def _text_words(text: str, quoted_line: bool = False) -> tuple[list[str], list[tuple[int, int]], list[bool]]:
+    """(stemmed words, their character spans, whether each stands inside quotation marks)."""
     spans = _quoted_spans(text)
     ms = list(TOKEN.finditer(text))
-    quoted_line = line["tag"] in QUOTE_TAGS
     return ([stem(m.group(0)) for m in ms], [(m.start(), m.end()) for m in ms],
             [quoted_line or any(a <= m.start() < b for a, b in spans) for m in ms])
+
+
+def _line_words(line: dict) -> tuple[list[str], list[tuple[int, int]], list[bool]]:
+    return _text_words(line["text"], line["tag"] in QUOTE_TAGS)
 
 
 def _content(words: list[str]) -> bool:
@@ -631,6 +640,7 @@ def _content(words: list[str]) -> bool:
 
 def _context_variants(term: list[str], deck_sents: list[list[str]], page: list[tuple]) -> list[tuple[int, int, int]]:
     """(line, word, length) of phrases that stand where the term stood in one of the deck's sentences.
+    (Deck mode: the brief's sentences, and the deck's fields as the lines.)
 
     With words on both sides of the term in the deck, the page must keep at least one on each side and
     three in all; with words on one side only, two of them, and the phrase must share a word with the term.
@@ -671,20 +681,21 @@ def _context_variants(term: list[str], deck_sents: list[list[str]], page: list[t
 
 
 def _form_variants(term: list[str], deck_sents: list[list[str]], page: list[tuple],
-                   lines: list[dict]) -> list[tuple[int, int, int]]:
+                   texts: list[str], headings: list[bool]) -> list[tuple[int, int, int]]:
     """The term with one content word changed ("slack window" for "tide window"), outside quotation marks,
     where the deck never writes that phrase. The last word stays: a rename most often keeps it ("slack window"
     for "tide window", "law of thirds" for "rule of thirds"), while a phrase with another last word most often
     names another thing ("tide tables", "rule of twelfths"). The changed word is in lower case, or starts a
-    sentence, a heading or a label; a capital inside a sentence is more likely a name."""
+    sentence, a heading or a label; a capital inside a sentence is more likely a name. (Deck mode: the
+    brief's sentences as the source, the deck's fields as the lines.)"""
     n = len(term)
     if n < 2:
         return []
     head = n - 1
     found = []
     for li, (words, spans, quoted) in enumerate(page):
-        text = lines[li]["text"]
-        heading = lines[li]["tag"] in HEADING_TAGS
+        text = texts[li]
+        heading = headings[li]
         for j in range(len(words) - n + 1):
             x = words[j:j + n]
             diff = [k for k in range(n) if x[k] != term[k]]
@@ -701,41 +712,129 @@ def _form_variants(term: list[str], deck_sents: list[list[str]], page: list[tupl
     return found
 
 
-def term_findings(lines: list[dict], deck: dict) -> list[dict]:
-    terms = [clean(t.get("term")) for t in deck.get("terms") or [] if isinstance(t, dict) and clean(t.get("term"))]
-    page = [_line_words(ln) for ln in lines]
-    deck_sents = [tokens(c) for _, t in deck_visible(deck) for c in clauses(t)]
-    hero = hero_section(lines)
+def renames(names: list[str], sources: list[list[str]], target: list[tuple], texts: list[str],
+            headings: list[bool], main: list[bool], form_first: bool = False) -> list[dict]:
+    """The one renamed_term definition both modes share. names come from the source (page mode: the deck's
+    terms list; deck mode: brief_names), sources are the source's sentences as stemmed words, and target,
+    texts, headings and main describe the lines checked (page lines, or the deck's visible fields). A name
+    found anywhere in the target, in any form and even inside quotation marks, gives nothing: named two ways
+    stays with the critic. Otherwise each name with a near variant gives one finding: the first variant's
+    line, the other lines in also_lines. Variants come in reading order; with form_first (deck mode) the
+    name with one word changed comes before a phrase found only by its place in a source sentence, so the
+    finding points at the plainest rename and not at a phrase that happens to share the sentence's words."""
     out = []
-    for term in terms:
-        tn = tokens(term)
-        if not tn or any(contains(words, tn) for words, _, _ in page):
-            continue  # on the page, inside quotation marks or not
-        hits = sorted(set(_context_variants(tn, deck_sents, page)) | set(_form_variants(tn, deck_sents, page, lines)))
+    for name in names:
+        tn = tokens(name)
+        if not tn or any(contains(words, tn) for words, _, _ in target):
+            continue  # in the target, inside quotation marks or not
+        forms = set(_form_variants(tn, sources, target, texts, headings))
+        hits = sorted(set(_context_variants(tn, sources, target)) | forms,
+                      key=lambda h: (form_first and h not in forms, h))
         covered: set[tuple[int, int]] = set()
         seen: dict[tuple[str, ...], dict] = {}
         for li, j, m in hits:
             if any((li, w) in covered for w in range(j, j + m)):
                 continue  # overlaps a phrase already taken
             covered |= {(li, w) for w in range(j, j + m)}
-            words, spans, _ = page[li]
-            phrase = lines[li]["text"][spans[j][0]:spans[j + m - 1][1]]
-            ln = lines[li]
-            main = (hero is not None and ln["section"] == hero) or ln["tag"] in CONTROL_TAGS
+            words, spans, _ = target[li]
+            phrase = texts[li][spans[j][0]:spans[j + m - 1][1]]
             entry = seen.setdefault(tuple(words[j:j + m]), {"phrase": phrase, "lines": [], "main": False})
             if li not in entry["lines"]:
                 entry["lines"].append(li)
-            entry["main"] = entry["main"] or main
+            entry["main"] = entry["main"] or main[li]
         if not seen:
             continue
         variants = list(seen.values())
         first = variants[0]
-        others = [f"'{v['phrase']}'" for v in variants[1:]]
         out.append({"rule": "renamed_term", "severity": 3 if any(v["main"] for v in variants) else 2,
-                    "line": first["lines"][0], "text": first["phrase"], "term": term,
+                    "line": first["lines"][0], "text": first["phrase"], "term": name,
                     "also_lines": [li for v in variants for li in v["lines"]][1:],
-                    "evidence": f"the deck's term '{term}' is not on the page; '{first['phrase']}' stands in its place"
-                                + (f" (also {', '.join(others)})" if others else "")})
+                    "others": [f"'{v['phrase']}'" for v in variants[1:]]})
+    return out
+
+
+def term_findings(lines: list[dict], deck: dict) -> list[dict]:
+    """Page mode: the deck's terms, renamed on the page."""
+    terms = [clean(t.get("term")) for t in deck.get("terms") or [] if isinstance(t, dict) and clean(t.get("term"))]
+    deck_sents = [tokens(c) for _, t in deck_visible(deck) for c in clauses(t)]
+    hero = hero_section(lines)
+    out = renames(terms, deck_sents, [_line_words(ln) for ln in lines], [ln["text"] for ln in lines],
+                  [ln["tag"] in HEADING_TAGS for ln in lines],
+                  [(hero is not None and ln["section"] == hero) or ln["tag"] in CONTROL_TAGS for ln in lines])
+    for f in out:
+        others = f.pop("others")
+        f["evidence"] = (f"the deck's term '{f['term']}' is not on the page; '{f['text']}' stands in its place"
+                         + (f" (also {', '.join(others)})" if others else ""))
+    return out
+
+
+def _near(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """Same length, one content word other than the last changed: "slack window" for "tide window"."""
+    diff = [k for k in range(len(a)) if a[k] != b[k]] if len(a) == len(b) >= 2 else []
+    return (len(diff) == 1 and diff[0] != len(a) - 1 and _content([a[diff[0]]]) and _content([b[diff[0]]]))
+
+
+def brief_names(brief: dict, deck: dict) -> list[str]:
+    """The names deck mode checks, as the brief writes them. W1a's countable rule (words-v1's key): a name
+    the brief uses (its product name, a name or term of two words or more in its facts) which the deck's
+    own terms list also defines. A term of two words or more in the deck's terms list names a phrase of the
+    brief when the brief writes it (any form), or else when the brief writes exactly one phrase that is
+    its near variant (one content word other than the last changed): the term the deck renamed in its own
+    terms list. A term the brief writes as it is gives no near names ("log a watering" is the brief's "logs
+    a watering", so "sets a watering" is another thing), and a term near two or more of the brief's phrases
+    is the deck's own word for them ("example terms" for "booking terms" and "current terms"), not a rename.
+    (W4d2 screen: without these two limits the four baseline decks gave eight false names.)"""
+    texts = [clean(brief.get("product"))] + [clean(t) for t in brief_texts(brief)]
+    phrases: list[list[tuple[tuple[str, ...], str]]] = []  # per text: (stemmed words, as written)
+    for text in (t for t in texts if t):
+        words, spans, _ = _text_words(text)
+        phrases.append([(tuple(words[j:j + n]), text[spans[j][0]:spans[j + n - 1][1]])
+                        for n in range(2, 7) for j in range(len(words) - n + 1)])
+    names: list[str] = []
+    keys: set[tuple[str, ...]] = set()
+    for t in deck.get("terms") or []:
+        term = tuple(tokens(clean(t.get("term")))) if isinstance(t, dict) else ()
+        if len(term) < 2:
+            continue
+        exact = [w for p in phrases for k, w in p if k == term]
+        near: dict[tuple[str, ...], str] = {}
+        for p in phrases:
+            for k, w in p:
+                if _near(k, term):
+                    near.setdefault(k, w)
+        found = exact[:1] or (list(near.items())[0][1:] if len(near) == 1 else [])
+        for name in found:
+            if tuple(tokens(name)) not in keys:
+                keys.add(tuple(tokens(name)))
+                names.append(name)
+    return names
+
+
+def _main_field(path: str) -> bool:
+    """The deck's main path: its headline options (any can become the h1) and its calls to action."""
+    return path.startswith(("headlines[", "ctas."))
+
+
+def _heading_field(path: str) -> bool:
+    """Fields the page shows as headings, labels or controls (page mode's HEADING_TAGS): headlines, calls to
+    action, proof-point titles and FAQ questions. A terms entry or worked example starts with its label."""
+    return _title_field(path) or bool(re.fullmatch(r"faq\[\d+\]\.q", path))
+
+
+def deck_term_findings(deck: dict, brief: dict) -> list[dict]:
+    """Deck mode: the brief's names, renamed in the deck. The source is the brief (its facts, audience,
+    category, purpose, CTA and disclosure); the target is the deck's visible fields (deck_visible)."""
+    fields = deck_visible(deck)
+    sources = [tokens(c) for t in brief_texts(brief) for c in clauses(clean(t))]
+    out = renames(brief_names(brief, deck), sources, [_text_words(t) for _, t in fields], [t for _, t in fields],
+                  [_heading_field(p) for p, _ in fields], [_main_field(p) for p, _ in fields], form_first=True)
+    for f in out:
+        others, li = f.pop("others"), f.pop("line")
+        also = list(dict.fromkeys(fields[k][0] for k in f.pop("also_lines") if fields[k][0] != fields[li][0]))
+        f["field"] = fields[li][0]
+        f["evidence"] = (f"the brief's name '{f['term']}' is not in the deck; '{f['text']}' stands in its place"
+                         + (f" (also {', '.join(others)})" if others else "")
+                         + (f"; also in {', '.join(also)}" if also else ""))
     return out
 
 
@@ -755,7 +854,8 @@ def _finish(target: str, findings: list[tuple[int, dict]]) -> dict:
     for f in ordered:
         per_rule[f["rule"]] = per_rule.get(f["rule"], 0) + 1
         f.update({"id": f"{target}-{f['rule']}-{per_rule[f['rule']]}", "target": target, "kind": "word",
-                  "check": RULES[f["rule"]]["check"], "grade": _grade(f["rule"], f["severity"])})
+                  "check": RULES[f["rule"]].get(f"{target}_check", RULES[f["rule"]]["check"]),
+                  "grade": _grade(f["rule"], f["severity"])})
     return {"version": VERSION, "target": target,
             "limits": {"cta_max_chars": CTA_MAX_CHARS, "paragraph_max_chars": PARAGRAPH_MAX_CHARS,
                        "paragraph_max_lines": PARAGRAPH_MAX_LINES, "line_max_chars": LINE_MAX_CHARS,
@@ -773,18 +873,26 @@ def check_deck(deck: dict, brief: dict) -> dict:
     if not isinstance(deck, dict):
         raise ValueError("copy.json is not an object")
     fields = [(p, t) for p, t in v2.deck_fields(deck) if clean(t)]
-    order = {p: i for i, (p, _) in enumerate(fields)}
+    order = {p: i for i, (p, _) in enumerate(deck_visible(deck))}
     sources = [str(f) for f in brief.get("facts") or []] + [str(brief.get("product", ""))]
     pool = [t for _, t in deck_visible(deck)] + brief_texts(brief)
     findings: list[tuple[int, dict]] = []
     for f in deck_cta_findings(deck):
         findings.append((order.get(f["field"], len(order)), f))
+    named: list[tuple[str, list[str]]] = []  # (field, stemmed name) of each unsourced name
     for f in name_findings([(p, t, _title_field(p)) for p, t in fields], sources, pool):
         where, also = f.pop("where"), f.pop("also")
+        named += [(p, tokens(f["text"])) for p in [where, *also]]
         evidence = "not in the brief's facts or the product name"
         if also:
             evidence += f"; also in {', '.join(also)}"
         findings.append((order[where], {**f, "field": where, "evidence": evidence}))
+    for f in deck_term_findings(deck, brief):
+        # A capitalised new name in the name's place ("Coastal Data Office") is unsourced_name's (level 4);
+        # renamed_term's phrase inside it ("Coastal") would count the same rename twice.
+        if any(p == f["field"] and contains(n, tokens(f["text"])) for p, n in named):
+            continue
+        findings.append((order.get(f["field"], len(order)), f))
     return _finish("deck", findings)
 
 

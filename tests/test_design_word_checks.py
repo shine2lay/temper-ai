@@ -12,6 +12,10 @@ decks and pages (a tide planner called Tidebook), so the sealed words-v1 cases s
   split by a link is joined again.
 - renamed_term: a term with one word changed, or another phrase in its place, caught; plural and
   hyphen forms pass; a synonym inside quotation marks is not a rename.
+- renamed_term on the deck (W4d2): a name the brief uses, gone from the deck, with one word changed or
+  another phrase in its place in a brief sentence, caught (level 3 in a headline or call to action);
+  a new last word, or the name still in the deck, is not counted; quotation marks, another thing
+  beside the name, and plural, possessive and hyphen forms of the name pass.
 
 The rules table quotes the critic and craft configs word for word, and BAR.md when it is on the host.
 """
@@ -498,6 +502,193 @@ def test_renamed_term_trap_definition_words_and_mid_sentence_capitals():
                  ("The hours when the current is weak enough to paddle.",
                   "Pick the hours when the current is weak enough to paddle, in the Tidebook window."))
     assert rules(wc.check_page(lines, DECK, BRIEF), "renamed_term") == []
+
+
+# ---------------------------------------------------------------- renamed_term on the deck (W4d2)
+
+# The brief names its term in a fact, so on the deck "tide window" is a name the brief uses.
+TERM_BRIEF = {**BRIEF, "facts": BRIEF["facts"] + ["Each plan marks the tide window for the launch you pick"]}
+# The clean deck's subhead says "safe window": a near variant too once the name is gone, so these decks say
+# "safe time" there to keep one variant per case.
+DECK_T = deck(subhead="Tidebook shows tide times for 1,200 harbours, so you pick a safe time in a minute.")
+MEANING = DECK["terms"][0]["meaning"]
+
+
+def renamed(new_term, d=None):
+    """The deck with every "tide window" (any case or number) written as new_term instead."""
+    text = json.dumps(d or DECK_T)
+    text = text.replace("Tide windows", new_term.capitalize() + "s").replace("tide window", new_term)
+    return json.loads(text)
+
+
+def term_free(**changes):
+    """The deck with "tide window" taken out of every field (no variant in its place) and an empty terms
+    list, so the deck defines none of the facts' phrases; then changes."""
+    d = _set(DECK_T, "proof_points__0__title", "Launch times")
+    changes = {"faq__1__q": "When should I launch?", "worked_examples__0__example": "High water at 9:10.",
+               "terms": [], **changes}
+    for path, value in changes.items():
+        d = _set(d, path, value)
+    return d
+
+
+def with_term(term, **changes):
+    """term_free, with term as the deck's one defined term."""
+    return term_free(terms=[{"term": term, "meaning": MEANING}], **changes)
+
+
+def _set(d, path, value):
+    d = copy.deepcopy(d)
+    node, keys = d, path.split("__")
+    for k in keys[:-1]:
+        node = node[int(k)] if isinstance(node, list) else node[k]
+    node[int(keys[-1]) if isinstance(node, list) else keys[-1]] = value
+    return d
+
+
+def test_deck_renamed_term_names_are_the_briefs_phrases_the_terms_list_defines():
+    # W1a's countable rule: a name the brief uses which the deck's terms list also defines.
+    assert wc.brief_names(TERM_BRIEF, DECK) == ["tide window"]  # not the product name or the survey office
+    # A phrase of the brief the deck's terms list renames (one word other than the last) is still the name.
+    assert wc.brief_names(TERM_BRIEF, renamed("slack window")) == ["tide window"]
+    # Without the fact, the deck's own term is not the brief's name.
+    assert wc.brief_names(BRIEF, DECK) == []
+    # A capitalised name counts once the terms list defines it.
+    d = deck(terms=[{"term": "Coastal Survey Office", "meaning": "the agency"}])
+    assert wc.brief_names(BRIEF, d) == ["Coastal Survey Office"]
+
+
+def test_deck_renamed_term_names_trap_terms_the_brief_writes_or_that_are_near_two_phrases():
+    # The W4d2 screen's false names (baseline decks): a term the brief writes as it is ("log a watering" for
+    # "logs a watering") names no near phrase ("sets a watering"); a term near two phrases is the deck's word.
+    brief = {**TERM_BRIEF, "facts": TERM_BRIEF["facts"] + ["Pick a safe window or a calm window"]}
+    assert wc.brief_names(brief, DECK) == ["tide window"]
+    assert wc.brief_names(brief, renamed("slack window")) == []  # near tide, safe and calm window: ambiguous
+
+
+def test_deck_renamed_term_clean_decks_give_no_findings():
+    assert wc.check_deck(DECK, TERM_BRIEF)["findings"] == []
+    assert wc.check_deck(DECK_T, TERM_BRIEF)["findings"] == []
+    assert wc.check_deck(term_free(), TERM_BRIEF)["findings"] == []  # the name gone, nothing in its place
+    assert wc.check_deck(with_term("tide window"), TERM_BRIEF)["findings"] == []  # only the terms list has it
+
+
+def test_deck_renamed_term_catch_one_word_changed_everywhere():
+    report = wc.check_deck(renamed("slack window"), TERM_BRIEF)
+    found = rules(report, "renamed_term")
+    assert len(found) == 1 and len(report["findings"]) == 1
+    f = found[0]
+    assert (f["term"], f["text"], f["field"], f["severity"], f["grade"], f["check"], f["id"]) == (
+        "tide window", "Slack windows", "proof_points[1].title", 2, "Should", "terms", "deck-renamed_term-1")
+    assert f["evidence"] == ("the brief's name 'tide window' is not in the deck; 'Slack windows' stands in its "
+                             "place; also in faq[2].q, terms[1], worked_examples[1]")
+    # The clean deck's "safe window" stands in the name's place too, once the name is gone: one finding.
+    f = rules(wc.check_deck(renamed("slack window", DECK), TERM_BRIEF), "renamed_term")
+    assert [(x["text"], x["field"]) for x in f] == [("safe window", "subhead")]
+    assert "(also 'Slack windows')" in f[0]["evidence"]
+
+
+def test_deck_renamed_term_catch_in_a_headline_or_call_to_action_is_level_3():
+    for path, text in (("headlines", ["Plan around the slack window, not against it"]),
+                       ("ctas", {"primary": "Find your slack window", "secondary": "See a sample plan"})):
+        found = rules(wc.check_deck(with_term("slack window", **{path: text}), TERM_BRIEF), "renamed_term")
+        assert [(f["text"], f["severity"], f["grade"]) for f in found] == [("slack window", 3, "Must")], path
+        assert found[0]["field"] in ("headlines[1]", "ctas.primary") and "also in terms[1]" in found[0]["evidence"]
+
+
+def test_deck_renamed_term_catch_another_phrase_in_place_in_a_reused_brief_sentence():
+    d = with_term("slack window", subhead="Each plan marks the safe hours for the launch you pick.")
+    found = rules(wc.check_deck(d, TERM_BRIEF), "renamed_term")
+    assert [(f["term"], f["text"], f["field"], f["severity"]) for f in found] == [
+        ("tide window", "slack window", "terms[1]", 2)]  # the plain rename leads, the phrase in place joins it
+    assert found[0]["evidence"].endswith("(also 'safe hours'); also in subhead")
+    # The phrase in place alone, with the glossary's rename inside quotation marks.
+    d = with_term("\u201cslack window\u201d", subhead="Each plan marks the safe hours for the launch you pick.")
+    found = rules(wc.check_deck(d, TERM_BRIEF), "renamed_term")
+    assert [(f["term"], f["text"], f["field"], f["severity"]) for f in found] == [
+        ("tide window", "safe hours", "subhead", 2)]
+
+
+def test_deck_renamed_term_reports_the_name_with_one_word_changed_first():
+    # "water is slack" stands where the brief's sentence has the name ("the ... for the launch"): a phrase that
+    # only shares the sentence's words. It joins the same finding; the plain rename in terms[1] leads it.
+    d = with_term("slack window", proof_points__0__text="See when the water is slack for the launch you pick.")
+    found = rules(wc.check_deck(d, TERM_BRIEF), "renamed_term")
+    assert [(f["text"], f["field"]) for f in found] == [("slack window", "terms[1]")]
+    assert found[0]["evidence"].endswith("(also 'water is slack'); also in proof_points[1].text")
+
+
+def test_deck_renamed_term_boundary_a_new_last_word_is_not_counted():
+    # "tide slot" changes the last word: another thing, so the facts' "tide window" is not a name here.
+    d = with_term("tide slot", faq=[DECK["faq"][0], {"q": "What is a tide slot?", "a": "The hours when it is calm."}])
+    assert "tide window" not in wc.brief_names(TERM_BRIEF, d)
+    assert rules(wc.check_deck(d, TERM_BRIEF), "renamed_term") == []
+    # Nor when the deck defines the name and writes only the new last word.
+    d = with_term("tide window", subhead="Tidebook finds the tide slot at 1,200 harbours.")
+    assert rules(wc.check_deck(_set(d, "terms", [{"term": "tide slot", "meaning": MEANING}]), TERM_BRIEF),
+                 "renamed_term") == []
+
+
+def test_deck_renamed_term_boundary_the_name_still_in_the_deck_is_not_counted():
+    # Named two ways (the name and a variant both in the deck) stays with the critic.
+    d = deck(subhead="Tidebook finds the slack window at 1,200 harbours.")
+    assert rules(wc.check_deck(d, TERM_BRIEF), "renamed_term") == []
+    assert rules(wc.check_deck(renamed("slack window"), BRIEF), "renamed_term") == []  # not a brief name
+
+
+def test_deck_renamed_term_trap_variant_inside_quotation_marks():
+    d = with_term("\u201cslack window\u201d",
+                  subhead="Tidebook finds what paddlers call the \u201cslack window\u201d at 1,200 harbours.",
+                  promise='Know your "slack window" before you launch.')
+    assert "tide window" in wc.brief_names(TERM_BRIEF, d)
+    assert rules(wc.check_deck(d, TERM_BRIEF), "renamed_term") == []
+
+
+def test_deck_renamed_term_trap_another_thing_beside_the_name():
+    # The brief's name stays; a phrase one word away names another thing (the wind, not the tide).
+    d = deck(proof_points__0__text="See when the water is slack at your launch spot, and check the wind window too.")
+    assert rules(wc.check_deck(d, TERM_BRIEF), "renamed_term") == []
+
+
+@pytest.mark.parametrize("form", ["tide windows", "tide window's", "tide-window", "Tide Window", "TIDE WINDOW"])
+def test_deck_renamed_term_trap_forms_of_the_name_count_as_the_name(form):
+    # The terms list renames the name, but a form of the name stands in the deck: named two ways, the critic's.
+    assert len(rules(wc.check_deck(with_term("slack window"), TERM_BRIEF), "renamed_term")) == 1  # control
+    d = with_term("slack window", subhead=f"Each plan marks the {form} for the launch you pick.")
+    assert rules(wc.check_deck(d, TERM_BRIEF), "renamed_term") == []
+
+
+@pytest.mark.parametrize("form", ["Coastal Survey Office's", "coastal survey office", "Coastal-Survey Office"])
+def test_deck_renamed_term_trap_forms_of_a_capitalised_name(form):
+    office = deck(terms=[{"term": "Coastal Data Office", "meaning": "the agency"}])
+    assert wc.brief_names(BRIEF, office) == ["Coastal Survey Office"]
+    d = _set(office, "proof_points__2__text", f"Tide data comes from the {form} tables.")
+    assert rules(wc.check_deck(d, BRIEF), "renamed_term") == []
+
+
+def test_deck_renamed_term_leaves_a_capitalised_new_word_to_unsourced_name():
+    # The name gone, the terms list's "Coastal Data Office" changes a word to a capital inside the line:
+    # more likely a name, so unsourced_name (level 4) reports it and renamed_term does not report it again.
+    d = deck(terms=[{"term": "Coastal Data Office", "meaning": "the agency"}],
+             proof_points__2__text="Tide data comes from the Coastal Data Office.")
+    report = wc.check_deck(d, BRIEF)
+    assert [(f["rule"], f["text"]) for f in report["findings"]] == [("unsourced_name", "Coastal Data Office")]
+    # Lower case in the brief's sentence, another phrase in the name's place is renamed_term's in-place catch.
+    d = _set(d, "proof_points__2__text", "Tide data comes from the survey tables.")
+    assert [(f["rule"], f["text"]) for f in wc.check_deck(d, BRIEF)["findings"]] == [("renamed_term", "survey")]
+
+
+def test_deck_renamed_term_cli_writes_the_same_bytes_twice(tmp_path):
+    (tmp_path / "copy.json").write_text(json.dumps(renamed("slack window")))
+    (tmp_path / "brief.json").write_text(json.dumps(TERM_BRIEF))
+    outs = []
+    for n in range(2):
+        out = tmp_path / f"out{n}.json"
+        assert wc.main(["deck", "--copy", str(tmp_path / "copy.json"), "--brief", str(tmp_path / "brief.json"),
+                        "--out", str(out)]) == 0
+        outs.append(out.read_bytes())
+    assert outs[0] == outs[1]
+    assert [f["rule"] for f in json.loads(outs[0])["findings"]] == ["renamed_term"]
 
 
 # ---------------------------------------------------------------- report shape, inputs, sources

@@ -547,6 +547,9 @@ def word_text(f: dict) -> tuple[str, str]:
     if rule == "long_paragraph":
         return (f"This paragraph runs past three lines at 1440 px ({f.get('evidence')}).",
                 "Split it, lead with the key fact, or turn it into a short list.")
+    if rule == "renamed_term" and f.get("field"):  # deck mode: the brief's name renamed in the deck
+        return (f"The brief's name \"{f.get('term')}\" appears in the deck as \"{text}\".",
+                f"Use the brief's name \"{f.get('term')}\" wherever the deck means it.")
     if rule == "renamed_term":
         return (f"The deck's term \"{f.get('term')}\" appears on the page as \"{text}\".",
                 f"Use the deck's term \"{f.get('term')}\" wherever the page means it.")

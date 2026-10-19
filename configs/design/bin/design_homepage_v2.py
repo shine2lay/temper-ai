@@ -382,21 +382,51 @@ def pairing_log(workspace: Path) -> Path:
     return (Path(root) if root else workspace.parent) / ".design" / "type-pairings.jsonl"
 
 
-def recorded_pairings(log: Path, workspace: str) -> list[dict]:
-    """The seed's pairings plus those logged by other workspaces (a run never blocks its own concepts)."""
+def read_recorded_pairings(log: Path, workspace: str) -> tuple[list[dict], list[dict]]:
+    """recorded_pairings() and the log lines it skipped as unreadable, from one read of the log (queue #98).
+
+    An unreadable line is still skipped, so a run cut off mid-write never blocks the runs after it, but it is
+    named by line number and kind ('not JSON', 'cut off', 'not an object'): the list is short by any pairing it
+    held. A blank line holds no row, and an object without both faces is another event: neither is unreadable."""
     seed = load(PAIRING_SEED).get("pairings", []) if PAIRING_SEED.exists() else []
     out = [{"display": p["display"], "text": p["text"], "source": p.get("source", "recorded")} for p in seed]
+    unreadable: list[dict] = []
     if log.exists():
-        for line in log.read_text(errors="replace").splitlines():
+        for number, line in enumerate(log.read_text(errors="replace").splitlines(), 1):
+            if not line.strip():
+                continue
             try:
                 event = json.loads(line)
             except ValueError:
+                unreadable.append({"line": number, "kind": unreadable_kind(line)})
                 continue
-            if (isinstance(event, dict) and event.get("workspace") != workspace
+            if not isinstance(event, dict):
+                unreadable.append({"line": number, "kind": "not an object"})
+            elif (event.get("workspace") != workspace
                     and str(event.get("display", "")).strip() and str(event.get("text", "")).strip()):
                 out.append({"display": event["display"], "text": event["text"],
                             "source": f"{event.get('kind', 'used')} in run {event.get('workspace', '?')}"})
-    return out
+    return out, unreadable
+
+
+def unreadable_kind(line: str) -> str:
+    """Why json.loads refused a log line. Rows are one-line objects with nothing nested, so a row whose write
+    stopped part-way starts with { and never reaches its closing }, or has the next row appended to it."""
+    text = line.strip()
+    return "cut off" if text.startswith("{") and (not text.endswith("}") or '{"' in text[1:]) else "not JSON"
+
+
+def unreadable_lines_text(unreadable: list[dict], shown: int = 10) -> str:
+    """'2 unreadable lines (line 2: cut off; line 5: not JSON)': the count, with the first `shown` named."""
+    named = [f"line {u['line']}: {u['kind']}" for u in unreadable[:shown]]
+    if len(unreadable) > shown:
+        named.append(f"and {len(unreadable) - shown} more")
+    return f"{len(unreadable)} unreadable line{'' if len(unreadable) == 1 else 's'} ({'; '.join(named)})"
+
+
+def recorded_pairings(log: Path, workspace: str) -> list[dict]:
+    """The seed's pairings plus those logged by other workspaces (a run never blocks its own concepts)."""
+    return read_recorded_pairings(log, workspace)[0]
 
 
 def pairing_problems(concepts: list[dict], recorded: list[dict], brand_fonts: set[str]) -> list[str]:
@@ -435,7 +465,7 @@ def record_pairings(log: Path, workspace: str, kind: str, concepts: list[dict]) 
     return len(rows)
 
 
-def pairings_brief(recorded: list[dict], brand_fonts: set[str]) -> str:
+def pairings_brief(recorded: list[dict], brand_fonts: set[str], unreadable: list[dict] | None = None) -> str:
     """homepage/PAIRINGS.md: what the art director reads before drafting."""
     pairs: dict[str, dict] = {}
     for r in recorded:
@@ -450,6 +480,9 @@ def pairings_brief(recorded: list[dict], brand_fonts: set[str]) -> str:
              "concept whose pairing is on this list (either way round), unless the brand owns both faces"
              + (f" (this brief's brand fonts: {', '.join(sorted(brand_fonts))})." if brand_fonts else " (this brief lists no brand fonts)."),
              "Pick each pairing for this product's character, not from habit.", "", f"## Used pairings ({len(pairs)})", ""]
+    if unreadable:  # queue #98: a list short by unreadable log lines never passes for the whole record
+        lines += [f"Skipped: the pairing log has {unreadable_lines_text(unreadable)}, so this list may be missing "
+                  + ("a pairing from it." if len(unreadable) == 1 else "pairings from them."), ""]
     lines += [f"- {r['display']} + {r['text']} ({r['source']})" for r in pairs.values()]
     if common:
         lines += ["", "## Faces earlier runs reached for most", "",
@@ -2354,13 +2387,21 @@ class Job:
                 shutil.copyfile(cdir / name, keep / name)
 
     def pairings(self) -> dict:
-        """homepage/PAIRINGS.md before the art director drafts: the type pairings already used (queue #34)."""
+        """homepage/PAIRINGS.md before the art director drafts: the type pairings already used (queue #34).
+
+        Unreadable log lines are skipped, so the run goes on, but named (queue #98): in PAIRINGS.md, as
+        unreadable_log_lines in the output and in one warning line. With none, both are as before."""
         brief = load(self.packet / "brief.json")
         brand_fonts = {f.lower() for f in brief.get("brand", {}).get("fonts", [])}
-        recorded = recorded_pairings(pairing_log(self.root), self.root.name)
-        (self.packet / "PAIRINGS.md").write_text(pairings_brief(recorded, brand_fonts))
-        return {"status": "completed", "path": "homepage/PAIRINGS.md",
-                "used_pairings": len({pairing_key(r["display"], r["text"]) for r in recorded})}
+        log = pairing_log(self.root)
+        recorded, unreadable = read_recorded_pairings(log, self.root.name)
+        (self.packet / "PAIRINGS.md").write_text(pairings_brief(recorded, brand_fonts, unreadable))
+        out: dict[str, Any] = {"status": "completed", "path": "homepage/PAIRINGS.md",
+                               "used_pairings": len({pairing_key(r["display"], r["text"]) for r in recorded})}
+        if unreadable:
+            out["unreadable_log_lines"] = unreadable
+            print(f"pairings: warning: skipped {unreadable_lines_text(unreadable)} in {log}", file=sys.stderr)
+        return out
 
     def concepts_next(self) -> dict:
         """Loop control after the final concept check: report its verdict, change nothing.

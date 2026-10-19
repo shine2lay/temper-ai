@@ -1,0 +1,8 @@
+{
+  "about": "A fixed pairing seed for the clean-log recording (W3c): the recording depends on these files, not on the live seed.",
+  "pairings": [
+    {"display": "Fraunces", "text": "Instrument Sans", "source": "converter fixture atlas"},
+    {"display": "Bricolage Grotesque", "text": "Figtree", "source": "converter fixture pulse"},
+    {"display": "Atkinson Hyperlegible", "text": "Figtree"}
+  ]
+}

@@ -561,7 +561,10 @@ Fresh type pairings and accessibility (queue #34):
   check, and the pairing picked at the direction step (fixture runs too). Before
   drafting, the model-free `pairings` stage writes `homepage/PAIRINGS.md` (record +
   log, minus the run's own workspace, plus the faces reached for most), which the
-  art director reads. The concept check rejects a concept whose pairing is
+  art director reads. A log line it can't read (not JSON, cut off mid-write, not
+  an object) is skipped, so the run goes on, but named by line number and kind: in
+  PAIRINGS.md, as `unreadable_log_lines` in the stage output and in one warning
+  line (W3c, queue #98). The concept check rejects a concept whose pairing is
   recorded, either way round, unless the brief's brand owns both faces; fixture
   concepts are exempt (they are the record's own).
 - **axe on every concept.** axe-core (WCAG 2.2 A/AA tags) runs on each concept

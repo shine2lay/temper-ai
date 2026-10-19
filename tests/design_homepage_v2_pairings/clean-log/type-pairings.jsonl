@@ -1,0 +1,10 @@
+{"display": "Gloock", "text": "Hanken Grotesk", "kind": "offered", "concept": "A", "workspace": "run-a", "recorded_at": "2026-10-01T09:00:00Z"}
+{"display": "Young Serif", "text": "Public Sans", "kind": "chosen", "concept": "B", "workspace": "run-b", "recorded_at": "2026-10-02T09:00:00Z"}
+{"display": "Rubik Mono One", "text": "Karla", "kind": "offered", "concept": "C", "workspace": "run-self", "recorded_at": "2026-10-03T09:00:00Z"}
+{"kind": "note", "workspace": "run-a", "recorded_at": "2026-10-03T10:00:00Z"}
+{"display": "Instrument Sans", "text": "Fraunces", "kind": "offered", "concept": "A", "workspace": "run-c", "recorded_at": "2026-10-04T09:00:00Z"}
+{"display": " ", "text": "Karla", "kind": "offered", "concept": "B", "workspace": "run-d", "recorded_at": "2026-10-05T09:00:00Z"}
+
+{"display": "Literata", "text": "Mulish", "kind": "offered"}
+{"display": "Space Grotesk", "text": "Figtree", "workspace": "run-e"}
+{"display": "Gloock", "text": "Figtree", "kind": "chosen", "concept": null, "workspace": "run-e", "recorded_at": "2026-10-06T09:00:00Z"}

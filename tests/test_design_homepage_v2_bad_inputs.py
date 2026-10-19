@@ -8,14 +8,17 @@ problem before it does any work (no capture, no receipt, no output file), OR it 
 so in its output. Dropping a bad part silently is not a refusal: the next stage would trust a list that is
 quietly shorter than what was recorded.
 
-Where today's code accepts a bad input, the test is xfail(strict=True) with the reason, so it starts failing
-(XPASS) the day the code is fixed and the mark has to come off. Fixes belong to the wiring task W4e, not here.
+Where the code accepts a bad input, the test is xfail(strict=True) with the reason, so it starts failing
+(XPASS) the day the code is fixed and the mark has to come off. W3 found one such gap: unreadable pairing-log
+lines were dropped without a word. W3c (queue #98) fixed it (skipped, so the run goes on, but named), and no
+xfail is left.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -192,34 +195,83 @@ def test_pairings_stage_reads_a_good_log(tmp_path, pairing_log):
     assert "Gloock + Hanken Grotesk (offered in run run-other)" in (tmp_path / "run-self/homepage/PAIRINGS.md").read_text()
 
 
+CLEAN = Path(__file__).resolve().parent / "design_homepage_v2_pairings" / "clean-log"
+
+
+def run_clean_log(root: Path, log: Path) -> dict[str, bytes]:
+    """The pairings stage on the fixed clean log in CLEAN: PAIRINGS.md, the stage output and the list the concept
+    check reads, as bytes. The caller points DESIGN_PAIRING_LOG at `log` and v2.PAIRING_SEED at CLEAN / seed.json."""
+    log.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(CLEAN / "type-pairings.jsonl", log)
+    job = v2.Job(str(root / "run-self"), fixture=True)
+    job.brief("")
+    shutil.copyfile(CLEAN / "brief.json", job.packet / "brief.json")  # brand fonts fixed here, not by FIXTURE_BRIEF
+    out = job.pairings()
+    return {"PAIRINGS.md": (job.packet / "PAIRINGS.md").read_bytes(),
+            "output.json": json.dumps(out, ensure_ascii=False).encode(),
+            "recorded.json": json.dumps(v2.recorded_pairings(log, "run-self"), ensure_ascii=False, indent=1).encode()}
+
+
+def test_pairings_stage_on_a_clean_log_writes_the_same_bytes_as_before(tmp_path, pairing_log, monkeypatch, capsys):
+    """W3c only adds a report of unreadable log lines. On a log with none (CLEAN: other runs' rows, the run's own row,
+    an event that is no pairing, a seed pairing the other way round, a blank face, a blank line, rows without kind or
+    workspace, a last line without a newline) PAIRINGS.md, the stage output and the concept check's list are byte
+    for byte the recording made with the code before W3c (temper-ai fecacf06), and nothing is written to stderr."""
+    monkeypatch.setattr(v2, "PAIRING_SEED", CLEAN / "seed.json")
+    made = run_clean_log(tmp_path, pairing_log)
+    for name, data in made.items():
+        assert data == (CLEAN / name).read_bytes(), name
+    assert capsys.readouterr().err == ""
+
+
+CUT_ROW = json.dumps(GOOD_ROW | {"display": "Fraunces", "text": "Karla"})[:40]  # a write stopped part-way
+
 UNREADABLE_RECORDS = {
-    "not json": "not json at all",
-    "cut off mid-write": json.dumps(GOOD_ROW | {"display": "Fraunces", "text": "Karla"})[:40],
-    "json but not an object": json.dumps(["Fraunces", "Karla"]),
+    "not json": ("not json at all", "not JSON"),
+    "cut off mid-write": (CUT_ROW, "cut off"),
+    "json but not an object": (json.dumps(["Fraunces", "Karla"]), "not an object"),
 }
 
-SILENT_SKIP = ("recorded_pairings() drops a log line it cannot read (json.loads ValueError -> continue; non-object "
-               "-> skipped) and Job.pairings() neither stops nor says so: PAIRINGS.md and the stage's output "
-               "list one pairing fewer than the log holds, so a reused pairing can pass the concept check. "
-               "Fix in W4e: stop with an error naming the log line, or count and name skipped lines in "
-               "PAIRINGS.md and the stage output. tests/test_design_homepage_v2.py::"
-               "test_runs_log_their_pairings_and_a_run_never_blocks_its_own asserts today's silent skip and "
-               "changes with that fix.")
+# What the concept check reads from a log holding GOOD_ROW and bad lines: the seed and GOOD_ROW, as before W3c.
+READABLE = [*({"display": p["display"], "text": p["text"], "source": p.get("source", "recorded")} for p in SEED["pairings"]),
+            {"display": "Gloock", "text": "Hanken Grotesk", "source": "offered in run run-other"}]
 
 
-@pytest.mark.xfail(strict=True, reason=SILENT_SKIP)
 @pytest.mark.parametrize("case", list(UNREADABLE_RECORDS))
-def test_pairings_stage_refuses_or_reports_an_unreadable_record(tmp_path, pairing_log, case):
+def test_pairings_stage_refuses_or_reports_an_unreadable_record(tmp_path, pairing_log, capsys, case):
+    """W3c (queue #98): a log line the stage can't read is skipped, so the run goes on, and named by line number
+    and kind in PAIRINGS.md, in the output (unreadable_log_lines) and in one warning line. The list is as before."""
+    record, kind = UNREADABLE_RECORDS[case]
     pairing_log.parent.mkdir(parents=True)
-    pairing_log.write_text(json.dumps(GOOD_ROW) + "\n" + UNREADABLE_RECORDS[case] + "\n")
-    job = fixture_job(tmp_path)
-    try:
-        out = job.pairings()
-    except ValueError as exc:
-        assert "line 2" in str(exc) or "unreadable" in str(exc).lower()
-        return
-    said = (tmp_path / "run-self/homepage/PAIRINGS.md").read_text().lower() + json.dumps(out).lower()
-    assert "unreadable" in said or "skipped" in said, "a bad log line was dropped without a word"
+    pairing_log.write_text(json.dumps(GOOD_ROW) + "\n" + record + "\n")
+    out = fixture_job(tmp_path).pairings()
+    assert out["status"] == "completed" and out["unreadable_log_lines"] == [{"line": 2, "kind": kind}]
+    assert out["used_pairings"] == len({v2.pairing_key(p["display"], p["text"]) for p in SEED["pairings"]}) + 1
+    text = (tmp_path / "run-self/homepage/PAIRINGS.md").read_text()
+    assert (f"\n\nSkipped: the pairing log has 1 unreadable line (line 2: {kind}), so this list may be missing a "
+            "pairing from it.\n\n- ") in text
+    assert "Gloock + Hanken Grotesk (offered in run run-other)" in text
+    assert capsys.readouterr().err.splitlines() == [
+        f"pairings: warning: skipped 1 unreadable line (line 2: {kind}) in {pairing_log}"]
+    assert v2.recorded_pairings(pairing_log, "run-self") == READABLE  # the concept check's list is unchanged
+
+
+def test_pairings_stage_counts_every_unreadable_line_and_names_the_first_ten(tmp_path, pairing_log, capsys):
+    """A cut-off row with the next run's row appended to it (how a write stopped part-way meets the next one) is
+    named cut off; a blank line holds no row and is not counted. Past ten unreadable lines PAIRINGS.md and the
+    warning name ten and count the rest; the output lists them all."""
+    rows = [json.dumps(GOOD_ROW), CUT_ROW + json.dumps(GOOD_ROW | {"workspace": "run-later"}), "",
+            *(f"not json {n}" for n in range(4, 15))]
+    pairing_log.parent.mkdir(parents=True)
+    pairing_log.write_text("\n".join(rows) + "\n")
+    out = fixture_job(tmp_path).pairings()
+    assert out["unreadable_log_lines"] == [{"line": 2, "kind": "cut off"},
+                                           *({"line": n, "kind": "not JSON"} for n in range(4, 15))]
+    named = "12 unreadable lines (line 2: cut off; " + "; ".join(f"line {n}: not JSON" for n in range(4, 13)) + "; and 2 more)"
+    assert f"Skipped: the pairing log has {named}, so this list may be missing pairings from them.\n" in (
+        tmp_path / "run-self/homepage/PAIRINGS.md").read_text()
+    assert capsys.readouterr().err.splitlines() == [f"pairings: warning: skipped {named} in {pairing_log}"]
+    assert out["status"] == "completed" and v2.recorded_pairings(pairing_log, "run-self") == READABLE
 
 
 def test_pairings_stage_stops_when_the_log_cannot_be_read(tmp_path, pairing_log):

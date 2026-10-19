@@ -1,0 +1,6 @@
+{
+  "product": "Fixture Studio",
+  "fictional": true,
+  "fixture": true,
+  "brand": {"fonts": ["Gloock", "Public Sans"]}
+}

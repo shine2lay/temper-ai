@@ -205,7 +205,12 @@ LIVE_SHA256 = {
     "agents/design_verify.yaml": "3c4dfa0f2246b7e4d984e4fbe7f899a6d549934f024d3b5b809b42d51ec0cdfe",
     "agents/design_capture.yaml": "3dd509cb5a4464eee441eae10c668c800128d70f20ac63ac352af1f4f83ea73e",
     "agents/design_craft_bench_stage.yaml": "5623043c4a8942460631a93e9658311c0007a08107ba9085fb110ecee54704de",
-    "bin/design_homepage_v2.py": "995ec7769a6049391926f9d8dcb9b0463749f2f83f4d4e2889653f141a793fd8",
+    # Re-pinned for W3c (queue #98, first committed as 69bae180; Design home's decision, 2026-10-19 16:58 PDT):
+    # the pairings stage names unreadable log lines instead of dropping them silently. On a readable log its
+    # output is byte-identical (tests/test_design_homepage_v2_bad_inputs.py::
+    # test_pairings_stage_on_a_clean_log_writes_the_same_bytes_as_before), and the live log
+    # workspaces/.design/type-pairings.jsonl had 61 lines, 0 unreadable, at 16:52 PDT: no trial output moves.
+    "bin/design_homepage_v2.py": "e82f33022f55ae47d849e11faaf8390714846684cc1726af5f312186d59e752d",
     "bin/design_review_verify.py": "2f2ca0bf9997dd31782c33a5ebffc44a8d729ed2b6850d30bafd6cc208bd6550",
     "bin/design_craft_bench.py": "c010ee576bf2617904777234d0095e7043b0f461314008cc68ee7805c30d1441",
 }

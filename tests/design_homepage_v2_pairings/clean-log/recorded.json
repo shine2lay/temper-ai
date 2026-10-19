@@ -1,0 +1,47 @@
+[
+ {
+  "display": "Fraunces",
+  "text": "Instrument Sans",
+  "source": "converter fixture atlas"
+ },
+ {
+  "display": "Bricolage Grotesque",
+  "text": "Figtree",
+  "source": "converter fixture pulse"
+ },
+ {
+  "display": "Atkinson Hyperlegible",
+  "text": "Figtree",
+  "source": "recorded"
+ },
+ {
+  "display": "Gloock",
+  "text": "Hanken Grotesk",
+  "source": "offered in run run-a"
+ },
+ {
+  "display": "Young Serif",
+  "text": "Public Sans",
+  "source": "chosen in run run-b"
+ },
+ {
+  "display": "Instrument Sans",
+  "text": "Fraunces",
+  "source": "offered in run run-c"
+ },
+ {
+  "display": "Literata",
+  "text": "Mulish",
+  "source": "offered in run ?"
+ },
+ {
+  "display": "Space Grotesk",
+  "text": "Figtree",
+  "source": "used in run run-e"
+ },
+ {
+  "display": "Gloock",
+  "text": "Figtree",
+  "source": "chosen in run run-e"
+ }
+]

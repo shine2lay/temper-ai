@@ -1404,7 +1404,9 @@ def test_runs_log_their_pairings_and_a_run_never_blocks_its_own(pairing_log_file
     assert len(other) == 1 and "(offered in run run-1)" in other[0]
     with pairing_log_file.open("a") as fh:
         fh.write("not json\n")
-    assert len(v2.recorded_pairings(pairing_log_file, "run-2")) == len(SEED["pairings"]) + 1  # a broken line is skipped
+    recorded, unreadable = v2.read_recorded_pairings(pairing_log_file, "run-2")
+    assert recorded == v2.recorded_pairings(pairing_log_file, "run-2") and len(recorded) == len(SEED["pairings"]) + 1
+    assert unreadable == [{"line": 2, "kind": "not JSON"}]  # a broken line is skipped, and named (W3c)
 
 
 def test_pairings_stage_lists_the_used_pairings_for_the_art_director(tmp_path, pairing_log_file):

@@ -1,0 +1,229 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    24,
+    197,
+    342,
+    38
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "Pricing",
+   "weight": 700
+  },
+  {
+   "box": [
+    57,
+    516,
+    276,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Free",
+   "weight": 700
+  },
+  {
+   "box": [
+    57,
+    922,
+    276,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Team",
+   "weight": 700
+  },
+  {
+   "box": [
+    57,
+    1347,
+    276,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Business",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    1827,
+    342,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Compare plans",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 4,
+    "fill": 1
+   },
+   "checked": 4,
+   "nav_links": 9,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 133,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      76,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      107,
+      76,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      182,
+      76,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      286,
+      76,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 2590,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 2590,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [
+  {
+   "box": [
+    157,
+    1969,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(1) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    225,
+    1969,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(2) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    308,
+    1969,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    225,
+    2066,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(2) > td.c:nth-of-type(2) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    308,
+    2066,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(2) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    308,
+    2139,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(3) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  }
+ ],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": [
+  {
+   "boundary_contrast": 1.24,
+   "name": "Monthly Yearly",
+   "sel": "div.wrap > section.head:nth-of-type(1) > div.billing > button.switch"
+  }
+ ]
+}

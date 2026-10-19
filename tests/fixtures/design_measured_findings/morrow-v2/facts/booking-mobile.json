@@ -1,0 +1,141 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "you@company.com",
+   "name_from": "placeholder only",
+   "sel": "#guest-email",
+   "type": "email",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Reservation date (required)",
+   "name_from": "label",
+   "sel": "#meeting-date",
+   "type": "date",
+   "value": "2026-10-14"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Email me room news (optional)",
+   "name_from": "label",
+   "sel": "div.booking-grid:nth-of-type(2) > section.stack:nth-of-type(1) > label.check-label > input",
+   "type": "checkbox",
+   "value": "on"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    24,
+    188,
+    342,
+    36
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "Check the details",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    318,
+    342,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Guest details",
+   "weight": 700
+  },
+  {
+   "box": [
+    49,
+    745,
+    292,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Payment summary",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 1,
+    "native control": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 117,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      68,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      133,
+      68,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1335,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 1335,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

@@ -1,0 +1,380 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    52,
+    99,
+    1176,
+    34
+   ],
+   "level": 1,
+   "size": 28,
+   "text": "Income",
+   "weight": 600
+  },
+  {
+   "box": [
+    581,
+    207,
+    299,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Premium collected by month",
+   "weight": 600
+  },
+  {
+   "box": [
+    77,
+    633,
+    522,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Open covered calls",
+   "weight": 600
+  },
+  {
+   "box": [
+    77,
+    1155,
+    526,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Roll 2 AAPL calls",
+   "weight": 600
+  },
+  {
+   "box": [
+    677,
+    1155,
+    282,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Profit at expiry after the roll",
+   "weight": 600
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Income",
+     "May 2026 · figures as of 10:42 ET, May 21 · prices 15 min delayed, source: Northwind Market Data (fictional)",
+     "Premium collected in May",
+     "$1,284.50",
+     "6 calls sold or rolled",
+     "Open covered calls",
+     "6",
+     "on 1,000 shares",
+     "Calls expiring in 9 days",
+     "3",
+     "AAPL, MSFT, PG on Jun 21",
+     "Shares called away this year",
+     "100",
+     "KO, in March",
+     "Premium collected by month",
+     "2026, before fees"
+    ],
+    "name": "Income"
+   },
+   {
+    "blocks": [
+     "Open covered calls",
+     "Delta and prices as of 10:42 ET. A call with delta above 0.50 is likely to be exercised."
+    ],
+    "name": "Open covered calls"
+   },
+   {
+    "blocks": [
+     "Roll 2 AAPL calls",
+     "From Jun 21 190 to Jul 19 195. Prices as of 10:42 ET; the final price is set when the order fills.",
+     "Buy back 2 Jun 21 190 calls at $2.10",
+     "−$420.00",
+     "Sell 2 Jul 19 195 calls at $3.45",
+     "+$690.00",
+     "Net credit before fees",
+     "+$270.00",
+     "Fees: 4 contracts × $0.65",
+     "−$2.60",
+     "Net credit after fees",
+     "+$267.40",
+     "Nothing is sent until you confirm on the next screen.",
+     "Profit at expiry after the roll",
+     "200 shares, Jul 19"
+    ],
+    "name": "Roll order"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 1,
+    "fill": 1
+   },
+   "checked": 15,
+   "nav_links": 7,
+   "without": [
+    {
+     "box": [
+      1106,
+      636,
+      97,
+      24
+     ],
+     "section": "Open covered calls",
+     "sel": "div.wrap > div.panel > div.table-head:nth-of-type(1) > a",
+     "tag": "a",
+     "text": "See all orders"
+    },
+    {
+     "box": [
+      1113,
+      761,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr.near:nth-of-type(1) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      761,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr.near:nth-of-type(1) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      1113,
+      815,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(2) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      815,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(2) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      1113,
+      869,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(3) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      869,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(3) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      1113,
+      923,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(4) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      923,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(4) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      1113,
+      977,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(5) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      977,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(5) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      1113,
+      1031,
+      25,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(6) > td.row-actions:nth-of-type(7) > button:nth-of-type(1)",
+     "tag": "button",
+     "text": "Roll"
+    },
+    {
+     "box": [
+      1153,
+      1031,
+      38,
+      29
+     ],
+     "section": "Open covered calls",
+     "sel": "tbody > tr:nth-of-type(6) > td.row-actions:nth-of-type(7) > button:nth-of-type(2)",
+     "tag": "button",
+     "text": "Close"
+    },
+    {
+     "box": [
+      256,
+      1427,
+      68,
+      48
+     ],
+     "section": "Roll order",
+     "sel": "div.roll > div.panel.ticket:nth-of-type(1) > div.ticket-actions > button.btn-quiet:nth-of-type(2)",
+     "tag": "button",
+     "text": "Cancel"
+    }
+   ],
+   "without_count": 14
+  },
+  "dark": false,
+  "frame": [
+   52,
+   1228
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 67,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      239,
+      12,
+      56,
+      42
+     ],
+     "text": "Income"
+    },
+    {
+     "box": [
+      319,
+      12,
+      70,
+      42
+     ],
+     "text": "Positions"
+    },
+    {
+     "box": [
+      413,
+      12,
+      52,
+      42
+     ],
+     "text": "Orders"
+    },
+    {
+     "box": [
+      489,
+      12,
+      64,
+      42
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Income",
+     "Positions",
+     "Orders",
+     "Settings"
+    ]
+   ],
+   "sel": "header.app-bar > div.wrap > nav.app-nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1655,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 1655,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

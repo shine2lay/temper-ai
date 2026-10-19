@@ -1,0 +1,231 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "First name",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(2) > div.field:nth-of-type(1) > input",
+   "type": "text",
+   "value": "Maya"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Last name",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(2) > div.field:nth-of-type(2) > input",
+   "type": "text",
+   "value": "Okafor"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Work email",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(3) > input",
+   "type": "email",
+   "value": "maya@kettleandco.com"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Password",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(4) > input.bad",
+   "type": "password",
+   "value": "(set)"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Company name",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(5) > input",
+   "type": "text",
+   "value": "Kettle & Co"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Phone number (required)",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(6) > div.field:nth-of-type(1) > input",
+   "type": "tel",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Company size (required)",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(6) > div.field:nth-of-type(2) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "How did you hear about us? (required)",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(7) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Your job title (required)",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(8) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "I agree to the Terms and the Privacy policy.",
+   "name_from": "label",
+   "sel": "div.wrap.page > form > label.agree > input",
+   "type": "checkbox",
+   "value": "on"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    80,
+    137,
+    528,
+    48
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Start your free trial",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [
+   {
+    "beside": "Already have an account? Sign in",
+    "height": 512,
+    "section": "Start your free trial",
+    "share": 0.53,
+    "side": "left",
+    "top": 343,
+    "width": 592,
+    "x": 80
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Start your free trial",
+     "14 days of Team, free. No card needed.",
+     "Build your first rota in an afternoon",
+     "Invite your team by email or link",
+     "Keep everything if you stay on Free",
+     "Error: invalid input (code 422)",
+     "Already have an account?"
+    ],
+    "name": "Start your free trial"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 10,
+    "fill": 1,
+    "native control": 1,
+    "underline": 4
+   },
+   "checked": 15,
+   "nav_links": 8,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 73,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      864,
+      16,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      947,
+      16,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      1022,
+      16,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      1126,
+      16,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1131,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 1131,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

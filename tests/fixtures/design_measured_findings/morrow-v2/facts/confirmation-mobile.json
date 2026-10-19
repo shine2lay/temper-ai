@@ -1,0 +1,112 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    24,
+    188,
+    342,
+    36
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "Your room is booked",
+   "weight": 700
+  },
+  {
+   "box": [
+    49,
+    343,
+    292,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Willow room",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    1061,
+    342,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Planning another meeting?",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 4,
+    "fill": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 117,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      68,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      133,
+      68,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1301,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 1301,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

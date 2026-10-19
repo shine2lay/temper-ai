@@ -1,0 +1,47 @@
+{
+ "page_checks": {
+  "primary_action": "Book a pickup"
+ },
+ "pages": [
+  {
+   "name": "index",
+   "page": "index.html",
+   "views": [
+    {
+     "facts": "facts/index-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/index-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    },
+    {
+     "facts": "facts/index-desktop-dark.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop-dark"
+    }
+   ]
+  }
+ ],
+ "viewports": {
+  "desktop": [
+   1280,
+   800
+  ],
+  "mobile": [
+   390,
+   844
+  ]
+ }
+}

@@ -1,0 +1,105 @@
+{
+ "page_checks": {
+  "primary_action": ""
+ },
+ "pages": [
+  {
+   "name": "index",
+   "page": "index.html",
+   "views": [
+    {
+     "facts": "facts/index-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/index-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "pricing",
+   "page": "pricing.html",
+   "views": [
+    {
+     "facts": "facts/pricing-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/pricing-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "signup",
+   "page": "signup.html",
+   "views": [
+    {
+     "facts": "facts/signup-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/signup-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "app-week",
+   "page": "app/week.html",
+   "views": [
+    {
+     "facts": "facts/app-week-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/app-week-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  }
+ ],
+ "viewports": {
+  "desktop": [
+   1280,
+   800
+  ],
+  "mobile": [
+   390,
+   844
+  ]
+ }
+}

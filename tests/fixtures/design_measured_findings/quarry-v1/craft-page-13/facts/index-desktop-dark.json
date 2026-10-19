@@ -1,0 +1,408 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    80,
+    182,
+    581,
+    246
+   ],
+   "level": 1,
+   "size": 56,
+   "text": "Your food scraps, collected every week and turned into compost.",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    904,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "How a pickup works",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Fill the caddy",
+   "weight": 600
+  },
+  {
+   "box": [
+    464,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Put the bin out on Tuesday",
+   "weight": 600
+  },
+  {
+   "box": [
+    848,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "We swap it",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    1688,
+    528,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "What your scraps become",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    2178,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "What it costs",
+   "weight": 600
+  },
+  {
+   "box": [
+    113,
+    2366,
+    79,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Weekly",
+   "weight": 600
+  },
+  {
+   "box": [
+    685,
+    2366,
+    184,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Every other week",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    2889,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "Questions",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    3662,
+    536,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "Start with one Tuesday",
+   "weight": 600
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 2,
+    "fill": 2,
+    "underline": 2
+   },
+   "checked": 6,
+   "nav_links": 7,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": true,
+  "nav": {
+   "found": true,
+   "header_height": 75,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      944,
+      25,
+      90,
+      23
+     ],
+     "text": "How it works"
+    },
+    {
+     "box": [
+      1061,
+      25,
+      41,
+      23
+     ],
+     "text": "Prices"
+    },
+    {
+     "box": [
+      1131,
+      25,
+      69,
+      23
+     ],
+     "text": "Questions"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How it works",
+     "Prices",
+     "Questions"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.site-nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "declared": 10.19,
+    "id": 0,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      153,
+      230,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.eyebrow:nth-of-type(1)",
+    "size": 15,
+    "text": "KITCHEN COMPOST PICKUP",
+    "weight": 800
+   },
+   {
+    "color": [
+     241,
+     232,
+     218,
+     1
+    ],
+    "declared": 14.4,
+    "id": 1,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      80,
+      196,
+      472,
+      34
+     ],
+     [
+      80,
+      257,
+      559,
+      34
+     ],
+     [
+      80,
+      319,
+      420,
+      34
+     ],
+     [
+      80,
+      380,
+      250,
+      34
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > h1",
+    "size": 56,
+    "text": "Your food scraps, collected every week and turned into compo",
+    "weight": 600
+   },
+   {
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "declared": 10.19,
+    "id": 2,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      458,
+      513,
+      14
+     ],
+     [
+      80,
+      492,
+      568,
+      14
+     ],
+     [
+      80,
+      526,
+      555,
+      14
+     ],
+     [
+      80,
+      560,
+      48,
+      14
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.lede:nth-of-type(2)",
+    "size": 22,
+    "text": "Keep a sealed caddy under the sink for peels, coffee grounds",
+    "weight": 400
+   },
+   {
+    "color": [
+     165,
+     216,
+     157,
+     1
+    ],
+    "declared": 10.75,
+    "id": 3,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      270,
+      636,
+      137,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a:nth-of-type(2)",
+    "size": 18,
+    "text": "See how it works",
+    "weight": 400
+   },
+   {
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "declared": 10.19,
+    "id": 4,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      695,
+      263,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.note:nth-of-type(3)",
+    "size": 15,
+    "text": "From $6 a week. Skip or stop any week.",
+    "weight": 400
+   }
+  ],
+  "page_height": 4167,
+  "pixels": {
+   "0": {
+    "bg": "rgb(40,34,27)",
+    "ratio": 9.16
+   },
+   "1": {
+    "bg": "rgb(39,33,26)",
+    "ratio": 13.09
+   },
+   "2": {
+    "bg": "rgb(32,28,22)",
+    "ratio": 9.9
+   },
+   "3": {
+    "bg": "rgb(29,25,20)",
+    "ratio": 10.75
+   },
+   "4": {
+    "bg": "rgb(29,25,20)",
+    "ratio": 10.19
+   }
+  },
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 4167,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

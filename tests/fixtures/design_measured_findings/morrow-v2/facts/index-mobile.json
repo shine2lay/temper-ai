@@ -1,0 +1,173 @@
+{
+ "axe": [
+  {
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.23 (foreground color: #7b7b7b, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".intro-note"
+    }
+   ],
+   "wcag": [
+    "wcag2aa",
+    "wcag143"
+   ]
+  }
+ ],
+ "contrast_failures": [
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    24,
+    288,
+    342,
+    70
+   ],
+   "color": "rgb(123,123,123)",
+   "contrast": 4.23,
+   "inactive": false,
+   "line_height": "23.2px",
+   "needs": 4.5,
+   "sel": "main.wrap > section.hero:nth-of-type(1) > p.intro-note:nth-of-type(2)",
+   "size": 16,
+   "tag": "p",
+   "text": "Bring your team together in a quiet, ready-to-use meeting room. Book by the hour, with spa",
+   "transform": "none",
+   "weight": 400
+  }
+ ],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    24,
+    196,
+    342,
+    72
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "A room for your next good idea.",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    497,
+    342,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Walk in, settle in",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    642,
+    342,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Book only what you need",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    787,
+    342,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Bring the whole team",
+   "weight": 700
+  },
+  {
+   "box": [
+    48,
+    930,
+    294,
+    58
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "$24 per hour. Nothing more.",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 1,
+    "fill": 1
+   },
+   "checked": 1,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 117,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      68,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      133,
+      68,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1213,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 1213,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

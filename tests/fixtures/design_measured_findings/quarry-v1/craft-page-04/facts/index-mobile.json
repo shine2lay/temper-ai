@@ -1,0 +1,427 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    19,
+    155,
+    352,
+    167
+   ],
+   "level": 1,
+   "size": 38,
+   "text": "Your food scraps, collected every week and turned into compost.",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    1048,
+    352,
+    33
+   ],
+   "level": 2,
+   "size": 30,
+   "text": "How a pickup works",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    1441,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Fill the caddy",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    1845,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Put the bin out on Tuesday",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    2250,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "We swap it",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    2478,
+    352,
+    66
+   ],
+   "level": 2,
+   "size": 30,
+   "text": "What your scraps become",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    3156,
+    352,
+    33
+   ],
+   "level": 2,
+   "size": 30,
+   "text": "What it costs",
+   "weight": 600
+  },
+  {
+   "box": [
+    47,
+    3346,
+    79,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Weekly",
+   "weight": 600
+  },
+  {
+   "box": [
+    47,
+    3641,
+    184,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Every other week",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    4081,
+    352,
+    33
+   ],
+   "level": 2,
+   "size": 30,
+   "text": "Questions",
+   "weight": 600
+  },
+  {
+   "box": [
+    19,
+    5121,
+    352,
+    33
+   ],
+   "level": 2,
+   "size": 30,
+   "text": "Start with one Tuesday",
+   "weight": 600
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "action": {
+   "first": {
+    "bottom": 573,
+    "section": "Hero",
+    "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a.btn:nth-of-type(1)",
+    "text": "Book a pickup",
+    "top": 515,
+    "whole": true
+   },
+   "found": 2,
+   "label": "Book a pickup",
+   "screen_height": 844
+  },
+  "cues": {
+   "by_cue": {
+    "border": 2,
+    "fill": 2,
+    "underline": 2
+   },
+   "checked": 6,
+   "nav_links": 7,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": true,
+  "nav": {
+   "found": true,
+   "header_height": 93,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      19,
+      56,
+      90,
+      23
+     ],
+     "text": "How it works"
+    },
+    {
+     "box": [
+      126,
+      56,
+      41,
+      23
+     ],
+     "text": "Prices"
+    },
+    {
+     "box": [
+      184,
+      56,
+      69,
+      23
+     ],
+     "text": "Questions"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How it works",
+     "Prices",
+     "Questions"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.site-nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 0,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      19,
+      128,
+      230,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.eyebrow:nth-of-type(1)",
+    "size": 15,
+    "text": "KITCHEN COMPOST PICKUP",
+    "weight": 800
+   },
+   {
+    "color": [
+     46,
+     36,
+     25,
+     1
+    ],
+    "declared": 13.51,
+    "id": 1,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      19,
+      163,
+      320,
+      23
+     ],
+     [
+      19,
+      205,
+      276,
+      23
+     ],
+     [
+      19,
+      247,
+      307,
+      23
+     ],
+     [
+      19,
+      289,
+      252,
+      23
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > h1",
+    "size": 38,
+    "text": "Your food scraps, collected every week and turned into compo",
+    "weight": 600
+   },
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 2,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      19,
+      352,
+      311,
+      11
+     ],
+     [
+      19,
+      380,
+      333,
+      11
+     ],
+     [
+      19,
+      408,
+      344,
+      11
+     ],
+     [
+      19,
+      436,
+      347,
+      11
+     ],
+     [
+      19,
+      463,
+      39,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.lede:nth-of-type(2)",
+    "size": 18,
+    "text": "Keep a sealed caddy under the sink for peels, coffee grounds",
+    "weight": 400
+   },
+   {
+    "color": [
+     47,
+     107,
+     58,
+     1
+    ],
+    "declared": 5.69,
+    "id": 3,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      195,
+      538,
+      130,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a:nth-of-type(2)",
+    "size": 17,
+    "text": "See how it works",
+    "weight": 400
+   },
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 4,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      19,
+      592,
+      263,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.note:nth-of-type(3)",
+    "size": 15,
+    "text": "From $6 a week. Skip or stop any week.",
+    "weight": 400
+   }
+  ],
+  "page_height": 5588,
+  "pixels": {
+   "0": {
+    "bg": "rgb(242,233,215)",
+    "ratio": 7.02
+   },
+   "1": {
+    "bg": "rgb(243,233,216)",
+    "ratio": 12.62
+   },
+   "2": {
+    "bg": "rgb(244,236,221)",
+    "ratio": 7.22
+   },
+   "3": {
+    "bg": "rgb(246,238,225)",
+    "ratio": 5.56
+   },
+   "4": {
+    "bg": "rgb(246,239,227)",
+    "ratio": 7.43
+   }
+  },
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 5588,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

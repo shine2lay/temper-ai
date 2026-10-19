@@ -1,0 +1,124 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Timezone",
+   "name_from": "label",
+   "sel": "#timezone",
+   "type": "select-one",
+   "value": "America/Los_Angeles"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    24,
+    149,
+    342,
+    72
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "Your workspace preferences",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    402,
+    233,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Meeting preferences",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    609,
+    244,
+    23
+   ],
+   "level": 3,
+   "size": 18,
+   "text": "Pause all meeting reminders",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 2,
+    "native control": 1,
+    "underline": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 117,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      68,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      133,
+      68,
+      63,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 886,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 886,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

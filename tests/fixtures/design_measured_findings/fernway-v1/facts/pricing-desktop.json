@@ -1,0 +1,267 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    104,
+    137,
+    1072,
+    48
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Pricing",
+   "weight": 700
+  },
+  {
+   "box": [
+    137,
+    436,
+    270,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Free",
+   "weight": 700
+  },
+  {
+   "box": [
+    505,
+    441,
+    270,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Team",
+   "weight": 700
+  },
+  {
+   "box": [
+    873,
+    436,
+    270,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Business",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    916,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Compare plans",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Pricing",
+     "Every plan includes the rota, shift swaps and the mobile app. Try Team free for 14 days.",
+     "Monthly",
+     "Yearly",
+     "Free",
+     "$0",
+     "For teams of up to 5 people.",
+     "Weekly rota",
+     "Shift swaps",
+     "Mobile app",
+     "Team",
+     "$5 per user",
+     "For teams of 6 to 100 people.",
+     "Everything in Free",
+     "Cost as you plan",
+     "Templates",
+     "Overtime alerts",
+     "Business",
+     "Custom",
+     "For more than 100 people or several sites.",
+     "Everything in Team",
+     "Several sites",
+     "Payroll export",
+     "Single sign-on",
+     "Compare plans",
+     "Prices exclude sales tax. You can cancel at any time from Settings."
+    ],
+    "name": "Pricing"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 4,
+    "fill": 1
+   },
+   "checked": 4,
+   "nav_links": 9,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   1176
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 73,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      684,
+      16,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      766,
+      16,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      842,
+      16,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      946,
+      16,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1475,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 1475,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [
+  {
+   "box": [
+    662,
+    1023,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(1) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    837,
+    1023,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(2) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    1048,
+    1023,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(1) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    837,
+    1074,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(2) > td.c:nth-of-type(2) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    1048,
+    1074,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(2) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  },
+  {
+   "box": [
+    1048,
+    1125,
+    20,
+    20
+   ],
+   "sel": "tbody > tr:nth-of-type(3) > td.c:nth-of-type(3) > svg",
+   "src": "",
+   "tag": "svg"
+  }
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": [
+  {
+   "boundary_contrast": 1.24,
+   "name": "Monthly Yearly",
+   "sel": "div.wrap > section.head:nth-of-type(1) > div.billing > button.switch"
+  }
+ ]
+}

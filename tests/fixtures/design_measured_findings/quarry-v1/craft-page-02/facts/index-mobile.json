@@ -1,0 +1,170 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    16,
+    169,
+    358,
+    29
+   ],
+   "level": 1,
+   "size": 24,
+   "text": "Income",
+   "weight": 600
+  },
+  {
+   "box": [
+    41,
+    664,
+    213,
+    57
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Premium collected by month",
+   "weight": 600
+  },
+  {
+   "box": [
+    41,
+    967,
+    245,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Open covered calls",
+   "weight": 600
+  },
+  {
+   "box": [
+    41,
+    1543,
+    308,
+    29
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Roll 2 AAPL calls",
+   "weight": 600
+  },
+  {
+   "box": [
+    41,
+    2021,
+    209,
+    57
+   ],
+   "level": 2,
+   "size": 22,
+   "text": "Profit at expiry after the roll",
+   "weight": 600
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "action": {
+   "first": {
+    "bottom": 1889,
+    "section": "Roll order",
+    "sel": "div.roll > div.panel.ticket:nth-of-type(1) > div.ticket-actions > button.btn:nth-of-type(1)",
+    "text": "Review roll order",
+    "top": 1839,
+    "whole": true
+   },
+   "found": 1,
+   "label": "Review roll order",
+   "screen_height": 844
+  },
+  "cues": {
+   "by_cue": {
+    "border": 14,
+    "fill": 3,
+    "underline": 1
+   },
+   "checked": 15,
+   "nav_links": 7,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 137,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      16,
+      53,
+      56,
+      42
+     ],
+     "text": "Income"
+    },
+    {
+     "box": [
+      96,
+      53,
+      70,
+      42
+     ],
+     "text": "Positions"
+    },
+    {
+     "box": [
+      190,
+      53,
+      52,
+      42
+     ],
+     "text": "Orders"
+    },
+    {
+     "box": [
+      266,
+      53,
+      64,
+      42
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Income",
+     "Positions",
+     "Orders",
+     "Settings"
+    ]
+   ],
+   "sel": "header.app-bar > div.wrap > nav.app-nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 2469,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 2469,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

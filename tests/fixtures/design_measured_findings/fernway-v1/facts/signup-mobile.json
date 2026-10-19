@@ -1,0 +1,201 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "First name",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(2) > div.field:nth-of-type(1) > input",
+   "type": "text",
+   "value": "Maya"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Last name",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(2) > div.field:nth-of-type(2) > input",
+   "type": "text",
+   "value": "Okafor"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Work email",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(3) > input",
+   "type": "email",
+   "value": "maya@kettleandco.com"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Password",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(4) > input.bad",
+   "type": "password",
+   "value": "(set)"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Company name",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(5) > input",
+   "type": "text",
+   "value": "Kettle & Co"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Phone number (required)",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(6) > div.field:nth-of-type(1) > input",
+   "type": "tel",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Company size (required)",
+   "name_from": "placeholder only",
+   "sel": "form > div.two:nth-of-type(6) > div.field:nth-of-type(2) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "How did you hear about us? (required)",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(7) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Your job title (required)",
+   "name_from": "placeholder only",
+   "sel": "div.wrap.page > form > div.field:nth-of-type(8) > input",
+   "type": "text",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "I agree to the Terms and the Privacy policy.",
+   "name_from": "label",
+   "sel": "div.wrap.page > form > label.agree > input",
+   "type": "checkbox",
+   "value": "on"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    0,
+    183,
+    390,
+    38
+   ],
+   "level": 1,
+   "size": 32,
+   "text": "Start your free trial",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 10,
+    "fill": 1,
+    "native control": 1,
+    "underline": 3
+   },
+   "checked": 14,
+   "nav_links": 8,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 119,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      62,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      107,
+      62,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      182,
+      62,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      286,
+      62,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1642,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 1642,
+ "page_width": {
+  "overflows": false,
+  "scroll": 390,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

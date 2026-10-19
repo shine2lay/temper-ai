@@ -1,0 +1,159 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Timezone",
+   "name_from": "label",
+   "sel": "#timezone",
+   "type": "select-one",
+   "value": "America/Los_Angeles"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    104,
+    137,
+    1072,
+    45
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Your workspace preferences",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    341,
+    233,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Meeting preferences",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    503,
+    244,
+    23
+   ],
+   "level": 3,
+   "size": 18,
+   "text": "Pause all meeting reminders",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [
+   {
+    "beside": "Meeting preferences",
+    "height": 400,
+    "section": "Meeting preferences",
+    "share": 0.34,
+    "side": "middle",
+    "top": 272,
+    "width": 245,
+    "x": 431
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Your workspace preferences",
+     "Manage reminders and the timezone for your meetings."
+    ],
+    "name": "Your workspace preferences"
+   },
+   {
+    "blocks": [
+     "All changes saved",
+     "Meeting preferences",
+     "Unsaved changes",
+     "Pause all meeting reminders",
+     "Reminders enabled"
+    ],
+    "name": "Meeting preferences"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 2,
+    "native control": 1,
+    "underline": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   824
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 89,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      1004,
+      28,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      1113,
+      28,
+      63,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 800,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 800,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

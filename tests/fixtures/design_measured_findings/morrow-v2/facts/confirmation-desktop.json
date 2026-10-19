@@ -1,0 +1,141 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    104,
+    176,
+    720,
+    45
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Your room is booked",
+   "weight": 700
+  },
+  {
+   "box": [
+    129,
+    317,
+    670,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Willow room",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    815,
+    720,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Planning another meeting?",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Reservation MR-1042",
+     "Your room is booked",
+     "You’re all set. A confirmation has been sent to jordan@example.com.",
+     "Willow room",
+     "Everything you need for a focused team session.",
+     "When",
+     "Wednesday, October 14, 2026",
+     "Time",
+     "10:00–12:00 America/Los_Angeles",
+     "Your team",
+     "8 people · Capacity 10",
+     "Where",
+     "24 Grove Street, Portland",
+     "Free cancellation until October 13 at 10:00 America/Los_Angeles.",
+     "Available after your visit.",
+     "Planning another meeting?",
+     "Explore availability for October 14."
+    ],
+    "name": "Your room is booked"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 4,
+    "fill": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   799
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 89,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      1009,
+      28,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      1118,
+      28,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 1071,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 1071,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

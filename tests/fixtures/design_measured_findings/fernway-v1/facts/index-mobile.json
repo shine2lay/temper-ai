@@ -1,0 +1,461 @@
+{
+ "axe": [
+  {
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(1) > p"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(2) > p"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(3) > p"
+    }
+   ],
+   "wcag": [
+    "wcag2aa",
+    "wcag143"
+   ]
+  },
+  {
+   "help": "Images must have alternative text",
+   "id": "image-alt",
+   "impact": "critical",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-brightbean.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-northdesk.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-saltmarsh.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-kettle.svg\"]"
+    }
+   ],
+   "wcag": [
+    "wcag2a",
+    "wcag111"
+   ]
+  }
+ ],
+ "contrast_failures": [
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    24,
+    1275,
+    342,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(1) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "Start from last week, fill the gaps and publish. Fernway flags anyone booked over their co",
+   "transform": "none",
+   "weight": 400
+  },
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    24,
+    1435,
+    342,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(2) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "Staff offer and pick up shifts in the app. You approve each swap with one tap, and the rot",
+   "transform": "none",
+   "weight": 400
+  },
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    24,
+    1595,
+    342,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(3) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "See the week's wage bill change while you build it, against the budget you set for the wee",
+   "transform": "none",
+   "weight": 400
+  }
+ ],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    24,
+    285,
+    342,
+    67
+   ],
+   "level": 1,
+   "size": 28,
+   "text": "Build next week's rota in ten minutes",
+   "weight": 400
+  },
+  {
+   "box": [
+    24,
+    1185,
+    342,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Everything a rota needs",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    1235,
+    342,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Copy, fix, publish",
+   "weight": 600
+  },
+  {
+   "box": [
+    24,
+    1395,
+    342,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Swaps without the texts",
+   "weight": 600
+  },
+  {
+   "box": [
+    24,
+    1555,
+    342,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Cost as you plan",
+   "weight": 600
+  },
+  {
+   "box": [
+    24,
+    1811,
+    342,
+    67
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Why teams switch from spreadsheets",
+   "weight": 700
+  },
+  {
+   "box": [
+    24,
+    2438,
+    342,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "How it works",
+   "weight": 700
+  },
+  {
+   "box": [
+    49,
+    2542,
+    186,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Import your team",
+   "weight": 600
+  },
+  {
+   "box": [
+    317,
+    2542,
+    186,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Copy a typical week",
+   "weight": 600
+  },
+  {
+   "box": [
+    585,
+    2542,
+    186,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Fill the gaps",
+   "weight": 600
+  },
+  {
+   "box": [
+    853,
+    2542,
+    186,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Publish",
+   "weight": 600
+  },
+  {
+   "box": [
+    24,
+    2695,
+    342,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Simple pricing",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [
+  {
+   "box": [
+    24,
+    76,
+    59,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Product",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(1)"
+  },
+  {
+   "box": [
+    107,
+    76,
+    52,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Pricing",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(2)"
+  },
+  {
+   "box": [
+    182,
+    76,
+    80,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Customers",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(3)"
+  },
+  {
+   "box": [
+    286,
+    76,
+    50,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Sign in",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(4)"
+  }
+ ],
+ "overflowing": [
+  {
+   "box": [
+    24,
+    2488,
+    1040,
+    183
+   ],
+   "sel": "#main > section.how:nth-of-type(5) > div.wrap > div.steps"
+  }
+ ],
+ "page_checks": {
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 2
+   },
+   "checked": 3,
+   "nav_links": 9,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "nav": {
+   "found": true,
+   "header_height": 133,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      24,
+      76,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      107,
+      76,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      182,
+      76,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      286,
+      76,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 3246,
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ]
+ },
+ "page_height": 3246,
+ "page_width": {
+  "overflows": true,
+  "scroll": 1064,
+  "viewport": 390
+ },
+ "small_targets": [],
+ "unnamed_graphics": [
+  {
+   "box": [
+    24,
+    945,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(1)",
+   "src": "/img/logo-brightbean.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    204,
+    945,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(2)",
+   "src": "/img/logo-northdesk.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    24,
+    1025,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(3)",
+   "src": "/img/logo-saltmarsh.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    204,
+    1025,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(4)",
+   "src": "/img/logo-kettle.svg",
+   "tag": "img"
+  }
+ ],
+ "viewport": [
+  390,
+  844
+ ],
+ "weak_boundaries": []
+}

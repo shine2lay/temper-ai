@@ -1,0 +1,27 @@
+{
+ "page_checks": {
+  "primary_action": ""
+ },
+ "pages": [
+  {
+   "name": "page-09-index",
+   "page": "page-09/index.html",
+   "views": [
+    {
+     "facts": "facts/page-09-index-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    }
+   ]
+  }
+ ],
+ "viewports": {
+  "desktop": [
+   1280,
+   800
+  ]
+ }
+}

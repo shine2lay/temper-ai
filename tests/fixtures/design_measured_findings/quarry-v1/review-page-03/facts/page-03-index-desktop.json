@@ -1,0 +1,508 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    80,
+    182,
+    581,
+    246
+   ],
+   "level": 1,
+   "size": 56,
+   "text": "Your food scraps, collected every week and turned into compost.",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    904,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "How a pickup works",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Fill the caddy",
+   "weight": 600
+  },
+  {
+   "box": [
+    464,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Put the bin out on Tuesday",
+   "weight": 600
+  },
+  {
+   "box": [
+    848,
+    1322,
+    352,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "We swap it",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    1688,
+    528,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "What your scraps become",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    2178,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "What it costs",
+   "weight": 600
+  },
+  {
+   "box": [
+    113,
+    2366,
+    79,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Weekly",
+   "weight": 600
+  },
+  {
+   "box": [
+    685,
+    2366,
+    184,
+    28
+   ],
+   "level": 3,
+   "size": 22,
+   "text": "Every other week",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    2889,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "Questions",
+   "weight": 600
+  },
+  {
+   "box": [
+    80,
+    3568,
+    1120,
+    44
+   ],
+   "level": 2,
+   "size": 40,
+   "text": "Start with one Tuesday",
+   "weight": 600
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Kitchen compost pickup",
+     "Your food scraps, collected every week and turned into compost.",
+     "Keep a sealed caddy under the sink for peels, coffee grounds and leftovers. Each Tuesday we swap the full one for a washed one and take your scraps to a city compost yard.",
+     "From $6 a week. Skip or stop any week."
+    ],
+    "name": "Hero"
+   },
+   {
+    "blocks": [
+     "How a pickup works",
+     "One caddy, one morning a week. You never carry scraps further than your front step.",
+     "Step 1",
+     "Fill the caddy",
+     "The 7-litre caddy lives under your sink with a roll of compostable liners. Peels, grounds and plate scrapings go in as you cook.",
+     "Step 2",
+     "Put the bin out on Tuesday",
+     "Tip the caddy into the lockable outdoor bin and leave it on your step or by your building door before 7 a.m.",
+     "Step 3",
+     "We swap it",
+     "Our driver leaves a freshly washed bin and takes the full one to the yard. You get a text when it's done."
+    ],
+    "name": "How it works"
+   },
+   {
+    "blocks": [
+     "What your scraps become",
+     "A household fills about 3.5 kg of scraps a week. Over a year that comes to about 180 kg, which the Mill Lane yard turns into about 60 kg of finished compost.",
+     "Each April you can collect a 10-litre bag for your pots and window boxes. Whatever you leave goes to the community gardens next to the yard."
+    ],
+    "name": "What it makes"
+   },
+   {
+    "blocks": [
+     "What it costs",
+     "Two plans with the same caddy, liners and Tuesday round. Pay by the month; there is no sign-up fee.",
+     "Weekly",
+     "$6 a week",
+     "A pickup every Tuesday. Suits most homes of two or more.",
+     "Every other week",
+     "$4 a round",
+     "A pickup on alternate Tuesdays. Suits one person or a small kitchen.",
+     "Change plans, pause for a holiday or cancel from your account page."
+    ],
+    "name": "Prices"
+   },
+   {
+    "blocks": [
+     "Questions",
+     "What people ask before their first round.",
+     "Does the caddy smell?",
+     "The lid seals and has a charcoal filter. When the caddy is full, tip it into the larger bin we leave outside; most homes do that twice a week.",
+     "What can go in?",
+     "Fruit and vegetable peels, coffee grounds, tea bags, eggshells, bread and cooked leftovers. Not bones, plastic or cat litter.",
+     "I live in a flat. Does that work?",
+     "Yes. Leave the bin by your building's main door or with the concierge, and tell us where when you book.",
+     "What if I miss a Tuesday?",
+     "Keep the bin until the following week and we take both loads then. Going away? Pause before Monday at 6 p.m.",
+     "Who runs Loamwise?",
+     "Ana Ruiz and Theo Park, who also run the Mill Lane compost yard. Write to them at .",
+     "Can I stop at any time?",
+     "Yes. Cancel whenever you like; we collect the bin on your last round."
+    ],
+    "name": "Questions"
+   },
+   {
+    "blocks": [
+     "Start with one Tuesday",
+     "Book online in two minutes. The caddy and a roll of liners arrive the week before your first round."
+    ],
+    "name": "Start"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 2,
+    "fill": 2,
+    "underline": 2
+   },
+   "checked": 6,
+   "nav_links": 9,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": true,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 75,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      695,
+      25,
+      90,
+      23
+     ],
+     "text": "How it works"
+    },
+    {
+     "box": [
+      812,
+      25,
+      97,
+      23
+     ],
+     "text": "What it makes"
+    },
+    {
+     "box": [
+      938,
+      25,
+      41,
+      23
+     ],
+     "text": "Prices"
+    },
+    {
+     "box": [
+      1007,
+      25,
+      69,
+      23
+     ],
+     "text": "Questions"
+    },
+    {
+     "box": [
+      1105,
+      25,
+      96,
+      23
+     ],
+     "text": "Book a pickup"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How it works",
+     "What it makes",
+     "Prices",
+     "Questions",
+     "Book a pickup"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.site-nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 0,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      153,
+      230,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.eyebrow:nth-of-type(1)",
+    "size": 15,
+    "text": "KITCHEN COMPOST PICKUP",
+    "weight": 800
+   },
+   {
+    "color": [
+     46,
+     36,
+     25,
+     1
+    ],
+    "declared": 13.51,
+    "id": 1,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      80,
+      196,
+      472,
+      34
+     ],
+     [
+      80,
+      257,
+      559,
+      34
+     ],
+     [
+      80,
+      319,
+      420,
+      34
+     ],
+     [
+      80,
+      380,
+      250,
+      34
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > h1",
+    "size": 56,
+    "text": "Your food scraps, collected every week and turned into compo",
+    "weight": 600
+   },
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 2,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      458,
+      513,
+      14
+     ],
+     [
+      80,
+      492,
+      568,
+      14
+     ],
+     [
+      80,
+      526,
+      555,
+      14
+     ],
+     [
+      80,
+      560,
+      48,
+      14
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.lede:nth-of-type(2)",
+    "size": 22,
+    "text": "Keep a sealed caddy under the sink for peels, coffee grounds",
+    "weight": 400
+   },
+   {
+    "color": [
+     47,
+     107,
+     58,
+     1
+    ],
+    "declared": 5.69,
+    "id": 3,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      270,
+      636,
+      137,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a:nth-of-type(2)",
+    "size": 18,
+    "text": "See how it works",
+    "weight": 400
+   },
+   {
+    "color": [
+     90,
+     74,
+     58,
+     1
+    ],
+    "declared": 7.55,
+    "id": 4,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      80,
+      695,
+      263,
+      9
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.note:nth-of-type(3)",
+    "size": 15,
+    "text": "From $6 a week. Skip or stop any week.",
+    "weight": 400
+   }
+  ],
+  "page_height": 3979,
+  "pixels": {
+   "0": {
+    "bg": "rgb(243,233,217)",
+    "ratio": 7.07
+   },
+   "1": {
+    "bg": "rgb(243,234,218)",
+    "ratio": 12.74
+   },
+   "2": {
+    "bg": "rgb(246,239,226)",
+    "ratio": 7.39
+   },
+   "3": {
+    "bg": "rgb(247,241,230)",
+    "ratio": 5.69
+   },
+   "4": {
+    "bg": "rgb(247,241,230)",
+    "ratio": 7.55
+   }
+  },
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 3979,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

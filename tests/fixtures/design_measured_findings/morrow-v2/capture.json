@@ -1,0 +1,127 @@
+{
+ "page_checks": {
+  "primary_action": ""
+ },
+ "pages": [
+  {
+   "name": "index",
+   "page": "index.html",
+   "views": [
+    {
+     "facts": "facts/index-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/index-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "rooms",
+   "page": "rooms.html",
+   "views": [
+    {
+     "facts": "facts/rooms-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/rooms-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "booking",
+   "page": "booking.html",
+   "views": [
+    {
+     "facts": "facts/booking-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/booking-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "settings",
+   "page": "settings.html",
+   "views": [
+    {
+     "facts": "facts/settings-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/settings-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  },
+  {
+   "name": "confirmation",
+   "page": "confirmation.html",
+   "views": [
+    {
+     "facts": "facts/confirmation-desktop.json",
+     "size": [
+      1280,
+      800
+     ],
+     "viewport": "desktop"
+    },
+    {
+     "facts": "facts/confirmation-mobile.json",
+     "size": [
+      390,
+      844
+     ],
+     "viewport": "mobile"
+    }
+   ]
+  }
+ ],
+ "viewports": {
+  "desktop": [
+   1280,
+   800
+  ],
+  "mobile": [
+   390,
+   844
+  ]
+ }
+}

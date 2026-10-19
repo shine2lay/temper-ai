@@ -1,0 +1,173 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "you@company.com",
+   "name_from": "placeholder only",
+   "sel": "#guest-email",
+   "type": "email",
+   "value": ""
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Reservation date (required)",
+   "name_from": "label",
+   "sel": "#meeting-date",
+   "type": "date",
+   "value": "2026-10-14"
+  },
+  {
+   "aria_invalid": "",
+   "described_by": "",
+   "name": "Email me room news (optional)",
+   "name_from": "label",
+   "sel": "div.booking-grid:nth-of-type(2) > section.stack:nth-of-type(1) > label.check-label > input",
+   "type": "checkbox",
+   "value": "on"
+  }
+ ],
+ "headings": [
+  {
+   "box": [
+    104,
+    176,
+    1072,
+    45
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Check the details",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    315,
+    512,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Guest details",
+   "weight": 700
+  },
+  {
+   "box": [
+    689,
+    340,
+    462,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Payment summary",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Your reservation · Review and payment",
+     "Check the details",
+     "Willow · 8 people · 10:00–12:00 All times in America/Los_Angeles."
+    ],
+    "name": "Check the details"
+   },
+   {
+    "blocks": [
+     "Guest details",
+     "Free cancellation until 24 hours before your start time.",
+     "Payment summary",
+     "Willow · October 15, 2026 10:00–12:00 · 8 people",
+     "2 hours × $24",
+     "$48",
+     "Service fee",
+     "$6",
+     "Total",
+     "$62",
+     "Payment method: Visa ending 4242",
+     "Pressing Save draft charges your card and confirms this reservation."
+    ],
+    "name": "Guest details"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 1,
+    "native control": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   1176
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 89,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      1009,
+      28,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      1118,
+      28,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 946,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 946,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

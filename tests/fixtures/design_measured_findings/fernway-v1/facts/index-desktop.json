@@ -1,0 +1,531 @@
+{
+ "axe": [
+  {
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(1) > p"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(2) > p"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.55 (foreground color: #9aa3ae, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".feature:nth-child(3) > p"
+    }
+   ],
+   "wcag": [
+    "wcag2aa",
+    "wcag143"
+   ]
+  },
+  {
+   "help": "Images must have alternative text",
+   "id": "image-alt",
+   "impact": "critical",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-brightbean.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-northdesk.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-saltmarsh.svg\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics ",
+     "target": "img[src$=\"logo-kettle.svg\"]"
+    }
+   ],
+   "wcag": [
+    "wcag2a",
+    "wcag111"
+   ]
+  }
+ ],
+ "contrast_failures": [
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    104,
+    792,
+    336,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(1) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "Start from last week, fill the gaps and publish. Fernway flags anyone booked over their co",
+   "transform": "none",
+   "weight": 400
+  },
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    472,
+    792,
+    336,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(2) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "Staff offer and pick up shifts in the app. You approve each swap with one tap, and the rot",
+   "transform": "none",
+   "weight": 400
+  },
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    840,
+    792,
+    336,
+    72
+   ],
+   "color": "rgb(154,163,174)",
+   "contrast": 2.55,
+   "inactive": false,
+   "line_height": "24px",
+   "needs": 4.5,
+   "sel": "div.wrap > div.grid3 > div.feature:nth-of-type(3) > p",
+   "size": 16,
+   "tag": "p",
+   "text": "See the week's wage bill change while you build it, against the budget you set for the wee",
+   "transform": "none",
+   "weight": 400
+  }
+ ],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    104,
+    258,
+    536,
+    34
+   ],
+   "level": 1,
+   "size": 28,
+   "text": "Build next week's rota in ten minutes",
+   "weight": 400
+  },
+  {
+   "box": [
+    104,
+    702,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Everything a rota needs",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    752,
+    336,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Copy, fix, publish",
+   "weight": 600
+  },
+  {
+   "box": [
+    472,
+    752,
+    336,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Swaps without the texts",
+   "weight": 600
+  },
+  {
+   "box": [
+    840,
+    752,
+    336,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Cost as you plan",
+   "weight": 600
+  },
+  {
+   "box": [
+    104,
+    1008,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Why teams switch from spreadsheets",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    1361,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "How it works",
+   "weight": 700
+  },
+  {
+   "box": [
+    129,
+    1465,
+    194,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Import your team",
+   "weight": 600
+  },
+  {
+   "box": [
+    405,
+    1465,
+    194,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Copy a typical week",
+   "weight": 600
+  },
+  {
+   "box": [
+    681,
+    1465,
+    194,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Fill the gaps",
+   "weight": 600
+  },
+  {
+   "box": [
+    957,
+    1465,
+    194,
+    24
+   ],
+   "level": 3,
+   "size": 20,
+   "text": "Publish",
+   "weight": 600
+  },
+  {
+   "box": [
+    104,
+    1618,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Simple pricing",
+   "weight": 700
+  }
+ ],
+ "long_lines": [
+  {
+   "chars_per_line": 111,
+   "lines": 4,
+   "sel": "#main > section.why:nth-of-type(4) > div.wrap > p:nth-of-type(1)",
+   "text": "Most small teams start with a spreadsheet and a group chat. It works until someone swaps a",
+   "width": 1072
+  },
+  {
+   "chars_per_line": 118,
+   "lines": 2,
+   "sel": "#main > section.why:nth-of-type(4) > div.wrap > p:nth-of-type(2)",
+   "text": "Setting up takes an afternoon. Import your team from a spreadsheet, set each person's role",
+   "width": 1072
+  }
+ ],
+ "no_focus_ring": [
+  {
+   "box": [
+    684,
+    16,
+    59,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Product",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(1)"
+  },
+  {
+   "box": [
+    766,
+    16,
+    52,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Pricing",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(2)"
+  },
+  {
+   "box": [
+    842,
+    16,
+    80,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Customers",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(3)"
+  },
+  {
+   "box": [
+    946,
+    16,
+    50,
+    40
+   ],
+   "box_shadow": "none",
+   "name": "Sign in",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "header.site-header > div.wrap > nav.nav > a:nth-of-type(4)"
+  }
+ ],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "New · Auto-fill for open shifts",
+     "Build next week's rota in ten minutes",
+     "Leverage AI-native orchestration to operationalise workforce elasticity across your shift graph."
+    ],
+    "name": "Build next week's rota in ten minutes"
+   },
+   {
+    "blocks": [
+     "Teams who plan with Fernway"
+    ],
+    "name": "section"
+   },
+   {
+    "blocks": [
+     "Everything a rota needs",
+     "Copy, fix, publish",
+     "Start from last week, fill the gaps and publish. Fernway flags anyone booked over their contracted hours before you send.",
+     "Swaps without the texts",
+     "Staff offer and pick up shifts in the app. You approve each swap with one tap, and the rota updates for everyone.",
+     "Cost as you plan",
+     "See the week's wage bill change while you build it, against the budget you set for the week."
+    ],
+    "name": "Everything a rota needs"
+   },
+   {
+    "blocks": [
+     "Why teams switch from spreadsheets",
+     "Most small teams start with a spreadsheet and a group chat. It works until someone swaps a shift by text and nobody updates the sheet, or two people both think they are on the Saturday close, or payroll finds forty extra hours at the end of the month. Fernway keeps one rota that everyone sees on their phone, records every swap and every approval, and tells you the week's cost before you publish it, so the sheet and the chat stop disagreeing.",
+     "Setting up takes an afternoon. Import your team from a spreadsheet, set each person's roles and contracted hours, and copy in a typical week. From then on most managers spend about ten minutes a week on the rota, mostly approving swaps."
+    ],
+    "name": "Why teams switch from spreadsheets"
+   },
+   {
+    "blocks": [
+     "How it works",
+     "Step 1",
+     "Import your team",
+     "Upload a spreadsheet or add people by email.",
+     "Step 2",
+     "Copy a typical week",
+     "Start from last week or a saved template.",
+     "Step 3",
+     "Fill the gaps",
+     "Open shifts go to the people free to take them.",
+     "Step 4",
+     "Publish",
+     "Everyone gets their shifts on their phone."
+    ],
+    "name": "How it works"
+   },
+   {
+    "blocks": [
+     "Simple pricing",
+     "Free for teams of up to 5. Then $4 per person per month."
+    ],
+    "name": "Simple pricing"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 2
+   },
+   "checked": 3,
+   "nav_links": 9,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   1176
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 73,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      684,
+      16,
+      59,
+      40
+     ],
+     "text": "Product"
+    },
+    {
+     "box": [
+      766,
+      16,
+      52,
+      40
+     ],
+     "text": "Pricing"
+    },
+    {
+     "box": [
+      842,
+      16,
+      80,
+      40
+     ],
+     "text": "Customers"
+    },
+    {
+     "box": [
+      946,
+      16,
+      50,
+      40
+     ],
+     "text": "Sign in"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Product",
+     "Pricing",
+     "Customers",
+     "Sign in"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 2032,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 2032,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [
+  {
+   "box": [
+    376,
+    542,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(1)",
+   "src": "/img/logo-brightbean.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    556,
+    542,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(2)",
+   "src": "/img/logo-northdesk.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    736,
+    542,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(3)",
+   "src": "/img/logo-saltmarsh.svg",
+   "tag": "img"
+  },
+  {
+   "box": [
+    916,
+    542,
+    132,
+    32
+   ],
+   "sel": "#customers > div.wrap > img:nth-of-type(4)",
+   "src": "/img/logo-kettle.svg",
+   "tag": "img"
+  }
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

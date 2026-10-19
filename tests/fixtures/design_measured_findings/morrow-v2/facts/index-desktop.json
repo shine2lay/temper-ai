@@ -1,0 +1,206 @@
+{
+ "axe": [
+  {
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.23 (foreground color: #7b7b7b, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "target": ".intro-note"
+    }
+   ],
+   "wcag": [
+    "wcag2aa",
+    "wcag143"
+   ]
+  }
+ ],
+ "contrast_failures": [
+  {
+   "background": "rgb(255,255,255)",
+   "box": [
+    104,
+    282,
+    481,
+    46
+   ],
+   "color": "rgb(123,123,123)",
+   "contrast": 4.23,
+   "inactive": false,
+   "line_height": "23.2px",
+   "needs": 4.5,
+   "sel": "main.wrap > section.hero:nth-of-type(1) > p.intro-note:nth-of-type(2)",
+   "size": 16,
+   "tag": "p",
+   "text": "Bring your team together in a quiet, ready-to-use meeting room. Book by the hour, with spa",
+   "transform": "none",
+   "weight": 400
+  }
+ ],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    104,
+    208,
+    760,
+    54
+   ],
+   "level": 1,
+   "size": 48,
+   "text": "A room for your next good idea.",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    484,
+    341,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Walk in, settle in",
+   "weight": 700
+  },
+  {
+   "box": [
+    469,
+    484,
+    341,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Book only what you need",
+   "weight": 700
+  },
+  {
+   "box": [
+    835,
+    484,
+    341,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "Bring the whole team",
+   "weight": 700
+  },
+  {
+   "box": [
+    136,
+    651,
+    1008,
+    29
+   ],
+   "level": 2,
+   "size": 24,
+   "text": "$24 per hour. Nothing more.",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Space to think together",
+     "A room for your next good idea.",
+     "Bring your team together in a quiet, ready-to-use meeting room. Book by the hour, with space for everyone."
+    ],
+    "name": "A room for your next good idea."
+   },
+   {
+    "blocks": [
+     "Walk in, settle in",
+     "A screen, whiteboard and reliable Wi-Fi are ready when you arrive.",
+     "Book only what you need",
+     "A focused hour or a whole morning. Your space follows your schedule.",
+     "Bring the whole team",
+     "Choose a room that fits, from a one-to-one to a team workshop."
+    ],
+    "name": "What comes with your room"
+   },
+   {
+    "blocks": [
+     "$24 per hour. Nothing more.",
+     "All rooms, one simple rate. No booking fees. The price you see is the price you pay."
+    ],
+    "name": "$24 per hour. Nothing more."
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 1,
+    "fill": 1
+   },
+   "checked": 1,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   1176
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 89,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      1009,
+      28,
+      85,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      1118,
+      28,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 906,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 906,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

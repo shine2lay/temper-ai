@@ -1,0 +1,155 @@
+{
+ "axe": [],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    56,
+    97,
+    170,
+    29
+   ],
+   "level": 1,
+   "size": 24,
+   "text": "Week of 12 Oct",
+   "weight": 700
+  },
+  {
+   "box": [
+    1001,
+    182,
+    230,
+    22
+   ],
+   "level": 2,
+   "size": 18,
+   "text": "Open shifts",
+   "weight": 700
+  },
+  {
+   "box": [
+    1001,
+    446,
+    230,
+    17
+   ],
+   "level": 2,
+   "size": 14,
+   "text": "This week's cost",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [],
+ "page_checks": {
+  "columns": [],
+  "copy": [
+   {
+    "blocks": [
+     "Week of 12 Oct"
+    ],
+    "name": "Week of 12 Oct"
+   },
+   {
+    "blocks": [
+     "Drag a shift to another day or person to move it.",
+     "Open shifts",
+     "This week's cost",
+     "$4,312 Budget $4,500"
+    ],
+    "name": "Open shifts"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 3,
+    "fill": 3,
+    "icon": 2
+   },
+   "checked": 5,
+   "nav_links": 5,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   24,
+   1256
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 65,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      515,
+      12,
+      34,
+      40
+     ],
+     "text": "Rota"
+    },
+    {
+     "box": [
+      574,
+      12,
+      40,
+      40
+     ],
+     "text": "Team"
+    },
+    {
+     "box": [
+      638,
+      12,
+      49,
+      40
+     ],
+     "text": "Swaps"
+    },
+    {
+     "box": [
+      711,
+      12,
+      58,
+      40
+     ],
+     "text": "Reports"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Rota",
+     "Team",
+     "Swaps",
+     "Reports"
+    ]
+   ],
+   "sel": "header.bar > div.wrap > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 800,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 800,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

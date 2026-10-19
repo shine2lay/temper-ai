@@ -1,0 +1,239 @@
+{
+ "axe": [
+  {
+   "help": "All touch targets must be 24px large, or leave sufficient space",
+   "id": "target-size",
+   "impact": "serious",
+   "nodes": [
+    {
+     "summary": "Fix any of the following:\n  Target has insufficient size (20px by 20px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16px instead of at least 24px.",
+     "target": "button[aria-label=\"Previous day\"]"
+    },
+    {
+     "summary": "Fix any of the following:\n  Target has insufficient size (20px by 20px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16px instead of at least 24px.",
+     "target": "button[aria-label=\"Next day\"]"
+    }
+   ],
+   "wcag": [
+    "wcag22aa",
+    "wcag258"
+   ]
+  }
+ ],
+ "contrast_failures": [],
+ "fields": [],
+ "headings": [
+  {
+   "box": [
+    104,
+    137,
+    1072,
+    45
+   ],
+   "level": 1,
+   "size": 40,
+   "text": "Find your meeting space",
+   "weight": 700
+  },
+  {
+   "box": [
+    104,
+    373,
+    1072,
+    34
+   ],
+   "level": 2,
+   "size": 28,
+   "text": "Available rooms",
+   "weight": 700
+  },
+  {
+   "box": [
+    129,
+    499,
+    826,
+    23
+   ],
+   "level": 3,
+   "size": 18,
+   "text": "Cedar",
+   "weight": 700
+  },
+  {
+   "box": [
+    129,
+    679,
+    826,
+    23
+   ],
+   "level": 3,
+   "size": 18,
+   "text": "Willow",
+   "weight": 700
+  }
+ ],
+ "long_lines": [],
+ "no_focus_ring": [
+  {
+   "box": [
+    979,
+    521,
+    150,
+    45
+   ],
+   "box_shadow": "none",
+   "name": "Choose Cedar",
+   "outline": "none 3px",
+   "ring": false,
+   "sel": "#choose-cedar"
+  }
+ ],
+ "page_checks": {
+  "columns": [
+   {
+    "beside": "Available rooms",
+    "height": 400,
+    "section": "Available rooms",
+    "share": 0.31,
+    "side": "middle",
+    "top": 374,
+    "width": 322,
+    "x": 657
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Find your meeting space",
+     "A quiet place for your next team session."
+    ],
+    "name": "Find your meeting space"
+   },
+   {
+    "blocks": [
+     "8 people · Wednesday, October 14, 2026 10:00–12:00 · America/Los_Angeles"
+    ],
+    "name": "div"
+   },
+   {
+    "blocks": [
+     "Available rooms",
+     "Recommended for your team",
+     "Cedar",
+     "Up to 6 people · Whiteboard · Screen",
+     "Free cancellation when you cancel at least 24 hours before your start time.",
+     "$24 / hour",
+     "Willow",
+     "Up to 10 people · Whiteboard · Screen",
+     "Free cancellation until 24 hours before your start time.",
+     "$24 / hour"
+    ],
+    "name": "Available rooms"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 4,
+    "fill": 1
+   },
+   "checked": 4,
+   "nav_links": 3,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   104,
+   1135
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 89,
+   "lines": 1,
+   "links": [
+    {
+     "box": [
+      1003,
+      28,
+      92,
+      32
+     ],
+     "text": "Find a room"
+    },
+    {
+     "box": [
+      1118,
+      28,
+      58,
+      32
+     ],
+     "text": "Settings"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "Find a room",
+     "Settings"
+    ]
+   ],
+   "sel": "header.site-header > div.wrap.header-inner > nav.nav",
+   "wrapped": []
+  },
+  "overlays": [],
+  "page_height": 934,
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "page_height": 934,
+ "page_width": {
+  "overflows": false,
+  "scroll": 1280,
+  "viewport": 1280
+ },
+ "small_targets": [
+  {
+   "box": [
+    430,
+    287,
+    20,
+    20
+   ],
+   "hit": "target",
+   "name": "Previous day",
+   "sel": "main.wrap > div.search-summary:nth-of-type(2) > div.date-stepper > button:nth-of-type(1)",
+   "too_close_to": {
+    "centre": 20,
+    "edge": 10,
+    "name": "Next day",
+    "sel": "main.wrap > div.search-summary:nth-of-type(2) > div.date-stepper > button:nth-of-type(2)"
+   }
+  },
+  {
+   "box": [
+    450,
+    287,
+    20,
+    20
+   ],
+   "hit": "target",
+   "name": "Next day",
+   "sel": "main.wrap > div.search-summary:nth-of-type(2) > div.date-stepper > button:nth-of-type(2)",
+   "too_close_to": {
+    "centre": 20,
+    "edge": 10,
+    "name": "Previous day",
+    "sel": "main.wrap > div.search-summary:nth-of-type(2) > div.date-stepper > button:nth-of-type(1)"
+   }
+  }
+ ],
+ "unnamed_graphics": [],
+ "viewport": [
+  1280,
+  800
+ ],
+ "weak_boundaries": []
+}

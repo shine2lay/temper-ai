@@ -16,7 +16,9 @@ Keys:
 * ``account_slots`` -- the account slots (the host helper's labels) a Pi run may use; the Pi
   lane picks one per run at its start, as ``account_pick`` says
   (:mod:`temper_ai.pi_agent.accounts`, ADR-M4-09 and -14). None by default here: the tracked
-  file lists them. The canonical provider's own slot (account 1) is never allowed.
+  file lists them. Any slot label may be listed, the canonical provider's own slot
+  (``anthropic``, account 1) too: the owner's decision dr-393b503dcdff replaced ADR-M4-14's
+  refusal of it. The host helper still serves only the slots on its own list that pi has.
 * ``account_room_file`` -- an absolute path, readable where the Pi lane runs, of the account
   room figures (:func:`temper_ai.pi_agent.accounts.read_room`); none by default: under the
   room pick a Pi run then can't pick its account and doesn't start.
@@ -248,13 +250,9 @@ SLOT_RE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 
 
 def slot_problem(slot: object) -> str | None:
-    """Why ``slot`` can't be a Pi run's account, else None. The canonical provider's own
-    name is account 1's slot: never on a member's route (ADR-M4-14), refused by name."""
-    from temper_ai.pi_agent.member import DEFAULT_PROVIDER
-
+    """Why ``slot`` can't be a Pi run's account, else None: only a label's shape is checked.
+    The canonical provider's own slot (account 1) is a slot like the others since the owner's
+    decision dr-393b503dcdff (2026-10-18), which replaced ADR-M4-14's refusal by name."""
     if not isinstance(slot, str) or not SLOT_RE.match(slot):
         return "must be a slot label (lower-case letters, digits, '-' or '_')"
-    if slot == DEFAULT_PROVIDER:
-        return (f"'{slot}' is account 1, which is never on a Pi member's route (ADR-M4-14): "
-                "list the other slots")
     return None

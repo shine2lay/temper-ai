@@ -73,7 +73,7 @@ def as_the_pi_lane(monkeypatch) -> None:
     monkeypatch.setenv(lanes.LANE_ENV, PI_LANE)
 
 
-#: The account slots these tests' team settings allow: any labels but account 1's.
+#: The account slots these tests' team settings allow (account 1's own tests list it).
 TEST_SLOTS = ("acct-b", "acct-c")
 
 

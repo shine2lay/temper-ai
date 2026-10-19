@@ -67,8 +67,20 @@ def test_token_serves_the_slot_asked_for(host, helpers, capsys):
 
 
 @needs_node
+def test_token_serves_the_base_slot_account_1_when_listed(host, helpers, capsys):
+    """The owner's decision dr-393b503dcdff replaced ADR-M4-14's refusal of account 1."""
+    host.write_auth({BASE: login(host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    helper = helper_for(host, helpers, allowed_slots=[BASE, SLOT])
+    assert ask_in_process(helper, f"token {BASE}") == "ok " + host.canary
+    assert helper.ceiling.used() == 1
+    lines = log_lines(capsys)
+    assert len(lines) == 1 and f" verb=token slot={BASE} result=ok " in lines[0]
+    assert host.canary not in "\n".join(lines)
+
+
+@needs_node
 @pytest.mark.parametrize("slot, answer", [
-    (BASE, f"denied slot {BASE} is account 1 and is never served"),
+    (BASE, f"denied slot {BASE} is not one this helper serves"),  # account 1, not listed
     (f"{BASE}-9", f"denied slot {BASE}-9 is not one this helper serves"),
     ("other-2", f"denied slot other-2 is not an alias of {BASE}"),
     (f"{BASE}-1", f"denied slot {BASE}-1 is not an alias of {BASE}"),
@@ -88,6 +100,7 @@ def test_token_refusals_before_the_bridge(host, helpers, capsys, slot, answer):
     (None, OTHER, f"denied slot {OTHER} has no stored login"),
     ("api_key", SLOT, f"denied slot {SLOT} has no OAuth login"),
     ("failing_refresh", SLOT, f"denied slot {SLOT}: its login could not be refreshed"),
+    ("base_listed", BASE, f"denied slot {BASE} has no stored login"),
 ])
 def test_token_refusals_from_the_bridge(host, helpers, capsys, setup, slot, answer):
     if setup == "unregistered":
@@ -97,8 +110,9 @@ def test_token_refusals_from_the_bridge(host, helpers, capsys, setup, slot, answ
     elif setup == "failing_refresh":
         host.write_auth({SLOT: login(host.canary, host.canary_refresh, 60 * 1000)})
         host.control(refresh="fail")
+    over = {"allowed_slots": [BASE, SLOT, OTHER]} if setup == "base_listed" else {}
     before = host.auth_state()
-    helper = helper_for(host, helpers)
+    helper = helper_for(host, helpers, **over)
     assert ask_in_process(helper, f"token {slot}") == answer
     assert host.auth_state() == before
     text = "\n".join(log_lines(capsys))

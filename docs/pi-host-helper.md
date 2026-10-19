@@ -45,8 +45,12 @@ the hourly ceiling) comes from a private config file outside the repo;
 - It stores nothing, and writes no file of its own. Its only output is one line per
   request on stderr (the journal, under systemd).
 
-It never serves the base provider's own slot (account 1), never serves a slot other than
-the one asked for, never copies a login to another slot or keeps one under another key,
+It serves only the slots on its own list that Pi really holds: the base provider's own slot
+(account 1, named like the base provider) and its multi-pass aliases, each only when listed.
+Account 1 is served since the owner's decision dr-393b503dcdff (2026-10-18), which replaced
+ADR-M4-14's refusal of it; its login is read and renewed by the Pi SDK's own built-in flow,
+under auth.json's lock, exactly as the chats do, and nothing is registered for it. It never
+serves a slot other than the one asked for, never copies a login to another slot or keeps one under another key,
 never edits auth.json itself, never patches or upgrades the SDK, and never falls back to
 another CLI.
 
@@ -64,8 +68,8 @@ start. Defaults in brackets.
 | `pi_agent_dir` | Pi's agent folder holding `auth.json` and `multi-pass.json` [`<home>/.pi/agent`] |
 | `path` | PATH folders for the Pi CLI, node and git [the helper's PATH] |
 | `pi_cli` | the command that runs Pi, as a list [`["pi"]`] |
-| `base_provider` | the base provider whose multi-pass aliases are served [`anthropic`] |
-| `allowed_slots` | the slots it serves, each an alias `<base_provider>-<n>` with n ≥ 2; the base slot itself (account 1) is refused in the config [none] |
+| `base_provider` | the base provider whose own slot (account 1) and multi-pass aliases may be served [`anthropic`] |
+| `allowed_slots` | the slots it serves, each the base slot `<base_provider>` itself (account 1) or an alias `<base_provider>-<n>` with n ≥ 2; any other name, or a slot listed twice, is refused in the config [none] |
 | `bridge.node` | node's path [`node`] |
 | `bridge.script` | the bridge's path (the pinned copy beside the script) |
 | `bridge.sdk_root` | the folder whose `node_modules` holds the Pi SDK the running chats load |
@@ -103,7 +107,7 @@ python3 <pinned folder>/temper_pi_host.py serve --config <private config>
   report and exits 0 or 1.
 - `python3 <pinned folder>/temper_pi_host.py ask --socket <socket> status` asks a running
   helper for its status (it can't ask for a token).
-- `python3 <pinned folder>/temper_pi_host.py ask --socket <socket> usage --slot <alias>`
+- `python3 <pinned folder>/temper_pi_host.py ask --socket <socket> usage --slot <slot>`
   asks for that slot's usage. `usage` requires `--slot`; `status` rejects it. No default.
   Any `ok` response, including `unavailable`, exits 0; a denial exits 1, CLI misuse exits 2.
 
@@ -124,8 +128,7 @@ Anything else: `denied the request is not one this helper knows`.
 **token.** The slot must be one of `allowed_slots`; the helper checks that before the
 bridge, and the bridge checks it again. Then the hourly ceiling, then the bridge, within
 `token_timeout_s`. The refusals, each naming the slot and none carrying text from the SDK:
-`slot <s> is account 1 and is never served`, `slot <s> is not an alias of <base>`,
-`slot <s> is not one this helper serves`, `slot <s> is not registered in Pi's multi-pass
+`slot <s> is not an alias of <base>`, `slot <s> is not one this helper serves`, `slot <s> is not registered in Pi's multi-pass
 subscriptions`, `slot <s>: Pi's multi-pass subscriptions could not be read`,
 `slot <s> has no stored login`, `slot <s> has no OAuth login`,
 `slot <s>: its login could not be refreshed`, `slot <s>: the login gave no token`,
@@ -151,8 +154,8 @@ running `stop_grace_s` later. The next request starts a new bridge, with the sta
 `not_configured`; `expected`; the `package`, `version`, `ai_package`, `ai_version` and
 `node` it loaded; `found` when the SDK on disk changed) and `slots`, for each allowed slot
 `pi` (the stock CLI's status and reason words; the stock CLI does not know multi-pass
-aliases, so expect `not_ready provider_not_found`) and `bridge` (`registered` or a refusal
-code, then `login_ready`, `login_refresh_due`, `login_missing`, `login_not_oauth` or
+aliases, so expect `not_ready provider_not_found` for them) and `bridge` (`registered`, for
+the base slot too, or a refusal code, then `login_ready`, `login_refresh_due`, `login_missing`, `login_not_oauth` or
 `login_unknown_expiry`). Status never refreshes and does not count toward the ceiling.
 
 **usage.** An additive protocol-1 verb; status, token validity, token ceiling and branch
@@ -273,15 +276,19 @@ helper runs, and a running bridge keeps its old code loaded; both write auth.jso
 skew could spend or garble a refresh token every chat on that slot uses. So before every
 token, status and usage request the bridge reads the versions on disk again and compares them
 with what it loaded; a change refuses that one request (`sdk_changed`, with the version
-found) before any read, modify or write of auth.json. The refresh step checks once more,
-under auth.json's lock, just before the network refresh. **Whenever the chats' Pi SDK is
+found) before any read, modify or write of auth.json. For an alias, the refresh step checks
+once more, under auth.json's lock, just before the network refresh; the base slot's
+(account 1's) refresh is the SDK's built-in flow with no step of the bridge's in it, so its
+versions are checked only before the request. **Whenever the chats' Pi SDK is
 upgraded, the helper's `bridge.sdk_version` (and `ai_version`) are updated, and the helper
 restarted, in the same step**; until then every token request is refused, plainly.
 
-**How a token is served.** The bridge registers the slot on the SDK's `ModelRuntime` the
-way the chats' multi-pass extension does: under the slot's own auth key, with the base
-provider's built-in OAuth flow. It checks that Pi's multi-pass subscriptions list the
-slot and that auth.json holds an OAuth login for it, then asks
+**How a token is served.** For an alias, the bridge registers the slot on the SDK's
+`ModelRuntime` the way the chats' multi-pass extension does: under the slot's own auth key,
+with the base provider's built-in OAuth flow, and checks that Pi's multi-pass subscriptions
+list the slot. The base slot (account 1) is the runtime's own built-in provider, used
+untouched: nothing is registered and multi-pass.json is not read for it. For either, the
+bridge checks that auth.json holds an OAuth login for the slot, then asks
 `ModelRuntime.getAuth(<slot>, {minOAuthValidityMs: 1800000})`. A login that expires within
 30 minutes is refreshed by the SDK's credential-modify path: under auth.json's lock it
 reads the file again and refreshes only if the login still expires soon, so the chats and
@@ -329,7 +336,8 @@ Pi SDK, and a canary login in a temp auth.json. It runs the real helper (`serve`
 `systemd-cat` with `--journald`) with the real bridge beside the script, which can only
 load the stub SDK. It checks: the socket is served; `status` answers `ok <json>` with the
 stub Pi version, the bridge's SDK package and version and both slot words, and no login
-text; a token comes back on the socket only; the base slot is refused; the vendored check
+text; a token comes back on the socket only; a slot not on the list (the base slot, there)
+is refused; the vendored check
 loads for usage on a synthetic unsupported base and reads no credential; usage without a
 slot is refused; changing the SDK
 version on disk refuses the next token and shows `sdk_changed` in status, with auth.json

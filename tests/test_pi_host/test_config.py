@@ -58,6 +58,12 @@ def test_the_values_ops_installs_are_accepted(host):
     assert cfg.allowed_slots == (SLOT, OTHER)
 
 
+def test_the_base_slot_account_1_may_be_listed_with_its_aliases(host):
+    """The owner's decision dr-393b503dcdff replaced ADR-M4-14's refusal of account 1."""
+    assert host.cfg(allowed_slots=[BASE, SLOT, OTHER]).allowed_slots == (BASE, SLOT, OTHER)
+    assert host.cfg(allowed_slots=[BASE]).allowed_slots == (BASE,)
+
+
 def test_defaults(host):
     raw = host.config()
     for key in ("pi_cli", "base_provider", "allowed_slots", "project_roots", "branch_enabled",
@@ -78,10 +84,11 @@ def test_comment_keys_are_ignored(host):
 
 
 @pytest.mark.parametrize("over, expected", [
-    ({"allowed_slots": [BASE]}, "it is account 1, never served"),
-    ({"allowed_slots": ["other-2"]}, "is not an alias of acme"),
-    ({"allowed_slots": [f"{BASE}-1"]}, "is not an alias of acme"),
+    ({"allowed_slots": ["other-2"]}, "is neither acme (account 1) nor an alias of it"),
+    ({"allowed_slots": [f"{BASE}-1"]}, "is neither acme (account 1) nor an alias of it"),
+    ({"allowed_slots": ["other"]}, "is neither acme (account 1) nor an alias of it"),
     ({"allowed_slots": [SLOT, SLOT]}, "lists a slot twice"),
+    ({"allowed_slots": [BASE, SLOT, BASE]}, "lists a slot twice"),
     ({"socket": "/tmp/" + "s" * 100}, "socket must be shorter than 100 bytes"),
     ({"socket": "relative.sock"}, "socket must be an absolute, normalized path"),
     ({"pi_state_root": "/tmp/../etc"}, "pi_state_root must be an absolute, normalized path"),
@@ -117,8 +124,8 @@ def test_bridge_refused(host, bridge_over, expected):
 
 
 def test_every_problem_is_named_at_once(host):
-    problems = problems_of(host.config(allowed_slots=[BASE], tokens_per_hour=0, surprise=1))
-    assert len(problems) == 3
+    problems = problems_of(host.config(allowed_slots=["other-2"], tokens_per_hour=0, surprise=1))
+    assert len(problems) == 3, problems
 
 
 def test_an_unreadable_config_file(host):

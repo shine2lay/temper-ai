@@ -92,15 +92,17 @@ The team settings name the account slots Pi runs may use (`account_slots`, defau
 `configs/team/team.yaml`; none in code, so a missing setting allows none), how a run's account
 is picked (`account_pick`: `room`, the default, or `settings_order`) and, for the room pick,
 the account-room file to pick by (`account_room_file`, set only in the private
-`configs/team/local/team.yaml`). Account 1, the base provider's own slot (`anthropic`), is
-refused by name wherever a slot is named, and is never picked.
+`configs/team/local/team.yaml`). Account 1, the base provider's own slot (`anthropic`), is a
+slot like the others: it may be listed and picked (the owner's decision dr-393b503dcdff,
+2026-10-18, replaced ADR-M4-14's refusal of it by name). The host helper still serves only
+the slots on its own list that Pi holds, and hands a member only a short-lived access token.
 
 ### The settings' order, with no capacity check (ADR-M4-19)
 
 For the frozen first trial (the owner's order of 6 Oct: no account checker and no allowance
 check by hand; a limit is accepted) the private settings say `account_pick: settings_order`
 and name no `account_room_file`. A run's first claim then takes the first allowed slot in
-`account_slots` order (never account 1). Nothing about any account's use is read or asked:
+`account_slots` order (account 1 too, when listed). Nothing about any account's use is read or asked:
 no account-room file, no usage call, no snapshot, no percentage and no reset date. The slot
 may be near or at its limit.
 

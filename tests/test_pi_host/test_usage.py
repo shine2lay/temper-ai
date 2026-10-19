@@ -144,6 +144,26 @@ def test_fresh_all_and_scoped_windows_no_identity_no_refresh_no_cap(host, helper
     unchanged(host, before)
 
 
+def test_the_base_slot_account_1_usage_is_read_when_listed(host, helpers):
+    """Account 1 (the owner's decision dr-393b503dcdff) is read like any listed slot, with no
+    multi-pass entry: the vendored checker numbers it 1; nothing is refreshed or written."""
+    host.write_auth({BASE: login("BASE-" + host.canary, host.canary_refresh, 10 * 60_000),
+                     SLOT: login(host.canary, host.canary_refresh, 10 * 60_000)})
+    host.fixture(slot=BASE)
+    (host.agent / "multi-pass.json").write_text("not json")
+    helper = helpers(allowed_slots=[BASE, SLOT, OTHER])
+    before = host.auth_state()
+    result = ask(helper, BASE)
+    assert result["status"] == "ok" and result["windows"][0] == {"key": "5h", "used_percent": 12.5,
+                                                                "resets_at": RESET}
+    assert host.fetch_events() == [{"usage": True, "authorised": True, "noRedirect": True}]
+    assert helper.ceiling.used() == 0
+    assert host.auth_state() == before and host.refreshes() == 0
+    assert not any(e.startswith(("runtime-created", "register", "list-credentials", "get-auth", "write-auth"))
+                   for e in host.events())
+    assert {e for e in host.events() if e.startswith("read-stored")} == {f"read-stored {BASE}"}
+
+
 def test_new_scoped_format_preserved_overall_zero_does_not_erase_scoped_limit(host, helpers):
     data = {"limits": [
         {"kind": "session", "percent": 0, "resets_at": None},
@@ -317,7 +337,7 @@ def test_sdk_drift_before_request_reads_no_auth(host, helpers):
     unchanged(host, before)
 
 
-@pytest.mark.parametrize("slot,reason", [(BASE, "account 1"), ("anthropic-9", "not one this helper serves"),
+@pytest.mark.parametrize("slot,reason", [(BASE, "not one this helper serves"), ("anthropic-9", "not one this helper serves"),
                                         ("acme-2", "not an alias"), ("a/b", "malformed"), (OTHER, "not registered")])
 def test_alias_and_registration_refused_before_auth(host, helpers, slot, reason):
     (host.agent / "multi-pass.json").write_text(json.dumps({"subscriptions": [{"provider": BASE, "index": 5}]}))
@@ -408,7 +428,7 @@ def test_bridge_defence_and_bad_auth_never_pass_exception_text(host, helpers):
     helper = helpers()
     helper.bridge.start()
     result = helper.bridge.request("usage", BASE, 10)
-    assert result["ok"] is False and result["reason"] == "account_1"
+    assert result["ok"] is False and result["reason"] == "not_served"  # account 1, not listed
     index = tph.sdk_package_dir(host.sdk_root) / "dist/index.js"
     index.write_text(index.read_text().replace('note("read-stored " + providerId);',
                                               'throw new Error("STUB-SECRET-BODY");'))

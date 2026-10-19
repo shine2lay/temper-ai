@@ -8,7 +8,7 @@
   "path": ["/home/<user>/.local/bin", "/home/<user>/.nvm/versions/node/<node-version>/bin", "/usr/bin", "/bin"],
   "pi_cli": ["pi"],
   "base_provider": "<base_provider>",
-  "_allowed_slots": "multi-pass alias slots <base_provider>-<n> (n >= 2) this helper serves; the base slot (account 1) is never served",
+  "_allowed_slots": "the slots this helper serves: the base slot <base_provider> itself (account 1) and/or multi-pass alias slots <base_provider>-<n> (n >= 2), each one Pi holds",
   "allowed_slots": ["<base_provider>-2", "<base_provider>-3"],
   "bridge": {
     "node": "/home/<user>/.nvm/versions/node/<node-version>/bin/node",

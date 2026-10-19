@@ -215,11 +215,13 @@ def test_the_slot_with_the_least_weekly_use_is_picked_ties_in_the_settings_order
     assert pick(SLOTS[::-1], rooms(acct_b=(10, 30), acct_c=(40, 30))).slot == "acct-c"
 
 
-def test_account_1_is_never_picked_even_with_the_most_room():
+def test_account_1_is_picked_by_its_room_when_listed_and_never_when_not():
+    """The owner's decision dr-393b503dcdff replaced ADR-M4-14's refusal of account 1."""
     found = {**rooms(acct_b=(50, 80)), "anthropic": Room("anthropic", 1, 1)}
-    assert pick(("anthropic", "acct-b"), found).slot == "acct-b"
-    with pytest.raises(AccountError, match="no account slot is allowed"):
-        pick(("anthropic",), found)
+    assert pick(("anthropic", "acct-b"), found).slot == "anthropic"  # the least weekly use
+    assert pick(("acct-b", "anthropic"), found).slot == "anthropic"
+    assert pick(("anthropic",), found).slot == "anthropic"
+    assert pick(("acct-b",), found).slot == "acct-b"  # its row is there, but it isn't listed
 
 
 @pytest.mark.parametrize("c_figures", [(85, 10), (10, 90), (None, 10), (10, None)],
@@ -391,9 +393,11 @@ def test_by_the_settings_order_the_run_takes_the_first_allowed_slot_reads_nothin
     (("acct-b",), "acct-b"),
     (("acct-b", "acct-c"), "acct-b"),
     (("acct-c", "acct-b"), "acct-c"),
-    ((DEFAULT_PROVIDER, "acct-c", "acct-b"), "acct-c"),
-], ids=["one-slot", "b-then-c", "c-then-b", "account-1-first"])
-def test_by_the_settings_order_the_first_allowed_slot_is_picked_never_account_1(slots, picked):
+    ((DEFAULT_PROVIDER, "acct-c", "acct-b"), DEFAULT_PROVIDER),
+    (("acct-c", DEFAULT_PROVIDER), "acct-c"),
+    ((DEFAULT_PROVIDER,), DEFAULT_PROVIDER),
+], ids=["one-slot", "b-then-c", "c-then-b", "account-1-first", "account-1-second", "account-1-only"])
+def test_by_the_settings_order_the_first_allowed_slot_is_picked_account_1_too(slots, picked):
     reader = sup.Tripwire("choose's read")
     cfg = TeamConfig(account_slots=slots, **BY_ORDER)
     assert accounts.pick_by_settings_order(slots) == picked
@@ -401,7 +405,7 @@ def test_by_the_settings_order_the_first_allowed_slot_is_picked_never_account_1(
     assert reader.calls == 0
 
 
-@pytest.mark.parametrize("slots", [(DEFAULT_PROVIDER,), ()], ids=["account-1-only", "none"])
+@pytest.mark.parametrize("slots", [("Not A Label",), ()], ids=["bad-label-only", "none"])
 def test_by_the_settings_order_no_allowed_slot_refuses_the_run(slots):
     with pytest.raises(AccountError, match="no account slot is allowed for Pi runs"):
         choose({}, config=TeamConfig(account_slots=slots, **BY_ORDER),
@@ -525,18 +529,22 @@ def test_the_tracked_settings_keep_the_room_pick(tmp_path):
     assert not [p for p in cfg.problems if "account_pick" in p]
 
 
-# --- account 1 is refused by name -------------------------------------------------------------
+# --- account 1 is a slot like the others (the owner's decision dr-393b503dcdff) ----------------
 
 
-def test_account_1_is_refused_by_name_wherever_it_appears(tmp_path):
+def test_account_1_is_allowed_when_listed_and_kept_and_refused_when_not_listed(tmp_path):
+    """ADR-M4-14 refused account 1 by name; the owner's decision dr-393b503dcdff (2026-10-18)
+    replaced that: only a label's shape is checked, and a slot is used only when listed."""
     assert DEFAULT_PROVIDER == "anthropic"
-    assert "account 1" in (slot_problem(DEFAULT_PROVIDER) or "")
+    assert slot_problem(DEFAULT_PROVIDER) is None
     for bad in ("Anthropic-2", "a b", "someone@example.com", "", 7):
         assert slot_problem(bad)
     assert slot_problem("acct-b") is None
     row = {"spawner_metadata": {"pi_lane": {"account": {"slot": DEFAULT_PROVIDER}}}}
-    with pytest.raises(AccountError, match="account 1"):
-        choose(row, config=config(account_slots=(*SLOTS, DEFAULT_PROVIDER)))
+    kept = choose(row, config=config(account_slots=(*SLOTS, DEFAULT_PROVIDER)))
+    assert kept["slot"] == DEFAULT_PROVIDER
+    with pytest.raises(AccountError, match="the run's account anthropic is no longer allowed"):
+        choose(row, config=config(account_slots=SLOTS))
 
     tracked = tmp_path / team_config.TEAM_DIR / "team.yaml"
     tracked.parent.mkdir(parents=True)
@@ -544,18 +552,26 @@ def test_account_1_is_refused_by_name_wherever_it_appears(tmp_path):
                                        "account_room_file": "relative/room.json"}),
                        encoding="utf-8")
     cfg = load_team_config(tmp_path)
-    assert cfg.account_slots == ("acct-b",) and cfg.account_room_file is None
-    assert any("account_slots[0]" in p and "account 1" in p for p in cfg.problems)
+    assert cfg.account_slots == (DEFAULT_PROVIDER, "acct-b") and cfg.account_room_file is None
+    assert not [p for p in cfg.problems if "account_slots" in p]
     assert any("account_room_file must be a plain absolute path" in p for p in cfg.problems)
 
 
-def test_the_tracked_defaults_list_the_two_other_slots_and_never_account_1():
+def test_the_team_settings_name_account_1_and_the_run_takes_it(tmp_path):
+    """What the owner asked for: the settings name account 1 alone, by the settings' order."""
+    cfg = team_settings(tmp_path, account_slots=[DEFAULT_PROVIDER], **BY_ORDER)
+    assert cfg.account_slots == (DEFAULT_PROVIDER,) and cfg.problems == ()
+    picked = choose({}, config=cfg, read=sup.Tripwire("choose's read"), now=NOW)
+    assert (picked["slot"], picked["by"], picked["capacity"]) == (DEFAULT_PROVIDER, "settings_order",
+                                                                  "not_checked")
+
+
+def test_the_tracked_defaults_list_two_alias_slots():
     from pathlib import Path
 
     tracked = Path(__file__).resolve().parents[2] / "configs" / team_config.TEAM_DIR / "team.yaml"
     data = yaml.safe_load(tracked.read_text(encoding="utf-8"))
     assert data["account_slots"] == ["anthropic-2", "anthropic-3"]
-    assert DEFAULT_PROVIDER not in data["account_slots"]
 
 
 # --- how a model call ended: the error path only (ADR-M4-16) -----------------------------------

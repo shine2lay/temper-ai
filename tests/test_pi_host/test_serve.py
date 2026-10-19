@@ -15,12 +15,14 @@ import pytest
 from .support import (
     BASE,
     NODE,
+    OTHER,
     PI_VERSION,
     SCRIPT,
     SDK_VERSION,
     SLOT,
     Host,
     Served,
+    login,
     tph,
 )
 
@@ -70,7 +72,7 @@ def test_serves_and_stops(host, served):
     assert stat.S_IMODE(os.stat(host.sock_dir).st_mode) == 0o700  # its folder untouched
     words = json.loads(s.ask("status")[3:])
     assert words["pi"] == PI_VERSION and words["bridge"]["version"] == SDK_VERSION
-    assert s.ask(f"token {BASE}") == f"denied slot {BASE} is account 1 and is never served"
+    assert s.ask(f"token {BASE}") == f"denied slot {BASE} is not one this helper serves"  # not listed
     assert s.stop() == 0
     assert not os.path.exists(s.socket)
     log = s.log()
@@ -79,7 +81,7 @@ def test_serves_and_stops(host, served):
     requests = [ln for ln in log.splitlines() if " verb=" in ln]
     assert len(requests) == 2
     assert " verb=status result=ok " in requests[0]
-    assert f" verb=token slot={BASE} result=denied why=account_1 " in requests[1]
+    assert f" verb=token slot={BASE} result=denied why=not_served " in requests[1]
     assert log.rstrip().endswith("temper-pi-host: stopped")
 
 
@@ -102,6 +104,25 @@ def test_a_login_never_leaves_the_socket(host, served):
     assert host.files_holding(host.canary, skip=(host.auth,)) == []
     assert host.files_holding(host.canary_refresh, skip=(host.auth,)) == []
     assert host.forbidden_pi_calls() == []
+
+
+@pytest.mark.timeout(60)
+def test_the_base_slot_account_1_is_served_when_listed(host, served):
+    """The owner's decision dr-393b503dcdff replaced ADR-M4-14's refusal of account 1."""
+    base_access = "BASE-" + host.canary
+    host.write_auth({BASE: login(base_access, host.canary_refresh, 2 * 3600 * 1000),
+                     SLOT: login(host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    s = serve(host, served, allowed_slots=[BASE, SLOT])
+    assert s.wait_ready()
+    assert s.ask(f"token {BASE}") == "ok " + base_access
+    assert s.ask(f"token {SLOT}") == "ok " + host.canary
+    assert s.ask(f"token {OTHER}") == f"denied slot {OTHER} is not one this helper serves"
+    assert s.stop() == 0
+    log = s.log()
+    assert f", slots {BASE},{SLOT}, branch off" in log
+    assert f" verb=token slot={BASE} result=ok " in log
+    assert host.canary not in log and host.canary_refresh not in log
+    assert host.files_holding(host.canary, skip=(host.auth,)) == []
 
 
 @pytest.mark.timeout(60)
@@ -170,10 +191,11 @@ def test_one_helper_per_socket_and_a_stale_socket_is_replaced(host, served):
 
 @pytest.mark.timeout(60)
 def test_a_bad_config_refuses_the_start(host, served):
-    s = Served(host, host.config(allowed_slots=[BASE]))
+    s = Served(host, host.config(allowed_slots=["other-2"]))
     served.append(s)
     assert s.proc.wait(timeout=30) == 2
-    assert "refused to start: allowed_slots can't hold acme: it is account 1, never served" in s.log()
+    assert ("refused to start: allowed_slots: 'other-2' is neither acme (account 1) nor an alias of it "
+            "like acme-2") in s.log()
 
 
 @pytest.mark.timeout(60)

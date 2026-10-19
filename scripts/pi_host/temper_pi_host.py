@@ -20,7 +20,8 @@ What it can touch (docs/pi-host-helper.md says the same, in more words):
   user and be mode 0700 (it never creates, chmods or chowns a folder);
 - it runs the host ``pi`` CLI for its version and the read-only ``auth check --no-refresh``;
 - it runs the auth bridge, which reads (and, when a login is due, refreshes) Pi logins
-  through the pinned Pi SDK's own auth storage, for the allowed multi-pass alias slots only;
+  through the pinned Pi SDK's own auth storage, for the allowed slots only: the base
+  provider's own slot (account 1) and multi-pass aliases of it, each only when listed;
 - for ``usage``, the bridge only reads the slot's stored login (never refreshes it) and asks
   the provider's fixed OAuth usage page once (one retry), through pi-multi-pass's own limits
   check vendored beside it (``vendor/pi-multi-pass-b8423d2``): no model call, no other address;
@@ -99,7 +100,6 @@ BRIDGE_KEYS = {"node", "script", "sdk_root", "sdk_package", "sdk_version", "ai_v
 # What a token refusal says.  Every one names the slot; none carries text from the Pi SDK.
 REFUSALS = {
     "bad_slot": "the slot name is missing or malformed",
-    "account_1": "slot {slot} is account 1 and is never served",
     "not_alias": "slot {slot} is not an alias of {base}",
     "not_served": "slot {slot} is not one this helper serves",
     "not_registered": "slot {slot} is not registered in Pi's multi-pass subscriptions",
@@ -122,7 +122,7 @@ REFUSALS = {
 }
 
 # A usage request the helper refuses outright (``denied``): the same slot checks as a token.
-USAGE_DENIALS = frozenset({"bad_slot", "account_1", "not_alias", "not_served", "not_registered",
+USAGE_DENIALS = frozenset({"bad_slot", "not_alias", "not_served", "not_registered",
                            "registry_unreadable", "no_bridge"})
 # Why a served usage request has no reading (``ok {"status":"unavailable","reason":...}``).
 # Fixed words only: never text from the provider, the Pi SDK or an exception.
@@ -244,10 +244,11 @@ def parse_config(raw: Any) -> Config:
         problems.append("allowed_slots must be a list of slot names")
         slots = []
     for slot in slots:
-        if slot == base:
-            problems.append(f"allowed_slots can't hold {slot}: it is account 1, never served")
-        elif not alias_pattern(base).match(slot):
-            problems.append(f"allowed_slots: {slot!r} is not an alias of {base} like {base}-2")
+        # The base slot (account 1) may be listed since the owner's decision dr-393b503dcdff
+        # (2026-10-18) replaced ADR-M4-14's refusal of it.
+        if slot != base and not alias_pattern(base).match(slot):
+            problems.append(f"allowed_slots: {slot!r} is neither {base} (account 1) nor an alias of it "
+                            f"like {base}-2")
     if len(set(slots)) != len(slots):
         problems.append("allowed_slots lists a slot twice")
 
@@ -816,12 +817,11 @@ def refusal(code: str, slot: str, cfg: Config, **extra: Any) -> str:
 
 
 def slot_problem(cfg: Config, slot: str) -> str | None:
-    """The helper's own slot check, before the bridge (which checks the same again)."""
+    """The helper's own slot check, before the bridge (which checks the same again). The base
+    provider's own slot (account 1) and its aliases are served only when listed."""
     if not WORD_RE.match(slot):
         return "bad_slot"
-    if slot == cfg.base_provider:
-        return "account_1"
-    if not alias_pattern(cfg.base_provider).match(slot):
+    if slot != cfg.base_provider and not alias_pattern(cfg.base_provider).match(slot):
         return "not_alias"
     if slot not in cfg.allowed_slots:
         return "not_served"
@@ -1248,11 +1248,14 @@ function bumpVersionOnDisk() {
 export class ModelRuntime {
   static async create(options) {
     note("runtime-created");
-    return new ModelRuntime(options);
+    // As in the real SDK, the built-in providers come from the providers package.
+    const { builtinProviders } = await import("@earendil-works/pi-ai/providers/all");
+    return new ModelRuntime(options, builtinProviders());
   }
-  constructor(options) {
+  constructor(options, builtins = []) {
     this.authPath = options.authPath;
     this.providers = new Map();
+    this.builtins = new Map(builtins.map((p) => [p.id, p]));
   }
   registerProvider(id, config) {
     if (typeof config?.oauth?.refreshToken !== "function") throw new Error("no oauth flow");
@@ -1269,7 +1272,9 @@ export class ModelRuntime {
   async getAuth(id, options = {}) {
     note("get-auth " + id);
     const provider = this.providers.get(id);
-    if (!provider) throw new Error("Unknown provider " + id);
+    // A built-in provider (the base slot) is used untouched: its own flow refreshes it.
+    const builtin = provider ? undefined : this.builtins.get(id)?.auth?.oauth;
+    if (!provider && !builtin) throw new Error("Unknown provider " + id);
     const stored = readAuth(this.authPath)[id];
     if (!stored || stored.type !== "oauth") return undefined;
     const minimum = Math.max(5 * 60_000, options.minOAuthValidityMs ?? 0);
@@ -1277,7 +1282,9 @@ export class ModelRuntime {
     if (Date.now() + minimum >= stored.expires) {
       if (control().refresh === "bump-before-refresh") bumpVersionOnDisk();
       try {
-        current = { ...(await provider.oauth.refreshToken(stored, options.signal)), type: "oauth" };
+        const fresh = provider ? await provider.oauth.refreshToken(stored, options.signal)
+          : await builtin.refresh(stored, options.signal ?? new AbortController().signal);
+        current = { ...fresh, type: "oauth" };
       } catch (error) {
         throw new Error("OAuth refresh failed for " + id, { cause: error });
       }
@@ -1287,7 +1294,7 @@ export class ModelRuntime {
       note("write-auth " + id);
       if (Date.now() + minimum >= current.expires) throw new Error("OAuth refresh returned a token that expires too soon");
     }
-    return { auth: { apiKey: provider.oauth.getApiKey(current) }, source: "OAuth" };
+    return { auth: { apiKey: provider ? provider.oauth.getApiKey(current) : current.access }, source: "OAuth" };
   }
 }
 """
@@ -1514,8 +1521,8 @@ class Selftest:
                    "status: no login text in the answer")
         self.check(asked(f"token {SELFTEST_SLOT}") == "ok " + self.canary,
                    "token: the stub login comes back on the socket only (not printed here)")
-        self.check(asked(f"token {SELFTEST_BASE}").startswith(f"denied slot {SELFTEST_BASE} is account 1"),
-                   "token: the base slot (account 1) is refused")
+        self.check(asked(f"token {SELFTEST_BASE}") == f"denied slot {SELFTEST_BASE} is not one this helper serves",
+                   "token: a slot not on the list (here the base slot, account 1) is refused")
         self.check(asked(f"usage {SELFTEST_SLOT}") == 'ok {"status":"unavailable","reason":"unsupported"}',
                    "usage: the vendored limits check loads; a base with no usage page reads nothing")
         self.check(asked("usage") == "denied the request is not one this helper knows",

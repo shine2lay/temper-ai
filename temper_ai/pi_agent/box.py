@@ -693,9 +693,10 @@ class BoxSpec:
     #: ``reachable``, the names it may message), or None for a single Pi step. With it the
     #: box gets a third socket, ``team.sock``, and the send tool (``TEAM_TOOL``) in ``tools``.
     team: Any = None
-    #: The run's pinned account slot label (ADR-M4-14/15, e.g. a pi-multi-pass alias of the
-    #: route's provider), recorded exactly on the turn. The host helper is asked for this slot
-    #: only; inside the box the provider stays the route's. Empty: the route's provider.
+    #: The run's pinned account slot label (ADR-M4-14/15, e.g. ``anthropic`` for account 1 or
+    #: a pi-multi-pass alias of the route's provider such as ``anthropic-2``), recorded
+    #: exactly on the turn. The host helper is asked for this slot only; inside the box the
+    #: provider stays the route's. Empty: the route's provider.
     slot: str = ""
 
 

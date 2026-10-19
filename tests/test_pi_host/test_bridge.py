@@ -128,6 +128,48 @@ def test_it_serves_the_slot_asked_for(host, bridges):
     assert [e for e in host.events() if e.startswith("register")] == [f"register {SLOT}"]
 
 
+def test_the_base_slot_account_1_is_served_when_listed_with_nothing_registered(host, bridges):
+    """Account 1 is the SDK's own built-in provider (the owner's decision dr-393b503dcdff
+    replaced ADR-M4-14's refusal of it): served when listed, nothing registered for it."""
+    host.write_auth({BASE: login("BASE-" + host.canary, host.canary_refresh, 2 * 3600 * 1000),
+                     SLOT: login(host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    before = host.auth_state()
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
+    bridge.start()
+    answer = bridge.request("token", BASE, 10)
+    assert answer == {"id": answer["id"], "ok": True, "slot": BASE, "token": "BASE-" + host.canary}
+    assert [e for e in host.events() if e.startswith("register")] == []
+    assert bridge.request("token", SLOT, 10)["token"] == host.canary
+    assert [e for e in host.events() if e.startswith("register")] == [f"register {SLOT}"]
+    assert host.refreshes() == 0 and host.auth_state() == before
+
+
+def test_the_base_slot_needs_no_multi_pass_entry(host, bridges):
+    (host.agent / "multi-pass.json").write_text("not json")
+    host.write_auth({BASE: login(host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
+    bridge.start()
+    assert bridge.request("token", BASE, 10)["token"] == host.canary
+    assert bridge.request("token", SLOT, 10)["reason"] == "registry_unreadable"
+
+
+def test_a_base_slot_login_near_expiry_is_refreshed_once_and_no_other_entry_changes(host, bridges):
+    """The base slot's refresh is the built-in flow, run by the SDK's own storage (under
+    auth.json's lock in the real SDK); only its own entry is rewritten."""
+    alias_login = login(host.canary, host.canary_refresh, 2 * 3600 * 1000)
+    host.write_auth({BASE: login("old-access", "old-refresh", 10 * 60 * 1000), SLOT: alias_login})
+    host.control(next_access="new-access", next_refresh="new-refresh")
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
+    bridge.start()
+    assert bridge.request("token", BASE, 10)["token"] == "new-access"
+    assert host.refreshes() == 1
+    stored = host.read_auth()
+    assert (stored[BASE]["access"], stored[BASE]["refresh"]) == ("new-access", "new-refresh")
+    assert stored[SLOT] == alias_login and set(stored) == {BASE, SLOT}
+    assert bridge.request("token", BASE, 10)["token"] == "new-access"
+    assert host.refreshes() == 1
+
+
 def test_a_login_near_expiry_is_refreshed_once_through_the_sdk(host, bridges):
     host.write_auth({SLOT: login("old-access", "old-refresh", 10 * 60 * 1000)})  # 10 min < 30 min
     host.control(next_access="new-access", next_refresh="new-refresh")
@@ -144,7 +186,10 @@ def test_a_login_near_expiry_is_refreshed_once_through_the_sdk(host, bridges):
 
 
 @pytest.mark.parametrize("slot, setup, reason", [
-    (BASE, None, "account_1"),
+    (BASE, None, "not_served"),  # account 1 is served only when listed, like any slot
+    (BASE, "base_listed", "no_login"),
+    (BASE, "base_listed_api_key", "not_oauth"),
+    (BASE, "base_listed_failing_refresh", "refresh_failed"),
     ("acme-9", None, "not_served"),
     ("other-2", None, "not_alias"),
     ("acme-1", None, "not_alias"),
@@ -165,8 +210,14 @@ def test_each_refusal_names_the_slot_and_serves_nothing(host, bridges, slot, set
     elif setup == "failing_refresh":
         host.write_auth({SLOT: login(host.canary, host.canary_refresh, 60 * 1000)})
         host.control(refresh="fail")
+    elif setup == "base_listed_api_key":
+        host.write_auth({BASE: {"type": "api_key", "key": host.canary}})
+    elif setup == "base_listed_failing_refresh":
+        host.write_auth({BASE: login(host.canary, host.canary_refresh, 60 * 1000)})
+        host.control(refresh="fail")
+    over = {"allowed_slots": [BASE, SLOT, OTHER]} if (setup or "").startswith("base_listed") else {}
     before = host.auth_state()
-    bridge = bridge_for(host, bridges)
+    bridge = bridge_for(host, bridges, **over)
     bridge.start()
     answer = bridge.request("token", slot, 10)
     assert answer["ok"] is False
@@ -178,19 +229,22 @@ def test_each_refusal_names_the_slot_and_serves_nothing(host, bridges, slot, set
     assert host.auth_state() == before
 
 
-def test_the_sdk_changing_on_disk_refuses_the_next_mint_without_touching_auth_json(host, bridges):
+@pytest.mark.parametrize("slot", [SLOT, BASE])
+def test_the_sdk_changing_on_disk_refuses_the_next_mint_without_touching_auth_json(host, bridges, slot):
     """The per-request check: a stubbed mint works, the SDK on disk changes (as a pi-web-ui
     upgrade under a running helper would), the next mint is refused and auth.json is
-    byte-identical with the same mtime; nothing of auth.json was read after the change."""
-    bridge = bridge_for(host, bridges)
+    byte-identical with the same mtime; nothing of auth.json was read after the change.
+    The same for an alias and for the base slot (account 1)."""
+    host.write_auth({s: login(host.canary, host.canary_refresh, 2 * 3600 * 1000) for s in (BASE, SLOT)})
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
     bridge.start()
-    assert bridge.request("token", SLOT, 10)["token"] == host.canary
+    assert bridge.request("token", slot, 10)["token"] == host.canary
     before = host.auth_state()
     mark = len(host.events())
     tph.set_stub_version(host.sdk_root, "7.7.8-upgraded")
-    answer = bridge.request("token", SLOT, 10)
+    answer = bridge.request("token", slot, 10)
     assert answer["ok"] is False
-    assert (answer["reason"], answer["found_version"], answer["slot"]) == ("sdk_changed", "7.7.8-upgraded", SLOT)
+    assert (answer["reason"], answer["found_version"], answer["slot"]) == ("sdk_changed", "7.7.8-upgraded", slot)
     assert "token" not in answer
     assert host.auth_state() == before
     assert auth_events(host.events()[mark:]) == []
@@ -223,14 +277,29 @@ def test_the_check_inside_the_refresh_stops_a_refresh_after_a_change(host, bridg
     assert host.auth_state() == before
 
 
+def test_the_base_slot_refresh_is_the_builtin_flow_with_no_check_of_the_bridge_inside(host, bridges):
+    """Account 1's refresh is the SDK's built-in flow, untouched, as the chats run it: the
+    bridge has no callback in it, so its versions are checked only before the request (the
+    documented difference from an alias; docs/pi-host-helper.md)."""
+    host.write_auth({BASE: login("old-access", "old-refresh", 60 * 1000)})
+    host.control(refresh="bump-before-refresh", next_access="new-access")
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT])
+    bridge.start()
+    assert bridge.request("token", BASE, 10)["token"] == "new-access"
+    assert host.refreshes() == 1
+    # The very next request sees the change and is refused before any auth read.
+    assert bridge.request("token", BASE, 10)["reason"] == "sdk_changed"
+
+
 def test_status_words(host, bridges):
     host.write_auth({SLOT: login(host.canary, host.canary_refresh, 2 * 3600 * 1000),
                      OTHER: login("x", "y", 60 * 1000)})
-    bridge = bridge_for(host, bridges)
+    bridge = bridge_for(host, bridges, allowed_slots=[BASE, SLOT, OTHER])
     bridge.start()
     answer = bridge.request("status", "", 10)
     assert answer["ok"] is True and answer["state"] == "ready"
-    assert answer["slots"] == {SLOT: "registered login_ready", OTHER: "registered login_refresh_due"}
+    assert answer["slots"] == {BASE: "registered login_missing", SLOT: "registered login_ready",
+                               OTHER: "registered login_refresh_due"}
     assert host.canary not in json.dumps(answer)
     assert host.refreshes() == 0  # status never refreshes
 

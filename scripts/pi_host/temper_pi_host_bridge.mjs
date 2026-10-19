@@ -3,10 +3,13 @@
 //
 // temper_pi_host.py starts this as a child process.  It talks JSON lines on its stdin and
 // stdout (the private pipe) and nowhere else: it writes no file, no log and nothing on
-// stderr of its own.  It hands out a Pi login token for one multi-pass alias slot, read and
-// (when due) refreshed through the pinned Pi SDK's own auth storage, the way the owner's
-// chats use it:
-//   - the alias is registered on the SDK's ModelRuntime with the base provider's built-in
+// stderr of its own.  It hands out a Pi login token for one allowed slot, read and (when
+// due) refreshed through the pinned Pi SDK's own auth storage, the way the owner's chats
+// use it.  A slot is the base provider's own slot (account 1, named like the base provider;
+// served since the owner's decision dr-393b503dcdff replaced ADR-M4-14's refusal of it) or a
+// multi-pass alias of it ("<base>-2" and up):
+//   - the base slot is the SDK's built-in provider, used untouched: nothing is registered;
+//   - an alias is registered on the SDK's ModelRuntime with the base provider's built-in
 //     OAuth flow under the slot's own auth key, as pi-multi-pass registers it;
 //   - the login is read with ModelRuntime.getAuth(slot, { minOAuthValidityMs }), whose
 //     refresh runs inside the auth storage's credential-modify path: under auth.json's lock
@@ -21,8 +24,10 @@
 // disk and refuses (hello ok:false, exit 2) when the package or version is not the expected
 // one; the hello names what it loaded.  Before every token, status and usage request it reads the
 // versions on disk again and refuses that one request when they changed, before any use of
-// auth.json.  The refresh callback checks once more, under the lock, before the network
-// refresh.
+// auth.json.  For an alias, the refresh callback checks the versions once more, under the
+// lock, before the network refresh.  The base slot's refresh is the built-in flow itself, run
+// by the SDK's own double-checked refresh under the lock exactly as the chats run it, so no
+// callback of ours is in it: its versions are checked only before the request.
 //
 // Arguments (no secrets): --sdk-root <dir holding node_modules> --sdk-package <name>
 //   --sdk-version <exact> --ai-version <exact|-> --agent-dir <Pi agent dir>
@@ -249,13 +254,14 @@ function sdkChange() {
 
 function slotRefusal(slot) {
   if (!WORD.test(slot)) return "bad_slot";
-  if (slot === base) return "account_1";
-  if (!aliasRe.test(slot)) return "not_alias";
+  if (slot !== base && !aliasRe.test(slot)) return "not_alias";
   if (!slots.includes(slot)) return "not_served";
   return null;
 }
 
 function registryRefusal(slot) {
+  // The base slot (account 1) is Pi's own built-in provider: no multi-pass entry to look up.
+  if (slot === base) return null;
   // pi-multi-pass keeps its subscriptions in <agent dir>/multi-pass.json; read-only here.
   const index = Number(aliasRe.exec(slot)[1]);
   let data;
@@ -269,7 +275,7 @@ function registryRefusal(slot) {
 }
 
 let runtime = null;
-const registered = new Set();
+const prepared = new Set(); // slots whose login flow was found (and, for an alias, registered)
 let versionRefusal = null;
 
 async function runtimeFor(slot) {
@@ -277,9 +283,12 @@ async function runtimeFor(slot) {
     runtime = await sdk.ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false,
       refreshOnCreate: false });
   }
-  if (!registered.has(slot)) {
-    const flow = providers.builtinProviders().find((p) => p.id === base)?.auth?.oauth;
-    if (!flow || typeof flow.refresh !== "function" || typeof flow.login !== "function") return null;
+  if (prepared.has(slot)) return runtime;
+  const flow = providers.builtinProviders().find((p) => p.id === base)?.auth?.oauth;
+  if (!flow || typeof flow.refresh !== "function" || typeof flow.login !== "function") return null;
+  // The base slot (account 1) is the runtime's own built-in provider: its login is read and
+  // refreshed by that provider's OAuth flow, untouched, exactly as the chats do.
+  if (slot !== base) {
     const models = providers.getBuiltinModels(base);
     const index = Number(aliasRe.exec(slot)[1]);
     runtime.registerProvider(slot, {
@@ -303,8 +312,8 @@ async function runtimeFor(slot) {
         getApiKey: (credential) => credential.access,
       },
     });
-    registered.add(slot);
   }
+  prepared.add(slot);
   return runtime;
 }
 
@@ -500,7 +509,8 @@ async function usage(slot) {
     return unavailable("sign_in_expired");
   }
   const began = Date.now();
-  const account = { provider: slot, base, number: Number(aliasRe.exec(slot)[1]), name: "(not read)" };
+  const number = slot === base ? 1 : Number(aliasRe.exec(slot)[1]); // the vendor's numbering
+  const account = { provider: slot, base, number, name: "(not read)" };
   const host = { configured: () => [], bases: () => [base],
     stored: (provider) => provider === slot ? structuredClone(credential) : undefined };
   // Stand-in, not cached data: these fields suppress the checker's optional profile GET.

@@ -11,7 +11,8 @@
 #   on the Team page; any other named caller is shown by its name.
 # account_slots: the host helper's account slots a Pi run may use. The Pi
 #   lane picks one per run when it starts the run, as account_pick says, and
-#   keeps it for the whole run. Account 1 ("anthropic") is never allowed.
+#   keeps it for the whole run. Any slot may be listed, account 1
+#   ("anthropic") too; the host helper serves only the slots on its own list.
 # account_pick: how that pick is made. "room" (the default): the slot with
 #   the most weekly room under 85% of its 5 h and 90% of its 7 d use, read
 #   from account_room_file. "settings_order": the first allowed slot in

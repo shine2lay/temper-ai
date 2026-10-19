@@ -263,21 +263,30 @@ def test_stale_room_figures_refuse_the_run(claim):
     nothing_recorded("p1")
 
 
-def test_a_run_recorded_on_account_1_is_refused_by_name(claim):
+def test_a_run_recorded_on_account_1_is_kept_when_listed_and_refused_when_not(
+        claim, monkeypatch, tmp_path):
+    """Account 1 is a slot like the others (the owner's decision dr-393b503dcdff replaced
+    ADR-M4-14's refusal of it by name): a run recorded on it resumes on it while the settings
+    list it, and is refused, never moved, while they don't."""
     ls.make_row("p1", metadata={LANE_RECORD_KEY: {"account": {"slot": DEFAULT_PROVIDER}}})
-    refusal = claim.check("p1", start="resume")
-    assert refusal.kind == "account" and "account 1" in refusal.message
+    refusal = claim.check("p1", start="resume")  # the settings list acct-b and acct-c only
+    assert refusal.kind == "account"
+    assert f"the run's account {DEFAULT_PROVIDER} is no longer allowed" in refusal.message
     assert commits("p1") == []
+    ls.team_settings(monkeypatch, tmp_path / "settings",
+                     account_slots=[DEFAULT_PROVIDER, "acct-c"])
+    assert claim.check("p1", start="resume") is None
+    assert ls.account_of("p1") == {"slot": DEFAULT_PROVIDER}
 
 
-def test_account_1_in_the_settings_is_never_picked(claim, monkeypatch, tmp_path):
+def test_account_1_in_the_settings_is_picked_by_its_room_like_any_slot(claim, monkeypatch, tmp_path):
     ls.team_settings(monkeypatch, tmp_path / "settings",
                      account_slots=[DEFAULT_PROVIDER, "acct-c"])
     ls.write_room(claim.room, {DEFAULT_PROVIDER: {"five_hour": 0, "seven_day": 0},
                                "acct-c": {"five_hour": 50, "seven_day": 80}})
     ls.make_row("p1")
     assert claim.check("p1") is None
-    assert ls.account_of("p1")["slot"] == "acct-c"
+    assert ls.account_of("p1")["slot"] == DEFAULT_PROVIDER
 
 
 def _row_now(eid: str) -> dict:
@@ -365,6 +374,19 @@ def test_by_the_settings_order_the_claim_records_the_first_allowed_slot_before_w
     assert "the run's account acct-c is no longer allowed" in refusal.message
     assert ls.account_of("p1") == account
     record_property("tripwire_calls", by_order.counts())
+    assert by_order.counts() == {"read_room": 0, "socket_connect": 0}
+
+
+def test_by_the_settings_order_account_1_alone_is_the_run_s_account(claim, by_order):
+    """The owner's set-up (dr-393b503dcdff): the settings name account 1 alone."""
+    by_order.settings(account_slots=[DEFAULT_PROVIDER])
+    ls.make_row("p1")
+    assert claim.check("p1") is None
+    account = ls.account_of("p1")
+    assert (account["slot"], account["by"], account["capacity"]) == (
+        DEFAULT_PROVIDER, "settings_order", "not_checked")
+    assert accounts.run_account("p1") == account  # the member box's slot: account 1
+    assert claim.check("p1", start="resume") is None and ls.account_of("p1") == account
     assert by_order.counts() == {"read_room": 0, "socket_connect": 0}
 
 

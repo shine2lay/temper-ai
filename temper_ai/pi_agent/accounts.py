@@ -20,8 +20,9 @@ Either way it is recorded by its slot label on the run's row (``spawner_metadata
 ``pi_lane.account``) before any member works, kept for every attempt of the run, and never
 swapped for another: a resume, and Continue after a limit, carry on with the same account and
 never pick again (nor read the file). Account 1 -- the slot named like the canonical
-provider -- is refused by name. Inside a member's box the provider stays the canonical one;
-only the host helper sees the slot. Any other ``account_pick``, or ``settings_order`` beside
+provider -- is picked like any other allowed slot (the owner's decision dr-393b503dcdff,
+2026-10-18, replaced ADR-M4-14's refusal of it). Inside a member's box the provider stays the
+canonical one; only the host helper sees the slot. Any other ``account_pick``, or ``settings_order`` beside
 an ``account_room_file``, picks no account at all: every Pi run is refused, even one with an
 account kept, until the settings are fixed (``TeamConfig.account_pick_refusal``).
 
@@ -344,7 +345,7 @@ def read_room(path: str | Path, *, now: datetime | None = None) -> RoomReading:
 
 
 def pick(slots: tuple[str, ...] | list[str], rooms: dict[str, Room]) -> Room:
-    """Of the allowed slots (never account 1), the one whose reading passes with the least
+    """Of the allowed slots (account 1 too), the one whose reading passes with the least
     7-day use; ties go to the settings' order (ADR-M4-18). Rows for other labels are never
     picked. Raises :class:`AccountError` naming every allowed slot's reading, or why it has
     none, with the resets known, when none passes: the run is then refused at its claim, with
@@ -367,7 +368,7 @@ def pick(slots: tuple[str, ...] | list[str], rooms: dict[str, Room]) -> Room:
 
 
 def pick_by_settings_order(slots: tuple[str, ...] | list[str]) -> str:
-    """The first allowed slot (never account 1) in the settings' order: the run's account
+    """The first allowed slot (account 1 too) in the settings' order: the run's account
     under ``account_pick: settings_order`` (ADR-M4-19). It does **no capacity check**: it
     reads no account-room file and asks nothing about any account's use, so the slot may be
     near or at its limit; a limit then ends a turn like on any account (a recovery wait on

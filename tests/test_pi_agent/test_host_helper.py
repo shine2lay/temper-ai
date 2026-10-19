@@ -31,6 +31,7 @@ from tests.test_pi_host.support import (
     Served,
     branch_of,
     git,
+    login,
     make_leader,
     make_source,
 )
@@ -149,8 +150,26 @@ def test_the_handoff_serves_the_pinned_slot_from_the_helper(tmp_path, host, serv
 
 
 @needs_node
+def test_the_handoff_serves_account_1_when_the_helper_lists_it(tmp_path, host):
+    """A run pinned to account 1 (the base slot; the owner's decision dr-393b503dcdff) gets
+    its token from a helper that lists it, like any slot."""
+    host.write_auth({BASE: login("BASE-" + host.canary, host.canary_refresh, 2 * 3600 * 1000)})
+    s = Served(host, host.config(allowed_slots=[BASE, SLOT]))
+    try:
+        assert s.wait_ready(), s.log()
+        cfg = box_config(tmp_path, drop=("host_node", "host_pi"), host_helper_socket=s.socket)
+        got, receipt, redactor = handoff(cfg, tmp_path, BASE)
+        assert got == ("BASE-" + host.canary).encode()
+        assert receipt["handoff_slot"] == BASE and receipt["handoffs"] == 1
+        assert receipt["handoffs_denied"] == 0 and "handoff_refused" not in receipt
+    finally:
+        s.stop()
+    assert f"verb=token slot={BASE} result=ok" in s.log() and host.canary not in s.log()
+
+
+@needs_node
 @pytest.mark.parametrize("slot, words", [
-    (BASE, f"slot {BASE} is account 1 and is never served"),
+    (BASE, f"slot {BASE} is not one this helper serves"),  # account 1, not on the helper's list
     (f"{BASE}-9", f"slot {BASE}-9"),
 ])
 def test_a_refusal_hands_over_nothing_and_names_the_slot(tmp_path, host, served, slot, words):

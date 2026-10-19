@@ -1,0 +1,65 @@
+{
+  "fixture": "bar-interact-v1",
+  "meter": "design_homepage_bar_interact",
+  "written": "2026-10-18, before the meter's checks were built (Design, queue #79). Fix the meter, never this key.",
+  "rule": "For each page, the meter's failing rows (pass false or null) as (bar, check, width) must equal 'failing' exactly, in two runs.",
+  "widths": ["1440x900", "390x844", "412x823"],
+  "pages": {
+    "clean.html": {
+      "plant": "none: meets every part-2 check",
+      "failing": []
+    },
+    "skip-control.html": {
+      "plant": "the hero's 'See how it works' link has tabindex=-1, so Tab never reaches it",
+      "failing": [["A4", "keyboard-reach", "1440x900"], ["A4", "keyboard-reach", "390x844"]]
+    },
+    "order-jump.html": {
+      "plant": "positive tabindex sends focus to 'See how it works' before 'Start a free chart' (back left at 1440, back up at 390)",
+      "failing": [["A4", "keyboard-order", "1440x900"], ["A4", "keyboard-order", "390x844"]]
+    },
+    "no-outline.html": {
+      "plant": "the hero's primary button has outline:none on focus and no other cue",
+      "failing": [["A4", "focus-visible", "1440x900"], ["A4", "focus-visible", "390x844"], ["A7", "focus-states", "1440x900"], ["A7", "focus-states", "390x844"]]
+    },
+    "faint-ring.html": {
+      "plant": "the nav links' focus ring is #e5e7eb on the white header (about 1.25:1)",
+      "failing": [["A4", "focus-contrast", "1440x900"], ["A4", "focus-contrast", "390x844"]]
+    },
+    "sticky-cover.html": {
+      "plant": "a fixed cookie panel over the bottom 35% of the screen hides the focused hero buttons (and other stops focused under it)",
+      "failing": [["A4", "focus-not-obscured", "1440x900"], ["A4", "focus-not-obscured", "390x844"]]
+    },
+    "faint-input.html": {
+      "plant": "the email field's border is #e5e7eb (about 1.2:1 against the section) and its white fill is about 1.05:1",
+      "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
+    },
+    "no-hover.html": {
+      "plant": "the footer's 'Privacy' link has no hover change",
+      "failing": [["A7", "hover-states", "1440x900"], ["A7", "hover-states", "390x844"]]
+    },
+    "anim-ignore.html": {
+      "plant": "the endless wave animation keeps running under prefers-reduced-motion: reduce",
+      "failing": [["A4", "reduced-motion-animation", "1440x900"], ["A4", "reduced-motion-animation", "390x844"]]
+    },
+    "autoplay-video.html": {
+      "plant": "a muted looping video autoplays and keeps playing under reduced motion",
+      "failing": [["A4", "reduced-motion-video", "1440x900"], ["A4", "reduced-motion-video", "390x844"]]
+    },
+    "scroll-transform.html": {
+      "plant": "a scroll-linked parallax transform on the hero art ignores reduced motion",
+      "failing": [["A4", "reduced-motion-scroll", "1440x900"], ["A4", "reduced-motion-scroll", "390x844"]]
+    },
+    "still.html": {
+      "plant": "the wave's animation is off for everyone: no motion at all",
+      "failing": [["A7", "motion-present", "1440x900"], ["A7", "motion-present", "390x844"]]
+    },
+    "slow-script.html": {
+      "plant": "a 700 ms busy-wait in the head (late LCP) and a 700 ms task after load (blocking time)",
+      "failing": [["A8", "lcp", "412x823"], ["A8", "tbt", "412x823"]]
+    },
+    "shift.html": {
+      "plant": "a 200 px notice inserted above the hero 300 ms after load (layout shift)",
+      "failing": [["A8", "cls", "412x823"]]
+    }
+  }
+}

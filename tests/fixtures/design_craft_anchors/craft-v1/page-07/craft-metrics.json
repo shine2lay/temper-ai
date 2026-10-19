@@ -1,0 +1,152 @@
+{
+  "390": {
+    "width": 390,
+    "body_px": 17,
+    "display_px": 52,
+    "scale_ratio": 3.06,
+    "text_sizes": 20,
+    "families": [
+      "DM Serif Display",
+      "Figtree"
+    ],
+    "loaded_families": [
+      "DM Serif Display",
+      "Figtree"
+    ],
+    "unloaded_families": [],
+    "weights": 2,
+    "text_colors": 6,
+    "background_colors": 6,
+    "gradients": 0,
+    "background_images": 0,
+    "images": 0,
+    "svgs": 1,
+    "animated_elements": 3,
+    "sections": [
+      {
+        "name": "header",
+        "height": 92,
+        "signature": "flex-row | rgb(251, 246, 240) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 986,
+        "signature": "1 | rgb(251, 246, 240) | start | tall"
+      },
+      {
+        "name": "classes",
+        "height": 1241,
+        "signature": "flow | rgb(241, 228, 214) | start | tall"
+      },
+      {
+        "name": "how",
+        "height": 898,
+        "signature": "1 | rgb(251, 246, 240) | start | tall"
+      },
+      {
+        "name": "open-studio",
+        "height": 434,
+        "signature": "flex-column | rgb(43, 33, 28) | start | mid"
+      },
+      {
+        "name": "prices",
+        "height": 948,
+        "signature": "flow | rgb(251, 246, 240) | start | tall"
+      },
+      {
+        "name": "questions",
+        "height": 728,
+        "signature": "1 | rgb(241, 228, 214) | start | tall"
+      },
+      {
+        "name": "footer",
+        "height": 243,
+        "signature": "flex-column | rgb(43, 33, 28) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 7,
+    "consecutive_repeats": 0,
+    "spacing_values": 7,
+    "spacing_on_4px": 1,
+    "h1_px": 52,
+    "hero_height": 92,
+    "page_height": 5570,
+    "overflow_x": false
+  },
+  "1440": {
+    "width": 1440,
+    "body_px": 18,
+    "display_px": 76,
+    "scale_ratio": 4.22,
+    "text_sizes": 22,
+    "families": [
+      "DM Serif Display",
+      "Figtree"
+    ],
+    "loaded_families": [
+      "DM Serif Display",
+      "Figtree"
+    ],
+    "unloaded_families": [],
+    "weights": 2,
+    "text_colors": 6,
+    "background_colors": 6,
+    "gradients": 0,
+    "background_images": 0,
+    "images": 0,
+    "svgs": 1,
+    "animated_elements": 3,
+    "sections": [
+      {
+        "name": "header",
+        "height": 93,
+        "signature": "flex-row | rgb(251, 246, 240) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 619,
+        "signature": "2 | rgb(251, 246, 240) | start | mid"
+      },
+      {
+        "name": "classes",
+        "height": 692,
+        "signature": "flow | rgb(241, 228, 214) | start | mid"
+      },
+      {
+        "name": "how",
+        "height": 678,
+        "signature": "2 | rgb(251, 246, 240) | start | mid"
+      },
+      {
+        "name": "open-studio",
+        "height": 317,
+        "signature": "flex-row | rgb(43, 33, 28) | start | short"
+      },
+      {
+        "name": "prices",
+        "height": 680,
+        "signature": "flow | rgb(251, 246, 240) | start | mid"
+      },
+      {
+        "name": "questions",
+        "height": 448,
+        "signature": "2 | rgb(241, 228, 214) | start | mid"
+      },
+      {
+        "name": "footer",
+        "height": 182,
+        "signature": "flex-row | rgb(43, 33, 28) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 7,
+    "consecutive_repeats": 0,
+    "spacing_values": 10,
+    "spacing_on_4px": 0.98,
+    "h1_px": 76,
+    "hero_height": 93,
+    "page_height": 3709,
+    "overflow_x": false
+  }
+}

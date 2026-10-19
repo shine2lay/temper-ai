@@ -1,0 +1,152 @@
+{
+  "390": {
+    "width": 390,
+    "body_px": 17,
+    "display_px": 54,
+    "scale_ratio": 3.18,
+    "text_sizes": 5,
+    "families": [
+      "Bricolage Grotesque",
+      "Instrument Sans"
+    ],
+    "loaded_families": [
+      "Bricolage Grotesque",
+      "Instrument Sans"
+    ],
+    "unloaded_families": [],
+    "weights": 3,
+    "text_colors": 5,
+    "background_colors": 8,
+    "gradients": 0,
+    "background_images": 0,
+    "images": 0,
+    "svgs": 6,
+    "animated_elements": 6,
+    "sections": [
+      {
+        "name": "header",
+        "height": 93,
+        "signature": "flex-row | rgb(14, 23, 38) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 1366,
+        "signature": "1 | rgb(14, 23, 38) | start | tall"
+      },
+      {
+        "name": "features",
+        "height": 1935,
+        "signature": "flow | rgb(21, 35, 58) | start | tall"
+      },
+      {
+        "name": "how",
+        "height": 790,
+        "signature": "1 | rgb(14, 23, 38) | start | tall"
+      },
+      {
+        "name": "updates",
+        "height": 945,
+        "signature": "1 | rgb(21, 35, 58) | start | tall"
+      },
+      {
+        "name": "pricing",
+        "height": 1538,
+        "signature": "flow | rgb(14, 23, 38) | start | tall"
+      },
+      {
+        "name": "cta",
+        "height": 299,
+        "signature": "flex-column | rgb(198, 244, 50) | start | short"
+      },
+      {
+        "name": "footer",
+        "height": 278,
+        "signature": "flex-column | rgb(14, 23, 38) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 7,
+    "consecutive_repeats": 0,
+    "spacing_values": 8,
+    "spacing_on_4px": 1,
+    "h1_px": 54,
+    "hero_height": 93,
+    "page_height": 7244,
+    "overflow_x": false
+  },
+  "1440": {
+    "width": 1440,
+    "body_px": 18,
+    "display_px": 80,
+    "scale_ratio": 4.44,
+    "text_sizes": 5,
+    "families": [
+      "Bricolage Grotesque",
+      "Instrument Sans"
+    ],
+    "loaded_families": [
+      "Bricolage Grotesque",
+      "Instrument Sans"
+    ],
+    "unloaded_families": [],
+    "weights": 3,
+    "text_colors": 5,
+    "background_colors": 10,
+    "gradients": 0,
+    "background_images": 0,
+    "images": 0,
+    "svgs": 6,
+    "animated_elements": 6,
+    "sections": [
+      {
+        "name": "header",
+        "height": 94,
+        "signature": "flex-row | rgb(14, 23, 38) | - | short"
+      },
+      {
+        "name": "hero",
+        "height": 762,
+        "signature": "2 | rgb(14, 23, 38) | start | tall"
+      },
+      {
+        "name": "features",
+        "height": 946,
+        "signature": "flow | rgb(21, 35, 58) | start | tall"
+      },
+      {
+        "name": "how",
+        "height": 547,
+        "signature": "2 | rgb(14, 23, 38) | start | mid"
+      },
+      {
+        "name": "updates",
+        "height": 761,
+        "signature": "2 | rgb(21, 35, 58) | start | tall"
+      },
+      {
+        "name": "pricing",
+        "height": 797,
+        "signature": "flow | rgb(14, 23, 38) | start | tall"
+      },
+      {
+        "name": "cta",
+        "height": 249,
+        "signature": "flex-row | rgb(198, 244, 50) | start | short"
+      },
+      {
+        "name": "footer",
+        "height": 181,
+        "signature": "flex-row | rgb(14, 23, 38) | - | short"
+      }
+    ],
+    "section_count": 8,
+    "distinct_section_layouts": 7,
+    "consecutive_repeats": 0,
+    "spacing_values": 10,
+    "spacing_on_4px": 0.99,
+    "h1_px": 80,
+    "hero_height": 94,
+    "page_height": 4336,
+    "overflow_x": false
+  }
+}

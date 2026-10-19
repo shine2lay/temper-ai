@@ -11,6 +11,9 @@ and speed lines of `~/design-lab/homepage-workflow/BAR.md` (A4, A7, A8). It uses
   the pure scorer (raw JSON to rows, where every limit is applied) and the CLI.
 - `configs/design/testpages/bar-interact-v1/`: fixture pages with a known key (`expected.json`),
   their shared `base.css`, the video clip, and the recorded `raw/*.json`.
+- `configs/design/testpages/bar-interact-v2/`: the keyed cases for version 2's UI-part reading
+  (each page is bar-interact-v1's `clean.html` plus one case), with a copy of `base.css`, its own
+  `expected.json` and `raw/*.json`.
 - `tests/test_design_homepage_bar_interact.py`: the scorer on every recorded raw file must give
   exactly the key, plus unit tests of the maths. No browser in the tests.
 
@@ -40,16 +43,18 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   `bars-interact.md`, plus `shots/` (the focus crops, for checking a row by eye).
   `--raw-only` stops after `raw-interact.json`; `--from-raw DIR` scores `DIR/raw-interact.json`
   with no browser.
-- `--fixture-proof` measures every page in `bar-interact-v1/expected.json` and compares its failing
-  rows with the key (exact set equality). `--record` also saves each raw file to
-  `bar-interact-v1/raw/`. With `--from-raw DIR` it re-scores the raw files in DIR instead.
+- `--fixture-proof` measures every page in `bar-interact-v1/expected.json` and
+  `bar-interact-v2/expected.json` and compares its failing rows with the key (exact set equality).
+  `--record` also saves each raw file to its set's `raw/`. With `--from-raw DIR` it re-scores the
+  raw files in `DIR/bar-interact-v1/` and `DIR/bar-interact-v2/` instead.
 
 ## Output contract (shared with part 1)
 
 `bars-interact.json`:
 `{meter, version, page, page_sha256, widths, rows: [{bar, check, width, value, limit, pass, evidence}]}`
 
-- `meter` is `design_homepage_bar_interact`; `version` is `1`.
+- `meter` is `design_homepage_bar_interact`; `version` is `2` (UI parts read per WCAG 1.4.11 since
+  2026-10-19; see "Changes to definitions").
 - `page` is the page's path; `page_sha256` is the sha256 of its HTML file.
 - `widths`: `["1440x900", "390x844", "412x823"]`. `412x823` is Lighthouse's mobile preset (its
   emulated Moto G Power screen) and is used only by the three speed rows.
@@ -143,11 +148,11 @@ Notes:
 
 ### UI parts
 After settle, with nothing focused and the mouse off the page, each candidate is scrolled to the
-centre of the viewport. Candidates are interactive elements of two kinds:
+centre of the viewport. Candidates are interactive elements of three kinds:
 - field: `input` of a text-like type (text, email, search, tel, url, password, number, date, time,
   datetime-local, month, week, or no type), `select`, `textarea`;
-- button: `button`, `[role=button]`, `input` of type submit, button or reset, and `a[href]` whose
-  box is 80 px tall or less.
+- button: `button`, `[role=button]`, `input` of type submit, button or reset;
+- link: `a[href]`, at any height (version 1 took only links 80 px tall or less, as buttons).
 Checkboxes, radios, ranges, colour and file inputs are drawn by the browser and are not measured.
 A candidate that is still not on screen after it is centred (for example a skip link kept above the
 page until it has focus) is measured where it shows: it is given focus (the browser scrolls it into
@@ -161,14 +166,54 @@ has a `background-image`, the pixel of median luminance of a screenshot of its p
 Border: the top border's computed colour composited over the behind colour, when all four sides have
 a style other than none or hidden, a width of 1 px or more and a colour that is not transparent
 (a full border).
-A button is a UI part when its fill differs from the behind colour (more than 2 in any channel) or
-it has a full border; a button with neither is a text button with no boundary to measure (its text
-contrast is part 1's). A field is always a UI part. Part contrast: the higher of contrast(fill,
-behind) and contrast(border, behind).
+Part contrast: the higher of contrast(fill, behind) and contrast(border, behind).
+
+Visible text: a text node inside the candidate with a character that is not white space, drawn in
+the candidate's box. Its parent element is visible, its `color` is not fully transparent, and one of
+its line boxes (`Range` client rects), cut to the candidate's box and clipped by its parent and
+every ancestor (overflow, `clip`, `clip-path`, as for a visible element), keeps more than 1 x 1 px.
+So text kept for screen readers only (a 1 px box with `clip` or `clip-path`) and text pushed out of
+the box (`text-indent: -9999px`) are not visible text. An `input` button draws its value: it has
+visible text when its value is not empty, or when it is of type submit or reset (the browser draws
+a default label), and its `color` is not transparent. Visible text is read with the style, with the
+candidate on screen.
+
+What is measured (version 2; WCAG 1.4.11 and its Understanding document, "Boundaries"):
+- A field is always a UI part, identified by its boundary. Its value is its part contrast.
+- A control is a button, or a link whose fill differs from the behind colour (more than 2 in any
+  channel) or that has a full border. A link with neither is a text link with no boundary to
+  measure; it is not a UI part.
+- A control with visible text is identified by its text. Its text contrast is part 1's
+  text-contrast row; its fill and border are not measured here.
+- A control with no visible text is identified by its icon. Its value is its icon contrast (below).
+- A control with no visible text and no icon pixels is identified by its shape alone. Its value is
+  its part contrast, when it has a fill or a full border. One that draws nothing at all (no visible
+  text, no fill, no full border, no icon pixels) is not measured.
+
+Icon contrast (from a screenshot, with no model):
+- The shot: the control's viewport box, cut to the viewport and widened to whole CSS pixels, taken
+  at rest just before the behind shot.
+- Inside pixels: pixels whose centres lie at least 1 px inside the control's padding box (inside its
+  border) and at least 1 px inside its rounded corners (each corner's radius, less the border's
+  width there; percentages resolved and overlapping radii scaled down as CSS does). The 1 px keeps
+  out the edge pixels that anti-aliasing blends with what is behind.
+- Reference: the fill when it differs from the behind colour, otherwise the behind colour: what is
+  directly behind the icon.
+- Icon pixels: inside pixels that differ from the reference by more than 2 in any channel.
+- Icon contrast: rank the icon pixels by their contrast with the reference, lowest first. The value
+  is the contrast of the 90th-percentile pixel (the ceil(0.9 x n)-th of n) with the reference.
+  Anti-aliased icon edges sit below it, and a few stray pixels cannot lift it.
+- Known limits: a gradient or image fill, an inset shadow and a picture inside a control (an image
+  link) are read as icon pixels; a glyph from an icon font is a text node, so its control reads as
+  a text control.
 
 | check | bar | definition | limit |
 |---|---|---|---|
-| ui-contrast | A4 | UI parts whose part contrast is under 3:1 (solid buttons' fill against what is behind them; input and outlined-button borders against their background). Value: their number. | UI parts and focus indicators meet 3:1 |
+| ui-contrast | A4 | UI parts whose value is under 3:1: fields by part contrast (border or fill against what is behind them); controls with no visible text by icon contrast (or, with no icon, by part contrast). Value: their number. | UI parts and focus indicators meet 3:1 |
+
+Raw files measured before version 2 have no visible-text reading. Their candidates are scored as in
+version 1 (every button and link with a fill or full border by part contrast), so version 1's results
+can still be re-scored as they were.
 
 ### Hover and focus states
 Compared properties, on the element, its descendant elements (the first 60) and their rendered
@@ -244,9 +289,10 @@ value, the row could not be measured (`null`).
 | cls | A8 | 412x823 | CLS 0.1 or less |
 | tbt | A8 | 412x823 | total blocking time 200 ms or less |
 
-## The fixture proof (bar-interact-v1)
+## The fixture proof (bar-interact-v1 and bar-interact-v2)
 `bar-interact-v1/expected.json` was written before the meter, with each page's exact failing
-`(bar, check, width)` rows. `clean.html` meets every part-2 check; each planted page is
+`(bar, check, width)` rows. `bar-interact-v2/expected.json` (five keyed cases for version 2's UI-part
+reading) was written before version 2's code. `clean.html` meets every part-2 check; each planted page is
 `clean.html` plus one plant, and between them they break every check at least once. The meter is
 right only when its failing rows equal the key exactly on every page, in two runs, with identical
 non-speed rows and the same pass or fail on every speed row in both runs. When they differ, the
@@ -312,3 +358,56 @@ Changes to fixtures and evidence, all made before any real page was measured:
 - 2026-10-19, evidence only (no effect on any pass): moving elements report their offset box (see
   the output contract), and the LCP element is read from Lighthouse 13's `lcp-breakdown-insight`
   (its `largest-contentful-paint-element` audit no longer exists).
+
+### Version 2, 2026-10-19 (Design, queue #96, H3c): UI-part contrast follows WCAG 1.4.11
+
+Written before version 2's code, and before any page was measured with it. The decision and its
+hypothesis are H3c in `~/design-lab/homepage-workflow/HYPOTHESES.md` (Design's home chat). Its five
+keyed cases are in `bar-interact-v2/expected.json`, committed with this entry, before the code. No
+limit changed: ui-contrast's limit is still BAR.md A4's "UI parts and focus indicators meet 3:1",
+and BAR.md's A4 is WCAG 2.2 AA. No other row's definition changed.
+
+Reason: W3C's Understanding document for 1.4.11 (fetched 2026-10-19 from
+w3.org/WAI/WCAG22/Understanding/non-text-contrast.html), section "Boundaries": a control with
+visible text needs no contrasting boundary, and its Figures 1 and 30 pass text buttons with a faint
+fill or none. What has to reach 3:1 is the visual information needed to identify the control: a
+field's boundary, and the icon of a control with no text. Version 1 was stricter than BAR.md's words
+in one place and looser in another. The first baseline run (`BASELINE-INTERACT.md`) showed both.
+
+1. Controls with visible text (definition).
+   - Old reading: every button whose fill differs from what is behind it, or that has a full
+     border, was a UI part, and its fill or border had to reach 3:1 against what is behind it.
+     Driftwatch v2.1r's red text button on its cobalt section (1.65:1) failed at 1440, and an
+     ordinary white button on a pale section would fail the same way.
+   - New reading: a control with visible text is identified by its text. Its fill and border are
+     not measured; its label is part 1's text-contrast row. Keyed case: `text-button-faint.html`
+     (a 1.60:1 fill, a readable label): met.
+2. Controls with no visible text (definition and method).
+   - Old reading: an icon-only button was judged by its fill or border, and its icon was never
+     looked at. One with neither counted as having no boundary.
+   - New reading: its icon contrast (see UI parts) must reach 3:1: the screenshot pixels inside the
+     control that differ from its fill, and the contrast of the 90th-percentile one against the
+     fill (or against what is behind, when there is no fill). Keyed cases: `icon-faint.html`
+     (2.04:1): not met; `icon-ok.html` (3.75:1): met.
+3. Links (definition).
+   - Old reading: a link was a button candidate only when its box was 80 px tall or less. BAR.md
+     has no such limit, and it hid Driftwatch's same red button at 390, where it is 122 px tall.
+   - New reading: a link is a control when it has a fill that differs from what is behind it, or a
+     full border, at any height. Keyed case: `tall-link-icon.html` (120 px tall, a full border, no
+     text, a 1.49:1 icon): not met.
+4. Fields: unchanged, by border or fill against what is behind them. Keyed case:
+   `field-border-faint.html` (a 1.50:1 border): not met.
+
+Old plants: none of bar-interact-v1's plants rests on the old reading, so none is re-planted and
+its key is unchanged. Its only ui-contrast plant, `faint-input.html`, is a field (border `#e5e7eb`,
+about 1.2:1), which version 2 reads as before. On its other pages every button has visible text,
+and no link has a fill or a full border (the outlined "See how it works" has text).
+
+Output: `version` becomes 2. Raw files measured before version 2 have no visible-text reading and
+are scored as in version 1, so version 1's results can still be re-scored as they were.
+
+Precisions written with this entry, beyond H3c's words, so that the reading is exact and
+deterministic: what visible text is (screen-reader-only text and text pushed out of the box are
+not); which pixels are inside (1 px in from the padding box and its rounded corners, so the box's
+corners and border are never read as icon); the nearest-rank percentile; and the control with no
+text and no icon, which keeps version 1's reading by its shape.

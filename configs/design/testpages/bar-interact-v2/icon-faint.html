@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidewell: calm tide charts (bar-interact-v2 icon-faint)</title>
+<link rel="stylesheet" href="base.css">
+<!-- case (not met): an icon-only button after the hero's two buttons: a 48 px circle filled #1d4ed8 (about 6.4:1 against the section), with no visible text (its name is an aria-label). Its play icon, #5b8af5, is about 2.04:1 against the fill. The round shape puts the section's colour in the box's corners, so they must not be read as icon. -->
+<style>
+.icon-btn { display: inline-grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; background: #1d4ed8; color: #5b8af5; cursor: pointer; }
+.icon-btn:hover { background: #1e3a8a; }
+.icon-btn svg { display: block; width: 22px; height: 22px; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="#top">Tidewell</a>
+  <nav aria-label="Main">
+    <a class="nav-link" href="#how">How it works</a>
+    <a class="nav-link" href="#plans">Plans</a>
+    <a class="nav-link" href="#join">Join</a>
+  </nav>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="hero-art" aria-hidden="true"><span class="wave"></span></div>
+    <h1>Calm tide charts for small harbours</h1>
+    <p>Tidewell turns the tide tables for your harbour into one clear chart each morning.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="#join">Start a free chart</a>
+      <a class="btn btn-outline" href="#how">See how it works</a>
+      <button class="icon-btn" type="button" aria-label="Play the tide preview"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg></button>
+    </div>
+  </section>
+  <section class="cards" id="how">
+    <h2>How it works</h2>
+    <div class="grid">
+      <article class="card"><h3><a class="card-link" href="#pick">Pick a harbour</a></h3><p>Choose one of the harbours we chart.</p><a class="more" href="#pick-more">Read more</a></article>
+      <article class="card"><h3><a class="card-link" href="#set">Set your hours</a></h3><p>Tell us when you go out on the water.</p><a class="more" href="#set-more">Read more</a></article>
+      <article class="card"><h3><a class="card-link" href="#read">Read the chart</a></h3><p>One chart shows the safe hours for the day.</p><a class="more" href="#read-more">Read more</a></article>
+    </div>
+  </section>
+  <section class="join" id="join">
+    <h2 id="plans">Join the list</h2>
+    <form class="signup" action="#join">
+      <label for="email">Email address</label>
+      <input id="email" name="email" type="email" autocomplete="email">
+      <button class="btn btn-primary" type="submit">Join the list</button>
+    </form>
+  </section>
+</main>
+<footer class="site-footer">
+  <a class="foot-link" href="#privacy">Privacy</a>
+  <a class="foot-link" href="#contact">Contact</a>
+</footer>
+</body>
+</html>

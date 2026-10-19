@@ -1,0 +1,29 @@
+{
+  "fixture": "bar-interact-v2",
+  "meter": "design_homepage_bar_interact",
+  "written": "2026-10-19, before the version 2 code (Design, queue #96, hypothesis H3c: UI-part contrast follows WCAG 1.4.11). Each page is bar-interact-v1's clean.html plus one case. Fix the meter, never this key.",
+  "rule": "For each page, the meter's failing rows (pass false or null) as (bar, check, width) must equal 'failing' exactly, in two runs.",
+  "widths": ["1440x900", "390x844", "412x823"],
+  "pages": {
+    "text-button-faint.html": {
+      "plant": "the primary buttons' fill (#80d2fc) is about 1.60:1 against the section, with a border of the same colour; their label (#111827) is about 10.6:1: a control with visible text is identified by its text, so its fill is not measured",
+      "failing": []
+    },
+    "icon-faint.html": {
+      "plant": "an icon-only button (48 px circle, fill #1d4ed8, aria-label only) whose play icon (#5b8af5) is about 2.04:1 against the fill",
+      "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
+    },
+    "icon-ok.html": {
+      "plant": "the same icon-only button with its play icon at #a5c2fd, about 3.75:1 against the fill",
+      "failing": []
+    },
+    "field-border-faint.html": {
+      "plant": "the email field's border (#cacfd6) is about 1.50:1 against the section and its white fill about 1.05:1",
+      "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
+    },
+    "tall-link-icon.html": {
+      "plant": "a 120 px tall link with a full border (2 px #1d4ed8) and no visible text, whose play icon (#cbd5e1) is about 1.49:1 against the white section",
+      "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
+    }
+  }
+}

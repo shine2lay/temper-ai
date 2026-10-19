@@ -22,7 +22,7 @@ page pass. Limits are BAR.md's, word for word; the meter never changes a limit.
 
 ```
 design_homepage_bar_interact.py --site DIR [--page index.html] --out DIR [--browser URL] \
-    [--serve-host HOST] [--lighthouse DIR] [--chrome PATH] [--raw-only | --from-raw DIR]
+    [--serve-host HOST] [--lighthouse DIR] [--chrome PATH] [--no-speed] [--raw-only | --from-raw DIR]
 design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw DIR] [...]
 ```
 
@@ -34,7 +34,8 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   13.5.0 and puppeteer-core 25.14.0 from its `package-lock.json`, on the local Chromium
   (`--chrome`, default `~/.cache/ms-playwright/chromium-1243/chrome-linux-arm64/chrome`, Chrome for
   Testing 153.0.8010.12), headless, with the page served by `design_capture.serve` at 127.0.0.1.
-  Its README has the exact install command and the lock file's sha256.
+  Its README has the exact install command and the lock file's sha256. With `--no-speed`, or when
+  the tool can't run, the three speed rows are `null` (not met) and the error is kept in the raw file.
 - `--out DIR` gets `raw-interact.json` (the measurements), `bars-interact.json` and
   `bars-interact.md`, plus `shots/` (the focus crops, for checking a row by eye).
   `--raw-only` stops after `raw-interact.json`; `--from-raw DIR` scores `DIR/raw-interact.json`
@@ -55,7 +56,8 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
 - `pass` is `true`, `false` or `null`. `null` means "could not measure" and counts as not met.
 - `evidence`: up to 5 items `{selector, text (80 characters or fewer), box: [x, y, w, h]}`, page
   coordinates in CSS px, for the elements that fail the row (for motion-present, the elements
-  that move).
+  that move). For an element that moves (animation, transition or transform evidence), the box is
+  its layout box without transforms (the offset box), so it does not drift from run to run.
 - Rows come in a fixed order (the check order below, then width), and the file has no timestamps.
   Two runs of the same page give identical rows, except the speed rows' values (lab timings
   vary run to run; their pass or fail must not).
@@ -110,8 +112,9 @@ its box in page and viewport coordinates and its fixed or sticky container, and 
    by 4 px (or a quarter of the width or height, if smaller). A point is hidden when it lies outside
    the viewport, or when `document.elementFromPoint` there is inside a fixed or sticky element that
    does not contain the focused element and is not the focused element or inside it;
-2. settles and takes a screenshot (CSS px) of the focused element's viewport box grown by 4 px on
-   each side, cut to the viewport;
+2. settles and takes a screenshot (CSS px) of the focused element's viewport box grown by 16 px on
+   each side, cut to the viewport (16 px, not the 4 px first written: see "Changes to definitions",
+   2026-10-19);
 3. blurs the element, settles, takes the same clip again, then focuses it again with
    `focus({preventScroll: true})` and settles, so the next Tab continues from it.
 
@@ -146,6 +149,10 @@ centre of the viewport. Candidates are interactive elements of two kinds:
 - button: `button`, `[role=button]`, `input` of type submit, button or reset, and `a[href]` whose
   box is 80 px tall or less.
 Checkboxes, radios, ranges, colour and file inputs are drawn by the browser and are not measured.
+A candidate that is still not on screen after it is centred (for example a skip link kept above the
+page until it has focus) is measured where it shows: it is given focus (the browser scrolls it into
+view), and its style, behind colour and fill are read while it has focus. If it is still not on
+screen, its contrast cannot be measured and the row is `null`.
 
 Behind colour: a screenshot of the element's viewport box taken while the element is set to
 `visibility: hidden` (set for the shot only); the behind colour is its pixel of median relative
@@ -181,7 +188,11 @@ an `outline-offset` left by another rule, would count as a focus state.)
   scrolled to the centre; settle; rest values are read. The mouse moves to the element's centre, or,
   when `elementFromPoint` there is not the element or inside it, to the first of its four inset
   corners that is. If none is, the element cannot be hovered and has no hover state (evidence
-  "covered"). Settle; hover values are read.
+  "covered"). Settle; hover values are read. An element with no such point at rest is first given
+  focus, the way a keyboard user reveals it (a skip link kept above the page until it has focus),
+  and the same is done with focus kept: rest is read focused, then hovered and focused, so only the
+  hover's own change counts (raw evidence `via: focus`). Only when it still has no such point is it
+  "covered".
 - Focus: one Tab press puts the page in keyboard focus mode, then focus is removed. For each
   interactive element: `focus()` (the browser scrolls it into view), wait for the scroll, settle,
   read; `blur()`, settle, read. An element that does not become `document.activeElement` has no
@@ -242,7 +253,62 @@ non-speed rows and the same pass or fail on every speed row in both runs. When t
 meter is fixed, never the key.
 
 ## Running it inside temper's worker (finding only; no stack change)
-To be written once the meter runs (step 6 of #79).
+Checked 2026-10-19 against `Dockerfile` and `docker-compose.yml` on main. Nothing was changed.
+
+- Browser rows (keyboard, focus, UI parts, hover and focus states, motion, reduced motion): these
+  already fit temper. They use only the playwright-mcp service (`http://playwright-mcp:8931/mcp` on
+  the compose network, `browser_run_code_unsafe`; reduced motion is `page.emulateMedia` there) and
+  `design_capture.serve` and `design_capture.run`, as the design workflows do today. A worker run
+  passes `--serve-host` with an address of the worker container that playwright-mcp can reach.
+- Speed rows (A8): these cannot run in the worker image as it is.
+  - The image has Node 20 (`setup_20.x` in the `base` stage), and Lighthouse 13.5.0 needs Node
+    22.19 or later.
+  - The image has no Chromium. That is on purpose: the compose file keeps the browser (about
+    1.5 GB) in the playwright-mcp service alone.
+  - playwright-mcp's Chromium can't stand in for it. The service starts no remote-debugging port,
+    and Lighthouse needs its own Chrome over CDP.
+- What would let a workflow run the speed rows, for whoever owns the stack (temper, systems) to
+  choose:
+  1. A small Lighthouse service built like playwright-mcp: its own image with Node 22, Chromium and
+     this folder's `package-lock.json`, called over HTTP on the compose network. This keeps the
+     worker small, and it is the recommended option.
+  2. Node 22 plus Chromium in the worker image. This is simpler, but it adds about 1.5 GB to every
+     worker, against the reason the compose file gives.
+  3. Keep running speed on the host, as now (the pinned tool and the local Chromium). This needs no
+     change, but only the host can run it.
+- Until one of these exists, a worker run would score the speed rows `null` (not met). Run speed
+  on the host and merge the rows.
 
 ## Changes to definitions
-None yet.
+No limit has changed. One definition and two methods changed, after the first baseline run, each
+because a hand check showed the meter misreading a page, never to make a page pass:
+
+- 2026-10-19, focus clip 4 px -> 16 px (definition; the plan for #79 said "box plus 4 px"). In the
+  first baseline run every page failed focus-visible (Morrow Rooms v2.1r 22 stops at 1440). Opened
+  by hand, Morrow Rooms' "Demo rooms" link has a clear focus ring: `outline: 3px solid` at
+  `outline-offset: 4px`, so the ring lies 4 to 7 px outside the box and a 4 px clip contains none
+  of it (0 changed pixels; perimeter 296). With a 16 px clip, 1,020 pixels change, at 3.66:1. All
+  four baseline pages draw rings this way (3 px at a 4 px offset); 16 px holds a ring up to 6 px
+  wide at an offset up to 10 px. The bar is unchanged: changed pixels must still reach the box's
+  perimeter, at 3:1. The fixtures' rings (3 px at 1 px) lie inside both clips.
+- 2026-10-19, elements off the page at rest (method). Driftwatch v2.1r's skip link sits at
+  `top: -96px` until it has focus, so the hover phase called it "covered" (hover-states 92%) and
+  the UI-part phase could not measure it (ui-contrast `null`), although its CSS has a hover rule
+  (`.skip:hover { text-decoration: underline; }`) and it shows on focus. Both phases now reveal such
+  an element with focus first (see UI parts, and Hover and focus states). An element that focus
+  cannot bring on screen is still "covered" or unmeasured.
+- 2026-10-19, perimeter of a box wholly outside the viewport is 4 (the minimum), not its full
+  size: nothing of it is drawn, so its whole perimeter cannot be asked of it (unit test case).
+
+Changes to fixtures and evidence, all made before any real page was measured:
+
+- 2026-10-19, fixture slow-script.html (plant made effective; key unchanged): in fixture proof run 1
+  its LCP row passed (median 901 ms, the same as clean.html) while expected.json says it fails. The
+  meter reported Lighthouse's value correctly: Lighthouse's simulated throttling did not put the
+  700 ms busy-wait written inline in the head on the LCP path (its TBT did count it, 5,351 ms). The
+  same 700 ms of work moved into a parser-blocking external script (`busy.js`) gives a simulated LCP of
+  3,703 to 3,706 ms in scratch runs, so the plant now really is "a heavy blocking script", as the
+  plan for #79 asks. The meter and expected.json were not changed for it.
+- 2026-10-19, evidence only (no effect on any pass): moving elements report their offset box (see
+  the output contract), and the LCP element is read from Lighthouse 13's `lcp-breakdown-insight`
+  (its `largest-contentful-paint-element` audit no longer exists).

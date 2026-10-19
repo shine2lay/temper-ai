@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tidewell: calm tide charts (bar-interact-v1 slow-script)</title>
 <link rel="stylesheet" href="base.css">
-<!-- plant: a script in the head busy-waits 700 ms before anything can paint (late LCP), and a second
-     700 ms busy task runs just after load (one long task, total blocking time far over 200 ms) -->
+<!-- plant: a blocking script in the head (busy.js) busy-waits 700 ms before anything can paint (late LCP),
+     and a second 700 ms busy task runs just after load (one long task, total blocking time far over 200 ms) -->
+<script src="busy.js"></script>
 <script>
-function busy(ms) { const end = performance.now() + ms; let n = 0; while (performance.now() < end) { n += 1; } return n; }
-busy(700);
 addEventListener('load', () => { setTimeout(() => busy(700), 0); });
 </script>
 </head>

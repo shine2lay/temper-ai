@@ -1,10 +1,11 @@
-"""Model-free tests for Design's homepage A-bar meter, part 1 (queue #78).
+"""Model-free tests for Design's homepage A-bar meter (part 1, queue #78; version 2, queue #91).
 
 configs/design/bin/design_homepage_bar.js measures a page in temper's playwright-mcp browser;
 design_homepage_bar.py scores the raw measurements against BAR.md's A bars. No browser here:
-configs/design/testpages/bar-v1/raw/*.json were recorded from the bar-v1 fixture pages
-(`design_homepage_bar.py --fixture-proof --record`), and expected.json, written before the meter,
-lists each page's exact failing (bar, check, width) rows. Definitions: docs/design-homepage-bar.md.
+configs/design/testpages/bar-v1/raw/*.json and bar-v2/raw/*.json were recorded from the fixture pages
+(`design_homepage_bar.py --fixture-proof --record`). bar-v1/expected.json, written before part 1,
+lists each bar-v1 page's exact failing (bar, check, width) rows; bar-v2/expected.json, written before
+version 2's code, keys version 2's cases and the two rows it added. Definitions: docs/design-homepage-bar.md.
 """
 import copy
 import hashlib
@@ -18,6 +19,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "configs/design/bin"
 FIX = ROOT / "configs/design/testpages/bar-v1"
+FIX2 = ROOT / "configs/design/testpages/bar-v2"
 sys.path.insert(0, str(BIN))
 
 
@@ -30,25 +32,61 @@ def _load(name):
 
 hb = _load("design_homepage_bar")
 KEY = json.loads((FIX / "expected.json").read_text(encoding="utf-8"))
+KEY2 = json.loads((FIX2 / "expected.json").read_text(encoding="utf-8"))
 BRIEF = json.loads((FIX / "brief.json").read_text(encoding="utf-8"))
 PAGES = sorted(KEY["pages"])
+PAGES2 = sorted(KEY2["pages"])
+# bar-v1/expected.json as #78 committed it (45b8bd7d); version 2 never edits it.
+KEY_V1_SHA256 = "05436368c8276b6d3ac1bcb7a5306711508bfa61c4586f1caed8481c6ffcebed"
 
 
 def _raw(page):
     return json.loads((FIX / "raw" / f"{Path(page).stem}.json").read_text(encoding="utf-8"))
 
 
-# ------------------------------------------------------------------ the fixture key
+def _raw2(page):
+    return json.loads((FIX2 / "raw" / f"{hb.raw_name(page)}.json").read_text(encoding="utf-8"))
+
+
+def _brief2(page):
+    return json.loads((ROOT / KEY2["site"] / KEY2["pages"][page]["brief"]).read_text(encoding="utf-8"))
+
+
+# ------------------------------------------------------------------ the fixture keys
+
+
+def test_bar_v1_key_is_unchanged():
+    assert hashlib.sha256((FIX / "expected.json").read_bytes()).hexdigest() == KEY_V1_SHA256
 
 
 @pytest.mark.parametrize("page", PAGES)
 def test_recorded_page_scores_exactly_the_key(page):
-    raw = _raw(page)
-    rows = hb.score(raw, BRIEF)
-    got = hb.failing(rows)
-    want = {tuple(x) for x in KEY["pages"][page]}
-    assert sorted(want - got) == [], "missing failing rows"
-    assert sorted(got - want) == [], "extra failing rows"
+    """bar-v1's key for the rows it covers; bar-v2's key (its bar-v1 section) for the rows version 2 added."""
+    res = hb.key_match(page, hb.score(_raw(page), BRIEF), KEY, KEY2)
+    assert res["missing"] == [], "missing failing rows"
+    assert res["extra"] == [], "extra failing rows"
+
+
+@pytest.mark.parametrize("page", PAGES2)
+def test_bar_v2_recorded_case_matches_its_key(page):
+    res = hb.key_match(page, hb.score(_raw2(page), _brief2(page)), KEY, KEY2)
+    assert res["missing"] == [], "missing failing rows"
+    assert res["extra"] == [], "extra failing rows"
+    assert res["rows"] == [], "keyed rows differ"
+
+
+@pytest.mark.parametrize("page", PAGES2)
+def test_bar_v2_recorded_raw_is_of_the_current_page(page):
+    raw = _raw2(page)
+    html = ROOT / KEY2["site"] / page
+    assert raw["page_sha256"] == hashlib.sha256(html.read_bytes()).hexdigest()
+    assert sorted(raw["widths"]) == sorted(hb.WIDTHS)
+    assert all("error" not in v for v in raw["widths"].values())
+    deriv = html.parent / "derivations.json"
+    if deriv.is_file():
+        assert raw["derivations"]["sha256"] == hashlib.sha256(deriv.read_bytes()).hexdigest()
+    else:
+        assert "derivations" not in raw
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -67,6 +105,8 @@ def test_clean_page_passes_every_row():
 
 def test_planted_pages_break_every_check_at_least_once():
     broken = {(b, c) for page in PAGES for b, c, _ in KEY["pages"][page]}
+    broken |= {(b, c) for rows in KEY2["bar-v1"]["pages"].values() for b, c, _ in rows}
+    broken |= {(b, c) for page in PAGES2 for b, c, _ in KEY2["pages"][page]["failing"]}
     every = {(b, c) for b, c, _, _ in hb.CHECKS}
     assert every - broken == set()
     assert broken - every == set()
@@ -109,7 +149,7 @@ def test_a_width_that_could_not_be_measured_is_null_not_a_pass():
     assert at and all(r["pass"] is None for r in at)
     every = {r["check"]: r["pass"] for r in rows if r["width"] == "all"}
     assert every["disclosure"] is None and every["placeholders"] is None and every["numbers"] is None
-    assert every["cta-length"] is True and every["cta-verb"] is True
+    assert every["cta-length"] is True and every["cta-verb"] is True and every["cta-wording"] is True
     assert ("A4", "axe", "1440x900") not in hb.failing(rows)
 
 
@@ -241,3 +281,279 @@ def test_window_scan_steps_half_a_screen():
     assert hb.window_max([], 900, 2000) == (0, 0)
     # The last window starts at the page's end or before it, never after.
     assert hb.window_max([1990], 900, 2000) == (1, 1350)
+
+
+# ------------------------------------------------------------------ version 2 (queue #91), change by change
+
+
+def _view(**bar):
+    m = {"viewport": [1440, 900], "texts": [], "pictures": [], "html_pictures": [], "controls": [],
+         "sections": [], "content_boxes": [], "body": []}
+    m.update(bar)
+    return {"bar": m}
+
+
+# 1. A5 numbers: step labels, number words, pictures exposed as an image, derivations
+
+
+def test_number_words_restate_brief_facts():
+    assert hb.number_words("a one-hour slot, a ten-year history, twenty-one rooms, seven days") == [1, 10, 21, 7]
+    assert hb.number_words("Someone often waits") == []
+    fact = ["Rooms are booked in one-hour slots."]
+    assert hb.unsourced_numbers("Book a 1 hour slot", fact) == []
+    # A word number is a plain number: it does not source the same value with a currency or a suffix.
+    assert hb.unsourced_numbers("$1 an hour, 1% off", fact) == ["$1", "1%"]
+
+
+def test_step_labels_and_exposed_pictures_leave_the_claims():
+    claims = {"drop": [{"kind": "step-label", "text": "01"}, {"kind": "step-label", "text": "02"},
+                       {"kind": "image", "text": "$1,240 Rent"}],
+              "names": [{"text": "Bills sorted into 12 groups"}]}
+    text = "01 Link your bank 02 Name your groups $1,240 Rent $97 a year"
+    shown = [t[0] for t in hb.page_number_tokens(text, claims)]
+    assert shown == ["$97", "12"]
+    # Each dropped number takes out one number shown the same way; a second one stays a claim.
+    assert [t[0] for t in hb.page_number_tokens("01 and 01", {"drop": [{"text": "01"}]})] == ["01"]
+    # A version 1 raw file has no claims: every number counts.
+    assert [t[0] for t in hb.page_number_tokens(text, None)] == ["01", "02", "$1,240", "$97"]
+
+
+DERIV_FACTS = ["Plans cost $4 a month after a 30-day free trial.",
+               "The family add-on is $6 a month for up to four people."]
+
+
+@pytest.mark.parametrize("entry,ok,why", [
+    ({"shown": "$10", "operation": "add", "operands": ["$4", "$6"], "facts": DERIV_FACTS}, True, ""),
+    ({"shown": "$10", "operation": "multiply", "operands": ["$4", "$6"], "facts": DERIV_FACTS}, False,
+     "derivations.json: multiply gives $24, not $10"),
+    ({"shown": "$24", "operation": "multiply", "operands": ["$6", "4"], "facts": DERIV_FACTS[1:]}, True, ""),
+    ({"shown": "$10", "operation": "add", "operands": ["$4", "$6"], "facts": ["Plans cost $4 a month."]}, False,
+     "derivations.json: $10 lists a fact not in the brief"),
+    ({"shown": "$11", "operation": "add", "operands": ["$5", "$6"], "facts": DERIV_FACTS}, False,
+     "derivations.json: operand $5 is not in its facts"),
+    ({"shown": "$34", "operation": "add", "operands": ["30", "4"], "facts": DERIV_FACTS[:1]}, False,
+     "derivations.json: operand 4 is not in its facts"),
+    ({"shown": "$10", "operation": "concat", "operands": ["$4", "$6"], "facts": DERIV_FACTS}, False,
+     "derivations.json: $10 has no known operation"),
+])
+def test_a_derivation_sources_its_number_only_when_it_recomputes(entry, ok, why):
+    facts = DERIV_FACTS + ["Setup takes about 5 minutes."]
+    assert hb.check_derivation(entry, facts) == (ok, why)
+
+
+def test_possible_derivations_are_evidence_only():
+    seat = ["Each seat is $18 a month."]
+    assert hb.possible_derivation(hb.number_tokens("$36")[0], hb.fact_token_list(seat), hb.number_tokens("2 seats")) \
+        == "$36 = 2 x $18"
+    assert hb.possible_derivation(hb.number_tokens("$10")[0], hb.fact_token_list(DERIV_FACTS), []) == "$10 = $4 + $6"
+    assert hb.possible_derivation(hb.number_tokens("$97")[0], hb.fact_token_list(DERIV_FACTS), []) is None
+    # Neither number from the brief: no derivation is offered.
+    assert hb.possible_derivation(hb.number_tokens("$36")[0], [], hb.number_tokens("2 seats at $18")) is None
+    assert hb.unsourced_numbers("$36 for two", seat) == ["$36"]
+
+
+def test_a_derived_number_needs_a_valid_derivations_file():
+    raw = _raw2("bar-v2/c-derived-ok/index.html")
+    brief = _brief2("bar-v2/c-derived-ok/index.html")
+    row = next(r for r in hb.score(raw, brief) if r["check"] == "numbers")
+    assert (row["value"], row["pass"]) == (0, True)
+    bare = copy.deepcopy(raw)
+    del bare["derivations"]
+    row = next(r for r in hb.score(bare, brief) if r["check"] == "numbers")
+    assert (row["value"], row["pass"]) == (1, False)
+    assert row["evidence"][0]["text"] == "$10 = $4 + $6"
+
+
+# 2. A1 visual anchor: pictures built in HTML
+
+
+def _html_pic(cells, box=(100, 100, 400, 300), exposed=True, why="", anc=(), pics=()):
+    return {"sel": "#mock", "kind": "role=img", "name": "A ledger", "exposed": exposed, "why": why,
+            "cells": list(cells), "box": list(box), "sec": 0, "anc": list(anc), "pics": list(pics)}
+
+
+def test_an_exposed_painted_html_picture_is_an_anchor():
+    value, ok, evid = hb.check_width("visual-anchor", _view(html_pictures=[_html_pic([40, 100])]), BRIEF)
+    assert (value, ok) == (1, True)
+    assert evid[0]["selector"] == "#mock" and evid[0]["text"] == "html picture (role=img), painted 40%"
+    # Exactly a third painted is enough.
+    assert hb.check_width("visual-anchor", _view(html_pictures=[_html_pic([1, 3])]), BRIEF)[1] is True
+
+
+@pytest.mark.parametrize("pic,text", [
+    (_html_pic([60, 100], exposed=False, why="figure without figcaption or aria-labelledby"),
+     "not exposed as an image: figure without figcaption or aria-labelledby"),
+    (_html_pic([0, 100]), "painted 0% of its box, needs a third"),
+    (_html_pic([32, 100]), "painted 32% of its box, needs a third"),
+    (_html_pic([60, 100], box=(100, 100, 110, 300)), "110x300, needs 120x120 with half in the first screen"),
+])
+def test_an_html_picture_that_is_not_an_anchor_says_why(pic, text):
+    value, ok, evid = hb.check_width("visual-anchor", _view(html_pictures=[pic]), BRIEF)
+    assert (value, ok) == (0, False)
+    assert evid == [hb.ev("#mock", text, pic["box"])]
+
+
+def test_an_html_picture_below_the_first_screen_is_not_an_anchor():
+    pic = _html_pic([60, 100], box=(100, 1200, 400, 300))
+    assert hb.check_width("visual-anchor", _view(html_pictures=[pic]), BRIEF) == (0, False, [])
+
+
+def test_one_anchor_counts_once():
+    svg = {"sel": "svg.art", "kind": "svg", "box": [600, 100, 400, 400]}
+    # An HTML picture around a counted picture adds nothing.
+    view = _view(pictures=[svg], html_pictures=[_html_pic([90, 100], box=(560, 80, 480, 440), pics=[0])])
+    assert hb.check_width("visual-anchor", view, BRIEF)[:2] == (1, True)
+    # Nor does a painted HTML picture inside a counted one.
+    view = _view(html_pictures=[_html_pic([50, 100]), _html_pic([90, 100], box=(120, 120, 200, 200), anc=[0])])
+    assert hb.check_width("visual-anchor", view, BRIEF)[:2] == (1, True)
+
+
+# 3. A1 call to action: normalised wording, else the most prominent filled button in the first screen
+
+
+@pytest.mark.parametrize("text,want", [
+    ("Explore demo rooms \u2193", "explore demo rooms"),
+    ("  START a free   ledger! ", "start a free ledger"),
+    ("\u203a Next steps\u2026", "next steps"),
+    ("Book now \u2192 .", "book now"),
+    ("> Go", "go"),
+    ("Don't wait, book now!", "don't wait, book now"),
+])
+def test_cta_wording_is_normalised(text, want):
+    assert hb.cta_norm(text) == want
+
+
+def _ctl(i, text, y, w=200, h=50, filled=True):
+    return {"i": i, "sel": f"#c{i}", "tag": "a", "role": None, "text": text, "box": [100, y, w, h],
+            "bg": [29, 78, 216, 1] if filled else [0, 0, 0, 0], "bg_ratio": 6.2 if filled else 1.0}
+
+
+ROOMS = {"cta": "Explore demo rooms"}
+
+
+@pytest.mark.parametrize("controls,sel,rule", [
+    ([_ctl(0, "Explore demo rooms \u2193", 400)], "#c0", "brief wording"),
+    ([_ctl(0, "Try a sample booking", 400), _ctl(1, "Explore demo rooms", 2000)], "#c0",
+     "most prominent filled button in the first screen"),
+    ([_ctl(0, "Sign in", 20, 90, 40), _ctl(1, "Try a sample booking", 400)], "#c1",
+     "most prominent filled button in the first screen"),
+    ([_ctl(0, "See pricing", 400, filled=False), _ctl(1, "Explore demo rooms", 2000)], "#c1",
+     "brief wording, outside the first screen"),
+    ([_ctl(0, "See pricing", 400, filled=False), _ctl(1, "Book", 1500), _ctl(2, "Book a room today", 2500, 300)],
+     "#c2", "largest filled button on the page"),
+])
+def test_the_primary_cta_and_the_rule_that_picked_it(controls, sel, rule):
+    c, why = hb.pick_cta({"viewport": [1440, 900], "controls": controls}, ROOMS)
+    assert (c["sel"], why) == (sel, rule)
+
+
+def test_cta_wording_flags_a_primary_cta_other_than_the_briefs():
+    def raw_of(controls):
+        return {"widths": {"1440x900": {"bar": {"viewport": [1440, 900], "controls": controls}}}}
+    row = hb.check_all("cta-wording", raw_of([_ctl(0, "Explore demo rooms \u2193", 400)]), ROOMS, set(), [])
+    assert row[:2] == ("Explore demo rooms \u2193", True)
+    value, ok, evid = hb.check_all("cta-wording", raw_of([_ctl(0, "Try a sample booking", 400),
+                                                          _ctl(1, "Explore demo rooms", 2000)]), ROOMS, set(), [])
+    assert (value, ok) == ("Try a sample booking", False)
+    assert [e["text"] for e in evid] == ["Try a sample booking", "most prominent filled button in the first screen",
+                                         "Explore demo rooms"]
+    assert hb.check_all("cta-wording", raw_of([_ctl(0, "Go", 400)]), {}, set(), [])[:2] == \
+        ("brief has no call to action", None)
+
+
+# 4. A2 rhythm: the gap under the page header
+
+
+def test_the_gap_under_the_banner_is_not_a_section_gap():
+    sections = [{"sel": "header.site-head", "banner": True}, {"sel": "section.hero"}, {"sel": "section.features"}]
+    boxes = [[[0, 40, 0], [50, 70, 0]], [[70, 200, 1], [216, 400, 1]], [[464, 600, 2], [616, 800, 2]]]
+    value, ok, evid = hb.check_width("rhythm", _view(sections=sections, content_boxes=boxes), BRIEF)
+    assert ok is True and value == "smallest gap between sections 64px, median inside 16px"
+    # Without the banner flag the header's flush gap is a section gap, as in version 1.
+    sections[0].pop("banner")
+    value, ok, evid = hb.check_width("rhythm", _view(sections=sections, content_boxes=boxes), BRIEF)
+    assert ok is False and evid[0]["selector"] == "header.site-head | section.hero"
+
+
+def test_header_flush_case_passes_only_because_of_the_banner_rule():
+    raw = _raw2("bar-v2/i-header-flush.html")
+    for wk in hb.FIRST:
+        assert hb.check_width("rhythm", raw["widths"][wk], BRIEF)[1] is True
+    for v in raw["widths"].values():
+        for s in v["bar"]["sections"]:
+            s.pop("banner", None)
+    for wk in hb.FIRST:
+        assert hb.check_width("rhythm", raw["widths"][wk], BRIEF)[1] is False
+
+
+# 5. A3 measure: running text only
+
+
+def _block(line_chars, sel="p"):
+    return {"sel": sel, "text": "x", "lines": len(line_chars), "line_chars": line_chars, "box": [0, 0, 10, 10]}
+
+
+def test_measure_counts_running_text_only():
+    cells = [_block([1], f"span.cell-{k}") for k in range(14)]
+    label = _block([12], "span.label")
+    para = _block([70, 72, 30])
+    one_line = _block([60], "p.one-line")
+    body = [{"blocks": cells + [label, para, one_line]}]
+    assert hb.check_width("measure", _view(body=body), BRIEF)[:2] == (100.0, True)
+    # A one-line block of 60 or more characters counts with its one line.
+    body = [{"blocks": [para, _block([95], "p.wide")]}]
+    value, ok, evid = hb.check_width("measure", _view(body=body), BRIEF)
+    assert (value, ok) == (50.0, False) and evid[0]["selector"] == "p.wide"
+    # Under 60 characters on one line is a label, not running text.
+    assert hb.check_width("measure", _view(body=[{"blocks": [_block([59])]}]), BRIEF) == ("no running text", True, [])
+
+
+def test_flap_cells_case_passes_only_because_of_the_running_text_rule():
+    raw = _raw2("bar-v2/j-flap-cells.html")
+    view = raw["widths"]["1440x900"]
+    assert hb.check_width("measure", view, BRIEF)[1] is True
+    for b in view["bar"]["body"]:
+        b.pop("blocks", None)
+    assert hb.check_width("measure", view, BRIEF)[1] is False
+
+
+# 6. A7 word-split
+
+
+def test_word_split_counts_words_broken_without_a_hyphen():
+    split = {"sel": "#split-heading", "text": "Telecommunicatio / ns", "box": [24, 300, 272, 76]}
+    assert hb.check_width("word-split", _view(word_splits=[]), BRIEF) == (0, True, [])
+    assert hb.check_width("word-split", _view(word_splits=[split]), BRIEF) == \
+        (1, False, [hb.ev("#split-heading", "Telecommunicatio / ns", [24, 300, 272, 76])])
+    # A raw file measured before version 2 has no word boxes: not measured, never a pass.
+    assert hb.check_width("word-split", _view(), BRIEF) == ("not measured", None, [])
+
+
+def test_long_word_case_splits_at_320_only():
+    raw = _raw2("bar-v2/k-long-word.html")
+    got = {wk: hb.check_width("word-split", raw["widths"][wk], BRIEF)[0] for wk in hb.WIDTHS}
+    assert got == {"1440x900": 0, "1024x768": 0, "768x1024": 0, "390x844": 0, "320x568": 1}
+
+
+# The output contract only gains rows
+
+
+# Part 1's rows (45b8bd7d), in order, with their widths.
+V1_CHECKS = [
+    ("A1", "product-name", "2"), ("A1", "h1-words", "2"), ("A1", "cta-in-view", "2"), ("A1", "visual-anchor", "2"),
+    ("A2", "one-h1", "2"), ("A2", "h1-largest", "2"), ("A2", "primary-per-window", "5"), ("A2", "font-sizes", "5"),
+    ("A2", "section-sizes", "5"), ("A2", "section-colours", "5"), ("A2", "spacing-grid", "5"), ("A2", "rhythm", "2"),
+    ("A3", "body-size", "5"), ("A3", "line-height", "5"), ("A3", "measure", "1440"), ("A3", "fk-grade", "1440"),
+    ("A4", "axe", "2"), ("A4", "text-contrast", "5"), ("A4", "targets", "5"), ("A4", "no-hscroll", "5"),
+    ("A4", "headings", "2"), ("A4", "landmarks", "2"), ("A4", "lang", "2"), ("A4", "img-alt", "2"),
+    ("A4", "svg-names", "2"), ("A5", "cta-length", "all"), ("A5", "cta-verb", "all"), ("A5", "disclosure", "all"),
+    ("A5", "placeholders", "all"), ("A5", "numbers", "all"), ("A7", "overlap", "5"), ("A7", "clipped", "5"),
+]
+
+
+def test_version_2_adds_rows_and_renames_none():
+    rows = [(b, c, s) for b, c, s, _ in hb.CHECKS]
+    assert [x for x in rows if (x[0], x[1]) not in hb.ADDED] == V1_CHECKS
+    assert hb.ADDED == {("A5", "cta-wording"), ("A7", "word-split")}
+    assert rows.index(("A5", "cta-wording", "all")) == rows.index(("A5", "numbers", "all")) + 1
+    assert rows.index(("A7", "word-split", "5")) == rows.index(("A7", "clipped", "5")) + 1

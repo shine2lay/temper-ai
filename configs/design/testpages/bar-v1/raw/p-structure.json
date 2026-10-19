@@ -1,6 +1,6 @@
 {
  "meter": "design_homepage_bar",
- "version": 1,
+ "version": 2,
  "page": "configs/design/testpages/bar-v1/p-structure.html",
  "page_sha256": "6677e1b61dfa011c38f421fc8ab322fc494f064c226a57d6d209054f494ec275",
  "widths": {
@@ -19,22 +19,26 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      }
     ],
     "footer_text": "",
@@ -1174,6 +1178,23 @@
       "line_chars": [
        77,
        12
+      ],
+      "blocks": [
+       {
+        "sel": "section.hero:nth-of-type(1) > div.wrap.hero-grid > div.hero-copy > p.lede",
+        "text": "Lumen Ledger sorts your bills into 12 clear groups, so you can see each month at a glance.",
+        "lines": 2,
+        "line_chars": [
+         77,
+         12
+        ],
+        "box": [
+         184,
+         316.8,
+         704,
+         56
+        ]
+       }
       ]
      },
      {
@@ -1195,6 +1216,23 @@
       "line_chars": [
        70,
        35
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(1) > p",
+        "text": "Each bill lands in one of 12 groups, like rent, food or travel. You do not have to set up any rules first.",
+        "lines": 2,
+        "line_chars": [
+         70,
+         35
+        ],
+        "box": [
+         184,
+         754.39,
+         520,
+         50.38
+        ]
+       }
       ]
      },
      {
@@ -1216,6 +1254,23 @@
       "line_chars": [
        61,
        58
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(2) > p",
+        "text": "See what you spent this month next to last month. Big changes stand out, and you can read the short guide to learn more.",
+        "lines": 2,
+        "line_chars": [
+         61,
+         58
+        ],
+        "box": [
+         736,
+         690.39,
+         520,
+         40
+        ]
+       }
       ]
      },
      {
@@ -1237,6 +1292,23 @@
       "line_chars": [
        77,
        5
+      ],
+      "blocks": [
+       {
+        "sel": "#pricing > div.wrap > p",
+        "text": "Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends.",
+        "lines": 2,
+        "line_chars": [
+         77,
+         5
+        ],
+        "box": [
+         184,
+         984.77,
+         648,
+         50.38
+        ]
+       }
       ]
      },
      {
@@ -1257,6 +1329,22 @@
       ],
       "line_chars": [
        46
+      ],
+      "blocks": [
+       {
+        "sel": "#help > div.wrap > p",
+        "text": "Fictional demo — no real accounts or payments.",
+        "lines": 1,
+        "line_chars": [
+         46
+        ],
+        "box": [
+         184,
+         1237.33,
+         576,
+         22.39
+        ]
+       }
       ]
      }
     ],
@@ -1319,7 +1407,24 @@
        40
       ]
      }
-    ]
+    ],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -1426,22 +1531,26 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      }
     ],
     "footer_text": "",
@@ -2707,7 +2816,24 @@
        40
       ]
      }
-    ]
+    ],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -2802,22 +2928,26 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      }
     ],
     "footer_text": "",
@@ -4042,7 +4172,24 @@
        40
       ]
      }
-    ]
+    ],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -4137,22 +4284,26 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      }
     ],
     "footer_text": "",
@@ -5389,7 +5540,24 @@
        40
       ]
      }
-    ]
+    ],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -5496,22 +5664,26 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      }
     ],
     "footer_text": "",
@@ -6796,7 +6968,24 @@
        40
       ]
      }
-    ]
+    ],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [

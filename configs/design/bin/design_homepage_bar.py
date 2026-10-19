@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""design_homepage_bar (Design, queue #78): the homepage A-bar meter, part 1. No model (AGENTS rule 17).
+"""design_homepage_bar (Design, queues #78 and #91): the homepage A-bar meter, version 2. No model (AGENTS rule 17).
 
 Measures one built homepage against the script-measurable A bars of
 ~/design-lab/homepage-workflow/BAR.md at 1440x900, 1024x768, 768x1024, 390x844 and 320x568, and
@@ -14,7 +14,8 @@ The browser is temper's playwright-mcp service. The site folder is served over H
 design_capture.serve. In the page: design_homepage_bar.js (raw measurements), design_measure.js
 (text contrast, WCAG 2.5.8 targets), axe-core with design_capture's AXE_TAGS, and design_page_checks
 (text over an image, measured from the pixels behind it). The scorer (score) is pure: raw JSON in,
-rows out; every limit is applied there.
+rows out; every limit is applied there. Version 2 (queue #91, H3b) reads six of BAR.md's definitions
+more exactly and adds two rows (A5 cta-wording, A7 word-split); the doc's v2 section lists each change.
 """
 
 import argparse
@@ -32,10 +33,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 METER = "design_homepage_bar"
-VERSION = 1
+VERSION = 2
 REPO = HERE.parent.parent.parent
 JS = HERE / "design_homepage_bar.js"
 FIXTURES = HERE.parent / "testpages" / "bar-v1"
+FIXTURES_V2 = HERE.parent / "testpages" / "bar-v2"
 VERBS = FIXTURES / "verbs.txt"
 PLACEHOLDERS = FIXTURES / "placeholders.txt"
 SIZES = [(1440, 900), (1024, 768), (768, 1024), (390, 844), (320, 568)]
@@ -76,9 +78,14 @@ CHECKS = [
     ("A5", "disclosure", "all", "fictional products carry the disclosure line"),
     ("A5", "placeholders", "all", "no placeholder text"),
     ("A5", "numbers", "all", "0 unsourced claims"),
+    ("A5", "cta-wording", "all", "the brief's call to action, normalised"),
     ("A7", "overlap", "5", "no text box overlaps another"),
     ("A7", "clipped", "5", "no clipped text"),
+    ("A7", "word-split", "5", "no word split across two lines without a hyphen"),
 ]
+# The rows version 2 added (queue #91). bar-v1/expected.json predates them; bar-v2/expected.json keys them
+# for bar-v1's pages (its "bar-v1" section).
+ADDED = {("A5", "cta-wording"), ("A7", "word-split")}
 
 
 def widths_of(spec: str) -> list[str]:
@@ -178,15 +185,177 @@ def number_tokens(text: str) -> list[tuple[str, str, str, str]]:
     return out
 
 
-def unsourced_numbers(page_text: str, facts: list[str]) -> list[str]:
-    """Page number tokens without a brief fact token of the same number (and the same marks)."""
-    known = [(c, n, s) for f in facts for (_, c, n, s) in number_tokens(f)]
+UNITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+         "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+NUMBER_WORDS = {w: i for i, w in enumerate(UNITS)} | TENS
+WORD_NUM_RE = re.compile(r"(?<![A-Za-z])([A-Za-z]+)(?:-([A-Za-z]+))?(?![A-Za-z])")
+
+
+def number_words(text: str) -> list[int]:
+    """v2 (queue #91): the numbers a text writes as words: zero to nineteen, the tens, and hyphened compounds
+    such as twenty-one; 'one-hour' gives 1 and 'ten-year' 10."""
     out = []
-    for shown, cur, num, suf in number_tokens(page_text):
-        ok = any(n == num and (not cur or c == cur) and (not suf or s == suf) for c, n, s in known)
-        if not ok and shown not in out:
-            out.append(shown)
+    for m in WORD_NUM_RE.finditer(text or ""):
+        a, b = m.group(1).lower(), (m.group(2) or "").lower()
+        if a in TENS and 1 <= NUMBER_WORDS.get(b, 0) <= 9:
+            out.append(TENS[a] + NUMBER_WORDS[b])
+            continue
+        out += [NUMBER_WORDS[x] for x in (a, b) if x in NUMBER_WORDS]
     return out
+
+
+def fact_token_list(facts: list[str]) -> list[tuple[str, str, str, str]]:
+    """Every number the brief's facts hold, fact by fact: its numerals, then (v2) its number words as plain
+    numbers, so a page that restates 'seven days' as '7 days' is sourced."""
+    out = []
+    for f in facts:
+        out += number_tokens(f)
+        out += [(str(v), "", str(v), "") for v in number_words(f)]
+    return out
+
+
+def fact_tokens(facts: list[str]) -> list[tuple[str, str, str]]:
+    return [(c, n, s) for _, c, n, s in fact_token_list(facts)]
+
+
+def is_sourced(tok: tuple[str, str, str, str], known: list[tuple[str, str, str]]) -> bool:
+    """A page number is sourced by a known number of the same value whose marks cover the page's marks."""
+    _, cur, num, suf = tok
+    return any(n == num and (not cur or c == cur) and (not suf or s == suf) for c, n, s in known)
+
+
+def unsourced_numbers(page_text: str, facts: list[str], extra: list[tuple[str, str, str]] | None = None) -> list[str]:
+    """Page number tokens without a brief fact token of the same number (and the same marks)."""
+    known = fact_tokens(facts) + list(extra or [])
+    out = []
+    for tok in number_tokens(page_text):
+        if not is_sourced(tok, known) and tok[0] not in out:
+            out.append(tok[0])
+    return out
+
+
+def page_number_tokens(text: str, claims: dict | None) -> list[tuple[str, str, str, str]]:
+    """v2 (queue #91): the page text's numbers that are claims. claims (measured in the page) lists the
+    numbers that are not: step labels, and the text of pictures exposed as an image (drop); each dropped
+    number takes out one page number shown the same way. Those pictures' accessible names are checked as
+    text instead (names). Without claims (a version 1 raw file) every number counts, as in version 1."""
+    toks = number_tokens(text)
+    if not claims:
+        return toks
+    for d in claims.get("drop") or []:
+        for t in number_tokens(norm(d.get("text", ""))):
+            k = next((k for k, x in enumerate(toks) if x[0] == t[0]), None)
+            if k is not None:
+                del toks[k]
+    for nm in claims.get("names") or []:
+        toks += number_tokens(norm(nm.get("text", "")))
+    return toks
+
+
+DERIV_OPS = {"add": "+", "subtract": "-", "multiply": "x", "divide": "/"}
+
+
+def num_text(v: Decimal) -> str:
+    return format(v.normalize(), "f")
+
+
+def apply_op(op: str, vals: list[Decimal]) -> Decimal | None:
+    acc = vals[0]
+    for v in vals[1:]:
+        if op == "add":
+            acc += v
+        elif op == "subtract":
+            acc -= v
+        elif op == "multiply":
+            acc *= v
+        elif v == 0:
+            return None
+        else:
+            acc /= v
+    return acc
+
+
+def check_derivation(d: dict, facts: list[str]) -> tuple[bool, str]:
+    """v2 (queue #91): one derivations.json entry ({shown, operation, operands, facts}). It sources its shown
+    number only when every listed fact is a brief fact word for word, each operand is one number a listed
+    fact holds (the same marks; number words count), the shown number's marks are on an operand, and
+    recomputing left to right gives exactly the shown number. Returns (valid, why not)."""
+    shown = number_tokens(str(d.get("shown", "")))
+    if len(shown) != 1:
+        return False, "derivations.json: shown is not one number"
+    s = shown[0]
+    op = d.get("operation")
+    if op not in DERIV_OPS:
+        return False, f"derivations.json: {s[0]} has no known operation"
+    listed = d.get("facts") or []
+    if not listed or any(f not in facts for f in listed):
+        return False, f"derivations.json: {s[0]} lists a fact not in the brief"
+    held = fact_tokens(listed)
+    ops = []
+    for o in d.get("operands") or []:
+        t = number_tokens(str(o))
+        if len(t) != 1 or (t[0][1], t[0][2], t[0][3]) not in held:
+            return False, f"derivations.json: operand {o} is not in its facts"
+        ops.append(t[0])
+    if len(ops) < 2:
+        return False, f"derivations.json: {s[0]} needs 2 or more operands"
+    if (s[1] and not any(t[1] == s[1] for t in ops)) or (s[3] and not any(t[3] == s[3] for t in ops)):
+        return False, f"derivations.json: no operand carries {s[0]}'s mark"
+    val = apply_op(op, [Decimal(t[2]) for t in ops])
+    if val is None or val != Decimal(s[2]):
+        got = "nothing" if val is None else s[1] + num_text(val) + s[3]
+        return False, f"derivations.json: {op} gives {got}, not {s[0]}"
+    return True, ""
+
+
+def possible_derivation(tok: tuple[str, str, str, str], fact_toks: list, page_toks: list) -> str | None:
+    """v2 (queue #91), evidence only: the first way to reach an unsourced number from two numbers, at least
+    one of them a brief fact's, as text such as '$36 = 2 x $18'. Tries x, +, - then /; x and / take one
+    number with the shown currency and one without (none when the shown number has none), + and - two with
+    it; 0 and 1 are not used with x or /, nor 0 with + or -. A derivation sources the number only when the
+    page folder's derivations.json lists it (check_derivation)."""
+    shown, cur, num, suf = tok
+    if suf:
+        return None
+    target = Decimal(num)
+    pool, seen, facts = [], set(), set()
+    for k, t in enumerate(list(fact_toks) + list(page_toks)):
+        key = (t[1], t[2], t[3])
+        if t[3] or key in seen or key == (cur, num, suf):
+            continue
+        seen.add(key)
+        pool.append(t)
+        if k < len(fact_toks):
+            facts.add(key)
+
+    def dv(t):
+        return Decimal(t[2])
+
+    def fact(a, b):
+        return (a[1], a[2], a[3]) in facts or (b[1], b[2], b[3]) in facts
+
+    plain = [t for t in pool if not t[1]]
+    marked = [t for t in pool if t[1] == cur] if cur else plain
+    for a in plain:
+        for b in marked:
+            if a is b or (not cur and pool.index(b) < pool.index(a)) or dv(a) in (0, 1) or dv(b) in (0, 1):
+                continue
+            if dv(a) * dv(b) == target and fact(a, b):
+                return f"{shown} = {a[0]} x {b[0]}"
+    for i, a in enumerate(marked):
+        for b in marked[i + 1:]:
+            if dv(a) != 0 and dv(b) != 0 and dv(a) + dv(b) == target and fact(a, b):
+                return f"{shown} = {a[0]} + {b[0]}"
+    for a in marked:
+        for b in marked:
+            if a is not b and dv(b) != 0 and dv(a) - dv(b) == target and fact(a, b):
+                return f"{shown} = {a[0]} - {b[0]}"
+    for a in marked:
+        for b in plain:
+            if a is not b and dv(b) not in (0, 1) and dv(a) / dv(b) == target and fact(a, b):
+                return f"{shown} = {a[0]} / {b[0]}"
+    return None
 
 
 def srgb_to_oklab(rgb: list[float]) -> tuple[float, float, float]:
@@ -232,17 +401,53 @@ def solid(c: dict) -> bool:
     return (c["tag"] in ("a", "button") or c.get("role") == "button") and c["bg"][3] >= 1 and c["bg_ratio"] >= 3
 
 
-def primary_cta(m: dict, brief: dict) -> dict | None:
-    want = norm(brief.get("cta", "")).lower()
+def cta_norm(text: str) -> str:
+    """v2 (queue #91): call-to-action wording without case, extra whitespace, arrows (\u2193 \u2192 \u203a >) at
+    either end, or trailing punctuation (\u2026 . !)."""
+    t, prev = norm(text).lower(), None
+    while t != prev:
+        prev = t
+        t = re.sub(r"[\s\u2193\u2192\u203a>\u2026.!]+$", "", re.sub(r"^[\s\u2193\u2192\u203a>]+", "", t))
+    return t
+
+
+def in_first_screen(c: dict, h: float) -> bool:
+    return 0 <= c["box"][1] + c["box"][3] / 2 <= h
+
+
+def pick_cta(m: dict, brief: dict) -> tuple[dict | None, str]:
+    """The primary call to action and the rule that picked it (v2, queue #91): the first control in the first
+    screen whose wording is the brief's after cta_norm; else the most prominent filled button in the first
+    screen (solid: background 3:1 or more against its surroundings; the largest area wins); else, as in
+    version 1, the brief's wording anywhere, then the largest filled button on the page."""
+    want = cta_norm(brief.get("cta", ""))
     h = m["viewport"][1]
-    named = [c for c in m["controls"] if want and norm(c["text"]).lower() == want]
-    if named:
-        inview = [c for c in named if 0 <= c["box"][1] + c["box"][3] / 2 <= h]
-        return (inview or named)[0]
+    named = [c for c in m["controls"] if want and cta_norm(c["text"]) == want]
+    inview = [c for c in named if in_first_screen(c, h)]
+    if inview:
+        return inview[0], "brief wording"
+
+    def largest(cs):
+        return max(cs, key=lambda c: (c["box"][2] * c["box"][3], -c["i"]))
+
     solids = [c for c in m["controls"] if solid(c)]
+    first = [c for c in solids if in_first_screen(c, h)]
+    if first:
+        return largest(first), "most prominent filled button in the first screen"
+    if named:
+        return named[0], "brief wording, outside the first screen"
     if solids:
-        return max(solids, key=lambda c: (c["box"][2] * c["box"][3], -c["i"]))
-    return None
+        return largest(solids), "largest filled button on the page"
+    return None, ""
+
+
+def primary_cta(m: dict, brief: dict) -> dict | None:
+    return pick_cta(m, brief)[0]
+
+
+def pct(cells: list[int]) -> str:
+    on, total = cells
+    return str(round(100 * on / total)) if total else "0"
 
 
 def in_first(t: dict, w: float, h: float) -> bool:
@@ -289,25 +494,48 @@ def check_width(check: str, view: dict, brief: dict) -> tuple:
         n = len(m["h1"]["text"].split())
         return n, n <= 12, [ev(m["h1"]["sel"], m["h1"]["text"], m["h1"]["box"])]
     if check == "cta-in-view":
-        c = primary_cta(m, brief)
+        c, rule = pick_cta(m, brief)
         if not c:
             return "no primary CTA", False, []
         x, y, bw, bh = c["box"]
         ok = x >= 0 and y >= 0 and x + bw <= w and y + bh <= h
-        return f"box {fmt(x)},{fmt(y)} {fmt(bw)}x{fmt(bh)} in {w}x{h}", ok, [ev(c["sel"], c["text"], c["box"])]
+        return (f"box {fmt(x)},{fmt(y)} {fmt(bw)}x{fmt(bh)} in {w}x{h}", ok,
+                [ev(c["sel"], c["text"], c["box"]), ev("(picked by)", rule)])
     if check == "visual-anchor":
         need = 120 if w >= 1440 else 96
-        good = []
-        for p in m["pictures"]:
-            x, y, bw, bh = p["box"]
+
+        def fits(box) -> bool:
+            x, y, bw, bh = box
             if bw < need or bh < need:
-                continue
+                return False
             inside = max(0.0, min(y + bh, h) - max(y, 0.0)) * max(0.0, min(x + bw, w) - max(x, 0.0))
-            if inside >= 0.5 * bw * bh:
-                good.append(p)
-        if good:
-            return len(good), True, [ev(p["sel"], p["kind"], p["box"]) for p in good[:5]]
-        return 0, False, []
+            return inside >= 0.5 * bw * bh
+
+        good = [k for k, p in enumerate(m["pictures"]) if fits(p["box"])]
+        # v2 (queue #91): a picture built in HTML counts when it is exposed as an image (role=img with a name,
+        # or a figure with a figcaption or aria-labelledby) and a third or more of its box is painted by
+        # non-text boxes, at the same size and place as any anchor. One anchor counts once: an HTML picture
+        # holding a counted picture, or inside a counted HTML picture, adds nothing.
+        htmls = m.get("html_pictures") or []
+        ok_html = [k for k, p in enumerate(htmls) if p["exposed"] and 3 * p["cells"][0] >= p["cells"][1] and fits(p["box"])]
+        hgood = [htmls[k] for k in ok_html if not set(htmls[k]["pics"]) & set(good) and not set(htmls[k]["anc"]) & set(ok_html)]
+        if good or hgood:
+            evid = [ev(m["pictures"][k]["sel"], m["pictures"][k]["kind"], m["pictures"][k]["box"]) for k in good]
+            evid += [ev(p["sel"], f"html picture ({p['kind']}), painted {pct(p['cells'])}%", p["box"]) for p in hgood]
+            return len(good) + len(hgood), True, evid[:5]
+        near = []
+        for p in htmls:
+            x, y, bw, bh = p["box"]
+            if not (y < h and y + bh > 0 and x < w and x + bw > 0):
+                continue
+            if not p["exposed"]:
+                why = f"not exposed as an image: {p['why']}"
+            elif 3 * p["cells"][0] < p["cells"][1]:
+                why = f"painted {pct(p['cells'])}% of its box, needs a third"
+            else:
+                why = f"{fmt(bw)}x{fmt(bh)}, needs {need}x{need} with half in the first screen"
+            near.append(ev(p["sel"], why, p["box"]))
+        return 0, False, near[:5]
     if check == "one-h1":
         h1s = [x for x in m["headings"] if x["level"] == 1]
         return len(h1s), len(h1s) == 1, [ev(x["sel"], x["text"], x["box"]) for x in h1s[:5]]
@@ -367,7 +595,8 @@ def check_width(check: str, view: dict, brief: dict) -> tuple:
                     inside.append(top - low)
                 low = bottom if low is None else max(low, bottom)
             first_top = min(b[0] for b in boxes)
-            if prev is not None:
+            # v2 (queue #91): the gap under the page header (the banner) is not a gap between sections.
+            if prev is not None and not m["sections"][prev[0]].get("banner"):
                 between.append((first_top - prev[1], prev[0], i))
             prev = (i, max(b[1] for b in boxes))
         if not inside or not between:
@@ -399,10 +628,18 @@ def check_width(check: str, view: dict, brief: dict) -> tuple:
         lo, hi = min(r for r, _ in ratios), max(r for r, _ in ratios)
         return f"{fmt(lo)}-{fmt(hi)}", not bad, [ev(b["sel"], f"{fmt(r)}: {b['text']}", b["box"]) for r, b in bad[:5]]
     if check == "measure":
-        paras = [b for b in body if b["lines"] >= 2 and b.get("line_chars") and len(b["line_chars"]) >= 2]
-        if not paras:
-            return "no paragraphs of 2 or more lines", True, []
-        avgs = [(sum(b["line_chars"][:-1]) / (len(b["line_chars"]) - 1), b) for b in paras]
+        if any("blocks" in b for b in body):
+            # v2 (queue #91): running text only, block by block: text blocks of 2 or more lines, or of 60 or
+            # more characters. A one-line block counts its one line; labels and one-character cells drop out.
+            paras = [k for b in body for k in b.get("blocks") or [] if k["lines"] >= 2 or sum(k["line_chars"]) >= 60]
+            if not paras:
+                return "no running text", True, []
+        else:
+            paras = [b for b in body if b["lines"] >= 2 and b.get("line_chars") and len(b["line_chars"]) >= 2]
+            if not paras:
+                return "no paragraphs of 2 or more lines", True, []
+        avgs = [(sum(b["line_chars"][:-1]) / (len(b["line_chars"]) - 1) if len(b["line_chars"]) >= 2
+                 else float(sum(b["line_chars"])), b) for b in paras]
         good = [a for a, _ in avgs if 45 <= a <= 90]
         share = round(100 * len(good) / len(avgs), 1)
         bad = [(a, b) for a, b in avgs if not 45 <= a <= 90]
@@ -491,20 +728,33 @@ def check_width(check: str, view: dict, brief: dict) -> tuple:
             if x or y or e:
                 bad.append(o)
         return len(bad), not bad, [ev(o["sel"], o["text"], o["box"]) for o in bad[:5]]
+    if check == "word-split":
+        # v2 (queue #91): words whose glyphs sit on two lines with no hyphen drawn at the break.
+        splits = m.get("word_splits")
+        if splits is None:
+            return "not measured", None, []
+        return len(splits), not splits, [ev(x["sel"], x["text"], x["box"]) for x in splits[:5]]
     raise KeyError(check)
 
 
 def check_all(check: str, raw: dict, brief: dict, verbs: set[str], patterns: list[re.Pattern]) -> tuple:
     views = {wk: v for wk, v in raw["widths"].items() if v.get("bar")}
-    if check in ("cta-length", "cta-verb"):
-        c = None
+    if check in ("cta-length", "cta-verb", "cta-wording"):
+        c, rule = None, ""
         for wk in ("1440x900", "390x844"):
             if wk in views:
-                c = primary_cta(views[wk]["bar"], brief)
+                c, rule = pick_cta(views[wk]["bar"], brief)
                 if c:
                     break
         if not c:
             return "no primary CTA", None, []
+        if check == "cta-wording":
+            # v2 (queue #91): the primary call to action says what the brief's says, after cta_norm.
+            want = brief.get("cta", "")
+            if not cta_norm(want):
+                return "brief has no call to action", None, []
+            ok = cta_norm(c["text"]) == cta_norm(want)
+            return norm(c["text"]), ok, [ev(c["sel"], c["text"], c["box"]), ev("(picked by)", rule), ev("(brief)", want)]
         if check == "cta-length":
             n = len(norm(c["text"]))
             return n, n <= 40, [ev(c["sel"], c["text"], c["box"])]
@@ -531,7 +781,17 @@ def check_all(check: str, raw: dict, brief: dict, verbs: set[str], patterns: lis
         return len(hits), not hits, [ev("(page text)", f"{a}: {b}") for a, b, _ in hits[:5]]
     if check == "numbers":
         line = norm(brief.get("disclosure", ""))
-        found = []
+        facts = brief.get("facts") or []
+        known = fact_tokens(facts)
+        rejected = {}
+        for d in (raw.get("derivations") or {}).get("items") or []:
+            ok, why = check_derivation(d, facts)
+            s = number_tokens(str(d.get("shown", "")))
+            if ok:
+                known.append((s[0][1], s[0][2], s[0][3]))
+            elif len(s) == 1:
+                rejected.setdefault((s[0][1], s[0][2], s[0][3]), why)
+        found, page_toks = [], []
         for wk in WIDTHS:
             bar = views[wk]["bar"]
             text = bar["page_text"]
@@ -541,10 +801,17 @@ def check_all(check: str, raw: dict, brief: dict, verbs: set[str], patterns: lis
             text = norm(text)
             if line:
                 text = text.replace(line, " ")
-            for tok in unsourced_numbers(text, brief.get("facts") or []):
-                if tok not in found:
+            for tok in page_number_tokens(text, bar.get("claims")):
+                if tok[0] not in [t[0] for t in page_toks]:
+                    page_toks.append(tok)
+                if not is_sourced(tok, known) and tok[0] not in [t[0] for t in found]:
                     found.append(tok)
-        return len(found), not found, [ev("(page text)", tok) for tok in found[:5]]
+        evid = []
+        for tok in found[:5]:
+            txt = possible_derivation(tok, fact_token_list(facts), page_toks) or tok[0]
+            why = rejected.get((tok[1], tok[2], tok[3]))
+            evid.append(ev("(page text)", f"{txt} ({why})" if why else txt))
+        return len(found), not found, evid
     raise KeyError(check)
 
 
@@ -689,33 +956,90 @@ async def measure_pages(site: pathlib.Path, pages: list[str], browser: str, serv
 
 def page_raw(site: pathlib.Path, page: str, views: dict, label: str | None = None) -> dict:
     f = site / page
-    return {"meter": METER, "version": VERSION, "page": label or str(f.resolve()),
-            "page_sha256": hashlib.sha256(f.read_bytes()).hexdigest(), "widths": views}
+    raw = {"meter": METER, "version": VERSION, "page": label or str(f.resolve()),
+           "page_sha256": hashlib.sha256(f.read_bytes()).hexdigest(), "widths": views}
+    # v2 (queue #91): the page folder's derivations.json, when there is one (A5 numbers).
+    d = f.parent / "derivations.json"
+    if d.is_file():
+        data = d.read_bytes()
+        raw["derivations"] = {"file": "derivations.json", "sha256": hashlib.sha256(data).hexdigest(),
+                              "items": json.loads(data).get("derivations") or []}
+    return raw
+
+
+def load_keys() -> tuple[dict, dict]:
+    """bar-v1/expected.json (part 1's key) and bar-v2/expected.json (version 2's cases and added rows)."""
+    return (json.loads((FIXTURES / "expected.json").read_text(encoding="utf-8")),
+            json.loads((FIXTURES_V2 / "expected.json").read_text(encoding="utf-8")))
+
+
+def raw_name(page: str) -> str:
+    """bar-v1/clean.html -> clean; bar-v2/c-derived-ok/index.html -> c-derived-ok-index."""
+    return "-".join(pathlib.PurePosixPath(page).with_suffix("").parts[1:])
+
+
+def page_brief(page: str, key1: dict, key2: dict) -> str:
+    return key2["pages"][page]["brief"] if page in key2["pages"] else key1["brief"]
+
+
+def key_match(page: str, rows: list[dict], key1: dict, key2: dict) -> dict:
+    """One fixture page's rows against its key. A bar-v1 page: bar-v1/expected.json for the rows it covers,
+    plus bar-v2/expected.json's bar-v1 section for the rows version 2 added. A bar-v2 page: its exact failing
+    set, and each keyed row's pass, value and evidence items."""
+    got = failing(rows)
+    notes = []
+    if page in key2["pages"]:
+        k = key2["pages"][page]
+        want = {tuple(x) for x in k["failing"]}
+        by = {(r["bar"], r["check"], r["width"]): r for r in rows}
+        for spec in k["rows"]:
+            where = f"{spec['bar']} {spec['check']} {spec['width']}"
+            r = by.get((spec["bar"], spec["check"], spec["width"]))
+            if r is None:
+                notes.append(f"{where}: no such row")
+                continue
+            if r["pass"] is not spec["pass"]:
+                notes.append(f"{where}: pass {r['pass']}, key {spec['pass']}")
+            if "value" in spec and r["value"] != spec["value"]:
+                notes.append(f"{where}: value {r['value']!r}, key {spec['value']!r}")
+            for e in spec.get("evidence") or []:
+                if not any(("selector" not in e or x["selector"] == e["selector"])
+                           and ("text" not in e or x["text"] == e["text"])
+                           and ("text_has" not in e or e["text_has"] in x["text"]) for x in r["evidence"]):
+                    notes.append(f"{where}: no evidence like {e}")
+    else:
+        added = {tuple(x) for x in key2["bar-v1"]["checks"]}
+        want = {tuple(x) for x in key1["pages"][page] if (x[0], x[1]) not in added}
+        want |= {tuple(x) for x in key2["bar-v1"]["pages"][page]}
+    missing, extra = sorted(want - got), sorted(got - want)
+    return {"match": not missing and not extra and not notes, "failing": len(got), "missing": missing, "extra": extra,
+            "rows": notes}
 
 
 def fixture_proof(out: pathlib.Path, browser: str, serve_host: str | None, record: bool) -> dict:
-    key = json.loads((FIXTURES / "expected.json").read_text(encoding="utf-8"))
-    site = REPO / key["site"]
-    brief_path = site / key["brief"]
-    brief = json.loads(brief_path.read_text(encoding="utf-8"))
-    pages = list(key["pages"])
+    """Measure every bar-v1 and bar-v2 fixture page in one browser session; compare each with its key."""
+    key1, key2 = load_keys()
+    site = REPO / key1["site"]
+    pages = list(key1["pages"]) + list(key2["pages"])
     measured = asyncio.run(measure_pages(site, pages, browser, serve_host))
     result = {"pages": {}, "match": True}
     for page in pages:
-        name = pathlib.Path(page).stem
+        name = raw_name(page)
+        brief_path = site / page_brief(page, key1, key2)
+        brief = json.loads(brief_path.read_text(encoding="utf-8"))
         raw = page_raw(site, page, measured[page], label=str((site / page).relative_to(REPO)))
+        text = json.dumps(raw, indent=1, ensure_ascii=False) + "\n"
         (out / name).mkdir(parents=True, exist_ok=True)
-        (out / name / "raw.json").write_text(json.dumps(raw, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        (out / name / "raw.json").write_text(text, encoding="utf-8")
         if record:
-            (FIXTURES / "raw").mkdir(exist_ok=True)
-            (FIXTURES / "raw" / f"{name}.json").write_text(json.dumps(raw, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+            folder = (FIXTURES_V2 if page in key2["pages"] else FIXTURES) / "raw"
+            folder.mkdir(exist_ok=True)
+            (folder / f"{name}.json").write_text(text, encoding="utf-8")
         doc = write_outputs(out / name, raw, brief, str(brief_path.relative_to(REPO)))
-        got = failing(doc["rows"])
-        want = {tuple(x) for x in key["pages"][page]}
-        missing, extra = sorted(want - got), sorted(got - want)
-        result["pages"][page] = {"match": not missing and not extra, "failing": len(got), "missing": missing, "extra": extra}
-        result["match"] = result["match"] and not missing and not extra
-    (out / "fixture-proof.json").write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
+        res = key_match(page, doc["rows"], key1, key2)
+        result["pages"][page] = res
+        result["match"] = result["match"] and res["match"]
+    (out / "fixture-proof.json").write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return result
 
 
@@ -730,8 +1054,9 @@ def main(argv: list[str] | None = None) -> int:
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--raw-only", action="store_true")
     mode.add_argument("--from-raw", help="score DIR/raw.json with no browser")
-    ap.add_argument("--fixture-proof", action="store_true", help="measure every bar-v1 page and compare with expected.json")
-    ap.add_argument("--record", action="store_true", help="with --fixture-proof: save the raw files to bar-v1/raw/")
+    ap.add_argument("--fixture-proof", action="store_true",
+                    help="measure every bar-v1 and bar-v2 page and compare with their expected.json keys")
+    ap.add_argument("--record", action="store_true", help="with --fixture-proof: save the raw files to bar-v1/raw/ and bar-v2/raw/")
     a = ap.parse_args(argv)
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

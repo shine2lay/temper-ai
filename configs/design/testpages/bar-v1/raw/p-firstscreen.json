@@ -1,6 +1,6 @@
 {
  "meter": "design_homepage_bar",
- "version": 1,
+ "version": 2,
  "page": "configs/design/testpages/bar-v1/p-firstscreen.html",
  "page_sha256": "d18c193930bec16b367b49dff8046ada61d3c9ba4377cfd0d5c1c3b752327be1",
  "widths": {
@@ -19,27 +19,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo — no real accounts or payments.\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -1178,6 +1183,22 @@
       ],
       "line_chars": [
        80
+      ],
+      "blocks": [
+       {
+        "sel": "section.hero:nth-of-type(1) > div.wrap.hero-grid > div.hero-copy:nth-of-type(1) > p.lede",
+        "text": "It sorts your bills into 12 clear groups, so you can see each month at a glance.",
+        "lines": 1,
+        "line_chars": [
+         80
+        ],
+        "box": [
+         184,
+         367.78,
+         704,
+         28
+        ]
+       }
       ]
      },
      {
@@ -1199,6 +1220,23 @@
       "line_chars": [
        70,
        35
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(1) > p",
+        "text": "Each bill lands in one of 12 groups, like rent, food or travel. You do not have to set up any rules first.",
+        "lines": 2,
+        "line_chars": [
+         70,
+         35
+        ],
+        "box": [
+         184,
+         793.58,
+         520,
+         50.38
+        ]
+       }
       ]
      },
      {
@@ -1220,6 +1258,23 @@
       "line_chars": [
        61,
        58
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(2) > p",
+        "text": "See what you spent this month next to last month. Big changes stand out, and you can read the short guide to learn more.",
+        "lines": 2,
+        "line_chars": [
+         61,
+         58
+        ],
+        "box": [
+         736,
+         729.58,
+         520,
+         50.38
+        ]
+       }
       ]
      },
      {
@@ -1241,6 +1296,23 @@
       "line_chars": [
        77,
        5
+      ],
+      "blocks": [
+       {
+        "sel": "#pricing > div.wrap > p",
+        "text": "Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends.",
+        "lines": 2,
+        "line_chars": [
+         77,
+         5
+        ],
+        "box": [
+         184,
+         1023.95,
+         648,
+         50.38
+        ]
+       }
       ]
      }
     ],
@@ -1267,7 +1339,13 @@
      "no_alt": []
     },
     "svgs": [],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [],
+     "names": []
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -1343,27 +1421,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo — no real accounts or payments.\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -2600,7 +2683,13 @@
      "no_alt": []
     },
     "svgs": [],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [],
+     "names": []
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -2675,27 +2764,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo — no real accounts or payments.\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -3992,7 +4086,13 @@
      "no_alt": []
     },
     "svgs": [],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [],
+     "names": []
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -4067,27 +4167,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo — no real accounts or payments.\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -5336,7 +5441,13 @@
      "no_alt": []
     },
     "svgs": [],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [],
+     "names": []
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -5412,27 +5523,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo — no real accounts or payments.\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -6765,7 +6881,13 @@
      "no_alt": []
     },
     "svgs": [],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [],
+     "names": []
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [

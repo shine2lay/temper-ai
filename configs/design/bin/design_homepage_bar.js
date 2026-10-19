@@ -1,5 +1,5 @@
-// design_homepage_bar's in-page measurements (Design, queue #78). One function expression; the
-// driver calls it as (expr)(opts) in the page after load, document.fonts.ready and settled
+// design_homepage_bar's in-page measurements (Design, queue #78; v2 additions, queue #91). One function
+// expression; the driver calls it as (expr)(opts) in the page after load, document.fonts.ready and settled
 // animations, at scroll 0. It returns raw measurements only: no limits are applied here, every
 // limit is applied by design_homepage_bar.py's scorer. Definitions: docs/design-homepage-bar.md.
 // opts: {min_words: body text needs this many words, chars: count characters per line (1440 only)}.
@@ -167,7 +167,12 @@
   sections = sections.filter((e) => !["script", "style", "template", "noscript", "link", "meta"].includes(e.localName));
   const secIndex = new Map(sections.map((e, i) => [e, i]));
   const sectionOf = (el) => { for (let e = el; e; e = e.parentElement) if (secIndex.has(e)) return secIndex.get(e); return -1; };
-  out.sections = sections.map((e, i) => ({ i, sel: sel(e), tag: e.localName }));
+  // banner (v2, A2 rhythm): the section is the page header, the banner landmark (role=banner, or a header
+  // not inside article, aside, main, nav or section).
+  const isBanner = (e) => (e.getAttribute("role") || "").trim().split(/\s+/)[0] === "banner"
+    || (e.localName === "header" && !e.getAttribute("role")
+      && !(e.parentElement && e.parentElement.closest("article, aside, main, nav, section, [role=main]")));
+  out.sections = sections.map((e, i) => ({ i, sel: sel(e), tag: e.localName, banner: isBanner(e) }));
   out.footer_text = pageFooter ? pageFooter.innerText || "" : "";
   out.page_text = document.body.innerText || "";
 
@@ -312,11 +317,23 @@
         lines: groups.length, text: norm(el.innerText).slice(0, 5000), box: xywh(pageRect(el.getBoundingClientRect())) };
       if (OPTS.chars) {
         const counts = groups.map(() => 0);
+        // v2 (A3 measure): each character also belongs to its text block, the nearest element from its
+        // parent up to the body element whose display is not inline-level (inline*, contents); a block's
+        // lines are its own characters grouped by vertical centre.
+        const blockOf = (node) => {
+          for (let e = node.parentElement; e && e !== el; e = e.parentElement) {
+            const d = cs(e).display;
+            if (!d.startsWith("inline") && d !== "contents") return e;
+          }
+          return el;
+        };
+        const blockChars = new Map();
         const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         while (tw.nextNode()) {
           const n = tw.currentNode;
           if (n.parentElement && n.parentElement.closest(SKIP)) continue;
           const v = n.nodeValue;
+          const blk = blockOf(n);
           for (let i = 0; i < v.length;) {
             const len = v.codePointAt(i) > 0xffff ? 2 : 1;
             rg.setStart(n, i);
@@ -326,11 +343,24 @@
               const c = q.top + scrollY + q.height / 2;
               const g = groups.findIndex((gr) => c >= gr.top && c <= gr.bottom);
               if (g >= 0) counts[g] += 1;
+              if (!blockChars.has(blk)) blockChars.set(blk, []);
+              blockChars.get(blk).push([q.top + scrollY, q.bottom + scrollY]);
             }
             i += len;
           }
         }
         item.line_chars = counts;
+        item.blocks = [...blockChars].map(([blk, spans]) => {
+          const lg = lineGroups(spans.map((s) => [0, s[0], 1, s[1]]));
+          const per = lg.map(() => 0);
+          for (const s of spans) {
+            const c = (s[0] + s[1]) / 2;
+            const g = lg.findIndex((gr) => c >= gr.top && c <= gr.bottom);
+            if (g >= 0) per[g] += 1;
+          }
+          return { sel: sel(blk), text: norm(blk.innerText).slice(0, 200), lines: lg.length, line_chars: per,
+            box: xywh(pageRect(blk.getBoundingClientRect())) };
+        });
       }
       return item;
     });
@@ -418,6 +448,212 @@
         own_text: ownText, text_past_x: r2(pastX), text_past_y: r2(pastY), text: norm(el.innerText).slice(0, 80), box: xywh(g) });
     }
     out.overflowing = list;
+  }
+
+  // ---------------------------------------------------------------- v2 (queue #91, H3b)
+
+  // Pictures exposed as an image (BAR.md rule 2's test): role=img with a non-empty accessible name, or a
+  // figure (no role, or role=figure) with a non-empty figcaption child or aria-labelledby name; nothing
+  // inside aria-hidden=true. exposure(el) is null for an element that is neither.
+  const roleOf = (el) => (el.getAttribute("role") || "").trim().split(/\s+/)[0].toLowerCase();
+  const exposure = (el) => {
+    const role = roleOf(el);
+    const isFigure = el.localName === "figure" && (!role || role === "figure");
+    if (role !== "img" && !isFigure) return null;
+    if (el.closest('[aria-hidden="true"]')) return { exposed: false, why: "inside aria-hidden=true", name: "" };
+    if (role === "img") {
+      let name = norm(nameOfIds(el.getAttribute("aria-labelledby") || "")) || norm(el.getAttribute("aria-label") || "");
+      if (!name && el.localName === "svg") {
+        const title = [...el.children].find((c) => c.localName === "title");
+        name = title ? norm(title.textContent) : "";
+      }
+      name = name || norm(el.getAttribute("title") || "");
+      return name ? { exposed: true, why: "", name } : { exposed: false, why: "role=img without a name", name: "" };
+    }
+    const cap = [...el.children].find((c) => c.localName === "figcaption");
+    const name = norm(nameOfIds(el.getAttribute("aria-labelledby") || "")) || (cap ? norm(cap.innerText || cap.textContent) : "");
+    return name ? { exposed: true, why: "", name } : { exposed: false, why: "figure without figcaption or aria-labelledby", name: "" };
+  };
+
+  // A5 claims. drop: numbers that are not claims, as text to take out of the page text: step labels (the
+  // 1-2 digit number that starts each item of a run of 2 or more sibling elements numbered 1, 2, 3, ... in
+  // order; an ol's markers are not in the page text at all) and the rendered text of each outermost picture
+  // exposed as an image. names: those pictures' accessible names, checked as text instead.
+  {
+    const LABEL = /^\s*(\d{1,2})(?=[.):]?(\s|$))/;
+    const firstText = (el) => {
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (tw.nextNode()) {
+        const n = tw.currentNode;
+        const p = n.parentElement;
+        if (!n.nodeValue.trim() || !p || p.closest(SKIP) || !rendered(p) || cs(p).visibility === "hidden") continue;
+        return n;
+      }
+      return null;
+    };
+    const drop = [];
+    const names = [];
+    const seenNodes = new Set();
+    for (const parent of [document.body, ...document.body.querySelectorAll("*")]) {
+      if (parent.closest(SKIP)) continue;
+      const kids = [...parent.children].filter((c) => !c.closest(SKIP) && rendered(c));
+      if (kids.length < 2) continue;
+      let run = [];
+      const flush = () => {
+        if (run.length >= 2) {
+          for (const r of run) {
+            if (seenNodes.has(r.n)) continue;
+            seenNodes.add(r.n);
+            drop.push({ sel: sel(r.n.parentElement), kind: "step-label", text: r.text });
+          }
+        }
+        run = [];
+      };
+      for (const c of kids) {
+        const n = firstText(c);
+        const mt = n ? n.nodeValue.match(LABEL) : null;
+        const l = mt ? { n, text: mt[1], v: parseInt(mt[1], 10) } : null;
+        if (l && run.length && l.v === run[run.length - 1].v + 1) { run.push(l); continue; }
+        flush();
+        if (l && l.v === 1) run.push(l);
+      }
+      flush();
+    }
+    // An img's numerals are pixels, never page text, and its alt was never counted: img is left out.
+    const exposedEls = [...document.body.querySelectorAll("[role], figure")].filter((el) => {
+      if (el.localName === "img" || (el.parentElement && el.parentElement.closest("svg"))) return false;
+      const x = exposure(el);
+      return x && x.exposed && rendered(el);
+    });
+    for (const el of exposedEls) {
+      if (exposedEls.some((o) => o !== el && o.contains(el))) continue;
+      const text = el.localName === "svg" ? [...el.querySelectorAll("text")].map((t) => t.textContent).join(" ")
+        : (el.innerText || "");
+      drop.push({ sel: sel(el), kind: "image", text: norm(text).slice(0, 2000) });
+      names.push({ sel: sel(el), text: exposure(el).name.slice(0, 500) });
+    }
+    out.claims = { drop, names };
+  }
+
+  // A1 visual anchor, pictures built in HTML: every role=img element (not svg or img, which part 1 already
+  // counts) and every figure, with its exposure and the share of its visible box painted by its descendants'
+  // non-text boxes: svg, img, canvas and video; a background image; a background colour that differs from
+  // the colour behind it; borders (all four visible: the whole box, else the visible sides). The share is
+  // counted on a 4 px grid of cell centres. The element's own background and border are not counted: a
+  // plain panel was never an anchor, and type on a panel is still type.
+  {
+    const STEP = 4;
+    const cands = [...document.body.querySelectorAll("[role], figure")]
+      .filter((el) => el.localName !== "svg" && el.localName !== "img" && !el.closest("svg") && exposure(el));
+    const list = [];
+    for (const el of cands) {
+      const g = region(el);
+      if (!g) continue;
+      const x = exposure(el);
+      const nx = Math.max(1, Math.floor(wOf(g) / STEP)), ny = Math.max(1, Math.floor(hOf(g) / STEP));
+      const grid = new Uint8Array(nx * ny);
+      const mark = (r) => {
+        if (!r) return;
+        const i0 = Math.max(0, Math.ceil((r[0] - g[0]) / STEP - 0.5)), i1 = Math.min(nx, Math.ceil((r[2] - g[0]) / STEP - 0.5));
+        const j0 = Math.max(0, Math.ceil((r[1] - g[1]) / STEP - 0.5)), j1 = Math.min(ny, Math.ceil((r[3] - g[1]) / STEP - 0.5));
+        for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) grid[j * nx + i] = 1;
+      };
+      for (const d of el.querySelectorAll("*")) {
+        if (d.parentElement && d.parentElement.closest("svg")) continue;
+        const dg = region(d);
+        if (!dg) continue;
+        if (["svg", "img", "canvas", "video"].includes(d.localName)) { mark(dg); continue; }
+        const s = cs(d);
+        let fill = !!s.backgroundImage && s.backgroundImage !== "none";
+        const c = parse(s.backgroundColor);
+        if (!fill && c && c[3] > 0) {
+          const own = rgb(bgOf(d));
+          const behind = rgb(d.parentElement ? bgOf(d.parentElement) : [255, 255, 255, 1]);
+          fill = own.some((v, k) => v !== behind[k]);
+        }
+        if (fill) { mark(dg); continue; }
+        const side = (k) => {
+          const bw = parseFloat(s[`border${k}Width`]) || 0;
+          const st = s[`border${k}Style`];
+          const col = parse(s[`border${k}Color`]);
+          return bw >= 1 && st !== "none" && st !== "hidden" && col && col[3] > 0 ? bw : 0;
+        };
+        const [bt, br, bb, bl] = ["Top", "Right", "Bottom", "Left"].map(side);
+        if (bt && br && bb && bl) { mark(dg); continue; }
+        const r = pageRect(d.getBoundingClientRect());
+        if (bt) mark(inter(dg, [r[0], r[1], r[2], r[1] + bt]));
+        if (br) mark(inter(dg, [r[2] - br, r[1], r[2], r[3]]));
+        if (bb) mark(inter(dg, [r[0], r[3] - bb, r[2], r[3]]));
+        if (bl) mark(inter(dg, [r[0], r[1], r[0] + bl, r[3]]));
+      }
+      let on = 0;
+      for (const v of grid) on += v;
+      list.push({ el, sel: sel(el), kind: roleOf(el) === "img" ? "role=img" : "figure", name: x.name.slice(0, 80),
+        exposed: x.exposed, why: x.why, cells: [on, grid.length], box: xywh(g), sec: sectionOf(el) });
+    }
+    out.html_pictures = list.map((p) => ({ sel: p.sel, kind: p.kind, name: p.name, exposed: p.exposed, why: p.why,
+      cells: p.cells, box: p.box, sec: p.sec,
+      anc: list.map((q, k) => (q.el !== p.el && q.el.contains(p.el) ? k : -1)).filter((k) => k >= 0),
+      pics: pictureEls.map((e, k) => (p.el.contains(e) ? k : -1)).filter((k) => k >= 0) }));
+  }
+
+  // A7 word-split: each word (a run of letters, marks and digits in one text node, 2 or more characters, not
+  // in a script written without spaces) whose glyphs sit on 2 or more lines, at a break where no hyphen is
+  // drawn: the word's box on the earlier line ends at its last glyph there (a drawn hyphen, soft or from
+  // hyphens: auto, makes that box at least 1 px wider). Shown as the word with " / " at each such break.
+  {
+    const WORD = /[\p{L}\p{M}\p{N}]+/gu;
+    const NOSPACE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+    const rg = document.createRange();
+    const seen = (r) => r.width > 0.5 && r.height > 0.5;
+    const sameLine = (a, b) => Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < Math.min(a.height, b.height) / 2;
+    const list = [];
+    const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (tw.nextNode()) {
+      const node = tw.currentNode;
+      const el = node.parentElement;
+      if (!el || el.closest(SKIP) || !region(el)) continue;
+      const text = node.data;
+      for (const mt of text.matchAll(WORD)) {
+        const w = mt[0];
+        if ([...w].length < 2 || NOSPACE.test(w)) continue;
+        rg.setStart(node, mt.index);
+        rg.setEnd(node, mt.index + w.length);
+        const rects = [...rg.getClientRects()].filter(seen);
+        if (rects.length < 2) continue;
+        const lines = [];
+        for (const r of rects) { const ln = lines.find((l) => sameLine(l[0], r)); if (ln) ln.push(r); else lines.push([r]); }
+        if (lines.length < 2) continue;
+        const chars = [];
+        for (let i = mt.index; i < mt.index + w.length;) {
+          const n = text.codePointAt(i) > 0xffff ? 2 : 1;
+          rg.setStart(node, i);
+          rg.setEnd(node, i + n);
+          const cr = [...rg.getClientRects()].filter(seen);
+          if (cr.length) {
+            const last = cr[cr.length - 1];
+            const own = cr.find((r) => sameLine(r, last)) || last;
+            chars.push({ i, li: lines.findIndex((l) => sameLine(l[0], last)), right: own.right });
+          }
+          i += n;
+        }
+        const breaks = [];
+        for (let k = 1; k < chars.length; k++) {
+          const a = chars[k - 1], b = chars[k];
+          if (a.li === b.li || a.li < 0) continue;
+          const lineRight = Math.max(...lines[a.li].map((r) => r.right));
+          if (lineRight >= a.right + 1) continue;
+          breaks.push(b.i);
+        }
+        if (!breaks.length) continue;
+        let shown = "", from = mt.index;
+        for (const b of breaks) { shown += text.slice(from, b) + " / "; from = b; }
+        shown += text.slice(from, mt.index + w.length);
+        const u = rects.map(pageRect).reduce((p, q) => [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[2], q[2]), Math.max(p[3], q[3])]);
+        list.push({ sel: sel(el), text: shown.slice(0, 200), box: xywh(u) });
+      }
+    }
+    out.word_splits = list;
   }
   return out;
 })

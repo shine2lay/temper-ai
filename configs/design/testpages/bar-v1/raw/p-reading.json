@@ -1,6 +1,6 @@
 {
  "meter": "design_homepage_bar",
- "version": 1,
+ "version": 2,
  "page": "configs/design/testpages/bar-v1/p-reading.html",
  "page_sha256": "2be5be5122f3df30798e84ce241da734b8f26540a5a36209846dafeada39e794",
  "widths": {
@@ -19,27 +19,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo: no real accounts or payments.\n\nQuestions? Write to help@example.com\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -1282,6 +1287,23 @@
       "line_chars": [
        75,
        11
+      ],
+      "blocks": [
+       {
+        "sel": "section.hero:nth-of-type(1) > div.wrap.hero-grid > div.hero-copy > p.lede",
+        "text": "Lumen Ledger sorts your bills into 12 clear groups. It is trusted by 40,000 households.",
+        "lines": 2,
+        "line_chars": [
+         75,
+         11
+        ],
+        "box": [
+         184,
+         288.2,
+         704,
+         56
+        ]
+       }
       ]
      },
      {
@@ -1307,6 +1329,27 @@
        65,
        57,
        19
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(1) > p",
+        "text": "Comprehensive categorization functionality automatically differentiates recurring residential expenditures, discretionary entertainment purchases and miscellaneous administrative obligations, conseque",
+        "lines": 6,
+        "line_chars": [
+         56,
+         64,
+         56,
+         65,
+         57,
+         19
+        ],
+        "box": [
+         184,
+         754.39,
+         520,
+         151.13
+        ]
+       }
       ]
      },
      {
@@ -1328,6 +1371,23 @@
       "line_chars": [
        61,
        58
+      ],
+      "blocks": [
+       {
+        "sel": "div.wrap > div.cards > article.card:nth-of-type(2) > p",
+        "text": "See what you spent this month next to last month. Big changes stand out, and you can read the short guide to learn more.",
+        "lines": 2,
+        "line_chars": [
+         61,
+         58
+        ],
+        "box": [
+         736,
+         690.39,
+         520,
+         50.38
+        ]
+       }
       ]
      },
      {
@@ -1349,6 +1409,23 @@
       "line_chars": [
        127,
        34
+      ],
+      "blocks": [
+       {
+        "sel": "#pricing > div.wrap > p",
+        "text": "Setup takes about 5 minutes. Plans cost $4 a month when the 30-day free trial ends. You can stop at any time, and you keep your ledger for as long as you want it.",
+        "lines": 2,
+        "line_chars": [
+         127,
+         34
+        ],
+        "box": [
+         184,
+         1085.52,
+         1072,
+         50.38
+        ]
+       }
       ]
      }
     ],
@@ -1390,7 +1467,24 @@
       ]
      }
     ],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -1486,27 +1580,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo: no real accounts or payments.\n\nQuestions? Write to help@example.com\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -2849,7 +2948,24 @@
       ]
      }
     ],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -2944,27 +3060,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo: no real accounts or payments.\n\nQuestions? Write to help@example.com\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -4367,7 +4488,24 @@
       ]
      }
     ],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -4462,27 +4600,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo: no real accounts or payments.\n\nQuestions? Write to help@example.com\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -5885,7 +6028,24 @@
       ]
      }
     ],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [
@@ -5981,27 +6141,32 @@
      {
       "i": 0,
       "sel": "header.site-head",
-      "tag": "header"
+      "tag": "header",
+      "banner": true
      },
      {
       "i": 1,
       "sel": "#top > section.hero:nth-of-type(1)",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 2,
       "sel": "#features",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 3,
       "sel": "#pricing",
-      "tag": "section"
+      "tag": "section",
+      "banner": false
      },
      {
       "i": 4,
       "sel": "#help",
-      "tag": "footer"
+      "tag": "footer",
+      "banner": false
      }
     ],
     "footer_text": "Fictional demo: no real accounts or payments.\n\nQuestions? Write to help@example.com\n\nPrivacy\nTerms\n\n© 2026 Lumen Ledger",
@@ -7500,7 +7665,24 @@
       ]
      }
     ],
-    "overflowing": []
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.hero-grid > svg.art",
+       "text": "Bar chart of a month of household spending"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
    },
    "measure": {
     "contrast_failures": [

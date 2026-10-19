@@ -73,7 +73,12 @@ from temper_ai.runner.resume import (
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
 from temper_ai.shared.types import ExecutionContext
-from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
+from temper_ai.stage.exceptions import (
+    CancelFlag,
+    ReplacedByLaterAttempt,
+    RunParked,
+    stop_words,
+)
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import FailurePolicy
 from temper_ai.stage.gate import (
@@ -286,7 +291,7 @@ def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunRespo
         execution_id, notifier=_build_notifier(execution_id, config.name),
     )
     # Start execution in background thread
-    cancel_event = threading.Event()
+    cancel_event = CancelFlag()
     _state().running[execution_id] = cancel_event
 
     checkpoint_svc = CheckpointService(execution_id)
@@ -814,7 +819,10 @@ def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
         decide_event(str(ev["id"]), expect=(WAITING,), status=REJECTED, data={**rejected, **named})
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
-        cancel_event.set()
+        if isinstance(cancel_event, CancelFlag):
+            cancel_event.cancel(reason)  # the run ends with the stop's own words
+        else:
+            cancel_event.set()
         return {"status": "cancelling", "execution_id": execution_id}
 
     # A Pi run parked at a gate with no worker: nothing is left to stop, so it ends here.
@@ -1146,7 +1154,7 @@ def _start_resume(
     recorder = EventRecorder(
         execution_id, notifier=_build_notifier(execution_id, config.name),
     )
-    cancel_event = threading.Event()
+    cancel_event = CancelFlag()
     _state().running[execution_id] = cancel_event
 
     context = ExecutionContext(
@@ -1283,7 +1291,7 @@ def _fork_run(body: ForkRequest):
     recorder = EventRecorder(
         new_execution_id, notifier=_build_notifier(new_execution_id, config.name),
     )
-    cancel_event = threading.Event()
+    cancel_event = CancelFlag()
     _state().running[new_execution_id] = cancel_event
 
     context = ExecutionContext(
@@ -1959,7 +1967,8 @@ def _see_to_parked(execution_id: str, context: Any) -> None:
             return
         cancel_event = getattr(context, "cancel_event", None)
         if cancel_event is not None and cancel_event.is_set():
-            pi_parked.cancel_parked(execution_id, by="cancel while letting go")
+            pi_parked.cancel_parked(execution_id, stop_words(cancel_event),
+                                    by="cancel while letting go")
             return
         _carry_on_parked(execution_id, by="the worker let go")
     except Exception as exc:  # noqa: BLE001 - the run waits; the next answer or start-up looks again

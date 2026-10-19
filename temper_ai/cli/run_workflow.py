@@ -218,7 +218,12 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     )
 
     # --- Cancel signal handling ----------------------------------------------
-    cancel_event = threading.Event()
+    # A signal carries no words: the stop's own words are read from its record once the run
+    # ends on it (queue #111), so the run's stopped reason is what the stopper said.
+    from temper_ai.api.caller import recorded_cancel_words
+    from temper_ai.stage.exceptions import CancelFlag, stop_words
+
+    cancel_event = CancelFlag(words_from=lambda: recorded_cancel_words(execution_id))
     _install_signal_handlers(cancel_event, execution_id)
 
     # --- Sinks: live-streaming + JSONL forensic log --------------------------
@@ -326,7 +331,7 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     if result.status == PARKED_STATUS:
         if cancel_event.is_set():
             # Cancelled while it was letting go: nothing is left to stop.
-            cancel_parked(execution_id, by="cancel while its box let go")
+            cancel_parked(execution_id, stop_words(cancel_event), by="cancel while its box let go")
             return result.exit_code
         # Its row stays as it is: the worker's reaper sees this box gone, frees the run and
         # carries it on once the owner has answered (runner/parked.py). Writing the row here

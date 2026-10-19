@@ -16,6 +16,7 @@ from temper_ai.pi_agent.accounts import FIVE_HOUR, limit_kind, limit_restart_rea
 from temper_ai.pi_agent.ledger import events, first_line, messages, turns, waits
 from temper_ai.pi_agent.settings_wait import SETTINGS
 from temper_ai.pi_agent.team_leader import WAIT_KIND_SHOWN, _at
+from temper_ai.pi_agent.team_outcome import OWNER, UNKNOWN_CALLER
 from temper_ai.pi_agent.team_view import (
     RUN_ENDED,
     TeamReader,
@@ -56,9 +57,22 @@ PHASE_WORDS = {
     "quiet": "Everyone is idle",
     "settings": "Settings changed: go on or stop?",
     "done": "Done",
-    "stopped": "Stopped by the owner",
+    "stopped": "Stopped",  # who stopped it is added when recorded: stopped_words
     "interrupted": "Interrupted",
 }
+
+
+def stopped_words(by: str | None) -> str:
+    """A stopped team's phase words, naming who stopped it as its outcome records it
+    (``by``, team_outcome.by_name): the owner, a named caller (a role's key), an unknown
+    caller, or nobody recorded (plain "Stopped"; never a guess)."""
+    if not by:
+        return PHASE_WORDS["stopped"]
+    if by == OWNER:
+        return "Stopped by the owner"
+    if by == UNKNOWN_CALLER:
+        return "Stopped by an unknown caller"
+    return f"Stopped by {by}"
 
 
 def run_kind(record: dict, reviews: list[dict]) -> str:
@@ -299,7 +313,8 @@ class FlowRead:
             name = {"cancelled": "stopped"}.get(decision, decision)
             out.update(name=name, reason=outcome.get("reason"),
                        since=ended[-1]["at"] if ended else outcome.get("at"))
-            out["words"] = (PHASE_WORDS.get(name)
+            out["words"] = (stopped_words(outcome.get("by")) if name == "stopped"
+                            else PHASE_WORDS.get(name)
                             or f"Failed: {outcome.get('reason') or 'the team ended'}")
             return out
         if run_status in RUN_ENDED or run_status == "interrupted":

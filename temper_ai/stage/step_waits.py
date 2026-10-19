@@ -41,7 +41,7 @@ from typing import Any, Literal, overload
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.types import ExecutionContext
-from temper_ai.stage.exceptions import CancellationError, RunParked
+from temper_ai.stage.exceptions import RunParked, stopped_by_cancel
 from temper_ai.stage.gate import (
     APPROVED,
     REPLACED,
@@ -182,7 +182,7 @@ def park_until(context: ExecutionContext, wait_id: str, *, resumes_at: str) -> b
         raise ValueError("park_until needs the step's path and a valid stable wait id")
     cancel = context.cancel_event
     if cancel is not None and cancel.is_set():
-        raise CancellationError("Workflow cancelled by user")
+        raise stopped_by_cancel(cancel)
     event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{context.run_id}:{path}:{wait_id}:timer"))
     if get_event(event_id) is None:
         context.event_recorder.record(
@@ -256,7 +256,7 @@ def ask_owner(
     if cancel is not None and cancel.is_set():
         # A stopped run asks nothing more: an agent step retries what raised, and a retry
         # must not open a new wait after the cancel closed the last one.
-        raise CancellationError("Workflow cancelled by user")
+        raise stopped_by_cancel(cancel)
     name = wait_name(path, wait_id)
     recorder = context.event_recorder
     registry = context.gate_registry if context.gate_registry is not None else {}

@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from temper_ai.shared.clock import as_utc, utcnow
+from temper_ai.stage.exceptions import CANCEL_MESSAGE as _CANCEL_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ PARKED_STATUS = WAITING
 # The attempt that waited, once a later attempt carried the run on from where it waited.
 CARRIED_ON = "parked"
 CANCELLED = "cancelled"
-CANCEL_MESSAGE = "Workflow cancelled by user"
+CANCEL_MESSAGE = _CANCEL_MESSAGE  # used only when the stop gave no words
 
 # A claimed attempt's next attempt starts within moments (a thread, or a queued box row). A
 # claim older than this with nothing after it is one whose start was lost: Resume may retry.

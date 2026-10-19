@@ -27,6 +27,8 @@ from temper_ai.stage.exceptions import (
     ReplacedByLaterAttempt,
     RunParked,
     WorkflowError,
+    stop_words,
+    stopped_by_cancel,
 )
 from temper_ai.stage.failure import FailurePolicy, RunStop, is_cleanup, undoes
 from temper_ai.stage.gate import (
@@ -214,7 +216,7 @@ def execute_graph(
         # ends failed. With no batch after it to notice the stop, the run would
         # be reported failed too, when nothing broke and someone stopped it.
         if _stopped_mid_step(context, node_outputs):
-            raise CancellationError("Workflow cancelled by user")
+            raise stopped_by_cancel(context.cancel_event)
         stopped = _settle_run(context, nodes, node_outputs, input_data) if is_workflow else None
         return _build_final_result(
             nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs,
@@ -364,15 +366,17 @@ def _end_graph(
     # list, the CLI exit code and downstream callers all treat it
     # differently (nothing went wrong; someone stopped it).
     terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
+    # A stop's own words are its reason, wherever the cancel was noticed (queue #111).
+    message = (terminal is Status.CANCELLED and stop_words(getattr(context, "cancel_event", None))) or str(exc)
     stopped = None
     if is_workflow:
         # Stopped by hand, or thrown out by something that broke: either way nothing more
         # ran, so the clean-ups are still owed and the setup is still standing.
         stop = getattr(context, "run_stop", None)
         if isinstance(stop, RunStop):
-            stop.note_failure(context.node_path or "the run", str(exc))
+            stop.note_failure(context.node_path or "the run", message)
         stopped = _settle_run(context, nodes, node_outputs, input_data)
-    data: dict = {"error": str(exc), "duration_seconds": duration,
+    data: dict = {"error": message, "duration_seconds": duration,
                   **({"stopped": stopped} if stopped else {})}
     if is_workflow:
         # Every way a run ends leaves what it spent, as a completed run's does (queue #65).
@@ -380,7 +384,7 @@ def _end_graph(
     context.event_recorder.update_event(graph_event_id, status=terminal.value, data=data)
     return NodeResult(
         status=terminal,
-        error=str(exc),
+        error=message,
         agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
         node_results=node_outputs,
         duration_seconds=duration,
@@ -2503,7 +2507,7 @@ def _use_earlier_answer(recorder: Any, answer: dict[str, Any], path: str) -> dic
 def _check_cancelled(context: ExecutionContext) -> None:
     """Raise CancellationError if the workflow has been cancelled."""
     if context.cancel_event and context.cancel_event.is_set():
-        raise CancellationError("Workflow cancelled by user")
+        raise stopped_by_cancel(context.cancel_event)
 
 
 def _stopped_mid_step(context: ExecutionContext, node_outputs: dict[str, NodeResult]) -> bool:

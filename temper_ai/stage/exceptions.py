@@ -1,6 +1,13 @@
 """Stage module exceptions."""
 
+import logging
+import threading
+from collections.abc import Callable
+from typing import Any
+
 from temper_ai.shared.exceptions import TemperError
+
+logger = logging.getLogger(__name__)
 
 
 class StageError(TemperError):
@@ -33,6 +40,53 @@ class ValidationError(LoaderError):
 
 class CancellationError(StageError):
     """Workflow was cancelled by the user."""
+
+
+#: A stopped run's reason when the stop gave no words (or they can't be read).
+CANCEL_MESSAGE = "Workflow cancelled by user"
+
+
+class CancelFlag(threading.Event):
+    """A run's cancel flag that also carries the stop's own words (queue #111).
+
+    In the server's process the cancel hands its words over as it sets the flag
+    (``cancel``). A box's worker learns of a cancel by a signal, which carries no words: it
+    is made with ``words_from``, which reads them from the stop's own record when they're
+    first asked for after the flag is set. Without words the run ends with
+    ``CANCEL_MESSAGE``, as before.
+    """
+
+    def __init__(self, words_from: Callable[[], str | None] | None = None) -> None:
+        super().__init__()
+        self._words: str | None = None
+        self._words_from = words_from
+
+    def cancel(self, words: str | None = None) -> None:
+        """Set the flag, keeping the first stop's words."""
+        if self._words is None:
+            self._words = (words or "").strip() or None
+        self.set()
+
+    def words(self) -> str | None:
+        """The stop's words, or None when it gave none or the flag isn't set."""
+        if self._words is None and self._words_from is not None and self.is_set():
+            try:
+                self._words = (self._words_from() or "").strip() or None
+            except Exception:  # noqa: BLE001 - the run still ends; only its words are missing
+                logger.warning("could not read the stop's words", exc_info=True)
+        return self._words
+
+
+def stop_words(cancel_event: Any) -> str | None:
+    """The words a run's cancel flag carries: None for a plain ``threading.Event``."""
+    words = getattr(cancel_event, "words", None)
+    return words() if callable(words) else None
+
+
+def stopped_by_cancel(cancel_event: Any) -> CancellationError:
+    """The error a run raises where it notices its cancel: the stop's own words, else
+    ``CANCEL_MESSAGE``."""
+    return CancellationError(stop_words(cancel_event) or CANCEL_MESSAGE)
 
 
 #: The data key an event of a stood-down attempt carries (``cancelled`` with this set): the

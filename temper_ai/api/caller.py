@@ -302,6 +302,31 @@ def record_action(execution_id: str | None, action: str, caller: Caller | None, 
         logger.warning("could not record who did %s on run %s", action, execution_id, exc_info=True)
 
 
+def recorded_cancel(execution_id: str) -> dict | None:
+    """The run's latest cancel as :func:`record_action` wrote it: ``{caller, source, words}``,
+    or None when none is recorded (yet: it is written just after the cancel takes effect) or
+    the record can't be read."""
+    try:
+        from temper_ai.observability.recorder import get_events
+
+        events = get_events(execution_id=execution_id, event_type="caller.action",  # type: ignore[arg-type]
+                            limit=200)
+    except Exception:  # noqa: BLE001 - who cancelled is shown when known, never needed
+        logger.warning("run %s: its cancel record could not be read", execution_id, exc_info=True)
+        return None
+    cancels = [e for e in events or [] if (e.get("data") or {}).get("action") == "cancel"]
+    if not cancels:
+        return None
+    data = max(cancels, key=lambda e: e.get("timestamp") or "").get("data") or {}
+    return {"caller": data.get("caller"), "source": data.get("caller_source") or "unknown",
+            "words": str(data.get("reason") or "").strip() or None}
+
+
+def recorded_cancel_words(execution_id: str) -> str | None:
+    """The words the run's latest recorded cancel gave, or None."""
+    return (recorded_cancel(execution_id) or {}).get("words")
+
+
 # --- what the guard has seen -------------------------------------------------
 
 _seen_lock = threading.Lock()

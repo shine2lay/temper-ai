@@ -216,6 +216,12 @@ Flow replies also include `phase` (name/words/since/running/asked/reset informat
 `as_of`, `started_at`, frozen ended `elapsed_s`, `last_activity_at`, `spend` (total, baseline,
 next check-in and history), `you` (count/first owner question), `counts`, `links`, `work`
 (latest shared version and share history), `events_cursor` and visible `events_total`.
+A stopped team's phase words name who stopped it, from the outcome's `by`: "Stopped by the
+owner" (a name in `owner_callers`: his key, or his `slack:<id>` or `telegram:<id>` when
+listed there), "Stopped by <name>" for another key (a role's), "Stopped by an unknown
+caller", or plain "Stopped" when no stopper is recorded. The run's stopped reason (its
+`error` and `stopped.reason`) is the stop's own words; "Workflow cancelled by user" only
+when the stop gave none.
 Members add state/since, current `on`, live tools, ready-message count, last sent message,
 last share, conflicts, idle reason/note and last-turn error. A raw event cursor can exceed the
 visible count because internal bookkeeping is not shown. A feed `limit` row carries the hold's

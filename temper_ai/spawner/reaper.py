@@ -251,7 +251,10 @@ class Reaper:
             return
         self._termed_at.pop(execution_id, None)
         if cancel:
-            parked.cancel_parked(execution_id, by="reaper")
+            # The row's flag carries no words: the stop's own come from its record (#111).
+            from temper_ai.api.caller import recorded_cancel_words
+
+            parked.cancel_parked(execution_id, recorded_cancel_words(execution_id), by="reaper")
             return
         if self._mark_status(execution_id, parked.WAITING, keep_open=True):
             logger.info("Reaper: %s waits on you with no box", execution_id)

@@ -40,21 +40,11 @@ def by_name(caller: str | None, owners: Iterable[str] | None = None) -> str | No
 
 def cancel_record(run_id: str) -> dict | None:
     """The run's latest cancel as the API guard recorded it: ``{caller, source, words}``, or
-    None when no cancel was recorded (yet: the record is written after the run stops)."""
-    try:
-        from temper_ai.observability.recorder import get_events
+    None when no cancel was recorded (yet: the record is written after the run stops). The
+    run's own stopped reason reads the same record (api/caller.py ``recorded_cancel``)."""
+    from temper_ai.api.caller import recorded_cancel
 
-        events = get_events(execution_id=run_id, event_type="caller.action",  # type: ignore[arg-type]
-                            limit=200)
-    except Exception:  # noqa: BLE001 - who cancelled is shown when known, never needed
-        logger.warning("run %s: its cancel record could not be read", run_id, exc_info=True)
-        return None
-    cancels = [e for e in events or [] if (e.get("data") or {}).get("action") == "cancel"]
-    if not cancels:
-        return None
-    data = max(cancels, key=lambda e: e.get("timestamp") or "").get("data") or {}
-    return {"caller": data.get("caller"), "source": data.get("caller_source") or "unknown",
-            "words": str(data.get("reason") or "").strip() or None}
+    return recorded_cancel(run_id)
 
 
 def _ledger() -> Any | None:

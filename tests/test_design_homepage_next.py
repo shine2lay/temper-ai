@@ -547,3 +547,61 @@ def test_live_combine_reads_what_the_candidate_joins_write(tmp_path):
     out = job.combine()
     assert out["status"] == "completed" and out["content_dropped"] == 0
     assert out["by_source"]["usability"] == 3 and out["by_source"]["craft"] == 2 and out["by_source"]["content"] == 1
+
+
+# --------------------------------------------------------------------------- H6: the spacing share from 4 px up
+# Keyed cases from the W4e screen (2026-10-19, own headless browser): the spacing values CRAFT_CODE collected
+# on two baseline pages, as {value in px: how many}. The v2.2 morrow page at 390 is off the grid only by 1-3 px
+# hairlines (tile gaps and nudges): the live share 0.91 gave a level-2 spacing-grid false alarm, and it was
+# unsteady between identical runs (0.89 and 0.91, one 1 px value more or less). The v2.1r morrow page at 1440
+# is off the grid by real spacing (fluid gutters of 63 px, section padding of 115 px): it stays below 0.9.
+V22_390 = {"1": 4, "2": 18, "3": 4, "4": 39, "8": 45, "12": 36, "16": 34, "20": 28, "24": 33, "32": 17, "40": 4,
+           "48": 1, "56": 1, "64": 11}
+MORROW_1440 = {"2": 4, "4": 19, "6": 2, "8": 35, "12": 38, "16": 31, "23": 1, "24": 55, "27": 1, "32": 13, "36": 1,
+               "48": 5, "63": 9, "64": 1, "72": 3, "86": 2, "101": 1, "115": 9, "128": 1}
+
+
+@pytest.mark.parametrize("hist, live, share, hairlines", [
+    (V22_390, 0.91, 1, 26),  # trap: hairlines only -> no finding
+    (MORROW_1440, 0.87, 0.89, 4),  # catch: real off-grid spacing still level 2
+    ({"5": 3, "8": 1}, 0.25, 0.25, 0),  # off-grid values of 4 px and up still count
+    ({"1": 3, "2": 1}, 0, 1, 4),  # nothing from 4 px up: nothing off the grid
+])
+def test_spacing_share_leaves_out_hairlines_and_keeps_real_off_grid_spacing(hist, live, share, hairlines):
+    entry = hn.spacing_from({"spacing_values": len(hist), "spacing_on_4px": live, "spacing_histogram": dict(hist)})
+    assert (entry["spacing_on_4px"], entry["spacing_on_4px_all"], entry["spacing_hairlines"], entry["spacing_from_px"]) == (
+        share, live, hairlines, 4)
+    level = {"1440": {**entry, "body_px": 18, "display_px": 76, "scale_ratio": 4.22, "text_sizes": 5,
+                      "unloaded_families": []}}
+    found = [f for f in _anchors(level)["findings"] if f["rule"] == "spacing-grid"]
+    assert [f["severity"] for f in found] == ([] if share >= 0.9 else [2] if share >= 0.6 else [3])
+
+
+def _anchors(metrics: dict) -> dict:
+    return _load("design_craft_anchors").anchors(metrics)
+
+
+def test_spacing_share_rounds_as_the_browser_does_and_leaves_old_metrics_alone():
+    assert hn.js_round2(0.125) == 0.13 and hn.js_round2(0.135) == 0.14  # Math.round halves up
+    assert hn.js_round2(1.0) == 1 and isinstance(hn.js_round2(1.0), int)
+    assert hn.spacing_from({"spacing_on_4px": 0.5}) == {"spacing_on_4px": 0.5}  # no histogram: as measured
+
+
+def test_candidate_measure_adds_one_histogram_line_to_the_live_craft_code():
+    code = hn.spacing_code(v2.CRAFT_CODE)
+    assert code.count("spacing_histogram") == 1 and v2.CRAFT_CODE.count("spacing_histogram") == 0
+    assert code.replace(hn.HISTOGRAM, "") == v2.CRAFT_CODE
+    with pytest.raises(RuntimeError, match="spacing line changed"):
+        hn.spacing_code(v2.CRAFT_CODE.replace(hn.SPACING_LINE, ""))
+
+
+def test_craft_facts_say_which_spacing_values_the_share_counts(tmp_path):
+    review = _workspace(tmp_path) / "review"
+    metrics = json.loads((review / "craft-metrics.json").read_text(encoding="utf-8"))
+    metrics["390"] = hn.spacing_from({**metrics["390"], "spacing_histogram": dict(V22_390)})
+    (review / "craft-metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    assert hn.note_spacing(review) == 1 and hn.note_spacing(review) == 0  # idempotent
+    facts = (review / "craft-facts.md").read_text(encoding="utf-8").split("\n")
+    assert facts[10] == (f"- spacing values {metrics['390']['spacing_values']}, share on a 4 px grid 1 (values from 4 px up; "
+                         f"26 hairline values of 1-3 px left out; all values {metrics['390']['spacing_on_4px_all']})")
+    assert facts[20] == "- spacing values 17, share on a 4 px grid 0.96"  # 1440 has no histogram: unchanged

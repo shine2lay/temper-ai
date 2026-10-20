@@ -1,0 +1,134 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k12-internal-expenses",
+  "category": "internal_tool_deadline",
+  "tests": "Internal expenses tool with a hard deadline (licence ends 31 March, no extension, nobody reimbursed otherwise) and systems that must be kept (SAP ledger, Okta sign-in, existing Azure subscription): all constraints, as are 7-year tax retention and who may see a claim. Finance-owned approval rules, low running cost and office-hours-only support are ranked goals. Later travel booking is future scope, not a goal or constraint. Which SAP interface exists is a material unknown. An established firm replacing a nine-year-old tool: growing or scaled, not idea.",
+  "brief_sha256": "0fd4fcbd8990faef10d10b3167a5e5f511ff3b3f24d4ce3a85e9772f6b4a286c",
+  "maturity": {"accepted": ["growing", "scaled"]},
+  "sensitivity": {"accepted": ["moderate", "high"]},
+  "facts": [
+    {"id": "F1", "anchors": ["Kestrel Engineering has 600 employees"], "in": ["workload.observed", "maturity.evidence"], "value": 600},
+    {"id": "F2", "anchors": ["a hosted tool we have used for nine years"], "in": ["maturity.evidence"]},
+    {"id": "F3", "anchors": ["about 2,400 claims a month"], "in": ["workload.observed"], "value": 2400},
+    {"id": "F4", "anchors": ["Around 40% of them arrive in the last three days of the month"], "in": ["workload.peaks"], "value": 40},
+    {"id": "F5", "anchors": ["sign people in through Okta"], "in": ["security.requirements"]},
+    {"id": "F6", "anchors": ["the bank account details we pay into"], "in": ["privacy.data_categories"]},
+    {"id": "F7", "anchors": ["name, staff number, cost centre, the receipts"], "in": ["privacy.data_categories"]},
+    {"id": "F8", "anchors": ["keep receipts and claim records for 7 years"], "in": ["privacy.retention", "privacy.jurisdictions_or_rules", "security.compliance"], "value": 7},
+    {"id": "F9", "anchors": ["Only the employee, their manager and the finance team may see a claim"], "in": ["security.requirements", "privacy.sharing"]},
+    {"id": "F10", "anchors": ["Two developers from internal IT"], "in": ["team.size"], "value": 2},
+    {"id": "F11", "anchors": ["both work in C# and .NET"], "in": ["team.skills"]},
+    {"id": "F12", "anchors": ["neither has built anything that posts to SAP"], "in": ["team.skills"]},
+    {"id": "F13", "anchors": ["gives it two days a week"], "in": ["team.operating_capacity", "team.size"], "value": 2},
+    {"id": "F14", "anchors": ["The budget is $120,000 to build it"], "in": ["budget.build"], "value": 120000},
+    {"id": "F15", "anchors": ["run on our existing Azure subscription"], "in": ["budget.run_monthly", "team.operating_capacity"]},
+    {"id": "F16", "anchors": ["IT supports it during office hours only"], "in": ["team.operating_capacity", "reliability.recovery_time"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["our licence ends on 31 March", "the vendor has refused to extend it"]},
+    {"id": "C2", "anchors": ["must post to our SAP finance ledger"]},
+    {"id": "C3", "anchors": ["sign people in through Okta"]},
+    {"id": "C4", "anchors": ["keep receipts and claim records for 7 years"]},
+    {"id": "C5", "anchors": ["Only the employee, their manager and the finance team may see a claim"]},
+    {"id": "C6", "anchors": ["run on our existing Azure subscription"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["change approval rules themselves, without asking developers"], "criterion": ["change_cost", "operability", "other"], "rank": 1},
+    {"id": "G2", "anchors": ["keep the monthly running cost low"], "criterion": "cost", "rank": 2},
+    {"id": "G3", "anchors": ["IT should not need to look after it outside office hours"], "criterion": "operability", "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["change_cost", "cost", "operability"], ["operability", "cost", "operability"], ["other", "cost", "operability"]]},
+  "unknowns": [
+    {"id": "U1", "terms": [["sap"], ["api", "interface", "file import", "integration", "how"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["add travel booking to the same tool"], "reason": "future_scope", "forbidden_in": ["constraints", "goals", "workload.observed", "workload.projected"]}
+  ],
+  "fields_unknown": [],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "0fd4fcbd8990faef10d10b3167a5e5f511ff3b3f24d4ce3a85e9772f6b4a286c",
+    "product": {"summary": "An in-house expense claims tool: employees submit claims with receipts, managers approve, finance checks, payment goes out with payroll.",
+      "source": {"kind": "quote", "quote": "employees submit a claim with receipt photos, their manager approves it, finance checks it and the payment goes out with the next payroll"}},
+    "maturity": {"stage": "scaled", "evidence": [
+      {"value": "600 employees across four offices", "source": {"kind": "quote", "quote": "Kestrel Engineering has 600 employees across four offices."}},
+      {"value": "the current tool has been in use for nine years", "source": {"kind": "quote", "quote": "a hosted tool we have used for nine years"}},
+      {"value": "IT policy and a finance ledger already govern internal tools", "source": {"kind": "quote", "quote": "IT policy requires every internal tool to sign people in through Okta"}}
+    ]},
+    "workload": {
+      "observed": [
+        {"what": "employees who may claim", "value": 600, "unit": "employees", "source": {"kind": "quote", "quote": "Kestrel Engineering has 600 employees"}},
+        {"what": "claims submitted", "value": 2400, "unit": "claims per month", "source": {"kind": "quote", "quote": "Staff submit about 2,400 claims a month."}}
+      ],
+      "projected": [],
+      "peaks": [
+        {"what": "month-end batch in the last three days", "value": 40, "unit": "% of the month's claims", "source": {"kind": "quote", "quote": "Around 40% of them arrive in the last three days of the month"}}
+      ]
+    },
+    "reliability": {
+      "availability": "unknown",
+      "data_loss_tolerance": "unknown",
+      "recovery_time": {"value": "IT support during office hours only", "source": {"kind": "quote", "quote": "IT supports it during office hours only"}}
+    },
+    "privacy": {
+      "data_categories": [
+        {"value": "employee name, staff number, cost centre and receipts", "source": {"kind": "quote", "quote": "A claim holds the employee's name, staff number, cost centre, the receipts, and the bank account details we pay into."}},
+        {"value": "employee bank account details", "source": {"kind": "quote", "quote": "the bank account details we pay into"}}
+      ],
+      "sensitivity": {"level": "high", "source": {"kind": "assumption", "why": "Bank account details of every claimant, with employee records and receipts."}},
+      "retention": [
+        {"value": "receipts and claim records kept 7 years (tax rules)", "source": {"kind": "quote", "quote": "Tax rules require us to keep receipts and claim records for 7 years."}}
+      ],
+      "sharing": [
+        {"value": "a claim is visible only to the employee, their manager and finance", "source": {"kind": "quote", "quote": "Only the employee, their manager and the finance team may see a claim."}}
+      ],
+      "jurisdictions_or_rules": [
+        {"value": "tax record-keeping rules", "source": {"kind": "quote", "quote": "Tax rules require us to keep receipts and claim records for 7 years."}}
+      ]
+    },
+    "security": {
+      "requirements": [
+        {"value": "sign-in through Okta, no separate passwords", "source": {"kind": "quote", "quote": "IT policy requires every internal tool to sign people in through Okta; no separate passwords."}},
+        {"value": "claims visible only to the employee, their manager and finance", "source": {"kind": "quote", "quote": "Only the employee, their manager and the finance team may see a claim."}}
+      ],
+      "threats": [],
+      "compliance": [
+        {"value": "7-year retention of receipts and claims", "source": {"kind": "quote", "quote": "keep receipts and claim records for 7 years"}}
+      ]
+    },
+    "team": {
+      "size": {"value": "two developers from internal IT", "source": {"kind": "quote", "quote": "Two developers from internal IT will build it"}},
+      "skills": [
+        {"value": "C# and .NET", "source": {"kind": "quote", "quote": "both work in C# and .NET"}},
+        {"value": "no experience posting to SAP", "source": {"kind": "quote", "quote": "neither has built anything that posts to SAP"}}
+      ],
+      "operating_capacity": [
+        {"value": "product owner from finance two days a week", "source": {"kind": "quote", "quote": "A product owner from finance gives it two days a week."}},
+        {"value": "IT support in office hours only", "source": {"kind": "quote", "quote": "IT supports it during office hours only"}}
+      ]
+    },
+    "budget": {
+      "build": {"value": "$120,000 to build", "source": {"kind": "quote", "quote": "The budget is $120,000 to build it."}},
+      "run_monthly": {"value": "must run within the existing Azure subscription; no figure given", "source": {"kind": "quote", "quote": "After launch it has to run on our existing Azure subscription"}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "Live before the ClaimPro licence ends on 31 March; no extension", "source": {"kind": "quote", "quote": "our licence ends on 31 March and the vendor has refused to extend it. If there is no replacement by then, nobody can be reimbursed"}},
+      {"id": "C2", "text": "Approved claims post to the SAP finance ledger; SAP is not changed", "source": {"kind": "quote", "quote": "Approved claims must post to our SAP finance ledger. Finance will not change SAP for this project."}},
+      {"id": "C3", "text": "Sign-in through Okta (IT policy)", "source": {"kind": "quote", "quote": "IT policy requires every internal tool to sign people in through Okta; no separate passwords."}},
+      {"id": "C4", "text": "Keep receipts and claim records 7 years (tax rules)", "source": {"kind": "quote", "quote": "Tax rules require us to keep receipts and claim records for 7 years."}},
+      {"id": "C5", "text": "Only the employee, their manager and finance may see a claim", "source": {"kind": "quote", "quote": "Only the employee, their manager and the finance team may see a claim."}},
+      {"id": "C6", "text": "Runs on the existing Azure subscription", "source": {"kind": "quote", "quote": "After launch it has to run on our existing Azure subscription"}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "change_cost", "rank": 1, "note": "Finance changes approval rules without developers", "source": {"kind": "quote", "quote": "First, finance wants to change approval rules themselves, without asking developers."}},
+      {"id": "G2", "criterion": "cost", "rank": 2, "note": "Low monthly running cost", "source": {"kind": "quote", "quote": "Second, keep the monthly running cost low."}},
+      {"id": "G3", "criterion": "operability", "rank": 3, "note": "No out-of-hours care from IT", "source": {"kind": "quote", "quote": "Third, IT should not need to look after it outside office hours."}}
+    ],
+    "unknowns": [
+      {"question": "Which interface does SAP offer for posting claims: an API we may call, or only a file import run by hand?", "why_it_matters": "It decides the integration design, how quickly payments post, and whether the 31 March deadline is reachable by a team new to SAP.", "decisions_affected": ["SAP integration", "delivery plan"], "material": true, "field": "constraints"}
+    ],
+    "assumptions": [
+      {"text": "Travel booking is out of scope and does not shape this design.", "why": "The brief says it might come later but is not part of this project."}
+    ]
+  }
+}

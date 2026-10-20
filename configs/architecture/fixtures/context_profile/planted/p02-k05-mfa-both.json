@@ -1,0 +1,13 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p02-k05-mfa-both",
+  "case_id": "k05-small-therapy",
+  "fault": "A constraint duplicated as a goal: the multi-factor sign-in rule stays a constraint and is also added as a security goal on the same text.",
+  "expect": [
+    {"reason": "checker:constraint_goal_overlap", "ref": "$.goals[3]"},
+    {"reason": "constraint_also_goal", "ref": "C3"}
+  ],
+  "edits": [
+    {"op": "append", "path": ["goals"], "value": {"id": "G4", "criterion": "security", "rank": 4, "note": "Multi-factor sign-in for therapists", "source": {"kind": "quote", "quote": "Therapists must use multi-factor authentication to sign in"}}}
+  ]
+}

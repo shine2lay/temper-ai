@@ -1,0 +1,136 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k06-large-simple-transit",
+  "category": "large_simple",
+  "tests": "Large but simple: 1.1 million monthly users, read-mostly cached feeds, no accounts, two part-time people, no on-call. Maturity must come from stakes and team, not user count (never large); the 'large-scale platform' label is contradicted by the brief; Ashford's 400,000 users are projected; the agency's 2-minute alert term, the location-stays-on-phone promise and the $30,000 cap are constraints; rush-hour reliability, hosting cost and maintenance time are ranked goals.",
+  "brief_sha256": "22f80cf358e321a83291aa681b81f56b0287ab4e95c1209788e0c4cc1bbbaabc",
+  "maturity": {"accepted": ["growing", "scaled"]},
+  "sensitivity": {"accepted": ["low", "moderate"]},
+  "facts": [
+    {"id": "F1", "anchors": ["1.1 million monthly users"], "in": ["workload.observed", "maturity.evidence"], "value": 1100000},
+    {"id": "F2", "anchors": ["about 180,000 daily users"], "in": ["workload.observed", "maturity.evidence"], "value": 180000},
+    {"id": "F3", "anchors": ["flat for two years"], "in": ["workload.observed", "workload.projected", "maturity.evidence"]},
+    {"id": "F4", "anchors": ["We have run NextStop for six years"], "in": ["maturity.evidence"]},
+    {"id": "F5", "anchors": ["polls every 30 seconds and caches", "Almost everything is reading"], "in": ["workload.observed"]},
+    {"id": "F6", "anchors": ["requests run at about 5 times the daily average"], "in": ["workload.peaks"], "value": 5},
+    {"id": "F7", "anchors": ["10 times the average for a whole morning"], "in": ["workload.peaks"], "value": 10},
+    {"id": "F8", "anchors": ["Users do not sign in", "We collect no names, emails or accounts"], "in": ["privacy.data_categories", "security.requirements"]},
+    {"id": "F9", "anchors": ["run by the two of us"], "in": ["team.size"], "value": 2},
+    {"id": "F10", "anchors": ["Ines writes the Swift and Kotlin apps"], "in": ["team.skills"]},
+    {"id": "F11", "anchors": ["Rafael writes the Go backend"], "in": ["team.skills"]},
+    {"id": "F12", "anchors": ["about one day a week from each of us"], "in": ["team.operating_capacity"]},
+    {"id": "F13", "anchors": ["We are not on call", "it waits until morning"], "in": ["team.operating_capacity", "reliability.recovery_time"]},
+    {"id": "F14", "anchors": ["Ads bring in about $9,000 a month"], "in": ["maturity.evidence", "budget.run_monthly", "budget.build"], "value": 9000},
+    {"id": "F15", "anchors": ["Hosting costs $2,300 a month"], "in": ["budget.run_monthly"], "value": 2300},
+    {"id": "F16", "anchors": ["We can put $30,000 into this rework"], "in": ["budget.build"], "value": 30000},
+    {"id": "F17", "anchors": ["During rush hour the app has to work", "At 2am nobody notices"], "in": ["reliability.availability", "reliability.recovery_time"]},
+    {"id": "F18", "anchors": ["There is no user data to lose"], "in": ["reliability.data_loss_tolerance"]},
+    {"id": "F19", "anchors": ["the location never leaves the phone"], "in": ["privacy.data_categories", "privacy.sharing", "privacy.retention", "security.requirements"]},
+    {"id": "F20", "anchors": ["anonymous usage counts for 90 days"], "in": ["privacy.retention", "privacy.data_categories"], "value": 90},
+    {"id": "F21", "anchors": ["Our ad network receives the device's advertising identifier"], "in": ["privacy.sharing", "privacy.data_categories"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["show its service alerts within 2 minutes of publication"]},
+    {"id": "C2", "anchors": ["the location never leaves the phone"]},
+    {"id": "C3", "anchors": ["We can put $30,000 into this rework", "and not more this year"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["rush hour must hold up"], "criterion": "reliability", "rank": 1},
+    {"id": "G2", "anchors": ["Second, lower hosting costs"], "criterion": "cost", "rank": 2},
+    {"id": "G3", "anchors": ["less of our scarce time spent on maintenance"], "criterion": "operability", "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["reliability", "cost", "operability"]]},
+  "unknowns": [
+    {"id": "U1", "terms": [["ashford", "fourth city", "new city"], ["feed", "poll", "30 seconds", "format", "terms"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["a large-scale platform"], "reason": "contradicted_claim", "forbidden_in": ["maturity.evidence", "workload.observed"]},
+    {"id": "T2", "anchors": ["about 400,000 more monthly users"], "reason": "projected_as_observed", "forbidden_in": ["workload.observed", "maturity.evidence"]}
+  ],
+  "fields_unknown": [],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "22f80cf358e321a83291aa681b81f56b0287ab4e95c1209788e0c4cc1bbbaabc",
+    "product": {"summary": "A phone app showing nearby bus and tram departures and live delays for three cities, from transit agencies' open data feeds.", "source": {"kind": "quote", "quote": "NextStop is a phone app that shows bus and tram departures for three cities"}},
+    "maturity": {"stage": "scaled", "evidence": [
+      {"value": "Six years in operation", "source": {"kind": "quote", "quote": "We have run NextStop for six years."}},
+      {"value": "1.1 million monthly users, flat for two years", "source": {"kind": "quote", "quote": "It has 1.1 million monthly users and about 180,000 daily users, and these numbers have been flat for two years."}},
+      {"value": "Backend is two small services and a cache, run by two part-time people", "source": {"kind": "quote", "quote": "the backend is two small services and a cache, and it is boring on purpose"}}
+    ]},
+    "workload": {
+      "observed": [
+        {"what": "monthly users", "value": 1100000, "unit": "users per month", "source": {"kind": "quote", "quote": "It has 1.1 million monthly users"}},
+        {"what": "daily users", "value": 180000, "unit": "users per day", "source": {"kind": "quote", "quote": "about 180,000 daily users"}},
+        {"what": "transit feeds polled and cached; almost all traffic is reads", "value": 30, "unit": "seconds between polls", "source": {"kind": "quote", "quote": "Almost everything is reading: departure times and delays come from the transit agencies' open data feeds, which our backend polls every 30 seconds and caches."}}
+      ],
+      "projected": [
+        {"what": "user numbers expected to stay as they are (flat for two years)", "value": "flat", "unit": "trend", "source": {"kind": "quote", "quote": "these numbers have been flat for two years"}}
+      ],
+      "peaks": [
+        {"what": "weekday commute peaks, 7-9am and 4-7pm", "value": 5, "unit": "times the daily average", "source": {"kind": "quote", "quote": "On weekdays between 7am and 9am, and again between 4pm and 7pm, requests run at about 5 times the daily average."}},
+        {"what": "snow-day mornings", "value": 10, "unit": "times the average", "source": {"kind": "quote", "quote": "On snow days we have seen 10 times the average for a whole morning."}}
+      ]
+    },
+    "reliability": {
+      "availability": {"value": "Must work during rush hour; night outages go unnoticed", "source": {"kind": "quote", "quote": "During rush hour the app has to work: an outage at 8am means thousands of one-star reviews and angry emails to the agencies. At 2am nobody notices."}},
+      "data_loss_tolerance": {"value": "No user data to lose; everything can be fetched again from the feeds", "source": {"kind": "quote", "quote": "There is no user data to lose; everything we show can be fetched again from the feeds."}},
+      "recovery_time": {"value": "Night failures wait until morning (no on-call)", "source": {"kind": "quote", "quote": "We are not on call; if something breaks at night, it waits until morning."}}
+    },
+    "privacy": {
+      "data_categories": [
+        {"value": "no names, emails or accounts", "source": {"kind": "quote", "quote": "We collect no names, emails or accounts."}},
+        {"value": "phone location, used on the phone only", "source": {"kind": "quote", "quote": "The app uses the phone's location to find nearby stops, and the location never leaves the phone"}},
+        {"value": "anonymous usage counts", "source": {"kind": "quote", "quote": "We keep anonymous usage counts for 90 days."}},
+        {"value": "device advertising identifier, passed to the ad network", "source": {"kind": "quote", "quote": "Our ad network receives the device's advertising identifier."}}
+      ],
+      "sensitivity": {"level": "low", "source": {"kind": "assumption", "why": "No accounts or names; location stays on the phone; only anonymous counts and an advertising identifier leave it."}},
+      "retention": [
+        {"value": "anonymous usage counts kept 90 days", "source": {"kind": "quote", "quote": "We keep anonymous usage counts for 90 days."}}
+      ],
+      "sharing": [
+        {"value": "ad network receives the device's advertising identifier", "source": {"kind": "quote", "quote": "Our ad network receives the device's advertising identifier."}}
+      ],
+      "jurisdictions_or_rules": [
+        {"value": "published privacy policy promises location never leaves the phone", "source": {"kind": "quote", "quote": "we say so in our privacy policy and we intend to keep that promise"}}
+      ]
+    },
+    "security": {
+      "requirements": [
+        {"value": "no sign-in and no user accounts", "source": {"kind": "quote", "quote": "Users do not sign in."}}
+      ],
+      "threats": [],
+      "compliance": []
+    },
+    "team": {
+      "size": {"value": "two people, Ines and Rafael", "source": {"kind": "quote", "quote": "NextStop is run by the two of us, Ines and Rafael."}},
+      "skills": [
+        {"value": "Swift and Kotlin apps (Ines)", "source": {"kind": "quote", "quote": "Ines writes the Swift and Kotlin apps"}},
+        {"value": "Go backend and server operations (Rafael)", "source": {"kind": "quote", "quote": "Rafael writes the Go backend and looks after the servers"}}
+      ],
+      "operating_capacity": [
+        {"value": "about one day a week each, beside a consulting business", "source": {"kind": "quote", "quote": "We also run a consulting business, so NextStop gets about one day a week from each of us."}},
+        {"value": "no on-call", "source": {"kind": "quote", "quote": "We are not on call"}}
+      ]
+    },
+    "budget": {
+      "build": {"value": "$30,000 for this rework, no more this year", "source": {"kind": "quote", "quote": "We can put $30,000 into this rework, and not more this year."}},
+      "run_monthly": {"value": "hosting $2,300 a month against about $9,000 a month of ad revenue", "source": {"kind": "quote", "quote": "Ads bring in about $9,000 a month. Hosting costs $2,300 a month"}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "Show Riverton's service alerts within 2 minutes of publication (agency agreement)", "source": {"kind": "quote", "quote": "Our agreement with the Riverton transit agency requires us to show its service alerts within 2 minutes of publication."}},
+      {"id": "C2", "text": "The phone's location never leaves the phone (privacy policy promise)", "source": {"kind": "quote", "quote": "the location never leaves the phone; we say so in our privacy policy"}},
+      {"id": "C3", "text": "Rework spend capped at $30,000 this year", "source": {"kind": "quote", "quote": "We can put $30,000 into this rework, and not more this year."}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "reliability", "rank": 1, "note": "Rush hour must hold up", "source": {"kind": "quote", "quote": "First, rush hour must hold up."}},
+      {"id": "G2", "criterion": "cost", "rank": 2, "note": "Lower hosting costs", "source": {"kind": "quote", "quote": "Second, lower hosting costs."}},
+      {"id": "G3", "criterion": "operability", "rank": 3, "note": "Less maintenance time", "source": {"kind": "quote", "quote": "Third, less of our scarce time spent on maintenance."}}
+    ],
+    "unknowns": [
+      {"question": "Will Ashford's feed allow polling every 30 seconds, and in what format is it?", "why_it_matters": "Adding Ashford would add about 400,000 monthly users and a new feed; its limits and format decide the caching and ingestion design.", "decisions_affected": ["feed ingestion", "caching", "hosting cost"], "material": true, "field": "workload.projected"}
+    ],
+    "assumptions": [
+      {"text": "Ashford's 400,000 users are a possible addition next year, not current load.", "why": "The brief gives it as the agency's own estimate for a city not yet added."}
+    ]
+  }
+}

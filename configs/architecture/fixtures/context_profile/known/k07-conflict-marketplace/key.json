@@ -1,0 +1,131 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k07-conflict-marketplace",
+  "category": "conflicting_priorities",
+  "tests": "Conflicting stakeholders: CEO, CTO and head of sales want different things. The board named the CEO as decider, so her ranking (Germany launch, uptime, hosting cost) is the goal order; the CTO's challenge, still unanswered by the board, is a material unknown. Sales' 'basically signed' Baumann deal and its 4,000 machines are not facts or workload; the CEO's 1,000 German bookings a month is projected. Not holding customers' money and GDPR are constraints.",
+  "brief_sha256": "2eb86853a726e5c1fa8381138162bf1355e1165299fb1526e33fe1106c73afce",
+  "maturity": {"accepted": ["startup", "growing"]},
+  "sensitivity": {"accepted": ["low", "moderate"]},
+  "facts": [
+    {"id": "F1", "anchors": ["We are three years old"], "in": ["maturity.evidence"]},
+    {"id": "F2", "anchors": ["220 rental firms list about 1,900 machines"], "in": ["workload.observed", "maturity.evidence"], "value": 220},
+    {"id": "F3", "anchors": ["about 3,100 bookings are made each month"], "in": ["workload.observed"], "value": 3100},
+    {"id": "F4", "anchors": ["almost all in the Netherlands and Belgium"], "in": ["workload.observed", "privacy.jurisdictions_or_rules"]},
+    {"id": "F5", "anchors": ["Annual revenue reached $1.4M and roughly doubled last year"], "in": ["maturity.evidence"]},
+    {"id": "F6", "anchors": ["about a quarter of the week's bookings come in before noon on Monday"], "in": ["workload.peaks"]},
+    {"id": "F7", "anchors": ["Engineering is nine people"], "in": ["team.size"], "value": 9},
+    {"id": "F8", "anchors": ["six backend developers (Python and Postgres)"], "in": ["team.skills"]},
+    {"id": "F9", "anchors": ["On-call is a single person"], "in": ["team.operating_capacity"]},
+    {"id": "F10", "anchors": ["The engineering budget for this year is $1.2M"], "in": ["budget.build"], "value": 1200000},
+    {"id": "F11", "anchors": ["Hosting costs about $14,000 a month"], "in": ["budget.run_monthly"], "value": 14000},
+    {"id": "F12", "anchors": ["escrow service from a licensed payment provider"], "in": ["privacy.sharing", "security.requirements", "security.compliance"]},
+    {"id": "F13", "anchors": ["we must not hold customers' money ourselves"], "in": ["security.requirements", "security.compliance"]},
+    {"id": "F14", "anchors": ["company names, contact people, phone numbers and booking histories"], "in": ["privacy.data_categories"]},
+    {"id": "F15", "anchors": ["bank details stay with the payment provider"], "in": ["privacy.sharing", "privacy.data_categories"]},
+    {"id": "F16", "anchors": ["Customers in the EU are covered by GDPR"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
+    {"id": "F17", "anchors": ["Monday-morning slowdowns have cost us two large rental firms"], "in": ["reliability.availability", "maturity.evidence", "security.threats"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["we must not hold customers' money ourselves"]},
+    {"id": "C2", "anchors": ["Customers in the EU are covered by GDPR"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["Launch in Germany before the June trade fair"], "criterion": "delivery_speed", "rank": 1},
+    {"id": "G2", "anchors": ["Keep the platform up, especially on Monday mornings"], "criterion": "reliability", "rank": 2},
+    {"id": "G3", "anchors": ["Keep hosting costs from growing faster than revenue"], "criterion": "cost", "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["delivery_speed", "reliability", "cost"]]},
+  "unknowns": [
+    {"id": "U1", "field": "goals", "terms": [["ranking", "priorit", "board"], ["cto", "revisit", "disagree", "conflict"]]},
+    {"id": "U2", "terms": [["baumann", "enterprise"]]},
+    {"id": "U3", "terms": [["german", "germany"], ["traffic", "bookings", "volume", "demand", "load"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["is basically signed"], "reason": "hedged_as_fact", "forbidden_in": ["workload.observed", "maturity.evidence", "security.requirements", "constraints"]},
+    {"id": "T2", "anchors": ["a German rental chain with 4,000 machines"], "reason": "not_this_product", "forbidden_in": ["workload.observed", "maturity.evidence"]},
+    {"id": "T3", "anchors": ["1,000 bookings a month in the first year"], "reason": "projected_as_observed", "forbidden_in": ["workload.observed"]},
+    {"id": "T4", "anchors": ["reliability should come first"], "reason": "not_the_decider", "forbidden_in": ["goals"]}
+  ],
+  "fields_unknown": [
+    {"field": "reliability.data_loss_tolerance"},
+    {"field": "reliability.recovery_time"}
+  ],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "2eb86853a726e5c1fa8381138162bf1355e1165299fb1526e33fe1106c73afce",
+    "product": {"summary": "An online marketplace where construction companies rent heavy equipment from rental firms and pay through the platform.", "source": {"kind": "quote", "quote": "Rigshare is an online marketplace where construction companies rent heavy equipment (excavators, cranes, loaders) from rental firms."}},
+    "maturity": {"stage": "growing", "evidence": [
+      {"value": "Three years old", "source": {"kind": "quote", "quote": "We are three years old."}},
+      {"value": "Revenue $1.4M a year, roughly doubled last year", "source": {"kind": "quote", "quote": "Annual revenue reached $1.4M and roughly doubled last year."}},
+      {"value": "220 rental firms listing about 1,900 machines", "source": {"kind": "quote", "quote": "220 rental firms list about 1,900 machines"}}
+    ]},
+    "workload": {
+      "observed": [
+        {"what": "rental firms listing", "value": 220, "unit": "firms", "source": {"kind": "quote", "quote": "220 rental firms list about 1,900 machines"}},
+        {"what": "bookings, almost all in the Netherlands and Belgium", "value": 3100, "unit": "bookings per month", "source": {"kind": "quote", "quote": "about 3,100 bookings are made each month, almost all in the Netherlands and Belgium"}}
+      ],
+      "projected": [
+        {"what": "German bookings in the first year, the CEO's plan (the CTO expects fewer)", "value": 1000, "unit": "bookings per month", "source": {"kind": "quote", "quote": "the CEO's plan says 1,000 bookings a month in the first year, the CTO thinks less"}}
+      ],
+      "peaks": [
+        {"what": "share of the week's bookings made before noon on Monday", "value": "a quarter", "unit": "share of weekly bookings", "source": {"kind": "quote", "quote": "about a quarter of the week's bookings come in before noon on Monday"}}
+      ]
+    },
+    "reliability": {
+      "availability": {"value": "Must stay up, especially Monday mornings; slowdowns there lost two large rental firms this year", "source": {"kind": "quote", "quote": "Monday-morning slowdowns have cost us two large rental firms this year"}},
+      "data_loss_tolerance": "unknown",
+      "recovery_time": "unknown"
+    },
+    "privacy": {
+      "data_categories": [
+        {"value": "company names, contact people, phone numbers, booking histories", "source": {"kind": "quote", "quote": "We store company names, contact people, phone numbers and booking histories"}}
+      ],
+      "sensitivity": {"level": "low", "source": {"kind": "assumption", "why": "Business contact details and booking histories; bank details stay with the payment provider."}},
+      "retention": [],
+      "sharing": [
+        {"value": "payments through a licensed provider's escrow service; bank details stay with that provider", "source": {"kind": "quote", "quote": "bank details stay with the payment provider"}}
+      ],
+      "jurisdictions_or_rules": [
+        {"value": "GDPR for EU customers; Germany adds no new rule as far as known", "source": {"kind": "quote", "quote": "Customers in the EU are covered by GDPR, and the German launch adds no new rule beyond that as far as our lawyers know."}}
+      ]
+    },
+    "security": {
+      "requirements": [
+        {"value": "never hold customers' money; payments only through the licensed provider's escrow", "source": {"kind": "quote", "quote": "we must not hold customers' money ourselves, because that would require a payment licence we do not have"}}
+      ],
+      "threats": [],
+      "compliance": [
+        {"value": "escrow by a licensed payment provider in place of a payment licence", "source": {"kind": "quote", "quote": "Payments run through an escrow service from a licensed payment provider."}}
+      ]
+    },
+    "team": {
+      "size": {"value": "nine engineers", "source": {"kind": "quote", "quote": "Engineering is nine people"}},
+      "skills": [
+        {"value": "six backend developers in Python and Postgres, two frontend developers, one infrastructure engineer", "source": {"kind": "quote", "quote": "six backend developers (Python and Postgres), two frontend developers and one engineer who handles infrastructure and on-call"}}
+      ],
+      "operating_capacity": [
+        {"value": "on-call is one person", "source": {"kind": "quote", "quote": "On-call is a single person, which has become a worry."}}
+      ]
+    },
+    "budget": {
+      "build": {"value": "engineering budget $1.2M this year, people included", "source": {"kind": "quote", "quote": "The engineering budget for this year is $1.2M, people included."}},
+      "run_monthly": {"value": "hosting about $14,000 a month", "source": {"kind": "quote", "quote": "Hosting costs about $14,000 a month."}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "Never hold customers' money: no payment licence", "source": {"kind": "quote", "quote": "we must not hold customers' money ourselves"}},
+      {"id": "C2", "text": "GDPR applies to EU customers", "source": {"kind": "quote", "quote": "Customers in the EU are covered by GDPR"}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "delivery_speed", "rank": 1, "note": "Launch in Germany before the June trade fair (CEO's ranking, which the board says counts)", "source": {"kind": "quote", "quote": "Launch in Germany before the June trade fair"}},
+      {"id": "G2", "criterion": "reliability", "rank": 2, "note": "Keep the platform up, especially Monday mornings", "source": {"kind": "quote", "quote": "Keep the platform up, especially on Monday mornings."}},
+      {"id": "G3", "criterion": "cost", "rank": 3, "note": "Hosting costs grow no faster than revenue", "source": {"kind": "quote", "quote": "Keep hosting costs from growing faster than revenue."}}
+    ],
+    "unknowns": [
+      {"question": "Will the board keep the CEO's ranking, or put reliability first as the CTO asks?", "why_it_matters": "The CTO wants three months of technical-debt work before any launch; the answer reorders the goals and the plan.", "decisions_affected": ["goal ranking", "launch timing", "technical debt work"], "material": true, "field": "goals"},
+      {"question": "Will Baumann Group sign, and when?", "why_it_matters": "Baumann would need single sign-on and an API for its fleet system this year, and would add a large fleet.", "decisions_affected": ["single sign-on", "public API", "capacity"], "material": true, "field": "security.requirements"},
+      {"question": "How many German bookings to expect in the first year?", "why_it_matters": "The CEO's plan says 1,000 a month and the CTO expects fewer; it sizes capacity and cost.", "decisions_affected": ["capacity", "hosting cost"], "material": true, "field": "workload.projected"},
+      {"question": "How much data loss and how long a recovery are acceptable?", "why_it_matters": "The brief gives no targets; they decide backups and failover.", "decisions_affected": ["backups", "failover"], "material": false, "field": "reliability.data_loss_tolerance"}
+    ],
+    "assumptions": []
+  }
+}

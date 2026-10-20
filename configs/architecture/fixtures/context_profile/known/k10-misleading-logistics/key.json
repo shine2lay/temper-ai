@@ -1,0 +1,124 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k10-misleading-logistics",
+  "category": "misleading_claim",
+  "tests": "The brief claims 'no personal data', then shows recipients' names, addresses and phone numbers and GPS traces of drivers every 10 seconds kept for 2 years: the claim must not stand as a privacy or security fact, and sensitivity must not be none or low. Whether drivers were told and whether 2 years is defensible are material unknowns. The 99.5% contractual uptime and EU data residency are constraints; fewer dispatch incidents, lower hosting and configurable depot rules are ranked goals.",
+  "brief_sha256": "6d889f5e5590d930bb24db3fcfb15690a040fa54ec06775146ceb1de25a0f4a5",
+  "maturity": {"accepted": ["growing"]},
+  "sensitivity": {"accepted": ["moderate", "high"]},
+  "facts": [
+    {"id": "F1", "anchors": ["38 courier companies as customers"], "in": ["maturity.evidence"], "value": 38},
+    {"id": "F2", "anchors": ["up from 12 a year ago"], "in": ["maturity.evidence"], "value": 12},
+    {"id": "F3", "anchors": ["we are now 14 people, 9 of them engineers"], "in": ["team.size"], "value": 14},
+    {"id": "F4", "anchors": ["99.5% monthly uptime during their operating hours"], "in": ["reliability.availability"], "value": 99.5},
+    {"id": "F5", "anchors": ["about 9,000 drivers are on shift"], "in": ["workload.observed"], "value": 9000},
+    {"id": "F6", "anchors": ["roughly 1.5 million stops a month"], "in": ["workload.observed"], "value": 1500000},
+    {"id": "F7", "anchors": ["between 5am and 7am, when every depot loads its parcels at once"], "in": ["workload.peaks"]},
+    {"id": "F8", "anchors": ["the number of stops roughly doubles"], "in": ["workload.peaks"]},
+    {"id": "F9", "anchors": ["recipient's name, delivery address and phone number"], "in": ["privacy.data_categories"]},
+    {"id": "F10", "anchors": ["records each driver's GPS position every 10 seconds"], "in": ["privacy.data_categories"], "value": 10},
+    {"id": "F11", "anchors": ["keep the traces for 2 years"], "in": ["privacy.retention"], "value": 2},
+    {"id": "F12", "anchors": ["their data stays in the EU"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
+    {"id": "F13", "anchors": ["About a third of our customers are in the EU"], "in": ["privacy.jurisdictions_or_rules"]},
+    {"id": "F14", "anchors": ["Hosting costs $28,000 a month"], "in": ["budget.run_monthly"], "value": 28000},
+    {"id": "F15", "anchors": ["We have set aside $150,000 for this work"], "in": ["budget.build"], "value": 150000},
+    {"id": "F16", "anchors": ["TypeScript, Node and PostgreSQL"], "in": ["team.skills"]},
+    {"id": "F17", "anchors": ["one of them has run Kubernetes before"], "in": ["team.skills"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["99.5% monthly uptime during their operating hours"]},
+    {"id": "C2", "anchors": ["their data stays in the EU"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["fewer incidents during morning dispatch"], "criterion": "reliability", "rank": 1},
+    {"id": "G2", "anchors": ["bring the hosting bill down"], "criterion": "cost", "rank": 2},
+    {"id": "G3", "anchors": ["add a new customer's depot rules without code changes"], "criterion": ["change_cost", "operability"], "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["reliability", "cost", "change_cost"], ["reliability", "cost", "operability"]]},
+  "unknowns": [
+    {"id": "U1", "terms": [["contract", "told", "consent", "notice", "legal", "lawful"], ["driver", "tracking", "gps", "trace"]]},
+    {"id": "U2", "terms": [["2 years", "two years", "retention", "how long", "keep"], ["gps", "trace", "tracking", "location"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["The system holds no personal data", "it only deals with parcels and routes"], "reason": "contradicted_claim", "forbidden_in": ["privacy.data_categories", "privacy.sensitivity", "privacy.sharing", "security.requirements"]}
+  ],
+  "fields_unknown": [],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "6d889f5e5590d930bb24db3fcfb15690a040fa54ec06775146ceb1de25a0f4a5",
+    "product": {"summary": "Route planning for courier companies: routes built each morning, followed and re-planned in a driver app.",
+      "source": {"kind": "quote", "quote": "RouteWise plans delivery routes for courier companies."}},
+    "maturity": {"stage": "growing", "evidence": [
+      {"value": "38 courier companies as customers, up from 12 a year ago", "source": {"kind": "quote", "quote": "We have 38 courier companies as customers, up from 12 a year ago"}},
+      {"value": "contractual uptime with service credits", "source": {"kind": "quote", "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it."}}
+    ]},
+    "workload": {
+      "observed": [
+        {"what": "drivers on shift on a weekday", "value": 9000, "unit": "drivers", "source": {"kind": "quote", "quote": "On a weekday about 9,000 drivers are on shift on RouteWise"}},
+        {"what": "stops handled", "value": 1500000, "unit": "stops per month", "source": {"kind": "quote", "quote": "we handle roughly 1.5 million stops a month"}}
+      ],
+      "projected": [],
+      "peaks": [
+        {"what": "morning route building, every depot at once", "value": "5am-7am", "unit": "daily window", "source": {"kind": "quote", "quote": "Most route building happens between 5am and 7am, when every depot loads its parcels at once."}},
+        {"what": "week before Christmas", "value": "roughly double", "unit": "stops versus a normal week", "source": {"kind": "quote", "quote": "In the week before Christmas the number of stops roughly doubles."}}
+      ]
+    },
+    "reliability": {
+      "availability": {"value": "99.5% monthly uptime during customers' operating hours, with service credits", "source": {"kind": "quote", "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours"}},
+      "data_loss_tolerance": "unknown",
+      "recovery_time": "unknown"
+    },
+    "privacy": {
+      "data_categories": [
+        {"value": "recipients' names, delivery addresses, phone numbers and notes such as door codes", "source": {"kind": "quote", "quote": "Each stop holds the recipient's name, delivery address and phone number, and sometimes a note such as \"door code 4471\"."}},
+        {"value": "drivers' GPS position every 10 seconds during a shift", "source": {"kind": "quote", "quote": "The driver app records each driver's GPS position every 10 seconds during a shift"}}
+      ],
+      "sensitivity": {"level": "high", "source": {"kind": "assumption", "why": "Precise, continuous location tracking of named drivers kept for years, plus home addresses and door codes of recipients."}},
+      "retention": [
+        {"value": "GPS traces kept 2 years to settle delivery disputes", "source": {"kind": "quote", "quote": "we keep the traces for 2 years to settle delivery disputes"}}
+      ],
+      "sharing": [],
+      "jurisdictions_or_rules": [
+        {"value": "EU customers' data must stay in the EU (contract)", "source": {"kind": "quote", "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."}},
+        {"value": "about a third of customers in the EU, the rest in the UK", "source": {"kind": "quote", "quote": "About a third of our customers are in the EU; the rest are in the UK."}}
+      ]
+    },
+    "security": {
+      "requirements": [],
+      "threats": [
+        {"value": "door codes stored in stop notes", "source": {"kind": "quote", "quote": "sometimes a note such as \"door code 4471\""}}
+      ],
+      "compliance": [
+        {"value": "EU data residency written into customer contracts", "source": {"kind": "quote", "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."}}
+      ]
+    },
+    "team": {
+      "size": {"value": "14 people, 9 of them engineers", "source": {"kind": "quote", "quote": "we are now 14 people, 9 of them engineers"}},
+      "skills": [
+        {"value": "TypeScript, Node and PostgreSQL", "source": {"kind": "quote", "quote": "Our engineers know TypeScript, Node and PostgreSQL well"}},
+        {"value": "one engineer has run Kubernetes", "source": {"kind": "quote", "quote": "one of them has run Kubernetes before"}}
+      ],
+      "operating_capacity": []
+    },
+    "budget": {
+      "build": {"value": "$150,000 set aside", "source": {"kind": "quote", "quote": "We have set aside $150,000 for this work."}},
+      "run_monthly": {"value": "hosting $28,000 a month", "source": {"kind": "quote", "quote": "Hosting costs $28,000 a month."}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "99.5% monthly uptime during customers' operating hours (contract, service credits)", "source": {"kind": "quote", "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it."}},
+      {"id": "C2", "text": "EU customers' data stays in the EU (contract)", "source": {"kind": "quote", "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "reliability", "rank": 1, "note": "Fewer incidents during morning dispatch", "source": {"kind": "quote", "quote": "First, fewer incidents during morning dispatch."}},
+      {"id": "G2", "criterion": "cost", "rank": 2, "note": "Lower hosting bill", "source": {"kind": "quote", "quote": "Second, bring the hosting bill down."}},
+      {"id": "G3", "criterion": "change_cost", "rank": 3, "note": "New customers' depot rules without code changes", "source": {"kind": "quote", "quote": "Third, make it easier to add a new customer's depot rules without code changes."}}
+    ],
+    "unknowns": [
+      {"question": "Were drivers told about the GPS tracking in their employment contracts, and on what legal basis is it done?", "why_it_matters": "Without a lawful basis and notice the traces may have to be cut back or stopped, which changes what is collected and stored.", "decisions_affected": ["location collection", "data model"], "material": true, "field": "privacy.jurisdictions_or_rules"},
+      {"question": "Can keeping GPS traces for 2 years be defended, or must retention be shorter?", "why_it_matters": "Retention decides storage size, deletion jobs and the legal risk of the largest dataset.", "decisions_affected": ["retention and deletion", "storage"], "material": true, "field": "privacy.retention"}
+    ],
+    "assumptions": [
+      {"text": "The 'no personal data' description is wrong and is not used for any decision.", "why": "The brief itself lists names, addresses, phone numbers and GPS traces."}
+    ]
+  }
+}

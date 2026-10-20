@@ -1,0 +1,13 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p11-k11-fabricated-quote",
+  "case_id": "k11-privacy-reading",
+  "fault": "Fabricated quote: the 90-day recording deletion is retold as 180 days, with a quote the brief does not contain.",
+  "expect": [
+    {"reason": "checker:quote_not_in_brief", "ref": "$.privacy.retention[1].source.quote"},
+    {"reason": "fact_misplaced", "ref": "F11"}
+  ],
+  "edits": [
+    {"op": "set", "path": ["privacy", "retention", 1], "value": {"value": "recordings deleted after 180 days", "source": {"kind": "quote", "quote": "Recordings are deleted after 180 days."}}}
+  ]
+}

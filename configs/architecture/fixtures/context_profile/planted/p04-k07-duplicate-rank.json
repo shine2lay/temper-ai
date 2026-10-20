@@ -1,0 +1,12 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p04-k07-duplicate-rank",
+  "case_id": "k07-conflict-marketplace",
+  "fault": "Duplicate goal rank: the cost goal is given rank 2, the same as reliability, leaving rank 3 empty.",
+  "expect": [
+    {"reason": "checker:rank_duplicate", "ref": "$.goals"}
+  ],
+  "edits": [
+    {"op": "set", "path": ["goals", 2, "rank"], "value": 2}
+  ]
+}

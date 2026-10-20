@@ -1,0 +1,13 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p03-k02-unlabelled-number",
+  "case_id": "k02-startup-invoicing",
+  "fault": "An unlabelled number: the invoices-a-month figure is changed to 12,000 while the quote still says 9,000, so the number stands on no text and is not marked an assumption; the 9,000 fact is then quoted without its value.",
+  "expect": [
+    {"reason": "checker:number_not_in_quote", "ref": "$.workload.observed[2]"},
+    {"reason": "fact_wrong_value", "ref": "F3"}
+  ],
+  "edits": [
+    {"op": "set", "path": ["workload", "observed", 2, "value"], "value": 12000}
+  ]
+}

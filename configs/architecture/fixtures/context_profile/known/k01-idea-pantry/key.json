@@ -1,0 +1,115 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k01-idea-pantry",
+  "category": "idea_stage",
+  "tests": "Idea-stage startup: nothing built, only a waitlist; founders' guesses stay projected; a competitor's 2 million households are not this product's workload; a public deletion promise and a fixed savings budget are constraints, the hosting wish is a cost goal; allergy storage, launch country and receipts per week are material unknowns.",
+  "brief_sha256": "4f62ed718bc6c610a69a663f3da2ae22afa659e3dac585ea94877e220fa912c6",
+  "maturity": {"accepted": ["idea"]},
+  "sensitivity": {"accepted": ["low", "moderate"]},
+  "facts": [
+    {"id": "F1", "anchors": ["We are two founders"], "in": ["team.size"], "value": 2},
+    {"id": "F2", "anchors": ["Luis is a backend developer"], "in": ["team.skills"]},
+    {"id": "F3", "anchors": ["Neither of us has run anything in production"], "in": ["team.skills", "team.operating_capacity"]},
+    {"id": "F4", "anchors": ["about 15 hours a week each"], "in": ["team.operating_capacity"], "value": 15},
+    {"id": "F5", "anchors": ["$12,000 in total for the first year"], "in": ["budget.build", "budget.run_monthly"], "value": 12000},
+    {"id": "F6", "anchors": ["hosting to stay under $150 a month"], "in": ["budget.run_monthly"], "value": 150},
+    {"id": "F7", "anchors": ["a waitlist with 340 email sign-ups"], "in": ["maturity.evidence", "workload.observed"], "value": 340},
+    {"id": "F8", "anchors": ["Nothing is built yet", "Pantry Pal is still an idea"], "in": ["maturity.evidence"]},
+    {"id": "F9", "anchors": ["2,000 people in the beta"], "in": ["workload.projected"], "value": 2000},
+    {"id": "F10", "anchors": ["10,000 users by the end of next year"], "in": ["workload.projected"], "value": 10000},
+    {"id": "F11", "anchors": ["Users sign in with email"], "in": ["privacy.data_categories"]},
+    {"id": "F12", "anchors": ["We store the food they buy and the meals they cook"], "in": ["privacy.data_categories"]},
+    {"id": "F13", "anchors": ["Receipt photos should be deleted once the items are read"], "in": ["privacy.retention"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["$12,000 in total for the first year"]},
+    {"id": "C2", "anchors": ["Receipt photos should be deleted once the items are read"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["getting a beta out fast is the first thing"], "criterion": "delivery_speed", "rank": 1},
+    {"id": "G2", "anchors": ["Keeping costs low comes right after that", "We would like hosting to stay under $150 a month"], "criterion": "cost", "rank": 2},
+    {"id": "G3", "anchors": ["anything we run should be simple to operate"], "criterion": "operability", "rank": 3},
+    {"id": "G4", "anchors": ["the design should be easy to change"], "criterion": "change_cost", "rank": 4}
+  ],
+  "goal_order": {"accepted_top3": [["delivery_speed", "cost", "operability"], ["delivery_speed", "cost", "change_cost"]]},
+  "unknowns": [
+    {"id": "U1", "terms": [["allerg"]]},
+    {"id": "U2", "terms": [["country", "countries", "jurisdiction", "market"], ["launch", "law", "legal", "gdpr", "pipeda", "rules", "region"]]},
+    {"id": "U3", "terms": [["receipt", "scan"], ["week", "how many", "per user", "often", "frequency", "volume"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["serves 2 million households"], "reason": "not_this_product", "forbidden_in": ["workload.observed", "workload.projected", "workload.peaks", "maturity.evidence"]},
+    {"id": "T2", "anchors": ["2,000 people in the beta", "10,000 users by the end of next year"], "reason": "projected_as_observed", "forbidden_in": ["workload.observed"]}
+  ],
+  "fields_unknown": [
+    {"field": "reliability.availability"},
+    {"field": "reliability.data_loss_tolerance"},
+    {"field": "reliability.recovery_time"},
+    {"field": "security.compliance", "open_anchors": ["we are not sure what that means legally"]}
+  ],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "4f62ed718bc6c610a69a663f3da2ae22afa659e3dac585ea94877e220fa912c6",
+    "product": {"summary": "A phone app that tracks kitchen food from scanned grocery receipts and suggests meals that use it before it spoils.", "source": {"kind": "quote", "quote": "A phone app that keeps track of what is in your kitchen and suggests meals that use up food before it spoils."}},
+    "maturity": {"stage": "idea", "evidence": [
+      {"value": "Still an idea; nothing built yet", "source": {"kind": "quote", "quote": "Pantry Pal is still an idea. Nothing is built yet."}},
+      {"value": "Landing page and a waitlist of 340 email sign-ups", "source": {"kind": "quote", "quote": "We have a landing page and a waitlist with 340 email sign-ups"}}
+    ]},
+    "workload": {
+      "observed": [],
+      "projected": [
+        {"what": "beta users (founders' guess)", "value": 2000, "unit": "users", "source": {"kind": "quote", "quote": "Our hope is 2,000 people in the beta"}},
+        {"what": "users by the end of next year (founders' guess)", "value": 10000, "unit": "users", "source": {"kind": "quote", "quote": "10,000 users by the end of next year, but these are guesses"}}
+      ],
+      "peaks": []
+    },
+    "reliability": {"availability": "unknown", "data_loss_tolerance": "unknown", "recovery_time": "unknown"},
+    "privacy": {
+      "data_categories": [
+        {"value": "email address, for sign-in", "source": {"kind": "quote", "quote": "Users sign in with email."}},
+        {"value": "food bought and meals cooked", "source": {"kind": "quote", "quote": "We store the food they buy and the meals they cook."}}
+      ],
+      "sensitivity": {"level": "moderate", "source": {"kind": "assumption", "why": "Purchase and meal history is personal data whose leak can embarrass people; allergy data, if stored later, would be health data and make it high."}},
+      "retention": [
+        {"value": "receipt photos deleted once the items are read (promised publicly)", "source": {"kind": "quote", "quote": "Receipt photos should be deleted once the items are read; we promised this on the landing page."}}
+      ],
+      "sharing": [],
+      "jurisdictions_or_rules": []
+    },
+    "security": {"requirements": [], "threats": [], "compliance": []},
+    "team": {
+      "size": {"value": "two founders", "source": {"kind": "quote", "quote": "We are two founders, Maya Okafor and Luis Brandt"}},
+      "skills": [
+        {"value": "product design (Maya)", "source": {"kind": "quote", "quote": "Maya is a product designer"}},
+        {"value": "backend development; has built two small Django apps (Luis)", "source": {"kind": "quote", "quote": "Luis is a backend developer who has built two small Django apps."}},
+        {"value": "no experience running production systems with real users", "source": {"kind": "quote", "quote": "Neither of us has run anything in production with real users at night."}}
+      ],
+      "operating_capacity": [
+        {"value": "part-time, about 15 hours a week each, next to day jobs", "source": {"kind": "quote", "quote": "We both work on this part-time, about 15 hours a week each, next to our day jobs."}}
+      ]
+    },
+    "budget": {
+      "build": {"value": "$12,000 in total for the first year, from savings, everything included", "source": {"kind": "quote", "quote": "We are paying for everything from our savings: $12,000 in total for the first year, everything included."}},
+      "run_monthly": {"value": "hosting under $150 a month (a wish)", "source": {"kind": "quote", "quote": "We would like hosting to stay under $150 a month until we know people want this."}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "Total spend in the first year stays within the founders' $12,000 savings", "source": {"kind": "quote", "quote": "$12,000 in total for the first year, everything included"}},
+      {"id": "C2", "text": "Delete receipt photos once their items are read, as promised on the landing page", "source": {"kind": "quote", "quote": "Receipt photos should be deleted once the items are read; we promised this on the landing page."}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "delivery_speed", "rank": 1, "note": "Get a beta out fast to learn whether people use it", "source": {"kind": "quote", "quote": "Above all, we need to learn quickly whether people use it, so getting a beta out fast is the first thing."}},
+      {"id": "G2", "criterion": "cost", "rank": 2, "note": "Keep costs low", "source": {"kind": "quote", "quote": "Keeping costs low comes right after that."}},
+      {"id": "G3", "criterion": "operability", "rank": 3, "note": "Simple to operate; no nights fixing servers", "source": {"kind": "quote", "quote": "We do not want to spend nights fixing servers, so anything we run should be simple to operate."}},
+      {"id": "G4", "criterion": "change_cost", "rank": 4, "note": "Easy to change often after the beta", "source": {"kind": "quote", "quote": "We will need to change things often after the beta, so the design should be easy to change."}}
+    ],
+    "unknowns": [
+      {"question": "Will Pantry Pal store users' food allergies?", "why_it_matters": "Allergy data is health data: it raises sensitivity to high and brings stricter rules on consent, storage and security.", "decisions_affected": ["data model", "security controls", "consent flow", "hosting region"], "material": true, "field": "privacy.data_categories"},
+      {"question": "Which country will the beta launch in first?", "why_it_matters": "Germany brings GDPR and Canada PIPEDA; the answer decides the hosting region and the privacy duties.", "decisions_affected": ["hosting region", "privacy compliance"], "material": true, "field": "privacy.jurisdictions_or_rules"},
+      {"question": "How many receipts does a typical user scan per week?", "why_it_matters": "Reading receipts is the main processing load and cost; it sizes the receipt-reading service.", "decisions_affected": ["receipt processing design", "running cost"], "material": true, "field": "workload.projected"},
+      {"question": "What availability and data-loss tolerance does the beta need?", "why_it_matters": "With no one on call at night, the answer decides how much redundancy and managed hosting to pay for.", "decisions_affected": ["hosting choice", "backups"], "material": false, "field": "reliability.availability"}
+    ],
+    "assumptions": [
+      {"text": "The beta is one region and one small database.", "why": "Two part-time founders, a few thousand projected users and no stated peaks."}
+    ]
+  }
+}

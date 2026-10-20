@@ -1,0 +1,123 @@
+{
+  "key": "context_profile_key/v1",
+  "case_id": "k08-missing-volunteers",
+  "category": "missing_budget_workload",
+  "tests": "No budget and no workload numbers: build budget, monthly running cost and observed volunteers and deliveries must stay unknown and be flagged as material unknowns, never guessed; the hedged 'between a few dozen and a few hundred' is not a count. Nothing built yet (idea). The address-visibility policy and the trustees' Google Workspace sign-in ruling are constraints; the November date is hedged ('if we can manage it') and stays a goal. Client delivery notes can hold health details of housebound people.",
+  "brief_sha256": "2ef23d4295a29931023a40b6ed78c5c2250ba50cc08f2724b1b2e5f608e5436c",
+  "maturity": {"accepted": ["idea"]},
+  "sensitivity": {"accepted": ["moderate", "high"]},
+  "facts": [
+    {"id": "F1", "anchors": ["volunteers' names, phone numbers and availability"], "in": ["privacy.data_categories"]},
+    {"id": "F2", "anchors": ["clients' names, addresses and delivery notes"], "in": ["privacy.data_categories"]},
+    {"id": "F3", "anchors": ["mostly older and housebound clients"], "in": ["privacy.data_categories"]},
+    {"id": "F4", "anchors": ["Today we coordinate them with a shared spreadsheet", "Nothing has been built yet"], "in": ["maturity.evidence"]},
+    {"id": "F5", "anchors": ["December is our busiest month"], "in": ["workload.peaks"]},
+    {"id": "F6", "anchors": ["Our IT is one volunteer, Dev"], "in": ["team.size"], "value": 1},
+    {"id": "F7", "anchors": ["about five hours a week"], "in": ["team.operating_capacity"], "value": 5},
+    {"id": "F8", "anchors": ["He knows Linux and networks"], "in": ["team.skills"]},
+    {"id": "F9", "anchors": ["he has not built a web app before"], "in": ["team.skills"]},
+    {"id": "F10", "anchors": ["must sign them in with their Google Workspace accounts"], "in": ["security.requirements"]},
+    {"id": "F11", "anchors": ["may only be shown to the volunteer who has accepted that delivery"], "in": ["privacy.sharing", "security.requirements"]},
+    {"id": "F12", "anchors": ["must disappear from the volunteer's view once the delivery is done"], "in": ["privacy.retention", "privacy.sharing", "security.requirements"]},
+    {"id": "F13", "anchors": ["registered with the Information Commissioner's Office"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
+    {"id": "F14", "anchors": ["If the app is down for a day", "nobody goes hungry"], "in": ["reliability.availability", "reliability.recovery_time"]},
+    {"id": "F15", "anchors": ["Losing the record of who accepted which delivery"], "in": ["reliability.data_loss_tolerance"]}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["may only be shown to the volunteer who has accepted that delivery"]},
+    {"id": "C2", "anchors": ["must sign them in with their Google Workspace accounts"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["before the winter appeal starts in November"], "criterion": "delivery_speed", "rank": 1},
+    {"id": "G2", "anchors": ["cost as little as possible to run"], "criterion": "cost", "rank": 2},
+    {"id": "G3", "anchors": ["Dev should not have to babysit it"], "criterion": "operability", "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["delivery_speed", "cost", "operability"]]},
+  "unknowns": [
+    {"id": "U1", "field": "budget.build", "terms": [["budget", "spend", "money", "afford"]]},
+    {"id": "U2", "field": "budget.run_monthly", "terms": [["each month", "monthly", "running", "ongoing"], ["cost", "pay", "budget"]]},
+    {"id": "U3", "field": "workload.observed", "terms": [["volunteer", "deliveries", "delivery"], ["how many", "number of", "count", "volume"]]}
+  ],
+  "traps": [
+    {"id": "T1", "anchors": ["between a few dozen and a few hundred"], "reason": "hedged_as_fact", "forbidden_in": ["workload.observed", "team.size", "maturity.evidence"]}
+  ],
+  "fields_unknown": [
+    {"field": "budget.build", "open_anchors": ["We have not set a budget for this"]},
+    {"field": "budget.run_monthly", "open_anchors": ["what running it each month could cost"]},
+    {"field": "workload.observed", "open_anchors": ["we don't know how many volunteers we have", "how many deliveries we do a week"]}
+  ],
+  "profile": {
+    "contract": "context_profile/v1",
+    "brief_sha256": "2ef23d4295a29931023a40b6ed78c5c2250ba50cc08f2724b1b2e5f608e5436c",
+    "product": {"summary": "A volunteer rota app for a food-bank charity: volunteers see and take shifts and deliveries; coordinators post shifts and match deliveries to drivers.",
+      "source": {"kind": "quote", "quote": "We want a small app where volunteers can see open shifts, sign up for them and see the deliveries they have accepted."}},
+    "maturity": {"stage": "idea", "evidence": [
+      {"value": "Coordination runs on a spreadsheet, WhatsApp and phone calls today", "source": {"kind": "quote", "quote": "Today we coordinate them with a shared spreadsheet, a WhatsApp group and a lot of phone calls"}},
+      {"value": "Nothing built yet", "source": {"kind": "quote", "quote": "Nothing has been built yet; this note is the start."}}
+    ]},
+    "workload": {
+      "observed": [],
+      "projected": [],
+      "peaks": [
+        {"what": "December is the busiest month; size of the peak never measured", "value": "unmeasured", "unit": "relative to a normal month", "source": {"kind": "quote", "quote": "December is our busiest month, but nobody has measured by how much."}}
+      ]
+    },
+    "reliability": {
+      "availability": {"value": "A day's outage is tolerable: coordinators fall back to phone and spreadsheet", "source": {"kind": "quote", "quote": "If the app is down for a day, Maureen goes back to the phone and the spreadsheet; that is annoying, but nobody goes hungry."}},
+      "data_loss_tolerance": {"value": "Losing the day's record of who accepted which delivery is not acceptable", "source": {"kind": "quote", "quote": "Losing the record of who accepted which delivery on the day would be worse, because parcels could go undelivered."}},
+      "recovery_time": "unknown"
+    },
+    "privacy": {
+      "data_categories": [
+        {"value": "volunteers' names, phone numbers and availability", "source": {"kind": "quote", "quote": "The app would hold volunteers' names, phone numbers and availability"}},
+        {"value": "clients' names, home addresses and delivery notes, which can mention health or disability", "source": {"kind": "quote", "quote": "clients' names, addresses and delivery notes such as \"leave with the neighbour\" or \"use the side door, client is in a wheelchair\""}},
+        {"value": "clients are mostly older and housebound people", "source": {"kind": "quote", "quote": "mostly older and housebound clients"}}
+      ],
+      "sensitivity": {"level": "high", "source": {"kind": "assumption", "why": "Home addresses of vulnerable housebound people together with free-text notes that can reveal disability or health."}},
+      "retention": [
+        {"value": "client address removed from the volunteer's view once the delivery is done", "source": {"kind": "quote", "quote": "must disappear from the volunteer's view once the delivery is done"}}
+      ],
+      "sharing": [
+        {"value": "client address shown only to the volunteer who accepted that delivery", "source": {"kind": "quote", "quote": "a client's address may only be shown to the volunteer who has accepted that delivery"}}
+      ],
+      "jurisdictions_or_rules": [
+        {"value": "registered with the UK Information Commissioner's Office; own data protection policy", "source": {"kind": "quote", "quote": "We are registered with the Information Commissioner's Office."}}
+      ]
+    },
+    "security": {
+      "requirements": [
+        {"value": "coordinators sign in with their Google Workspace accounts, no new passwords", "source": {"kind": "quote", "quote": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords"}}
+      ],
+      "threats": [],
+      "compliance": []
+    },
+    "team": {
+      "size": {"value": "one volunteer IT person, Dev", "source": {"kind": "quote", "quote": "Our IT is one volunteer, Dev, a retired network engineer"}},
+      "skills": [
+        {"value": "Linux and networks", "source": {"kind": "quote", "quote": "He knows Linux and networks"}},
+        {"value": "has not built a web app before", "source": {"kind": "quote", "quote": "he has not built a web app before"}}
+      ],
+      "operating_capacity": [
+        {"value": "about five hours a week from Dev", "source": {"kind": "quote", "quote": "who gives us about five hours a week"}}
+      ]
+    },
+    "budget": {"build": "unknown", "run_monthly": "unknown"},
+    "constraints": [
+      {"id": "C1", "text": "A client's address is shown only to the volunteer who accepted that delivery, and disappears once it is done (data protection policy)", "source": {"kind": "quote", "quote": "Our data protection policy says a client's address may only be shown to the volunteer who has accepted that delivery, and must disappear from the volunteer's view once the delivery is done."}},
+      {"id": "C2", "text": "Coordinators sign in with their Google Workspace accounts (trustees' ruling)", "source": {"kind": "quote", "quote": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords"}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "delivery_speed", "rank": 1, "note": "In volunteers' hands before the November winter appeal, if possible", "source": {"kind": "quote", "quote": "Above all, something in volunteers' hands before the winter appeal starts in November, if we can manage it."}},
+      {"id": "G2", "criterion": "cost", "rank": 2, "note": "Cheapest possible to run", "source": {"kind": "quote", "quote": "After that, it should cost as little as possible to run."}},
+      {"id": "G3", "criterion": "operability", "rank": 3, "note": "Little looking after by Dev", "source": {"kind": "quote", "quote": "And Dev should not have to babysit it."}}
+    ],
+    "unknowns": [
+      {"question": "What budget, if any, will the trustees set for building it?", "why_it_matters": "Whether anything can be bought or paid for decides between a free off-the-shelf tool, a hosted product and a small custom build.", "decisions_affected": ["build or buy", "hosting choice"], "material": true, "field": "budget.build"},
+      {"question": "What monthly running cost can the charity afford, and who pays it?", "why_it_matters": "A charity with no running budget needs a free tier or donated hosting; this narrows every option.", "decisions_affected": ["hosting choice", "build or buy"], "material": true, "field": "budget.run_monthly"},
+      {"question": "How many volunteers and how many deliveries a week are there?", "why_it_matters": "The number of users and deliveries decides whether a spreadsheet-backed tool is enough or a database-backed app is needed, and how big the December peak is.", "decisions_affected": ["data store", "tool choice"], "material": true, "field": "workload.observed"}
+    ],
+    "assumptions": [
+      {"text": "Volunteers themselves do not have Google Workspace accounts; only coordinators must use them.", "why": "The brief's sign-in ruling names coordinators only."}
+    ]
+  }
+}

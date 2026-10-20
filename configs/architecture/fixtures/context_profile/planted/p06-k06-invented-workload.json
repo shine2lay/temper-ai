@@ -1,0 +1,12 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p06-k06-invented-workload",
+  "case_id": "k06-large-simple-transit",
+  "fault": "Invented workload: a requests-per-second figure the brief never gives is added to observed workload, sourced as an assumption.",
+  "expect": [
+    {"reason": "checker:observed_not_quoted", "ref": "$.workload.observed[3]"}
+  ],
+  "edits": [
+    {"op": "append", "path": ["workload", "observed"], "value": {"what": "API requests at the rush-hour peak", "value": 4000, "unit": "requests per second", "source": {"kind": "assumption", "why": "Typical for a transit app of this size."}}}
+  ]
+}

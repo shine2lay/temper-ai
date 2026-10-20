@@ -1,0 +1,12 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p07-k09-target-as-observed",
+  "case_id": "k09-projected-fitness",
+  "fault": "Projected presented as observed: the deck's 250,000 active members (a target for next year) is added to observed workload.",
+  "expect": [
+    {"reason": "trap:projected_as_observed", "ref": "T1"}
+  ],
+  "edits": [
+    {"op": "append", "path": ["workload", "observed"], "value": {"what": "active members", "value": 250000, "unit": "members", "source": {"kind": "quote", "quote": "FitLoop serves 250,000 active members"}}}
+  ]
+}

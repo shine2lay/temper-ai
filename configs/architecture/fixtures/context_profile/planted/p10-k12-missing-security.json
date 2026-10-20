@@ -1,0 +1,13 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p10-k12-missing-security",
+  "case_id": "k12-internal-expenses",
+  "fault": "Missing section: the security section is left out, so the Okta sign-in requirement is left only in the constraints, not among the facts.",
+  "expect": [
+    {"reason": "checker:missing_section", "ref": "$"},
+    {"reason": "fact_misplaced", "ref": "F5"}
+  ],
+  "edits": [
+    {"op": "remove", "path": ["security"]}
+  ]
+}

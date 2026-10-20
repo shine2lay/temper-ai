@@ -1,0 +1,13 @@
+{
+  "planted": "context_profile_planted/v1",
+  "plant_id": "p12-k10-no-personal-data",
+  "case_id": "k10-misleading-logistics",
+  "fault": "A misleading claim taken as fact: sensitivity is set to none on the sales line 'The system holds no personal data', which the brief later contradicts.",
+  "expect": [
+    {"reason": "sensitivity_mismatch", "ref": "privacy.sensitivity"},
+    {"reason": "trap:contradicted_claim", "ref": "T1"}
+  ],
+  "edits": [
+    {"op": "set", "path": ["privacy", "sensitivity"], "value": {"level": "none", "source": {"kind": "quote", "quote": "The system holds no personal data"}}}
+  ]
+}

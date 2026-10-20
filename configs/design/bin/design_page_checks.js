@@ -218,19 +218,21 @@
       const E = V.edge_px;
       const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
       const yOver = (a, b) => overlap(a.y0, a.y1, b.y0, b.y1) > E;
-      const rr = { y0: run.first, y1: run.last };
       const rect = (el) => {
         const q = el.getBoundingClientRect();
         return { x0: q.left, x1: q.right, y0: q.top + scrollY, y1: q.bottom + scrollY, w: q.width, h: q.height };
       };
       const holds = (q) => q.x0 <= run.x0 + E && q.x1 >= run.x1 - E
         && q.y0 <= run.first + band && q.y1 >= run.last - band;
+      // H12b: or it lies inside the run (within one band) and is at least inside_share of the run's height.
+      const within = (q) => q.x0 <= run.x0 + E && q.x1 >= run.x1 - E
+        && q.y0 >= run.first - band && q.y1 <= run.last + band && q.h >= V.inside_share * (run.last - run.first);
       const containers = new Set();
       for (const el of new Set(beside.map((b) => b.el))) {
         for (let e = el; e; e = e.parentElement) {
           const cs = getComputedStyle(e);
           const row = ["flex", "inline-flex"].includes(cs.display) && ["row", "row-reverse"].includes(cs.flexDirection);
-          if ((["grid", "inline-grid"].includes(cs.display) || row) && holds(rect(e))) {
+          if ((["grid", "inline-grid"].includes(cs.display) || row) && (holds(rect(e)) || within(rect(e)))) {
             containers.add(e);
             break;
           }
@@ -243,6 +245,10 @@
       if (!container) return { answer: "no", reason: "block", container: null,
         evidence: { why: "No grid or flex-row ancestor beside the run contains it (block flow)." } };
       const cs = getComputedStyle(container), cr = rect(container);
+      // H12b: a container inside the run answers for the part of the run beside it (the clipped span); one that
+      // holds the run keeps its whole span, as in H12.
+      const clip = !holds(cr);
+      const rr = clip ? { y0: Math.max(run.first, cr.y0), y1: Math.min(run.last, cr.y1) } : { y0: run.first, y1: run.last };
       const px = (name) => parseFloat(cs[name]) || 0;
       const left = cr.x0 + px("borderLeftWidth") + px("paddingLeft");
       const right = cr.x1 - px("borderRightWidth") - px("paddingRight");
@@ -292,6 +298,9 @@
       }
       const info = { sel: sel(container), display: cs.display, tracks: grid ? tracks.map((t) => t.map(Math.round)) : null,
         placed, items: children.length };
+      const r2 = (n) => Math.round(n * 100) / 100;
+      if (clip) info.inside = { y: [r2(cr.y0), r2(cr.y1)], share: Math.round(cr.h / (run.last - run.first) * 1000) / 1000,
+        span: [r2(rr.y0), r2(rr.y1)] };
       const result = (answer, reason, evidence) => ({ answer, reason, container: info, evidence });
       if (grid && tracks.length === 1) return result("no", "block", { why: "A one-column grid container." });
       const vacant = tracks.map((t, k) => ({ k, t, cover: t[1] > t[0] ? overlap(run.x0, run.x1, ...t) / (t[1] - t[0]) : 0 }))

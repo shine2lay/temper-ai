@@ -9,12 +9,51 @@
     "side": "right",
     "top": 380,
     "vacancy": {
-     "answer": "no",
-     "container": null,
-     "evidence": {
-      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     "answer": "yes",
+     "container": {
+      "display": "grid",
+      "inside": {
+       "share": 0.827,
+       "span": [
+        380,
+        710.39
+       ],
+       "y": [
+        366.39,
+        710.39
+       ]
+      },
+      "items": 1,
+      "placed": [
+       1,
+       0,
+       0
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        432
+       ],
+       [
+        464,
+        816
+       ],
+       [
+        848,
+        1200
+       ]
+      ]
      },
-     "reason": "block"
+     "evidence": {
+      "cover": 1,
+      "track": 3,
+      "track_x": [
+       848,
+       1200
+      ]
+     },
+     "reason": "vacant_track"
     },
     "width": 491,
     "x": 709

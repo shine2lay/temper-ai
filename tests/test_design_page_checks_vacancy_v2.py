@@ -39,9 +39,6 @@ T = pc.thresholds()
 KEY = json.loads((FIXTURES / "expected.json").read_text(encoding="utf-8"))
 YES = KEY["groups"]["yes"] + KEY["groups"]["near_yes"]
 NO = KEY["groups"]["no"] + KEY["groups"]["near_no"] + KEY["groups"]["control_no"]
-# Pre-code: H12 answers every keyed yes page (and new-craft02 classes) no/block; the H12b code commit removes this.
-PRE_CODE = pytest.mark.xfail(strict=True, reason="H12b (queue #118): a container inside the run counts only after "
-                                                "the code commit")
 
 
 def test_the_keyed_pages_are_the_sealed_ones():
@@ -88,7 +85,7 @@ def _page(page):
     return _recorded(SCENES / "vacancy-v2" / page.replace(".html", ".raw.json"))
 
 
-@pytest.mark.parametrize("page", [pytest.param(p, marks=PRE_CODE) if p in YES else p for p in sorted(KEY["pages"])])
+@pytest.mark.parametrize("page", sorted(KEY["pages"]))
 def test_each_keyed_page_gets_its_keyed_answer_and_reason(page):
     got = [(c["section"], c["side"], c["x"], c["width"], c["height"], c["top"], c["vacancy"]["answer"],
             c["vacancy"]["reason"]) for c in _page(page)["columns"]]
@@ -101,7 +98,6 @@ def _known():
     return {c["section"]: c for c in _recorded(SCENES / "vacancy-known/new-craft02.raw.json")["columns"]}
 
 
-@PRE_CODE
 def test_new_craft02_classes_is_a_vacant_track_and_its_how_column_stays_no():
     """W10a's new-craft02 (cases-v2.json): the classes run starts at its heading, the one-card grid lies inside it."""
     cols = _known()
@@ -116,7 +112,7 @@ def _inside_cases():
     yield "new-craft02 classes", _known()["classes"]
 
 
-@pytest.mark.parametrize("case", [pytest.param(p, marks=PRE_CODE) for p in YES + ["new-craft02 classes"]])
+@pytest.mark.parametrize("case", YES + ["new-craft02 classes"])
 def test_a_yes_from_a_container_inside_the_run_carries_its_share_and_clipped_span(case):
     column = dict(_inside_cases())[case]
     inside = column["vacancy"]["container"]["inside"]

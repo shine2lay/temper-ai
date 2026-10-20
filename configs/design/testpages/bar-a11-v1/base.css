@@ -1,0 +1,43 @@
+/* bar-a11-v1 fixtures (queue #112): the bar-v2 base (fonts, reset, header, footer), all running text at
+   18 px, plus the A11 base page's parts. Each page adds its case in its own <style> after this file.
+   Served from configs/design/testpages, so the fonts come from html-fixtures/fonts. */
+@font-face { font-family: "Atkinson"; font-weight: 400; src: url("/html-fixtures/fonts/atkinsonhyperlegible/AtkinsonHyperlegible-400.ttf"); }
+@font-face { font-family: "Atkinson"; font-weight: 700; src: url("/html-fixtures/fonts/atkinsonhyperlegible/AtkinsonHyperlegible-700.ttf"); }
+@font-face { font-family: "Figtree"; font-weight: 800; src: url("/html-fixtures/fonts/figtree/Figtree-800.ttf"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Atkinson", sans-serif; font-size: 18px; line-height: 1.4; color: #374151; background: #ffffff; }
+.wrap { max-width: 1136px; margin: 0 auto; padding: 0 32px; }
+.site-head { padding: 16px 0; }
+.site-head .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.logo { display: inline-block; padding: 8px 0; font-family: "Figtree", sans-serif; font-weight: 800; font-size: 20px; color: #111827; text-decoration: none; }
+.menu { list-style: none; display: flex; flex-wrap: wrap; gap: 16px; }
+.menu a { display: inline-block; padding: 8px 4px; font-size: 16px; color: #1f2937; text-decoration: none; }
+h1, h2, h3 { font-family: "Figtree", sans-serif; font-weight: 800; color: #111827; line-height: 1.2; }
+h1 { font-size: 64px; margin-bottom: 16px; }
+h2 { font-size: 30px; margin-bottom: 16px; }
+h3 { font-size: 22px; margin-bottom: 8px; }
+p { max-width: 36em; }
+.cta { display: inline-block; margin-top: 24px; padding: 16px 24px; border-radius: 8px; background: #1d4ed8; color: #ffffff; font-weight: 700; font-size: 18px; text-decoration: none; }
+
+/* The base page's one content section: a tinted band (#e0e7ff, OKLCH L 92.99: a step of 7.0 from the
+   white page, so level 2) holding a CSS grid of three white tiles with a 24 px shadow (level 3). The
+   main tile spans both rows, so the tiles differ in size (a bento grid). The chart svg starts 24 px above
+   its tile's top edge (it crosses the edge by 24 px). */
+.hero { padding: 64px 0; background: #e0e7ff; }
+.tiles { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+.tile { padding: 24px; border-radius: 16px; background: #ffffff; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16); }
+.tile-main { grid-row: span 2; }
+.chart { display: block; width: 160px; height: 120px; margin-top: -48px; }
+
+.site-foot { padding: 48px 0 32px; border-top: 1px solid #e5e7eb; }
+.site-foot .wrap { display: flex; flex-direction: column; gap: 8px; }
+.site-foot p { font-size: 16px; }
+.foot-links { list-style: none; display: flex; flex-wrap: wrap; gap: 16px; }
+.foot-links a { display: inline-block; padding: 8px 4px; font-size: 16px; color: #1d4ed8; }
+@media (max-width: 767px) {
+  .wrap { padding: 0 16px; }
+  .hero { padding: 48px 0; }
+  h1 { font-size: 56px; }
+  .tiles { grid-template-columns: 1fr; }
+  .tile-main { grid-row: auto; }
+}

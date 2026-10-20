@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-a11-v1 near-threshold pair, (b) bento, at the threshold: the base page with the three tiles in one
+     row at 1440, 375, 300 and 300 px wide and the same height: the widest is 1.25 times the narrowest. One
+     asymmetric section at 1440 (the check runs at 1440 only). Its twin n-bento-124 differs only in the
+     first column's width. -->
+<link rel="stylesheet" href="base.css">
+<style>
+.tiles { grid-template-columns: 375px 300px 300px; }
+.tile-main { grid-row: auto; }
+@media (max-width: 767px) { .tiles { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#plans">Plans</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap tiles">
+      <div class="tile tile-main">
+        <h1>See your bills at a glance</h1>
+        <p>Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.</p>
+        <a class="cta" href="#start">Start a free ledger</a>
+      </div>
+      <div class="tile tile-chart">
+        <svg class="chart" role="img" aria-label="Bars of a month of spending by group" viewBox="0 0 160 120">
+          <rect width="160" height="120" rx="12" fill="#c7d2fe"/>
+          <rect x="20" y="60" width="24" height="44" rx="4" fill="#4f46e5"/>
+          <rect x="68" y="36" width="24" height="68" rx="4" fill="#4338ca"/>
+          <rect x="116" y="20" width="24" height="84" rx="4" fill="#3730a3"/>
+        </svg>
+      </div>
+      <div class="tile tile-note">
+        <h2>Every bill in its place</h2>
+        <p>Rent, food and travel each get a group, and the ledger keeps them tidy for you.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site-foot">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

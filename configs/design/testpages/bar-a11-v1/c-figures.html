@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-a11-v1 case (c) figures, end to end: the base page plus two panels (surfaces). The first holds 11
+     figures, one of each kind of the doc's patterns, written across inline tags and a line break, and a
+     drawn sparkline: all 11 are drawn. It also holds text the meter must not read: "62%" inside the svg and
+     "45%" in screen-reader-only text. The second panel holds only text that is not a figure (prices, dates,
+     times, versions, a phone number, 24/7, a part above its whole, ranges and words) and draws nothing: any
+     figure found there would be undrawn. The footer's "99.9%" is left out with the footer. 11 of 11
+     figures drawn at 1440 and 390. -->
+<link rel="stylesheet" href="base.css">
+<style>
+.numbers { padding: 64px 0; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.panel { padding: 24px; border-radius: 16px; background: #f8fafc; }
+.panel p { margin-bottom: 12px; }
+.spark { display: block; width: 240px; height: 64px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 767px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#plans">Plans</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero">
+    <div class="wrap tiles">
+      <div class="tile tile-main">
+        <h1>See your bills at a glance</h1>
+        <p>Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.</p>
+        <a class="cta" href="#start">Start a free ledger</a>
+      </div>
+      <div class="tile tile-chart">
+        <svg class="chart" role="img" aria-label="Bars of a month of spending by group" viewBox="0 0 160 120">
+          <rect width="160" height="120" rx="12" fill="#c7d2fe"/>
+          <rect x="20" y="60" width="24" height="44" rx="4" fill="#4f46e5"/>
+          <rect x="68" y="36" width="24" height="68" rx="4" fill="#4338ca"/>
+          <rect x="116" y="20" width="24" height="84" rx="4" fill="#3730a3"/>
+        </svg>
+      </div>
+      <div class="tile tile-note">
+        <h2>Every bill in its place</h2>
+        <p>Rent, food and travel each get a group, and the ledger keeps them tidy for you.</p>
+      </div>
+    </div>
+  </section>
+  <section class="numbers" id="how">
+    <div class="wrap pair">
+      <div class="panel panel-drawn">
+        <h2>This month in numbers</h2>
+        <p>Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week</p>
+        <p>−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved</p>
+        <p><strong>7</strong> of 9 paid · Occupancy<br>82%</p>
+        <svg class="spark" aria-hidden="true" viewBox="0 0 240 64">
+          <polyline points="0,48 40,40 80,44 120,28 160,32 200,16 240,20" fill="none" stroke="#4f46e5" stroke-width="4"/>
+          <circle cx="240" cy="20" r="6" fill="#4f46e5"/>
+          <text x="8" y="60" font-size="12">62%</text>
+        </svg>
+        <span class="sr-only">45% of the year so far</span>
+      </div>
+      <div class="panel panel-plain">
+        <h2>Not figures</h2>
+        <p>$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026</p>
+        <p>9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100</p>
+        <p>24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site-foot">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments. Uptime 99.9% this year.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

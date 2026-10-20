@@ -557,3 +557,108 @@ def test_version_2_adds_rows_and_renames_none():
     assert hb.ADDED == {("A5", "cta-wording"), ("A7", "word-split")}
     assert rows.index(("A5", "cta-wording", "all")) == rows.index(("A5", "numbers", "all")) + 1
     assert rows.index(("A7", "word-split", "5")) == rows.index(("A7", "clipped", "5")) + 1
+
+
+# ------------------------------------------------------------------ A11, modern and dynamic (version 3, queue #112)
+# bar-a11-v1/expected.json was written and sealed (~/design-lab/seals/bar-a11-v1.json) before the A11 code.
+# Tests marked A11 fail until the meter measures A11 (xfail strict); the code commit removes the marks.
+
+FIX3 = ROOT / "configs/design/testpages/bar-a11-v1"
+KEY3 = json.loads((FIX3 / "expected.json").read_text(encoding="utf-8"))
+PAGES3 = sorted(KEY3["pages"])
+KEY_A11_SHA256 = "efd56660e0fbbf6807cabbc1f5ec91b81dd3556f6d09c4a3d09f931266fa3c01"
+A11 = pytest.mark.xfail(strict=True, reason="A11 (queue #112): the meter does not measure A11 yet")
+
+
+def _raw3(page):
+    return json.loads((FIX3 / "raw" / f"{hb.raw_name(page)}.json").read_text(encoding="utf-8"))
+
+
+def _brief3(page):
+    return json.loads((ROOT / KEY3["site"] / KEY3["pages"][page]["brief"]).read_text(encoding="utf-8"))
+
+
+def test_bar_a11_key_is_sealed():
+    assert hashlib.sha256((FIX3 / "expected.json").read_bytes()).hexdigest() == KEY_A11_SHA256
+
+
+def test_bar_a11_key_covers_every_a11_row_and_page():
+    checks = {tuple(c) for c in KEY3["checks"]}
+    assert len(checks) == 12 and {b for b, _, _ in checks} == {"A11"}
+    assert {w for _, _, w in checks} == {"1440x900", "390x844"}
+    assert {c for _, c, w in checks if w == "390x844"} == {"depth-levels", "depth-overlap", "layout-runs", "data-drawn",
+                                                           "display-type"}
+    assert sorted("bar-a11-v1/" + p.name for p in FIX3.glob("*.html")) == PAGES3
+    broken = set()
+    for page in PAGES3:
+        k = KEY3["pages"][page]
+        failing = {tuple(x) for x in k["failing"]}
+        assert failing <= checks, page
+        broken |= {(b, c) for b, c, _ in failing}
+        for spec in k["rows"]:
+            row = (spec["bar"], spec["check"], spec["width"])
+            assert row in checks and (spec["pass"] is False) == (row in failing), (page, row)
+    assert broken == {(b, c) for b, c, _ in checks}
+    assert {tuple(x) for x in KEY3["pages"]["bar-a11-v1/flat.html"]["failing"]} == checks
+    assert KEY3["pages"]["bar-a11-v1/clean-rich.html"]["failing"] == []
+
+
+@A11
+def test_the_meter_has_the_a11_rows():
+    rows = {(b, c, w) for b, c, s, _ in hb.CHECKS if b == "A11" for w in hb.widths_of(s)}
+    assert rows == {tuple(c) for c in KEY3["checks"]}
+    assert hb.VERSION == 3
+
+
+@A11
+@pytest.mark.parametrize("page", PAGES3)
+def test_bar_a11_recorded_page_matches_its_key(page):
+    res = hb.key_match(page, hb.score(_raw3(page), _brief3(page)), KEY, KEY2, KEY3)
+    assert res["missing"] == [], "missing failing rows"
+    assert res["extra"] == [], "extra failing rows"
+    assert res["rows"] == [], "keyed rows differ"
+
+
+@A11
+@pytest.mark.parametrize("page", PAGES3)
+def test_bar_a11_recorded_raw_is_of_the_current_page(page):
+    raw = _raw3(page)
+    assert raw["version"] == 3
+    assert raw["page_sha256"] == hashlib.sha256((ROOT / KEY3["site"] / page).read_bytes()).hexdigest()
+    assert sorted(raw["widths"]) == sorted(hb.WIDTHS)
+    assert all("error" not in v for v in raw["widths"].values())
+    assert all(("a11" in v["bar"]) == (wk in hb.FIRST) for wk, v in raw["widths"].items())
+
+
+# The doc's keyed cases for (c): each text and the figures found in it, as (kind, text).
+A11_FIGURE_CASES = [
+    ("Spending is up 12% this month", [("trend", "up 12%")]),
+    ("3 of 5 rooms booked", [("part", "3 of 5")]),
+    ("Rated 4/5 stars", [("part", "4/5")]),
+    ("+8 bookings this week", [("trend", "+8")]),
+    ("\u22123 days to pay", [("trend", "\u22123")]),
+    ("down 2 hours a week", [("trend", "down 2 hours")]),
+    ("\u25b2 4 new", [("trend", "\u25b2 4")]),
+    ("Step 2 of 3", [("progress", "Step 2 of 3")]),
+    ("40% saved", [("share", "40%")]),
+    ("4 out of 5 households", [("part", "4 out of 5")]),
+    ("12.5% back", [("share", "12.5%")]),
+    ("-12% (down)", [("trend", "-12%")]),
+    ("6 of 5,000 bills", [("part", "6 of 5,000")]),
+    ("100% free", [("share", "100%")]),
+    ("Tue 10/20", [("part", "10/20")]),
+    ("7 of 9 paid \u00b7 Occupancy\n82%", [("part", "7 of 9"), ("share", "82%")]),
+    ("$12 a month", []), ("$4/mo", []), ("\u20ac9.99 per month", []),
+    ("Oct 19, 2026", []), ("19 October 2026", []), ("2026-10-19", []), ("10/19/2026", []), ("May 5 update", []),
+    ("9:30 am", []), ("10 pm", []),
+    ("v2.1", []), ("version 3.2", []), ("Release 4", []), ("2.1.0", []),
+    ("+1 (555) 010-0100", []),
+    ("24/7 support", []), ("5 of 3", []), ("0 of 0", []),
+    ("ages 3-5", []), ("COVID-19", []), ("12 groups", []), ("2x faster", []), ("up 3 floors", []),
+]
+
+
+@A11
+@pytest.mark.parametrize("text,want", A11_FIGURE_CASES)
+def test_a11_figures_follow_the_docs_patterns(text, want):
+    assert hb.a11_figures(text) == want

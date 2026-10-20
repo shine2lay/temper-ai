@@ -14,6 +14,8 @@ and writes the same row format.
 - `configs/design/testpages/bar-v2/`: version 2's keyed cases (`expected.json`, committed before the
   version 2 code), their briefs (`brief.json`, `brief-rooms.json`), two `derivations.json` cases and
   the recorded `raw/*.json`.
+- `configs/design/testpages/bar-a11-v1/`: version 3's A11 pages and their key (`expected.json`,
+  committed and sealed before the version 3 code), the brief, and the recorded `raw/*.json`.
 - `tests/test_design_homepage_bar.py`: the scorer on every recorded raw file must give exactly the
   key, plus unit tests. No browser in the tests.
 
@@ -25,12 +27,15 @@ Version 2 (2026-10-19, queue #91, H3b) changed six definitions after the first r
 measured. Each change, its reason, and the old and new readings are under "Changes to definitions".
 The tables below give the version 2 definitions. No limit changed.
 
+Version 3 (2026-10-20, queue #112) adds BAR.md A11's parts (a), (b), (c) and (e) as seven new rows,
+measured at 1440 and 390. No earlier definition, row or limit changed.
+
 ## Running it
 
 ```
 design_homepage_bar.py --site DIR [--page index.html] --brief brief.json --out DIR \
     [--browser URL] [--serve-host HOST] [--raw-only | --from-raw DIR]
-design_homepage_bar.py --fixture-proof --out DIR [--record] [--browser URL] [--serve-host HOST]
+design_homepage_bar.py --fixture-proof --out DIR [--record [SET ...]] [--browser URL] [--serve-host HOST]
 ```
 
 - The browser is temper's playwright-mcp service (default `http://playwright-mcp:8931/mcp`; from
@@ -42,8 +47,10 @@ design_homepage_bar.py --fixture-proof --out DIR [--record] [--browser URL] [--s
 - `--fixture-proof` measures every page of both keys and compares each page's failing rows with its
   key (exact set equality). bar-v1 pages are held to `bar-v1/expected.json` on the version 1 checks,
   and to the `bar-v1` section of `bar-v2/expected.json` on the two version 2 rows. Each `bar-v2` case
-  is held to its failing set and its keyed rows. `--record` also saves each raw file to `bar-v1/raw/`
-  and `bar-v2/raw/`.
+  is held to its failing set and its keyed rows. Each `bar-a11-v1` page is held to its exact set of
+  failing A11 rows and its keyed rows (`bar-a11-v1/expected.json`); bar-v1 and bar-v2 pages are held to
+  their keys on every row but A11's, which those keys predate. `--record` also saves each raw file to
+  its set's `raw/` folder (`bar-v1`, `bar-v2`, `bar-a11-v1`); `--record SET ...` only for those sets.
 - When the page's folder holds `derivations.json`, `raw.json` carries it, with its sha256 (A5 numbers).
 
 ## Output contract (shared with part 2)
@@ -51,8 +58,9 @@ design_homepage_bar.py --fixture-proof --out DIR [--record] [--browser URL] [--s
 `bars.json`:
 `{meter, version, page, page_sha256, brief, widths, rows: [{bar, check, width, value, limit, pass, evidence}]}`
 
-- `meter` is `design_homepage_bar`; `version` is the meter's version (`2`). Version 2 only added
-  rows (A5 cta-wording, A7 word-split). No row was renamed or removed.
+- `meter` is `design_homepage_bar`; `version` is the meter's version (`3`). Version 2 only added
+  rows (A5 cta-wording, A7 word-split); version 3 only added A11's seven rows, after A7's. No row was
+  renamed or removed.
 - `page` is the page's path; `page_sha256` is the sha256 of its HTML file; `brief` is the brief's path.
 - `widths`: `["1440x900", "1024x768", "768x1024", "390x844", "320x568"]`.
 - `width` in a row is one of those, or `all` for a check made once over the whole page.
@@ -206,9 +214,214 @@ Hover, focus and motion are part 2.
 | clipped | 5 | Elements other than html and body, visible and larger than 1x1, with non-visible overflow on an axis whose scroll size exceeds the client size by more than 1 px, where the overflow is text: the element has its own text, or a line box of a text element inside it reaches more than 1 px past its client box. Also an active ellipsis: `text-overflow: ellipsis` with scrollWidth over clientWidth by 1 px or more. | no clipped text |
 | word-split | 5 | Words: runs of letters, marks and digits of 2 or more characters in one text node of a visible element, outside svg, script, style, noscript and template, and not in a script written without spaces (Han, Hiragana, Katakana, Thai, Lao, Khmer, Myanmar). A word is split when its Range boxes sit on 2 or more lines and, at a break between two of its characters, no hyphen is drawn. A hyphen is drawn when the word's box on the earlier line reaches 1 px or more past its last glyph there, as a soft hyphen or `hyphens: auto` does. Value: the number of split words. Evidence: each word with ` / ` at the break. Raw files from before version 2: not measured. | no word split across two lines without a hyphen |
 
+### A11, modern and dynamic (version 3: a, b, c and e)
+BAR.md A11: "Modern and dynamic, not a flat page or list (owner 2026-10-19). Measured at 1440 and 390
+on the page as delivered: (a) Depth: at least 3 surface levels (page, card, raised), told apart by
+shadow or by a lightness step of at least 3 OKLCH L points, and at least one visual that overlaps a
+card or section edge. (b) Varied layout: no two neighbouring sections share a layout signature
+(column count plus the order of picture and text blocks); no run of more than 4 identical text-only
+rows or cards; at least one section is an asymmetric or bento grid with blocks of different sizes.
+(c) Data drawn, not only written: every figure that shows a trend, share or progress also has a
+chart, bar, ring or diagram. ... (e) Expressive type: on the first screen the display text is at
+least 3 times the body size." (d), motion, is part 2's (`design_homepage_bar_interact`); (f), the
+blind read, is Design's by hand.
+
+Written 2026-10-20 (Design, queue #112) before any A11 code and before any real page was measured
+for A11. BAR.md's words are fixed; where they leave a number or a reading open, the reading below
+sets it, with its source, and it is never tuned to a real page. The key, `bar-a11-v1/expected.json`,
+was written and sealed (`~/design-lab/seals/bar-a11-v1.json`) before the code.
+
+Where A11 runs: 1440x900 and 390x844 only, after the settle step above (finite animations finished,
+infinite ones paused at their start), at scroll 0. The neighbour and bento checks run at 1440 only:
+at 390 a layout stacks by design (Material 3's compact window class, under 600 dp wide), so
+neighbouring sections share one column there. Raw files from before version 3 hold no A11
+measurements: their A11 rows read "not measured" (could not measure).
+
+Terms used by A11 (on top of visible, sections and composited colour above):
+
+- Box: an element's visible box, after clipping, in page px.
+- OKLCH L: the OKLab L of an sRGB colour (the meter's `srgb_to_oklab`) times 100, so 0 to 100,
+  from whole RGB values.
+- Visual: a visible img, picture, outermost svg, video or canvas; an element (not html or body) with a
+  CSS `url(...)` background image; or a picture built in HTML that A1 visual-anchor counts (exposed as
+  an image, and a third or more of it painted). Gradients alone are not visuals, as in A1.
+- Controls: as above (`a[href]`, `button`, `[role=button]`, input submit, button or reset), plus the
+  form fields `input`, `select` and `textarea`.
+- Navigation and footer: inside `nav`, `footer`, `[role=navigation]` or `[role=contentinfo]` (A3's
+  cut for body text).
+
+#### (a) Depth
+Source: Material 3 elevation (a surface is raised by a tonal step, a shadow, or both).
+
+- Surface: a visible element, not html or body and not inside svg, whose box is at least 120 px wide
+  and 48 px high, with its own background (a background colour whose alpha is above 0, or a background
+  image: a gradient or `url(...)`), a box-shadow, or a backdrop-filter (computed value not `none`).
+  A control is not a surface (a filled button is a control, not a card) unless it holds a heading
+  (h1-h6): a link that wraps a whole card is a card.
+- The surface behind a surface: its nearest ancestor that is a surface; with none, the page.
+- Colour: a surface's own background colour composited over the colour behind it (the composited
+  background of its parent), rounded to whole RGB. The page's colour is the composited background of
+  `body` (body over html over white).
+- L: the OKLCH L of that colour. A surface (or `body`, for the page) with background image layers
+  takes the mean over its layers instead: a gradient layer gives the mean L of its colour stops, each
+  composited over the colour; a `url(...)` layer gives the L of the image's mean pixel colour,
+  composited over the colour (read in the page from a canvas of at most 64x64; an image the page
+  cannot read leaves the layer out).
+- Blur: the largest blur radius among a surface's box-shadows that are not inset and whose colour has
+  an alpha above 0; none: 0. The page's blur is 0.
+- Step: a surface is one step above the surface behind it (or the page) when their L differs by 3
+  points or more, or when its blur is 4 px or more and the blur behind it is smaller.
+- Level: the page is level 1. A surface one step above the surface behind it is that surface's level
+  plus 1; any other surface has the level of the surface behind it. So the highest level is the
+  longest chain of steps from the page.
+- Overlap: for a visual V whose box is at least 48x48 px, and a section or surface E that is not V,
+  not inside V, and whose box does not lie wholly inside V's box: at each side of E's box where V and
+  E overlap along that side (by more than 0 px), the crossing is the smaller of how far V's box reaches
+  past that side, outside E, and how far it reaches inside E from it. For the top side:
+  `min(E.top - V.top, min(V.bottom, E.bottom) - E.top)`; the other sides likewise. Both boxes are
+  measured after clipping, so a visual cut off by overflow does not cross.
+
+| check | widths | definition | limit |
+|---|---|---|---|
+| depth-levels | 2 | The highest level on the page. Evidence: the chain to it, from the page (each surface's level, L and blur). | at least 3 surface levels (page, card, raised) |
+| depth-overlap | 2 | The largest crossing of any visual over any section or surface edge, in px. Met at 8 px or more. Evidence: the visual, the edge it crosses and by how much. | at least one visual that overlaps a card or section edge |
+
+#### (b) Varied layout
+Sources: a section's layout as its grid of blocks (Material 3 layout: window classes, panes and
+columns); runs of identical rows as the "flat list" the owner rejected (T8).
+
+- Content child: a visible element child, in normal flow (position not absolute or fixed), that holds
+  visible text or a visual (itself or inside it). A child with `display: contents` is replaced by its
+  own children. Script, style, template and noscript never count.
+- Blocks of a section: start at the section. While the element has exactly one content child and no
+  visible text of its own, go down into that child (single-child wrappers). When the element reached
+  has visible text of its own, or no content child, it is the section's only block. Otherwise its
+  content children are the section's top-level blocks. A top-level block that is a CSS grid
+  (computed display `grid` or `inline-grid`) with 2 or more content children is a layout wrapper too:
+  its content children take its place (one level only).
+- Kind of a block: picture when the block is a visual, when one visual covers at least half of its box,
+  or when it holds no visible text; otherwise text.
+- Side by side: two boxes overlap vertically by at least half the height of the shorter one, and
+  horizontally by 1 px or less.
+- Column count: the left edges of the blocks that sit side by side with another block, clustered
+  (sorted, a new cluster when an edge is more than 8 px right of the previous one); 1 when no block
+  sits beside another. A centred column of blocks of different widths is one column.
+- Reading order: blocks sorted by top, then left; a block joins the current row when it sits side by
+  side with the row's first block, else it starts the next row; rows top to bottom, and in a row left
+  to right (then top to bottom).
+- Layout signature: the column count, then the kinds in reading order with each run of one kind
+  written once, e.g. `2:text-picture`.
+- Content sections: A2's sections without the page header and the page footer (the banner and
+  contentinfo landmarks are the page's chrome, not its content; A2 rhythm makes the same cut for the
+  banner), and without sections that have no block.
+- Grid blocks of a section: its blocks that sit side by side with another of its blocks. A section is
+  an asymmetric or bento grid when it has 3 or more grid blocks and their widths differ by 25% or more
+  (the widest is at least 1.25 times the narrowest), or two of them that sit side by side differ in
+  height by 25% or more.
+- Runs: consecutive visible element children of one parent (outside navigation and footer) that are
+  identical and text-only. Identical: the same tag and the same set of classes, and a width and a
+  height each within 4 px of the run's first element's. Text-only: it holds visible text, and no img,
+  svg, canvas or picture (itself or inside it).
+
+| check | widths | definition | limit |
+|---|---|---|---|
+| layout-neighbours | 1440 | Content sections in order; the number of neighbouring pairs whose layout signatures are equal. Evidence: each such pair and its signature. | no two neighbouring sections share a layout signature |
+| layout-bento | 1440 | The number of content sections that are an asymmetric or bento grid. Met at 1 or more. Evidence: the section and its grid blocks' sizes; when none, each section with 3 or more grid blocks and its size ratios. | at least one section is an asymmetric or bento grid with blocks of different sizes |
+| layout-runs | 2 | The longest run. Met at 4 or fewer. Evidence: the run's first element, its length and size. | no run of more than 4 identical text-only rows or cards |
+
+#### (c) Data drawn
+Source: BAR.md's "chart, bar, ring or diagram" for every figure of a trend, share or progress.
+
+- Text blocks: the visible text elements' own text nodes (outside svg, script, style, noscript and
+  template; not inside `footer` or `[role=contentinfo]`), joined in document order by their block, the
+  nearest element from the node's parent up whose display is not inline-level (`inline*` or
+  `contents`). A `br` is a line break. Whitespace is collapsed. Blocks without a digit hold no figure.
+- Left out first: every match of these patterns (Python `re`), in this order, is replaced by a space.
+  - price: `[$£€¥]\s?\d[\d,]*(?:\.\d+)?(?:\s?[kKmMbB]\b)?(?:\s?(?:/|per\s)\s?[A-Za-z]+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP)\b`
+  - date: `\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b|\bMONTH\.?\s\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s\d{4}\b)?|\b\d{1,2}(?:st|nd|rd|th)?\sMONTH\b(?:,?\s\d{4}\b)?`,
+    where MONTH is `(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)`
+  - time: `\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[aApP]\.?[mM]\b\.?)?|\b\d{1,2}\s?[aApP]\.?[mM]\b\.?`
+  - version: `\b[vV]\d+(?:\.\d+)*\b|\b(?:[Vv]ersion|[Rr]elease)\s\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b`
+  - phone: `\+?\(?\d(?:[\s().-]*\d){6,}` (7 digits or more with spaces, brackets, dots or hyphens between)
+- Figures: every match of these patterns in what is left, where NUM is
+  `(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?`:
+  - progress: `(?i)\bstep\s(NUM)\sof\s(NUM)\b`
+  - trend, up or down with a unit: `(?i)\b(?:up|down)\s(?:by\s)?NUM\s?(?:%|×|(?:x|pts?|points?|ms|s|secs?|seconds?|mins?|minutes?|h|hrs?|hours?|days?|weeks?|months?|years?)\b)`
+  - trend, an arrow before or after: `[↑↓▲▼↗↘⬆⬇]\s?[+\-−]?NUM|(?<![\w.,])NUM\s?%?\s?[↑↓▲▼↗↘⬆⬇]`
+  - trend, a sign: `(?<![\w.,+\-−])[+\-−]NUM`
+  - part of a whole: `(?i)(?<![\w.,])(NUM)\s(?:of|out\sof)\s(NUM)(?![\d.,]*\d)`
+  - part of a whole, slashed: `(?<![\w.,/])(NUM)\s?/\s?(NUM)(?![\w/])`
+  - share: `(?<![\w.,])NUM\s?%`
+
+  A progress or part of a whole counts only when its whole is above 0 and its part is not above its
+  whole (24/7 is not a part of a whole). Matches that overlap are one figure, named by the first of
+  progress, trend, part, share. A slashed date with only two parts (10/20) cannot be told from a
+  part of a whole, and counts as one.
+- Keyed cases (unit-tested, `A11_FIGURE_CASES` in the tests):
+
+| text | figures |
+|---|---|
+| Spending is up 12% this month | trend "up 12%" |
+| 3 of 5 rooms booked | part "3 of 5" |
+| Rated 4/5 stars | part "4/5" |
+| +8 bookings this week | trend "+8" |
+| −3 days to pay | trend "−3" |
+| down 2 hours a week | trend "down 2 hours" |
+| ▲ 4 new | trend "▲ 4" |
+| Step 2 of 3 | progress "Step 2 of 3" |
+| 40% saved | share "40%" |
+| 4 out of 5 households | part "4 out of 5" |
+| 12.5% back | share "12.5%" |
+| -12% (down) | trend "-12%" |
+| 6 of 5,000 bills | part "6 of 5,000" |
+| 100% free | share "100%" |
+| Tue 10/20 | part "10/20" |
+| $12 a month; $4/mo; €9.99 per month | none (prices) |
+| Oct 19, 2026; 19 October 2026; 2026-10-19; 10/19/2026; May 5 update | none (dates) |
+| 9:30 am; 10 pm | none (times) |
+| v2.1; version 3.2; Release 4; 2.1.0 | none (versions) |
+| +1 (555) 010-0100 | none (phone number) |
+| 24/7 support; 5 of 3; 0 of 0 | none (the part is above its whole, or the whole is 0) |
+| ages 3-5; COVID-19; 12 groups; 2x faster; up 3 floors | none (no sign, mark or unit of the patterns) |
+
+- Scope of a figure: the innermost surface (a) that holds its block; else the (b) block of its section
+  that holds it; else its section; else the page.
+- Drawn element: a visible outermost svg holding 2 or more shapes (rect, circle, ellipse, line,
+  polyline, polygon, path); a canvas; a progress; a meter; or a bar. A bar is a visible element, not
+  inside svg, with its own background and no visible text, whose width or height is less than its
+  track's. Its track is its parent's content box (inside padding and border): along the track's
+  longer side the bar is shorter than the track by more than 1 px, and along the shorter side it is
+  as long as the track (within 1 px), as a progress bar's fill is. Bars of a chart, 2 or more such
+  elements in normal flow in one parent whose widths or whose heights differ by more than 1 px, are
+  bars too (the parent is their track). A divider as long as its parent is not a bar.
+
+| check | widths | definition | limit |
+|---|---|---|---|
+| data-drawn | 2 | Every figure (outside the footer) needs a drawn element in its scope. Value: `D of F drawn`. Met when D equals F; no figures is met, recorded as `0 of 0 drawn`. Evidence: each figure without one, and its scope. | every figure that shows a trend, share or progress also has a chart, bar, ring or diagram |
+
+#### (e) Expressive type
+Source: BAR.md's 3x; A3's body text.
+
+- Display size: the largest font size of a visible text element in the first viewport (as in A2
+  h1-largest: a line box's vertical centre inside it).
+- Body size: the running-text size, the font size that holds the most characters of A3's body text
+  (visible p, li, dd and blockquote of 8 or more words, outside navigation and footer), each element's
+  whitespace-collapsed text counted once; a tie goes to the smaller size. No body text: could not
+  measure.
+
+| check | widths | definition | limit |
+|---|---|---|---|
+| display-type | 2 | Display size over body size. Value: `Apx / Bpx = R`, R to 2 decimals. Met when the ratio (unrounded) is 3.0 or more. Evidence: the display text and the body size. | on the first screen the display text is at least 3 times the body size |
+
+Known limits of these readings, left for the blind read (f) and Design's hand checks: an svg icon with
+2 or more shapes counts as a drawn element; a bar drawn with a gradient or a pseudo-element is not
+seen; a two-part slashed date is a part of a whole; the signature does not look inside a block, so two
+different sections built from the same blocks share one.
+
 ## Not in part 1
 A6 (model) and A10 (blind read); A9 (the converter's verify); keyboard, focus, focus-indicator
-contrast, hover, reduced motion and speed (part 2); Design's manual WCAG pass (hand).
+contrast, hover, reduced motion and speed (part 2); A11 (d), motion (part 2), and A11 (f), the blind
+read (hand); Design's manual WCAG pass (hand).
 
 ## The fixture proof (bar-v1)
 `bar-v1/expected.json` was written before the meter, with each page's exact failing
@@ -253,7 +466,46 @@ Result: both version 2 proof runs (2026-10-19) matched both keys exactly on all 
 13 bar-v2). `bar-v1/expected.json` kept its sha256 (05436368...). Every page's `bars.json` and
 `raw.json` were byte-identical between the runs.
 
+A11's keyed pages are in `bar-a11-v1/expected.json`, written and sealed on 2026-10-20
+(`~/design-lab/seals/bar-a11-v1.json`, sha256 efd56660...) before the version 3 code and before any real
+page was measured for A11. Its 29 pages share `bar-a11-v1/base.css` and the bar-v2 brief:
+
+- `mini.html`, the base page: one tinted band with a bento grid of three raised tiles, a chart crossing
+  its tile's top edge by 24 px, no figure, h1 64 px over 18 px. It meets every A11 row.
+- `clean-rich.html`: a full page that meets every A11 row (five content sections with five different
+  signatures, four drawn figures, a chart card hanging over the hero's bottom edge).
+- `flat.html`: the owner's rejected flat page and list of rows (T6, T8). It fails all 12 A11 rows.
+- One plant per check, each the base page with one change: `p-levels`, `p-overlap`, `p-neighbours`,
+  `p-bento`, `p-runs`, `p-data`, `p-type`.
+- Near-threshold pairs, base-page twins on either side of one number: a lightness step of 2.92 against
+  3.02 L points (`n-lstep-29`, `n-lstep-30`), a shadow blur of 3 against 4 px (`n-blur-3`, `n-blur-4`),
+  a surface 119 against 120 px wide (`n-surface-119`, `n-surface-120`), a crossing of 6 against 8 px
+  (`n-overlap-6`, `n-overlap-8`), a visual of 47 against 48 px (`n-visual-47`, `n-visual-48`), 4 against
+  5 identical cards (`n-cards-4`, `n-cards-5`), widths 1.24 against 1.25 times (`n-bento-124`,
+  `n-bento-125`), display text 2.9 against 3 times the body (`n-type-29`, `n-type-30`), and a figure
+  with and without its bar (`n-figure-bar`, `n-figure-nobar`).
+- `c-figures.html`: (c)'s patterns end to end: 11 figures across inline tags and a line break, drawn by
+  one sparkline; svg text, screen-reader text, the footer and a panel of non-figures are left out.
+
+The key holds each page's exact set of failing A11 rows and, where a number is the point, the row's
+value. Each page is held to it in each of 3 runs, and the runs' `bars.json` and `raw.json` must be
+byte-identical. Before sealing, the pages' geometry (the boxes of their named parts, no A11 logic) was
+checked in the browser, so that each page is what the key says.
+
 ## Changes to definitions
+
+### Version 3, 2026-10-20 (Design, queue #112)
+
+Version 3 adds BAR.md A11's parts (a), (b), (c) and (e) as seven rows after A7's: A11 depth-levels,
+depth-overlap, layout-neighbours, layout-bento, layout-runs, data-drawn and display-type. No earlier
+definition, row or limit changed: bar-v1's and bar-v2's keys are unchanged and are still held on every row
+but A11's. Raw files measured before version 3 have no A11 measurements, so their A11 rows read "not
+measured". The A11 definitions were written from BAR.md's words and the numbers Design (home) set in
+queue #112's plan, before the code and before any real page. Where the plan left a reading open, the
+A11 section gives the reading and its reason: controls are not surfaces; the page header and footer
+are left out of the neighbour and bento checks; the column count clusters blocks that sit side by
+side; a top-level CSS grid's children are blocks; a part of a whole needs its part not above its
+whole; a bar fills its track's short side and falls short on its long side.
 
 ### Version 2, 2026-10-19 (Design, queue #91, H3b)
 

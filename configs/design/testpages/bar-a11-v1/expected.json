@@ -1,0 +1,313 @@
+{
+ "version": 1,
+ "set": "bar-a11-v1",
+ "written": "2026-10-20, before the A11 checks were coded in design_homepage_bar.js and design_homepage_bar.py (meter version 3, queue #112) and before any real page was measured for A11. Definitions: docs/design-homepage-bar.md, A11.",
+ "rule": "For each page, the exact set of failing A11 (bar, check, width) rows, where failing means pass is false or null, and each listed row as described: pass, value when given, and every listed evidence item found among the row's evidence (selector equal when given, text equal when 'text' is given, text containing 'text_has' when that is given). Rows of other bars are not keyed here. The meter is right only when every page matches, in each of 3 runs. When they differ, the meter is fixed, never this key.",
+ "site": "configs/design/testpages",
+ "brief": "bar-a11-v1/brief.json",
+ "checks": [
+  ["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"],
+  ["A11", "depth-overlap", "1440x900"], ["A11", "depth-overlap", "390x844"],
+  ["A11", "layout-neighbours", "1440x900"], ["A11", "layout-bento", "1440x900"],
+  ["A11", "layout-runs", "1440x900"], ["A11", "layout-runs", "390x844"],
+  ["A11", "data-drawn", "1440x900"], ["A11", "data-drawn", "390x844"],
+  ["A11", "display-type", "1440x900"], ["A11", "display-type", "390x844"]
+ ],
+ "pages": {
+  "bar-a11-v1/clean-rich.html": {
+   "case": "clean-rich: a full page that meets every A11 row: 3 levels; the hero's chart svg crosses the hero's bottom edge by 24 px (40 px at 390); five content sections with five different signatures; one bento grid; no long run; four figures, each drawn; h1 72 px (56 px) over 18 px body text.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": true, "value": 24},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": true, "value": 40},
+    {"bar": "A11", "check": "layout-neighbours", "width": "1440x900", "pass": true, "value": 0,
+     "evidence": [{"text": "2:text-picture"}, {"text": "3:text-picture-text"}, {"text": "3:text"}, {"text": "2:picture-text"}, {"text": "1:text"}]},
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": true, "value": 1},
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": true},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": true},
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": true, "value": "4 of 4 drawn"},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": true, "value": "4 of 4 drawn"},
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": true, "value": "72px / 18px = 4"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": true, "value": "56px / 18px = 3.11"}
+   ]
+  },
+  "bar-a11-v1/flat.html": {
+   "case": "flat: the owner's rejected flat page and list of rows (T6, T8): no surface and no visual (1 level, no overlap); four content sections that all read 1:text; no grid; six identical text-only rows; one share with nothing drawn; h1 40 px (32 px) over 18 px. Fails every A11 row.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [
+    ["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"],
+    ["A11", "depth-overlap", "1440x900"], ["A11", "depth-overlap", "390x844"],
+    ["A11", "layout-neighbours", "1440x900"], ["A11", "layout-bento", "1440x900"],
+    ["A11", "layout-runs", "1440x900"], ["A11", "layout-runs", "390x844"],
+    ["A11", "data-drawn", "1440x900"], ["A11", "data-drawn", "390x844"],
+    ["A11", "display-type", "1440x900"], ["A11", "display-type", "390x844"]
+   ],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": false, "value": 1},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": false, "value": 1},
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": false, "value": 0},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": false, "value": 0},
+    {"bar": "A11", "check": "layout-neighbours", "width": "1440x900", "pass": false, "value": 3, "evidence": [{"text": "1:text"}]},
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": false, "value": 0},
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": false, "value": 6},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": false, "value": 6},
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "82%"}]},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "82%"}]},
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": false, "value": "40px / 18px = 2.22"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": false, "value": "32px / 18px = 1.78"}
+   ]
+  },
+  "bar-a11-v1/mini.html": {
+   "case": "the base page every plant and pair changes in one place: meets every A11 row (3 levels; the chart svg crosses its tile's top edge by 24 px; one content section, 2:text-picture-text, a bento grid; no run; no figure; h1 64 px (56 px) over 18 px).",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": true, "value": 24},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": true, "value": 24},
+    {"bar": "A11", "check": "layout-neighbours", "width": "1440x900", "pass": true, "value": 0, "evidence": [{"text": "2:text-picture-text"}]},
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": true, "value": 1},
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": true, "value": 0},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": true, "value": 0},
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": true, "value": "0 of 0 drawn"},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": true, "value": "0 of 0 drawn"},
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": true, "value": "64px / 18px = 3.56"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": true, "value": "56px / 18px = 3.11"}
+   ]
+  },
+  "bar-a11-v1/p-levels.html": {
+   "case": "plant (a) levels: flat tiles in the band's own colour, no shadow: 2 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": false, "value": 2},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": false, "value": 2}
+   ]
+  },
+  "bar-a11-v1/p-overlap.html": {
+   "case": "plant (a) overlap: the chart svg kept inside its tile: no visual crosses an edge.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-overlap", "1440x900"], ["A11", "depth-overlap", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": false, "value": 0},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": false, "value": 0}
+   ]
+  },
+  "bar-a11-v1/p-neighbours.html": {
+   "case": "plant (b) neighbours: a second band built like the first, right under it: one neighbouring pair reads 2:text-picture-text twice.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "layout-neighbours", "1440x900"]],
+   "rows": [
+    {"bar": "A11", "check": "layout-neighbours", "width": "1440x900", "pass": false, "value": 1, "evidence": [{"text": "2:text-picture-text"}]}
+   ]
+  },
+  "bar-a11-v1/p-bento.html": {
+   "case": "plant (b) bento: the three tiles as equal columns of one height: no asymmetric or bento section.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "layout-bento", "1440x900"]],
+   "rows": [
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": false, "value": 0}
+   ]
+  },
+  "bar-a11-v1/p-runs.html": {
+   "case": "plant (b) runs: a list of six identical text-only rows.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "layout-runs", "1440x900"], ["A11", "layout-runs", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": false, "value": 6},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": false, "value": 6}
+   ]
+  },
+  "bar-a11-v1/p-data.html": {
+   "case": "plant (c) data: a share (92%) written in the note tile, with nothing drawn in that tile.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "data-drawn", "1440x900"], ["A11", "data-drawn", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "92%"}]},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "92%"}]}
+   ]
+  },
+  "bar-a11-v1/p-type.html": {
+   "case": "plant (e) type: h1 48 px (40 px at 390) over 18 px body text.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "display-type", "1440x900"], ["A11", "display-type", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": false, "value": "48px / 18px = 2.67"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": false, "value": "40px / 18px = 2.22"}
+   ]
+  },
+  "bar-a11-v1/n-lstep-29.html": {
+   "case": "pair (a) lightness step, below: tiles #eff0ef on a #e6e6e6 band, 2.92 L points up, no shadow: 2 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": false, "value": 2},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": false, "value": 2}
+   ]
+  },
+  "bar-a11-v1/n-lstep-30.html": {
+   "case": "pair (a) lightness step, at the threshold: tiles #f0f0f0 on a #e6e6e6 band, 3.02 L points up, no shadow: 3 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": true, "value": 3}
+   ]
+  },
+  "bar-a11-v1/n-blur-3.html": {
+   "case": "pair (a) shadow, below: tiles in the band's colour with a 3 px blur: 2 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": false, "value": 2},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": false, "value": 2}
+   ]
+  },
+  "bar-a11-v1/n-blur-4.html": {
+   "case": "pair (a) shadow, at the threshold: tiles in the band's colour with a 4 px blur: 3 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": true, "value": 3}
+   ]
+  },
+  "bar-a11-v1/n-surface-119.html": {
+   "case": "pair (a) surface size, below: flat tiles (level 2) and a raised white chip 119x56 px, too narrow for a surface: 2 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-levels", "1440x900"], ["A11", "depth-levels", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": false, "value": 2},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": false, "value": 2}
+   ]
+  },
+  "bar-a11-v1/n-surface-120.html": {
+   "case": "pair (a) surface size, at the threshold: flat tiles (level 2) and a raised white chip 120x56 px: 3 levels.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-levels", "width": "1440x900", "pass": true, "value": 3},
+    {"bar": "A11", "check": "depth-levels", "width": "390x844", "pass": true, "value": 3}
+   ]
+  },
+  "bar-a11-v1/n-overlap-6.html": {
+   "case": "pair (a) overlap, below: the chart svg starts 6 px above its tile's top edge.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-overlap", "1440x900"], ["A11", "depth-overlap", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": false, "value": 6},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": false, "value": 6}
+   ]
+  },
+  "bar-a11-v1/n-overlap-8.html": {
+   "case": "pair (a) overlap, at the threshold: the chart svg starts 8 px above its tile's top edge.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": true, "value": 8},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": true, "value": 8}
+   ]
+  },
+  "bar-a11-v1/n-visual-47.html": {
+   "case": "pair (a) visual size, below: the crossing svg is 47x47 px, under a visual: no crossing counts.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "depth-overlap", "1440x900"], ["A11", "depth-overlap", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": false, "value": 0},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": false, "value": 0}
+   ]
+  },
+  "bar-a11-v1/n-visual-48.html": {
+   "case": "pair (a) visual size, at the threshold: the svg is 48x48 px, 24 px outside its tile and 24 px inside: a 24 px crossing.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "depth-overlap", "width": "1440x900", "pass": true, "value": 24},
+    {"bar": "A11", "check": "depth-overlap", "width": "390x844", "pass": true, "value": 24}
+   ]
+  },
+  "bar-a11-v1/n-cards-4.html": {
+   "case": "pair (b) runs, at the limit: four identical text-only cards.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": true, "value": 4},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": true, "value": 4}
+   ]
+  },
+  "bar-a11-v1/n-cards-5.html": {
+   "case": "pair (b) runs, over the limit: five identical text-only cards.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "layout-runs", "1440x900"], ["A11", "layout-runs", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "layout-runs", "width": "1440x900", "pass": false, "value": 5},
+    {"bar": "A11", "check": "layout-runs", "width": "390x844", "pass": false, "value": 5}
+   ]
+  },
+  "bar-a11-v1/n-type-29.html": {
+   "case": "pair (e) type, below: h1 52.2 px over 18 px body text at both widths: 2.9 times.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "display-type", "1440x900"], ["A11", "display-type", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": false, "value": "52.2px / 18px = 2.9"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": false, "value": "52.2px / 18px = 2.9"}
+   ]
+  },
+  "bar-a11-v1/n-type-30.html": {
+   "case": "pair (e) type, at the threshold: h1 54 px over 18 px body text at both widths: 3 times.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "display-type", "width": "1440x900", "pass": true, "value": "54px / 18px = 3"},
+    {"bar": "A11", "check": "display-type", "width": "390x844", "pass": true, "value": "54px / 18px = 3"}
+   ]
+  },
+  "bar-a11-v1/n-figure-bar.html": {
+   "case": "pair (c) data, with its bar: \"3 of 4\" and a track with a 75% fill in the same tile.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": true, "value": "1 of 1 drawn"},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": true, "value": "1 of 1 drawn"}
+   ]
+  },
+  "bar-a11-v1/n-figure-nobar.html": {
+   "case": "pair (c) data, without its bar: \"3 of 4\" and nothing drawn in its tile.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "data-drawn", "1440x900"], ["A11", "data-drawn", "390x844"]],
+   "rows": [
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "3 of 4"}]},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": false, "value": "0 of 1 drawn", "evidence": [{"text_has": "3 of 4"}]}
+   ]
+  },
+  "bar-a11-v1/n-bento-124.html": {
+   "case": "pair (b) bento, below: three tiles in one row, 372, 300 and 300 px wide, one height: 1.24 times.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [["A11", "layout-bento", "1440x900"]],
+   "rows": [
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": false, "value": 0}
+   ]
+  },
+  "bar-a11-v1/n-bento-125.html": {
+   "case": "pair (b) bento, at the threshold: three tiles in one row, 375, 300 and 300 px wide, one height: 1.25 times.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "layout-bento", "width": "1440x900", "pass": true, "value": 1}
+   ]
+  },
+  "bar-a11-v1/c-figures.html": {
+   "case": "(c) figures end to end: 11 figures of every pattern, across inline tags and a line break, drawn by one sparkline in their panel; svg text, screen-reader text, the footer and a panel of non-figures (prices, dates, times, versions, a phone number, 24/7, a part above its whole, ranges, words) are not figures.",
+   "brief": "bar-a11-v1/brief.json",
+   "failing": [],
+   "rows": [
+    {"bar": "A11", "check": "data-drawn", "width": "1440x900", "pass": true, "value": "11 of 11 drawn"},
+    {"bar": "A11", "check": "data-drawn", "width": "390x844", "pass": true, "value": "11 of 11 drawn"}
+   ]
+  }
+ }
+}

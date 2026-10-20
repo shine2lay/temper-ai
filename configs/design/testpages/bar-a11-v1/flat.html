@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-a11-v1 flat: the owner's rejected flat page (T6 Morrow v1) and list of rows (T8 Roles), in one page.
+     It fails every A11 row at 1440 and 390. (a) No surface (the button is a control) and no visual: one
+     level, no overlap. (b) Four content sections, each a single column of text (1:text): three
+     neighbouring pairs alike; no grid; a run of six identical text-only rows. (c) One share ("82%") with
+     nothing drawn. (e) h1 40 px (32 px at 390) over 18 px body text. -->
+<link rel="stylesheet" href="base.css">
+<style>
+h1 { font-size: 40px; }
+.f-hero, .f-how, .f-list, .f-stats { padding: 64px 0; }
+.rows { list-style: none; }
+.row { padding: 12px 0; border-bottom: 1px solid #d1d5db; }
+@media (max-width: 767px) {
+  h1 { font-size: 32px; }
+  .f-hero, .f-how, .f-list, .f-stats { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#plans">Plans</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="f-hero">
+    <div class="wrap">
+      <h1>Know where your money goes</h1>
+      <p>Lumen Ledger sorts every household bill into clear groups so you can see each month at a glance.</p>
+      <a class="cta" href="#start">Start a free ledger</a>
+    </div>
+  </section>
+  <section class="f-how" id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p>Add your bills once and the ledger sorts them for you every month, with a reminder before each one is due.</p>
+    </div>
+  </section>
+  <section class="f-list">
+    <div class="wrap">
+      <h2>What it tracks</h2>
+      <ul class="rows">
+        <li class="row">Rent and housing</li>
+        <li class="row">Food and groceries</li>
+        <li class="row">Travel and fuel</li>
+        <li class="row">Power and water</li>
+        <li class="row">Phone and internet</li>
+        <li class="row">Gifts and treats</li>
+      </ul>
+    </div>
+  </section>
+  <section class="f-stats">
+    <div class="wrap">
+      <p>Households using the ledger paid 82% of their bills on time last month, and we hope you will too.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-foot">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

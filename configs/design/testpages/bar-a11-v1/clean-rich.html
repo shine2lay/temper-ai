@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen Ledger: see where your household money goes</title>
+<!-- bar-a11-v1 clean-rich: a full page that meets every A11 row at 1440 and 390.
+     (a) White page; tinted bands (#e0e7ff, #eef2ff tiles, #f1f5f9) one step up; white cards with shadows
+     on them, a second step: 3 levels. The hero's chart card is moved 112 px down (transform), so its chart
+     svg crosses the hero's bottom edge and the next section's top edge by 24 px at 1440 (40 px at 390).
+     (b) Content sections at 1440 read 2:text-picture (hero), 3:text-picture-text (bento), 3:text (stats),
+     2:picture-text (split) and 1:text (closing band): no two neighbours alike. The bento grid's tiles are
+     512, 256, 256 and 536 px wide. No run longer than 2; the footer's five links are left out.
+     (c) Four figures (down 12%, 82%, 3 of 4, a falling 12%), each in a card with its line chart, bar,
+     meter or sparkline; the footer's 99.9% is left out. (e) h1 72 px (56 px at 390) over 18 px body text. -->
+<link rel="stylesheet" href="base.css">
+<style>
+h1 { font-size: 72px; }
+.hero2 { padding: 64px 0; background: #e0e7ff; }
+.hero-grid { display: grid; grid-template-columns: 1fr 420px; gap: 48px; align-items: end; }
+.art-card { padding: 24px; border-radius: 20px; background: #ffffff; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  transform: translateY(112px); }
+.art-note { margin-bottom: 16px; }
+.art-chart { display: block; width: 100%; height: auto; }
+.bento { padding: 160px 0 64px; }
+.bento-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 24px; }
+.b-tile { padding: 24px; border-radius: 16px; background: #eef2ff; }
+.b-a { grid-row: span 2; }
+.b-d { grid-column: span 2; }
+.b-art { display: block; width: 100%; height: auto; }
+.stats { padding: 64px 0; background: #f1f5f9; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.stat { padding: 24px; border-radius: 16px; background: #ffffff; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); }
+.stat-figure { font-family: "Figtree", sans-serif; font-weight: 800; font-size: 40px; line-height: 1.2; color: #111827; }
+.stat-label { margin-bottom: 16px; }
+.track { height: 8px; border-radius: 4px; background: #c7d2fe; }
+.fill { height: 8px; border-radius: 4px; background: #4f46e5; }
+.stat meter { display: block; width: 100%; height: 16px; }
+.spark { display: block; width: 160px; height: 40px; }
+.split { padding: 96px 0; }
+.split-grid { display: grid; grid-template-columns: 400px 1fr; gap: 48px; align-items: center; }
+.split-art { display: block; width: 400px; height: 300px; }
+.who { margin-top: 16px; font-weight: 700; }
+.cta-band { padding: 64px 0; background: #e0e7ff; text-align: center; }
+.cta-band p { margin: 0 auto; }
+@media (max-width: 767px) {
+  h1 { font-size: 56px; }
+  .hero2 { padding: 48px 0; }
+  .hero-grid { grid-template-columns: 1fr; }
+  .bento { padding: 160px 0 48px; }
+  .bento-grid { grid-template-columns: 1fr; }
+  .b-a { grid-row: auto; }
+  .b-d { grid-column: auto; }
+  .stats { padding: 48px 0; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .split { padding: 48px 0; }
+  .split-grid { grid-template-columns: 1fr; }
+  .split-art { width: 100%; height: auto; }
+  .cta-band { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="#top">Lumen Ledger</a>
+    <nav aria-label="Main">
+      <ul class="menu">
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#plans">Plans</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="top">
+  <section class="hero2">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1>Know where your money goes</h1>
+        <p>Lumen Ledger sorts every household bill into clear groups and shows each month as a picture you can read in seconds.</p>
+        <a class="cta" href="#start">Start a free ledger</a>
+      </div>
+      <div class="art-card">
+        <p class="art-note">Spending is down 12% this month.</p>
+        <svg class="art-chart" role="img" aria-label="Line chart of a household's monthly spending, falling at the end" viewBox="0 0 372 220">
+          <rect width="372" height="220" rx="12" fill="#eef2ff"/>
+          <polyline points="24,150 84,120 144,132 204,84 264,96 324,150" fill="none" stroke="#4f46e5" stroke-width="6" stroke-linejoin="round"/>
+          <circle cx="204" cy="84" r="8" fill="#4338ca"/>
+          <circle cx="324" cy="150" r="10" fill="#1d4ed8"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+  <section class="bento" id="how">
+    <div class="wrap">
+      <h2>One ledger, every bill</h2>
+      <div class="bento-grid">
+        <div class="b-tile b-a">
+          <svg class="b-art" role="img" aria-label="Bills falling into labelled groups" viewBox="0 0 464 320">
+            <rect width="464" height="320" rx="12" fill="#c7d2fe"/>
+            <rect x="32" y="200" width="112" height="88" rx="10" fill="#4f46e5"/>
+            <rect x="176" y="168" width="112" height="120" rx="10" fill="#4338ca"/>
+            <rect x="320" y="136" width="112" height="152" rx="10" fill="#3730a3"/>
+            <circle cx="88" cy="96" r="28" fill="#ffffff"/>
+            <circle cx="232" cy="72" r="28" fill="#ffffff"/>
+            <circle cx="376" cy="56" r="28" fill="#ffffff"/>
+          </svg>
+        </div>
+        <div class="b-tile b-b">
+          <h3>Sorted for you</h3>
+          <p>Each bill lands in the right group as soon as you add it, with no rules to set up.</p>
+        </div>
+        <div class="b-tile b-c">
+          <h3>Reminders</h3>
+          <p>A short note arrives before each bill is due, so nothing slips past.</p>
+        </div>
+        <div class="b-tile b-d">
+          <h3>Shared with family</h3>
+          <p>Invite the people you live with, and everyone sees the same tidy picture of the month.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="stats">
+    <div class="wrap">
+      <h2>This month at a glance</h2>
+      <div class="stat-grid">
+        <div class="stat">
+          <p class="stat-figure">82%</p>
+          <p class="stat-label">of the budget used</p>
+          <div class="track"><div class="fill" style="width: 82%"></div></div>
+        </div>
+        <div class="stat">
+          <p class="stat-figure">3 of 4</p>
+          <p class="stat-label">bills paid</p>
+          <meter min="0" max="4" value="3" aria-label="Bills paid"></meter>
+        </div>
+        <div class="stat">
+          <p class="stat-figure">▼ 12%</p>
+          <p class="stat-label">less spent on food</p>
+          <svg class="spark" aria-hidden="true" viewBox="0 0 160 40">
+            <polyline points="0,8 32,12 64,10 96,20 128,26 160,32" fill="none" stroke="#4f46e5" stroke-width="4"/>
+            <circle cx="160" cy="32" r="5" fill="#4f46e5"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="split">
+    <div class="wrap split-grid">
+      <svg class="split-art" role="img" aria-label="A family table with a laptop showing the ledger" viewBox="0 0 400 300">
+        <rect width="400" height="300" rx="16" fill="#eef2ff"/>
+        <rect x="40" y="200" width="320" height="24" rx="6" fill="#4338ca"/>
+        <rect x="120" y="96" width="160" height="104" rx="8" fill="#1e1b4b"/>
+        <rect x="132" y="108" width="136" height="80" rx="4" fill="#c7d2fe"/>
+        <circle cx="72" cy="120" r="32" fill="#4f46e5"/>
+        <circle cx="328" cy="120" r="32" fill="#6366f1"/>
+      </svg>
+      <div class="quote">
+        <blockquote><p>“I finally know where the grocery money goes, and the reminders keep us on time.”</p></blockquote>
+        <p class="who">Ana, a parent of two</p>
+      </div>
+    </div>
+  </section>
+  <section class="cta-band">
+    <div class="wrap">
+      <h2>Start your ledger today</h2>
+      <p>It takes a few minutes to set up, and the first month is free.</p>
+      <a class="cta" href="#start">Start a free ledger</a>
+    </div>
+  </section>
+</main>
+<footer class="site-foot">
+  <div class="wrap">
+    <p>Fictional demo — no real accounts or payments. Uptime 99.9% this year.</p>
+    <ul class="foot-links">
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#terms">Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+      <li><a href="#press">Press</a></li>
+      <li><a href="#jobs">Jobs</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

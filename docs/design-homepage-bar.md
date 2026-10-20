@@ -286,7 +286,7 @@ Source: Material 3 elevation (a surface is raised by a tonal step, a shadow, or 
 | check | widths | definition | limit |
 |---|---|---|---|
 | depth-levels | 2 | The highest level on the page. Evidence: the chain to it, from the page (each surface's level, L and blur). | at least 3 surface levels (page, card, raised) |
-| depth-overlap | 2 | The largest crossing of any visual over any section or surface edge, in px. Met at 8 px or more. Evidence: the visual, the edge it crosses and by how much. | at least one visual that overlaps a card or section edge |
+| depth-overlap | 2 | The largest crossing of any visual over any section or surface edge, in px. Met at 8 px or more. Evidence: the visual, the edge it crosses and by how much; when none crosses, the largest visuals of 48x48 px or more, or that the page has none. | at least one visual that overlaps a card or section edge |
 
 #### (b) Varied layout
 Sources: a section's layout as its grid of blocks (Material 3 layout: window classes, panes and
@@ -523,6 +523,12 @@ visual makes a block a picture only from inside it; a text node of whitespace on
 a space; layout-neighbours' evidence lists the sections and their signatures when no pair is equal
 (at most 5 items, as every row's); a text-less element as tall as its parent reads as a bar (a known
 limit).
+
+After the first real pages were measured (`~/design-lab/results/homepage-bar-a11/BASELINE.md`), with
+no number, definition, value or key changed: depth-overlap's evidence, empty when no visual crossed an
+edge, now names the largest visuals of 48x48 px or more (at most 5) and says they cross none, or that
+the page has no such visual. Only that evidence changed: every row's value and pass are as before, and
+the fixture proof's raw files are the same.
 
 ### Version 2, 2026-10-19 (Design, queue #91, H3b)
 

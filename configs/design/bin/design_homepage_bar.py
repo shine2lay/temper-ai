@@ -821,6 +821,11 @@ def check_a11(check: str, m: dict) -> tuple:
         best = a11_num(cr[0][0]) if cr else 0
         evid = [ev(a["visuals"][n]["sel"], f"crosses the {side} edge of {esel} by {fmt(px)}px", a["visuals"][n]["box"])
                 for px, n, side, esel in cr[:5]]
+        if not cr:  # the largest visuals, page order on ties (a stable sort), or that there is none
+            big = sorted((v for v in a["visuals"] if v["box"][2] >= A11_VISUAL and v["box"][3] >= A11_VISUAL),
+                         key=lambda v: -v["box"][2] * v["box"][3])
+            evid = [ev(v["sel"], "crosses no section or surface edge", v["box"]) for v in big[:5]] or [
+                ev("(page)", f"no visual of {A11_VISUAL}x{A11_VISUAL}px or more")]
         return best, best >= A11_CROSSING, evid
     if check == "layout-neighbours":
         secs = a11_content_sections(a)

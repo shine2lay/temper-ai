@@ -751,6 +751,23 @@ def test_a_crossing_is_the_smaller_reach_on_either_side_of_an_edge(v, px, side):
     assert hb.a11_cross(list(v), [0, 0, 400, 200]) == (px, side)
 
 
+def _visual(box, sel):
+    return {"sel": sel, "kind": "img", "box": list(box), "holds_cands": [], "holds_secs": []}
+
+
+def test_with_no_crossing_the_evidence_names_the_largest_visuals():
+    a = {"page": {"base": [255, 255, 255], "layers": []}, "cands": [],
+         "sections": [{"i": 0, "sel": "section", "chrome": False, "box": [0, 0, 1440, 600], "blocks": []}],
+         "visuals": [_visual((40, 40, 100, 100), "img.a"), _visual((40, 200, 300, 200), "img.b"),
+                     _visual((400, 40, 47, 400), "img.c"), _visual((600, 40, 100, 100), "img.d")]}
+    value, ok, evid = hb.check_a11("depth-overlap", {"a11": a})
+    assert (value, ok) == (0, False)
+    assert [e["selector"] for e in evid] == ["img.b", "img.a", "img.d"]
+    assert {e["text"] for e in evid} == {"crosses no section or surface edge"}
+    a["visuals"] = [_visual((400, 40, 47, 400), "img.c")]
+    assert hb.check_a11("depth-overlap", {"a11": a})[2] == [hb.ev("(page)", "no visual of 48x48px or more")]
+
+
 def _blk(x, y, w, h, kind="text"):
     return {"sel": "b", "box": [x, y, w, h], "visual": kind == "picture", "cover": 0, "text": kind == "text"}
 

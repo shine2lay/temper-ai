@@ -8,7 +8,8 @@ told why and what it can do: at a share by the refused share's notice, at a sync
 framing of a turn that starts without the merge. After refusals in 2 turns in a row it rests
 until a message wakes it, and Temper asks once: the leader, or the owner when the member is
 the leader. A writer that may still be live, git set up wrong and a stray gitlink behave as
-after #110.
+after #110, and so does a refusal that comes once git has written into the folder in the
+same call (a conflicting merge's finish, a share's merge again after a lost race).
 
 Model-free: every member is a scripted Pi, and git runs in tmp folders. ``subprocess.run``
 is spied on to show that no git process starts over a folder while its .git is there.
@@ -26,7 +27,12 @@ from typing import Any
 import pytest
 
 from temper_ai.pi_agent import flow_view, member_tree, team_flow
-from temper_ai.pi_agent.shared_version import NO_MARKERS, Conflict
+from temper_ai.pi_agent.shared_version import (
+    NO_MARKERS,
+    Conflict,
+    SharedVersion,
+    VersionError,
+)
 from temper_ai.pi_agent.team_flow import FlowTeam, flow_framing
 from temper_ai.pi_agent.team_leader import MemberGitRefused, ProjectCopies, TeamFailure
 from temper_ai.pi_agent.team_view import TeamReader
@@ -417,6 +423,85 @@ def test_a_writer_refusal_at_a_sync_keeps_the_turn_from_starting_until_it_clears
     assert "Temper didn't bring" not in ts.PROMPTS["builder"][0]
     assert [(e["member"], e["data"]["cause"]) for e in _events(led, run_id, "sync_refused")] \
         == [("builder", "writer")]
+
+
+# --- once git has written into the folder in the same call (Security's N1) ---------------------
+
+#: M1's entries refusal with the cap the tests below set.
+ENTRIES_3 = REFUSED["entries"].replace("more than 5 entries", "more than 3 entries")
+
+
+@pytest.mark.parametrize("at", ["share", "sync"])
+def test_a_refusal_once_a_conflicting_merge_wrote_into_the_folder_fails_as_before(
+        led, box, run_id, tmp_path, monkeypatch, at):
+    """The merge stops on a conflict after writing the builder's files into the leader's
+    folder, which takes it past the entries cap, so the check refuses the commit that finishes
+    the merge. Git has already changed the folder in this call: the share ends the run and the
+    sync keeps the turn from starting, as before #115, and the member isn't told to fix it."""
+    team = _open(led, box, run_id, tmp_path)
+    bws, ws = ls.workspace(team, "builder"), ls.workspace(team, "lead")
+    (bws / "app.py").write_text("print('builder')\n")
+    for i in range(6):
+        (bws / f"b{i}.txt").write_text("x\n")
+    assert team.shared.share("builder", team._pdir(team._member_rows()["builder"])).status \
+        == "shared"
+    (ws / "app.py").write_text("print('lead')\n")
+    monkeypatch.setattr(member_tree, "GIT_CHECK_ENTRIES", 3)
+    why = f"a merge in the member's copy could not be finished: {ENTRIES_3}"
+
+    if at == "share":
+        with pytest.raises(TeamFailure) as failed:
+            team._share("lead", "act-1", None)
+        assert str(failed.value) == f"lead's share could not be carried out: {why}"
+        assert _events(led, run_id, "share_refused") == []
+    else:
+        turn, batch, _ = ts.claim_bound(led, run_id)
+        with pytest.raises(VersionError) as refused:
+            team.prompt_for(ts.member("lead"), turn, batch)
+        assert not isinstance(refused.value, MemberGitRefused)
+        assert str(refused.value) == why
+        assert _events(led, run_id, "sync_refused") == []
+        ts.settle(led, turn)
+    assert (ws / "b0.txt").exists()  # git had written into the folder before the refusal
+    assert _notices(led, run_id, "lead") == []
+
+
+def test_a_refusal_when_a_share_merges_again_after_a_lost_race_ends_the_run_as_before(
+        led, box, run_id, tmp_path, monkeypatch):
+    """The builder's share merges the team's version into its folder, which brings the
+    leader's files in, then loses the race to the leader's next share. Merging again is
+    refused: the folder is past the entries cap now. Git has already changed the folder in
+    this call, so the run ends, as before #115."""
+    team = _open(led, box, run_id, tmp_path)
+    lws, ws = ls.workspace(team, "lead"), ls.workspace(team, "builder")
+    lead_pdir = team._pdir(team._member_rows()["lead"])
+    for i in range(6):
+        (lws / f"l{i}.txt").write_text("x\n")
+    assert team.shared.share("lead", lead_pdir).status == "shared"
+    for i in range(6):
+        (lws / f"l{i}.txt").unlink()
+    (lws / "late.md").write_text("# late\n")
+    (ws / "part.md").write_text("# part\n")
+    monkeypatch.setattr(member_tree, "GIT_CHECK_ENTRIES", 3)
+    move, raced = SharedVersion._move, []
+
+    def lose_the_race(self: SharedVersion, *args: Any) -> Any:
+        if not raced:  # the leader's share moves the team's version first
+            raced.append("racing")
+            raced[0] = team.shared.share("lead", lead_pdir).status
+        return move(self, *args)
+
+    monkeypatch.setattr(SharedVersion, "_move", lose_the_race)  # team.shared is made anew
+    with pytest.raises(TeamFailure) as failed:
+        team._share("builder", "act-1", None)
+
+    assert raced == ["shared"]
+    assert str(failed.value) == (
+        "builder's share could not be carried out: the team's version moved during the share, "
+        f"and merging it again could not run: {ENTRIES_3}")
+    assert (ws / "l0.txt").exists()  # the first merge had written into the folder
+    assert _notices(led, run_id, "builder") == []
+    assert _events(led, run_id, "share_refused") == []
 
 
 # --- refusals in a row: the member rests, and Temper asks once ----------------------------------

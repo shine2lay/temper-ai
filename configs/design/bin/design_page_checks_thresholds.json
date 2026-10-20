@@ -30,7 +30,9 @@
   "track_cover": 0.5,
   "set_size_tolerance": 0.1,
   "edge_px": 2,
-  "decided": "2026-10-20 by Design (home), H12 (queue #114), before any code; not calibrated on results"
+  "decided": "2026-10-20 by Design (home), H12 (queue #114), before any code; not calibrated on results",
+  "inside_share": 0.5,
+  "inside_share_decided": "2026-10-20 09:40 PDT by Design (home), H12b as revised (queue #118, rm-cc683a0d), before the vacancy-v2 seal and any H12b code: a grid or flex-row container that lies inside the run (not holding it) qualifies only when its height is at least this share of the run's height, the same 'at least half' convention as track_cover. Chosen with new-craft02's share known (its .cards grid 281.58 px of a 464 px run, 0.61), so the honest tests are the fresh vacancy-v2 pages (a 0.55/0.45 pair and a thin chip-row control) and the real sheet; not calibrated on results."
  },
  "signifier": {
   "min_channel_diff": 10,

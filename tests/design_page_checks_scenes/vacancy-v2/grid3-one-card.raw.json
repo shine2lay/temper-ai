@@ -1,0 +1,109 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Plans",
+    "height": 512,
+    "section": "Plans",
+    "share": 0.43,
+    "side": "right",
+    "top": 204,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 479,
+    "x": 721
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Plans",
+     "Every plan includes the booking calendar, the room displays and guest sign-in, so a team can start with one room and grow.",
+     "Starter",
+     "One shared calendar, five rooms and email reminders for a small office.",
+     "Twelve dollars a month, billed monthly."
+    ],
+    "name": "Plans"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     580
+    ],
+    "chrome": false,
+    "name": "Plans"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Plans"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Plans",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

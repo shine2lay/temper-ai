@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise guides (vacancy-v2: bottom-band-outside)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Heading and a 36em intro, then three equal tracks with one card in the first, the grid padded at the bottom
+     so its box ends just outside one band below the empty-column run (near-threshold pair with bottom-band-inside). */
+  .intro { max-width: 36em; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; padding-bottom: 24px; }
+  .guide { height: 320px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Guides">
+    <div class="wrap">
+      <h2>Guides</h2>
+      <p class="intro">Short guides for the people who set Roomwise up and the people who use it every day.</p>
+      <div class="grid3">
+        <article class="card guide">
+          <h3>Set up your first room</h3>
+          <p>Name it, give it a size and the hours it can be booked, then put it on the board.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

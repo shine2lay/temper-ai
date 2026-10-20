@@ -1,0 +1,321 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Three ways in",
+    "height": 464,
+    "section": "classes",
+    "share": 0.48,
+    "side": "right",
+    "top": 806,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 568,
+    "x": 664
+   },
+   {
+    "beside": "Two hours, one skill at a time. You leave with clay under yo",
+    "height": 320,
+    "section": "how",
+    "share": 0.45,
+    "side": "left",
+    "top": 1609,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       1
+      ],
+      "sel": "#how > div.wrap.how-grid",
+      "tracks": [
+       [
+        48,
+        515
+       ],
+       [
+        579,
+        1232
+       ]
+      ]
+     },
+     "evidence": {
+      "item": "#how > div.wrap.how-grid > div",
+      "overlap": 467
+     },
+     "reason": "in_item"
+    },
+    "width": 531,
+    "x": 48
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Pottery classes on Harbour Street",
+     "Make something you’ll keep.",
+     "Small wheel and hand-building classes for complete beginners and returning potters. Six people a class, with clay, glazes and firing included."
+    ],
+    "name": "hero"
+   },
+   {
+    "blocks": [
+     "Three ways in",
+     "Every class is taught by a working potter and capped at six people, so there is always a hand free when the clay misbehaves.",
+     "Wednesdays, six weeks",
+     "Wheel basics",
+     "Centre the clay, open it and pull your first cylinders. By week six you will trim and glaze a set of cups.",
+     "$240, clay and firing included"
+    ],
+    "name": "classes"
+   },
+   {
+    "blocks": [
+     "How a class runs",
+     "Two hours, one skill at a time. You leave with clay under your nails and a piece on the drying shelf.",
+     "1",
+     "Arrive and settle in",
+     "Aprons, tools and tea are ready. Six people a class means there is room to ask anything.",
+     "2",
+     "Watch, then try",
+     "A short demonstration, then your hands in the clay with a teacher beside you.",
+     "3",
+     "Shape now, trim later",
+     "Pieces dry for a week before trimming. Nothing is wasted: spare clay is recycled.",
+     "4",
+     "Glaze and collect",
+     "Choose from twelve house glazes. We fire everything and send a message when it is ready."
+    ],
+    "name": "how"
+   },
+   {
+    "blocks": [
+     "Keep going after your course",
+     "Open studio gives members wheel time four evenings a week, a shelf of their own and firing included."
+    ],
+    "name": "open-studio"
+   },
+   {
+    "blocks": [
+     "Prices",
+     "Clay, glazes and firing are included in every price. Gift vouchers cover any class.",
+     "Taster evening Two hours, one fired piece $45",
+     "Open studio Monthly membership, four evenings a week $95",
+     "Hand-building Four Saturday sessions $160",
+     "Private session Two hours for one or two people $120",
+     "Wheel basics Six Wednesday sessions $240",
+     "Gift voucher Any class, valid for a year from $45"
+    ],
+    "name": "prices"
+   },
+   {
+    "blocks": [
+     "Questions",
+     "Do I need any experience?",
+     "None. Taster evenings and Wheel basics start from zero.",
+     "What should I wear?",
+     "Clothes you do not mind getting muddy. We lend aprons and towels.",
+     "Can I miss a week?",
+     "Tell us a day ahead and join the same session of the next course.",
+     "Is it suitable for children?",
+     "Classes are for ages 16 and up. Family afternoons run in school holidays."
+    ],
+    "name": "questions"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "fill": 2,
+    "underline": 1
+   },
+   "checked": 3,
+   "nav_links": 10,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   48,
+   1232
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 3668,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     93
+    ],
+    "chrome": true,
+    "name": "header"
+   },
+   {
+    "box": [
+     0,
+     93,
+     1280,
+     608
+    ],
+    "chrome": false,
+    "name": "hero"
+   },
+   {
+    "box": [
+     0,
+     701,
+     1280,
+     676
+    ],
+    "chrome": false,
+    "name": "classes"
+   },
+   {
+    "box": [
+     0,
+     1376,
+     1280,
+     666
+    ],
+    "chrome": false,
+    "name": "how"
+   },
+   {
+    "box": [
+     0,
+     2042,
+     1280,
+     314
+    ],
+    "chrome": false,
+    "name": "open-studio"
+   },
+   {
+    "box": [
+     0,
+     2356,
+     1280,
+     682
+    ],
+    "chrome": false,
+    "name": "prices"
+   },
+   {
+    "box": [
+     0,
+     3038,
+     1280,
+     445
+    ],
+    "chrome": false,
+    "name": "questions"
+   },
+   {
+    "box": [
+     0,
+     3483,
+     1280,
+     185
+    ],
+    "chrome": true,
+    "name": "footer"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0.14,
+   "none": [
+    "classes",
+    "how",
+    "open-studio",
+    "prices",
+    "questions"
+   ],
+   "sections": [
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "header",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "Three handmade pots on a wooden shelf",
+       "size": [
+        403,
+        336
+       ],
+       "top": 221
+      }
+     ],
+     "name": "hero",
+     "share": 0.18
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "classes",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "how",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "open-studio",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "prices",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "questions",
+     "share": 0
+    },
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "footer",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

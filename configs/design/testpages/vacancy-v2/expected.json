@@ -1,0 +1,99 @@
+{
+ "about": "Answer key for the keyed empty-column pages vacancy-v2 (queue #118, W10c, hypothesis H12b in ~/design-lab/homepage-workflow/HYPOTHESES.md, as revised 2026-10-20 09:40 PDT before the seal). Every page puts a heading and an intro above the grid or row, the arrangement real pages put around a slot (H12 missed new-craft02, whose run starts at its heading). Each page holds one empty-column run that the unchanged page check finds (runs listed from a capture with b9c96c0e's design_capture.py --page-checks, vacancy on, desktop 1280x800, host headless browser; box numbers from the same browser). 'answer' and 'reason' come from how each page was built, under the H12 rule plus H12b's one change decided by Design (home) before any code (docs/design.md, 'Empty-column vacancy'). Keyed and sealed (~/design-lab/seals/vacancy-v2.json) before the H12b code was written. A mismatch is reported in ~/design-lab/homepage-workflow/wave2/W10c-REPORT.md and never fixed by editing this key; a fix needs a new hold-out.",
+ "written": "2026-10-20T10:06:23-07:00",
+ "viewport": "desktop",
+ "width": 1280,
+ "rule": "H12 (vacancy-v1's key) plus H12b: a grid or flex-row ancestor of the content beside the run also qualifies when it covers the run's x-range (within edge_px), lies vertically within the run give or take one band (y0 >= run top - 16, y1 <= run end + 16) and is at least inside_share (0.5) of the run's height; the tests then use the part of the run inside that container; the smallest qualifying container is used. yes: vacant_track, trailing or orphan; no: in_item, between, block, below_bar, outside_items. Thresholds: track_cover 0.5, set_size_tolerance 0.10, edge_px 2, inside_share 0.5. Run spans below are y ranges in page px.",
+ "groups": {
+  "yes": ["grid3-one-card.html", "grid3-two-cards.html", "flex-trailing.html"],
+  "no": ["grid3-full-below-intro.html", "split-ends-early.html", "space-between-rows.html"],
+  "near_yes": ["share-055.html", "top-band-inside.html", "bottom-band-inside.html"],
+  "near_no": ["share-045.html", "top-band-outside.html", "bottom-band-outside.html"],
+  "control_no": ["chip-row-control.html"]
+ },
+ "pairs": {
+  "share": ["share-055.html", "share-045.html"],
+  "top_band": ["top-band-inside.html", "top-band-outside.html"],
+  "bottom_band": ["bottom-band-inside.html", "bottom-band-outside.html"]
+ },
+ "pages": {
+  "grid3-one-card.html": {
+   "runs": [
+    {"section": "Plans", "side": "right", "x": 721, "width": 479, "height": 512, "top": 204, "answer": "yes", "reason": "vacant_track",
+     "why": "Heading and a 36em intro, then three equal tracks (repeat(3, 1fr)) with one card in track 1. The run (204-716) starts at the heading; the grid (345.39-705.39) covers its x-range, lies inside it and is 360/512 = 0.70 of its height. Tracks 2 and 3 hold no item and the run covers track 3 (848-1200) whole."}
+   ]
+  },
+  "grid3-two-cards.html": {
+   "runs": [
+    {"section": "Plans", "side": "right", "x": 816, "width": 384, "height": 512, "top": 204, "answer": "yes", "reason": "vacant_track",
+     "why": "Heading and intro, then three equal tracks with cards in tracks 1 and 2. The grid (345.39-705.39) lies inside the run (204-716), 0.70 of its height; track 3 (848-1200) holds no item and the run covers it whole."}
+   ]
+  },
+  "flex-trailing.html": {
+   "runs": [
+    {"section": "Stories", "side": "right", "x": 816, "width": 384, "height": 512, "top": 204, "answer": "yes", "reason": "trailing",
+     "why": "Heading and intro, then a flex row (345.39-705.39, 0.70 of the run 204-716) of two 352 px cards (80-432, 464-816). No item overlaps the run (816-1200), which reaches the row's end edge 1200: trailing space."}
+   ]
+  },
+  "grid3-full-below-intro.html": {
+   "runs": [
+    {"section": "Rooms", "side": "right", "x": 728, "width": 472, "height": 384, "top": 204, "answer": "no", "reason": "block",
+     "why": "Heading, three lead paragraphs and an intro, all 36em, then a full grid of three cards. The run (204-588) lies beside the text only: the grid starts at 609.39, more than one band below the run, so no container qualifies; block flow."}
+   ]
+  },
+  "split-ends-early.html": {
+   "runs": [
+    {"section": "Questions", "side": "middle", "x": 111, "width": 455, "height": 832, "top": 412, "answer": "no", "reason": "in_item",
+     "why": "Heading and intro, then a 2fr 3fr grid (.split) that holds the run: track 1 has a short note whose content ends early, track 2 the answers. The run overlaps the note's item box (80-502.39, stretched to the row): a column that ends early. No smaller grid or flex row covers the run's x-range."}
+   ]
+  },
+  "space-between-rows.html": {
+   "runs": [
+    {"section": "Notifications", "side": "middle", "x": 342, "width": 638, "height": 400, "top": 348, "answer": "no", "reason": "block",
+     "why": "Heading and intro, then six flex rows with justify-content: space-between (label left, select right) in a block list. Each row covers the run's x-range and lies inside the run (348-748) but is 68/400 = 0.17 of its height, under inside_share; the list is block flow, so no container qualifies: spread space, block."}
+   ]
+  },
+  "share-055.html": {
+   "runs": [
+    {"section": "Add-ons", "side": "right", "x": 718, "width": 482, "height": 480, "top": 204, "answer": "yes", "reason": "vacant_track",
+     "why": "Heading, a lead and an intro (36em), then three equal tracks with one 264 px card in track 1. The grid (415.39-679.39) lies inside the run (204-684) and is 264/480 = 0.55 of its height, at least inside_share 0.5. Tracks 2 and 3 hold no item; the run covers track 3 whole. Near-threshold pair with share-045."}
+   ]
+  },
+  "share-045.html": {
+   "runs": [
+    {"section": "Add-ons", "side": "right", "x": 718, "width": 482, "height": 400, "top": 204, "answer": "no", "reason": "block",
+     "why": "As share-055 with a 180 px card: the grid (415.39-595.39) lies inside the run (204-604) but is 180/400 = 0.45 of its height, under inside_share 0.5, and does not hold the run: no container qualifies, block flow."}
+   ]
+  },
+  "top-band-inside.html": {
+   "runs": [
+    {"section": "Plans", "side": "right", "x": 709, "width": 491, "height": 416, "top": 380, "answer": "yes", "reason": "vacant_track",
+     "why": "Heading, intro and a divider; the run (380-796) starts under the divider and goes on beside the note under the grid. The grid (padding-top 24, box 366.39-710.39) starts 13.61 px above the run, within one band, ends inside it and is 344/416 = 0.83 of its height; it does not hold the run (ends 85.61 px short). One card in track 1; the run covers track 3 whole."}
+   ]
+  },
+  "top-band-outside.html": {
+   "runs": [
+    {"section": "Plans", "side": "right", "x": 709, "width": 491, "height": 416, "top": 396, "answer": "no", "reason": "block",
+     "why": "As top-band-inside with padding-top 40: the run is 396-812 and the grid (366.39-726.39) starts 29.61 px above it, more than one band, and does not hold it (ends 85.61 px short): no container qualifies, block flow."}
+   ]
+  },
+  "bottom-band-inside.html": {
+   "runs": [
+    {"section": "Guides", "side": "right", "x": 685, "width": 515, "height": 464, "top": 204, "answer": "yes", "reason": "vacant_track",
+     "why": "Heading and intro, then three equal tracks with one card in track 1, the grid padded 8 px at the bottom. The run (204-668) starts at the heading; the grid (345.39-673.39) ends 5.39 px past the run's end, within one band, and is 328/464 = 0.71 of its height. Tracks 2 and 3 hold no item; the run covers track 3 whole."}
+   ]
+  },
+  "bottom-band-outside.html": {
+   "runs": [
+    {"section": "Guides", "side": "right", "x": 685, "width": 515, "height": 464, "top": 204, "answer": "no", "reason": "block",
+     "why": "As bottom-band-inside with padding-bottom 24: the grid (345.39-689.39) ends 21.39 px past the run's end (668), more than one band, and starts too low to hold the run: no container qualifies, block flow."}
+   ]
+  },
+  "chip-row-control.html": {
+   "runs": [
+    {"section": "About", "side": "right", "x": 707, "width": 493, "height": 384, "top": 204, "answer": "no", "reason": "block",
+     "why": "Control: heading and four 36em paragraphs, then a full-width flex row of four chips with trailing space on its right. The chip row (539.39-577.39) covers the run's x-range and lies inside the run (204-588), but is 38/384 = 0.10 of its height, under inside_share 0.5: no container qualifies, block flow (without the share guard it would read as trailing space)."}
+   ]
+  }
+ }
+}

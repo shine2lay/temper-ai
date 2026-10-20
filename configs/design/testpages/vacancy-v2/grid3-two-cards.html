@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise plans (vacancy-v2: grid3-two-cards)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Heading and a 36em intro, then three equal tracks with cards in the first two. */
+  .intro { max-width: 36em; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+  .plan { min-height: 360px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Plans">
+    <div class="wrap">
+      <h2>Plans</h2>
+      <p class="intro">Every plan includes the booking calendar, the room displays and guest sign-in, so a team can start with one room and grow.</p>
+      <div class="grid3">
+        <article class="card plan">
+          <h3>Starter</h3>
+          <p>One shared calendar, five rooms and email reminders for a small office.</p>
+          <p>Twelve dollars a month, billed monthly.</p>
+        </article>
+        <article class="card plan">
+          <h3>Team</h3>
+          <p>Twenty rooms, room displays and guest sign-in at the front desk.</p>
+          <p>Forty dollars a month, billed monthly.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

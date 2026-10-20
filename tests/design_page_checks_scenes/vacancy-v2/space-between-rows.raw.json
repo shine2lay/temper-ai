@@ -1,0 +1,115 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Email me when a room is booked Every booking Never",
+    "height": 400,
+    "section": "Notifications",
+    "share": 0.57,
+    "side": "middle",
+    "top": 348,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 638,
+    "x": 342
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Notifications",
+     "Choose what Roomwise tells you and how. Changes apply to every room you look after.",
+     "Email me when a room is booked",
+     "Remind me before a meeting",
+     "Tell me when a room is freed",
+     "Weekly usage report",
+     "Guest arrivals",
+     "Room display alerts"
+    ],
+    "name": "Notifications"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 6,
+    "native control": 6
+   },
+   "checked": 6,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     628
+    ],
+    "chrome": false,
+    "name": "Notifications"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Notifications"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Notifications",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

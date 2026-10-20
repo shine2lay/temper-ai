@@ -1,0 +1,109 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Add-ons",
+    "height": 400,
+    "section": "Add-ons",
+    "share": 0.43,
+    "side": "right",
+    "top": 204,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 482,
+    "x": 718
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Add-ons",
+     "Add-ons are billed with your plan, on the same invoice, and every one of them works in every room you have.",
+     "Extras you can switch on for any plan, one room at a time, and switch off again at the end of the month without a call.",
+     "Room displays",
+     "A screen by the door that shows who has the room and when it is free."
+    ],
+    "name": "Add-ons"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     470
+    ],
+    "chrome": false,
+    "name": "Add-ons"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Add-ons"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Add-ons",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

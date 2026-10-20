@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise stories (vacancy-v2: flex-trailing)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Heading and a 36em intro, then a flex row of two fixed-width cards that stops short of the frame. */
+  .intro { max-width: 36em; }
+  .row { display: flex; gap: 32px; }
+  .row > .card { flex: 0 0 352px; min-height: 360px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Stories">
+    <div class="wrap">
+      <h2>Stories</h2>
+      <p class="intro">Two offices told us how they moved their meeting rooms off a shared spreadsheet and what changed in the first month.</p>
+      <div class="row">
+        <article class="card story">
+          <h3>Harbor Dental</h3>
+          <p>Four treatment rooms and one meeting room, booked from the front desk in seconds.</p>
+        </article>
+        <article class="card story">
+          <h3>Northside Legal</h3>
+          <p>Client rooms are held for visitors, and the displays show who is next.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

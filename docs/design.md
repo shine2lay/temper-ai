@@ -359,6 +359,59 @@ The candidate `craft_anchors` stage leaves candidates out of the critic's
 Readers of these outputs:
 `~/design-lab/homepage-workflow/wave2/w10b/READERS.md`.
 
+**H12b: a container inside the run (queue #118, 2026-10-20).** H12 missed
+one known case: on new-craft02 the run starts at the "Three ways in"
+heading, beside block-flow heading and intro, and the one-card
+`repeat(3, 1fr)` grid starts about 177 px lower, so no container held the
+run and the plain vacant slot came out `block`. Real pages put a heading
+and an intro above a slot, so H12b (HYPOTHESES.md, decided by Design
+(home) before any code) adds one way for a container to qualify:
+
+- As well as a container that holds the run (above, unchanged), a grid or
+  flex-row ancestor of the content beside the run qualifies when it lies
+  inside the run: it covers the run's x-range (within `edge_px`), its box
+  lies within the run give or take one band (top at least the run's top
+  less one band, bottom at most the run's end plus one band), and its
+  height is at least `vacancy.inside_share` (0.5) of the run's height.
+  The walk up from each beside element still stops at the first grid or
+  flex-row ancestor that qualifies either way, and the smallest of the
+  containers found is used, as before.
+- For a container that lies inside the run, the tests (vacant track,
+  trailing space, orphan, in_item, between) run on the part of the run
+  inside it: the y-range they use is the run clipped to the container's
+  box. The rest of the run, beside block-flow heading or intro, adds
+  nothing. *Added* (the text left it open): a container that holds the run
+  keeps the run's whole span, exactly as before, so its answers and
+  evidence do not move; and when a container meets both tests it counts
+  as holding. The answer's `container` object carries `inside` (the
+  container's share of the run's height and the clipped span) only when
+  the container was taken as lying inside the run.
+- Revised before the seal or any code (2026-10-20 09:40 PDT, from #118's
+  question): the first text asked the inner container to be at least
+  `empty_column.min_height` (300 px) tall. #118 measured new-craft02's
+  grid at 281.58 px, so that clause was certain to miss the case H12b is
+  for; min_height is the run's own minimum, and a card grid needs no
+  300 px. The guard's real job is to keep a thin row inside a tall run (a
+  full-width chip or button row) from turning a block-flow gap into a
+  vacancy, so it asks whether most of the run lies beside the layout.
+  `inside_share` 0.5 was chosen with new-craft02's share known (281.58 of
+  464 px, 0.61): that case is no test of the number. The honest tests are
+  the fresh hold-out pages and the real-page sheet.
+- Hold-out: `configs/design/testpages/vacancy-v2` (13 pages, key
+  `expected.json`), keyed and sealed (`~/design-lab/seals/vacancy-v2.json`)
+  before the H12b code: yes pages (one card in three tracks, two cards in
+  three, flex trailing space), no pages (a full grid below an intro, a
+  split whose column ends early, space-between rows), near-threshold
+  pairs (the container's share at 0.55 and 0.45; its top just inside and
+  just outside one band; its bottom just inside and just outside one
+  band) and a control (a thin full-width chip row with trailing space in
+  a tall run, no). Every page has a heading and an intro above its grid
+  or row.
+- Nothing else changes: no rule, threshold, band, filter or candidate
+  order; the pass stays opt-in (`DESIGN_PAGE_CHECKS_VACANCY=1`, the
+  candidate path only). Proofs: `~/design-lab/homepage-workflow/wave2/w10c`
+  and `W10c-REPORT.md`.
+
 ## Files
 
 | Path | What |

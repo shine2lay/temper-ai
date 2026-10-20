@@ -1,0 +1,110 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Stories",
+    "height": 512,
+    "section": "Stories",
+    "share": 0.34,
+    "side": "right",
+    "top": 204,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 384,
+    "x": 816
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Stories",
+     "Two offices told us how they moved their meeting rooms off a shared spreadsheet and what changed in the first month.",
+     "Harbor Dental",
+     "Four treatment rooms and one meeting room, booked from the front desk in seconds.",
+     "Northside Legal",
+     "Client rooms are held for visitors, and the displays show who is next."
+    ],
+    "name": "Stories"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     580
+    ],
+    "chrome": false,
+    "name": "Stories"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Stories"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Stories",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

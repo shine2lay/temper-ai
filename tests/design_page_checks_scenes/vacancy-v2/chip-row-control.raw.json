@@ -1,0 +1,113 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "About Roomwise",
+    "height": 384,
+    "section": "About",
+    "share": 0.44,
+    "side": "right",
+    "top": 204,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 493,
+    "x": 707
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "About Roomwise",
+     "Roomwise started in a shared office where four teams fought over two meeting rooms and a spreadsheet nobody kept up to date.",
+     "We built a board that shows every room at once, a calendar that books them in two taps and a display by the door that tells the next team when to come in.",
+     "Today Roomwise runs meeting rooms in dental practices, law firms, schools and shared offices, from one room to a few hundred.",
+     "The company is twelve people in two cities, and every one of them answers the support line at least one day a month.",
+     "Offices",
+     "Clinics",
+     "Schools",
+     "Coworking"
+    ],
+    "name": "About"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     452
+    ],
+    "chrome": false,
+    "name": "About"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "About"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "About",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise rooms (vacancy-v2: grid3-full-below-intro)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Heading and a long 36em intro (the empty column is beside the words), then a full three-card grid. */
+  .lead, .intro { max-width: 36em; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+  .room { min-height: 240px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Rooms">
+    <div class="wrap">
+      <h2>Rooms</h2>
+      <p class="lead">Roomwise treats every space as a room: the big boardroom, the two-person phone booth, the quiet corner by the window and the desk a visitor borrows for an afternoon.</p>
+      <p class="lead">Each room has a name, a size, the things in it and the hours it can be booked, and the board shows all of them at once so nobody walks the floor looking for a free one.</p>
+      <p class="lead">Rooms can be grouped by floor or by building, and a group can be hidden from visitors or opened to the whole company.</p>
+      <p class="intro">When a meeting ends early the room goes back on the board at once, and when nobody turns up it is released after ten minutes.</p>
+      <div class="grid3">
+        <article class="card room">
+          <h3>Boardroom</h3>
+          <p>Twelve seats, a wall screen and a speakerphone for the whole team.</p>
+        </article>
+        <article class="card room">
+          <h3>Phone booth</h3>
+          <p>One seat, a door that closes and a socket for a laptop.</p>
+        </article>
+        <article class="card room">
+          <h3>Window corner</h3>
+          <p>Four soft chairs and a low table for a relaxed catch-up.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

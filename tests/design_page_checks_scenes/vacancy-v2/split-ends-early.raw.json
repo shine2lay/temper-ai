@@ -1,0 +1,139 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Write to us and a person answers within a working day.",
+    "height": 832,
+    "section": "Questions",
+    "share": 0.41,
+    "side": "middle",
+    "top": 412,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       1
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.split",
+      "tracks": [
+       [
+        80,
+        502
+       ],
+       [
+        566,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "item": "section:nth-of-type(2) > div.wrap > div.split > div.note",
+      "overlap": 391
+     },
+     "reason": "in_item"
+    },
+    "width": 455,
+    "x": 111
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Questions",
+     "What people ask before they book their first room, answered by the team that answers the support line.",
+     "Still unsure?",
+     "Write to us and a person answers within a working day.",
+     "Can I try Roomwise before I pay?",
+     "Yes. Every plan starts with a thirty-day trial, and you add a card only when you decide to stay.",
+     "Does it work with our calendar?",
+     "Roomwise syncs with the calendar your team already uses, both ways, within a minute.",
+     "What happens when nobody turns up?",
+     "After ten minutes without a check-in the room goes back on the board for someone else.",
+     "Can visitors book a room?",
+     "Visitors cannot book, but you can send them a guest pass that shows their room on a map.",
+     "Do we need tablets by every door?",
+     "No. Room displays are optional; the board on any phone or laptop is enough.",
+     "How do we leave?",
+     "Export your bookings as a file and close the account in settings; there is nothing else to sign."
+    ],
+    "name": "Questions"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 1291,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     1126
+    ],
+    "chrome": false,
+    "name": "Questions"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Questions"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Questions",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

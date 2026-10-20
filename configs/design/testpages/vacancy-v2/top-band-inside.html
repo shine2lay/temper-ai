@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise plans (vacancy-v2: top-band-inside)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Heading, a 36em intro and a divider; then three equal tracks with one card in the first, the grid padded at
+     the top so its box starts just inside one band above the empty-column run; a short note under the grid keeps
+     the run going below it (near-threshold pair with top-band-outside). */
+  .intro { max-width: 36em; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; padding-top: 24px; }
+  .plan { height: 320px; }
+  .after { max-width: 36em; margin: 32px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Plans">
+    <div class="wrap">
+      <h2>Plans</h2>
+      <p class="intro">Every plan includes the booking calendar, the room displays and guest sign-in.</p>
+      <div class="rule"></div>
+      <div class="grid3">
+        <article class="card plan">
+          <h3>Starter</h3>
+          <p>One shared calendar, five rooms and email reminders for a small office.</p>
+          <p>Twelve dollars a month, billed monthly.</p>
+        </article>
+      </div>
+      <p class="after">Prices are per office and exclude sales tax. Larger teams can ask us for a quote.</p>
+      <p>Switch plans at any time; the change applies from the next month.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

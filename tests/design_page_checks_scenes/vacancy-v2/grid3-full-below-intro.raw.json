@@ -1,0 +1,115 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Rooms",
+    "height": 384,
+    "section": "Rooms",
+    "share": 0.42,
+    "side": "right",
+    "top": 204,
+    "vacancy": {
+     "answer": "no",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     },
+     "reason": "block"
+    },
+    "width": 472,
+    "x": 728
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Rooms",
+     "Roomwise treats every space as a room: the big boardroom, the two-person phone booth, the quiet corner by the window and the desk a visitor borrows for an afternoon.",
+     "Each room has a name, a size, the things in it and the hours it can be booked, and the board shows all of them at once so nobody walks the floor looking for a free one.",
+     "Rooms can be grouped by floor or by building, and a group can be hidden from visitors or opened to the whole company.",
+     "When a meeting ends early the room goes back on the board at once, and when nobody turns up it is released after ten minutes.",
+     "Boardroom",
+     "Twelve seats, a wall screen and a speakerphone for the whole team.",
+     "Phone booth",
+     "One seat, a door that closes and a socket for a laptop.",
+     "Window corner",
+     "Four soft chairs and a low table for a relaxed catch-up."
+    ],
+    "name": "Rooms"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 889,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     724
+    ],
+    "chrome": false,
+    "name": "Rooms"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Rooms"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Rooms",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

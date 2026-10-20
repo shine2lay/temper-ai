@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise about (vacancy-v2: chip-row-control)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Control: heading and a long 36em intro (a tall empty column beside the words), then a thin full-width flex
+     row of chips with trailing space. The row lies inside the run but is a small share of its height. */
+  .lead { max-width: 36em; }
+  .chips { display: flex; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .chips li { padding: 6px 14px; border: 1px solid #6b7280; border-radius: 999px; font-size: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="About">
+    <div class="wrap">
+      <h2>About Roomwise</h2>
+      <p class="lead">Roomwise started in a shared office where four teams fought over two meeting rooms and a spreadsheet nobody kept up to date.</p>
+      <p class="lead">We built a board that shows every room at once, a calendar that books them in two taps and a display by the door that tells the next team when to come in.</p>
+      <p class="lead">Today Roomwise runs meeting rooms in dental practices, law firms, schools and shared offices, from one room to a few hundred.</p>
+      <p class="lead">The company is twelve people in two cities, and every one of them answers the support line at least one day a month.</p>
+      <ul class="chips" aria-label="Who uses Roomwise">
+        <li>Offices</li>
+        <li>Clinics</li>
+        <li>Schools</li>
+        <li>Coworking</li>
+      </ul>
+    </div>
+  </section>
+</main>
+</body>
+</html>

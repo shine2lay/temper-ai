@@ -36,12 +36,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextlib
 import http.server
 import json
 import os
 import pathlib
 import re
-import shutil
 import sys
 import tempfile
 import threading
@@ -56,6 +56,7 @@ fac = sys.modules.get("first_app_check")
 if fac is None:
     import first_app_check as fac  # noqa: E402
 fs = fac.shared_module()
+import first_app_p3_guard as guard  # noqa: E402
 
 FIXTURE = HERE.parent / "fixtures" / "p3_app"
 PROPOSAL = "/home/shinelay/qa-lab/project3-critical-journey/brief/QA-PROPOSAL-raised-bar.md"
@@ -91,9 +92,9 @@ PROFILE_KEYS = ("journey_p3", "origin", "pins", "build", "kit_id", "kit_sha256",
 
 # ---------------------------------------------------------------- engines and contexts
 
-CHROMIUM_OPTS = dict(fs.CONTEXT_OPTS)  # unchanged: 1280x800, en-US, UTC
+CHROMIUM_OPTS = dict(fs.CONTEXT_OPTS, serviceWorkers="block")  # P3 only; legacy options unchanged
 WEBKIT_OPTS = {"viewport": {"width": 390, "height": 844}, "deviceScaleFactor": 3, "isMobile": True,
-               "hasTouch": True, "locale": fac.LOCALE, "timezoneId": fac.TIMEZONE}
+               "hasTouch": True, "locale": fac.LOCALE, "timezoneId": fac.TIMEZONE, "serviceWorkers": "block"}
 ENGINES = {"chromium": {"opts": CHROMIUM_OPTS, "touch": False, "contexts": ("A", "B")},
            "webkit": {"opts": WEBKIT_OPTS, "touch": True, "contexts": ("P", "Q")}}
 CTX_ENGINE = {c: e for e, spec in ENGINES.items() for c in spec["contexts"]}
@@ -549,40 +550,20 @@ def waiting_record(row: dict, origin: str, wait_s: float, receipt_file: str) -> 
 # ---------------------------------------------------------------- browser code (playwright-mcp)
 
 SETUP = r"""async (page) => {
-  const browser = page.context().browser(); const t = () => new Date().toISOString();
+  const browser = page.context().browser();
+  __OBSERVERS__
   const W = __WORDING__; const ORIGIN = __ORIGIN__; const CTXS = __CTXS__;
   const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
-  const log = {requests: [], responses: [], failed: [], pageerrors: [], console: [], dialogs: [], websockets: [],
-    popups: [], crashes: [], serviceworkers: []};
-  const p3 = {log, seen: {}, users: {}}; page.__p3 = p3;
   const observers_at = t(); const contexts = {};
   for (const [name, spec] of Object.entries(CTXS)) {
-    const ctx = await browser.newContext(spec.opts); const u = {name, ctx, inflight: 0, p: null, touch: !!spec.touch};
-    p3.users[name] = u;
-    ctx.on('request', r => { u.inflight++; log.requests.push({t: t(), ctx: name, method: r.method(), url: r.url(),
-      type: r.resourceType(), navigation: r.isNavigationRequest()}); });
-    ctx.on('requestfinished', () => { u.inflight = Math.max(0, u.inflight - 1); });
-    ctx.on('requestfailed', r => { u.inflight = Math.max(0, u.inflight - 1); log.failed.push({t: t(), ctx: name,
-      method: r.method(), url: r.url(), error: (r.failure() || {}).errorText || null}); });
-    ctx.on('response', r => log.responses.push({t: t(), ctx: name, method: r.request().method(), url: r.url(),
-      status: r.status()}));
-    ctx.on('serviceworker', w => log.serviceworkers.push({t: t(), ctx: name, url: w.url()}));
-    ctx.on('page', pg => { if (u.p && pg !== u.p) log.popups.push({t: t(), ctx: name, url: pg.url()}); });
-    const p = await ctx.newPage(); u.p = p;
-    p.on('pageerror', e => log.pageerrors.push({t: t(), ctx: name, message: String(e && e.message || e).slice(0, 500)}));
-    p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') log.console.push({t: t(), ctx: name,
-      type: m.type(), text: m.text().slice(0, 500)}); });
-    p.on('dialog', d => { log.dialogs.push({t: t(), ctx: name, type: d.type(), message: d.message().slice(0, 300)});
-      d.dismiss().catch(() => {}); });
-    p.on('websocket', w => log.websockets.push({t: t(), ctx: name, url: w.url()}));
-    p.on('crash', () => log.crashes.push({t: t(), ctx: name}));
+    const ctx = await browser.newContext({...spec.opts, serviceWorkers: 'block'});
+    const u = p3.attach(ctx, name, spec.touch);  // track before newPage, storageState or any navigation
+    const p = await ctx.newPage(); u.p = p; u.attachPage(p);
     const st = await ctx.storageState();
     contexts[name] = {created_at: t(), first_url: p.url(), cookies: st.cookies.length, storage_origins: st.origins.length,
       touch: u.touch, viewport: p.viewportSize(), is_mobile: !!spec.opts.isMobile,
       device_scale_factor: spec.opts.deviceScaleFactor || 1};
   }
-  p3.drain = () => { const out = {}; for (const [k, v] of Object.entries(log)) { const from = p3.seen[k] || 0;
-    out[k] = v.slice(from); p3.seen[k] = v.length; } return out; };
   const one = async (loc, what) => { const n = await loc.count(); if (n !== 1) throw new Error(what + ': ' + n + ' found');
     return loc; };
   // Touch contexts tap, the others click (PH-1).
@@ -736,22 +717,63 @@ ROW = r"""async (page) => {
   return res;
 }"""
 
-DRAIN = "async (page) => page.__p3.drain()"
+DRAIN = guard.DRAIN
 SHOT = "async (page) => (await page.__p3.users[__CTX__].p.screenshot({type: 'png'})).toString('base64')"
-CLOSE = r"""async (page) => {
-  const p3 = page.__p3; const browser = page.context().browser(); const out = {contexts: {}};
-  for (const [name, u] of Object.entries(p3.users)) { let error = null;
-    try { await u.ctx.close(); } catch (e) { error = String(e).slice(0, 300); }
-    out.contexts[name] = {error, page_closed: u.p.isClosed(), context_still_in_browser: browser.contexts().includes(u.ctx)}; }
-  out.at = new Date().toISOString(); out.other_contexts_left = browser.contexts().filter(c => c !== page.context()).length;
+CLOSE = guard.CLOSE
+
+# These probes preserve pin/refusal data AND event observations, even on navigation/creation/close errors.
+PROBE = r"""async (page) => {
+  const browser = page.context().browser();
+  __OBSERVERS__
+  const out = {observers_at: t(), type: browser.browserType().name(), version: browser.version()};
+  const blocked = []; const ORIGIN = __ORIGIN__; const kind = __KIND__;
+  try {
+    const ctx = await browser.newContext({...__OPTS__, serviceWorkers: 'block'});
+    const u = p3.attach(ctx, 'probe', false);
+    await ctx.route(u => u.pathname.startsWith('/api/'), route => { blocked.push({method: route.request().method(),
+      url: route.request().url()}); return route.abort(); });
+    const p = await ctx.newPage(); u.p = p; u.attachPage(p);
+    if (kind !== 'engine') {
+      let r = null;
+      try { r = await p.goto(ORIGIN + '/', {waitUntil: 'load', timeout: 20000}); }
+      catch (e) { out.error = String(e && e.message || e); }
+      if (kind === 'down') out.down = !!out.error && /net::ERR_/.test(out.error);
+      if (!out.error) {
+        out.final_url = p.url(); out.status = r ? r.status() : null;
+        if (kind === 'pins') {
+          if (r) { try { out.root = {status: r.status(), content_type: r.headers()['content-type'] || null, url: r.url(),
+            b64: (await r.body()).toString('base64')}; } catch (e) { out.root = {error: String(e)}; } }
+          out.files = await p.evaluate(async (names) => { const res = {};
+            for (const n of names) { try { const r = await fetch(new URL(n, location.origin + '/').href, {cache: 'no-store'});
+              const b = new Uint8Array(await r.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 8192)
+                s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+              res[n] = {status: r.status, content_type: r.headers.get('content-type'), b64: btoa(s), url: r.url}; }
+              catch (e) { res[n] = {error: String(e)}; } } return res; }, __NAMES__);
+          out.refs = await p.evaluate(() => [...document.querySelectorAll(
+            'link[href],script[src],img[src],iframe[src],source[src],video[src],audio[src],embed[src],object[data]')]
+            .filter(e => !(e.tagName === 'LINK' && /^(alternate|canonical|author|help|license|next|prev|search)$/i.test(e.rel)))
+            .map(e => e.href || e.src || e.data).filter(Boolean));
+        }
+      }
+    }
+  } catch (e) { out.error = String(e && e.message || e); }
+  finally { out.api_blocked = blocked; out.disposal = await p3.close(); out.log = out.disposal.log;
+    out.closed = out.disposal.other_contexts_left === 0
+      && Object.values(out.disposal.contexts).every(x => !x.error && x.page_closed && !x.context_still_in_browser); }
   return out;
 }"""
-ENGINE_PROBE = ("async (page) => ({type: page.context().browser().browserType().name(), "
-                "version: page.context().browser().version()})")
 
 
 def setup_js(target: dict, engine: str) -> str:
-    return fs._js(SETUP, WORDING=target["wording"], ORIGIN=target["origin"], CTXS=context_specs(engine))
+    return fs._js(SETUP.replace('__OBSERVERS__', guard.OBSERVERS), WORDING=target["wording"],
+                  ORIGIN=target["origin"], CTXS=context_specs(engine))
+
+
+def probe_js(target: dict, kind: str, engine: str = "chromium") -> str:
+    if kind not in ("pins", "down", "engine"):
+        raise ValueError("unknown P3 probe kind: " + kind)
+    return fs._js(PROBE.replace('__OBSERVERS__', guard.OBSERVERS), ORIGIN=target["origin"], KIND=kind,
+                  OPTS=ENGINES[engine]["opts"], NAMES=list(target["pins"]))
 
 
 def row_js(row: dict, cached: dict | None = None) -> str:
@@ -792,11 +814,13 @@ def new_receipt(label: str, target: dict | None) -> dict:
                "checker_sha256": fac.sha256(pathlib.Path(fac.__file__).read_bytes()),
                "shared_module_sha256": fac.sha256(pathlib.Path(fs.__file__).read_bytes()),
                "p3_module_sha256": fac.sha256(pathlib.Path(__file__).read_bytes()),
+               "p3_guard_sha256": fac.sha256(pathlib.Path(guard.__file__).read_bytes()),
                "test_strings_from": {"file": PROPOSAL, "sha256": PROPOSAL_SHA256}, "started_at": fac.now(),
                "engines": {e: {"contexts": list(s["contexts"]), "options": s["opts"], "presses": "tap" if s["touch"]
                                else "click"} for e, s in ENGINES.items()},
                "settle": SETTLE_RULE, "steps": [], "steps_attempted": 0, "browser_contact": False,
-               "sessions": {}, "kit_not_checked": t.get("kit_not_checked"), "not_checked_here": list(NOT_CHECKED_HERE)}
+               "sessions": {}, "log": {}, "kit_not_checked": t.get("kit_not_checked"),
+               "not_checked_here": list(NOT_CHECKED_HERE)}
     if target:
         r["profile"] = {"source": t["source"], "sha256": t["profile_sha256"], "wording": t["wording"],
                         "users": t["users"], "host_wait_minutes": t["host_wait_minutes"]}
@@ -808,102 +832,167 @@ def new_receipt(label: str, target: dict | None) -> dict:
     return r
 
 
-def refuse_profile(text: str, problems: list[str], out: pathlib.Path, label: str) -> dict:
+def refuse_profile(text: str, problems: list[str], out: pathlib.Path, label: str, *, persist: bool = True) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     r = new_receipt(label, None)
     r["profile"] = {"source": "input", "sha256": fac.sha256(text.encode()), "problems": problems}
     fac.say(f"[{label}] profile not valid; the browser is not contacted: {'; '.join(problems)}")
-    return finish(r, out)
+    return finish(r, out, persist=persist)
 
 
-async def check_profile(args, text: str | None, out: pathlib.Path, label: str, budget_s: float) -> dict:
+async def check_profile(args, text: str | None, out: pathlib.Path, label: str, budget_s: float,
+                        latch: guard.StopLatch | None = None, *, persist: bool = True) -> dict:
     target, problems = parse_p3_profile(text)
     if problems:
-        return refuse_profile(text or "", problems, out, label)
-    return await check_target(args.browser, args.browser_webkit, target, out, label, out / "host", budget_s)
+        r = refuse_profile(text or "", problems, out, label, persist=persist)
+        if latch:
+            latch.bind(r)
+        return r
+    return await check_target(args.browser, args.browser_webkit, target, out, label, out / "host", budget_s,
+                              latch=latch, persist=persist)
 
 
-async def engine_probe(browser_url: str) -> dict:
-    return await asyncio.wait_for(fs.probe_session(browser_url, ENGINE_PROBE), WEBKIT_PROBE_S)
+@contextlib.asynccontextmanager
+async def open_session(url: str):
+    """P3's transport seam. Imports/connects only when explicitly invoked, never at import time."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    async with streamablehttp_client(url) as (rd, wr, _):
+        async with ClientSession(rd, wr) as session:
+            yield session
+
+
+def collect(r: dict, new: dict, origin: str, latch: guard.StopLatch, phase: str) -> None:
+    fac.merge_log(r.setdefault("log", {}), new or {})
+    latch.observe(r, new or {}, origin, phase)
+
+
+async def settled_cleanup(s, r, engine, label, latch, origin, *, probe=False):
+    """Cancellation cannot abandon an in-flight disposal. It is re-raised after disposal settles."""
+    task = asyncio.create_task(cleanup(s, r, engine, label, latch, origin, probe=probe))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
+
+
+async def probe_session(browser_url: str, code: str, *, r: dict, latch: guard.StopLatch,
+                        phase: str) -> dict:
+    """Keep probe observations even when its final MCP close or transport exit fails."""
+    got = {}
+    if latch.stopped:
+        return {"error": "invocation already stopped"}
+    try:
+        async with open_session(browser_url) as s:
+            try:
+                await s.initialize()
+                got = await _call(s, code)
+                if not isinstance(got, dict):
+                    got = {"error": "P3 probe did not return an object", "result_type": type(got).__name__}
+                collect(r, got.get("log") or {}, r["origin"], latch, phase)
+                r.setdefault("probes", {})[phase] = got
+                if got.get("error") and not got.get("down"):
+                    latch.block(phase + ": probe did not complete: " + got["error"])
+            finally:
+                await settled_cleanup(s, r, phase, r.get("label", "probe"), latch, r["origin"], probe=True)
+    except asyncio.CancelledError:
+        r.setdefault("runner_error", phase + ": cancelled")
+        raise
+    except Exception as exc:  # transport exit must not discard the already captured result/log
+        got.setdefault("error", exc_text(exc))
+        latch.block(phase + ": probe/transport failed: " + exc_text(exc))
+    latch.bind(r)
+    return got
+
+
+async def engine_probe(browser_url: str, target: dict, r: dict, latch: guard.StopLatch) -> dict:
+    return await asyncio.wait_for(probe_session(browser_url, probe_js(target, "engine", "webkit"),
+                                                r=r, latch=latch, phase="webkit-probe"), WEBKIT_PROBE_S)
 
 
 async def check_target(browser_url: str, webkit_url: str, target: dict, out: pathlib.Path, label: str,
-                       host_dir: pathlib.Path, budget_s: float, hooks: dict | None = None) -> dict:
-    """Stage A (pins, Chromium), B (Chromium rows and host rows), C (WebKit phone rows); receipt and summary."""
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+                       host_dir: pathlib.Path, budget_s: float, hooks: dict | None = None,
+                       latch: guard.StopLatch | None = None, *, persist: bool = True,
+                       receipt: dict | None = None) -> dict:
+    """Return only after final drain/disposal, never a pending True across cleanup."""
+    latch = latch if latch is not None else guard.StopLatch()
+    r = receipt if receipt is not None else new_receipt(label, target)
+    try:
+        await _check_target(browser_url, webkit_url, target, out, label, host_dir, budget_s, hooks or {}, r, latch)
+    except asyncio.CancelledError:
+        r["runner_error"] = "journey cancelled after disposal"
+        latch.block(r["runner_error"])
+        latch.bind(r)
+        finish(r, out, persist=persist)
+        raise
+    except Exception as exc:
+        r.setdefault("runner_error", exc_text(exc))
+        latch.block("unresolved journey/transport error: " + exc_text(exc))
+    latch.bind(r)
+    return finish(r, out, persist=persist)
 
+
+async def _check_target(browser_url, webkit_url, target, out, label, host_dir, budget_s, hooks, r, latch):
+    if latch.stopped:
+        r["runner_error"] = "invocation stopped before target"
+        return
     out.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + budget_s
-    r = new_receipt(label, target)
     if host_dir.exists() and any(host_dir.iterdir()):
         r["runner_error"] = f"{host_dir} is not empty: a host receipt must come after the check asks for it"
-        return finish(r, out)
+        return
     host_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(host_dir, 0o777)  # the host side (another user on the machine) writes its receipts here
+    os.chmod(host_dir, 0o777)  # existing provisional host wire; #125/#126 own compatibility
     r["host_dir"] = str(host_dir)
-    fac.say(f"[{label}] A: open {target['origin']}/ and fetch {', '.join(target['pins'])} in Chromium")
     r["browser_contact"] = True
-    try:
-        got = await fs.probe_session(browser_url, fs.pin_js(target))
-    except Exception as exc:  # noqa: BLE001 - the browser service itself: BLOCKED, not an app result
-        r["runner_error"] = f"stage A: {exc.__class__.__name__}: {str(exc)[:400]}"
-        return finish(r, out)
-    pins = fs.pin_result(got, target["pins"], target["origin"])
-    if pins.get("error"):
-        r["reach"] = {"error": pins["error"]}
-        return finish(r, out)
+    got = await probe_session(browser_url, probe_js(target, "pins"), r=r, latch=latch, phase="stage-A")
+    r["pins"] = fs.pin_result(got, target["pins"], target["origin"])
     r["reach"] = {"status": got.get("status"), "final_url": got.get("final_url")}
-    r["pins"] = pins
-    fac.say(f"[{label}] A: pins {'match' if pins['ok'] else 'DO NOT MATCH'}: "
-            + ", ".join(f"{f['file']} {'ok' if f['match'] else 'NO'}" for f in pins["files"]))
-    if not pins["ok"]:
-        return finish(r, out)
+    if r["pins"].get("error"):
+        r["reach"]["error"] = r["pins"]["error"]
+    if latch.stopped or not r["pins"].get("ok"):
+        return
     cached = cached_files(got)
     rows = p3_rows(target["wording"], target["users"])
-    r["log"], r["screenshots"] = {}, []
+    r["screenshots"] = []
     ok = True
     for engine, url in (("chromium", browser_url), ("webkit", webkit_url)):
         section = [x for x in rows if row_engine(x) in ((engine, "host") if engine == "chromium" else (engine,))]
         sess = r["sessions"][engine] = {"url": url, "rows": [x["id"] for x in section]}
-        if not ok:
-            sess["status"] = "NOT REACHED"
-            sess["why"] = "an earlier row did not pass"
+        if not ok or latch.stopped:
+            sess.update(status="NOT REACHED", why="earlier row, W4 or disposal stopped the invocation")
             continue
         if engine == "webkit":
             try:
-                probe = await engine_probe(url)
-            except BaseException as exc:  # noqa: BLE001 - timeouts and connection errors both mean: no WebKit here
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
-                probe = {"error": exc_text(exc)[:300]}
+                probe = await engine_probe(url, target, r, latch)
+            except TimeoutError as exc:
+                probe = {"error": exc_text(exc)}
+                latch.block("WebKit probe timed out; final state unresolved")
             sess["probe"] = probe
-            if not (isinstance(probe, dict) and probe.get("type") == "webkit"):
-                why = (f"the WebKit browser service at {url} did not answer ({probe.get('error')})"
-                       if isinstance(probe, dict) and probe.get("error") else
-                       f"the browser service at {url} is {(probe or {}).get('type')!r}, not webkit")
+            if latch.stopped or probe.get("type") != "webkit" or probe.get("error"):
+                why = "WebKit not available or invocation stopped: " + str(probe.get("error") or probe.get("type"))
                 sess.update(status="NOT RUN", why=why)
                 for x in section:
                     r["steps"].append({"id": x["id"], "kind": "browser", "engine": engine, "ctx": x["ctx"],
                                        "action": x["action"], "expected": x["expected"], "status": "NOT RUN",
                                        "reasons": [why], "traffic": [], "notes": []})
-                fac.say(f"[{label}] C: WebKit rows NOT RUN: {why}")
                 continue
         try:
-            async with streamablehttp_client(url) as (rd, wr, _):
-                async with ClientSession(rd, wr) as s:
+            async with open_session(url) as s:
+                try:
                     await s.initialize()
-                    try:
-                        ok = await run_section(s, r, engine, section, target, out, label, host_dir, deadline,
-                                               hooks or {}, browser_url, cached)
-                    finally:
-                        await cleanup(s, r, engine, label)
+                    ok = await run_section(s, r, engine, section, target, out, label, host_dir, deadline,
+                                           hooks, browser_url, cached, latch)
+                finally:
+                    await settled_cleanup(s, r, engine, label, latch, target["origin"])
+            ok = ok and not latch.stopped and r["cleanup"][engine]["confirmed"]
             sess["status"] = "RAN"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             r.setdefault("runner_error", f"{engine}: {exc_text(exc)}")
             sess["status"] = "ERROR"
+            latch.block("unresolved " + engine + " session: " + exc_text(exc))
             ok = False
-    return finish(r, out)
 
 
 def exc_text(exc: BaseException) -> str:
@@ -918,8 +1007,35 @@ async def _call(s, code):
 
 
 async def run_section(s, r: dict, engine: str, rows: list[dict], target: dict, out: pathlib.Path, label: str,
-                      host_dir: pathlib.Path, deadline: float, hooks: dict, browser_url: str, cached: dict) -> bool:
-    """One engine's rows in one MCP session (Chromium also carries the host rows). True when every row passed."""
+                      host_dir: pathlib.Path, deadline: float, hooks: dict, browser_url: str, cached: dict,
+                      latch: guard.StopLatch | None = None) -> bool:
+    latch = latch if latch is not None else guard.StopLatch()
+    if latch.stopped:
+        return False
+    result = False
+    try:
+        result = await _section_rows(s, r, engine, rows, target, out, label, host_dir, deadline, hooks,
+                                     browser_url, cached, latch)
+    finally:
+        try:
+            new = await _call(s, DRAIN)
+            collect(r, new or {}, target["origin"], latch, engine + ":final-drain")
+            late_traffic = fs.traffic_findings((new or {}).get("requests") or [], (new or {}).get("websockets") or [],
+                                               target["origin"])
+            late = late_traffic + fac.error_findings(new or {})
+            if late:
+                r.setdefault("late_findings", []).extend(f"{engine}: {x}" for x in late)
+            if late_traffic:
+                r.setdefault("late_traffic", []).extend(f"{engine}: {x}" for x in late_traffic)
+        except Exception as exc:
+            latch.block(engine + ": final observation drain failed: " + exc_text(exc))
+    latch.bind(r)
+    return result and not latch.stopped and not r.get("late_findings")
+
+
+async def _section_rows(s, r, engine, rows, target, out, label, host_dir, deadline, hooks,
+                        browser_url, cached, latch) -> bool:
+    """Rows only. The enclosing section and session own drain and unconditional disposal."""
     origin, w = target["origin"], target["wording"]
     setup = await _call(s, setup_js(target, engine))
     ctxs = setup["contexts"]
@@ -932,74 +1048,68 @@ async def run_section(s, r: dict, engine: str, rows: list[dict], target: dict, o
     if setup["browser_type"] != engine:
         r["runner_error"] = f"{engine} session is {setup['browser_type']}"
         return False
-    try:
-        for row in rows:
-            if row.get("host"):
-                step = await host_row(s, r, row, target, host_dir, deadline, label, browser_url)
-                r["steps"].append(step)
-                if step["status"] != "PASS":
-                    return False
-                continue
-            res = await _call(s, row_js(row, cached))
-            if not isinstance(res, dict):
-                raise RuntimeError(f"{row['id']}: the browser returned {repr(res)[:200]}")
-            obs = res.get("obs") or {}
-            if hooks.get("drop_observation") == row["id"]:
-                for o in obs.values():
-                    if isinstance(o, dict):
-                        o.pop("rows", None)
-            new = res.get("log") or {}
-            fac.merge_log(r["log"], new)
-            v = judge_row(row, obs, res.get("action_error"), new, origin, w)
-            if res.get("observe_error"):
-                v["reasons"].append(f"observation failed: {res['observe_error']}")
-                v["status"] = "FAIL" if v["status"] == "FAIL" else "BLOCKED"
-            notes = v["notes"] + ([f"SIM-5: {json.dumps(res['sim'])}; {json.dumps(sim_timing(new))}"]
-                                  if res.get("sim") else [])
-            r["steps_attempted"] += 1
-            r["steps"].append({"id": row["id"], "kind": "browser", "engine": engine, "ctx": row["ctx"],
-                               "action": row["action"], "expected": row["expected"], "acts": res.get("acts"),
-                               "action_started": res.get("started"), "action_ended": res.get("ended"),
-                               "observed": obs, "status": v["status"], "reasons": v["reasons"],
-                               "traffic": v["traffic"], "notes": notes, "text_diffs": v["text_diffs"]})
-            fac.say(f"[{label}] {row['id']} ({row['ctx']}, {engine}) {v['status']}"
-                    + (f" -- {'; '.join(v['reasons'])[:600]}" if v["reasons"] else "")
-                    + (f" -- traffic: {'; '.join(v['traffic'])}" if v["traffic"] else "")
-                    + (f" -- {'; '.join(notes)[:300]}" if notes else ""))
-            if v["status"] != "PASS" or v["traffic"]:
+    for row in rows:
+        if latch.stopped:
+            return False
+        if row.get("host"):
+            step = await host_row(s, r, row, target, host_dir, deadline, label, browser_url, latch)
+            r["steps"].append(step)
+            collect(r, await _call(s, DRAIN), origin, latch, engine + ":host-return")
+            if step["status"] != "PASS" or latch.stopped:
                 return False
-            if row["id"] in SHOTS:
-                ctx, name = SHOTS[row["id"]]
-                png = base64.b64decode(await _call(s, fs._js(SHOT, CTX=ctx)))
-                (out / name).write_bytes(png)
-                r["screenshots"].append({"file": name, "after": row["id"], "context": ctx, "engine": engine,
-                                         "taken_at": fac.now(), "bytes": len(png), "sha256": fac.sha256(png),
-                                         "viewport": ENGINES[engine]["opts"]["viewport"]})
-        return True
-    finally:
-        new = await _call(s, DRAIN)
-        fac.merge_log(r["log"], new or {})
-        late_traffic = fs.traffic_findings((new or {}).get("requests") or [], (new or {}).get("websockets") or [],
-                                           origin)
-        late = late_traffic + fac.error_findings(new or {})
-        if late:
-            r.setdefault("late_findings", []).extend(f"{engine}: {x}" for x in late)
-        if late_traffic:
-            r.setdefault("late_traffic", []).extend(f"{engine}: {x}" for x in late_traffic)
+            continue
+        res = await _call(s, row_js(row, cached))
+        if not isinstance(res, dict):
+            raise RuntimeError(f"{row['id']}: the browser did not return an object")
+        obs = res.get("obs") or {}
+        if hooks.get("drop_observation") == row["id"]:
+            for o in obs.values():
+                if isinstance(o, dict):
+                    o.pop("rows", None)
+        new = res.get("log") or {}
+        collect(r, new, origin, latch, engine + ":" + row["id"])
+        v = judge_row(row, obs, res.get("action_error"), new, origin, w)
+        if res.get("observe_error"):
+            v["reasons"].append(f"observation failed: {res['observe_error']}")
+            v["status"] = "FAIL" if v["status"] == "FAIL" else "BLOCKED"
+        notes = v["notes"] + ([f"SIM-5: {json.dumps(res['sim'])}; {json.dumps(sim_timing(new))}"]
+                              if res.get("sim") else [])
+        r["steps_attempted"] += 1
+        r["steps"].append({"id": row["id"], "kind": "browser", "engine": engine, "ctx": row["ctx"],
+                           "action": row["action"], "expected": row["expected"], "acts": res.get("acts"),
+                           "action_started": res.get("started"), "action_ended": res.get("ended"),
+                           "observed": obs, "status": v["status"], "reasons": v["reasons"],
+                           "traffic": v["traffic"], "notes": notes, "text_diffs": v["text_diffs"]})
+        fac.say(f"[{label}] {row['id']} ({row['ctx']}, {engine}) {v['status']}")
+        if v["status"] != "PASS" or v["traffic"] or latch.stopped:
+            return False
+        if row["id"] in SHOTS:
+            ctx, name = SHOTS[row["id"]]
+            png = base64.b64decode(await _call(s, fs._js(SHOT, CTX=ctx)))
+            guard.write_private(out / name, png)
+            r["screenshots"].append({"file": name, "after": row["id"], "context": ctx, "engine": engine,
+                                     "taken_at": fac.now(), "bytes": len(png), "sha256": fac.sha256(png),
+                                     "viewport": ENGINES[engine]["opts"]["viewport"]})
+    return True
 
 
 async def host_row(s, r: dict, row: dict, target: dict, host_dir: pathlib.Path, deadline: float, label: str,
-                   browser_url: str) -> dict:
+                   browser_url: str, latch: guard.StopLatch | None = None) -> dict:
     """A host step, as Project 2's (WAITING-<row>.json, then <row>.json), with Project 3's receipt rules: a kill
     is its own host action, exit_code is required and must be one of the action's values. After a restart or
     start the pins are checked again; after a stop or kill the origin must give no answer (both in Chromium,
     in a session of their own)."""
+    latch = latch if latch is not None else guard.StopLatch()
+    r.setdefault("origin", target["origin"])
+    r.setdefault("label", label)
+    # Drain the still-open journey session before asking for a host operation or a fresh probe.
+    collect(r, await _call(s, DRAIN), target["origin"], latch, row["id"] + ":before-host")
     rid = row["id"]
     wait_s = min(target["host_wait_minutes"] * 60, deadline - time.monotonic() - fs.RESERVE_S)
     step = {"id": rid, "kind": "host", "host_action": row["host"], "action": row["action"], "expected": row["expected"],
             "exit_codes": list(EXIT_CODES[row["host"]]), "traffic": [], "notes": []}
-    if wait_s <= 0:
-        step.update(status="BLOCKED", reasons=["no time left in the run to wait for the host"])
+    if wait_s <= 0 or latch.stopped:
+        step.update(status="BLOCKED", reasons=["invocation stopped or no time left to wait for the host"])
         return step
     asked = time.time()
     f = host_dir / f"{rid}.json"
@@ -1009,9 +1119,12 @@ async def host_row(s, r: dict, row: dict, target: dict, host_dir: pathlib.Path, 
     os.chmod(wf, 0o666)
     step.update(waiting_file=str(wf), asked_at=waiting["since"])
     fac.say(f"[{label}] host: {rid} asked ({row['host']}); waiting up to {int(wait_s)} s for {f}")
-    t0 = last_keep = time.monotonic()
+    t0 = time.monotonic()
     raw, rec, problem = None, None, None
     while time.monotonic() - t0 < wait_s:
+        collect(r, await _call(s, DRAIN), target["origin"], latch, rid + ":host-wait")
+        if latch.stopped:
+            break
         if f.exists():
             raw = f.read_bytes()
             rec, problem = fs.parse_host_receipt(raw, rid)
@@ -1022,28 +1135,29 @@ async def host_row(s, r: dict, row: dict, target: dict, host_dir: pathlib.Path, 
             if not problem and f.stat().st_mtime < asked - 1:
                 problem = "host receipt is older than the check's request"
             break
-        if time.monotonic() - last_keep >= 20:
-            await _call(s, fs.KEEPALIVE)
-            last_keep = time.monotonic()
         await asyncio.sleep(0.5)
+    collect(r, await _call(s, DRAIN), target["origin"], latch, rid + ":host-answer")
     step.update(waited_s=round(time.monotonic() - t0, 1), receipt=rec,
                 receipt_sha256=fac.sha256(raw) if raw is not None else None, answered_at=fac.now())
-    if raw is None:
+    if latch.stopped:
+        step.update(status="BLOCKED", reasons=["invocation stopped during host wait"])
+    elif raw is None:
         step.update(status="BLOCKED", reasons=[f"no host receipt within {int(wait_s)} s"])
     elif problem or (problem := receipt_problem(rec, row["host"])):
         step.update(status="BLOCKED", reasons=[problem])
     elif row["host"] in ("restart", "start"):
-        probe = fs.pin_result(await fs.probe_session(browser_url, fs.pin_js(target)), target["pins"], target["origin"])
+        got = await probe_session(browser_url, probe_js(target, "pins"), r=r, latch=latch, phase=rid + ":pins")
+        probe = fs.pin_result(got, target["pins"], target["origin"])
         step["probe"] = probe
-        if probe.get("error") or not probe.get("ok"):
+        if latch.stopped or probe.get("error") or not probe.get("ok"):
             step.update(status="BLOCKED", reasons=["after the host step the served files do not match the pins or the "
                                                    f"origin does not answer: {probe.get('error') or 'pins'}"])
         else:
             step.update(status="PASS", reasons=[])
     else:
-        probe = await fs.probe_session(browser_url, fs.down_js(target))
+        probe = await probe_session(browser_url, probe_js(target, "down"), r=r, latch=latch, phase=rid + ":down")
         step["probe"] = probe
-        if not (isinstance(probe, dict) and probe.get("down")):
+        if latch.stopped or not (isinstance(probe, dict) and probe.get("down")):
             step.update(status="BLOCKED", reasons=[f"after the host's {row['host']} the origin still answers: "
                                                    f"{probe!r}"[:300]])
         else:
@@ -1055,25 +1169,56 @@ async def host_row(s, r: dict, row: dict, target: dict, host_dir: pathlib.Path, 
     return step
 
 
-async def cleanup(s, r: dict, engine: str, label: str) -> None:
-    c: dict = {}
+async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | None = None,
+                  origin: str | None = None, *, probe: bool = False) -> None:
+    """Partial setup is tracked in JS. CLOSE, final drain and browser fallback are independent."""
+    latch = latch if latch is not None else guard.StopLatch()
+    origin = origin or r["origin"]
+    c: dict = {"errors": []}
+    cancelled = False
     try:
-        if r["sessions"][engine].get("contexts") is not None:
-            c["contexts"] = await _call(s, CLOSE)
-        await s.call_tool("browser_close", {})
+        c["contexts"] = await _call(s, CLOSE)  # unconditional: SETUP may have failed before returning metadata
+        collect(r, (c["contexts"] or {}).get("log") or {}, origin, latch, engine + ":close")
+    except (Exception, asyncio.CancelledError) as exc:
+        cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
+        c["errors"].append("CLOSE: " + exc_text(exc))
+    try:
+        collect(r, await _call(s, DRAIN), origin, latch, engine + ":terminal-drain")
+    except (Exception, asyncio.CancelledError) as exc:
+        cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
+        c["errors"].append("final drain: " + exc_text(exc))
+    try:
+        fac.mcp_result(await s.call_tool("browser_close", {}))
         c["browser_close"] = "ok"
-    except Exception as exc:  # noqa: BLE001
-        c["error"] = f"{exc.__class__.__name__}: {str(exc)[:300]}"
+    except (Exception, asyncio.CancelledError) as exc:
+        cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
+        c["errors"].append("browser_close: " + exc_text(exc))
     got = (c.get("contexts") or {}).get("contexts") or {}
-    c["confirmed"] = bool(c.get("browser_close") == "ok" and set(got) == set(ENGINES[engine]["contexts"])
+    expected = {"probe"} if probe else set(ENGINES[engine]["contexts"])
+    c["confirmed"] = bool(not c["errors"] and c.get("browser_close") == "ok" and set(got) == expected
+                          and not (c.get("contexts") or {}).get("untracked")
+                          and (c.get("contexts") or {}).get("other_contexts_left") == 0
                           and all(not x.get("error") and x.get("page_closed") and not x.get("context_still_in_browser")
                                   for x in got.values()))
-    r.setdefault("cleanup", {})[engine] = c
+    r.setdefault("probe_cleanup" if probe else "cleanup", {})[engine] = c
+    if not c["confirmed"]:
+        latch.block(engine + ": disposal or terminal observations unresolved")
+    latch.bind(r)
     fac.say(f"[{label}] {engine}: cleanup {'confirmed' if c['confirmed'] else 'NOT confirmed'}")
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 def traffic_gate(r: dict) -> dict:
     findings, first = [], None
+    if r.get("origin"):
+        log = r.get("log") or {}
+        findings += fs.traffic_findings(log.get("requests") or [], log.get("websockets") or [], r["origin"])
+        if findings:
+            first = "event journal (probe/row/disposal)"
+    if (r.get("w4") or {}).get("status") == "TRIPPED":
+        findings.append("W4 TRIPPED: native Security hold required")
+        first = first or "event journal"
     for s in r.get("steps") or []:
         for x in s.get("traffic") or []:
             findings.append(f"{s['id']}: {x}")
@@ -1108,11 +1253,17 @@ def traffic_gate(r: dict) -> dict:
 
 
 def final_verdict(r: dict) -> tuple[str, str]:
-    """The receipt's verdict: (PASS|FAIL|REFUSED|BLOCKED, why). FAIL wins over BLOCKED and NOT RUN; WebKit rows
-    NOT RUN make the verdict BLOCKED, never PASS."""
+    """W4 takes priority, then unresolved disposal. NOT RUN is never success.
+
+    Ordinary row FAIL still wins over row BLOCKED when the lifetime boundary is confirmed.
+    """
+    if (r.get("w4") or {}).get("status") == "TRIPPED":
+        return "W4 TRIPPED", guard.HOLD
     problems = (r.get("profile") or {}).get("problems")
     if problems:
         return "REFUSED", "profile not valid, browser not contacted: " + "; ".join(problems)
+    if (r.get("invocation_stop") or {}).get("blocked"):
+        return "BLOCKED", "; ".join(r["invocation_stop"]["reasons"])
     steps = r.get("steps") or []
     if r.get("runner_error") and not steps:
         return "BLOCKED", f"runner: {r['runner_error']}"
@@ -1158,7 +1309,7 @@ def final_verdict(r: dict) -> tuple[str, str]:
     return "PASS", f"all {len(ROW_IDS)} rows observed as expected (Chromium, WebKit phone and host rows)"
 
 
-def finish(r: dict, out: pathlib.Path) -> dict:
+def finish(r: dict, out: pathlib.Path, *, persist: bool = True) -> dict:
     r["finished_at"] = fac.now()
     done = {s["id"] for s in r["steps"]}
     r["not_checked"] = [x for x in ROW_IDS if x not in done]
@@ -1174,8 +1325,11 @@ def finish(r: dict, out: pathlib.Path) -> dict:
     }
     r["traffic_gate"] = traffic_gate(r)
     r["verdict"], r["why"] = final_verdict(r)
-    (out / "receipt.json").write_text(json.dumps(r, indent=1, ensure_ascii=False))
-    (out / "summary.md").write_text(summary_md(r))
+    r["exit_code"] = exit_status(r)
+    if persist:
+        guard.write_json(out / "observations.json", log)  # exact events, not abbreviated findings/DOM refs
+        guard.write_json(out / "receipt.json", r)
+        guard.write_private(out / "summary.md", summary_md(r))
     fac.say(f"[{r['label']}] VERDICT {r['verdict']}: {r['why'][:600]}")
     return r
 
@@ -1239,6 +1393,11 @@ def summary_md(r: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def exit_status(r: dict) -> int:
+    # Preserve ordinary legacy codes, including BLOCKED=3; W4 has its own unused code.
+    return guard.W4_EXIT if r["verdict"] == "W4 TRIPPED" else fac.EXIT[r["verdict"]]
+
+
 async def live(args, out: pathlib.Path) -> int:
     if (out / "receipt.json").exists():
         raise SystemExit(f"{out}/receipt.json exists: one live run per folder (no retry-until-green)")
@@ -1249,7 +1408,7 @@ async def live(args, out: pathlib.Path) -> int:
                       "pins_ok": (r.get("pins") or {}).get("ok"), "traffic_gate": r["traffic_gate"]["status"],
                       "browser_contact": r["browser_contact"], "host_dir": r.get("host_dir"),
                       "receipt": str(out / "receipt.json")}, ensure_ascii=False), flush=True)
-    return fac.EXIT[r["verdict"]]
+    return exit_status(r)
 
 
 # ---------------------------------------------------------------- controls: the synthetic Project 3 server
@@ -1260,6 +1419,14 @@ class P3Handler(fs.Handler):
 
     def _json(self, code: int, obj) -> None:
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+    def do_GET(self):  # noqa: N802
+        if self.path in fs.STATIC:  # literal route map; queries/escapes are not normalized into fixture paths
+            name, ctype = fs.STATIC[self.path]
+            return self._send(200, self.server.files[name], ctype)
+        if self.path == "/api/items":
+            return self._json(200, {"items": self.server.store.items()})
+        return self._json(404, {"error": "not found"})
 
 
 class RaceStore(fs.Store):
@@ -1280,34 +1447,76 @@ class P3Server(fs.SyntheticServer):
     (closed at once; a real kill is SIGKILL) and the exit code a host would report. variant: file (clean),
     race_add."""
 
+    def __init__(self, site: pathlib.Path, data_dir: pathlib.Path, variant: str = "file", *,
+                 bind_address: str = "0.0.0.0"):
+        if bind_address not in ("0.0.0.0", "127.0.0.1"):
+            raise ValueError("P3 fixture listener must be literal 0.0.0.0 or 127.0.0.1")
+        super().__init__(site, data_dir, variant)
+        self.bind_address = bind_address
+        self.files = guard.snapshot(site, CTYPES)
+        self._lifetime = threading.RLock()
+        self._retired = threading.Event()
+
     def start(self) -> None:
-        store = (RaceStore if self.variant == "race_add" else fs.Store)(self.data_dir / "items.json")
-        srv = http.server.ThreadingHTTPServer(("0.0.0.0", self.port), P3Handler)
-        srv.daemon_threads = True
-        srv.site, srv.store, srv.variant, srv.hits = self.site, store, self.variant, self.hits
-        self.port = srv.server_address[1]
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        self.srv = srv
-        self.starts += 1
+        with self._lifetime:
+            if self._retired.is_set():
+                raise RuntimeError("P3 server retired: late start refused")
+            if self.srv is not None:
+                raise RuntimeError("P3 server already started")
+            store = (RaceStore if self.variant == "race_add" else fs.Store)(self.data_dir / "items.json")
+            srv = http.server.ThreadingHTTPServer((self.bind_address, self.port), P3Handler)
+            self.srv = srv  # own the resource before any later start step can fail
+            try:
+                srv.daemon_threads = True
+                srv.files, srv.store, srv.variant, srv.hits = self.files, store, self.variant, self.hits
+                self.port = srv.server_address[1]
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                self.starts += 1
+            except BaseException:
+                srv.server_close()  # no shutdown wait: serve_forever may not have started
+                self.srv = None
+                raise
+
+    def stop(self) -> None:
+        with self._lifetime:
+            srv = self.srv
+            if srv is not None:
+                try:
+                    srv.shutdown()
+                finally:
+                    try:
+                        srv.server_close()
+                    finally:
+                        self.srv = None
+
+    def retire(self) -> None:
+        self._retired.set()  # before waiting for a possibly in-flight host-action thread
+
+    def shutdown(self) -> None:
+        self.retire()
+        self.stop()  # same lifetime lock: any earlier action settles before terminal stop completes
 
     def host_action(self, kind: str) -> dict:
-        rec = super().host_action("stop" if kind == "kill" else kind)
-        rec["action"] = kind
-        rec["exit_code"] = 137 if kind == "kill" else 0
-        return rec
+        with self._lifetime:
+            if self._retired.is_set():
+                return {"action": kind, "done": False, "exit_code": 1, "note": "P3 server retired"}
+            rec = super().host_action("stop" if kind == "kill" else kind)
+            rec["action"] = kind
+            rec["exit_code"] = 137 if kind == "kill" else 0
+            return rec
 
 
 def materialize(variant: str, root: pathlib.Path) -> pathlib.Path:
     """One control's site: fixtures/p3_app with app.js's VARIANT line set."""
-    site = root / "site"
-    site.mkdir(parents=True)
-    for name in ("index.html", "style.css", "favicon.svg"):
-        shutil.copy(FIXTURE / name, site / name)
-    src = (FIXTURE / "app.js").read_text()
+    captured = guard.snapshot(FIXTURE, CTYPES)
+    src = captured["app.js"].decode("utf-8")
     line = 'const VARIANT = "clean";'
     if src.count(line) != 1:
         raise SystemExit(f"fixtures/p3_app/app.js: the line {line!r} is not there exactly once")
-    (site / "app.js").write_text(src.replace(line, f"const VARIANT = {json.dumps(variant)};"))
+    captured["app.js"] = src.replace(line, f"const VARIANT = {json.dumps(variant)};").encode("utf-8")
+    site = root / "site"
+    for name, data in captured.items():
+        guard.write_private(site / name, data)
     return site
 
 
@@ -1358,6 +1567,10 @@ def control_status(case: dict, r: dict) -> tuple[str, list]:
     the WebKit rows are NOT RUN)."""
     stop = next((s for s in r["steps"] if s["status"] in ("FAIL", "BLOCKED", "NOT RUN")), None)
     got = [r["verdict"], stop["id"] if stop else None]
+    if r["verdict"] == "W4 TRIPPED":
+        return "W4 TRIPPED", got
+    if (r.get("invocation_stop") or {}).get("blocked"):
+        return "BLOCKED", got
     gate = r["traffic_gate"]["status"]
     webkit = (r.get("sessions") or {}).get("webkit", {}).get("status")
     if case.get("webkit") and webkit == "NOT RUN":
@@ -1370,79 +1583,131 @@ def control_status(case: dict, r: dict) -> tuple[str, list]:
     return ("OK" if ok else "WRONG"), got
 
 
-async def run_control(args, case: dict, out: pathlib.Path, tmp: pathlib.Path, ip: str) -> dict:
-    base = tmp / case["case"]
-    site = materialize(case["variant"], base)
-    data = base / "data"
-    data.mkdir(mode=0o700)
-    server = P3Server(site, data, case.get("server", "file"))
-    server.start()
-    origin = f"http://{ip}:{server.port}"
-    case_out, label = out / case["case"], f"control {case['case']}"
-    host_dir = case_out / "host"
-    pins = fs.site_pins(site)
-    host = asyncio.create_task(control_host(host_dir, server, case.get("receipts", "")))
+async def dispose_control(server, host) -> list[str]:
+    errors = []
+    if server is not None:
+        server.retire()  # disallow late threaded actions before awaiting/cancelling the host
     try:
+        if host is not None:
+            host.cancel()
+            try:
+                await host
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                errors.append("host task: " + exc_text(exc))
+    finally:
+        if server is not None:
+            try:
+                await asyncio.to_thread(server.shutdown)
+            except Exception as exc:
+                errors.append("server shutdown: " + exc_text(exc))
+    return errors
+
+
+async def run_control(args, case: dict, out: pathlib.Path, tmp: pathlib.Path, ip: str,
+                      latch: guard.StopLatch | None = None) -> dict:
+    latch = latch if latch is not None else guard.StopLatch()
+    case_out, label = out / case["case"], f"control {case['case']}"
+    r = new_receipt(label, None)
+    server, host, cancelled = None, None, False
+    try:
+        if latch.stopped:
+            raise RuntimeError("invocation already stopped: no new case")
+        base = tmp / case["case"]
+        site = materialize(case["variant"], base)
+        data = base / "data"
+        data.mkdir(mode=0o700)
+        server = P3Server(site, data, case.get("server", "file"), bind_address="0.0.0.0")
+        server.start()
+        origin = f"http://{ip}:{server.port}"
+        # Pin and serve precisely the same captured regular-file bytes, never reopen site paths.
+        pins = {n: fac.sha256(data) for n, data in server.files.items()}
+        host_dir = case_out / "host"
+        host = asyncio.create_task(control_host(host_dir, server, case.get("receipts", "")))
         if case.get("profile") == "served_origin":
             r = await check_profile(args, json.dumps(default_p3_profile(origin=origin, pins=pins)), case_out, label,
-                                    fs.CONTROL_BUDGET_S)
+                                    fs.CONTROL_BUDGET_S, latch, persist=False)
         else:
             profile = default_p3_profile(pins=pins)
             profile["host_wait_minutes"] = 1
             target, problems = parse_p3_profile(json.dumps(profile))
             if problems:
-                raise SystemExit(f"control profile refused: {problems}")
+                raise ValueError(f"control profile refused: {problems}")
             target["control_note"] = (f"control: the profile's origin {target['origin']} replaced, after the profile "
                                       f"was accepted, by the synthetic server's {origin}")
             target["host_wait_minutes"] = fs.CONTROL_HOST_WAIT_S / 60
             target["origin"] = origin
-            r = await check_target(args.browser, args.browser_webkit, target, case_out, label, host_dir,
-                                   fs.CONTROL_BUDGET_S)
+            r = new_receipt(label, target)
+            await check_target(args.browser, args.browser_webkit, target, case_out, label, host_dir,
+                               fs.CONTROL_BUDGET_S, latch=latch, persist=False, receipt=r)
+    except asyncio.CancelledError:
+        cancelled = True
+        r["runner_error"] = "control cancelled"
+        latch.block(r["runner_error"])
+    except Exception as exc:
+        r.setdefault("runner_error", exc_text(exc))
+        latch.block("control lifetime failure: " + exc_text(exc))
     finally:
-        host.cancel()
+        task = asyncio.create_task(dispose_control(server, host))
         try:
-            await host
+            errors = await asyncio.shield(task)
         except asyncio.CancelledError:
-            pass
-        await asyncio.to_thread(server.stop)
+            cancelled = True
+            errors = await task
+            latch.block("control cancelled during disposal")
+        r["server_cleanup"] = {"confirmed": not errors, "errors": errors}
+        for error in errors:
+            latch.block(error)
+    latch.bind(r)
+    finish(r, case_out)  # receipt is final only after host and server disposal
+    if cancelled:
+        raise asyncio.CancelledError
     status, got = control_status(case, r)
-    api_hits = [h for h in server.hits if " /api/" in h]
+    hits = server.hits if server is not None else []
+    api_hits = [h for h in hits if " /api/" in h]
     if r["verdict"] == "REFUSED" and (r["steps_attempted"] or api_hits):
         status = "WRONG"
-    if (r.get("profile") or {}).get("problems") and (r["browser_contact"] or server.hits):
-        status = "WRONG"  # a refused profile reaches nothing
-    res = {"case": case["case"], "expected": list(case["expect"]), "got": got, "status": status,
-           "traffic_gate": r["traffic_gate"]["status"], "gate_engines": r["traffic_gate"].get("engines"),
-           "webkit": (r.get("sessions") or {}).get("webkit", {}).get("status"),
-           "why": r["why"][:600], "steps_attempted": r["steps_attempted"], "browser_contact": r["browser_contact"],
-           "server_requests": len(server.hits), "api_requests": len(api_hits), "server_starts": server.starts,
-           "rows": {s["id"]: s["status"] for s in r["steps"]}}
-    engines = ", ".join(f"{k} {v}" for k, v in (res["gate_engines"] or {}).items())
-    fac.say(f"control {case['case']}: expected {case['expect']}, got {got}, gate {res['traffic_gate']} ({engines}), "
-            f"webkit {res['webkit']}: {status}")
-    return res
+    if (r.get("profile") or {}).get("problems") and (r["browser_contact"] or hits):
+        status = "WRONG"
+    return {"case": case["case"], "expected": list(case["expect"]), "got": got, "status": status,
+            "traffic_gate": r["traffic_gate"]["status"], "gate_engines": r["traffic_gate"].get("engines"),
+            "webkit": (r.get("sessions") or {}).get("webkit", {}).get("status"), "why": r["why"],
+            "steps_attempted": r["steps_attempted"], "browser_contact": r["browser_contact"],
+            "server_requests": len(hits), "api_requests": len(api_hits),
+            "server_starts": server.starts if server is not None else 0,
+            "rows": {s["id"]: s["status"] for s in r["steps"]}, "receipt": str(case_out / "receipt.json")}
 
 
 async def controls(args, out: pathlib.Path) -> int:
-    ip = fs.serve_ip(urllib.parse.urlparse(args.browser).hostname, args.serve_ip)
-    only = [x for x in (args.only or "").split(",") if x]
+    latch = guard.StopLatch()
+    only = [x.strip() for x in (args.only or "").split(",") if x.strip()]
+    names = {x["case"] for x in CONTROLS}
+    invalid = bool(args.only and (not only or set(only) - names))
+    selected = [] if invalid else [c for c in CONTROLS if not only or c["case"] in only]
     results = []
-    with tempfile.TemporaryDirectory(prefix="first-app-p3-controls-") as tmp:
-        for case in CONTROLS:
-            if only and case["case"] not in only:
-                continue
-            results.append(await run_control(args, case, out, pathlib.Path(tmp), ip))
-    summary = {"mode": "controls_p3", "journey": "p3", "all_ok": all(x["status"] != "WRONG" for x in results),
+    if selected:
+        ip = fs.serve_ip(urllib.parse.urlparse(args.browser).hostname, args.serve_ip)
+        with tempfile.TemporaryDirectory(prefix="first-app-p3-controls-") as tmp:
+            for case in selected:
+                if latch.stopped:
+                    break
+                results.append(await run_control(args, case, out, pathlib.Path(tmp), ip, latch))
+    all_ok = bool(selected) and len(results) == len(selected) and all(x["status"] == "OK" for x in results)
+    summary = {"mode": "controls_p3", "journey": "p3", "all_ok": all_ok and not latch.stopped,
+               "full_qualification": all_ok and not latch.stopped and {x["case"] for x in results} == names,
+               "selection_error": "empty/unmatched selection" if invalid or not selected else None,
+               "not_reached": [c["case"] for c in selected if c["case"] not in {x["case"] for x in results}],
                "not_run": [x["case"] for x in results if x["status"] == "NOT RUN"], "cases": results,
                "checker_sha256": fac.sha256(pathlib.Path(fac.__file__).read_bytes()),
                "shared_module_sha256": fac.sha256(pathlib.Path(fs.__file__).read_bytes()),
-               "p3_module_sha256": fac.sha256(pathlib.Path(__file__).read_bytes())}
-    (out / "controls.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False))
-    print(json.dumps({"mode": "controls_p3", "journey": "p3", "all_ok": summary["all_ok"],
-                      "statuses": {x["case"]: x["status"] for x in results},
-                      "verdicts": {x["case"]: x["got"] for x in results}, "not_run": summary["not_run"],
-                      "webkit": sorted({str(x["webkit"]) for x in results}), "out": str(out)}), flush=True)
-    return 0 if summary["all_ok"] else 1
+               "p3_module_sha256": fac.sha256(pathlib.Path(__file__).read_bytes()),
+               "p3_guard_sha256": fac.sha256(pathlib.Path(guard.__file__).read_bytes())}
+    latch.bind(summary)
+    summary["exit_code"] = guard.W4_EXIT if latch.tripped else (0 if summary["all_ok"] else 1)
+    guard.write_json(out / "controls.json", summary)
+    print(json.dumps(summary, ensure_ascii=False), flush=True)
+    return summary["exit_code"]
 
 
 def main() -> int:
@@ -1463,8 +1728,9 @@ def main() -> int:
         ap.error("--mode and --out are required")
     if a.mode != "live" and a.profile:
         ap.error("--profile is for --mode live; the controls bring their own profiles")
-    out = pathlib.Path(a.out).resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    out = pathlib.Path(os.path.abspath(a.out))  # preserve literal components; never resolve and follow a symlink
+    with guard.directory_fd(out, create=True) as fd:
+        os.fchmod(fd, 0o700)
     return asyncio.run(live(a, out) if a.mode == "live" else controls(a, out))
 
 

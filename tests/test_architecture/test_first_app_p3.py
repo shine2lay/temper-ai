@@ -96,10 +96,11 @@ def test_test_strings_are_the_proposals_exact_code_points():
 
 
 def test_each_engine_has_its_own_context_options():
-    assert p3.context_specs("chromium") == {c: {"opts": fs.CONTEXT_OPTS, "touch": False} for c in ("A", "B")}
+    assert p3.context_specs("chromium") == {
+        c: {"opts": dict(fs.CONTEXT_OPTS, serviceWorkers="block"), "touch": False} for c in ("A", "B")}
     assert fs.CONTEXT_OPTS == {"viewport": {"width": 1280, "height": 800}, "locale": "en-US", "timezoneId": "UTC"}
     want = {"viewport": {"width": 390, "height": 844}, "deviceScaleFactor": 3, "isMobile": True, "hasTouch": True,
-            "locale": "en-US", "timezoneId": "UTC"}
+            "locale": "en-US", "timezoneId": "UTC", "serviceWorkers": "block"}
     assert p3.context_specs("webkit") == {c: {"opts": want, "touch": True} for c in ("P", "Q")}
     js = p3.setup_js(target(), "webkit")
     assert '"isMobile": true' in js and '"hasTouch": true' in js and '"deviceScaleFactor": 3' in js
@@ -285,10 +286,16 @@ class FakeSession:
 
 
 def _host_row(tmp_path, monkeypatch, row_id, receipt, probe):
-    async def fake_probe(url, code):
+    async def fake_probe(url, code, **kwargs):
         return probe
 
-    monkeypatch.setattr(fs, "probe_session", fake_probe)
+    async def fake_drain(session, code):
+        assert code == p3.DRAIN
+        return {}
+
+    # P3 now owns its observed probe lifetime; keep the same fixed result and every assertion.
+    monkeypatch.setattr(p3, "probe_session", fake_probe)
+    monkeypatch.setattr(p3, "_call", fake_drain)
     row = next(r for r in p3.p3_rows(W, p3.USERS) if r["id"] == row_id)
     host = tmp_path / "host"
     host.mkdir(parents=True)
@@ -461,7 +468,7 @@ def test_server_answers_utf8_keeps_items_across_a_kill_and_reports_exit_codes(tm
     site = p3.materialize("clean", tmp_path / "c")
     data = tmp_path / "data"
     data.mkdir()
-    srv = p3.P3Server(site, data)
+    srv = p3.P3Server(site, data, bind_address="127.0.0.1")
     srv.start()
     try:
         code, raw = _req(srv.port, "POST", "/api/items", {"text": p3.S["hebrew"], "added_by": "Pat"})
@@ -484,7 +491,7 @@ def test_race_server_loses_one_of_two_adds_at_once(tmp_path):
     for variant, want in (("file", 2), ("race_add", 1)):
         data = tmp_path / variant
         data.mkdir()
-        srv = p3.P3Server(site, data, variant)
+        srv = p3.P3Server(site, data, variant, bind_address="127.0.0.1")
         srv.start()
         try:
             threads = [threading.Thread(target=_req, args=(srv.port, "POST", "/api/items",

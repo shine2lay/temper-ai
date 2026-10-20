@@ -17,6 +17,10 @@ the events Temper already records and shows, so a Pi agent's run reads like any 
 - usage is taken once per model call, from its final message (Pi repeats the running
   total on every update, so adding those up would count it many times).
 
+Call-event usage observations are nullable and validated by :func:`_usage`. Agent-result
+numeric totals and legacy cost deliberately retain the old conversion, separately in
+:meth:`PiEventMapper._add_legacy_usage_totals`; do not rebuild them from nullable rows.
+
 A model call ending is not the agent ending, and Pi going idle is not success: only
 :meth:`PiEventMapper.finish`, after Pi settles, decides how the agent's turn went.
 
@@ -311,20 +315,44 @@ def _obj(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+_USAGE_FIELDS = {
+    "prompt_tokens": "input",
+    "completion_tokens": "output",
+    "cached_prompt_tokens": "cacheRead",
+    "cache_write_tokens": "cacheWrite",
+    "total_tokens": "totalTokens",
+}
+MAX_SAFE_USAGE_COUNT = 2**53 - 1
+
+
+def _positive_usage_count(value: Any) -> int | None:
+    # Pi loses raw presence with || 0 and delta overwrites: Data confirmed no zero class.
+    return value if type(value) is int and 0 < value <= MAX_SAFE_USAGE_COUNT else None
+
+
 def _usage(raw: Any) -> dict[str, Any]:
+    """Nullable call observations, NEVER numeric aggregates or a claim of quotability.
+
+    Pi's initialized/provider-null/delta zeros are indistinguishable, so every zero is
+    unknown, including all-zero/no-usage calls and compactions. See pi-usage-counts.md.
+    _add_legacy_usage_totals deliberately keeps the previous numeric totals/cost separately:
+    suppressing an unknown observation must not subtract from those legacy numbers.
+    """
     u = _obj(raw)
-    cost = _obj(u.get("cost"))
-
-    def num(v: Any) -> int:
-        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
-
+    tokens = {key: _positive_usage_count(u.get(source_key))
+              for key, source_key in _USAGE_FIELDS.items()}
+    long_write = u.get("cacheWrite1h")
+    if type(long_write) is int and long_write > 0:
+        tokens["cache_write_tokens"] = None  # 1-hour writes need their own price class first
+    components = [tokens[key] for key in ("prompt_tokens", "completion_tokens",
+                                        "cached_prompt_tokens", "cache_write_tokens")]
+    # A total is only a consistency check AFTER all four component observations are known.
+    if (any(count is None for count in components)
+            or tokens["total_tokens"] != sum(count for count in components if count is not None)):
+        tokens["total_tokens"] = None
     return {
-        "prompt_tokens": num(u.get("input")),
-        "completion_tokens": num(u.get("output")),
-        "cached_prompt_tokens": num(u.get("cacheRead")),
-        "cache_write_tokens": num(u.get("cacheWrite")),
-        "total_tokens": num(u.get("totalTokens")),
-        "cost_usd": float(cost.get("total") or 0.0),
+        **tokens,
+        "cost_usd": float(_obj(u.get("cost")).get("total") or 0.0),
         # Pi prices tokens from its model table; on a subscription nobody is billed this.
         "cost_basis": "pi_estimate",
     }
@@ -645,7 +673,7 @@ class PiEventMapper:
         text = self.redact.text(original)
         reasoning = self.redact.text("\n\n".join(thinking)) if thinking else None
         usage = _usage(msg.get("usage"))
-        self._add_usage(usage)
+        self._add_legacy_usage_totals(msg.get("usage"))
         stop = msg.get("stopReason")
         data = {
             **self._common(), "llm_call_id": call.id, "call_kind": "model", "iteration": call.ordinal,
@@ -673,11 +701,22 @@ class PiEventMapper:
         self._last_answer = {"stop": stop, "text": said, "error": data.get("error"), "call_id": call.id}
         self._call = None
 
-    def _add_usage(self, usage: dict) -> None:
-        for k in ("prompt_tokens", "completion_tokens", "cached_prompt_tokens", "cache_write_tokens",
-                  "total_tokens"):
-            self._totals[k] += usage[k]
-        self._cost += usage["cost_usd"]
+    def _add_legacy_usage_totals(self, raw: Any) -> None:
+        """Preserve old numeric agent-result totals and cost, NOT nullable _usage observations.
+
+        The event can hide an invalid count or unclassified cache write while the legacy
+        aggregate keeps its old number. Do not "fix" totals to match nullable call rows.
+        NaN/inf now count as 0 instead of crashing; Pi's JSON.stringify emits null for them.
+        """
+        u = _obj(raw)
+        for key, source_key in _USAGE_FIELDS.items():
+            value = u.get(source_key)
+            try:
+                count = int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+            except (ValueError, OverflowError):
+                count = 0
+            self._totals[key] += count
+        self._cost += float(_obj(u.get("cost")).get("total") or 0.0)
 
     # ---- tools ---------------------------------------------------------------
 
@@ -822,7 +861,7 @@ class PiEventMapper:
         assert call is not None
         result = _obj(event.get("result"))
         usage = _usage(result.get("usage"))
-        self._add_usage(usage)
+        self._add_legacy_usage_totals(result.get("usage"))
         data = {**self._common(), "llm_call_id": call.id, "call_kind": "compaction",
                 "iteration": call.ordinal, **usage, "latency_ms": int((self._clock() - call.started) * 1000),
                 "reason": event.get("reason"), "tokens_before": result.get("tokensBefore"),

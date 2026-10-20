@@ -113,6 +113,8 @@ refuses the run (`commit_unreadable`); outside it (in-process, dev, CI) it recor
 
 ## The pins
 
+Pi upgrades keep zeros unknown; a future per-class proof needs the separate planned change and Data review in [Pi usage counts](pi-usage-counts.md).
+
 Every part a Pi member box runs on is pinned by digest in the private box config
 (`local/pi/pi-box.json`, git-ignored; `TEMPER_PI_BOX_CONFIG`), M4 ADR-M4-04, SW-24, SW-26,
 SW-29, SW-50. The pinned copies sit in folders of their own on the host, under

@@ -1,0 +1,79 @@
+{
+  "source": "Fixed Data-reviewed catch/clean shapes only, no real Pi process/provider call; these observations alone never establish quotability or coverage.",
+  "cases": [
+    {
+      "name": "delta_zero_overwrites_positive_start",
+      "start_usage": {"input": 1200, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 1201},
+      "raw": {"input": 0, "output": 57, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 57},
+      "expected": {"prompt_tokens": null, "completion_tokens": 57, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "provider_all_null_normalizes_to_zero_normal_stop",
+      "raw": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 0},
+      "expected": {"prompt_tokens": null, "completion_tokens": null, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "error_snapshot_is_partial",
+      "stop": "error",
+      "raw": {"input": 1200, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 1201},
+      "expected": {"prompt_tokens": 1200, "completion_tokens": 1, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "aborted_snapshot_is_partial",
+      "stop": "aborted",
+      "raw": {"input": 1200, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 1201},
+      "expected": {"prompt_tokens": 1200, "completion_tokens": 1, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "counts_belong_to_served_response_model",
+      "response_model": "actually-served",
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": 210},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": 210}
+    },
+    {
+      "name": "compaction_positive_aggregate_not_leaf_call",
+      "compaction": true,
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": 210},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": 210}
+    },
+    {
+      "name": "compaction_without_usage",
+      "compaction": true,
+      "raw": null,
+      "expected": {"prompt_tokens": null, "completion_tokens": null, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "compaction_zero_is_not_proof",
+      "compaction": true,
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 0, "totalTokens": 200},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "unproven_convention_positive_observations_only",
+      "api": "unproven-api",
+      "provider": "unproven-provider",
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": 210},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": 210}
+    },
+    {
+      "name": "clean_all_positive_matching_total",
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": 210},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": 210}
+    },
+    {
+      "name": "string_component_and_concatenated_total",
+      "raw": {"input": "5", "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": "5208010"},
+      "expected": {"prompt_tokens": null, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": null}
+    },
+    {
+      "name": "one_hour_count_exceeds_total_writes",
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "cacheWrite1h": 11, "totalTokens": 210},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "known_components_mismatched_total",
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "totalTokens": 211},
+      "expected": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": null}
+    }
+  ]
+}

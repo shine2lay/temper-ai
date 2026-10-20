@@ -1,0 +1,54 @@
+{
+  "master_commit": "296711b41065f1b2ebf94d4ad54b18ccfbc5c918",
+  "capture": "Read-only current-master PiEventMapper on fixed, content-free stream shapes, before legacy aggregate split; no Pi process or provider call.",
+  "cases": [
+    {
+      "name": "normal",
+      "compaction": false,
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 0, "totalTokens": 200, "cost": {"total": 0.125}},
+      "tokens": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 0, "total_tokens": 200, "cost_usd": 0.125},
+      "snapshot": {"cost_usd": 0.125, "total_tokens": 200, "llm_calls": 1},
+      "observations": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "one_hour",
+      "compaction": false,
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 10, "cacheWrite1h": 10, "totalTokens": 200, "cost": {"total": 0.125}},
+      "tokens": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 10, "total_tokens": 200, "cost_usd": 0.125},
+      "snapshot": {"cost_usd": 0.125, "total_tokens": 200, "llm_calls": 1},
+      "observations": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "all_zero_with_total",
+      "compaction": false,
+      "raw": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 91, "cost": {"total": 0.25}},
+      "tokens": {"prompt_tokens": 0, "completion_tokens": 0, "cached_prompt_tokens": 0, "cache_write_tokens": 0, "total_tokens": 91, "cost_usd": 0.25},
+      "snapshot": {"cost_usd": 0.25, "total_tokens": 91, "llm_calls": 1},
+      "observations": {"prompt_tokens": null, "completion_tokens": null, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "fraction",
+      "compaction": false,
+      "raw": {"input": 7.9, "output": 20, "cacheRead": 80, "cacheWrite": 0, "totalTokens": 200, "cost": {"total": 0.125}},
+      "tokens": {"prompt_tokens": 7, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 0, "total_tokens": 200, "cost_usd": 0.125},
+      "snapshot": {"cost_usd": 0.125, "total_tokens": 200, "llm_calls": 1},
+      "observations": {"prompt_tokens": null, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "absent",
+      "compaction": false,
+      "raw": null,
+      "tokens": {"prompt_tokens": 0, "completion_tokens": 0, "cached_prompt_tokens": 0, "cache_write_tokens": 0, "total_tokens": 0, "cost_usd": 0.0},
+      "snapshot": {"cost_usd": 0.0, "total_tokens": 0, "llm_calls": 1},
+      "observations": {"prompt_tokens": null, "completion_tokens": null, "cached_prompt_tokens": null, "cache_write_tokens": null, "total_tokens": null}
+    },
+    {
+      "name": "compaction",
+      "compaction": true,
+      "raw": {"input": 100, "output": 20, "cacheRead": 80, "cacheWrite": 0, "totalTokens": 200, "cost": {"total": 0.125}},
+      "tokens": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": 0, "total_tokens": 200, "cost_usd": 0.125},
+      "snapshot": {"cost_usd": 0.125, "total_tokens": 200, "llm_calls": 1},
+      "observations": {"prompt_tokens": 100, "completion_tokens": 20, "cached_prompt_tokens": 80, "cache_write_tokens": null, "total_tokens": null}
+    }
+  ]
+}

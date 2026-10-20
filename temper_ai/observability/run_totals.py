@@ -17,9 +17,12 @@ and tokens each (queue #104).
 Per agent the spend is the larger of what its end event says and what its model calls
 (``llm.call.completed`` / ``llm.call.failed``) add up to: an agent that finished says what it
 spent; one thrown out mid-step (no end event, or a failed one with no cost) is known only by
-its calls. A completed run's stored total equals the sum of its model calls, so this rule
-gives the same figure for it. Only the figures are read (JSON fields in the query), never
-prompts or answers.
+its calls. A completed run's stored cost equals the sum of its model-call costs. Pi's
+stored token total can differ: its call counts are nullable observations, while numeric
+agent-end/mapper/stored-run totals keep legacy aggregation. Without a numeric agent end
+(in flight, a parked run's in-flight step, or a lost/cancelled/failed agent), an unknown
+call total adds zero here, so this token floor can be lower than before. Dollar spend is
+unchanged. Only figures are read (JSON fields in the query), never prompts or answers.
 """
 
 from __future__ import annotations

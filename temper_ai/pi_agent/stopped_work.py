@@ -25,7 +25,8 @@ but the copy's unreferenced objects, and its files stay in the folder.
 Before any of its git runs over the folder, the save runs #110's check (M1, #112,
 :func:`_wait_for_box_gone_then_check_folder`): it waits, within its seconds, until no box may
 still write in the folder (the Stop is removing the cut turn's box), and a folder that holds
-a .git of its own is not saved, so git never follows a .git the member planted.
+a .git of its own is not saved, so git never follows a .git the member planted. What it waits
+for is the check's kind of answer, never its words (#118).
 """
 
 from __future__ import annotations
@@ -46,10 +47,10 @@ from typing import Any, TypeVar
 from temper_ai.pi_agent.member_tree import (
     MemberLink,
     member_file_size,
-    nested_git,
     quoted_member_path,
 )
 from temper_ai.pi_agent.team_folders import GIT
+from temper_ai.pi_agent.team_leader import FolderWriter, MemberGitRefused
 
 #: A file bigger than this (5 MiB) is left out of the kept commit and listed as skipped.
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -73,11 +74,10 @@ _REAP_SECONDS = 1.0
 _CHUNK = 1 << 16
 #: How often the save asks again whether a box may still write in the member's folder.
 WRITER_POLL_SECONDS = 0.25
-#: How the writer check's answer (``LeaderTeam.writer_in_member_folder``) begins while a worker
-#: box of the run may still write in the folder: the one answer the save waits out.
-_BOX_LIVE = " while a box "
 #: The planted .git entries a refusal names; past them it says "and more".
 GIT_NAMED = 5
+#: The most of an error a record entry keeps (:func:`not_kept_entry`).
+RECORD_ERROR_CHARS = 500
 _T = TypeVar("_T")
 
 
@@ -167,7 +167,7 @@ def not_kept_entry(member: str | None, turn_id: str, error: Any) -> dict:
     return {"member": member, "turn": turn_id, "branch": None,
             "commit": getattr(error, "commit", None), "files": [], "files_total": 0,
             "skipped": [], "skipped_total": 0,
-            "error": str(error)[:500] or type(error).__name__}
+            "error": str(error)[:RECORD_ERROR_CHARS] or type(error).__name__}
 
 
 def _wait_for_box_gone_then_check_folder(project: Any, work_tree: Path, git_dir: Path,
@@ -175,24 +175,28 @@ def _wait_for_box_gone_then_check_folder(project: Any, work_tree: Path, git_dir:
     """M1 at the Stop (#112): #110's check before the save's first git over ``work_tree``.
 
     First it waits, asking ``project.writer_check`` again every :data:`WRITER_POLL_SECONDS`,
-    until no worker box of the run may still write in the folder: the Stop has recorded the
-    cut turn ended and is removing its box. Anything else that may write (a turn of the member
-    in flight, Docker that can't be asked, a folder that is no member's) refuses at once. Then
-    the whole check, ``project.refuse_git_over_member_folder``: a folder that holds a .git of
-    its own (or that the check refuses for another reason) is not saved, naming up to
-    :data:`GIT_NAMED` of them. All of it within the deadline: a check still running then is
-    left to end by its own caps (it only reads: docker ps, a walk of the folder, git on the
-    copy's own git dir) and the save is refused. Raises StoppedWorkError."""
+    while its answer's kind is ``box_live``: a worker box of the run that may write in the
+    folder is live (the Stop has recorded the cut turn ended and is removing its box, or Docker
+    lists a box Temper can't place). Any other kind (a turn of the member in flight, Docker
+    that can't be asked, a folder that is no member's) refuses at once, in the check's words.
+    Then the whole check, ``project.refuse_git_over_member_folder``, once: a folder that holds
+    a .git of its own is not saved, naming what the check found (:func:`_planted_text`), never
+    walking the folder again; any other refusal is recorded in the check's own words. All of
+    it within the deadline: a check still running then is left to end by its own caps (it only
+    reads: docker ps, a walk of the folder, git on the copy's own git dir) and the save is
+    refused. Raises StoppedWorkError."""
     while True:
-        writer = _by_deadline(lambda: project.writer_check(work_tree), deadline,
-                              "while asking whether its box is gone")
+        writer: FolderWriter | None = _by_deadline(lambda: project.writer_check(work_tree),
+                                                   deadline,
+                                                   "while asking whether its box is gone")
         if writer is None:
             break
-        if not writer.startswith(_BOX_LIVE):
-            raise StoppedWorkError(f"not saved: Temper won't run git over its folder{writer}")
+        if writer.kind != "box_live":
+            raise StoppedWorkError(
+                f"not saved: Temper won't run git over its folder{writer.text}")
         if deadline - time.monotonic() <= WRITER_POLL_SECONDS:
             raise StoppedWorkError("not saved: its box was still live (Temper won't run git "
-                                   f"over its folder{writer})")
+                                   f"over its folder{writer.text})")
         time.sleep(WRITER_POLL_SECONDS)
     try:
         _by_deadline(lambda: project.refuse_git_over_member_folder(work_tree, git_dir,
@@ -200,18 +204,30 @@ def _wait_for_box_gone_then_check_folder(project: Any, work_tree: Path, git_dir:
                      deadline, "while checking its folder for a .git of its own")
     except StoppedWorkError:
         raise
-    except Exception as exc:  # MemberGitRefused, or the check could not run: no git over it
-        try:
-            planted = _by_deadline(lambda: nested_git(work_tree), deadline,
-                                   "while naming the .git it holds")
-        except Exception:   # GitCheckUnfinished, or out of time: the check's own words say why
-            planted = []
-        if not planted:
-            raise StoppedWorkError(f"not saved: {exc}") from None
-        named = ", ".join(quoted_member_path(p) for p in planted[:GIT_NAMED])
-        if len(planted) > GIT_NAMED:
-            named += " and more"   # the walk stops one past them
-        raise StoppedWorkError(f"not saved: its folder holds a .git of its own ({named})") from None
+    except MemberGitRefused as exc:  # no git over it; a planted .git is named from the refusal
+        if exc.cause == "planted" and exc.paths:
+            raise StoppedWorkError(_planted_text(exc.paths)) from None
+        raise StoppedWorkError(f"not saved: {exc}") from None
+    except Exception as exc:  # the check could not run: no git over it
+        raise StoppedWorkError(f"not saved: {exc}") from None
+
+
+def _planted_text(paths: tuple[str, ...]) -> str:
+    """The record's words for a folder that holds a .git of its own (``paths``: what the check
+    found, in its order). It names the first :data:`GIT_NAMED`, each whole and quoted
+    (:func:`quoted_member_path`), as many as fit in the :data:`RECORD_ERROR_CHARS` a record
+    keeps of an error, then says "and more" whenever a path found isn't named (the walk stops
+    one past the five). Never a path cut short, an escape cut in two or "and more" lost."""
+    quoted = [quoted_member_path(p) for p in paths[:GIT_NAMED]]
+    n = len(quoted)
+    while True:
+        named = ", ".join(quoted[:n])
+        if n < len(paths):
+            named = f"{named} and more" if named else "and more"
+        text = f"not saved: its folder holds a .git of its own ({named})"
+        if n == 0 or len(text) <= RECORD_ERROR_CHARS:
+            return text
+        n -= 1
 
 
 def _by_deadline(call: Callable[[], _T], deadline: float, what: str) -> _T:

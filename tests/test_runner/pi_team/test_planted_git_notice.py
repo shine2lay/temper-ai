@@ -36,7 +36,12 @@ from temper_ai.pi_agent.shared_version import (
     VersionError,
 )
 from temper_ai.pi_agent.team_flow import FlowTeam, flow_framing
-from temper_ai.pi_agent.team_leader import MemberGitRefused, ProjectCopies, TeamFailure
+from temper_ai.pi_agent.team_leader import (
+    FolderWriter,
+    MemberGitRefused,
+    ProjectCopies,
+    TeamFailure,
+)
 from temper_ai.pi_agent.team_view import TeamReader
 from tests.test_runner.pi_team import leader_support as ls
 from tests.test_runner.pi_team import support as ts
@@ -76,7 +81,7 @@ FIXES = {
     "unreadable": ("Fix that folder's permissions so Temper can list and read it, or remove "
                    "it, and try again."),
 }
-WRITER = " while a box of yours is still live: temper-pi-x (running)"
+WRITER = FolderWriter("box_live", " while a box of yours is still live: temper-pi-x (running)")
 #: What the resting leader gets when the owner answers its refusals with no words (#119, S5).
 NO_WORDS = "The owner answered with no words: you get another turn."
 NOT_ROOT = pytest.mark.skipif(os.geteuid() == 0, reason="root opens any folder")

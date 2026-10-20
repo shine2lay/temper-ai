@@ -52,7 +52,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import sqlalchemy as sa
 
@@ -249,12 +249,16 @@ class MemberGitRefused(CopyError, VersionError):
     asks ``cause`` first: ``"setup"`` (git wasn't told the copy's own git dir: a code fault),
     ``"writer"`` (something may still write in the folder), ``"stall"`` (the check ran out of
     time), ``"gitlink"`` (the copy's index, outside the member's reach) -- or one of
-    :data:`FIXABLE_GIT_REFUSALS`, which the member can fix itself; ``fix`` then says how."""
+    :data:`FIXABLE_GIT_REFUSALS`, which the member can fix itself; ``fix`` then says how.
+    ``paths``, for ``"planted"`` only: the .git entries the check found, as
+    :func:`nested_git` returned them, so whoever names them needn't walk the folder again."""
 
-    def __init__(self, message: str, *, cause: str, fix: str = "") -> None:
+    def __init__(self, message: str, *, cause: str, fix: str = "",
+                 paths: tuple[str, ...] = ()) -> None:
         super().__init__(message)
         self.cause = cause
         self.fix = fix
+        self.paths = paths
 
     @property
     def fixable(self) -> bool:
@@ -321,6 +325,22 @@ def _plain(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "?", str(text))[:64]
 
 
+WriterKind = Literal["unknown_folder", "turn_in_flight", "docker_unknown", "box_live"]
+
+
+@dataclass(frozen=True)
+class FolderWriter:
+    """What may still write in a member's folder, as :meth:`LeaderTeam.writer_in_member_folder`
+    finds it (M1, Security's B1). ``kind`` is what code decides by, never ``text``:
+    ``"unknown_folder"`` (no one member has the folder), ``"turn_in_flight"`` (a turn of the
+    member is running or uncertain), ``"docker_unknown"`` (Docker can't be asked) or
+    ``"box_live"`` (a worker box of the run that may write in it is live: the member's own, or
+    one Temper can't place). ``text`` is the end of Temper's refusal, as the member reads it."""
+
+    kind: WriterKind
+    text: str
+
+
 class ProjectCopies:
     """Each member's own git copy of the project, in its folder's ``workspace`` -- the box's
     working folder, mounted only into that member's box (W3). Only committed content is copied:
@@ -329,11 +349,11 @@ class ProjectCopies:
     git data lives under ``<team root>/git``, outside every member's folder.
 
     ``writer_check`` says what may still write in a member's folder (its box, a turn of it in
-    flight), as the end of a refusal, or None: asked right before each git call over the
+    flight), as a :class:`FolderWriter`, or None: asked right before each git call over the
     folder (M1, Security's B1). The team gives :meth:`LeaderTeam.writer_in_member_folder`."""
 
     def __init__(self, root: Path, source: str | None, *,
-                 writer_check: Callable[[Path], str | None]):
+                 writer_check: Callable[[Path], FolderWriter | None]):
         self.root = Path(root)
         self.source = source
         self.record_path = self.root / "project.json"
@@ -411,7 +431,7 @@ class ProjectCopies:
                 "dir, outside the folder, and runs from the folder's top.", cause="setup")
         writer = self.writer_check(Path(work_tree))
         if writer is not None:
-            raise MemberGitRefused(f"Temper won't run git over your folder{writer}.",
+            raise MemberGitRefused(f"Temper won't run git over your folder{writer.text}.",
                                    cause="writer")
         try:
             planted = nested_git(work_tree)
@@ -423,7 +443,7 @@ class ProjectCopies:
             raise MemberGitRefused(
                 "Temper won't run git over your folder while it holds a .git of its own: "
                 f"{_named(planted, all_found=False)}. Remove them and try again.",
-                cause="planted", fix=GIT_REFUSAL_FIXES["planted"])
+                cause="planted", fix=GIT_REFUSAL_FIXES["planted"], paths=tuple(planted))
         if not self._index_may_hold_gitlink(Path(git_dir)):
             return
         held = self._gitlinks(git_dir, ["ls-files", "-s", "-z"], oid_at=1)
@@ -769,14 +789,16 @@ class LeaderTeam(TeamRows, Team):
         self.goal = goal
         self.project = project
 
-    def writer_in_member_folder(self, folder: Path) -> str | None:
-        """What may still write in ``folder``, a member's working folder, as the end of
-        Temper's refusal to run git over it; None when nothing may (M1, Security's B1). Asked
-        right before each git call over the folder: a turn of that member in flight (running
-        or uncertain), other than the turn the git is for while that one has no box named
-        (:func:`git_for_own_turn`); a worker box Docker lists for this run in any state but
-        exited or dead whose turn is that member's, or no turn of the run (it might be
-        anyone's); Docker that can't be asked. A folder that is no member's is refused too.
+    def writer_in_member_folder(self, folder: Path) -> FolderWriter | None:
+        """What may still write in ``folder``, a member's working folder, as a
+        :class:`FolderWriter`: its kind, and the end of Temper's refusal to run git over it;
+        None when nothing may (M1, Security's B1). Asked right before each git call over the
+        folder: a turn of that member in flight (running or uncertain), other than the turn
+        the git is for while that one has no box named (:func:`git_for_own_turn`):
+        ``turn_in_flight``; a worker box Docker lists for this run in any state but exited or
+        dead whose turn is that member's, or no turn of the run (it might be anyone's):
+        ``box_live``; Docker that can't be asked: ``docker_unknown``. A folder that is no
+        member's is refused too: ``unknown_folder``.
 
         Its limits (Security's B1 conditions): it sees Temper's own worker boxes only, not a
         process on the host or a container started by hand without Temper's labels; the leader
@@ -788,16 +810,18 @@ class LeaderTeam(TeamRows, Team):
         owners = [m["participant_id"] for m in members
                   if os.path.abspath(ProjectCopies.worktree(self._pdir(m))) == target]
         if len(owners) != 1:
-            return ": it can't tell which member's folder it is"
+            return FolderWriter("unknown_folder", ": it can't tell which member's folder it is")
         own = _GIT_FOR_TURN.get()
         for t in run_turns:
             if (t["participant_id"] == owners[0] and t["state"] in UNSETTLED
                     and not (t["turn_id"] == own and t["box_name"] is None)):
-                return f" while a turn of yours is still in flight: turn {t['turn_no']} ({t['state']})"
+                return FolderWriter("turn_in_flight", " while a turn of yours is still in "
+                                    f"flight: turn {t['turn_no']} ({t['state']})")
         try:
             boxes = (type(self).list_boxes or boxes_of_run)(self.run_id)
         except BoxesUnknown as exc:
-            return f": it can't ask Docker which boxes are live ({exc})"
+            return FolderWriter("docker_unknown",
+                                f": it can't ask Docker which boxes are live ({exc})")
         for b in boxes:
             if b["state"] in ("exited", "dead"):
                 continue
@@ -805,9 +829,10 @@ class LeaderTeam(TeamRows, Team):
                      if b["turn"] and t["turn_id"][:16] == b["turn"]}
             shown = f"{_plain(b['name'])} ({_plain(b['state'])})"
             if not whose:
-                return f" while a box of this run that Temper can't place is live: {shown}"
+                return FolderWriter("box_live", " while a box of this run that Temper can't "
+                                    f"place is live: {shown}")
             if owners[0] in whose:
-                return f" while a box of yours is still live: {shown}"
+                return FolderWriter("box_live", f" while a box of yours is still live: {shown}")
         return None
 
     # --- Team seams -------------------------------------------------------------------

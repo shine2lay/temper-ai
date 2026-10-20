@@ -13,9 +13,11 @@ The save works on folders members wrote, so it is bounded (Architecture's land c
 with everything it started, and past its caps (paths, bytes, output) the save is refused.
 
 Before any of its git starts over a member's folder, the save runs #110's check (M1, #112):
-it waits, within its seconds, until nothing may still write in the folder (the cut turn's box
-is gone), and a folder that holds a .git of its own is not saved. Docker is a stand-in here
-too (LeaderTeam.list_boxes).
+it waits, within its seconds, while a box of the run may still write in the folder (the cut
+turn's box, or one Temper can't place), refuses at once for anything else that may write, and
+a folder that holds a .git of its own is not saved. It decides by the check's kind of answer,
+never its words, walks the folder once, and names what it found within what the record keeps
+(#118). Docker is a stand-in here too (LeaderTeam.list_boxes).
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from temper_ai.pi_agent import flow_view, stopped_work
+from temper_ai.pi_agent import flow_view, member_tree, stopped_work, team_leader
 from temper_ai.pi_agent.box import BoxesUnknown
 from temper_ai.pi_agent.ledger import events
 from temper_ai.pi_agent.team_leader import LeaderTeam
@@ -701,3 +703,235 @@ def test_a_clean_members_save_runs_the_same_git_and_keeps_the_same_work(led, box
                   {"path": "server.py", "change": "added"}],
         "files_total": 2, "skipped": [], "skipped_total": 0, "error": None}]
     assert _branch_files(team, "builder", branch) == _folder_files(ws, set())
+
+
+# --- what the Stop save decides by, and what it records (#118, Architecture's S1-S4 of #112) ---
+
+
+def _writer_checks(team, monkeypatch) -> list[tuple[str, object]]:
+    """Every answer of #110's writer check (``team.project.writer_check``), by whoever asks:
+    ``(folder, answer)``, in order."""
+    asked: list[tuple[str, object]] = []
+    check = team.project.writer_check
+
+    def counted(folder):
+        answer = check(folder)
+        asked.append((os.path.abspath(folder), answer))
+        return answer
+
+    monkeypatch.setattr(team.project, "writer_check", counted)
+    return asked
+
+
+def _ledger_says(team, monkeypatch, member: str, writer: str) -> None:
+    """The ledger's answer to #110's check, as if ``member``'s folder were no member's
+    (``unknown_folder``: no member row has it) or a turn of ``member`` were still in flight
+    (``turn_in_flight``). Every other folder gets the ledger's own answer."""
+    real = team.ledger.git_writers
+    pid = next(p["participant_id"] for p in team.ledger.participants_of(team.run_id, ts.HOST)
+               if p["member"] == member)
+
+    def git_writers(run_id, host_path):
+        members, run_turns = real(run_id, host_path)
+        if writer == "unknown_folder":
+            return [m for m in members if m["participant_id"] != pid], run_turns
+        return members, [*run_turns, {"turn_id": "turn-still-in-flight", "participant_id": pid,
+                                      "turn_no": 2, "state": "running", "box_name": None}]
+
+    monkeypatch.setattr(team.ledger, "git_writers", git_writers)
+
+
+def _save_seconds(monkeypatch) -> dict[str, float]:
+    """How long each member's save takes, by member."""
+    took: dict[str, float] = {}
+    save = stopped_work.save_unsaved_work_to_stopped_branch
+
+    def timed_save(project, member, *args, **kwargs):
+        started = time.monotonic()
+        try:
+            return save(project, member, *args, **kwargs)
+        finally:
+            took[member] = time.monotonic() - started
+
+    monkeypatch.setattr(stopped_work, "save_unsaved_work_to_stopped_branch", timed_save)
+    return took
+
+
+def _walks(monkeypatch) -> list[str]:
+    """Every walk of a folder for a .git of its own (``member_tree.nested_git``), whichever
+    module's name for it is called: the folders walked, in order."""
+    walked: list[str] = []
+    real = member_tree.nested_git
+
+    def walk(root):
+        walked.append(os.path.abspath(root))
+        return real(root)
+
+    for module in (member_tree, team_leader, stopped_work):
+        monkeypatch.setattr(module, "nested_git", walk, raising=False)
+    return walked
+
+
+def test_the_save_waits_out_a_live_box_temper_cannot_place_then_keeps_the_work(
+        led, box, run_id, tmp_path, monkeypatch):
+    """S1 (#118): a live box of the run whose turn label names no turn of it might be the
+    builder's, so the save waits it out as it waits out the builder's own box (R2). Docker
+    lists it (running, then removing) for two answers, then not at all: git starts over the
+    folder only after Docker last listed it live, and the work is kept as #107 keeps it."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    (ws / "server.py").write_text("serve()\n")
+    log: list = []
+    Docker(monkeypatch, [[{"name": "pi-box-stray", "state": s, "turn": "0123456789abcdef"}]
+                         for s in ("running", "removing")] + [[]], log)
+    asked = _writer_checks(team, monkeypatch)
+    git = GitStarts(monkeypatch, log)
+
+    out = team.end("run_cancelled")
+
+    answers = [answer for folder, answer in asked if folder == os.path.abspath(ws)]
+    # two answers that a box may write in the folder, waited out; then none, before git
+    assert [a is not None for a in answers[:3]] == [True, True, False]
+    lives = [i for i, e in enumerate(log) if e == ("docker", "live")]
+    gits = [i for i, e in enumerate(log) if e[0] == "git" and any(_inside(f, ws) for f in e[2])]
+    assert len(lives) == 2 and gits and min(gits) > max(lives)
+    assert git.over(ws) == SAVE_GIT
+    branch = f"stopped/{cut['turn_id']}"
+    (kept,) = out["kept_work"]
+    assert (kept["branch"], kept["error"]) == (branch, None)
+    assert kept["files"] == [{"path": "server.py", "change": "added"}]
+    assert _branch_files(team, "builder", branch) == _folder_files(ws, set())
+
+
+@pytest.mark.parametrize("writer", ["turn_in_flight", "unknown_folder"])
+def test_a_turn_in_flight_or_a_folder_no_member_has_is_refused_at_once(
+        led, box, run_id, tmp_path, monkeypatch, writer):
+    """S3 (#118): only a box that may write in the folder is waited out. A turn of the builder
+    still in flight, or a folder the ledger gives to no member, is refused at once: the writer
+    check is asked once for the folder and the save takes less than one poll. One poll is 2 s
+    here and the member's seconds 5, so a save that waited could not pass for one that didn't.
+    Git never starts over the folder, and the lead is saved as before."""
+    monkeypatch.setattr(stopped_work, "WRITER_POLL_SECONDS", 2.0)
+    monkeypatch.setattr(stopped_work, "MEMBER_SECONDS", 5.0)
+    team = _team(led, box, run_id, tmp_path)
+    lead_turn = _cut(team, "lead")
+    cut = _cut(team, "builder")
+    lead_ws, ws = ls.workspace(team, "lead"), ls.workspace(team, "builder")
+    (lead_ws / "plan.md").write_text("the plan\n")
+    (ws / "server.py").write_text("serve()\n")
+    _ledger_says(team, monkeypatch, "builder", writer)
+    asked = _writer_checks(team, monkeypatch)
+    git = GitStarts(monkeypatch)
+    took = _save_seconds(monkeypatch)
+
+    out = team.end("run_cancelled")
+
+    by_member = {k["member"]: k for k in out["kept_work"]}
+    says = {"turn_in_flight": "not saved: Temper won't run git over its folder while a turn of "
+                              "yours is still in flight: turn 2 (running)",
+            "unknown_folder": "not saved: Temper won't run git over its folder: it can't tell "
+                              "which member's folder it is"}[writer]
+    entry = by_member["builder"]
+    assert (entry["turn"], entry["branch"], entry["commit"], entry["files"], entry["error"]) == (
+        cut["turn_id"], None, None, [], says)
+    assert [folder for folder, _ in asked].count(os.path.abspath(ws)) == 1   # no second ask
+    assert took["builder"] < stopped_work.WRITER_POLL_SECONDS                 # no wait
+    assert git.over(ws) == []
+    assert _stopped_branches(team, "builder") == []
+    assert (ws / "server.py").read_text() == "serve()\n"
+    lead = by_member["lead"]
+    assert (lead["branch"], lead["error"]) == (f"stopped/{lead_turn['turn_id']}", None)
+    assert git.over(lead_ws) == SAVE_GIT
+    assert {p["state"] for p in led.participants_of(run_id, ts.HOST)} == {"ended"}
+    assert _ended(led, run_id) == [{"reason": "run_cancelled", "kept_work": out["kept_work"]}]
+
+
+@pytest.mark.parametrize("refusal", ["planted", "entries"])
+def test_a_refused_save_walks_the_members_folder_once(led, box, run_id, tmp_path, monkeypatch,
+                                                     refusal):
+    """S2 (#118): the save names a planted .git from the refusal that found it, so a refused
+    save walks the member's folder once, in #110's check. A refusal for another reason (here
+    more entries than the check takes) is recorded in the check's own words, with no walk after
+    it either."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    (ws / "server.py").write_text("serve()\n")
+    if refusal == "planted":
+        (ws / "sub").mkdir()
+        (ws / "sub" / ".git").write_text("gitdir: /nowhere\n")
+        says = 'not saved: its folder holds a .git of its own ("sub/.git")'
+    else:
+        monkeypatch.setattr(member_tree, "GIT_CHECK_ENTRIES", 2)
+        says = ("not saved: Temper won't run git over your folder: it holds more than 2 entries, "
+                "the most Temper checks for a .git of its own.")
+    walks = _walks(monkeypatch)
+    git = GitStarts(monkeypatch)
+
+    out = team.end("run_cancelled")
+
+    (entry,) = out["kept_work"]
+    assert (entry["turn"], entry["branch"], entry["error"]) == (cut["turn_id"], None, says)
+    assert walks.count(os.path.abspath(ws)) == 1
+    assert git.over(ws) == []
+    assert (ws / "server.py").read_text() == "serve()\n"
+
+
+@pytest.mark.parametrize("letter", ["\u00e9", "\U0001f600"], ids=["accented", "astral"])
+def test_many_escape_heavy_planted_paths_are_named_whole_within_the_record_with_and_more(
+        led, box, run_id, tmp_path, monkeypatch, letter):
+    """S4 (#118): six planted .git entries in folders whose names escape heavily when quoted
+    (an accented letter is 6 characters as \\u00e9, an astral one 12). The record keeps at most
+    500 characters of an error, so the save names only the whole quoted paths that fit, in the
+    walk's order, and says "and more" as some it found are not named: one path fits with the
+    accented names, none with the astral ones. Never a path cut short, an escape cut in two or
+    "and more" lost."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    for i in range(6):
+        nested = ws / f"{i}{letter * 30}" / (letter * 30)
+        nested.mkdir(parents=True)
+        (nested / ".git").write_text("gitdir: /nowhere\n")
+    found = member_tree.nested_git(ws)
+    assert len(found) == 6
+    quoted = [member_tree.quoted_member_path(p) for p in found]
+    assert min(len(q) for q in quoted) > 300     # five of them would be well over 500
+
+    out = team.end("run_cancelled")
+
+    (entry,) = out["kept_work"]
+    error = entry["error"]
+    named = quoted[:1] if letter == "\u00e9" else []
+    assert error == ("not saved: its folder holds a .git of its own ("
+                     + "".join(f"{q} " for q in named) + "and more)")
+    assert len(error) <= 500
+    assert (entry["turn"], entry["branch"], entry["commit"]) == (cut["turn_id"], None, None)
+    assert _ended(led, run_id) == [{"reason": "run_cancelled", "kept_work": out["kept_work"]}]
+
+
+def test_fewer_than_five_planted_paths_too_long_to_name_still_say_and_more(
+        led, box, run_id, tmp_path):
+    """S4 (#118, Architecture's S1 on it): two planted .git entries, fewer than the five the
+    save names, in folders whose names quote to well over the 500 characters the record keeps.
+    Neither fits, so the record says "(and more)": a path the fit leaves out is always said, not
+    only past the first five, and the record never reads "()"."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    astral = "\U0001f600"
+    for i in range(2):
+        nested = ws / f"{i}{astral * 30}" / (astral * 30)
+        nested.mkdir(parents=True)
+        (nested / ".git").write_text("gitdir: /nowhere\n")
+    found = member_tree.nested_git(ws)
+    assert len(found) == 2
+    assert len(found) < stopped_work.GIT_NAMED
+    assert min(len(member_tree.quoted_member_path(p)) for p in found) > 500
+
+    out = team.end("run_cancelled")
+
+    (entry,) = out["kept_work"]
+    assert entry["error"] == "not saved: its folder holds a .git of its own (and more)"
+    assert (entry["turn"], entry["branch"], entry["commit"]) == (cut["turn_id"], None, None)

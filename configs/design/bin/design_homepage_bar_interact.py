@@ -32,6 +32,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 import zlib
 
@@ -39,7 +40,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 METER = "design_homepage_bar_interact"
-VERSION = 2
+# 2: UI parts per WCAG 1.4.11 (H3c, #96); 3: speed only on a quiet machine (H3d, #110)
+VERSION = 3
 HELPERS = HERE / "design_homepage_bar_interact.js"
 FIXTURES = HERE.parent / "testpages" / "bar-interact-v1"
 # Fixture sets of the proof: version 1's key, then version 2's UI-part cases (H3c).
@@ -60,6 +62,12 @@ CHROME = (
     pathlib.Path.home() / ".cache/ms-playwright/chromium-1243/chrome-linux-arm64/chrome"
 )
 SPEED_RUNS = 3
+# H3d (queue #110): a speed run counts only on a quiet machine. The 1-minute load (the first
+# number in /proc/loadavg) must be under LOAD_GATE before and after each run; while it isn't, the
+# step reads it again every LOAD_POLL_S, for at most LOAD_WAIT_S per page.
+LOAD_GATE = 6.0
+LOAD_POLL_S = 15
+LOAD_WAIT_S = 600
 
 # (bar, check, limit); the limit text is BAR.md's, word for word, after the measured threshold.
 CHECKS = [
@@ -811,6 +819,57 @@ def failing(doc: dict) -> set[tuple[str, str, str]]:
     }
 
 
+# A row's outcome by its pass (H3d): null is "could not measure", never met and never not met.
+OUTCOME = {True: "met", False: "not met", None: "could not measure"}
+
+
+def unmeasured(doc: dict) -> set[tuple[str, str, str]]:
+    return {
+        (r["bar"], r["check"], r["width"]) for r in doc["rows"] if r["pass"] is None
+    }
+
+
+def page_verdict(doc: dict, want: set) -> str:
+    """A page's rows against its key: match, differ or could not measure (H3d).
+
+    differ: a row the key doesn't name was not met, or a row it names was met. A row that
+    could not be measured is never counted as either; when no row differs but some could not
+    be measured, the page proves nothing either way.
+    """
+    got, nulls = failing(doc), unmeasured(doc)
+    if (got - nulls) - want or want - got:
+        return "differ"
+    return "could not measure" if nulls else "match"
+
+
+def tally(doc: dict) -> dict:
+    """Rows counted apart as met, not met and could not measure, and each bar's outcome."""
+    rows = dict.fromkeys(OUTCOME.values(), 0)
+    passes: dict[str, list] = {}
+    for r in doc["rows"]:
+        rows[OUTCOME[r["pass"]]] += 1
+        passes.setdefault(r["bar"], []).append(r["pass"])
+    bars = {}
+    for bar, ps in sorted(passes.items()):
+        if any(p is False for p in ps):
+            bars[bar] = "not met"
+        elif any(p is None for p in ps):
+            bars[bar] = "could not measure"
+        else:
+            bars[bar] = "met"
+    return {"rows": rows, "bars": bars}
+
+
+def _reason(row: dict) -> str:
+    """Why a row could not be measured: its evidence texts that name no element."""
+    why = [e["text"] for e in row["evidence"] if not e["selector"]]
+    return "; ".join(why) or "no value"
+
+
+def _ev_line(e: dict) -> str:
+    return f'  - `{e["selector"]}` "{e["text"]}" box {e["box"]}'
+
+
 def _fmt(v) -> str:
     if v is None:
         return "n/a"
@@ -827,23 +886,37 @@ def to_md(doc: dict) -> str:
         "|---|---|---|---|---|---|",
     ]
     for r in doc["rows"]:
-        ok = {True: "yes", False: "no", None: "n/a"}[r["pass"]]
+        ok = {True: "yes", False: "no", None: "could not measure"}[r["pass"]]
         lines.append(
             f"| {r['bar']} | {r['check']} | {r['width']} | {_fmt(r['value'])} | {r['limit']} | {ok} |"
         )
     lines += ["", "## Bars (part 2 rows only)", ""]
     for bar in ("A4", "A7", "A8"):
         rows = [r for r in doc["rows"] if r["bar"] == bar]
-        bad = [f"{r['check']} {r['width']}" for r in rows if r["pass"] is not True]
-        lines.append(
-            f"- {bar}: {'met' if not bad else 'not met (' + ', '.join(bad) + ')'}"
-        )
-    lines += ["", "## Evidence for rows not met", ""]
+        parts = []
+        for outcome in (False, None):
+            named = [f"{r['check']} {r['width']}" for r in rows if r["pass"] is outcome]
+            if named:
+                parts.append(f"{OUTCOME[outcome]} ({', '.join(named)})")
+        lines.append(f"- {bar}: {'; '.join(parts) or 'met'}")
+    n = tally(doc)["rows"]
+    lines += [
+        "",
+        f"Rows: {n['met']} met, {n['not met']} not met,"
+        f" {n['could not measure']} could not measure.",
+        "",
+        "## Evidence for rows not met",
+        "",
+    ]
     for r in doc["rows"]:
-        if r["pass"] is not True:
+        if r["pass"] is False:
             lines.append(f"- {r['check']} {r['width']}:")
-            for e in r["evidence"]:
-                lines.append(f'  - `{e["selector"]}` "{e["text"]}" box {e["box"]}')
+            lines += [_ev_line(e) for e in r["evidence"]]
+    lines += ["", "## Rows that could not be measured", ""]
+    for r in doc["rows"]:
+        if r["pass"] is None:
+            lines.append(f"- {r['check']} {r['width']}: {_reason(r)}")
+            lines += [_ev_line(e) for e in r["evidence"] if e["selector"]]
     return "\n".join(lines) + "\n"
 
 
@@ -1313,6 +1386,91 @@ def _lighthouse_nodes(o, found: list[dict]) -> None:
             _lighthouse_nodes(v, found)
 
 
+def read_load() -> float:
+    """The 1-minute load average: the first number in /proc/loadavg."""
+    return float(pathlib.Path("/proc/loadavg").read_text().split()[0])
+
+
+def gated_runs(once, load=None, clock=None, sleep=None) -> dict:
+    """SPEED_RUNS Lighthouse runs, each on a quiet machine (H3d, queue #110).
+
+    once() is one Lighthouse run; load, clock and sleep default to read_load,
+    time.monotonic and time.sleep. Before each run the 1-minute load must be under
+    LOAD_GATE, or the step waits LOAD_POLL_S and reads it again. A run whose after-reading
+    is LOAD_GATE or more is thrown away (kept under "dropped") and redone. LOAD_WAIT_S from
+    the step's start, checked before each wait and each run, ends the step: with fewer than
+    SPEED_RUNS quiet runs, "error" says why, and score_speed makes the speed rows null
+    (could not measure), never met or not met.
+    """
+    load = load or read_load
+    clock = clock or time.monotonic
+    sleep = sleep or time.sleep
+    runs: list[dict] = []
+    dropped: list[dict] = []
+    nodes: dict = {}
+    meta: dict = {}
+    waited, polls = 0.0, 0
+    busy: float | None = None
+    error: str | None = None
+    start = clock()
+    try:
+        while len(runs) < SPEED_RUNS:
+            if clock() - start >= LOAD_WAIT_S:
+                error = (
+                    f"could not measure: machine busy (load {busy:.2f})"
+                    if busy is not None
+                    else f"could not measure: {len(runs)} of {SPEED_RUNS} quiet runs"
+                    f" in {LOAD_WAIT_S} s"
+                )
+                break
+            before = load()
+            if before >= LOAD_GATE:
+                busy = before
+                t0 = clock()
+                sleep(LOAD_POLL_S)
+                waited += clock() - t0
+                polls += 1
+                continue
+            r = once()
+            after = load()
+            run_nodes = r.pop("nodes", None) or {}
+            meta = {
+                "lighthouse": r.pop("lighthouse", None),
+                "chrome": r.pop("chrome", None),
+            }
+            rec = {
+                k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()
+            }
+            rec.update(load_before=before, load_after=after)
+            if after >= LOAD_GATE:
+                busy = after
+                dropped.append(rec)
+                continue
+            nodes = nodes or run_nodes
+            runs.append(rec)
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"[:300]
+    speed = {
+        "runs": runs,
+        "dropped": dropped,
+        "gate": {
+            "load_limit": LOAD_GATE,
+            "poll_s": LOAD_POLL_S,
+            "cap_s": LOAD_WAIT_S,
+            "waited_s": round(waited, 1),
+            "polls": polls,
+            "redone": len(dropped),
+            "elapsed_s": round(clock() - start, 1),
+            "busy_load": busy,
+        },
+        "nodes": nodes,
+        **meta,
+    }
+    if error:
+        speed["error"] = error
+    return speed
+
+
 def measure_speed(
     site: pathlib.Path, page: str, tool: pathlib.Path, chrome: pathlib.Path
 ) -> dict:
@@ -1320,23 +1478,10 @@ def measure_speed(
 
     base, srv = dc.serve(site, "127.0.0.1")
     url = base + "/" + urllib.parse.quote(page.lstrip("/"))
-    runs: list[dict] = []
-    nodes: dict = {}
-    meta: dict = {}
     try:
-        for _ in range(SPEED_RUNS):
-            r = lighthouse_once(url, tool, chrome)
-            nodes = nodes or r.pop("nodes")
-            r.pop("nodes", None)
-            meta = {"lighthouse": r.pop("lighthouse"), "chrome": r.pop("chrome")}
-            runs.append(
-                {k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()}
-            )
-    except Exception as e:
-        return {"runs": runs, "error": f"{type(e).__name__}: {e}"[:300]}
+        return gated_runs(lambda: lighthouse_once(url, tool, chrome))
     finally:
         srv.shutdown()
-    return {"runs": runs, "nodes": nodes, **meta}
 
 
 # ---------------------------------------------------------------- CLI
@@ -1383,7 +1528,7 @@ def write_outputs(out: pathlib.Path, raw: dict | None, doc: dict) -> None:
 def fixture_proof(args) -> int:
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    report, ok_all = [], True
+    report = []
     for name in FIXTURE_SETS:
         fixtures = FIXTURES.parent / name
         key = json.loads((fixtures / "expected.json").read_text())
@@ -1405,36 +1550,57 @@ def fixture_proof(args) -> int:
                     )
             doc = score(raw)
             write_outputs(out / name / stem, raw, doc)
-            got = failing(doc)
+            got, nulls = failing(doc), unmeasured(doc)
             want = {tuple(x) for x in spec["failing"]}
-            match = got == want
-            ok_all &= match
+            verdict = page_verdict(doc, want)
+            extra, missing = sorted((got - nulls) - want), sorted(want - got)
             report.append(
                 {
                     "set": name,
                     "page": page,
-                    "match": match,
-                    "extra": sorted(got - want),
-                    "missing": sorted(want - got),
+                    "match": verdict == "match",
+                    "verdict": verdict,
+                    "extra": extra,
+                    "missing": missing,
+                    "unmeasured": sorted(nulls),
                 }
             )
-            print(
-                f"{'MATCH' if match else 'DIFF '} {name}/{page}"
-                + (
-                    ""
-                    if match
-                    else f"  extra={sorted(got - want)} missing={sorted(want - got)}"
-                ),
-                flush=True,
-            )
+            if verdict == "match":
+                line = f"MATCH {name}/{page}"
+            elif verdict == "differ":
+                line = f"DIFF  {name}/{page}  extra={extra} missing={missing}"
+            else:
+                why = sorted({_reason(r) for r in doc["rows"] if r["pass"] is None})
+                line = (
+                    f"COULD NOT MEASURE {name}/{page}  rows={sorted(nulls)}:"
+                    f" {'; '.join(why)}"
+                )
+            print(line, flush=True)
+    counts = {
+        v: sum(p["verdict"] == v for p in report)
+        for v in ("match", "differ", "could not measure")
+    }
     (out / "fixture-proof.json").write_text(
-        json.dumps({"all_match": ok_all, "pages": report}, indent=1) + "\n"
+        json.dumps(
+            {
+                "all_match": counts["match"] == len(report),
+                "match": counts["match"],
+                "differ": counts["differ"],
+                "could_not_measure": counts["could not measure"],
+                "pages": report,
+            },
+            indent=1,
+        )
+        + "\n"
     )
     print(
-        f"fixture proof: {sum(r['match'] for r in report)}/{len(report)} pages match",
+        f"fixture proof: {counts['match']}/{len(report)} pages match,"
+        f" {counts['differ']} differ, {counts['could not measure']} could not measure",
         flush=True,
     )
-    return 0 if ok_all else 1
+    if counts["differ"]:
+        return 1
+    return 3 if counts["could not measure"] else 0
 
 
 def main(argv=None) -> int:
@@ -1453,7 +1619,7 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--no-speed",
         action="store_true",
-        help="skip Lighthouse (speed rows become n/a)",
+        help="skip Lighthouse (the speed rows could not be measured)",
     )
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--raw-only", action="store_true")

@@ -512,7 +512,6 @@ def test_speed_medians_and_limits():
 
 # ---------------------------------------------------------------- H3d: speed only on a quiet machine (queue #110)
 
-H3D = "H3d (queue #110): keyed cases written before the load gate's code"
 BUSY = "could not measure: machine busy (load {:.2f})"
 
 
@@ -579,7 +578,6 @@ def _want(fixture_set: str, page: str) -> set:
     return {tuple(x) for x in KEYS[fixture_set]["pages"][page]["failing"]}
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_gate_values_and_unchanged_speed_definitions():
     assert (bi.LOAD_GATE, bi.LOAD_POLL_S, bi.LOAD_WAIT_S) == (6.0, 15, 600)
     assert bi.SPEED_RUNS == 3 and bi.VERSION == 3
@@ -591,7 +589,6 @@ def test_h3d_gate_values_and_unchanged_speed_definitions():
     assert isinstance(bi.read_load(), float)
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_a_quiet_machine_measures_three_runs_as_before():
     m = Machine(
         lambda m: 1.5,
@@ -617,7 +614,6 @@ def test_h3d_a_quiet_machine_measures_three_runs_as_before():
     assert bi.score_speed(speed) == bi.score_speed(plain)
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_b_busy_then_quiet_waits_then_measures():
     m = Machine(lambda m: 8.0 if m.t < 120 else 2.0)
     speed = m.speed()
@@ -630,7 +626,6 @@ def test_h3d_b_busy_then_quiet_waits_then_measures():
     assert all(r["pass"] is True for r in bi.score_speed(speed))
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_c_busy_throughout_could_not_measure():
     m = Machine(lambda m: 9.5)
     speed = m.speed()
@@ -648,7 +643,6 @@ def test_h3d_c_busy_throughout_could_not_measure():
     }
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_d_load_rising_during_a_run_throws_it_away_and_redoes_it():
     m = Machine(
         lambda m: 7.0 if 20 <= m.t < 50 else 1.0,
@@ -672,7 +666,6 @@ def test_h3d_d_load_rising_during_a_run_throws_it_away_and_redoes_it():
     assert (rows["tbt"]["value"], rows["tbt"]["pass"]) == (0, True)
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_d_every_run_getting_busy_ends_could_not_measure():
     m = Machine(lambda m: 7.0 if m.last == "run" else 1.0)
     speed = m.speed()
@@ -682,7 +675,6 @@ def test_h3d_d_every_run_getting_busy_ends_could_not_measure():
     assert all(r["pass"] is None for r in bi.score_speed(speed))
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_cap_is_checked_before_each_wait_and_each_run():
     slow = Machine(lambda m: 1.0, run_s=250.0)
     speed = slow.speed()
@@ -695,7 +687,6 @@ def test_h3d_cap_is_checked_before_each_wait_and_each_run():
     assert all(r["pass"] is None for r in bi.score_speed(speed))
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_lighthouse_error_still_ends_the_step():
     m = Machine(lambda m: 1.0)
 
@@ -707,7 +698,6 @@ def test_h3d_lighthouse_error_still_ends_the_step():
     assert all(r["pass"] is None for r in bi.score_speed(speed))
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_measure_speed_runs_through_the_gate(monkeypatch, tmp_path):
     class Server:
         down = False
@@ -728,7 +718,6 @@ def test_h3d_measure_speed_runs_through_the_gate(monkeypatch, tmp_path):
     assert all({"load_before", "load_after"} <= set(r) for r in speed["runs"])
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_e_could_not_measure_is_counted_apart():
     doc = bi.score(_busy(_raw("bar-interact-v1", "faint-input"), 7.21))
     n = len(doc["rows"])
@@ -763,7 +752,6 @@ def test_h3d_e_could_not_measure_is_counted_apart():
     assert bi.page_verdict(bi.score(_busy(slow, 6.4)), slow_want) == "could not measure"
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_e_fixture_proof_counts_could_not_measure_apart(tmp_path, capsys):
     src = tmp_path / "raw-in"
     for name in bi.FIXTURE_SETS:
@@ -784,7 +772,6 @@ def test_h3d_e_fixture_proof_counts_could_not_measure_apart(tmp_path, capsys):
     assert "fixture proof: 18/19 pages match, 0 differ, 1 could not measure" in printed
 
 
-@pytest.mark.xfail(reason=H3D, strict=True)
 def test_h3d_e_a_real_speed_fail_still_differs(tmp_path, capsys):
     src = tmp_path / "raw-in"
     for name in bi.FIXTURE_SETS:

@@ -498,7 +498,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_grade.yaml` | agent |
 | `design/agents/design_score.yaml` | agent (script) |
 
-### architecture (38)
+### architecture (39)
 
 | Config | Kind |
 |---|---|
@@ -519,6 +519,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/fixtures/first_app/` | checker controls (synthetic page) |
 | `architecture/fixtures/first_app_reworded/` | checker controls (the synthetic page reworded, with its profile) |
 | `architecture/bin/first_app_p3.py` | script (first_app_check's Project 3 journey: WebKit phone, exact text, kill and start) |
+| `architecture/bin/ops_host_client.py` | library (stdlib-only, build-bound Ops request/receipt client; pure host verdicts) |
 | `architecture/fixtures/p3_app/` | checker controls (synthetic Project-3-style page, with its plants) |
 | `architecture/stages/context_profile/STANDARD.md` | stage standard (context profile v2: bars and contract; no case content) |
 | `architecture/stages/context_profile/contract.v2.schema.json` | contract (JSON Schema) |
@@ -549,6 +550,19 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_review_next.yaml` | agent |
 | `epd/rules/build.md` | build rules |
 | `epd/rules/new_project.md` | build rules |
+
+**Project 3 host client.** `configs/architecture/bin/ops_host_client.py` writes
+`ops-host-request/1` atomically and validates `ops-host-receipt/1` without running
+host actions. `HostClient.initialize()` drains the writer's pending requests,
+then reads `SEQ-<writer>.json`; `execute()` uses receipt counters thereafter.
+Callers serialize each `(window_id, writer)` and include lane-held time in
+`expires_at`, bounded by `window_expires_at`. `verdict()` is QA's pure verdict
+rule; `judge_receipt()` reads the bound receipt and evidence files and applies it;
+`compare_engine(before, after, expected)` checks the full image pin
+and unchanged running container lifecycle. QA's `api_check` may pin the module's
+SHA-256 and use `writer="api-check"` for `API-D-1`/`API-D-5`. This module does not
+change Project 2's `first_app_shared.host_row`. Tests:
+`tests/test_architecture/test_ops_host_client.py`.
 
 ### frontend (2)
 

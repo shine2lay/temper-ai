@@ -22,7 +22,9 @@ times out or leaves a tool call open after the prompt was sent makes the turn *u
 
 A team member's turn can also take messages while it runs (FLOW): the
 request's ``inbox`` is polled during the turn and each new item goes to Pi once, as a steer
-(delivered after the current tool calls, before the next model call). Its text must start
+(delivered after the current tool calls, before the next model call), one at a time: the
+next only after Pi accepted the one before, and none after Pi refused one or one could not
+be sent, so one sender's messages never overtake each other. Its text must start
 with :data:`TEAM_MESSAGE_PREFIX`, the one input the box's guard lets in mid-turn. Once the box
 is gone, the session file says which handed messages reached the turn
 (``TurnReport.handed_in``). ``on_tools`` gets the running turn's tool-call counts.
@@ -141,9 +143,13 @@ class TurnRequest:
     rewind_allowed: bool = False
     #: Team messages for this member that arrived while its turn runs. Polled about every
     #: :data:`INBOX_POLL_S` and right after each tool call ends, while Pi's run is active
-    #: (from its agent_start until it settles), on the turn's own thread; each new ``seq``
-    #: goes to Pi once, as a steer. An item whose text lacks :data:`TEAM_MESSAGE_PREFIX` is
-    #: never sent (reported unconfirmed). A failing inbox is noted, never fails the turn.
+    #: (from its agent_start until it settles), on the turn's own thread, and only when
+    #: everything it gave before was steered and accepted; each new ``seq`` goes to Pi once,
+    #: as a steer, one at a time (the next once Pi accepted the one before). An item whose
+    #: text lacks :data:`TEAM_MESSAGE_PREFIX` is never sent; after it, or after a steer Pi
+    #: refused, nothing more is steered or polled in this turn, and what was polled but not
+    #: steered is reported unconfirmed (it goes back to pending, so the member's next claim
+    #: takes it in order). A failing inbox is noted, never fails the turn.
     #: None: nothing is handed in, as before.
     inbox: Callable[[], list[Handed]] | None = None
     #: Gets the running turn's tool calls counted by tool name, most first, at most every
@@ -172,16 +178,25 @@ class TurnReport:
     #: [seq...], "unexpected": n}``, plus ``"refused": [seq...]`` (Pi answered the steer
     #: with an error) and ``"problems": [words...]`` when there were any. Confirmed: its exact
     #: text is a user message this turn added to the file. Unconfirmed: everything else that
-    #: was polled (not sent, refused by Pi or the box's guard, queued too late, or the box not
-    #: confirmed gone). ``unexpected`` counts user messages of this turn that start with the
-    #: team-message prefix but were not handed in by Temper.
+    #: was polled (not sent, refused by Pi or the box's guard, never steered because an
+    #: earlier one was refused or not sent, queued too late, or the box not confirmed gone).
+    #: ``unexpected`` counts user messages of this turn that start with the team-message
+    #: prefix but were not handed in by Temper.
     handed_in: dict | None = None
 
 
 class _MidTurn:
     """A running team turn's live side (FLOW): team messages handed in as
     Pi steers, and the turn's tool-call counts. Every call happens on the turn runner's
-    thread (the RPC sink runs inside ``rpc.next``)."""
+    thread (the RPC sink runs inside ``rpc.next``).
+
+    One sender's messages must reach the member in seq order (I5 rule 3; Architecture's
+    ruling in #114's land check). So the messages the inbox gives are steered one at a time,
+    from :meth:`tick`: the next only once Pi accepted the one before. After a steer Pi
+    refused, or a message that could not be sent, nothing more is steered or polled in this
+    turn: the rest of what was polled is never sent, and it goes back to pending with the
+    refused one (unconfirmed), so the member's next claim takes them in seq order. What Pi
+    accepted is then always an in-order prefix of what was polled."""
 
     def __init__(self, inbox: Callable[[], list[Handed]] | None,
                  on_tools: Callable[[dict[str, int]], None] | None,
@@ -195,6 +210,10 @@ class _MidTurn:
         self.running = False
         self.sent: dict[int, str] = {}  # seq -> text, in the order sent
         self.unsent: list[int] = []  # seqs never sent: no prefix, or the worker was gone
+        self.queued: list[tuple[int, Any]] = []  # polled, not steered yet: (seq, text)
+        self.awaiting: str | None = None  # the steer Pi has not answered yet (request id)
+        # A steer was refused or a message could not be sent: nothing more this turn.
+        self.halted = False
         self.steers: dict[str, int] = {}  # RPC request id -> seq
         self.refused: list[int] = []  # seqs whose steer Pi answered with an error
         self.problems: list[str] = []
@@ -208,7 +227,8 @@ class _MidTurn:
     def observe(self, record: dict) -> bool:
         """See one Pi record of the turn. True for the answer to one of these steers: it is
         kept from the event mapper (a refused steer never fails the turn; it stays
-        unconfirmed)."""
+        unconfirmed, and it stops the steering for the rest of the turn). The next steer goes
+        from :meth:`tick`, never from here (this runs in the RPC sink)."""
         kind = record.get("type")
         if kind == "agent_start":
             self.running = True
@@ -228,20 +248,27 @@ class _MidTurn:
                 self.tool_ended = True
         elif kind == "response" and record.get("command") == "steer" \
                 and record.get("id") in self.steers:
+            if record["id"] == self.awaiting:
+                self.awaiting = None
             if not record.get("success"):
                 self.refused.append(self.steers[record["id"]])
+                self.halted = True
             return True
         return False
 
     def tick(self) -> None:
         """Called by the turn's wait loop after each record and at least every half second."""
         now = self.clock()
-        if self.inbox is not None and self.rpc is not None and self.running and (
-                self.tool_ended or self.polled_at is None
-                or now - self.polled_at >= INBOX_POLL_S):
-            self.tool_ended = False
-            self.polled_at = now
-            self._hand_in()
+        if self.inbox is not None and self.rpc is not None and self.running:
+            # Poll only once all that was polled before is steered and accepted: what comes
+            # in meanwhile stays pending in the ledger.
+            if not self.queued and self.awaiting is None and not self.halted and (
+                    self.tool_ended or self.polled_at is None
+                    or now - self.polled_at >= INBOX_POLL_S):
+                self.tool_ended = False
+                self.polled_at = now
+                self._poll()
+            self._steer_next()
         if self.on_tools is not None and self.counts_new and (
                 self.counts_at is None or now - self.counts_at >= TOOLS_EVERY_S):
             self.counts_new = False
@@ -252,7 +279,8 @@ class _MidTurn:
             except Exception as exc:  # noqa: BLE001 - a counting bug never fails the turn
                 self._problem(f"on_tools failed ({type(exc).__name__})")
 
-    def _hand_in(self) -> None:
+    def _poll(self) -> None:
+        """Queue what the inbox gives now, in its order (the ledger's: seq order)."""
         assert self.inbox is not None
         try:
             items = list(self.inbox() or [])
@@ -264,20 +292,30 @@ class _MidTurn:
             if not isinstance(seq, int) or isinstance(seq, bool):
                 self._problem("a handed message had no seq: not sent")
                 continue
-            if seq in self.sent or seq in self.unsent:
+            if seq in self.sent or seq in self.unsent or any(s == seq for s, _ in self.queued):
                 continue
-            text = item.get("text")
-            if not isinstance(text, str) or not text.startswith(TEAM_MESSAGE_PREFIX):
-                self.unsent.append(seq)
-                self._problem("a handed message lacked the team-message prefix: not sent")
-                continue
-            try:
-                rid = self.rpc.send("steer", message=text)
-            except RpcError:  # the worker is gone: the turn ends uncertain
-                self.unsent.append(seq)
-                raise
-            self.sent[seq] = text
-            self.steers[rid] = seq
+            self.queued.append((seq, item.get("text")))
+
+    def _steer_next(self) -> None:
+        """The next queued message to Pi, once the steer before it was accepted. One without
+        the team-message prefix is never sent, and it stops the steering as a refusal does."""
+        if self.awaiting is not None or self.halted or not self.queued:
+            return
+        seq, text = self.queued.pop(0)
+        if not isinstance(text, str) or not text.startswith(TEAM_MESSAGE_PREFIX):
+            self.unsent.append(seq)
+            self.halted = True
+            self._problem("a handed message lacked the team-message prefix: not sent")
+            return
+        try:
+            rid = self.rpc.send("steer", message=text)
+        except RpcError:  # the worker is gone: the turn ends uncertain
+            self.unsent.append(seq)
+            self.halted = True
+            raise
+        self.sent[seq] = text
+        self.steers[rid] = seq
+        self.awaiting = rid
 
     def _problem(self, words: str) -> None:
         if words not in self.problems:
@@ -289,7 +327,10 @@ class _MidTurn:
         unreadable) confirms nothing."""
         found = set(turn_user_texts or ())
         confirmed = [s for s, text in self.sent.items() if text in found]
-        unconfirmed = [s for s in [*self.sent, *self.unsent] if s not in confirmed]
+        never = [s for s, _ in self.queued]  # polled, never steered: not sent
+        if never:
+            self._problem("a handed message was never steered: not sent")
+        unconfirmed = [s for s in [*self.sent, *self.unsent, *never] if s not in confirmed]
         handed = set(self.sent.values())
         unexpected = sum(1 for text in turn_user_texts or ()
                          if text.startswith(TEAM_MESSAGE_PREFIX) and text not in handed)

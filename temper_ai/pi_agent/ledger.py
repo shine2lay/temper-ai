@@ -1384,15 +1384,18 @@ class Ledger:
             return rows
 
     def unhand(self, turn_id: str, seqs: Sequence[int]) -> int:
-        """Messages handed into a turn that its session never shows: back to pending, so the
-        member's next turn gets them (delivered once, never lost)."""
+        """Messages handed into a turn that its session never shows: back to pending as if
+        never handed in, so the member's next turn gets them (delivered once, never lost).
+        The hand-in's delivery is taken back too: the next claim counts its first, and its
+        frame doesn't call it given again."""
         if not seqs:
             return 0
         with _LOCK, self._tx() as conn:
             n = conn.execute(messages.update().where(
                 messages.c.seq.in_(list(seqs)), messages.c.turn_id == turn_id,
                 messages.c.state == "consumed").values(
-                state="pending", turn_id=None, delivered_at=None)).rowcount
+                state="pending", turn_id=None, delivered_at=None,
+                delivery_count=messages.c.delivery_count - 1)).rowcount
             t = conn.execute(sa.select(turns.c.input_seqs).where(
                 turns.c.turn_id == turn_id)).scalar()
             conn.execute(turns.update().where(turns.c.turn_id == turn_id).values(

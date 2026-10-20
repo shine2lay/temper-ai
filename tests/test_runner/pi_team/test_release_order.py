@@ -217,12 +217,64 @@ def _cut(f: _Forged, bad: bool) -> None:
     f.claim(Z, [6, 7], cut=6 if bad else 7)
 
 
+# The labels below were first forged in Architecture's bite check of #114
+# (land-check-temper-114/bite-extra-forged.py); #116 keeps them here.
+
+
+def _twice(f: _Forged, bad: bool) -> None:
+    """Rule 1: Y's 6 reaches Z a second time, with 7."""
+    f.release(6, Y, Z)
+    f.claim(Z, [6], cut=6)
+    f.release(7, Y, Z)
+    f.claim(Z, [6, 7] if bad else [7], cut=7)
+
+
+def _batch_order(f: _Forged, bad: bool) -> None:
+    """Rule 1: a batch out of seq order."""
+    f.release(6, Y, Z)
+    f.release(7, Y, Z)
+    f.claim(Z, [7, 6] if bad else [6, 7], cut=7)
+
+
+def _retry_batch(f: _Forged, bad: bool) -> None:
+    """Rule 1: a retry's batch is not all its superseded turn gave back."""
+    f.release(6, Y, Z)
+    f.release(7, Y, Z)
+    first = f.claim(Z, [6, 7], cut=7)
+    f.turns[first]["state"] = "superseded"
+    retry = f.claim(Z, [6] if bad else [6, 7], cut=7)
+    f.turns[retry]["retry_of"] = first
+
+
+def _no_release_event(f: _Forged, bad: bool) -> None:
+    """A message that is not a view reaches Z with no release event."""
+    f.release(6, Y, Z)
+    f.msgs.append({"seq": 9, "message_id": "m9", "to_participant": f"p-{Z}", "sender": Y,
+                   "sender_kind": "member", "kind": "info"})
+    f.claim(Z, [6, 9] if bad else [6], cut=9)
+
+
+def _claim_size(f: _Forged, bad: bool) -> None:
+    """A claim's turn_start counts other than its batch."""
+    f.release(6, Y, Z)
+    f.release(7, Y, Z)
+    f.claim(Z, [6, 7], cut=7)
+    if bad:
+        f.events[-1]["data"]["messages"] = 1
+
+
 @pytest.mark.parametrize(("case", "label"), [
     (_skip, "I5.2 skip"),
     (_sender, "I5.3 sender order"),
     (_sender_after_unhand, "I5.3 sender order"),
     (_cut, "I5.4 cutoff"),
-], ids=["skip", "sender", "sender_after_unhand", "cut"])
+    (_twice, "I5.1 not pending"),
+    (_batch_order, "I5.1 batch order"),
+    (_retry_batch, "I5.1 retry batch"),
+    (_no_release_event, "I5 no release event"),
+    (_claim_size, "I5 claim size"),
+], ids=["skip", "sender", "sender_after_unhand", "cut", "twice", "batch_order",
+        "retry_batch", "no_release_event", "claim_size"])
 def test_a_forged_bad_ledger_fails_with_its_rule(case: Callable[[_Forged, bool], None],
                                                  label: str):
     good, bad = _Forged(), _Forged()

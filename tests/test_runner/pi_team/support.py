@@ -88,7 +88,10 @@ def ids_in(prompt: str) -> list[str]:
 
 
 class TeamFakeBox(FakeBox):
-    """L2's stand-in worker, playing the member's script through the box's team channel."""
+    """L2's stand-in worker, playing the member's script through the box's team channel.
+
+    A script turn with an ``{"agent_start": True}`` action is played live (:meth:`_live`),
+    so Temper can hand messages into it while it runs."""
 
     def _model_turn(self, rid: str, message: str, ok: Any) -> list[dict]:
         team = self.spec.team
@@ -105,6 +108,8 @@ class TeamFakeBox(FakeBox):
             {"type": "text", "text": message}]}})
         actions = SCRIPTS[member].pop(0) if SCRIPTS[member] else []
         out: list[dict] = [ok()]
+        if any("agent_start" in action for action in actions):
+            return [*out, *self._live(actions)]
         text = "ok"
         for action in actions:
             if "call" in action:
@@ -140,6 +145,42 @@ class TeamFakeBox(FakeBox):
         msg = assistant(text)
         self._append({"type": "message", "message": msg})
         return [*out, *said(msg, (text,)), {"type": "agent_end", "messages": []}, SETTLED]
+
+    def _live(self, actions: list[dict]) -> list[dict]:
+        """The turn as Pi runs it: each action happens only when the turn runner reads that
+        far (``sup.later``). ``agent_start``: Pi's run begins (Temper hands messages in from
+        here); ``later``: a callable run at that point (another member's turn settling,
+        say); ``tool``: a model call that reads a file with the read tool; ``say``: the final
+        answer. Before each model call -- each ``tool`` and the final answer -- Pi takes the
+        steers it accepted (its steering point)."""
+        text = next((a["say"] for a in reversed(actions) if "say" in a), "ok")
+
+        def play(action: dict) -> list[dict]:
+            if "agent_start" in action:
+                return [{"type": "agent_start"}]
+            if "later" in action:
+                action["later"]()
+                return []
+            if "tool" in action:
+                self.take_steers()
+                call_id = f"call_{uuid.uuid4().hex[:12]}"
+                self._append({"type": "message", "message": {**assistant(stop="toolUse"),
+                              "content": [{"type": "toolCall", "id": call_id, "name": "read",
+                                           "arguments": {"path": "note.txt"}}]}})
+                self._append({"type": "message", "message": {
+                    "role": "toolResult", "toolCallId": call_id, "toolName": "read",
+                    "content": [{"type": "text", "text": action["tool"]}]}})
+                return sup.read_tool(call_id, action["tool"])
+            raise AssertionError(f"not playable live: {action}")
+
+        def end() -> list[dict]:
+            self.take_steers()
+            msg = assistant(text)
+            self._append({"type": "message", "message": msg})
+            return [*said(msg, (text,)), {"type": "agent_end", "messages": []}, SETTLED]
+
+        return [*(sup.later(lambda a=a: play(a)) for a in actions if "say" not in a),
+                sup.later(end)]
 
     def close(self) -> dict:
         self.log["closed"] = True

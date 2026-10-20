@@ -171,3 +171,112 @@ def test_only_the_pinned_runtimes_own_extensions_may_add_commands(tmp_path):
     assert err.value.code == "extensions_not_allowed"
     with pytest.raises(TurnFailure):
         _check_commands(ours + [builtin], None, frozenset())
+
+
+# --- messages handed into a running turn: one steer at a time (#116) ---------------------
+
+
+class _SteerRpc:
+    """Pi's RPC as the running turn's live side uses it: ``send`` alone, each steer logged.
+    ``gone``: the worker is gone, every send fails."""
+
+    def __init__(self, gone: bool = False):
+        self.steers: list[str] = []
+        self.gone = gone
+
+    def send(self, command, **fields):
+        from temper_ai.pi_agent.rpc import RpcError
+
+        if self.gone:
+            raise RpcError("command_pipe_closed")
+        assert command == "steer"
+        self.steers.append(fields["message"])
+        return f"s{len(self.steers)}"
+
+
+def _handed(seq: int) -> str:
+    from temper_ai.pi_agent.turn import TEAM_MESSAGE_PREFIX
+
+    return f"{TEAM_MESSAGE_PREFIX}message {seq}"
+
+
+def _running(*polls: list[dict], gone: bool = False):
+    """A running turn's live side whose inbox gives ``polls`` in turn (then nothing), at a
+    clock that never moves (it polls only after a tool call ends). Its rpc, and its polls."""
+    from temper_ai.pi_agent.turn import _MidTurn
+
+    left, polled = list(polls), []
+
+    def inbox():
+        polled.append(len(polled) + 1)
+        return left.pop(0) if left else []
+    mid = _MidTurn(inbox, None, clock=lambda: 0.0)
+    mid.rpc = _SteerRpc(gone)
+    mid.observe({"type": "agent_start"})
+    return mid, polled
+
+
+def _answer(mid, rid: str, ok: bool) -> None:
+    assert mid.observe({"type": "response", "command": "steer", "id": rid, "success": ok,
+                        **({} if ok else {"error": "refused"})})
+
+
+def _tool_ended(mid, call_id: str) -> None:
+    mid.observe({"type": "tool_execution_end", "toolCallId": call_id, "toolName": "read"})
+
+
+def test_handed_messages_are_steered_one_at_a_time_and_none_after_a_refusal():
+    mid, polled = _running([{"seq": s, "text": _handed(s)} for s in (5, 8, 9)],
+                           [{"seq": 12, "text": _handed(12)}])
+    mid.tick()
+    assert mid.rpc.steers == [_handed(5)]  # one steer, waiting for Pi's answer
+    _tool_ended(mid, "c1")
+    mid.tick()
+    assert mid.rpc.steers == [_handed(5)] and polled == [1]  # no next steer, no poll
+    _answer(mid, "s1", True)
+    mid.tick()
+    assert mid.rpc.steers == [_handed(5), _handed(8)]
+    _answer(mid, "s2", False)  # Pi refuses 8: nothing more in this turn
+    _tool_ended(mid, "c2")
+    mid.tick()
+    assert mid.rpc.steers == [_handed(5), _handed(8)] and polled == [1]
+
+    report = mid.handed_in([_handed(5)])
+    assert (report["confirmed"], report["unconfirmed"], report["refused"]) == ([5], [8, 9], [8])
+    assert report["problems"] == ["a handed message was never steered: not sent"]
+
+
+def test_all_steers_accepted_the_inbox_is_polled_again():
+    mid, polled = _running([{"seq": 5, "text": _handed(5)}], [{"seq": 8, "text": _handed(8)}])
+    mid.tick()
+    _answer(mid, "s1", True)
+    _tool_ended(mid, "c1")
+    mid.tick()
+    assert polled == [1, 2] and mid.rpc.steers == [_handed(5), _handed(8)]
+    _answer(mid, "s2", True)
+    assert mid.handed_in([_handed(5), _handed(8)]) == {
+        "confirmed": [5, 8], "unconfirmed": [], "unexpected": 0}
+
+
+def test_a_message_that_cannot_be_sent_stops_the_steering_as_a_refusal_does():
+    mid, _ = _running([{"text": _handed(4)}, {"seq": 5, "text": "no prefix"},
+                       {"seq": 8, "text": _handed(8)}])
+    mid.tick()  # the seq-less one is noted and skipped; 5 is never sent, nor 8 after it
+    assert mid.rpc.steers == []
+    report = mid.handed_in(None)
+    assert (report["confirmed"], report["unconfirmed"]) == ([], [5, 8])
+    assert report["problems"] == ["a handed message had no seq: not sent",
+                                  "a handed message lacked the team-message prefix: not sent",
+                                  "a handed message was never steered: not sent"]
+
+
+def test_a_gone_worker_leaves_the_rest_unsent():
+    import pytest
+
+    from temper_ai.pi_agent.rpc import RpcError
+
+    mid, _ = _running([{"seq": 5, "text": _handed(5)}, {"seq": 8, "text": _handed(8)}],
+                      gone=True)
+    with pytest.raises(RpcError):
+        mid.tick()
+    assert mid.handed_in(None)["unconfirmed"] == [5, 8]

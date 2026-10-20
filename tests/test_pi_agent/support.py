@@ -16,6 +16,7 @@ import queue
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -160,6 +161,16 @@ def spec(pdir: Path, session_id: str = "sess-1", **over: Any) -> BoxSpec:
 # --- Pi's events (what Pi 0.87.1 writes on its RPC stdout) ----------------------------
 
 SETTLED = {"type": "agent_settled"}
+#: A stand-in's own record, never one of Pi's: :class:`FakeRpc` runs it when the turn runner
+#: reads it, and the records it returns come next (:func:`later`).
+LATER = "fake_later"
+
+
+def later(run: Callable[[], list[dict] | None]) -> dict:
+    """What Pi does at this point of its run, done only when the turn runner gets this far
+    (so whatever Temper sends meanwhile, a steer, is seen first); ``run`` returns the records
+    Pi sends then."""
+    return {"type": LATER, "run": run}
 
 
 def assistant(text: str = "", *, stop: str = "stop", error: str | None = None) -> dict:
@@ -204,6 +215,9 @@ class FakeRpc:
         self.sink = sink
         self.responses: dict[str, dict] = {}
         self.queue: queue.Queue[dict] = queue.Queue()
+        # What Pi sends before anything still queued: a steer's answer (Pi answers a steer
+        # at once, while its run goes on) and the records a ``later`` returns.
+        self.front: deque[dict] = deque()
         self.replies: list[dict] = []
         self.sent: list[dict] = []
         self.dead = False
@@ -215,7 +229,11 @@ class FakeRpc:
         self._seq += 1
         rid = f"t{self._seq}"
         self.sent.append({"type": command, **{k: v for k, v in fields.items() if k != "message"}})
-        for record in self.box.answer(rid, command, fields):
+        records = self.box.answer(rid, command, fields)
+        if command == "steer":
+            self.front.extend(records)
+            return rid
+        for record in records:
             self.queue.put(record)
         return rid
 
@@ -225,13 +243,20 @@ class FakeRpc:
 
     def next(self, deadline: float) -> dict:
         while True:
-            try:
-                record = self.queue.get(timeout=max(0.0, min(0.05, deadline - time.monotonic())))
-            except queue.Empty:
-                if self.dead:
-                    raise RpcError("protocol_eof") from None
-                if time.monotonic() >= deadline:
-                    raise RpcError("protocol_deadline") from None
+            if self.front:
+                record = self.front.popleft()
+            else:
+                try:
+                    record = self.queue.get(
+                        timeout=max(0.0, min(0.05, deadline - time.monotonic())))
+                except queue.Empty:
+                    if self.dead:
+                        raise RpcError("protocol_eof") from None
+                    if time.monotonic() >= deadline:
+                        raise RpcError("protocol_deadline") from None
+                    continue
+            if record.get("type") == LATER:
+                self.front.extendleft(reversed(record["run"]() or []))
                 continue
             if record.get("type") == "response":
                 self.responses[record["id"]] = record
@@ -262,12 +287,17 @@ class FakeBox:
     ``tools``, ``notebook``, ``stray_extension``, and for the add-on read-back
     ``add_on_missing``, ``add_on_extra``, ``image_trim_off``). Every start is logged in
     ``STARTS``.
+
+    A steer is answered at once: refused when ``refuse_steer`` (class attribute, set by a
+    test) gives a reason for its text, else accepted and kept until Pi's next steering point
+    (:meth:`take_steers`). Every steer's text is logged in ``log["steers"]``.
     """
 
     behaviour = "answer"
     lie: str | None = None
     STARTS: list[dict] = []
     on_prompt: Callable[[FakeBox], None] | None = None
+    refuse_steer: Callable[[str], str | None] | None = None
 
     def __init__(self, cfg: BoxConfig, spec: BoxSpec, redactor: Any):
         self.cfg = cfg
@@ -282,6 +312,7 @@ class FakeBox:
         self.closed = False
         self.rpc: FakeRpc | None = None
         self.leaf: str | None = None
+        self.steered: list[str] = []  # steers Pi accepted and has not taken yet
         self.inspected = {"network_none": True, "read_only_root": True, "cap_drop_all": True}
         self.launched: dict | None = None
         self.log: dict[str, Any] = {"session_id": spec.session_id, "prompts": 0,
@@ -370,6 +401,15 @@ class FakeBox:
         return not msgs or (msgs[-1].get("role") == "assistant" and msgs[-1].get("stopReason")
                             in ("stop", "error", "aborted", "length"))
 
+    def take_steers(self) -> list[str]:
+        """Pi's steering point (before its next model call): every steer it accepted becomes
+        a user message of the turn, in the order it got them."""
+        taken, self.steered = self.steered, []
+        for text in taken:
+            self._append({"type": "message", "message": {"role": "user", "content": [
+                {"type": "text", "text": text}]}})
+        return taken
+
     def _entries(self) -> list[dict]:
         path = self.session_file
         if not path.exists():
@@ -404,6 +444,15 @@ class FakeBox:
                 rows.append({"name": "sneaky", "source": "extension",
                              "sourceInfo": {"path": "/w/agent/extensions/sneaky.ts"}})
             return [ok({"commands": rows})]
+        if command == "steer":
+            text = str(fields.get("message") or "")
+            self.log.setdefault("steers", []).append(text)
+            why = FakeBox.refuse_steer(text) if FakeBox.refuse_steer is not None else None
+            if why:
+                return [{"type": "response", "id": rid, "command": command, "success": False,
+                         "error": why}]
+            self.steered.append(text)
+            return [ok()]
         if command != "prompt":
             return [ok()]
         message = str(fields.get("message") or "")
@@ -505,6 +554,7 @@ def reset_fake() -> None:
     FakeBox.behaviour = "answer"
     FakeBox.lie = None
     FakeBox.on_prompt = None
+    FakeBox.refuse_steer = None
     FakeBox.STARTS.clear()
 
 

@@ -239,7 +239,39 @@ class TeamFailure(Exception):
 class MemberGitRefused(CopyError, VersionError):
     """Temper refused to run git over a member's folder (M1): it holds a .git of its own, its
     copy's index holds a gitlink the Project didn't start with, or the check could not finish.
-    Both wrappers' git error, so every caller fails the way it fails on a git error."""
+    Both wrappers' git error, so every caller fails the way it fails on a git error, unless it
+    asks ``cause`` first: ``"setup"`` (git wasn't told the copy's own git dir: a code fault),
+    ``"writer"`` (something may still write in the folder), ``"stall"`` (the check ran out of
+    time), ``"gitlink"`` (the copy's index, outside the member's reach) -- or one of
+    :data:`FIXABLE_GIT_REFUSALS`, which the member can fix itself; ``fix`` then says how."""
+
+    def __init__(self, message: str, *, cause: str, fix: str = "") -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.fix = fix
+
+    @property
+    def fixable(self) -> bool:
+        return self.cause in FIXABLE_GIT_REFUSALS
+
+    def told(self) -> str:
+        """The refusal as the member reads it: the problem, then what it can do about it."""
+        return f"{self} {self.fix}".strip()
+
+
+#: The refusals a member can fix in its own folder, each with what to do (#115). A .git of its
+#: own: remove it; too many entries or folders nested too deep: remove what it can make again;
+#: a folder Temper can't open, list or look at: fix its permissions or remove it.
+GIT_REFUSAL_FIXES = {
+    "planted": ("Don't create a new one: no git init or git clone in your folder, and give a "
+                "scaffolder its no-git option."),
+    "entries": ("Remove generated folders you can make again, such as node_modules, .venv or "
+                "build output, and try again."),
+    "depth": "Remove or flatten the deepest folders, and try again.",
+    "unreadable": ("Fix that folder's permissions so Temper can list and read it, or remove "
+                   "it, and try again."),
+}
+FIXABLE_GIT_REFUSALS = frozenset(GIT_REFUSAL_FIXES)
 
 
 _GITLINK_MODE = (0o160000).to_bytes(4, "big")
@@ -370,18 +402,22 @@ class ProjectCopies:
                 or any(name.startswith("GIT_") for name in env or {})):
             raise MemberGitRefused(
                 "Temper won't run git over your folder unless git is told the copy's own git "
-                "dir, outside the folder, and runs from the folder's top.")
+                "dir, outside the folder, and runs from the folder's top.", cause="setup")
         writer = self.writer_check(Path(work_tree))
         if writer is not None:
-            raise MemberGitRefused(f"Temper won't run git over your folder{writer}.")
+            raise MemberGitRefused(f"Temper won't run git over your folder{writer}.",
+                                   cause="writer")
         try:
             planted = nested_git(work_tree)
         except GitCheckUnfinished as exc:
-            raise MemberGitRefused(f"Temper won't run git over your folder: {exc}.") from None
+            raise MemberGitRefused(f"Temper won't run git over your folder: {exc}.",
+                                   cause=exc.kind,
+                                   fix=GIT_REFUSAL_FIXES.get(exc.kind, "")) from None
         if planted:
             raise MemberGitRefused(
                 "Temper won't run git over your folder while it holds a .git of its own: "
-                f"{_named(planted, all_found=False)}. Remove them and try again.")
+                f"{_named(planted, all_found=False)}. Remove them and try again.",
+                cause="planted", fix=GIT_REFUSAL_FIXES["planted"])
         if not self._index_may_hold_gitlink(Path(git_dir)):
             return
         held = self._gitlinks(git_dir, ["ls-files", "-s", "-z"], oid_at=1)
@@ -399,7 +435,7 @@ class ProjectCopies:
             raise MemberGitRefused(
                 "Temper won't run git over your folder while your copy holds a gitlink the "
                 f"Project didn't start with: {_named(other)}. It has to be removed from the "
-                "copy's index on the host first.")
+                "copy's index on the host first.", cause="gitlink")
 
     @staticmethod
     def _index_may_hold_gitlink(git_dir: Path) -> bool:

@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -62,6 +63,8 @@ from temper_ai.pi_agent.member_tree import MemberLink, member_entry, read_member
 from temper_ai.pi_agent.team_folders import GIT, GIT_TIMEOUT, git_env
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from temper_ai.pi_agent.team_leader import ProjectCopies
 
 #: The shared repo's name in ``<team root>/git``: no member's name starts with ``_``.
@@ -237,6 +240,19 @@ def _dedupe(conflicts: list[Conflict]) -> list[Conflict]:
         by_path.pop(c.path, None)
         by_path[c.path] = c
     return list(by_path.values())
+
+
+@contextmanager
+def _refusal_as_plain_git_error(why: str) -> Iterator[None]:
+    """Raise M1's refusal (a :class:`VersionError` with a ``cause``) as a plain git error
+    (#115). Used where git has already changed the member's folder in this call: the caller
+    must then fail as on any git error, never tell the member and carry on."""
+    try:
+        yield
+    except VersionError as exc:
+        if getattr(exc, "cause", None) is None:
+            raise
+        raise VersionError(f"{why}: {exc}") from None
 
 
 class SharedVersion:
@@ -456,7 +472,10 @@ class SharedVersion:
             if not (gd / "MERGE_HEAD").exists():
                 err = done.stderr.decode("utf-8", "replace").strip().splitlines()
                 raise VersionError(f"git merge failed: {(err[-1] if err else '')[:200]}")
-            return "conflict", self._finish(member, gd, wt, "with conflicts")
+            # The merge has written into the member's folder by now (#115).
+            with _refusal_as_plain_git_error("a merge in the member's copy could not be "
+                                             "finished"):
+                return "conflict", self._finish(member, gd, wt, "with conflicts")
         after = self._rev("HEAD", gd)
         if after == before:
             return "up_to_date", []
@@ -471,7 +490,8 @@ class SharedVersion:
 
         Returns every open conflict marked told, because the turn about to start names them:
         recorded ones still open (a ``markers`` path whose markers are gone is settled), plus
-        any this merge left."""
+        any this merge left. M1's refusal comes as raised (its ``cause`` set) while no git
+        has changed the folder in this call; after that, as a plain :class:`VersionError`."""
         self.ensure()
         gd, wt = self._copy(member, pdir)
         found = self._finish_pending(member, gd, wt)
@@ -500,7 +520,9 @@ class SharedVersion:
         """After the member's turn has settled: commit its copy, merge the shared version
         into it and, when that merge is clean, make the result the shared version.
         ``recorded``: its stored open conflicts; ``note``: its share note (token-scanned by
-        the caller when the act was recorded)."""
+        the caller when the act was recorded). M1's refusal comes as raised (its ``cause``
+        set) while no git has changed the folder in this call; after that, as a plain
+        :class:`VersionError`."""
         self.ensure()
         gd, wt = self._copy(member, pdir)
         recorded = tuple(recorded)
@@ -524,7 +546,11 @@ class SharedVersion:
         self._commit_all(gd, wt, f"Temper: {member}'s work, shared")
         for races in range(MAX_RACES):
             old = self._fetch_shared(gd)
-            merge, new = self._merge(member, gd, wt, old)
+            # After a lost race, the merge before may have changed the member's folder.
+            with (_refusal_as_plain_git_error("the team's version moved during the share, "
+                                              "and merging it again could not run")
+                  if races else nullcontext()):
+                merge, new = self._merge(member, gd, wt, old)
             head = self._rev("HEAD", gd) or ""
             if new:
                 return Shared("conflict", "Your share did not reach the team's version: merging "

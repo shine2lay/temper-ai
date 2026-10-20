@@ -480,7 +480,14 @@ SHOWN_PATH_CHARS = 60
 
 class GitCheckUnfinished(Exception):
     """The walk for a .git could not finish (a cap, or a folder it could not read); the
-    message is the plain problem, with any path in it quoted (:func:`quoted_member_path`)."""
+    message is the plain problem, with any path in it quoted (:func:`quoted_member_path`).
+    ``kind`` says which: ``"unreadable"`` (a folder it could not open, list or look at),
+    ``"entries"`` or ``"depth"`` (past :data:`GIT_CHECK_ENTRIES` or :data:`GIT_CHECK_DEPTH`:
+    the member can fix those) or ``"stall"`` (past :data:`GIT_CHECK_SECONDS`: it can't)."""
+
+    def __init__(self, message: str, kind: str = "unreadable") -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 def quoted_member_path(rel: str) -> str:
@@ -532,11 +539,11 @@ def nested_git(root: Path | str) -> list[str]:
             if seen > GIT_CHECK_ENTRIES:
                 raise GitCheckUnfinished(
                     f"it holds more than {GIT_CHECK_ENTRIES} entries, the most Temper checks "
-                    "for a .git of its own")
+                    "for a .git of its own", "entries")
             if time.monotonic() - start >= GIT_CHECK_SECONDS:
                 raise GitCheckUnfinished(
                     f"checking it for a .git of its own took longer than "
-                    f"{GIT_CHECK_SECONDS:g} seconds")
+                    f"{GIT_CHECK_SECONDS:g} seconds", "stall")
             rel = f"{rel_dir}/{entry.name}" if rel_dir else entry.name
             if entry.name.lower() == ".git":
                 # Passed by only as the top's own, spelled exactly ".git" (B4).
@@ -552,7 +559,7 @@ def nested_git(root: Path | str) -> list[str]:
             if len(levels) > GIT_CHECK_DEPTH:
                 raise GitCheckUnfinished(
                     f"it nests folders deeper than {GIT_CHECK_DEPTH}, the most Temper checks "
-                    "for a .git of its own")
+                    "for a .git of its own", "depth")
             try:
                 sub = os.open(entry.name, _DIR_FLAGS, dir_fd=fd)
             except FileNotFoundError:

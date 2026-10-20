@@ -37,7 +37,8 @@ LINKS_WINDOW = timedelta(hours=1)
 #: A message is released once it left ``held``.
 RELEASED = ("pending", "consumed", "undelivered")
 #: The engine's rest reasons, as the page names them.
-IDLE_REASONS = {"start": "start", "idle": "idle_call", "no_tool": "no_tool_call"}
+IDLE_REASONS = {"start": "start", "idle": "idle_call", "no_tool": "no_tool_call",
+                "refused": "git_refused"}
 #: How a ledger turn ending is named on the page.
 TURN_ENDED = {"completed": "completed", "failed": "failed", "uncertain": "held",
               "retry": "failed", "limit": "cancelled", "drain": "cancelled",
@@ -451,7 +452,13 @@ def _event(e: dict, waits_by_id: dict[str, dict],
     if kind == "share_refused":
         # reason: the notice's first sentence, at most 160 characters (cut as a wait's words)
         return {**base, "why": d.get("status"), "paths": d.get("paths") or [],
-                "reason": wait_words({"question": (notices or {}).get(d.get("act_id") or "")})}
+                "reason": wait_words({"question": (notices or {}).get(d.get("act_id") or "")}),
+                "cause": d.get("cause")}
+    if kind == "sync_refused":
+        # M1 refused to run git over the member's folder before its turn (#115); cause:
+        # planted, entries, depth, unreadable (the turn started, told why), or writer,
+        # stall, setup, gitlink (it didn't start)
+        return {**base, "cause": d.get("cause"), "reason": wait_words({"question": d.get("reason")})}
     if kind == "conflict":
         return {**base, "paths": d.get("paths") or [], "at_step": d.get("at_step")}
     if kind == "idle":

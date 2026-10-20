@@ -115,8 +115,10 @@ WAIT_KINDS = ("owner", "recovery", "stalled", "pause", "settings", "limit", "clo
 #: waits (``owner``, ``recovery``: their subject names a ``participant_id``) hold only that
 #: member.
 RUN_HOLD_KINDS = ("stalled", "pause", "settings", "limit")
-#: Why a free-flowing team's member is at rest (``idle_reason``).
-REST_REASONS = ("start", "idle", "no_tool")
+#: Why a free-flowing team's member is at rest (``idle_reason``). ``refused``: Temper refused
+#: twice in a row to run git over its folder, for a cause the member can fix (#115); it is set
+#: even while Temper's own notices wait for the member. Any message posted later wakes it.
+REST_REASONS = ("start", "idle", "no_tool", "refused")
 #: The wait kind asked first.
 SETTINGS_KIND = "settings"
 MAX_REFUSALS = 200
@@ -1340,12 +1342,17 @@ class Ledger:
             )).scalar_one()
             if have or (only_if_new and (p["turns"] or p["idle_reason"])):
                 return False
-            conn.execute(participants.update().where(
-                participants.c.participant_id == participant_id).values(
-                idle_reason=reason, idle_note=note, idle_since=_now()))
-            self._event(conn, p["run_id"], p["host_path"], "idle", p["member"],
-                        reason=reason, note=note)
+            self._rest(conn, p, reason, note)
             return True
+
+    def _rest(self, conn: Any, p: Any, reason: str, note: str | None) -> None:
+        """Put the member (``p``: its participant row) at rest in ``conn``'s transaction,
+        whatever waits for it: the callers decide that."""
+        conn.execute(participants.update().where(
+            participants.c.participant_id == p["participant_id"]).values(
+            idle_reason=reason, idle_note=note, idle_since=_now()))
+        self._event(conn, p["run_id"], p["host_path"], "idle", p["member"],
+                    reason=reason, note=note)
 
     def set_conflicts(self, participant_id: str, conflicts: list[dict]) -> None:
         with _LOCK, self._tx() as conn:
@@ -1490,10 +1497,12 @@ class Ledger:
     def finish_turn(self, turn_id: str, *, epoch: int | None, output: str,
                     model_call_ids: list[str], worker: dict | None, ask_owner: dict | None,
                     attempt_id: str, retire: bool = False,
-                    rest: tuple[str, str | None] | None = None) -> dict | None:
+                    rest: tuple[str, str | None] | None = None,
+                    when_resting: Callable[[Any], None] | None = None) -> dict | None:
         """Complete a turn: its held messages leave, the member goes idle (or retires) and,
         when ``ask_owner`` is given (``{"question", "options"}``), the owner wait follows -- in
-        one transaction. None when the turn is no longer this owner's (stale write)."""
+        one transaction. None when the turn is no longer this owner's (stale write).
+        ``when_resting`` is called with the transaction only when ``rest`` was applied."""
         team = self._team_of(turns, turns.c.turn_id, turn_id)
         if team is None:
             return None
@@ -1528,11 +1537,9 @@ class Ledger:
             # FLOW F1/(g): the member rests (its idle tool, or a turn with no tool call) --
             # unless a message already waits for it, which it takes next.
             if rest is not None and not retired and arrived == 0:
-                conn.execute(participants.update().where(
-                    participants.c.participant_id == p["participant_id"]).values(
-                    idle_reason=rest[0], idle_note=rest[1], idle_since=_now()))
-                self._event(conn, p["run_id"], p["host_path"], "idle", p["member"],
-                            reason=rest[0], note=rest[1])
+                self._rest(conn, p, rest[0], rest[1])
+                if when_resting is not None:
+                    when_resting(conn)
             wait = None
             if ask_owner and not retired:
                 wait = self._open_wait(conn, p["run_id"], p["host_path"], "owner", {

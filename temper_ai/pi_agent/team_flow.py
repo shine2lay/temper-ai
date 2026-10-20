@@ -37,6 +37,7 @@ import hashlib
 import logging
 import threading
 import time
+from dataclasses import replace
 from typing import Any
 
 import sqlalchemy as sa
@@ -59,6 +60,7 @@ from temper_ai.pi_agent.ledger import (
     ACCOUNT_REFUSED,
     Binding,
     acts,
+    events,
     messages,
     participants,
     turns,
@@ -68,6 +70,7 @@ from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import Refusal
 from temper_ai.pi_agent.shared_version import (
     Conflict,
+    Shared,
     SharedVersion,
     VersionError,
     conflict_lines,
@@ -75,11 +78,13 @@ from temper_ai.pi_agent.shared_version import (
 from temper_ai.pi_agent.team import ROUNDS_TEAM
 from temper_ai.pi_agent.team_leader import (
     EVIDENCE_HANDOFF_NOTE,
+    FIXABLE_GIT_REFUSALS,
     MAX_NOTE,
     MAX_SUMMARY,
     NOT_NOW,
     PAUSE_OPTIONS,
     LeaderTeam,
+    MemberGitRefused,
     Outcome,
     TeamFailure,
     answer_who,
@@ -119,6 +124,14 @@ POLL_ASK_S = 3.0
 TICK_S = 1.0
 #: How a share ended that lets done count (F5).
 SHARE_OK = ("shared", "unchanged")
+#: Refusals in a row, for the same cause the member can fix, after which it rests (#115).
+REFUSALS_BEFORE_REST = 2
+#: M1's refusals that still end the run at a share and stop the turn at a sync, as after
+#: #110: git set up wrong (a code fault), or a gitlink in the copy's index (outside the
+#: member's reach). The others are told: to the member, with what it can do, if anything.
+GIT_REFUSALS_THAT_FAIL = ("setup", "gitlink")
+#: The events :func:`refusal_streak` reads.
+STREAK_EVENTS = ("turn_start", "sync_refused", "share", "share_refused")
 
 
 class _Halt(threading.Event):
@@ -182,10 +195,75 @@ def flow_framing(name: str, leader: str, roster: list[str], tools: list[str]) ->
     else:
         text += ("\nWork on what is asked of you, tell whoever asked (usually the leader) when "
                  "it is done or if you are stuck, and share your work.")
+    text += ("\nDon't create a git repository inside your folder (git init, git clone, or a "
+             "scaffolder that runs git init: use its no-git option). Temper won't share your "
+             "work while your folder holds a .git of its own.")
     text += ("\nIf only the owner can answer, call ask_owner with your question and finish "
              "this turn. Only you wait for the answer; the other members carry on. Your "
              "send_message calls reach their recipients only after your turn finishes.")
     return text + "\n" + EVIDENCE_HANDOFF_NOTE + "\n" + tools_note(tools)
+
+
+def git_refusal_words(exc: MemberGitRefused, again: str) -> str:
+    """M1's refusal as the member reads it (#115): what it can do, or, when it can't fix the
+    cause (``writer``, ``stall``), that there is nothing for it to fix. ``again``: what it
+    does later ("share again")."""
+    if exc.fixable:
+        return exc.told()
+    if exc.cause == "writer":
+        return (f"{exc} Temper couldn't yet confirm that nothing else writes in your folder, "
+                f"so there's nothing for you to fix: {again} later.")
+    return f"{exc} There's nothing for you to fix: {again} later."
+
+
+def sync_refusal_paragraph(exc: MemberGitRefused) -> str:
+    """What a turn starts with when M1 refused its sync for a cause the member can fix."""
+    return ("[Temper] Temper didn't bring the team's shared version into your copy this turn. "
+            f"{exc.told()} Until it's fixed, your copy misses the others' latest shared work, "
+            "and your shares are refused.")
+
+
+def refusal_streak(rows: list[dict]) -> dict | None:
+    """A member's current run of refusals for one cause it can fix (#115), from its events
+    (:data:`STREAK_EVENTS`, in order): ``{"cause", "count", "first_seq", "turn", "reason"}``,
+    or None. ``count`` is turns in a row: a turn's sync and its shares (its done among them)
+    count once, so a member has had a turn that told it the reason before it rests.
+    ``reason``: the latest words it was told. A good sync (a turn start with no
+    ``sync_refused`` for it), a version shared, or a share whose check passed (a conflict)
+    ends the run; a refusal for another cause it can fix starts a new one; one it can't fix
+    (writer, stall) neither counts nor ends it."""
+    streak: dict | None = None
+    started: str | None = None  # the latest turn start, while its sync isn't known refused
+    for row in rows:
+        data = row.get("data") or {}
+        kind = row["kind"]
+        if kind == "sync_refused" and started is not None and data.get("turn_id") == started:
+            started = None
+            if data.get("cause") not in FIXABLE_GIT_REFUSALS:
+                continue
+        elif started is not None:  # that turn's sync went through
+            streak = started = None
+        if kind == "turn_start":
+            started = data.get("turn_id")
+            continue
+        if kind == "share" or (kind == "share_refused" and data.get("status") == "conflict"):
+            streak = None
+            continue
+        cause = data.get("cause")
+        if kind not in ("sync_refused", "share_refused") or cause not in FIXABLE_GIT_REFUSALS:
+            continue
+        turn = data.get("turn_id")
+        if streak is None or streak["cause"] != cause:
+            streak = {"cause": cause, "count": 1, "first_seq": row["seq"], "turn": turn}
+        elif turn is None or turn != streak["turn"]:
+            streak = {**streak, "count": streak["count"] + 1, "turn": turn}
+        streak = {**streak, "reason": data.get("reason")}
+    return None if started is not None else streak
+
+
+def refused_rest_note(streak: dict) -> str:
+    return (f"Temper refused to run git over its folder in {streak['count']} turns in a row "
+            f"({streak['cause']}); a message wakes it.")
 
 
 class FlowTeam(LeaderTeam):
@@ -239,26 +317,48 @@ class FlowTeam(LeaderTeam):
         part = self.ledger.participant(turn["participant_id"]) or {}
         pdir = self._pdir(part)
         recorded = [Conflict.from_dict(c) for c in part.get("conflicts") or []]
+        refused: MemberGitRefused | None = None
         git_started = time.monotonic()
-        with (_LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn,
-              git_for_own_turn(turn["turn_id"])):
-            synced = self.shared.sync(member.name, pdir, recorded)
-            conn.execute(participants.update().where(
-                participants.c.participant_id == turn["participant_id"]).values(
-                conflicts=[c.as_dict() for c in synced.conflicts]))
+        try:
+            with (_LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn,
+                  git_for_own_turn(turn["turn_id"])):
+                try:
+                    conflicts = self.shared.sync(member.name, pdir, recorded).conflicts
+                except MemberGitRefused as exc:
+                    if not exc.fixable:
+                        raise
+                    # #115: the turn starts without the merge and says why; the recorded
+                    # conflicts stay, named in this turn.
+                    refused = exc
+                    conflicts = tuple(replace(c, told=True) for c in recorded)
+                    self.ledger._event(conn, self.run_id, self.host_path, "sync_refused",
+                                       member.name, turn_id=turn["turn_id"],
+                                       cause=exc.cause, reason=exc.told())
+                conn.execute(participants.update().where(
+                    participants.c.participant_id == turn["participant_id"]).values(
+                    conflicts=[c.as_dict() for c in conflicts]))
+        except MemberGitRefused as exc:
+            # writer, stall, setup, gitlink: no turn starts while another writer may be
+            # live or git is set up wrong (as after #110), and the refusal is on record.
+            self.ledger.record_event(self.run_id, self.host_path, "sync_refused", member.name,
+                                     turn_id=turn["turn_id"], cause=exc.cause,
+                                     reason=str(exc))
+            raise
         git_seconds = time.monotonic() - git_started
         if git_seconds > 10:
             logger.warning("flow: sync for %s took %.3fs including ledger lock wait", member.name, git_seconds)
-        new = [c for c in synced.conflicts if c.path not in {r.path for r in recorded}]
+        new = [c for c in conflicts if c.path not in {r.path for r in recorded}]
         if new:
             self.ledger.record_event(self.run_id, self.host_path, "conflict", member.name,
                                      at_step="sync",
                                      paths=[{"path": c.path, "kind": c.kind} for c in new])
         text = flow_framing(member.name, self.leader, sorted(self.members),
                             self.tools_for(member))
-        lines = conflict_lines(list(synced.conflicts))
+        lines = conflict_lines(list(conflicts))
         if lines:
             text += "\n\n" + "\n".join(lines)
+        if refused is not None:
+            text += "\n\n" + sync_refusal_paragraph(refused)
         if turn.get("retry_of"):
             text += "\n\n" + self._retry_framing(turn["retry_of"])
         else:
@@ -385,19 +485,31 @@ class FlowTeam(LeaderTeam):
             blocked.add(row["participant_id"])
         return None
 
-    def _share(self, member: str, act_id: str, note: str | None) -> dict:
+    def _share(self, member: str, act_id: str, note: str | None,
+               turn_id: str | None = None) -> dict:
         """Merge ``member``'s copy into the shared version (after its turn has finished) and
         record the outcome: a version record and a ``share`` event, or a notice to the member
-        naming the conflicts."""
+        naming the conflicts, or why M1 refused to run git over its folder (#115: the callers
+        then check whether it rests, :meth:`_rest_after_refusals`)."""
         rows = self._member_rows()
         row = rows.get(member)
         if row is None:
             raise TeamFailure(f"{member} has no conversation")
         recorded = [Conflict.from_dict(c) for c in row.get("conflicts") or []]
+        cause: str | None = None
         git_started = time.monotonic()
         try:
             with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
-                got = self.shared.share(member, self._pdir(row), recorded, note)
+                try:
+                    got = self.shared.share(member, self._pdir(row), recorded, note)
+                except MemberGitRefused as exc:
+                    if exc.cause in GIT_REFUSALS_THAT_FAIL:
+                        raise
+                    # Refused before git changed the member's folder (a refusal after that
+                    # comes as a plain VersionError): told, and the run carries on.
+                    cause = exc.cause
+                    got = Shared("refused", "Not shared: " + git_refusal_words(exc, "share again"),
+                                 tuple(recorded))
                 conn.execute(participants.update().where(
                     participants.c.participant_id == row["participant_id"]).values(
                     conflicts=[c.as_dict() for c in got.conflicts]))
@@ -408,13 +520,17 @@ class FlowTeam(LeaderTeam):
                                      conn=conn)
                     self.ledger._event(conn, self.run_id, self.host_path, "share_refused",
                                        member, act_id=act_id, status=got.status,
-                                       paths=[c.path for c in got.conflicts])
+                                       paths=[] if cause else [c.path for c in got.conflicts],
+                                       **({"cause": cause, "reason": got.text,
+                                           "turn_id": turn_id} if cause else {}))
         except VersionError as exc:
             raise TeamFailure(f"{member}'s share could not be carried out: {exc}") from exc
         git_seconds = time.monotonic() - git_started
         if git_seconds > 10:
             logger.warning("flow: share for %s took %.3fs including ledger lock wait", member, git_seconds)
         result: dict[str, Any] = {"status": got.status, "text": got.text}
+        if cause:
+            result["cause"] = cause
         if got.version is not None:
             v = got.version
             result["version"] = v.as_dict()
@@ -435,8 +551,86 @@ class FlowTeam(LeaderTeam):
                                    files_total=v.files_total)
         return result
 
+    def _refusal_streak(self, conn: Any, member: str) -> dict | None:
+        rows = conn.execute(sa.select(events.c.seq, events.c.kind, events.c.data).where(
+            events.c.run_id == self.run_id, events.c.host_path == self.host_path,
+            events.c.member == member, events.c.kind.in_(STREAK_EVENTS)).order_by(
+            events.c.seq)).mappings().all()
+        return refusal_streak([dict(r) for r in rows])
+
+    def _rest_after_refusals(self, member: str, turn_id: str | None,
+                             own_mail: str | None = None) -> bool:
+        """#115, once a share M1 refused for a cause the member can fix is carried out: at
+        :data:`REFUSALS_BEFORE_REST` turns in a row the member rests (no turn until a message
+        wakes it) and Temper asks once (:meth:`_ask_once_about_refusals`). Temper's own
+        notices, the share's among them, don't keep it on, nor the done refusal's delivery
+        (``own_mail``: its dedupe key); a member's or the owner's message does. True when it
+        rests. A turn with no share is checked as it finishes (:meth:`_finish`)."""
+        with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
+            p = conn.execute(sa.select(participants).where(
+                *self._where(participants), participants.c.member == member)).mappings().first()
+            if p is None or p["state"] != "idle":
+                return False
+            streak = self._refusal_streak(conn, member)
+            if streak is None or streak["count"] < REFUSALS_BEFORE_REST:
+                return False
+            mail = sa.select(sa.func.count()).select_from(messages).where(
+                messages.c.to_participant == p["participant_id"],
+                messages.c.state == "pending", messages.c.sender_kind != "temper")
+            if own_mail is not None:
+                mail = mail.where(sa.or_(messages.c.dedupe_key.is_(None),
+                                         messages.c.dedupe_key != own_mail))
+            if conn.execute(mail).scalar_one():
+                return False
+            self.ledger._rest(conn, p, "refused", refused_rest_note(streak))
+            self._ask_once_about_refusals(conn, dict(p), streak, turn_id)
+            return True
+
+    def _ask_once_about_refusals(self, conn: Any, p: dict, streak: dict,
+                                 turn_id: str | None) -> None:
+        """Temper asks once per run of refusals (#115), as the member starts to rest: for a
+        member other than the leader, the leader, by a notice; for the leader, the owner,
+        through the wait a member's ask_owner opens (it holds only the leader, and the
+        owner's answer reaches the leader as a message)."""
+        member = p["member"]
+        key = f"{self.run_id}:{self.host_path}:refusals:{member}:{streak['first_seq']}"
+        told = streak.get("reason") or ""
+        times = f"in {streak['count']} turns in a row"
+        if member != self.leader:
+            if conn.execute(sa.select(sa.func.count()).select_from(messages).where(
+                    messages.c.dedupe_key == key)).scalar_one():
+                return
+            self.ledger.post(
+                self.run_id, self.host_path, self.leader,
+                f"{member} is resting: Temper refused to run git over its folder {times}, so "
+                f"its work can't reach the team's shared version. What Temper told {member}: "
+                f"\"{told}\" Send {member} a message to give it another try, or carry on "
+                "without its work.", sender="temper", sender_kind="temper", kind="notice",
+                dedupe_key=key, conn=conn)
+            return
+        asked = conn.execute(sa.select(waits.c.subject).where(
+            waits.c.run_id == self.run_id, waits.c.host_path == self.host_path,
+            waits.c.kind == "owner")).scalars().all()
+        if any((s or {}).get("refusals") == key for s in asked):
+            return
+        turn_no = conn.execute(sa.select(turns.c.turn_no).where(
+            turns.c.turn_id == turn_id)).scalar() if turn_id else None
+        self.ledger._open_wait(conn, self.run_id, self.host_path, "owner", {
+            "participant_id": p["participant_id"], "member": member, "role": p.get("role"),
+            "turn_id": turn_id, "turn_no": turn_no, "label": "git-refused",
+            "header": "git-refused", "refusals": key,
+            "question": (f"Temper refused to run git over the folder of {member}, the "
+                         f"team's leader, {times}, so its work can't reach the team's "
+                         f"shared version, and {member} is resting. What Temper told "
+                         f"{member}: \"{told}\""),
+            "reply_hint": (f"Reply with what to tell {member}: Temper passes it on, and "
+                           f"{member} gets another turn.")}, self.attempt_id)
+
     def _carry_share(self, act: dict) -> None:
-        result = self._share(act["member"], act["act_id"], (act["args"] or {}).get("note"))
+        result = self._share(act["member"], act["act_id"], (act["args"] or {}).get("note"),
+                             act["turn_id"])
+        if result.get("cause") in FIXABLE_GIT_REFUSALS:
+            self._rest_after_refusals(act["member"], act["turn_id"])
         self._settle_act(act, "carried_out", result)
 
     def _carry_idle(self, act: dict) -> None:
@@ -451,12 +645,13 @@ class FlowTeam(LeaderTeam):
         for w in self._closing_waits():
             if (w["subject"] or {}).get("stage") == "lone":
                 self.ledger.decide_wait(w["wait_id"], {"answer": "done_again"}, self.attempt_id)
-        result = self._share(act["member"], act["act_id"], "done")
+        result = self._share(act["member"], act["act_id"], "done", act["turn_id"])
         summary = (act["args"] or {}).get("summary")
         subject = {"label": "closing", "header": "closing", "stage": "finishing",
                    "act_id": act["act_id"], "turn_id": act["turn_id"], "summary": summary,
                    "began_at": act["created_at"],  # the done call, not its turn's start
                    "share_status": result["status"], "share_text": result["text"],
+                   "share_cause": result.get("cause"),
                    "question": "The leader said done: the team is finishing."}
         with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
             self.ledger._open_wait(conn, self.run_id, self.host_path, "closing", subject,
@@ -483,8 +678,15 @@ class FlowTeam(LeaderTeam):
         if s.get("share_status") not in SHARE_OK:
             out.append({"reason": "share", "detail": s.get("share_text") or "your share failed"})
         lead = self._member_rows().get(self.leader) or {}
-        with _LOCK, self.ledger._team_tx(self.run_id, self.host_path):
-            different = self.shared.unshared(self.leader, self._pdir(lead))
+        try:
+            with _LOCK, self.ledger._team_tx(self.run_id, self.host_path):
+                different = self.shared.unshared(self.leader, self._pdir(lead))
+        except MemberGitRefused as exc:
+            if exc.cause in GIT_REFUSALS_THAT_FAIL:
+                raise
+            # #115: said once, when the done's own share was refused for the same cause
+            different = (None if s.get("share_cause") == exc.cause
+                         else git_refusal_words(exc, "say done again"))
         if different:
             out.append({"reason": "copy", "detail": different})
         late = [m for m in self._rows(messages, messages.c.to_participant
@@ -541,6 +743,10 @@ class FlowTeam(LeaderTeam):
                                 self.attempt_id, deliveries=[(self.leader, text)])
         self.ledger.record_event(self.run_id, self.host_path, "done_refused", self.leader,
                                  reasons=reasons)
+        if (s.get("share_cause") in FIXABLE_GIT_REFUSALS
+                and self._rest_after_refusals(self.leader, s.get("turn_id"),
+                                              own_mail=f"{wait['wait_id']}:decision:0")):
+            return True  # #115: it rests, so no lone turn until a message wakes it
         with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
             self.ledger._open_wait(conn, self.run_id, self.host_path, "closing",
                                    {"label": "closing", "header": "closing", "stage": "lone",
@@ -554,6 +760,8 @@ class FlowTeam(LeaderTeam):
 
     def _leader_can_go(self) -> bool:
         row = self._member_rows().get(self.leader) or {}
+        if row.get("idle_reason") == "refused":
+            return False  # #115: the notices waiting as it rested don't; a new message wakes it
         if row.get("state") != "idle" or row.get("idle_reason"):
             pending = self._rows(messages, messages.c.to_participant == row.get("participant_id"),
                                  messages.c.state == "pending")
@@ -671,11 +879,29 @@ class FlowTeam(LeaderTeam):
         rest = (("idle", (idle[0]["args"] or {}).get("note")) if idle
                 else ("no_tool", None) if report.outcome is not None and tool_calls == 0
                 else None)
+        streak = None
+        if not any(a["op"] in (SHARE, DONE) for a in recorded):
+            # #115: a turn whose sync was refused, and no share to carry out after it (a
+            # share is checked once carried out, :meth:`_share`)
+            with _LOCK, self.ledger.engine.connect() as conn:
+                streak = self._refusal_streak(conn, name)
+            if streak is not None and streak["count"] >= REFUSALS_BEFORE_REST:
+                rest = ("refused", refused_rest_note(streak))
+            else:
+                streak = None
+
+        def ask_once(conn: Any) -> None:
+            if streak is not None:
+                p = conn.execute(sa.select(participants).where(
+                    participants.c.participant_id == turn["participant_id"])).mappings().one()
+                self._ask_once_about_refusals(conn, dict(p), streak, turn["turn_id"])
+
         worker = {**worker, "tool_calls": tool_calls if report.outcome is not None else None}
         res = self.ledger.finish_turn(turn["turn_id"], epoch=turn["epoch"],
                                       output=report.output,
                                       model_call_ids=report.model_call_ids, worker=worker,
-                                      ask_owner=asked, attempt_id=self.attempt_id, rest=rest)
+                                      ask_owner=asked, attempt_id=self.attempt_id, rest=rest,
+                                      when_resting=ask_once)
         if res is None:
             return StepResult("lost", member=name, turn=turn)
         return StepResult("completed", member=name, turn=self.ledger.turn(turn["turn_id"]),

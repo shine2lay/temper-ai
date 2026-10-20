@@ -82,7 +82,8 @@ def test_a_repeated_call_gets_its_first_answer_and_a_changed_one_is_refused(
 
 def test_a_stalled_team_asks_the_owner_and_a_nudge_reaches_the_leader(
         led, box, run_id, tmp_path, monkeypatch):
-    owner = ls.Owner(led, "nudge: share your work").install(monkeypatch)
+    # A nudge no framing holds (every member's framing says "Temper won't share your work")
+    owner = ls.Owner(led, "nudge: wrap it up").install(monkeypatch)
     ts.SCRIPTS["lead"] = [[{"say": "thinking it over"}], [ls.op("done", summary="ok")]]
     team = open_flow(led, box, run_id, tmp_path)
     out = team.drive(ls.Context())
@@ -94,7 +95,7 @@ def test_a_stalled_team_asks_the_owner_and_a_nudge_reaches_the_leader(
         "The team is stalled: nothing is running, nothing is waiting to be delivered and lead "
         "has not said done. Reply 'nudge' (optionally with a message for lead) or 'stop'.")
     assert "Reply" not in ask["row"]["subject"]["question"]
-    assert sum("share your work" in p for p in ts.PROMPTS["lead"]) == 1
+    assert sum("wrap it up" in p for p in ts.PROMPTS["lead"]) == 1
 
 
 def test_stop_when_stalled_ends_the_team_stopped(led, box, run_id, tmp_path, monkeypatch):

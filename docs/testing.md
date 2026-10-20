@@ -71,6 +71,22 @@ RAM, at most 4 GB), waits until it answers and prints its URL. With that variabl
 tests listed in `tests/pgtier.py` use Postgres and the rest stay on SQLite,
 so the whole suite still takes about twenty seconds.
 
+**On Linux it is on the host's network.** With Docker's own engine on Linux
+(rootful, not Docker Desktop) the container runs with `--network host`, and
+Postgres listens on 127.0.0.1 only, never on the LAN or tailscale; a login
+over TCP still needs the password. The tests then reach it over loopback
+instead of through Docker's userland proxy (`docker-proxy`), which has to
+wake up for every round trip and, on a busy machine, wait for a core each
+time. Measured here on 2026-10-19: an idle `SELECT 1` took 33 µs instead of
+46 µs at the median, and 196 µs instead of 648 µs at p99. Under load, the run
+thread's database wait fell by a quarter in one team-run test and by half in
+another. Elsewhere the port is published on 127.0.0.1 through Docker's
+bridge, as before. `TEMPER_TEST_PG_NETWORK=bridge` (or `host`) chooses by
+hand for a container the script starts, and the URL is the same either way.
+A container started by an older script (label `temper.test-pg.version`
+below 4) keeps working as it is; it moves over only once it is removed while
+idle (`down`, then `url`).
+
 **One container, shared: leave it up.** `temper-test-postgres` serves every
 worktree, every chat's pre-commit hook and every run by hand, often at the
 same time. Runs keep apart by schema: each xdist worker of each run gets one

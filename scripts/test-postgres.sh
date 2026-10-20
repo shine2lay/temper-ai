@@ -13,6 +13,15 @@
 # long or heavy run can have a container of its own: set TEMPER_TEST_PG_NAME
 # and TEMPER_TEST_PG_PORT, and `down` it afterwards.
 #
+# On Linux with Docker's own engine (rootful, not Docker Desktop) it runs on the
+# host's network and listens on 127.0.0.1 only. The tests then reach it over
+# loopback instead of through Docker's userland proxy, which has to wake up for
+# every round trip and, on a busy machine, makes each one wait for a core
+# (docs/testing.md). Elsewhere it runs on Docker's bridge with its port
+# published on 127.0.0.1, as before. TEMPER_TEST_PG_NETWORK=host or bridge
+# chooses for a container this script starts; a running one is kept as it is.
+# The URL is the same either way.
+#
 # Never temper's live database: this container has a name of its own, a port
 # of its own, and keeps everything in RAM (tmpfs), so removing it leaves
 # nothing behind. The tests refuse a URL that could be the live one anyway
@@ -22,6 +31,7 @@ set -euo pipefail
 NAME="${TEMPER_TEST_PG_NAME:-temper-test-postgres}"
 PORT="${TEMPER_TEST_PG_PORT:-5455}"      # live temper is on 5433; this is not that
 IMAGE="${TEMPER_TEST_PG_IMAGE:-pgvector/pgvector:pg16}"
+NETWORK="${TEMPER_TEST_PG_NETWORK:-}"    # host, bridge, or empty: host where it works
 DB="temper_ai_test"
 URL="postgresql://temper_ai:test@127.0.0.1:${PORT}/${DB}"
 LOCK="${XDG_RUNTIME_DIR:-/tmp}/temper-test-postgres-${NAME}.lock"
@@ -52,40 +62,113 @@ running() {
     [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = "true" ]
 }
 
+# Over the container's unix socket, on the port its server was started with
+# (the container's PGPORT; 5432 when it has none).
 psql_in() {
     docker exec "$NAME" psql -U temper_ai -d "$DB" -XAtq -c "$1"
 }
 
+# Whether something takes a TCP connection on 127.0.0.1:$PORT, here. Bash's
+# /dev/tcp, so there is nothing to install; on loopback it answers or refuses
+# at once.
+answers() {
+    local -a limit=()
+    if command -v timeout >/dev/null; then
+        limit=(timeout 5)
+    fi
+    ${limit[@]+"${limit[@]}"} bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1"' _ "$PORT" 2>/dev/null
+}
+
+# The host's network is this machine's only with Docker's own engine on Linux,
+# run as root. Docker Desktop runs containers in a VM, and rootless Docker in a
+# network namespace of its own: there the container's 127.0.0.1 is not ours.
+default_network() {
+    local info
+    if [ "$(uname -s)" != Linux ] \
+        || ! info=$(docker info --format '{{.OperatingSystem}}|{{json .SecurityOptions}}' 2>/dev/null); then
+        echo bridge
+        return
+    fi
+    case "${info%%|*}" in
+        "Docker Desktop"*) echo bridge; return ;;
+    esac
+    case "${info#*|}" in
+        *name=rootless*) echo bridge; return ;;
+    esac
+    echo host
+}
+
 start() {
+    local mode=$1
+    local -a net=() listen=()
+    if [ "$mode" = host ]; then
+        # The server takes the port itself, and only on 127.0.0.1: the host's
+        # network also reaches the LAN and tailscale, and it must never listen there.
+        net=(--network host -e PGPORT="$PORT")
+        listen=(-c listen_addresses=127.0.0.1)
+    else
+        net=(-p "127.0.0.1:${PORT}:5432")
+    fi
     # size=4g: up to five builds run their suites here at the same time
     # (2026-10-05), each in schemas of its own, and 512 MB was a third full
     # with nothing running. A tmpfs takes RAM only for what it holds, so the
     # cap costs nothing until it is used. max_wal_size: Postgres keeps up to
     # 1 GB of write-ahead log by default; here it stays near 128 MB.
     # max_connections: a run takes up to ~30, and several runs share the
-    # container. The label says which of these settings a container has.
+    # container. --auth-host: a login over TCP needs the password. The image
+    # would trust any login from 127.0.0.1, which on the host's network is
+    # every process on this machine. The labels say which of these settings a
+    # container has.
     docker run -d --name "$NAME" \
-        --label temper.test-pg.version=3 \
+        --label temper.test-pg.version=4 --label temper.test-pg.network="$mode" \
+        "${net[@]}" \
         -e POSTGRES_DB="$DB" -e POSTGRES_USER=temper_ai -e POSTGRES_PASSWORD=test \
+        -e POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 \
         -e PGDATA=/var/lib/postgresql/data/pgdata \
         --tmpfs /var/lib/postgresql/data:rw,size=4g \
-        -p "127.0.0.1:${PORT}:5432" \
         "$IMAGE" \
+        ${listen[@]+"${listen[@]}"} \
         -c fsync=off -c full_page_writes=off -c synchronous_commit=off \
         -c max_wal_size=128MB -c min_wal_size=32MB -c max_connections=300 >/dev/null
 }
 
+# Ready means our own server answers. First on the container's unix socket with
+# listen_addresses set: while the image sets the database up it runs a server
+# with none, which answers and then stops. Then on 127.0.0.1:$PORT from here.
+# A container that stops on the way fails at once, with its logs.
 wait_ready() {
-    # Over TCP, inside the container: while the image sets the database up it
-    # runs a server on the unix socket only, which answers and then stops.
+    local state listening
     for _ in $(seq 1 120); do
-        if docker exec "$NAME" pg_isready -h 127.0.0.1 -p 5432 -U temper_ai -d "$DB" >/dev/null 2>&1; then
-            return 0
+        state=$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo "not there")
+        if [ "$state" != running ]; then
+            echo "test postgres $NAME stopped before it answered ($state); docker logs $NAME:" >&2
+            docker logs --tail 30 "$NAME" >&2 || true
+            return 1
+        fi
+        listening=$(psql_in "SHOW listen_addresses" 2>/dev/null || true)
+        if [ -n "$listening" ]; then
+            reachable
+            return
         fi
         sleep 0.5
     done
     echo "test postgres $NAME did not answer within a minute; docker logs $NAME:" >&2
     docker logs --tail 30 "$NAME" >&2 || true
+    return 1
+}
+
+reachable() {
+    for _ in $(seq 1 20); do
+        if answers; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "test-postgres.sh: $NAME is up, but nothing answers on 127.0.0.1:$PORT from here." >&2
+    if [ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$NAME" 2>/dev/null || true)" = host ]; then
+        echo "  It is on Docker's host network, which is not this machine's here (a VM?)." >&2
+        echo "  Start it on the bridge instead: $0 down; TEMPER_TEST_PG_NETWORK=bridge $0 up" >&2
+    fi
     return 1
 }
 
@@ -95,7 +178,12 @@ up() {
         # Nobody can be using a container that is not running: one that exists
         # (it stopped, or its start failed) is replaced. A running one never is.
         docker rm -f "$NAME" >/dev/null 2>&1 || true
-        start
+        if answers; then
+            echo "test-postgres.sh: something already answers on 127.0.0.1:$PORT, so $NAME is not started there." >&2
+            echo "  Stop what holds port $PORT, or give the container another one (TEMPER_TEST_PG_PORT)." >&2
+            exit 1
+        fi
+        start "${NETWORK:-$(default_network)}"
     fi
     wait_ready
 }
@@ -161,6 +249,12 @@ down() {
     fi
     docker rm -f "$NAME" >/dev/null
 }
+
+case "$NETWORK" in
+    ""|host|bridge) ;;
+    *)  echo "test-postgres.sh: TEMPER_TEST_PG_NETWORK must be host or bridge (or unset), not '$NETWORK'." >&2
+        exit 2 ;;
+esac
 
 case "${1:-url}" in
     up)   [ $# -le 1 ] || usage; up; echo "$URL" ;;

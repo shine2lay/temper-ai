@@ -1,8 +1,9 @@
-"""design_homepage_bar_interact (Design, queues #79 and #96): the pure scorer and its maths. No browser.
+"""design_homepage_bar_interact (Design, queues #79, #96 and #110): the pure scorer and its maths. No browser.
 
 The recorded raw files in configs/design/testpages/bar-interact-v1/raw/ and bar-interact-v2/raw/ come
 from real runs of the meter on the fixture pages; scoring each must give exactly the failing rows in
-its set's expected.json. bar-interact-v2 holds version 2's UI-part cases (H3c, WCAG 1.4.11).
+its set's expected.json. bar-interact-v2 holds version 2's UI-part cases (H3c, WCAG 1.4.11). The
+test_h3d_* cases are version 3's speed gate (H3d): a fake load reader, clock and Lighthouse run.
 """
 
 from __future__ import annotations
@@ -10,7 +11,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import shutil
 import struct
+import sys
+import types
 import zlib
 
 import pytest
@@ -504,3 +508,298 @@ def test_speed_medians_and_limits():
     missing = {r["check"]: r for r in bi.score_speed({"runs": runs[:2]})}
     assert missing["lcp"]["pass"] is None
     assert bi.median_or_none([1, None, 3]) is None
+
+
+# ---------------------------------------------------------------- H3d: speed only on a quiet machine (queue #110)
+
+H3D = "H3d (queue #110): keyed cases written before the load gate's code"
+BUSY = "could not measure: machine busy (load {:.2f})"
+
+
+class Machine:
+    """A fake machine for the speed gate: a load reader, a clock, a sleep and a Lighthouse run.
+
+    load_at(machine) gives the 1-minute load at the machine's time. Each Lighthouse run takes run_s
+    seconds and gives the next (lcp, cls, tbt) of values; the last one repeats.
+    """
+
+    def __init__(self, load_at, values=((900.0, 0.0, 0.0),), run_s=20.0):
+        self.load_at = load_at
+        self.values = list(values)
+        self.run_s = run_s
+        self.t = 0.0
+        self.last = None  # "sleep" or "run": what the machine did last
+        self.sleeps: list[float] = []
+        self.started: list[float] = []
+
+    def clock(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.sleeps.append(s)
+        self.t += s
+        self.last = "sleep"
+
+    def load(self) -> float:
+        return self.load_at(self)
+
+    def once(self) -> dict:
+        lcp, cls, tbt = self.values[min(len(self.started), len(self.values) - 1)]
+        self.started.append(self.t)
+        self.t += self.run_s
+        self.last = "run"
+        return {
+            "lcp": lcp,
+            "cls": cls,
+            "tbt": tbt,
+            "nodes": {"lcp": [], "cls": []},
+            "lighthouse": "13.5.0",
+            "chrome": "fake",
+        }
+
+    def speed(self) -> dict:
+        return bi.gated_runs(
+            self.once, load=self.load, clock=self.clock, sleep=self.sleep
+        )
+
+
+def _speed_rows(speed: dict) -> dict:
+    return {r["check"]: r for r in bi.score_speed(speed)}
+
+
+def _raw(fixture_set: str, stem: str) -> dict:
+    return json.loads((FIX.parent / fixture_set / "raw" / f"{stem}.json").read_text())
+
+
+def _busy(raw: dict, load: float) -> dict:
+    return dict(raw, speed={"runs": [], "error": BUSY.format(load)})
+
+
+def _want(fixture_set: str, page: str) -> set:
+    return {tuple(x) for x in KEYS[fixture_set]["pages"][page]["failing"]}
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_gate_values_and_unchanged_speed_definitions():
+    assert (bi.LOAD_GATE, bi.LOAD_POLL_S, bi.LOAD_WAIT_S) == (6.0, 15, 600)
+    assert bi.SPEED_RUNS == 3 and bi.VERSION == 3
+    assert bi.SPEED_CHECKS == [
+        ("A8", "lcp", "LCP 2.5 s or less (2500 ms or less)"),
+        ("A8", "cls", "CLS 0.1 or less"),
+        ("A8", "tbt", "total blocking time 200 ms or less"),
+    ]
+    assert isinstance(bi.read_load(), float)
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_a_quiet_machine_measures_three_runs_as_before():
+    m = Machine(
+        lambda m: 1.5,
+        values=[(900.0, 0.0, 30.0), (950.0, 0.02, 0.0), (910.0, 0.01, 10.0)],
+    )
+    speed = m.speed()
+    assert m.started == [0.0, 20.0, 40.0] and m.sleeps == []
+    assert [(r["load_before"], r["load_after"]) for r in speed["runs"]] == [
+        (1.5, 1.5)
+    ] * 3
+    assert speed["dropped"] == [] and "error" not in speed
+    assert speed["gate"]["waited_s"] == 0 and speed["gate"]["redone"] == 0
+    rows = _speed_rows(speed)
+    assert {c: (r["value"], r["pass"]) for c, r in rows.items()} == {
+        "lcp": (910, True),
+        "cls": (0.01, True),
+        "tbt": (10, True),
+    }
+    plain = {
+        "runs": [{"lcp": a, "cls": b, "tbt": c} for a, b, c in m.values],
+        "nodes": speed["nodes"],
+    }
+    assert bi.score_speed(speed) == bi.score_speed(plain)
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_b_busy_then_quiet_waits_then_measures():
+    m = Machine(lambda m: 8.0 if m.t < 120 else 2.0)
+    speed = m.speed()
+    assert m.sleeps == [15] * 8 and m.started == [120.0, 140.0, 160.0]
+    assert speed["gate"]["waited_s"] == 120 and speed["gate"]["polls"] == 8
+    assert [(r["load_before"], r["load_after"]) for r in speed["runs"]] == [
+        (2.0, 2.0)
+    ] * 3
+    assert "error" not in speed
+    assert all(r["pass"] is True for r in bi.score_speed(speed))
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_c_busy_throughout_could_not_measure():
+    m = Machine(lambda m: 9.5)
+    speed = m.speed()
+    assert m.started == [] and m.t == 600 and len(m.sleeps) == 40
+    assert speed["error"] == "could not measure: machine busy (load 9.50)"
+    assert speed["gate"]["busy_load"] == 9.5
+    rows = bi.score_speed(speed)
+    assert [r["check"] for r in rows] == ["lcp", "cls", "tbt"]
+    for r in rows:
+        assert r["pass"] is None and r["value"] is None
+        assert r["evidence"][0]["text"] == "could not measure: machine busy (load 9.50)"
+    assert bi.tally({"rows": rows}) == {
+        "rows": {"met": 0, "not met": 0, "could not measure": 3},
+        "bars": {"A8": "could not measure"},
+    }
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_d_load_rising_during_a_run_throws_it_away_and_redoes_it():
+    m = Machine(
+        lambda m: 7.0 if 20 <= m.t < 50 else 1.0,
+        values=[
+            (2600.0, 0.0, 536.0),
+            (900.0, 0.0, 0.0),
+            (905.0, 0.0, 12.0),
+            (901.0, 0.0, 0.0),
+        ],
+    )
+    speed = m.speed()
+    assert m.started == [0.0, 50.0, 70.0, 90.0]
+    assert speed["dropped"] == [
+        {"lcp": 2600.0, "cls": 0.0, "tbt": 536.0, "load_before": 1.0, "load_after": 7.0}
+    ]
+    assert speed["gate"]["redone"] == 1 and speed["gate"]["waited_s"] == 30
+    assert [r["tbt"] for r in speed["runs"]] == [0.0, 12.0, 0.0]
+    assert "error" not in speed
+    rows = _speed_rows(speed)
+    assert (rows["lcp"]["value"], rows["lcp"]["pass"]) == (901, True)
+    assert (rows["tbt"]["value"], rows["tbt"]["pass"]) == (0, True)
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_d_every_run_getting_busy_ends_could_not_measure():
+    m = Machine(lambda m: 7.0 if m.last == "run" else 1.0)
+    speed = m.speed()
+    assert speed["runs"] == [] and len(speed["dropped"]) == 18
+    assert m.started == [35.0 * k for k in range(18)]
+    assert speed["error"] == "could not measure: machine busy (load 7.00)"
+    assert all(r["pass"] is None for r in bi.score_speed(speed))
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_cap_is_checked_before_each_wait_and_each_run():
+    slow = Machine(lambda m: 1.0, run_s=250.0)
+    speed = slow.speed()
+    assert slow.started == [0.0, 250.0, 500.0] and len(speed["runs"]) == 3
+    assert "error" not in speed
+    slower = Machine(lambda m: 1.0, run_s=300.0)
+    speed = slower.speed()
+    assert slower.started == [0.0, 300.0] and len(speed["runs"]) == 2
+    assert speed["error"] == "could not measure: 2 of 3 quiet runs in 600 s"
+    assert all(r["pass"] is None for r in bi.score_speed(speed))
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_lighthouse_error_still_ends_the_step():
+    m = Machine(lambda m: 1.0)
+
+    def boom():
+        raise RuntimeError("lighthouse exit 1: boom")
+
+    speed = bi.gated_runs(boom, load=m.load, clock=m.clock, sleep=m.sleep)
+    assert speed["error"] == "RuntimeError: lighthouse exit 1: boom"
+    assert all(r["pass"] is None for r in bi.score_speed(speed))
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_measure_speed_runs_through_the_gate(monkeypatch, tmp_path):
+    class Server:
+        down = False
+
+        def shutdown(self):
+            self.down = True
+
+    srv = Server()
+    fake_dc = types.SimpleNamespace(
+        serve=lambda site, host: ("http://127.0.0.1:1", srv)
+    )
+    monkeypatch.setitem(sys.modules, "design_capture", fake_dc)
+    m = Machine(lambda m: 1.0)
+    monkeypatch.setattr(bi, "lighthouse_once", lambda url, tool, chrome: m.once())
+    monkeypatch.setattr(bi, "read_load", m.load)
+    speed = bi.measure_speed(tmp_path, "index.html", tmp_path, tmp_path)
+    assert len(speed["runs"]) == 3 and srv.down and "error" not in speed
+    assert all({"load_before", "load_after"} <= set(r) for r in speed["runs"])
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_e_could_not_measure_is_counted_apart():
+    doc = bi.score(_busy(_raw("bar-interact-v1", "faint-input"), 7.21))
+    n = len(doc["rows"])
+    assert bi.tally(doc) == {
+        "rows": {"met": n - 5, "not met": 2, "could not measure": 3},
+        "bars": {"A4": "not met", "A7": "met", "A8": "could not measure"},
+    }
+    md = bi.to_md(doc)
+    assert "- A8: could not measure (lcp 412x823, cls 412x823, tbt 412x823)" in md
+    assert "- A4: not met (ui-contrast 1440x900, ui-contrast 390x844)" in md
+    assert f"Rows: {n - 5} met, 2 not met, 3 could not measure." in md
+    assert (
+        "| A8 | tbt | 412x823 | n/a | total blocking time 200 ms or less | could not measure |"
+        in md
+    )
+    evidence, unmeasured = md.split("## Evidence for rows not met")[1].split(
+        "## Rows that could not be measured"
+    )
+    assert "- ui-contrast 1440x900:" in evidence and "412x823" not in evidence
+    assert "- tbt 412x823: could not measure: machine busy (load 7.21)" in unmeasured
+    want = _want("bar-interact-v1", "faint-input.html")
+    assert bi.page_verdict(doc, want) == "could not measure"
+    assert (
+        bi.page_verdict(doc, want | {("A8", "tbt", "412x823")}) == "could not measure"
+    )
+    assert bi.page_verdict(doc, set()) == "differ"
+    quiet = bi.score(_raw("bar-interact-v1", "faint-input"))
+    assert bi.page_verdict(quiet, want) == "match"
+    slow = _raw("bar-interact-v1", "slow-script")
+    slow_want = _want("bar-interact-v1", "slow-script.html")
+    assert bi.page_verdict(bi.score(slow), slow_want) == "match"
+    assert bi.page_verdict(bi.score(_busy(slow, 6.4)), slow_want) == "could not measure"
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_e_fixture_proof_counts_could_not_measure_apart(tmp_path, capsys):
+    src = tmp_path / "raw-in"
+    for name in bi.FIXTURE_SETS:
+        shutil.copytree(FIX.parent / name / "raw", src / name / "raw")
+    clean = src / "bar-interact-v1" / "raw" / "clean.json"
+    clean.write_text(json.dumps(_busy(json.loads(clean.read_text()), 6.4)))
+    out = tmp_path / "out"
+    code = bi.main(["--fixture-proof", "--from-raw", str(src), "--out", str(out)])
+    proof = json.loads((out / "fixture-proof.json").read_text())
+    assert code == 3 and proof["all_match"] is False
+    assert (proof["match"], proof["differ"], proof["could_not_measure"]) == (18, 0, 1)
+    entry = next(p for p in proof["pages"] if p["page"] == "clean.html")
+    assert entry["verdict"] == "could not measure" and entry["match"] is False
+    assert entry["extra"] == [] and entry["missing"] == []
+    assert len(entry["unmeasured"]) == 3
+    printed = capsys.readouterr().out
+    assert "COULD NOT MEASURE bar-interact-v1/clean.html" in printed
+    assert "fixture proof: 18/19 pages match, 0 differ, 1 could not measure" in printed
+
+
+@pytest.mark.xfail(reason=H3D, strict=True)
+def test_h3d_e_a_real_speed_fail_still_differs(tmp_path, capsys):
+    src = tmp_path / "raw-in"
+    for name in bi.FIXTURE_SETS:
+        shutil.copytree(FIX.parent / name / "raw", src / name / "raw")
+    clean = src / "bar-interact-v1" / "raw" / "clean.json"
+    raw = json.loads(clean.read_text())
+    raw["speed"]["runs"] = [dict(r, tbt=536.0) for r in raw["speed"]["runs"]]
+    clean.write_text(json.dumps(raw))
+    out = tmp_path / "out"
+    code = bi.main(["--fixture-proof", "--from-raw", str(src), "--out", str(out)])
+    proof = json.loads((out / "fixture-proof.json").read_text())
+    assert code == 1
+    assert (proof["match"], proof["differ"], proof["could_not_measure"]) == (18, 1, 0)
+    entry = next(p for p in proof["pages"] if p["page"] == "clean.html")
+    assert entry["verdict"] == "differ" and entry["extra"] == [["A8", "tbt", "412x823"]]
+    assert "fixture proof: 18/19 pages match, 1 differ, 0 could not measure" in (
+        capsys.readouterr().out
+    )

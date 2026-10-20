@@ -38,7 +38,9 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   (`--chrome`, default `~/.cache/ms-playwright/chromium-1243/chrome-linux-arm64/chrome`, Chrome for
   Testing 153.0.8010.12), headless, with the page served by `design_capture.serve` at 127.0.0.1.
   Its README has the exact install command and the lock file's sha256. With `--no-speed`, or when
-  the tool can't run, the three speed rows are `null` (not met) and the error is kept in the raw file.
+  the tool can't run, the three speed rows are `null` (could not measure; never met) and the error is
+  kept in the raw file. The speed runs are taken only on a quiet machine (1-minute load under 6; see
+  "Speed"); when the machine stays busy, the speed rows are `null` in the same way.
 - `--out DIR` gets `raw-interact.json` (the measurements), `bars-interact.json` and
   `bars-interact.md`, plus `shots/` (the focus crops, for checking a row by eye).
   `--raw-only` stops after `raw-interact.json`; `--from-raw DIR` scores `DIR/raw-interact.json`
@@ -54,23 +56,32 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
 `bars-interact.json`:
 `{meter, version, page, page_sha256, widths, rows: [{bar, check, width, value, limit, pass, evidence}]}`
 
-- `meter` is `design_homepage_bar_interact`; `version` is `2` (UI parts read per WCAG 1.4.11 since
-  2026-10-19; see "Changes to definitions").
+- `meter` is `design_homepage_bar_interact`; `version` is `3` (UI parts read per WCAG 1.4.11 since
+  version 2, and speed rows measured only on a quiet machine since version 3, both 2026-10-19; see
+  "Changes to definitions").
 - `page` is the page's path; `page_sha256` is the sha256 of its HTML file.
 - `widths`: `["1440x900", "390x844", "412x823"]`. `412x823` is Lighthouse's mobile preset (its
   emulated Moto G Power screen) and is used only by the three speed rows.
-- `pass` is `true`, `false` or `null`. `null` means "could not measure" and counts as not met.
+- `pass` is `true` (met), `false` (not met) or `null` (could not measure). A `null` row is never
+  met, so a bar with one is never met. Since version 3 it is counted apart from met and not met: in
+  `bars-interact.md` (the bar's summary and the row counts) and in the fixture proof.
 - `evidence`: up to 5 items `{selector, text (80 characters or fewer), box: [x, y, w, h]}`, page
   coordinates in CSS px, for the elements that fail the row (for motion-present, the elements
   that move). For an element that moves (animation, transition or transform evidence), the box is
   its layout box without transforms (the offset box), so it does not drift from run to run.
 - Rows come in a fixed order (the check order below, then width), and the file has no timestamps.
   Two runs of the same page give identical rows, except the speed rows' values (lab timings
-  vary run to run; their pass or fail must not).
+  vary run to run; their pass or fail must not). On a busy machine a speed row may come out `null`
+  (could not measure) instead; the gate never turns it into a pass or a fail.
 
-`bars-interact.md` has the table `bar | check | width | value | limit | pass` and a summary per
-bar. A bar is met only when every one of its rows passes. Merging this meter with part 1 into one
-gate step is later work.
+`bars-interact.md` has the table `bar | check | width | value | limit | pass` (pass `yes`, `no` or
+`could not measure`) and a summary per bar. A bar is met only when every one of its rows passes:
+its line says `met`; otherwise `not met (check width, ...)` for the rows that fail and
+`could not measure (check width, ...)` for the rows with no value, joined by `; `. Under the bars,
+the line `Rows: X met, Y not met, Z could not measure.` counts the rows apart. Then come
+"Evidence for rows not met" (the `false` rows, with their evidence) and "Rows that could not be
+measured" (each `null` row with its reason, and the elements its evidence names, if any). Merging
+this meter with part 1 into one gate step is later work.
 
 ## How a page is loaded
 
@@ -279,10 +290,33 @@ effects) is judged too. The exclusion in reduced-motion-scroll keeps each moving
 Lighthouse 13.5.0, its default mobile configuration (the mobile preset: 412x823 screen at 1.75
 device pixel ratio, simulated throttling with 150 ms round trip, 1,638.4 Kbps and a 4x CPU
 slowdown), performance category only, on the pinned Chromium, headless, the page served at
-127.0.0.1. Three runs one after another. Each run's `numericValue` of `largest-contentful-paint`
-(ms), `cumulative-layout-shift` and `total-blocking-time` (ms). Value: the median of the three runs
-(LCP and TBT in whole ms, CLS to 4 decimals); the pass is decided on the median. If any run gives no
-value, the row could not be measured (`null`).
+127.0.0.1. Three runs one after another, each on a quiet machine (below). Each run's `numericValue`
+of `largest-contentful-paint` (ms), `cumulative-layout-shift` and `total-blocking-time` (ms).
+Value: the median of the three runs (LCP and TBT in whole ms, CLS to 4 decimals); the pass is
+decided on the median. If any run gives no value, the row could not be measured (`null`).
+
+Quiet machine (version 3, H3d): the 1-minute load average (the first number in `/proc/loadavg`)
+is read before and after each Lighthouse run.
+
+- Before: if it is 6 or more, the meter waits 15 s and reads it again, until it is under 6.
+- After: if it is 6 or more, the machine got busy during the run. That run is thrown away (kept in
+  the raw file under `dropped`) and redone.
+- The cap: 600 s per page, from the start of its speed step. It is checked before each wait and
+  before each run (a run under way finishes and is judged as above), so a page's speed step takes
+  at most 600 s plus one run. If the cap passes before three quiet runs are in, all three speed
+  rows are `null`, with the reason `could not measure: machine busy (load X)` (X: the last reading
+  of 6 or more, to two decimals) or, if no reading was 6 or more, `could not measure: N of 3 quiet
+  runs in 600 s`. The quiet runs already in are kept in the raw file, never scored alone.
+- The load counts every process on the machine, the meter's own Lighthouse and Chrome too.
+
+Raw file: `speed` is `{runs, dropped, gate, nodes, lighthouse, chrome}`, plus `error` when the rows
+could not be measured. Each item of `runs` and `dropped` is `{lcp, cls, tbt, load_before,
+load_after}`. `gate` is `{load_limit: 6.0, poll_s: 15, cap_s: 600, waited_s, polls, redone,
+elapsed_s, busy_load}`: `waited_s` is the time spent waiting before runs, `polls` the number of
+waits, `redone` the number of runs thrown away, `elapsed_s` the whole step, and `busy_load` the last
+reading of 6 or more (`null` if none). A Lighthouse error still ends the step at once, as before,
+with its message as the reason. Raw files from before version 3 have no loads and are scored as
+before.
 
 | check | bar | width | limit |
 |---|---|---|---|
@@ -298,6 +332,21 @@ reading) was written before version 2's code. `clean.html` meets every part-2 ch
 right only when its failing rows equal the key exactly on every page, in two runs, with identical
 non-speed rows and the same pass or fail on every speed row in both runs. When they differ, the
 meter is fixed, never the key.
+
+Since version 3 each page gets one of three verdicts:
+
+- `match`: every row was measured, and the failing rows equal the key.
+- `differ`: a row the key does not name failed (`extra`), or a row the key names was met
+  (`missing`). A row that could not be measured is never counted as either.
+- `could not measure`: no row differs from the key, but at least one row is `null`
+  (`unmeasured`), so the page proves nothing either way.
+
+The proof prints `MATCH set/page`, `DIFF  set/page  extra=[...] missing=[...]` or
+`COULD NOT MEASURE set/page  rows=[...]: <reason>` for each page, then `fixture proof: M/N pages
+match, D differ, C could not measure`. `fixture-proof.json` is `{all_match, match, differ,
+could_not_measure, pages: [{set, page, match, verdict, extra, missing, unmeasured}]}`. Exit code: 0
+when every page matches, 1 when any page differs, 3 when none differs but some could not be
+measured.
 
 ## Running it inside temper's worker (finding only; no stack change)
 Checked 2026-10-19 against `Dockerfile` and `docker-compose.yml` on main. Nothing was changed.
@@ -323,8 +372,8 @@ Checked 2026-10-19 against `Dockerfile` and `docker-compose.yml` on main. Nothin
      worker, against the reason the compose file gives.
   3. Keep running speed on the host, as now (the pinned tool and the local Chromium). This needs no
      change, but only the host can run it.
-- Until one of these exists, a worker run would score the speed rows `null` (not met). Run speed
-  on the host and merge the rows.
+- Until one of these exists, a worker run would score the speed rows `null` (could not measure;
+  never met). Run speed on the host and merge the rows.
 
 ## Changes to definitions
 No limit has changed. One definition and two methods changed, after the first baseline run, each
@@ -412,3 +461,34 @@ deterministic: what visible text is (screen-reader-only text and text pushed out
 not); which pixels are inside (1 px in from the padding box and its rounded corners, so the box's
 corners and border are never read as icon); the nearest-rank percentile; and the control with no
 text and no icon, which keeps version 1's reading by its shape.
+
+### Version 3, 2026-10-19 (Design, queue #110, H3d): speed rows measured only on a quiet machine
+
+Written before version 3's code, and before any page was measured with it. The decision and its
+hypothesis are H3d in `~/design-lab/homepage-workflow/HYPOTHESES.md` (Design's home chat). Its keyed
+cases are the `test_h3d_*` tests in `tests/test_design_homepage_bar_interact.py`, committed with this
+entry, before the code. They use a fake load reader, clock and Lighthouse run, so no case needs a
+busy machine. No limit changed (A8: LCP 2,500 ms, CLS 0.1, TBT 200 ms), and neither did the three
+runs, the median, the mobile preset or any other row.
+
+Reason: in queue #96 (H3c), with the 1-minute load between 17 and 65 on this 20-core machine, TBT
+failed on 1 to 8 of the 18 unplanted fixture pages per run (up to 536 ms, against 0 to 64 ms on a
+quiet machine) and on 2 baseline pages, one of them with LCP too (2,253 -> 2,532 ms). The median of
+three runs did not absorb it; runs were clean only behind a gate (1-minute load under 6). A busy
+machine made the meter fail good pages, and W15 needs every A bar met on every proof page.
+
+1. Quiet machine (method): the gate in "Speed". The 1-minute load is read before and after each
+   run; the meter waits in 15 s steps while it is 6 or more; a run whose after-reading is 6 or more
+   is thrown away and redone; each page has a cap of 600 s.
+2. Could not measure (definition): when the cap passes before three quiet runs are in, the three
+   speed rows are `null`, with the reason `could not measure: machine busy (load X)`. They are
+   never met or not met, and they are counted apart in `bars-interact.md` and in the fixture proof
+   (see the output contract and the fixture proof). The fixture proof's exit code 3 is new.
+3. Raw file (output): each run carries `load_before` and `load_after`; `dropped` keeps the runs
+   thrown away; `gate` keeps the waits.
+
+Precisions written with this entry, beyond H3d's words: the cap is checked before each wait and
+each run, so a run under way finishes, and a page's speed step takes at most 600 s plus one run; X is
+the last reading of 6 or more, to two decimals; the load is the whole machine's, the meter's own
+Lighthouse and Chrome included; a Lighthouse error still ends the step as before; raw files measured
+before version 3 have no loads and are scored as before. `version` becomes 3.

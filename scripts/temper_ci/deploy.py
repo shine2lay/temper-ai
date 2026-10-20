@@ -5,7 +5,9 @@ had no run going for two minutes, then ask ``temper-deploy restart`` for a
 restart. The wait is temper-ci's own: temper-deploy restarts at once when
 runs live in boxes (they carry on in their boxes), but nothing may restart
 the live temper under a run that is going. Several lands that arrive while
-it waits join one deploy. When it has restarted, look at the live temper for real: its
+it waits join one deploy. From the start of each quiet window it asks run loops to start
+no new run (``runs-yield``), and takes that back once nothing waits; it never touches a
+run itself. When it has restarted, look at the live temper for real: its
 own check, its hooks, one free run, the dashboard, and then, on runs of its own, an
 ordinary run's box environment and the owner's own controls: stop and resume, and a
 gate answered through the API (live_checks.py). Every run it starts is quiet (notify off) and tidied away,
@@ -68,6 +70,15 @@ LIVE_CHECK_RUNS = live_checks.FREE_RUN_WORKFLOW   # $0, script agents only; the 
 # just long enough for the ordinary wait but not for the look's own ~85 seconds of runs.
 # Step-asides never fail or revert a commit: a revert needs the same quiet as a fresh look.
 OWED_QUIET_SECONDS = 300
+# A run that starts while temper-ci waits for quiet starts the wait over, so a loop of runs
+# with gaps shorter than the wait starves it: an owed retry waited 1 h 41 min on 2026-10-19.
+# So from the start of each quiet window temper-ci asks run loops to start no new run, in this
+# file (write_runs_yield), until the window, the restart and the look after it are through:
+# RUNS_YIELD_MARGIN_SECONDS past the window (the restart and the look took about 2 minutes on
+# 2026-10-20), never more than RUNS_YIELD_MAX_SECONDS ahead. Only loops that honour it yield.
+RUNS_YIELD = paths.STATE / "runs-yield"
+RUNS_YIELD_MARGIN_SECONDS = 10 * 60
+RUNS_YIELD_MAX_SECONDS = 30 * 60
 # The name temper-ci's key goes by on the live temper (GET /api/guard lists it): the caller a
 # gate answered by the live look must be recorded under.
 CI_CALLER = "temper-ci"
@@ -165,13 +176,55 @@ def _said(going: list[dict] | None) -> str:
     return f"runs going on the live temper: {names}{more}"
 
 
-def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None) -> bool:
+def _at(seconds: float) -> str:
+    """A time in seconds since the epoch, written the way stamp() writes one (ISO 8601, UTC)."""
+    return dt.datetime.fromtimestamp(seconds, dt.UTC).isoformat(timespec="seconds")
+
+
+def write_runs_yield(sha: str, what: str, quiet_since: float, quiet_seconds: int) -> None:
+    """Ask run loops to start no new run until the quiet window that began at ``quiet_since``,
+    and the restart and the look after it, are through: writes RUNS_YIELD (sha, for, since,
+    until). Nothing here touches a run. A failure is logged and decides nothing: the wait goes
+    on exactly as it would without the file.
+    """
+    until = _at(min(quiet_since + quiet_seconds + RUNS_YIELD_MARGIN_SECONDS,
+                    _now() + RUNS_YIELD_MAX_SECONDS))
+    try:
+        write_json(RUNS_YIELD, {"sha": sha, "for": what, "since": _at(quiet_since), "until": until})
+    except OSError as exc:
+        log(f"{what}: runs-yield could not be written ({type(exc).__name__}: {exc}); "
+            "the wait goes on as it would without it")
+        return
+    log(f"{what}: runs-yield written (until {until}): run loops that honour it start no new "
+        "run meanwhile; runs already going are left alone")
+
+
+def remove_runs_yield() -> None:
+    """Take back the ask in RUNS_YIELD, if there is one, saying what it was for. A failure is
+    logged and decides nothing: run loops stop honouring the file once its until has passed."""
+    was = _dict(read_json(RUNS_YIELD, None))
+    try:
+        RUNS_YIELD.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        log(f"runs-yield could not be removed ({type(exc).__name__}: {exc}); its until still ends it")
+        return
+    log(f"runs-yield removed (it was for {was.get('for') or 'a wait it could not read'}): "
+        "nothing waits for quiet now")
+
+
+def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None, *, sha: str) -> bool:
     """Should the deploy (or revert) of ``what`` wait? Keeps ``data["hold"]`` up to date.
 
     It waits while any run is going, and while the live temper cannot say; then it goes once
     the temper has been quiet for ``quiet_seconds`` in a row (QUIET_SECONDS by default).
     Owed retries use OWED_QUIET_SECONDS. A run that starts meanwhile starts the quiet over.
     A person running ``temper-ci deploy`` is not held: that is their call.
+
+    At the start of each quiet window, and when the commit waited for (``sha``) changes during
+    one, it asks run loops to yield (write_runs_yield). While runs are going the ask stays as it
+    was, bounded by its until; watch_master takes it back once nothing waits.
     """
     if quiet_seconds is None:
         quiet_seconds = QUIET_SECONDS
@@ -194,15 +247,19 @@ def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None) -> bo
         return False
     quiet_why = f"no run going; it goes once that has lasted {quiet_seconds} seconds"
     if hold.get("quiet_since") is None:
+        quiet_since = _now()
         data["hold"] = {"for": what, "since": hold.get("since") or stamp(),
-                        "why": quiet_why, "quiet_since": _now()}
+                        "why": quiet_why, "quiet_since": quiet_since}
         save(data)
         log(f"{what}: no run is going; it goes once that has lasted {quiet_seconds} seconds")
+        write_runs_yield(sha, what, quiet_since, quiet_seconds)
         return True
     if _now() - float(hold["quiet_since"]) < quiet_seconds:
         if hold.get("for") != what or hold.get("why") != quiet_why:
             data["hold"] = {**hold, "for": what, "why": quiet_why}
             save(data)
+            if hold.get("for") != what:
+                write_runs_yield(sha, what, float(hold["quiet_since"]), quiet_seconds)
         return True
     data.pop("hold", None)
     save(data)
@@ -857,7 +914,7 @@ def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
     # A revert restarts temper too, so it waits for the runs like any deploy: watch_master
     # makes it once they are over, unless master has moved on by then.
     data = state()
-    if held_for_runs(data, f"the revert of {sha[:12]}"):
+    if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha):
         data["revert_waits"] = {"good": good, "bad": sha, "parts": bad_parts, "since": stamp()}
         save(data)
         dm(f"temper: the live check failed after {sha[:12]} ({bad_parts}). Going back to "
@@ -926,7 +983,20 @@ def _state_lost() -> None:
 
 
 def watch_master() -> dict | None:
-    """Called from the watcher's loop: has master moved since we last deployed?"""
+    """Called from the watcher's loop: has master moved since we last deployed?
+
+    A pass that ends with no hold on record takes back the ask to run loops (remove_runs_yield):
+    the look it waited for is done (passed, failed or owed again), or nothing waits for quiet.
+    That also clears an ask left behind when temper-ci stopped in the middle of a wait.
+    """
+    try:
+        return _watch_master()
+    finally:
+        if not _dict(state()).get("hold"):
+            remove_runs_yield()
+
+
+def _watch_master() -> dict | None:
     if state_unreadable():
         _state_lost()
     data = state()
@@ -939,7 +1009,7 @@ def watch_master() -> dict | None:
         save(data)
         waits = None
     if waits:
-        if held_for_runs(data, f"the revert of {sha[:12]}"):
+        if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha):
             return None
         return _go_back(sha, waits.get("good") or "", waits.get("parts") or "",
                         dict(data.get("last_deploy") or {"sha": sha}))
@@ -951,7 +1021,8 @@ def watch_master() -> dict | None:
         # to rm-e71dc2dc): temper is still on the owed commit. After its first step-aside,
         # leave a longer quiet window: the owed parts start runs of their own, and never
         # beside someone else's. Legacy owed records without a count are the first look.
-        if held_for_runs(data, f"what the live check of {owed['sha'][:12]} owes", OWED_QUIET_SECONDS):
+        if held_for_runs(data, f"what the live check of {owed['sha'][:12]} owes", OWED_QUIET_SECONDS,
+                         sha=owed["sha"]):
             return None
         return settle_owed(owed["sha"])
     if not sha or data.get("deployed") == sha:
@@ -976,6 +1047,6 @@ def watch_master() -> dict | None:
                 "nowhere to go back to until a commit passes")
         save(data)
         return None
-    if held_for_runs(data, sha[:12]):
+    if held_for_runs(data, sha[:12], sha=sha):
         return None
     return deploy(sha)

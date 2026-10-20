@@ -12,6 +12,7 @@ import datetime as dt
 import hashlib
 import html
 import json
+import os
 import subprocess
 import sys
 import time
@@ -1733,3 +1734,273 @@ def test_a_person_deploying_by_hand_is_not_held(dep, monkeypatch):
 
     assert asked == ["2" * 40]
     assert "hold" not in deploy.state()
+
+
+# -- runs-yield: run loops asked to start nothing while a deploy waits for quiet -----------
+#
+# A run that starts while temper-ci waits for quiet starts the wait over. A loop of runs with
+# gaps of 186-222 s never let an owed retry's 300 quiet seconds come: 1 h 41 min on 2026-10-19,
+# 47 min on 2026-10-20, with newer deploys queued behind. So at the start of each quiet window
+# temper-ci writes runs-yield, and takes it back once nothing waits. It never touches a run;
+# the waits, the windows and the rules stay as they were.
+
+
+def _yield_file(deploy) -> Path:
+    """Where run loops look for it: temper-ci's state folder (TEMPER_CI_STATE here)."""
+    return deploy.paths.STATE / "runs-yield"
+
+
+def _yield_said(deploy) -> dict | None:
+    path = _yield_file(deploy)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def _at(seconds: float) -> str:
+    """A time on the stood-in clock, written the way stamp() writes one (ISO 8601, UTC)."""
+    return dt.datetime.fromtimestamp(seconds, dt.UTC).isoformat(timespec="seconds")
+
+
+def _looks_for_real(deploy, tmp_path, monkeypatch, look: Callable[[Path], dict]) -> None:
+    """deploy() runs whole; temper-deploy's restart and the live look are stood in for."""
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: _restarted(
+        deploy, tmp_path, dt.datetime.now(dt.UTC) + dt.timedelta(seconds=5), head=sha[:8]))
+    monkeypatch.setattr(deploy, "live_check", look)
+
+
+def test_a_deploy_asks_run_loops_to_yield_from_its_quiet_window_until_its_look_is_done(dep, monkeypatch):
+    """The whole life of the ask on an ordinary deploy. None while someone else's runs keep
+    temper busy anyway; written when the quiet window starts, and again when a newer land joins
+    the deploy; there through the restart and the look; gone after. The log says both."""
+    deploy, tmp_path = dep
+    assert _yield_file(deploy) == tmp_path / "state" / "runs-yield", "TEMPER_CI_STATE moves it"
+    real_deploy = deploy.deploy
+    clock, _ = _moved(deploy, monkeypatch)
+    monkeypatch.setattr(deploy, "deploy", real_deploy)
+    master = ["2" * 40]
+    monkeypatch.setattr(deploy, "master_sha", lambda: master[0])
+    during: list[dict | None] = []
+
+    def look(shots: Path) -> dict:
+        during.append(_yield_said(deploy))
+        return {"ok": True, "parts": [{"name": "check", "ok": True}]}
+
+    _looks_for_real(deploy, tmp_path, monkeypatch, look)
+    going: list[dict] = [dict(_RUN)]
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+    path = _yield_file(deploy)
+
+    for minute in range(3):
+        clock[0] = minute * 60.0
+        assert deploy.watch_master() is None
+    assert not path.exists(), "no ask while someone else's runs keep temper busy anyway"
+
+    going.clear()
+    clock[0] = 200.0
+    assert deploy.watch_master() is None
+    assert _yield_said(deploy) == {"sha": "2" * 40, "for": "222222222222",
+                                   "since": _at(200), "until": _at(200 + 120 + 600)}
+    os.utime(path, (0, 0))
+
+    master[0] = "3" * 40                  # a newer land joins the deploy; the same window goes on
+    clock[0] = 260.0
+    assert deploy.watch_master() is None
+    asked = _yield_said(deploy)
+    assert asked == {"sha": "3" * 40, "for": "333333333333", "since": _at(200), "until": _at(920)}
+    assert path.stat().st_mtime > 0, "written again for the newer commit"
+
+    clock[0] = 319.0
+    assert deploy.watch_master() is None
+    assert during == []
+
+    clock[0] = 320.0
+    out = deploy.watch_master()
+
+    assert out["ok"] is True and deploy.state()["last_good"] == "3" * 40
+    assert during == [asked], "the restart and the look ran with the ask there"
+    assert not path.exists(), "taken back once the look is done"
+    logged = deploy.paths.LOG.read_text(encoding="utf-8")
+    assert f"222222222222: runs-yield written (until {_at(920)})" in logged
+    assert f"333333333333: runs-yield written (until {_at(920)})" in logged
+    assert "runs-yield removed (it was for 333333333333)" in logged
+    deploy.watch_master()
+    assert not path.exists()
+
+
+def test_an_owed_retry_asks_for_its_five_quiet_minutes_and_each_window_asks_afresh(dep, monkeypatch):
+    """until counts the owed wait's 300 s. A run that breaks the window leaves the ask, bounded
+    by its until; the next window writes it again. A look that ends owed again leaves none
+    behind, and the next window writes a new one."""
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": None, "owed": True,
+                                                  "detail": f"owed, stopped part-way: {TEAM_RUN}"})
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner: {text}"))
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    monkeypatch.setattr(deploy, "OWED_QUIET_SECONDS", 300)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
+    going: list[dict] = []
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+    path = _yield_file(deploy)
+    what = "what the live check of 555555555555 owes"
+
+    clock[0] = 1000.0
+    assert deploy.watch_master() is None
+    first = _yield_said(deploy)
+    assert first == {"sha": "5" * 40, "for": what, "since": _at(1000), "until": _at(1000 + 300 + 600)}
+    os.utime(path, (0, 0))
+
+    going.append(dict(_RUN))              # someone else's run breaks the window
+    clock[0] = 1200.0
+    assert deploy.watch_master() is None
+    assert _yield_said(deploy) == first and path.stat().st_mtime == 0, "kept; its until bounds it"
+
+    going.clear()
+    clock[0] = 1500.0
+    assert deploy.watch_master() is None
+    assert _yield_said(deploy) == {**first, "since": _at(1500), "until": _at(1500 + 900)}
+    assert path.stat().st_mtime > 0, "a new window writes it again, with a fresh mtime"
+
+    clock[0] = 1800.0
+    out = deploy.watch_master()           # five quiet minutes: tried, and owed again
+
+    assert tried == [{GATE}] and out["ok"] is False
+    assert deploy.state()["owed"]["step_asides"] == 2
+    assert not path.exists(), "a look that ended owed leaves no ask behind"
+
+    clock[0] = 1830.0
+    assert deploy.watch_master() is None
+    assert _yield_said(deploy) == {**first, "since": _at(1830), "until": _at(1830 + 900)}
+
+
+def test_a_failed_look_hands_its_revert_an_ask_of_its_own(dep, monkeypatch):
+    """The revert waits for quiet too, so its own window writes its own ask (a fresh since and
+    until); it is gone once nothing waits."""
+    deploy, tmp_path = dep
+    deploy.save({"last_good": "4" * 40, "deployed": "4" * 40})
+    monkeypatch.setattr(deploy, "master_sha", lambda: "5" * 40)
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
+    going: list[dict] = []
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+
+    def look(shots: Path) -> dict:
+        going.append(dict(_RUN))          # someone's run starts while temper is looked at
+        return {"ok": False, "parts": [{"name": "hooks", "ok": False, "detail": "Slack said 500"}]}
+
+    _looks_for_real(deploy, tmp_path, monkeypatch, look)
+    reverted, _ = _reverts(deploy, monkeypatch)
+    path = _yield_file(deploy)
+
+    assert deploy.watch_master() is None
+    deploys_ask = _yield_said(deploy)
+    assert deploys_ask and deploys_ask["for"] == "555555555555"
+    clock[0] = 120.0
+    out = deploy.watch_master()
+    assert out["rolled_back"] is False and reverted == []
+    assert _yield_said(deploy) == deploys_ask, "runs going: the ask stays, bounded by its until"
+
+    going.clear()
+    clock[0] = 400.0
+    assert deploy.watch_master() is None
+    assert _yield_said(deploy) == {"sha": "5" * 40, "for": "the revert of 555555555555",
+                                   "since": _at(400), "until": _at(400 + 120 + 600)}
+    clock[0] = 520.0
+    deploy.watch_master()
+
+    assert reverted == [("4" * 40, "5" * 40)]
+    assert not path.exists(), "gone once nothing waits"
+    deploy.watch_master()
+    assert not path.exists()
+
+
+def test_an_ask_left_behind_with_nothing_waiting_goes_at_the_first_pass(dep, monkeypatch):
+    """temper-ci stopped in the middle of a wait (a crash, a restart): the next pass finds no
+    hold on record, and takes the ask back."""
+    deploy, _ = dep
+    deploy.save({"last_good": "2" * 40, "deployed": "2" * 40})
+    monkeypatch.setattr(deploy, "master_sha", lambda: "2" * 40)
+    path = _yield_file(deploy)
+    path.write_text(json.dumps({"sha": "2" * 40, "for": "222222222222", "since": _at(0),
+                                "until": _at(720)}), encoding="utf-8")
+
+    assert deploy.watch_master() is None
+
+    assert not path.exists()
+    assert "runs-yield removed (it was for 222222222222)" in deploy.paths.LOG.read_text(encoding="utf-8")
+
+
+def test_the_ask_is_never_more_than_thirty_minutes_ahead(dep, monkeypatch):
+    deploy, _ = dep
+    clock, _ = _moved(deploy, monkeypatch, quiet=3600)
+    clock[0] = 50.0
+
+    deploy.watch_master()
+
+    asked = _yield_said(deploy)
+    assert asked and (asked["since"], asked["until"]) == (_at(50), _at(50 + 30 * 60))
+
+
+@pytest.mark.parametrize("broken", [False, True], ids=["ask-written", "ask-cannot-be-written-or-removed"])
+def test_an_ask_that_cannot_be_written_or_removed_changes_no_decision(dep, monkeypatch, broken):
+    """Each failure is one line in the log, and the hold and the deploy go exactly as they would
+    without the file: the ask only ever helps a wait, it never decides one."""
+    deploy, _ = dep
+    clock, deployed = _moved(deploy, monkeypatch)
+    going: list[dict] = []
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+    if broken:
+        _yield_file(deploy).mkdir()       # a real OSError for every write and every removal
+    seen = []
+
+    for t, runs in ((0, True), (60, False), (179, False), (180, False)):
+        clock[0] = float(t)
+        going[:] = [dict(_RUN)] if runs else []
+        deploy.watch_master()
+        seen.append((t, list(deployed), (deploy.state().get("hold") or {}).get("quiet_since")))
+
+    assert seen == [(0, [], None), (60, [], 60.0), (179, [], 60.0), (180, ["2" * 40], None)]
+    failed = [line for line in _log_lines(deploy) if "runs-yield could not be" in line]
+    if broken:
+        assert len(failed) == 2, failed
+        assert "222222222222: runs-yield could not be written (" in failed[0]
+        assert "runs-yield could not be removed (" in failed[1]
+    else:
+        assert failed == []
+
+
+def test_status_shows_the_ask_while_it_is_there_and_nothing_once_it_has_gone(dep, monkeypatch, capsys):
+    deploy, _ = dep
+    from temper_ci import cli  # noqa: PLC0415
+
+    clock, deployed = _moved(deploy, monkeypatch)
+    clock[0] = 30.0
+    deploy.watch_master()
+    assert cli.main(["status"]) == 0
+    shown = [line for line in capsys.readouterr().out.splitlines() if "yield:" in line]
+    assert shown == [f"  yield:       runs-yield asks run loops to start no new run until {_at(750)} "
+                     f"(for 222222222222, quiet since {_at(30)})"]
+
+    clock[0] = 150.0
+    deploy.watch_master()
+    assert deployed == ["2" * 40]
+    assert cli.main(["status"]) == 0
+    assert "yield:" not in capsys.readouterr().out
+
+
+def test_a_deploy_by_hand_asks_nothing_of_run_loops(dep, monkeypatch):
+    """`temper-ci deploy` is a person's call: it writes no runs-yield, before, during or after."""
+    deploy, tmp_path = dep
+    deploy.save({"last_good": "1" * 40, "deployed": "1" * 40})
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    monkeypatch.setattr(deploy, "_now", lambda: 0.0)
+    monkeypatch.setattr(deploy, "runs_going", lambda: pytest.fail("a deploy by hand asked about runs"))
+    during: list[bool] = []
+    _looks_for_real(deploy, tmp_path, monkeypatch, lambda shots: (
+        during.append(_yield_file(deploy).exists()), {"ok": True, "parts": [{"name": "check", "ok": True}]})[1])
+
+    out = deploy.deploy("2" * 40)
+
+    assert out["ok"] is True and during == [False]
+    assert not _yield_file(deploy).exists()

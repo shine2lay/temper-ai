@@ -127,6 +127,13 @@ def cmd_status(_args) -> int:
         if not waits and not owed:
             print("               no restart under a run that is going; `temper-ci deploy` by "
                   "a person is not held")
+    if deploy_mod.RUNS_YIELD.exists():
+        asked = paths.read_json(deploy_mod.RUNS_YIELD, None)
+        if isinstance(asked, dict):
+            print(f"  yield:       runs-yield asks run loops to start no new run until {asked.get('until')} "
+                  f"(for {asked.get('for')}, quiet since {asked.get('since')})")
+        else:
+            print(f"  yield:       {deploy_mod.RUNS_YIELD} is there, but cannot be read")
     print(f"\n  reports:    {REPORTS}  (served at {paths.REPORT_BASE})")
     print(f"  log:        {paths.LOG}")
     return 0

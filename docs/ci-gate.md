@@ -69,6 +69,18 @@ first step-aside, its owed retries need five quiet minutes (300 seconds) instead
   check decide instead.
 * A live check that ended owed (below) is finished before anything newer is deployed on
   top, even when master has moved on meanwhile.
+* While it waits, it asks run loops to start no new run, because one that starts in the
+  quiet window starts it over (a loop with gaps shorter than the window starves it). At the
+  start of each quiet window, for a deploy, an owed retry or a revert, it writes
+  `~/.local/state/temper-ci/runs-yield`: JSON with `sha` (the commit waited for), `for`
+  (which wait), `since` (when the window began) and `until` (the end of the window plus ten
+  minutes for the restart and the look, never more than 30 minutes ahead), times in ISO
+  8601 UTC. It is written again at each new quiet window and when the commit waited for
+  changes, and removed at the end of each watcher pass that leaves nothing waiting (the look
+  passed, failed or ended owed). A loop that honours it starts no run until `until` and
+  treats a file past it as gone. temper-ci never cancels or touches a run; a file it cannot
+  write or remove is logged and changes nothing it decides; a deploy by hand writes none.
+  `temper-ci status` shows it on a `yield:` line.
 * `temper-ci deploy <commit>` by hand is not held: that is a person's call.
 
 ## Where everything lives
@@ -77,7 +89,7 @@ first step-aside, its owed retries need five quiet minutes (300 seconds) instead
 |---|---|
 | the gate's code | `scripts/temper_ci/` in this repo (`gate.py`, `deploy.py`, `live_checks.py` (the owner's controls, tried live), `stack.py` (the git mirror), `report.py`, `shot.py`) |
 | the command | `temper-ci` → `scripts/temper-ci` |
-| its state | `~/.local/state/temper-ci/` (`gate.json`, `deploy.json`, `reports/`, `mirror/`) |
+| its state | `~/.local/state/temper-ci/` (`gate.json`, `deploy.json`, `runs-yield` while a deploy waits for quiet, `reports/`, `mirror/`) |
 | the reports | `~/.local/state/temper-ci/reports/<commit>/`: `index.html`, `report.json`, `live.json` (the deploy's live check), screenshots |
 | the watcher | `systemd --user` unit `temper-ci.service` |
 | GitHub's side | `.github/workflows/ci.yml` |

@@ -649,8 +649,12 @@ def wait_for(fn: Callable[[], Any], timeout: float = 20.0, every: float = 0.02,
 def wait_ended(eid: str, n_attempts: int = 1, timeout: float = 20.0) -> list[dict]:
     """Wait until attempt ``n_attempts`` has ended and the thread that ran it has let go. The
     attempt row ends before that thread leaves the server's running runs, so a Resume sent in
-    between is refused as already running (409)."""
+    between is refused as already running (409). While the server holds the run, each poll
+    asks only that, in memory: a database read 50 times a second took CPU from the run's own
+    threads, enough under the gate's load to push the run past this wait's limit (#113)."""
     def ended():
+        if run_held(eid):
+            return None
         a = attempts(eid)
         if len(a) < n_attempts or a[-1]["status"] in ACTIVE:
             return None

@@ -7,6 +7,7 @@ file: never the live one (tests/conftest.py checks every init against it).
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 from types import SimpleNamespace
 
@@ -58,6 +59,27 @@ def _team_invariants_after_every_scenario(request):
     ts.check_all_invariants(Ledger(get_database().engine), before)
 
 
+def _sqlite_without_durability(engine, path):
+    """A test's SQLite file skips the disk work only durability needs, as the Postgres tier
+    does (scripts/test-postgres.sh: fsync off). Every connection sets ``synchronous=OFF``, so
+    no commit waits on fsync; one connection held open for the test keeps the last close from
+    checkpointing the WAL and deleting it, which NullPool would otherwise do after nearly every
+    statement. Measured (#113): under the gate's load this halves a one-turn Team run, which
+    had grown past the helpers' 20 s waits. Returns the held connection, to close at the end.
+    """
+    from sqlalchemy import event
+
+    def no_fsync(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA synchronous=OFF")
+        cursor.close()
+
+    event.listen(engine, "connect", no_fsync)
+    held = sqlite3.connect(path, check_same_thread=False)
+    held.execute("PRAGMA synchronous=OFF")
+    return held
+
+
 @pytest.fixture
 def pw_run(tmp_path, request, monkeypatch, _no_network):
     from fastapi.testclient import TestClient
@@ -69,12 +91,13 @@ def pw_run(tmp_path, request, monkeypatch, _no_network):
     from tests.conftest import TEST_DATABASE_URL
 
     url = request.node.stash.get(TEST_DATABASE_URL, "")
+    held = None
     if url.startswith("sqlite"):
         # Threads share the database: a file, not one in-memory connection.
         url = f"sqlite:///{tmp_path / 'pw.db'}"
         reset_database()
         request.node.stash[TEST_DATABASE_URL] = url
-        init_database(url)
+        held = _sqlite_without_durability(init_database(url).engine, tmp_path / "pw.db")
     box_json = sup.make_box_config(tmp_path / "box")
     monkeypatch.setenv("TEMPER_DATABASE_URL", url)
     monkeypatch.setenv("TEMPER_LOG_DIR", str(tmp_path / "logs"))
@@ -110,5 +133,6 @@ def pw_run(tmp_path, request, monkeypatch, _no_network):
     sup.unregister_types()
     AGENT_TYPES.pop(pw.FAIL_TYPE, None)
     AGENT_TYPES.pop(pw.VERDICT_TYPE, None)
-    if url.startswith("sqlite"):
+    if held is not None:
+        held.close()
         reset_database()

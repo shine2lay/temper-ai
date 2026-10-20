@@ -49,6 +49,11 @@ versions used are in the log rather than assumed.
 `uv run pytest tests/` — about 3,500 tests in roughly 20 seconds at `-n 8`.
 Each test gets a fresh in-memory SQLite.
 
+In the hook (and so in every land) the suite starts only when the machine has
+room for it: at most 3 suites at once across the machine, with workers sized
+to the free cores, 8 at most and 4 at least. On a busy machine it waits, up to
+20 minutes, printing a line a minute ([test-slots.md](test-slots.md)).
+
 **No `-x`.** Stopping at the first failure meant one red run told you about
 one broken test; you fixed it and the next run told you about the next.
 Everything that fails, fails visibly, in one go.

@@ -56,7 +56,14 @@ def target():
 def node_case(code, engine='chromium', **kw):
     payload = dict(code=code, engine=engine, files={n: b.decode() for n, b in g.snapshot(p3.FIXTURE, p3.CTYPES).items()},
                    ctypes=p3.CTYPES, close=p3.CLOSE, url=EXACT, **kw)
-    proc = subprocess.run(['node', str(NODE)], input=json.dumps(payload), text=True,
+    # Adapt the old fixed fake in memory to Page.close/Context.pages, without changing fixture bytes.
+    harness = NODE.read_text().replace('.pages', '.items')
+    harness = harness.replace('  async goto(url) {', '  async close() { this.closed = true; }\n  async goto(url) {')
+    harness = harness.replace('  browser() { return browser; }',
+                              '  pages() { return this.items.filter(p => !p.closed); }\n  browser() { return browser; }')
+    harness = harness.replace('contexts.length - 1', 'contexts.filter(c => c !== rootCtx).length')
+    harness = harness.replace("if (input.fault === 'close')", "if (input.fault === 'close' && !this.isRoot)")
+    proc = subprocess.run(['node', '-e', harness], input=json.dumps(payload), text=True,
                           capture_output=True, timeout=10)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
@@ -65,7 +72,8 @@ def node_case(code, engine='chromium', **kw):
 def clean_close(names, log=None):
     return {'contexts': {n: {'error': None, 'page_created': True, 'page_closed': True,
                             'context_still_in_browser': False} for n in names},
-            'other_contexts_left': 0, 'log': log or {}}
+            'other_contexts_left': 0, 'guard_page_closed': True, 'guard_context_closed': True,
+            'journal': {'status': 'complete', 'reasons': []}, 'log': log or {}}
 
 
 def event(url=EXACT):
@@ -193,6 +201,88 @@ def test_w4_origin_defaults_never_exempt_an_explicit_different_port(origin, url,
     assert [x['url'] for x in latch.observations] == ([url] if outside else [])
 
 
+# R1's five end-to-end fakes execute the actual guard on fixed EventEmitter objects.
+# The only subprocess is Node; this harness has no browser/MCP/socket/HTTP dependency.
+R1_NODE = r"""
+const {EventEmitter} = require('node:events');
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const contexts = [], sequence = [];
+class Page extends EventEmitter {
+  constructor(ctx) { super(); this.ctx = ctx; this.closed = false; }
+  context() { return this.ctx; }
+  url() { return 'about:blank'; }
+  isClosed() { return this.closed; }
+  async close(options) {
+    sequence.push('page-close:' + this.ctx.name + ':' + options.runBeforeUnload);
+    if (this.ctx.name === 'guard') {
+      if (input.fault === 'guard_alive') return;
+      if (input.fault === 'guard_error') throw new Error('fixed guard close failure');
+      if (input.fault === 'guard_event') this.ctx.emit('request', {method: () => 'GET', url: () => input.url,
+        resourceType: () => 'script', isNavigationRequest: () => false});
+    }
+    if (this.ctx.name === 'A') {
+      if (input.fault === 'F1') {
+        const r = {method: () => 'GET', url: () => input.url, resourceType: () => 'script',
+          isNavigationRequest: () => false};
+        this.ctx.emit('request', r);
+      }
+      if (input.fault === 'F4') throw new Error('fixed escalation failure');
+      if (['F2', 'F3'].includes(input.fault)) return;
+    }
+    this.closed = true;
+  }
+}
+class Context extends EventEmitter {
+  constructor(name) { super(); this.name = name; this.items = []; this.calls = 0; contexts.push(this); }
+  browser() { return browser; }
+  pages() { return this.items.filter(p => !p.closed); }
+  async newPage() { const p = new Page(this); this.items.push(p); this.emit('page', p); return p; }
+  async close() {
+    sequence.push('context-close:' + this.name + ':' + ++this.calls);
+    if (this.name === 'guard') {
+      if (input.fault === 'carrier_context_error') throw new Error('fixed carrier context close failure');
+      if (['carrier_context_alive', 'guard_alive'].includes(input.fault)) return;
+    }
+    if (this.name === 'A' && ['F1', 'F2', 'F3', 'F4'].includes(input.fault) &&
+        (this.calls === 1 || ['F2', 'F3'].includes(input.fault)))
+      throw new Error('fixed original CLOSE failure');
+    this.items.forEach(p => { p.closed = true; });
+    if (contexts.includes(this)) contexts.splice(contexts.indexOf(this), 1);
+  }
+}
+const browser = {contexts: () => contexts.slice()};
+const rootCtx = new Context('guard');
+const root = new Page(rootCtx); rootCtx.items.push(root);
+if (input.fault === 'untracked') rootCtx.items.push(new Page(rootCtx));
+if (input.fault === 'other_context') { const c = new Context('unknown'); c.items.push(new Page(c)); }
+(async () => {
+  await eval('(async (page) => { const browser = page.context().browser();' + input.observers + `
+    const drain = p3.drain;
+    p3.drain = () => { sequence.push('drain'); return drain(); };
+    for (const name of ['A', 'B']) {
+      const u = p3.attach(new Context(name), name, false);
+      u.p = await u.ctx.newPage(); u.attachPage(u.p);
+    }
+  })`)(root);
+  let result = null, error = null;
+  try { result = await eval('(' + input.close + ')')(root); } catch (e) { error = String(e); }
+  console.log(JSON.stringify({result, error, sequence, guard_closed: root.isClosed(),
+    live: contexts.flatMap(c => c.pages()).length, contexts_left: contexts.length}));
+})().catch(e => { console.error(String(e)); process.exitCode = 1; });
+"""
+
+
+def r1_close_case(fault):
+    proc = subprocess.run(['node', '-e', R1_NODE],
+                          input=json.dumps(dict(observers=g.OBSERVERS, close=p3.CLOSE, fault=fault, url=EXACT)),
+                          text=True, capture_output=True, timeout=10)
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads(proc.stdout)
+    assert not data['error'], data['error']
+    return data
+
+
 class FakeTransport:
     def __init__(self, kind, fail_close=False):
         self.kind = kind
@@ -200,11 +290,20 @@ class FakeTransport:
         self.fail_close = fail_close
 
     async def initialize(self):
-        pass
+        assert not self.browser_closes
 
     async def call_tool(self, name, args):
+        assert not self.browser_closes, 'MCP call after browser_close'
         assert name == 'browser_close'
         self.browser_closes += 1
+        if self.fail_close == 'timeout':
+            raise TimeoutError('fixed fallback timeout')
+        if self.fail_close == 'cancel':
+            raise asyncio.CancelledError
+        if self.fail_close == 'unknown':
+            return None
+        if self.fail_close == 'error_result':
+            return SimpleNamespace(content=[SimpleNamespace(type='text', text='fixed fallback MCP error')], isError=True)
         if self.fail_close:
             raise RuntimeError('fixed browser fallback failure')
         return SimpleNamespace(content=[], isError=False)
@@ -219,11 +318,11 @@ def test_independent_browser_fallback_even_after_close_or_partial_setup_fault(mo
         if code == p3.CLOSE:
             if fault == 'CLOSE':
                 raise RuntimeError('fixed CLOSE failure')
-            return clean_close(['A'] if fault == 'partial_setup' else ['A', 'B'], event())
-        assert code == p3.DRAIN
-        if fault == 'DRAIN':
-            raise RuntimeError('fixed terminal observation failure')
-        return event(ORIGIN + '/')
+            result = clean_close(['A'] if fault == 'partial_setup' else ['A', 'B'], event())
+            if fault == 'DRAIN':
+                result['journal'] = {'status': 'incomplete', 'reasons': ['fixed terminal observation failure']}
+            return result
+        raise AssertionError('cleanup addressed the carrier after terminal CLOSE')
 
     monkeypatch.setattr(p3, '_call', call)
     asyncio.run(p3.cleanup(s, r, 'chromium', 'fake', latch))
@@ -248,6 +347,7 @@ def install_journey(monkeypatch, fault='clean'):
             raise RuntimeError('fixed transport exit after pin data')
 
     async def call(s, code):
+        assert not s.browser_closes, 'MCP call after browser_close'
         if code == p3.CLOSE:
             if fault == 'CLOSE' and s.kind == 'chromium':
                 raise RuntimeError('fixed CLOSE failure')
@@ -282,6 +382,172 @@ def install_journey(monkeypatch, fault='clean'):
     monkeypatch.setattr(p3, '_call', call)
     monkeypatch.setattr(p3, '_section_rows', rows)
     return t, sessions
+
+
+@pytest.mark.parametrize('fault', ['F5', 'carrier_context_error', 'carrier_context_alive'])
+def test_r1_followup_carrier_context(monkeypatch, tmp_path, fault):
+    data = r1_close_case(fault)
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R1', target())), g.StopLatch()
+
+    async def call(session, code):
+        assert not session.browser_closes
+        if code == p3.DRAIN:  # unchanged base still uses the separate pre-fallback drain
+            return {}
+        assert code == p3.CLOSE
+        return data['result']
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R1', latch))
+    p3.finish(r, tmp_path, persist=False)
+    c = r['cleanup']['chromium']
+    assert s.browser_closes == 1
+    if fault == 'F5':
+        assert r['exit_code'] == 0 and data['contexts_left'] == 0
+        assert c['journal']['status'] == 'complete' and c['contexts']['guard_context_closed']
+    else:
+        assert r['exit_code'] == 3 and not c['confirmed']
+        assert c['journal']['status'] == 'incomplete' and c['journal']['reasons']
+        assert all(x.startswith('terminal observation not established: ') for x in c['journal']['reasons'])
+        assert 'terminal observation not established: ' in json.dumps(r['invocation_stop'])
+        assert r['traffic_gate']['status'] != 'PASS'
+        assert data['sequence'][-1] == 'drain' and data['guard_closed']
+    if fault == 'carrier_context_error':
+        assert 'fixed carrier context close failure' in json.dumps(c['errors'])
+
+
+@pytest.mark.parametrize('fault', ['error', 'error_result', 'timeout', 'cancel', 'unknown'])
+def test_r1_followup_fallback_recreation(monkeypatch, tmp_path, fault):
+    s, r, latch = FakeTransport('chromium', fail_close=fault), passing(p3.new_receipt('R1', target())), g.StopLatch()
+    r['sessions']['chromium']['url'] = 'fake:affected-chromium-service'
+
+    async def call(session, code):
+        assert not session.browser_closes
+        if code == p3.DRAIN:  # baseline compatibility, not a grant for calls after browser_close
+            return {}
+        assert code == p3.CLOSE
+        return clean_close(['A', 'B'])
+
+    monkeypatch.setattr(p3, '_call', call)
+    if fault == 'cancel':
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(p3.cleanup(s, r, 'chromium', 'R1', latch))
+    else:
+        asyncio.run(p3.cleanup(s, r, 'chromium', 'R1', latch))
+    p3.finish(r, tmp_path, persist=False)
+    c = r['cleanup']['chromium']
+    assert s.browser_closes == 1 and r['exit_code'] == 3 and not c['confirmed']
+    assert c['browser_close'] in ('error', 'unknown')
+    required = r['mcp_service_recreation_required'][0]
+    assert required == c['mcp_service_recreation_required']
+    assert required['service'] == 'fake:affected-chromium-service' and required['reason']
+    assert 'Architecture' in required['enforcer'] and 'W2' in required['required_receipt']
+    assert latch.blocked and r['traffic_gate']['status'] != 'PASS'
+    assert all(x.startswith('terminal observation not established: ') for x in c['journal']['reasons'])
+
+
+@pytest.mark.parametrize('fault', ['guard_event', 'guard_alive', 'guard_error', 'untracked', 'other_context', 'bad_close'])
+def test_r1_carrier_and_unknown_lifetimes(monkeypatch, tmp_path, fault):
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R1', target())), g.StopLatch()
+    data = None if fault == 'bad_close' else r1_close_case(fault)
+
+    async def call(session, code):
+        assert code == p3.CLOSE  # never DRAIN/address the carrier after its terminal CLOSE
+        return ['malformed terminal result'] if data is None else data['result']
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R1', latch))
+    p3.finish(r, tmp_path, persist=False)
+    c = r['cleanup']['chromium']
+    assert s.browser_closes == 1
+    if fault == 'guard_event':
+        assert r['exit_code'] == 4 and c['journal']['status'] == 'complete'
+        assert r['w4']['observations'][0]['url'] == EXACT
+        assert data['guard_closed'] and data['sequence'][-1] == 'drain'
+    else:
+        assert r['exit_code'] == 3 and not c['confirmed']
+        assert c['journal']['status'] == 'incomplete' and c['journal']['reasons']
+        assert r['traffic_gate']['status'] != 'PASS'
+        assert all(v != 'PASS' for v in r['traffic_gate']['engines'].values())
+    if fault == 'guard_error':
+        assert 'fixed guard close failure' in json.dumps(c)
+    if fault == 'untracked':
+        assert c['contexts']['untracked']
+
+
+@pytest.mark.parametrize('fault', ['F5', 'F1', 'F2', 'F3', 'F4'])
+def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
+    t, sessions = install_journey(monkeypatch)
+    original_call, original_rows = p3._call, p3._section_rows
+    data = r1_close_case(fault)
+    fallback_events, started = [], []
+    transport_close = FakeTransport.call_tool
+
+    async def call(s, code):
+        if s.kind == 'chromium' and code == p3.CLOSE:
+            return data['result']
+        return await original_call(s, code)
+
+    async def rows(s, r, *args):
+        started.append(s.kind)
+        ok = await original_rows(s, r, *args)
+        if s.kind == 'chromium':
+            r.setdefault('probes', {})['R1-original'] = {'data': 'fixed probe data',
+                                                       'error': 'fixed original probe error'}
+            if fault == 'F3':
+                p3.collect(r, event(), ORIGIN, args[-1], 'R1:earlier-case-event')
+        return ok
+
+    async def browser_close(s, name, args):
+        if s.kind == 'chromium' and fault in ('F2', 'F3'):
+            fallback_events.append(event())  # no transport channel to the now-terminal Node journal
+        return await transport_close(s, name, args)
+
+    monkeypatch.setattr(p3, '_call', call)
+    monkeypatch.setattr(p3, '_section_rows', rows)
+    monkeypatch.setattr(FakeTransport, 'call_tool', browser_close)
+    latch = g.StopLatch()
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'R1', tmp_path / 'host', 900,
+                                     latch=latch))
+    c = r['cleanup']['chromium']
+    assert all(s.browser_closes == 1 for s in sessions)
+    assert r['probes']['stage-A']['files']['app.js']['b64']
+    assert r['probes']['R1-original'] == {'data': 'fixed probe data', 'error': 'fixed original probe error'}
+    if fault in ('F1', 'F3'):
+        assert r['verdict'] == 'W4 TRIPPED' and r['exit_code'] == 4
+        assert r['w4']['observations'][0]['url'] == EXACT
+        assert EXACT in (tmp_path / 'observations.json').read_text()
+    elif fault in ('F2', 'F4'):
+        assert r['verdict'] == 'BLOCKED' and r['exit_code'] == 3 and not c['confirmed']
+        assert c.get('journal', {}).get('status') == 'incomplete'
+        assert c['journal']['reasons'] and not r['w4']['observations']
+        assert r['traffic_gate']['status'] != 'PASS'
+        assert EXACT not in (tmp_path / 'observations.json').read_text()
+    else:
+        assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and c['confirmed']
+        assert c.get('journal', {}).get('status') == 'complete'
+    if fault != 'F5':
+        assert len(sessions) == 2 and started == ['chromium']  # no later engine/probe
+        assert not c['confirmed']
+        assert 'fixed original CLOSE failure' in json.dumps(c)
+        attempted = []
+
+        async def forbidden_case(*a):
+            attempted.append(True)
+            raise AssertionError('a stopped invocation started a later case')
+
+        monkeypatch.setattr(p3, 'run_control', forbidden_case)
+        monkeypatch.setattr(p3, 'CONTROLS', [dict(case='LATER')])
+        monkeypatch.setattr(g, 'StopLatch', lambda: latch)  # controls owns a fresh latch in real invocations
+        args = SimpleNamespace(only='', browser='fake:', serve_ip='100.110.162.4')
+        assert asyncio.run(p3.controls(args, tmp_path / 'later')) == (4 if fault in ('F1', 'F3') else 1)
+        assert not attempted
+    if fault == 'F1':
+        assert 'page-close:A:false' in data['sequence']
+        assert data['sequence'][-1] == 'drain' and data['guard_closed'] and not data['live']
+    if fault in ('F2', 'F3'):
+        assert fallback_events == [event()] and data['live'] > 0
+    if fault == 'F4':
+        assert 'fixed escalation failure' in json.dumps(c)
 
 
 @pytest.mark.parametrize('fault', ['clean', 'stage_A', 'bad_pin', 'transport_exit', 'late_drain', 'late_close',
@@ -613,10 +879,10 @@ def test_cancellation_or_malformed_probe_cannot_skip_fallback(monkeypatch, fault
             if fault == 'outer_cancel':
                 reached.set()
                 await release.wait()
-            return clean_close(['probe'])
+            return clean_close(['probe'], event())
         if code == p3.DRAIN:
-            return event()
-        return ['not an object'] if fault == 'bad_result' else {'type': 'webkit', 'log': {}}
+            raise AssertionError('cleanup addressed the carrier after terminal CLOSE')
+        return ['not an object'] if fault == 'bad_result' else {'type': 'webkit', 'log': event()}
 
     async def go():
         task = asyncio.create_task(p3.probe_session('fake:', 'fixed-probe', r=r, latch=latch, phase='probe'))

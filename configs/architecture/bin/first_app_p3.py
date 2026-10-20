@@ -883,6 +883,7 @@ async def probe_session(browser_url: str, code: str, *, r: dict, latch: guard.St
     got = {}
     if latch.stopped:
         return {"error": "invocation already stopped"}
+    r.setdefault("probe_services", {})[phase] = browser_url
     try:
         async with open_session(browser_url) as s:
             try:
@@ -1171,37 +1172,88 @@ async def host_row(s, r: dict, row: dict, target: dict, host_dir: pathlib.Path, 
 
 async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | None = None,
                   origin: str | None = None, *, probe: bool = False) -> None:
-    """Partial setup is tracked in JS. CLOSE, final drain and browser fallback are independent."""
+    """CLOSE owns the last disposal AND drain. Never address its closed carrier again.
+
+    The unconditional MCP fallback has no observable journal channel; incomplete stays incomplete.
+    """
     latch = latch if latch is not None else guard.StopLatch()
     origin = origin or r["origin"]
     c: dict = {"errors": []}
     cancelled = False
     try:
-        c["contexts"] = await _call(s, CLOSE)  # unconditional: SETUP may have failed before returning metadata
-        collect(r, (c["contexts"] or {}).get("log") or {}, origin, latch, engine + ":close")
+        closed = await _call(s, CLOSE)  # unconditional: SETUP may have failed before returning metadata
+        if not isinstance(closed, dict) or not isinstance(closed.get("contexts"), dict):
+            c["close_result"] = closed
+            raise RuntimeError("terminal CLOSE did not return context/journal metadata")
+        c["contexts"] = closed
+        collect(r, closed.get("log") or {}, origin, latch, engine + ":close")
     except (Exception, asyncio.CancelledError) as exc:
         cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
         c["errors"].append("CLOSE: " + exc_text(exc))
+    terminal = c.get("contexts") or {}
+    got = terminal.get("contexts") or {}
+    expected = {"probe"} if probe else set(ENGINES[engine]["contexts"])
+    journal = terminal.get("journal") or {}
+    reasons = list(journal.get("reasons") or [])
+    if journal.get("status") != "complete":
+        reasons.append("terminal journal not complete")
+    if not terminal.get("guard_page_closed"):
+        reasons.append("guard page closure unconfirmed")
+    if not terminal.get("guard_context_closed"):
+        reasons.append("guard context closure unconfirmed")
+    if set(got) != expected or terminal.get("untracked") or terminal.get("other_contexts_left") != 0:
+        reasons.append("untracked or unresolved contexts/pages")
+    if any(not x.get("page_closed") or x.get("context_still_in_browser") for x in got.values()):
+        reasons.append("page/context still live at terminal drain")
+    for name, state in got.items():
+        errors = state.get("errors") or []
+        if state.get("error") and not errors:
+            c["errors"].append(f"CLOSE {name}: " + state["error"])
+        for error in errors:
+            c["errors"].append(f"CLOSE {name} {error['step']}: " + error["error"])
+        if any(error["step"] != "context-close" for error in errors):
+            reasons.append(name + ": escalation raised")
+    for error in terminal.get("errors") or []:
+        c["errors"].append("CLOSE " + error["step"] + ": " + error["error"])
+        reasons.append("terminal disposal raised")
+    if c["errors"] and not terminal:
+        reasons.append("CLOSE/disposal result unavailable")
+    prefix = "terminal observation not established: "
+    c["journal"] = {"status": "incomplete" if reasons else "complete",
+                    "reasons": list(dict.fromkeys(x if x.startswith(prefix) else prefix + x for x in reasons)),
+                    "boundary": "terminal CLOSE; subsequent MCP browser_close is unobserved"}
+    c["browser_close"] = "unknown"
     try:
-        collect(r, await _call(s, DRAIN), origin, latch, engine + ":terminal-drain")
-    except (Exception, asyncio.CancelledError) as exc:
-        cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
-        c["errors"].append("final drain: " + exc_text(exc))
-    try:
-        fac.mcp_result(await s.call_tool("browser_close", {}))
+        result = await s.call_tool("browser_close", {})  # last MCP call, on every path (including cancellation)
+        if getattr(result, "isError", None) is None:
+            raise RuntimeError("browser_close returned no known outcome")
+        if result.isError:
+            c["browser_close"] = "error"
+        fac.mcp_result(result)
         c["browser_close"] = "ok"
     except (Exception, asyncio.CancelledError) as exc:
         cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
-        c["errors"].append("browser_close: " + exc_text(exc))
-    got = (c.get("contexts") or {}).get("contexts") or {}
-    expected = {"probe"} if probe else set(ENGINES[engine]["contexts"])
-    c["confirmed"] = bool(not c["errors"] and c.get("browser_close") == "ok" and set(got) == expected
-                          and not (c.get("contexts") or {}).get("untracked")
-                          and (c.get("contexts") or {}).get("other_contexts_left") == 0
+        reason = "browser_close " + c["browser_close"] + ": " + exc_text(exc)
+        c["errors"].append(reason)
+        c["journal"]["status"] = "incomplete"
+        c["journal"]["reasons"].append(prefix + reason)
+        service = ((r.get("probe_services") or {}).get(engine) if probe
+                   else ((r.get("sessions") or {}).get(engine) or {}).get("url"))
+        required = {"service": service or "unknown MCP service for " + engine, "phase": engine, "reason": reason,
+                    "enforcer": "Architecture calling lead: no further P3 invocation on this service",
+                    "required_receipt": "Ops reviewed W2 recreation: new container id/StartedAt; receipts to Security"}
+        c["mcp_service_recreation_required"] = required
+        r.setdefault("mcp_service_recreation_required", []).append(required)
+    c["confirmed"] = bool(c["journal"]["status"] == "complete" and not c["errors"]
+                          and c.get("browser_close") == "ok" and set(got) == expected
+                          and terminal.get("guard_context_closed") and not terminal.get("untracked")
+                          and terminal.get("other_contexts_left") == 0
                           and all(not x.get("error") and x.get("page_closed") and not x.get("context_still_in_browser")
                                   for x in got.values()))
     r.setdefault("probe_cleanup" if probe else "cleanup", {})[engine] = c
-    if not c["confirmed"]:
+    if c["journal"]["status"] == "incomplete":
+        latch.block(engine + ": " + "; ".join(c["journal"]["reasons"]))
+    elif not c["confirmed"]:
         latch.block(engine + ": disposal or terminal observations unresolved")
     latch.bind(r)
     fac.say(f"[{label}] {engine}: cleanup {'confirmed' if c['confirmed'] else 'NOT confirmed'}")
@@ -1228,9 +1280,11 @@ def traffic_gate(r: dict) -> dict:
         first = first or "after the last row"
     observed = [s["id"] for s in r.get("steps") or [] if s["status"] != "NOT RUN"]
     sessions = [x for x in (r.get("sessions") or {}).values() if x.get("status") == "RAN"]
+    incomplete = any((x.get("journal") or {}).get("status") == "incomplete"
+                     for section in ("cleanup", "probe_cleanup") for x in (r.get(section) or {}).values())
     if findings:
         status = "FAIL"
-    elif observed == ROW_IDS and sessions and all(x.get("before_first_navigation") for x in sessions):
+    elif not incomplete and observed == ROW_IDS and sessions and all(x.get("before_first_navigation") for x in sessions):
         status = "PASS"
     else:
         status = "NOT CHECKED"
@@ -1244,7 +1298,7 @@ def traffic_gate(r: dict) -> dict:
         sess = (r.get("sessions") or {}).get(eng) or {}
         if dirty or r.get("late_traffic"):
             engines[eng] = "FAIL"
-        elif all(i in observed for i in ids) and sess.get("status") == "RAN" and sess.get("before_first_navigation"):
+        elif not incomplete and all(i in observed for i in ids) and sess.get("status") == "RAN" and sess.get("before_first_navigation"):
             engines[eng] = "PASS"
         else:
             engines[eng] = "NOT CHECKED"

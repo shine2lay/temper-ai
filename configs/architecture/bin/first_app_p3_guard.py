@@ -148,7 +148,7 @@ OBSERVERS = r"""
   p3.drain = () => { const out = {}; for (const [k, v] of Object.entries(log)) { const from = p3.seen[k] || 0;
     out[k] = v.slice(from); p3.seen[k] = v.length; } return out; };
   p3.attach = (ctx, name, touch) => {
-    const u = {name, ctx, touch: !!touch, p: null, inflight: 0, pages: new Set()}; p3.users[name] = u;
+    const u = {name, ctx, touch: !!touch, p: null, inflight: 0, pages: new Set(), closeErrors: []}; p3.users[name] = u;
     ctx.on('request', r => { u.inflight++; log.requests.push({t: t(), ctx: name, method: r.method(), url: r.url(),
       type: r.resourceType(), navigation: r.isNavigationRequest()}); });
     ctx.on('requestfinished', () => { u.inflight = Math.max(0, u.inflight - 1); });
@@ -169,19 +169,78 @@ OBSERVERS = r"""
     };
     ctx.on('page', u.attachPage); return u;
   };
-  p3.close = async () => { const out = {contexts: {}};
-    for (const [name, u] of Object.entries(p3.users)) { let error = null;
-      try { await u.ctx.close(); } catch (e) { error = String(e); }
-      out.contexts[name] = {error, page_created: !!u.p, page_closed: [...u.pages].every(p => p.isClosed()),
-        context_still_in_browser: browser.contexts().includes(u.ctx)};
+  // The carrier is a Node-side Page object: its journal remains readable after page.close().
+  const carrier = p3.attach(page.context(), '__guard', false); delete p3.users.__guard;
+  carrier.p = page; carrier.attachPage(page);
+  p3.close = async (terminal = false) => {
+    const out = {contexts: {}, errors: [], untracked: false}, reasons = [];
+    const fail = (errors, step, e) => errors.push({step, error: String(e)});
+    const pages = u => { const current = u.ctx.pages();
+      if (current.some(pg => !u.pages.has(pg))) out.untracked = true;
+      return [...new Set([...u.pages, ...current])]; };
+    try {
+      for (const [name, u] of Object.entries(p3.users)) {
+        const errors = u.closeErrors; let escalated = false;
+        const state = out.contexts[name] = {page_created: !!u.p, page_closed: false,
+          context_still_in_browser: true, errors};
+        try {
+          pages(u); // detect an untracked page even if the first close disposes it
+          let failed = false;
+          try { await u.ctx.close(); } catch (e) { failed = true; fail(errors, 'context-close', e); }
+          if (failed || pages(u).some(pg => !pg.isClosed())) {
+            escalated = true;
+            for (const pg of pages(u)) { if (!pg.isClosed()) {
+              try { await pg.close({runBeforeUnload: false}); } catch (e) { fail(errors, 'page-close', e); }
+            } }
+            try { await u.ctx.close(); } catch (e) { fail(errors, 'context-retry', e); }
+          }
+          state.page_closed = pages(u).every(pg => pg.isClosed());
+          state.context_still_in_browser = browser.contexts().includes(u.ctx);
+        } catch (e) { fail(errors, 'escalation', e); }
+        state.error = errors.length ? errors[0].error : null; state.escalated = escalated;
+        if (!state.page_closed || state.context_still_in_browser) reasons.push(name + ': page/context still live');
+        if (errors.some(e => e.step !== 'context-close')) reasons.push(name + ': escalation raised');
+      }
+    } catch (e) { fail(out.errors, 'disposal', e); reasons.push('disposal raised'); }
+    finally {
+      if (terminal) {
+        try { pages(carrier); await page.close({runBeforeUnload: false}); }
+        catch (e) { fail(out.errors, 'guard-page-close', e); reasons.push('guard page close raised'); }
+        try { await carrier.ctx.close(); }
+        catch (e) { fail(out.errors, 'guard-context-close', e); reasons.push('guard context close raised'); }
+        try {
+          out.guard_page_closed = page.isClosed();
+          out.guard_context_closed = !browser.contexts().includes(carrier.ctx);
+          if (!out.guard_context_closed) reasons.push('guard context still live');
+          if (!out.guard_page_closed) reasons.push('guard page still live');
+          if (pages(carrier).some(pg => !pg.isClosed())) reasons.push('guard context has live pages');
+          out.other_contexts_left = browser.contexts().length;
+          if (out.other_contexts_left) reasons.push('other contexts still live');
+        } catch (e) { fail(out.errors, 'terminal-state', e); reasons.push('terminal state unreadable'); }
+        if (out.untracked) reasons.push('untracked page');
+        out.journal = {status: reasons.length ? 'incomplete' : 'complete',
+          reasons: reasons.map(x => 'terminal observation not established: ' + x),
+          boundary: 'terminal CLOSE; subsequent MCP browser_close is unobserved'};
+      } else out.other_contexts_left = browser.contexts().filter(c => c !== carrier.ctx).length;
+      // No P3 disposal after this drain, and no later call may address the closed carrier.
+      out.at = t(); out.log = p3.drain();
     }
-    out.at = t(); out.other_contexts_left = browser.contexts().filter(c => c !== page.context()).length;
-    out.log = p3.drain(); return out;
+    return out;
   };
 """
 
 CLOSE = r"""async (page) => {
-  if (!page.__p3) return {contexts: {}, log: {}, untracked: true};
-  return await page.__p3.close();
+  if (!page.__p3) {
+    const out = {contexts: {}, log: {}, untracked: true, errors: [],
+      journal: {status: 'incomplete', reasons: ['terminal observation not established: P3 journal missing'],
+        boundary: 'terminal CLOSE; subsequent MCP browser_close is unobserved'}};
+    const ctx = page.context(), browser = ctx.browser();
+    try { await page.close({runBeforeUnload: false}); out.guard_page_closed = page.isClosed(); }
+    catch (e) { out.errors.push({step: 'guard-page-close', error: String(e)}); }
+    try { await ctx.close(); out.guard_context_closed = !browser.contexts().includes(ctx); }
+    catch (e) { out.errors.push({step: 'guard-context-close', error: String(e)}); }
+    return out;
+  }
+  return await page.__p3.close(true);
 }"""
 DRAIN = "async (page) => page.__p3 ? page.__p3.drain() : {}"

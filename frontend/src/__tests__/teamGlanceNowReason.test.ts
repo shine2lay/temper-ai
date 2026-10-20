@@ -52,8 +52,10 @@ describe('H17 full-reason edges and unchanged counter-cases', () => {
     expect(nowCell(run('stopped', reason), null).sentence).toBeNull();
   });
   it('G7 single-line ordinary reasons retain their exact initial-cap-only output', () => {
-    for (const body of [stopped, failed]) {
-      expect(nowCell(toGlanceRun(body), null).sentence).toBe(cap(body.phase.reason));
+    // A stop's own words leave the generic sentence out (teamGlanceStopWords.test.ts); these are stops without them.
+    for (const sample of [stopped, failed]) {
+      const body = { ...structuredClone(sample), outcome: { ...sample.outcome, owner_words: null } };
+      expect(nowCell(toGlanceRun(body), null).sentence).toBe(cap(sample.phase.reason));
     }
   });
   it('activity keeps its first line and Show all whole reason, not Now capitalisation', () => {

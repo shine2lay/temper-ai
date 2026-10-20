@@ -21,6 +21,7 @@ team-glance-g6.spec.ts
 team-glance-map.spec.ts
 team-glance-receipt.spec.ts
 team-glance-status.spec.ts
+team-glance-stop-words.spec.ts
 team-glance-words.spec.ts
 team-glance.spec.ts
 team-journey.spec.ts

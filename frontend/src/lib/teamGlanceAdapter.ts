@@ -10,7 +10,9 @@
  * one to change. Anything missing or of the wrong type reads as "not known"
  * (null, 0 or an empty list), never as a guess.
  */
+import type { TeamOwnerAction } from '@/types/team';
 import { phaseEnded } from './teamGlance';
+import { teamStopper } from './teamOutcome';
 import type {
   GlanceCounts,
   GlanceEvent,
@@ -26,6 +28,7 @@ import type {
   GlanceRun,
   GlanceShare,
   GlanceSpend,
+  GlanceStopWords,
   GlanceUsage,
   GlanceUsageWindow,
 } from './teamGlance';
@@ -293,6 +296,40 @@ function shareOf(v: unknown): GlanceShare | null {
   };
 }
 
+/**
+ * `outcome.owner_words`, the words given with the action that ended the run (a stop's reason), whole and as sent, and
+ * who gave them: teamStopper's caller (the stopping owner action's `by`, else the outcome's), as the rounds outcome
+ * card says it. Null when none were given (missing, empty or only blanks).
+ */
+function stopWordsOf(r: Raw): GlanceStopWords | null {
+  const outcome = obj(r.outcome);
+  const words = str(outcome?.owner_words);
+  if (!outcome || !words?.trim()) return null;
+  const actions: TeamOwnerAction[] = arr(r.owner_actions)
+    .map(obj)
+    .filter((a): a is Raw => a !== null)
+    .map((a) => ({
+      at: str(a.at) ?? '',
+      kind: str(a.kind) ?? '',
+      by: str(a.by),
+      source: str(a.source),
+      request_id: str(a.request_id),
+      detail: { answer: str(obj(a.detail)?.answer) ?? undefined },
+    }));
+  const { by } = teamStopper({
+    owner_actions: actions,
+    outcome: {
+      decision: str(outcome.decision) ?? 'stopped',
+      reason: str(outcome.reason),
+      owner_words: words,
+      problems: [],
+      by: str(outcome.by),
+      at: str(outcome.at),
+    },
+  });
+  return { words, by };
+}
+
 /** GET /api/team/runs/{id} of a free-flowing team, as the glance model. */
 export function toGlanceRun(raw: unknown): GlanceRun {
   const r = obj(raw) ?? {};
@@ -331,6 +368,7 @@ export function toGlanceRun(raw: unknown): GlanceRun {
     asOf: str(r.as_of),
     maxParallel: num(trial.max_parallel),
     phase,
+    stopWords: stopWordsOf(r),
     spend: spendOf(r.spend, num(r.cost_usd)),
     you: { count: num(you?.count) ?? 0, first: questionOf(you?.first) },
     counts: countsOf(r.counts, members),

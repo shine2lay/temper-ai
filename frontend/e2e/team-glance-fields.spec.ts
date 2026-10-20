@@ -82,7 +82,11 @@ for (const theme of ['dark', 'light']) for (const [width, height] of [[1440, 900
         await expect(members.getByTestId('glance-chip').filter({ hasText: /Finishing its turn/ })).toHaveCount(2);
       } else if (name === 'stopped') {
         await expect(page.getByTestId('glance-now-word')).toHaveText('Stopped');
-        await expect(page.getByTestId('glance-now-sentence')).toHaveText('The run was cancelled');
+        // Design SPEC's stopped row: the words given with the stop, in place of Temper's generic "the run was cancelled".
+        await expect(page.getByTestId('glance-now-sentence')).toHaveCount(0);
+        await expect(page.getByTestId('glance-now').getByRole('figure', { name: 'Your words', exact: true }).locator('blockquote')).toHaveText(
+          (run.outcome as Raw).owner_words as string,
+        );
       } else if (name === 'failed') {
         await expect(page.getByTestId('glance-now-word')).toHaveText('Failed');
         await expect(page.getByTestId('glance-now-sentence')).toHaveText('Account anthropic-4 refused the call (not allowed for this organization); the team was stopped');

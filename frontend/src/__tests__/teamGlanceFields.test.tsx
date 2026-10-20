@@ -189,6 +189,8 @@ describe('H11 D119: only Now explanations gain an initial capital', () => {
     ['failed', 'Account anthropic-4 refused the call (not allowed for this organization); the team was stopped'],
   ])('real %s: first letter only, all remaining characters exact', (name, wanted) => {
     const body = raw('real-g7/' + name);
+    // A stop's own words leave the generic sentence out (teamGlanceStopWords.test.ts); this is a stop without them.
+    (body.outcome as Raw).owner_words = null;
     const supplied = (body.phase as Raw).reason as string;
     expect(supplied[0]).toBe(supplied[0].toLowerCase());
     const shown = nowCell(toGlanceRun(body), null).sentence;

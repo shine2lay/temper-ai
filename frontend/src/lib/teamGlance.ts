@@ -192,6 +192,15 @@ export interface GlanceShare {
   filesTotal: number | null;
 }
 
+/**
+ * The words a person gave with a stop (Temper's outcome.owner_words), whole and as sent, and who gave them: the
+ * stopping action's caller, else the outcome's (teamStopper, as the rounds outcome card says it). Never empty.
+ */
+export interface GlanceStopWords {
+  words: string;
+  by: string | null;
+}
+
 export interface GlanceWork {
   latest: GlanceShare | null;
   shares: GlanceShare[];
@@ -220,6 +229,8 @@ export interface GlanceRun {
   /** How many members may run a turn at once (the number in force). */
   maxParallel: number | null;
   phase: GlancePhase;
+  /** The words given with the stop, as Temper recorded them; null when none were given. */
+  stopWords: GlanceStopWords | null;
   spend: GlanceSpend | null;
   you: GlanceYou;
   counts: GlanceCounts;
@@ -620,6 +631,8 @@ export interface NowCell {
   icon: GlanceIcon;
   /** D105: the sentence's second line, Temper's reason for an interrupted run (at most 80 characters). */
   reason?: string;
+  /** A stopped or failed run's words given with the stop, under the sentence: whole, as sent (plain text). */
+  words?: GlanceStopWords;
 }
 
 /** The small count line: "1 ready · 1 idle · 1 needs you · 1 awaiting retry" (zeros left out). */
@@ -858,9 +871,9 @@ function phaseNowCell(run: GlanceRun, now: number | null, stale: boolean, lastAt
     case 'done':
       return { word: 'Done', sentence: null, countLine: null, edge: 'green', icon: 'check' };
     case 'stopped':
-      return { word: 'Stopped', sentence: nowEndReason(phase.reason), countLine: null, edge: 'grey', icon: 'stop' };
+      return withStopWords(run, { word: 'Stopped', sentence: nowEndReason(phase.reason), countLine: null, edge: 'grey', icon: 'stop' });
     case 'failed':
-      return { word: 'Failed', sentence: nowEndReason(phase.reason), countLine: null, edge: 'red', icon: 'alert' };
+      return withStopWords(run, { word: 'Failed', sentence: nowEndReason(phase.reason), countLine: null, edge: 'red', icon: 'alert' });
     case 'didnt_start':
       // D121: failure before a turn is terminal; the adapter resolves only supplied reason fallbacks.
       return { word: 'Failed to start', sentence: phase.reason ?? "The project couldn't start. Temper gave no reason.", countLine: null, edge: 'red', icon: 'alert' };
@@ -1730,6 +1743,18 @@ function nowEndReason(reason: string | null | undefined): string | null {
   // endReason trims for classification. Genuine text keeps every supplied character, including a final newline.
   const explanation = classified === reason?.trim() ? reason : classified;
   return explanation?.replace(/^./u, (first) => first.toUpperCase()) ?? null;
+}
+
+/**
+ * Design SPEC's stopped row: Now gives the words given with the stop, under its sentence (stopped and failed runs
+ * only). Shown, they make Temper's generic "the run was cancelled" (any case, end punctuation ignored) say nothing
+ * more, so that sentence is left out, as D119 leaves out a generic reason; every other sentence stays.
+ */
+function withStopWords(run: Pick<GlanceRun, 'stopWords'>, cell: NowCell): NowCell {
+  const words = run.stopWords;
+  if (!words?.words.trim()) return cell;
+  const generic = !!cell.sentence && /^the run was cancelled[\s.!?\u2026:;,]*$/i.test(cell.sentence.trim());
+  return { ...cell, sentence: generic ? null : cell.sentence, words };
 }
 
 /** D119: any status in Temper's generic interruption template, case/end punctuation ignored, is no reason. */

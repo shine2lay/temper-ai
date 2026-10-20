@@ -18,6 +18,7 @@ import type { TeamAnswerOption, TeamStatus, TeamWait } from '@/types/team';
 import { teamCard, teamLink } from '@/components/team/teamUi';
 import { AnswerResultNote } from '@/components/team/run/AnswerResultNote';
 import { StopAnswerDialog } from '@/components/team/run/StopAnswerDialog';
+import { OwnerWords } from '@/components/team/TeamQuote';
 import { GIcon } from './glanceUi';
 import { NowVersion } from './NowVersion';
 import { glanceAnswerLabel, glanceBandLabel, glanceBtn, toneText } from './glanceStyle';
@@ -102,6 +103,15 @@ function NowBox({ run, agesAt, stale, lastAt }: { run: GlanceRun; agesAt: number
         <p className="m-0 text-base break-words text-temper-text md:text-lg" data-testid="glance-now-sentence">
           {cell.sentence}
         </p>
+      )}
+      {/*
+        Design SPEC's stopped row: the words given with the stop, under the sentence, as the outcome card quotes them
+        (their own label, the caller's name; whole, as sent, plain text). The label at the band's 14 px, its smallest.
+      */}
+      {cell.words && (
+        <div className="mt-1 min-w-0" data-testid="glance-now-words">
+          <OwnerWords by={cell.words.by} words={cell.words.words} labelClassName="text-sm" />
+        </div>
       )}
       {/* D105: an interrupted run's reason, Temper's words, as the sentence's second line. */}
       {cell.reason && (

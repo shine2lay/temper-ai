@@ -21,6 +21,11 @@ anything it started) is killed when the call ends, runs out of time or writes mo
 :data:`MAX_OUTPUT_BYTES`. More than :data:`MAX_PATHS` changed paths, or more than
 :data:`MAX_TOTAL_BYTES` to keep, refuses the save. A save refused or failed changes nothing
 but the copy's unreferenced objects, and its files stay in the folder.
+
+Before any of its git runs over the folder, the save runs #110's check (M1, #112,
+:func:`_wait_for_box_gone_then_check_folder`): it waits, within its seconds, until no box may
+still write in the folder (the Stop is removing the cut turn's box), and a folder that holds
+a .git of its own is not saved, so git never follows a .git the member planted.
 """
 
 from __future__ import annotations
@@ -32,11 +37,18 @@ import selectors
 import signal
 import subprocess
 import tempfile
+import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
-from temper_ai.pi_agent.member_tree import MemberLink, member_file_size
+from temper_ai.pi_agent.member_tree import (
+    MemberLink,
+    member_file_size,
+    nested_git,
+    quoted_member_path,
+)
 from temper_ai.pi_agent.team_folders import GIT
 
 #: A file bigger than this (5 MiB) is left out of the kept commit and listed as skipped.
@@ -59,6 +71,14 @@ _TURN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 #: How long a killed git may take to be reaped before the save stops waiting for it.
 _REAP_SECONDS = 1.0
 _CHUNK = 1 << 16
+#: How often the save asks again whether a box may still write in the member's folder.
+WRITER_POLL_SECONDS = 0.25
+#: How the writer check's answer (``LeaderTeam.writer_in_member_folder``) begins while a worker
+#: box of the run may still write in the folder: the one answer the save waits out.
+_BOX_LIVE = " while a box "
+#: The planted .git entries a refusal names; past them it says "and more".
+GIT_NAMED = 5
+_T = TypeVar("_T")
 
 
 class StoppedWorkError(Exception):
@@ -82,6 +102,7 @@ def save_unsaved_work_to_stopped_branch(project: Any, member: str, pdir: Path, t
     deadline = time.monotonic() + seconds
     git_dir = project.git_dir(member)
     work_tree = project.checked_worktree(pdir)
+    _wait_for_box_gone_then_check_folder(project, work_tree, git_dir, deadline)
     with tempfile.TemporaryDirectory(prefix="temper-stopped-") as tmp:
         def git(args: list[str], given: Path | None = None) -> bytes:
             return _git(args, git_dir=git_dir, work_tree=work_tree, home=Path(project.root),
@@ -147,6 +168,75 @@ def not_kept_entry(member: str | None, turn_id: str, error: Any) -> dict:
             "commit": getattr(error, "commit", None), "files": [], "files_total": 0,
             "skipped": [], "skipped_total": 0,
             "error": str(error)[:500] or type(error).__name__}
+
+
+def _wait_for_box_gone_then_check_folder(project: Any, work_tree: Path, git_dir: Path,
+                                         deadline: float) -> None:
+    """M1 at the Stop (#112): #110's check before the save's first git over ``work_tree``.
+
+    First it waits, asking ``project.writer_check`` again every :data:`WRITER_POLL_SECONDS`,
+    until no worker box of the run may still write in the folder: the Stop has recorded the
+    cut turn ended and is removing its box. Anything else that may write (a turn of the member
+    in flight, Docker that can't be asked, a folder that is no member's) refuses at once. Then
+    the whole check, ``project.refuse_git_over_member_folder``: a folder that holds a .git of
+    its own (or that the check refuses for another reason) is not saved, naming up to
+    :data:`GIT_NAMED` of them. All of it within the deadline: a check still running then is
+    left to end by its own caps (it only reads: docker ps, a walk of the folder, git on the
+    copy's own git dir) and the save is refused. Raises StoppedWorkError."""
+    while True:
+        writer = _by_deadline(lambda: project.writer_check(work_tree), deadline,
+                              "while asking whether its box is gone")
+        if writer is None:
+            break
+        if not writer.startswith(_BOX_LIVE):
+            raise StoppedWorkError(f"not saved: Temper won't run git over its folder{writer}")
+        if deadline - time.monotonic() <= WRITER_POLL_SECONDS:
+            raise StoppedWorkError("not saved: its box was still live (Temper won't run git "
+                                   f"over its folder{writer})")
+        time.sleep(WRITER_POLL_SECONDS)
+    try:
+        _by_deadline(lambda: project.refuse_git_over_member_folder(work_tree, git_dir,
+                                                                    cwd=work_tree),
+                     deadline, "while checking its folder for a .git of its own")
+    except StoppedWorkError:
+        raise
+    except Exception as exc:  # MemberGitRefused, or the check could not run: no git over it
+        try:
+            planted = _by_deadline(lambda: nested_git(work_tree), deadline,
+                                   "while naming the .git it holds")
+        except Exception:   # GitCheckUnfinished, or out of time: the check's own words say why
+            planted = []
+        if not planted:
+            raise StoppedWorkError(f"not saved: {exc}") from None
+        named = ", ".join(quoted_member_path(p) for p in planted[:GIT_NAMED])
+        if len(planted) > GIT_NAMED:
+            named += " and more"   # the walk stops one past them
+        raise StoppedWorkError(f"not saved: its folder holds a .git of its own ({named})") from None
+
+
+def _by_deadline(call: Callable[[], _T], deadline: float, what: str) -> _T:
+    """``call()`` on a thread of its own, waited for until the deadline; past it the save is
+    out of time and the call is left to end by its own caps. Only for calls that change
+    nothing. Raises what the call raised."""
+    _check_time(deadline, what)
+    got: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            got["value"] = call()
+        except Exception as exc:
+            got["error"] = exc
+
+    worker = threading.Thread(target=run, name="pi-stopped-check", daemon=True)
+    worker.start()
+    worker.join(max(0.0, deadline - time.monotonic()))
+    if worker.is_alive():
+        raise StoppedWorkError(f"out of time {what}")
+    if "error" in got:
+        raise got["error"]
+    if "value" not in got:
+        raise StoppedWorkError(f"the check stopped without an answer {what}")
+    return got["value"]
 
 
 def _check_time(deadline: float, what: str) -> None:

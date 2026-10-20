@@ -11,6 +11,11 @@ and the member copies are real git repositories.
 The save works on folders members wrote, so it is bounded (Architecture's land check of
 #107, M2 and M3): it never follows a link on the way to a file, a git that stalls is killed
 with everything it started, and past its caps (paths, bytes, output) the save is refused.
+
+Before any of its git starts over a member's folder, the save runs #110's check (M1, #112):
+it waits, within its seconds, until nothing may still write in the folder (the cut turn's box
+is gone), and a folder that holds a .git of its own is not saved. Docker is a stand-in here
+too (LeaderTeam.list_boxes).
 """
 
 from __future__ import annotations
@@ -20,13 +25,17 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from temper_ai.pi_agent import flow_view, stopped_work
+from temper_ai.pi_agent.box import BoxesUnknown
 from temper_ai.pi_agent.ledger import events
+from temper_ai.pi_agent.team_leader import LeaderTeam
 from temper_ai.pi_agent.team_runtime import Team
 from temper_ai.pi_agent.team_view import TeamReader
 from tests.test_runner.pi_team import leader_support as ls
@@ -439,3 +448,256 @@ def test_too_much_unsaved_work_is_refused_and_the_team_still_ends(led, box, run_
     assert all(p.read_bytes() == b"p" * 400 for p in parts)  # the files stay in the folder
     assert {p["state"] for p in led.participants_of(run_id, ts.HOST)} == {"ended"}
     assert _ended(led, run_id) == [{"reason": "run_cancelled", "kept_work": out["kept_work"]}]
+
+
+# --- M1 at the Stop save: #110's check before any of the save's git (#112) ---------------------
+
+#: The git a save with work to keep runs over the member's folder (#107), in order.
+SAVE_GIT = ["rev-parse", "read-tree", "status", "add", "write-tree", "rev-parse", "diff-tree",
+            "commit-tree", "update-ref"]
+
+
+def _sub(cmd: list[str]) -> str:
+    """The git subcommand of a hardened git command line (past its -c and -- options)."""
+    rest = cmd[1:]
+    while rest:
+        if rest[0] == "-c":
+            rest = rest[2:]
+        elif rest[0].startswith("--"):
+            rest = rest[1:]
+        else:
+            return rest[0]
+    return ""
+
+
+def _inside(path: str, folder: Path) -> bool:
+    p = Path(os.path.abspath(path))
+    return p == folder or folder in p.parents
+
+
+class GitStarts:
+    """Every git process started while it is on (the save's own Popen, and subprocess.run's):
+    its subcommand and the folders it was given, as work tree or working folder. ``log``, when
+    given, gets ``("git", subcommand, folders)`` as each starts."""
+
+    def __init__(self, monkeypatch, log: list | None = None):
+        self.calls: list[tuple[str, list[str]]] = []
+        self.log = log if log is not None else []
+        real = subprocess.Popen
+
+        def spy(cmd, *args, **kw):
+            if isinstance(cmd, list | tuple) and cmd and cmd[0] == "git":
+                words = [str(c) for c in cmd]
+                folders = [w.split("=", 1)[1] for w in words if w.startswith("--work-tree=")]
+                if kw.get("cwd"):
+                    folders.append(str(kw["cwd"]))
+                self.calls.append((_sub(words), folders))
+                self.log.append(("git", _sub(words), folders))
+            return real(cmd, *args, **kw)
+
+        monkeypatch.setattr(subprocess, "Popen", spy)
+
+    def over(self, folder: Path) -> list[str]:
+        """The subcommands of the git processes started over ``folder``: given it (or a folder
+        in it) as the work tree, or run in it."""
+        return [sub for sub, folders in self.calls if any(_inside(f, folder) for f in folders)]
+
+
+class Docker:
+    """``docker ps`` for the run's worker boxes, as a test scripts it (LeaderTeam.list_boxes,
+    which #110's check asks): each call takes the next answer, and the last one again once they
+    run out; an answer that is an exception is raised. ``hold``: no answer until it is set.
+    Each answer is logged as ``("docker", "live" | "gone" | "error")``."""
+
+    def __init__(self, monkeypatch, answers: list, log: list | None = None, *,
+                 hold: threading.Event | None = None):
+        self.answers = answers
+        self.calls = 0
+        self.log = log if log is not None else []
+        self.hold = hold
+        monkeypatch.setattr(LeaderTeam, "list_boxes", staticmethod(self))
+
+    def __call__(self, run_id: str) -> list[dict]:
+        if self.hold is not None:
+            self.hold.wait(30)
+        answer = self.answers[min(self.calls, len(self.answers) - 1)]
+        self.calls += 1
+        if isinstance(answer, Exception):
+            self.log.append(("docker", "error"))
+            raise answer
+        live = [b for b in answer if b["state"] not in ("exited", "dead")]
+        self.log.append(("docker", "live" if live else "gone"))
+        return answer
+
+
+def _timed_saves(monkeypatch) -> list[float]:
+    """How long each member's save takes, in the order they run."""
+    took: list[float] = []
+    save = stopped_work.save_unsaved_work_to_stopped_branch
+
+    def timed_save(*args, **kwargs):
+        started = time.monotonic()
+        try:
+            return save(*args, **kwargs)
+        finally:
+            took.append(time.monotonic() - started)
+
+    monkeypatch.setattr(stopped_work, "save_unsaved_work_to_stopped_branch", timed_save)
+    return took
+
+
+def test_a_folder_holding_a_git_of_its_own_is_not_saved_and_git_never_starts_over_it(
+        led, box, run_id, tmp_path, monkeypatch):
+    """M1 at the Stop save (#112): the builder's folder holds ``sub/.git``, a ``gitdir:`` file
+    naming a repository outside it, which git would follow. #110's check refuses the save
+    before any git starts over the folder, the entry says why, and the member's files stay as
+    they are. The lead, with no .git of its own, is saved as before."""
+    team = _team(led, box, run_id, tmp_path)
+    lead_turn = _cut(team, "lead")
+    cut = _cut(team, "builder")
+    lead_ws, ws = ls.workspace(team, "lead"), ls.workspace(team, "builder")
+    (lead_ws / "plan.md").write_text("the plan\n")
+    (ws / "server.py").write_text("serve()\n")
+    outside = ls.project(tmp_path / "outside", {"secret.txt": "another repository's file\n"})
+    planted = f"gitdir: {outside / '.git'}\n"
+    (ws / "sub").mkdir()
+    (ws / "sub" / "index.js").write_text("console.log('scaffolded')\n")
+    (ws / "sub" / ".git").write_text(planted)
+    before = _state(team, "builder")
+    outside_refs = ls.git(outside, "for-each-ref", OTHERS)
+    git = GitStarts(monkeypatch)
+
+    out = team.end("run_cancelled")
+
+    started = {"lead": git.over(lead_ws), "builder": git.over(ws)}
+    by_member = {k["member"]: k for k in out["kept_work"]}
+    assert by_member["builder"] == {
+        "member": "builder", "turn": cut["turn_id"], "branch": None, "commit": None,
+        "files": [], "files_total": 0, "skipped": [], "skipped_total": 0,
+        "error": 'not saved: its folder holds a .git of its own ("sub/.git")'}
+    assert started["builder"] == []        # no git ever started over the folder
+    assert _stopped_branches(team, "builder") == []
+    assert _state(team, "builder") == before
+    # Temper never deletes, moves or edits a member's files; the outside repository is as it was
+    assert (ws / "sub" / ".git").read_text() == planted
+    assert (ws / "server.py").read_text() == "serve()\n"
+    assert ls.git(outside, "for-each-ref", OTHERS) == outside_refs
+    # the lead is saved as before, by the same git
+    assert started["lead"] == SAVE_GIT
+    lead = by_member["lead"]
+    assert (lead["branch"], lead["files"], lead["error"]) == (
+        f"stopped/{lead_turn['turn_id']}", [{"path": "plan.md", "change": "added"}], None)
+    assert {p["state"] for p in led.participants_of(run_id, ts.HOST)} == {"ended"}
+    assert _ended(led, run_id) == [{"reason": "run_cancelled", "kept_work": out["kept_work"]}]
+
+
+@pytest.mark.parametrize("docker", ["box_live", "docker_fails", "docker_hangs"])
+def test_while_something_may_still_write_in_the_folder_it_is_not_saved_and_git_never_starts(
+        led, box, run_id, tmp_path, monkeypatch, docker):
+    """M1 at the Stop save (#112; Security's B1 at Stop): the save waits, within its seconds,
+    until nothing is left that may write in the member's folder. Here the builder's box is
+    still live past them (Docker lists it running), Docker can't be asked, or docker ps does not
+    answer in time: then the work is not saved, the entry says why, git never starts over the
+    folder, and the save keeps to its seconds (M3). A member whose box is gone is saved."""
+    monkeypatch.setattr(stopped_work, "MEMBER_SECONDS", 1.0)
+    team = _team(led, box, run_id, tmp_path)
+    lead_turn = _cut(team, "lead")
+    cut = _cut(team, "builder")
+    lead_ws, ws = ls.workspace(team, "lead"), ls.workspace(team, "builder")
+    (lead_ws / "plan.md").write_text("the plan\n")
+    (ws / "server.py").write_text("serve()\n")
+    hold = threading.Event()
+    answers = {"box_live": [[{"name": "pi-box-builder", "state": "running",
+                              "turn": cut["turn_id"][:16]}]],
+               "docker_fails": [BoxesUnknown("docker ps took too long")],
+               "docker_hangs": [[]]}[docker]
+    Docker(monkeypatch, answers, hold=hold if docker == "docker_hangs" else None)
+    git = GitStarts(monkeypatch)
+    took = _timed_saves(monkeypatch)
+
+    try:
+        out = team.end("run_cancelled")
+    finally:
+        hold.set()      # a docker ps left waiting answers, and its thread ends
+
+    started = {"lead": git.over(lead_ws), "builder": git.over(ws)}
+    by_member = {k["member"]: k for k in out["kept_work"]}
+    says = {"box_live": "not saved: its box was still live (Temper won't run git over its folder "
+                        "while a box of yours is still live: pi-box-builder (running))",
+            "docker_fails": "not saved: Temper won't run git over its folder: it can't ask "
+                            "Docker which boxes are live (docker ps took too long)",
+            "docker_hangs": "out of time while asking whether its box is gone"}[docker]
+    refused = ["builder"] if docker == "box_live" else ["lead", "builder"]
+    for name in refused:
+        entry = by_member[name]
+        assert (entry["branch"], entry["commit"], entry["files"], entry["error"]) == (
+            None, None, [], says), name
+        assert started[name] == [], name    # no git ever started over the folder
+        assert _stopped_branches(team, name) == []
+    if docker == "box_live":
+        lead = by_member["lead"]
+        assert (lead["branch"], lead["error"]) == (f"stopped/{lead_turn['turn_id']}", None)
+        assert started["lead"] == SAVE_GIT
+    # each save kept to its seconds, the wait and a docker ps that never answered included
+    assert len(took) == 2 and max(took) < stopped_work.MEMBER_SECONDS + 1.0
+    assert (ws / "server.py").read_text() == "serve()\n"
+    assert {p["state"] for p in led.participants_of(run_id, ts.HOST)} == {"ended"}
+    assert _ended(led, run_id) == [{"reason": "run_cancelled", "kept_work": out["kept_work"]}]
+
+
+def test_the_save_waits_for_the_cut_turns_box_to_be_gone_then_keeps_its_work_as_before(
+        led, box, run_id, tmp_path, monkeypatch):
+    """At Stop the cut turn is the one saved (#112): the stop has recorded it ended and its box
+    is being removed. Docker still lists the box (running, then removing) for two answers, then
+    exited, then not at all: the save waits, git starts over the folder only after Docker last
+    listed the box live, and the work is kept as #107 keeps it."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    (ws / "server.py").write_text("serve()\n")
+    (ws / "app.py").write_text("print('changed')\n")
+    log: list = []
+    label = cut["turn_id"][:16]
+    Docker(monkeypatch, [[{"name": "pi-box-builder", "state": s, "turn": label}]
+                         for s in ("running", "removing", "exited")] + [[]], log)
+    git = GitStarts(monkeypatch, log)
+
+    out = team.end("run_cancelled")
+
+    started = git.over(ws)
+    lives = [i for i, e in enumerate(log) if e == ("docker", "live")]
+    gits = [i for i, e in enumerate(log) if e[0] == "git" and any(_inside(f, ws) for f in e[2])]
+    # git started over the folder only after Docker last listed the box live
+    assert len(lives) == 2 and gits and min(gits) > max(lives)
+    assert started == SAVE_GIT
+    branch = f"stopped/{cut['turn_id']}"
+    (kept,) = out["kept_work"]
+    assert (kept["branch"], kept["error"]) == (branch, None)
+    assert kept["files"] == [{"path": "app.py", "change": "modified"},
+                             {"path": "server.py", "change": "added"}]
+    assert _branch_files(team, "builder", branch) == _folder_files(ws, set())
+
+
+def test_a_clean_members_save_runs_the_same_git_and_keeps_the_same_work(led, box, run_id,
+                                                                       tmp_path, monkeypatch):
+    """The control (#112): no .git of its own and no box live. #110's check lets the save run
+    exactly the git #107's save runs over the folder, and keep exactly the same work."""
+    team = _team(led, box, run_id, tmp_path)
+    cut = _cut(team, "builder")
+    ws = ls.workspace(team, "builder")
+    (ws / "server.py").write_text("serve()\n")
+    (ws / "app.py").write_text("print('changed')\n")
+    git = GitStarts(monkeypatch)
+
+    out = team.end("run_cancelled")
+
+    started = git.over(ws)
+    branch = f"stopped/{cut['turn_id']}"
+    assert started == SAVE_GIT
+    assert out["kept_work"] == [{
+        "member": "builder", "turn": cut["turn_id"], "branch": branch,
+        "commit": ls.copy_git(team, "builder", "rev-parse", branch),
+        "files": [{"path": "app.py", "change": "modified"},
+                  {"path": "server.py", "change": "added"}],
+        "files_total": 2, "skipped": [], "skipped_total": 0, "error": None}]
+    assert _branch_files(team, "builder", branch) == _folder_files(ws, set())

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise compare (vacancy-v1: grid3-middle-empty)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+  .side { height: 400px; }
+  .first { grid-column: 1; }
+  .third { grid-column: 3; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Compare">
+    <div class="wrap">
+      <h2>Compare</h2>
+      <div class="rule"></div>
+      <div class="grid3">
+        <article class="card side first"><h3>Before Roomwise</h3><p>Rooms booked on paper, meetings that start late, rooms nobody uses.</p></article>
+        <article class="card side third"><h3>With Roomwise</h3><p>Every room on one board, freed again the moment nobody turns up.</p></article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise spotlight (vacancy-v1: track-overflow-55)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Tracks 320 px and 800 px; the only item sits in track 1 and overflows 440 px (55%) into the empty track 2. */
+  .overflow-grid { display: grid; grid-template-columns: 320px 800px; }
+  .overflow-grid > .spot { width: 760px; height: 400px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Spotlight">
+    <div class="wrap">
+      <h2>Spotlight</h2>
+      <div class="rule"></div>
+      <div class="overflow-grid">
+        <article class="card spot"><h3>Room of the month</h3><p>Orchard seats twenty and splits into two rooms for workshops.</p></article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

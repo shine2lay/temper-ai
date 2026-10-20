@@ -324,6 +324,34 @@ def test_empty_column_is_a_craft_candidate_never_a_measured_finding(tmp_path, fi
     assert "dead space" in mf.CANDIDATE_QUESTION and "purposeful layout" in mf.CANDIDATE_QUESTION
 
 
+@pytest.mark.xfail(strict=True, reason="H12 (queue #114): the measured vacancy rule is not built yet")
+@pytest.mark.parametrize("answer,reason,evidence", [
+    ("yes", "vacant_track", {"track": 1, "track_x": [80, 566], "cover": 0.98}),
+    ("no", "in_item", {"item": "div.label", "overlap": 477}),
+])
+def test_a_measured_vacancy_settles_the_candidate_and_moves_no_measured_finding(tmp_path, fired, answer, reason,
+                                                                               evidence):
+    """H12: on the candidate path the page check measures whether the run is a vacant slot; that answer settles
+    the craft candidate instead of the critic's yes/no, at the craft rule's same fixed level."""
+    fired["judge"] = ["empty-column"]
+    vacancy = {"answer": answer, "reason": reason, "evidence": evidence,
+               "container": {"sel": "section.faq > div.grid", "display": "grid", "tracks": [[80, 566], [630, 1200]],
+                             "placed": [0 if answer == "yes" else 1, 1], "items": 2}}
+    col = {"width": 477, "share": 0.43, "side": "left", "height": 560, "beside": "What can go in?",
+           "section": "Questions", "top": 3014}
+    views = {}
+    for name, c in (("plain", col), ("measured", {**col, "vacancy": vacancy})):
+        raw = {"columns": [c], "frame": [80, 1200]}
+        views[name] = _review(tmp_path / name, {("index.html", "desktop"): {"page_checks": raw}}, "Book a pickup")
+    assert mf.measured_findings(views["measured"]) == mf.measured_findings(views["plain"])
+    (c,) = mf.craft_candidates(views["measured"])
+    assert (c["answer"], c["reason"], c["if_yes"], c["vacancy"]) == (answer, reason, 2, vacancy)
+    assert "question" not in c and "answers" not in c  # settled by the measure: nothing left to ask
+    assert reason in mf.vacancy_text(vacancy) and evidence.get("item", "track 1") in mf.vacancy_text(vacancy)
+    (p,) = mf.craft_candidates(views["plain"])  # measured without the vacancy pass: the old question stays
+    assert p["answers"] == ["yes", "no"] and "answer" not in p and "vacancy" not in p
+
+
 @pytest.mark.parametrize("bare,primary,level", [(14, "", 2), (15, "", 3), (1, "Review roll order", 3), (1, "Export", 2)])
 def test_signifier_levels(tmp_path, fired, bare, primary, level):
     fired["judge"] = ["signifier"]

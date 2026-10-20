@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise stories (vacancy-v1: flexwrap-orphan)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  .flexwrap { display: flex; flex-wrap: wrap; gap: 32px; }
+  .flexwrap > .story { flex: 0 0 calc((100% - 64px) / 3); height: 360px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Stories">
+    <div class="wrap">
+      <h2>Stories</h2>
+      <div class="rule"></div>
+      <div class="flexwrap">
+        <article class="card story"><h3>Harbour Legal</h3><p>Forty lawyers, nine rooms and no more double bookings.</p></article>
+        <article class="card story"><h3>Fieldnote Studio</h3><p>The studio found two rooms it never used and let one go.</p></article>
+        <article class="card story"><h3>Kestrel Clinic</h3><p>Front desk staff book consult rooms while the phone rings.</p></article>
+        <article class="card story"><h3>Orchard School</h3><p>Teachers hold the music room for practice in two taps.</p></article>
+        <article class="card story"><h3>Tidewater Bank</h3><p>Branch meetings start on time because the room is ready.</p></article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

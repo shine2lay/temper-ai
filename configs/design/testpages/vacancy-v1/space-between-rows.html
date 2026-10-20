@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise notifications (vacancy-v1: space-between-rows)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Stacked settings rows: each row spreads its label and its control to the two ends. */
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; }
+  .rows select { width: 220px; height: 44px; font: inherit; border: 1px solid #6b7280; border-radius: 6px; background: #ffffff; color: #1f2937; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Notifications">
+    <div class="wrap">
+      <h2>Notifications</h2>
+      <div class="rule"></div>
+      <ul class="rows">
+        <li><span>Email me when a room is booked</span><select aria-label="When a room is booked"><option>Every booking</option><option>Never</option></select></li>
+        <li><span>Remind me before a meeting</span><select aria-label="Reminder"><option>Ten minutes before</option><option>Never</option></select></li>
+        <li><span>Tell me when a room is freed</span><select aria-label="When a room is freed"><option>Rooms I like</option><option>Never</option></select></li>
+        <li><span>Weekly usage report</span><select aria-label="Weekly usage report"><option>Monday morning</option><option>Never</option></select></li>
+        <li><span>Guest arrivals</span><select aria-label="Guest arrivals"><option>Text message</option><option>Never</option></select></li>
+        <li><span>Room display alerts</span><select aria-label="Room display alerts"><option>Email</option><option>Never</option></select></li>
+      </ul>
+    </div>
+  </section>
+</main>
+</body>
+</html>

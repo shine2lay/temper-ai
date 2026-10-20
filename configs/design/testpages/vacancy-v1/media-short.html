@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise board (vacancy-v1: media-short)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Copy beside a picture that is shorter than the copy: the picture column ends early. */
+  .media-short { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+  .media { margin: 0; }
+  .media svg { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Board">
+    <div class="wrap">
+      <div class="media-short">
+        <div class="copy">
+          <h2>One board for every room</h2>
+          <p>The board lists every room in the office with who has it, until when, and how many people it seats.</p>
+          <p>Free rooms are at the top. Tap one to hold it for the next half hour, or drag the end time to keep it longer.</p>
+          <p>Rooms with a display by the door show the same board, so people in the corridor see it too.</p>
+          <p>When a meeting ends early, the person who booked it can give the room back with one tap.</p>
+          <p>Office managers can close a room for cleaning or repairs, and every booking in it moves to a free room.</p>
+          <p>The board works on any phone or laptop, with no app to install and nothing to keep up to date.</p>
+          <p>Guests get a pass by email that opens the front door and shows them the way to their room.</p>
+          <p>Each evening the board sends office managers a short note of rooms that were booked but never used.</p>
+          <p>Recurring meetings release their room on their own when nobody checks in for three weeks in a row.</p>
+          <p>Everything on the board can be read aloud by a screen reader, and every action works from the keyboard.</p>
+        </div>
+        <figure class="media">
+          <svg width="528" height="240" viewBox="0 0 528 240" role="img" aria-label="A board of six rooms, two of them free">
+            <rect x="0" y="0" width="528" height="240" rx="12" fill="#dbeafe"/>
+            <rect x="24" y="24" width="152" height="84" rx="8" fill="#93c5fd"/>
+            <rect x="188" y="24" width="152" height="84" rx="8" fill="#ffffff"/>
+            <rect x="352" y="24" width="152" height="84" rx="8" fill="#93c5fd"/>
+            <rect x="24" y="132" width="152" height="84" rx="8" fill="#93c5fd"/>
+            <rect x="188" y="132" width="152" height="84" rx="8" fill="#93c5fd"/>
+            <rect x="352" y="132" width="152" height="84" rx="8" fill="#ffffff"/>
+          </svg>
+        </figure>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

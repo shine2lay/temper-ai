@@ -261,6 +261,101 @@ Cost per review run is 1.06-1.2x v3 ($2.01-2.19 on the review
 benchmark); a craft-bench page about $0.52. Results:
 `~/design-lab/results/critic-research/` (host only).
 
+## Empty-column vacancy (queue #114, H12, 2026-10-20): candidate path only
+
+Whether an empty column is dead space or a purposeful part of the layout
+was a yes/no for the craft critic. In W10a (queue #102) it scored 19 of 27
+against 27 of 27, barely better than always saying "no", and the concept
+notes drove every wrong answer. Dead space is a question of structure, so a
+script answers it now (AGENTS rule 17). The rule below was decided by Design
+(home) before any code, and its hold-out pages
+(`configs/design/testpages/vacancy-v1`, key `expected.json`) were keyed and
+sealed (`~/design-lab/seals/vacancy-v1.json`) before the code was written.
+
+**The rule, as decided.** The existing empty-column page check still finds
+the empty runs; nothing changes about which runs are candidates. For each
+run, take its container: the nearest ancestor of the content beside the run
+whose box contains the run and that is a grid or flex-row container.
+
+- **yes (vacant)** when either:
+  - the run covers at least half of a grid column track (tracks from the
+    computed `grid-template-columns`) in which the container places no item
+    at all (reason `vacant_track`);
+  - or it lies past the last item of a flex row: no item of the row
+    overlaps the run's x-range, and the run reaches the row's end edge
+    (reason `trailing`);
+  - or it sits beside a lone member of a repeating set (siblings with the
+    same tag and class list, sizes within 10%) that elsewhere in the same
+    container sits two or more abreast, and the run is at least one member
+    wide (reason `orphan`).
+- **no** otherwise: the run lies in the x-range of an item of its container
+  (reason `in_item`: a column that ends early), between items (reason
+  `between`: spread space), or in block flow or a one-column container
+  (reason `block`).
+- Confirmed vacancies keep W4e's fixed level: 2, or 3 in the first screen or
+  beside the primary action.
+- The numbers are in `design_page_checks_thresholds.json` (`vacancy`:
+  `track_cover` 0.5, `set_size_tolerance` 0.10).
+
+**How it is measured** (`design_page_checks.js`, the measurement choices
+inside the rule; the ones marked *added* are this build's, for Design to
+read):
+
+- Content beside the run is the page check's own beside boxes; a text line
+  stands for its parent element. Container: walking up from each, the first
+  ancestor whose border box holds the run's x-range (within `edge_px`) and
+  y-range (within one band, the run's own 16 px step) and whose computed
+  display is `grid`/`inline-grid`, or `flex`/`inline-flex` with
+  `flex-direction` `row` or `row-reverse`. When several beside boxes give
+  containers, the smallest one wins. None: `block`. `edge_px` (2, *added*,
+  in the same file) is the one tolerance for edges: boxes hold or reach an
+  edge within it, and two ranges overlap only by more than it.
+- Items: the container's in-flow element children (`display: contents`
+  opened up; hidden, absolutely or fixed positioned and empty ones left
+  out). An item's x-extent is the union of the page check's content boxes
+  inside it (its border box when it has none), because a text block's lines
+  are often shorter than its box.
+- Grid tracks: the px sizes of the computed `grid-template-columns`, laid
+  from the content-box left edge with `column-gap` and `justify-content`.
+  A grid with one track is a one-column container (`block`). An item is
+  placed in the track holding its border box's left edge, spanning what its
+  computed `grid-column-start`/`-end` say; placement, not overlap, so an
+  item that overflows into a track does not fill it.
+- `vacant_track`: the run covers at least `track_cover` of an unplaced
+  track's width. `trailing`: the row is the items overlapping the run's
+  y-range; no item's x-extent overlaps the run; the run's end reaches the
+  container's content edge or the frame edge, whichever comes first (the
+  left end for `row-reverse`). `orphan`: an item beside the run
+  (overlapping its y-range, wholly to one side) is lone when no other item
+  overlaps its y-range; its set is the container's other children with the
+  same tag and class list whose width and height its own differ from by at
+  most `set_size_tolerance` of theirs (the sibling's size is the base, so
+  444 px beside 400 px is 11% off); two members of the set overlap each
+  other's y-range somewhere; the run is at least the lone member's width
+  (less `edge_px`). `in_item` looks at every item of the container, in any
+  row.
+- Checked in that order; then the no reasons: `block`, `in_item`,
+  `between` (items wholly left and wholly right of the run, among the items
+  overlapping its y-range), *added* `below_bar` (the run lies over an
+  unplaced track but covers less than `track_cover` of it) and *added*
+  `outside_items` (anything else: past every track of a grid, or beside
+  items on one side only, not a flex row).
+- Each answer carries its evidence: the container (CSS path, display,
+  tracks in px with the number of items placed in each), and the numbers
+  that decided it (track and cover, row items, the lone member and its set
+  size, the overlapping item, the items on each side).
+
+**Where it runs.** Off by default: live capture, `facts.md`, the measured
+findings and every live stage are byte-identical with it off. It runs only
+when `DESIGN_PAGE_CHECKS_VACANCY=1` is set, which only the candidate path
+(`design_homepage_next.py`: `measure` and `bench_prepare`) does; then each
+entry of `page_checks.columns` in `review/facts/*.json` gets a `vacancy`
+object, `design_measured_findings.craft_candidates` carries it as the
+candidate's measured answer, and `craft_join` confirms a candidate from it.
+The candidate craft critic (`design_homepage_craft_critic_v2_next`) no
+longer answers empty columns. Readers of these outputs:
+`~/design-lab/homepage-workflow/wave2/w10b/READERS.md`.
+
 ## Files
 
 | Path | What |

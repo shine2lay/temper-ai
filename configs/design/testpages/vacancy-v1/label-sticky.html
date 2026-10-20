@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise questions (vacancy-v1: label-sticky)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Offset FAQ whose label sticks while the answers scroll past it. */
+  .faq { display: grid; grid-template-columns: 2fr 3fr; gap: 64px; }
+  .faq > .label { position: sticky; top: 24px; align-self: start; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Questions">
+    <div class="wrap">
+      <div class="faq">
+        <div class="label">
+          <h2>Questions</h2>
+          <p>What people ask before they book their first room.</p>
+        </div>
+        <dl class="qa-list">
+          <div class="card qa"><dt>Can I try Roomwise before I pay?</dt><dd>Yes. Every plan starts with a thirty-day trial, and you add a card only when you decide to stay.</dd></div>
+          <div class="card qa"><dt>Does it work with our calendar?</dt><dd>Roomwise syncs with the calendar your team already uses, both ways, within a minute.</dd></div>
+          <div class="card qa"><dt>What happens when nobody turns up?</dt><dd>After ten minutes without a check-in the room goes back on the board for someone else.</dd></div>
+          <div class="card qa"><dt>Can visitors book a room?</dt><dd>Visitors cannot book, but you can send them a guest pass that shows their room on a map.</dd></div>
+          <div class="card qa"><dt>Do we need tablets by every door?</dt><dd>No. Room displays are optional; the board on any phone or laptop is enough.</dd></div>
+          <div class="card qa"><dt>How do we leave?</dt><dd>Export your bookings as a file and close the account in settings; there is nothing else to sign.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

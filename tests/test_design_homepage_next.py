@@ -498,6 +498,68 @@ def test_craft_join_settles_anchors_and_applies_the_empty_column_answer(tmp_path
     assert [p.name for p in (review / "craft").glob("*.json")] == ["craft.json"]  # combine reads every file there
 
 
+H12 = "H12 (queue #114): the measured vacancy rule is not built yet"
+
+
+def _measured_vacancy(review: Path, answer: str, reason: str) -> None:
+    """The vacancy pass's answer on the fixture's one empty column (index at desktop, in Price)."""
+    path = review / "facts/index-desktop.json"
+    facts = json.loads(path.read_text(encoding="utf-8"))
+    (col,) = facts["page_checks"]["columns"]
+    evidence = {"track": 2, "track_x": [459, 821], "cover": 1.0} if answer == "yes" else {
+        "left": "div.plan:nth-of-type(1)", "right": "div.plan:nth-of-type(2)"}
+    col["vacancy"] = {"answer": answer, "reason": reason, "evidence": evidence, "container": {
+        "sel": "div.plans", "display": "grid", "tracks": [[78, 427], [459, 821], [853, 1202]],
+        "placed": [1, 0 if answer == "yes" else 1, 1], "items": 3 if answer == "no" else 2}}
+    path.write_text(json.dumps(facts), encoding="utf-8")
+
+
+@pytest.mark.xfail(strict=True, reason=H12)
+def test_craft_join_settles_the_empty_column_from_the_measured_vacancy(tmp_path):
+    ws = _workspace(tmp_path)
+    review = ws / "review"
+    (review / "craft-critic.json").write_text(json.dumps({  # the critic no longer answers empty columns
+        "critic": "craft", "findings": [], "template_test": {"verdict": "distinctive", "evidence": "e"},
+        "strengths_to_keep": [], "visual_purpose": [], "not_checked": []}), encoding="utf-8")
+    for answer, reason, expect in (("no", "between", 0), ("yes", "vacant_track", 1)):
+        _measured_vacancy(review, answer, reason)
+        _stage("craft_anchors", ws)
+        out = _stage("craft_join", ws)
+        assert (out["candidates_confirmed"], out["candidates_declined"], out["candidates_unanswered"]) == (
+            expect, 1 - expect, 0)
+        craft = json.loads((review / "craft/craft.json").read_text(encoding="utf-8"))
+        found = [f for f in craft["findings"] if f["kind"] == "candidate"]
+        assert len(found) == expect
+        (row,) = craft["candidates"]
+        assert (row["answer"], row["reason"]) == (answer, reason)
+    assert "vacant_track" in found[0]["evidence"] and "the critic" not in found[0]["evidence"]
+    assert found[0]["severity"] in (2, 3) and found[0]["measured_id"] == "index-desktop-empty-column-1"
+
+
+@pytest.mark.xfail(strict=True, reason=H12)
+def test_the_craft_critic_candidate_leaves_empty_columns_to_the_measure():
+    craft = _prompt("design_homepage_craft_critic_v2_next")
+    assert "EMPTY COLUMNS" not in craft and "candidate_answers" not in craft
+    assert "dead space, or a purposeful part of the layout" not in craft and "anchors.json candidate" not in craft
+
+
+@pytest.mark.xfail(strict=True, reason=H12)
+def test_only_the_candidate_path_turns_the_vacancy_pass_on(monkeypatch):
+    import inspect
+    import os
+
+    env = hn.mf.pc.VACANCY_ENV
+    monkeypatch.delenv(env, raising=False)
+    with hn.vacancy_pass():
+        assert os.environ[env] == "1"
+    assert env not in os.environ
+    assert all("vacancy_pass()" in inspect.getsource(fn) for fn in (hn.measure, hn.bench_prepare))
+    named = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "configs").rglob("*")
+                   if p.is_file() and p.suffix in (".py", ".yaml", ".js", ".json", ".md")
+                   and env in p.read_text(encoding="utf-8", errors="ignore"))
+    assert named == ["configs/design/bin/design_page_checks.py"]  # live code reaches it only through the switch
+
+
 def test_word_joins_take_the_script_findings_and_keep_one_finding_per_problem(tmp_path):
     ws = _workspace(tmp_path)
     review, copy = ws / "review", ws / "homepage/copy"

@@ -1,0 +1,47 @@
+/* vacancy-v1 (queue #114, H12): shared look of the keyed empty-column fixtures. Desktop 1280 wide:
+   every layout sits in a 1120 px frame (80 px each side); the bar under the intro spans the frame. */
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-400.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-700.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: #ffffff; }
+body {
+  margin: 0;
+  font-family: "Atkinson Hyperlegible", Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.5;
+  color: #1f2937;
+  background: #ffffff;
+}
+section { padding: 40px 0; }
+.wrap { width: 1120px; margin: 0 auto; }
+.kicker { margin: 0 0 16px; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; color: #4b5563; }
+.rule { height: 8px; background: #d1d5db; margin: 0 0 40px; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 24px; }
+h2 { font-size: 32px; line-height: 1.2; margin: 0 0 16px; }
+h3 { font-size: 22px; line-height: 1.3; margin: 0 0 8px; }
+p { margin: 0 0 16px; }
+.card { background: #eef0f3; border: 1px solid #cbd5e1; border-radius: 12px; padding: 24px; }
+.card p:last-child { margin-bottom: 0; }
+.button {
+  display: inline-block;
+  padding: 14px 24px;
+  background: #1d4ed8;
+  color: #ffffff;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+}
+dl { margin: 0; }
+dt { font-weight: 700; margin: 0 0 4px; }
+dd { margin: 0; }
+.qa { margin: 0 0 16px; }

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise rooms (vacancy-v1: orphan-size-09)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* Seven tiles in three tracks; the lone seventh tile is 9% taller than its siblings (436 px against 400 px). */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; align-items: start; }
+  .tile { height: 400px; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Rooms">
+    <div class="wrap">
+      <h2>Rooms</h2>
+      <div class="rule"></div>
+      <div class="grid3">
+        <article class="card tile"><h3>Harbour</h3><p>Seats ten, with a screen and a whiteboard wall.</p></article>
+        <article class="card tile"><h3>Lantern</h3><p>Seats four, quiet, good for calls.</p></article>
+        <article class="card tile"><h3>Orchard</h3><p>Seats twenty, splits into two rooms.</p></article>
+        <article class="card tile"><h3>Quarry</h3><p>Seats six, next to the kitchen.</p></article>
+        <article class="card tile"><h3>Saltmarsh</h3><p>Seats eight, with a camera for hybrid meetings.</p></article>
+        <article class="card tile"><h3>Tidewater</h3><p>Seats two, a phone booth by the stairs.</p></article>
+        <article class="card tile" style="height: 436px"><h3>Willow</h3><p>Seats twelve, on the roof terrace in summer.</p></article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

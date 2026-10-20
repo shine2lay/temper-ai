@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roomwise security (vacancy-v1: onecol-grid)</title>
+<link rel="stylesheet" href="vacancy.css">
+<style>
+  /* A one-track grid held to a readable measure: one column, nothing missing beside it. */
+  .onecol { display: grid; grid-template-columns: minmax(0, 560px); row-gap: 16px; }
+  .onecol > p { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <section data-section="Intro">
+    <div class="wrap">
+      <p class="kicker">Roomwise, layout fixture</p>
+      <div class="rule"></div>
+    </div>
+  </section>
+  <section data-section="Security">
+    <div class="wrap">
+      <h2>Security</h2>
+      <div class="rule"></div>
+      <div class="onecol">
+        <h3>Your bookings stay yours</h3>
+        <p>Room names, bookings and guest passes are stored in one region you choose, and they are encrypted on disk and on the wire.</p>
+        <p>People sign in with the work account they already have. When someone leaves, their access ends the moment their account is closed.</p>
+        <p>Every change to a room or a booking is kept in a log that office managers can read and export at any time.</p>
+        <p>We never sell or share booking data, and we delete it within thirty days of the day you close your account.</p>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

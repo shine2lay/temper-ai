@@ -3,9 +3,9 @@
 configs/architecture/stages/context_profile/STANDARD.md freezes what the stage must produce (contract v2)
 and how it is measured. These tests hold the deterministic parts to it before any model stage exists:
 - the checker passes clean profiles and fails each planted fault with its expected reason;
-- every known case's key lints clean, passes the checker and scores 100% against itself;
+- every known case's key lints clean, passes the checker and has 100% structural/anchor diagnostics;
 - every planted bad profile causes exactly the failures it names, no more and no fewer;
-- the scorer's run comparison (bar B5) and pooling (bars B0-B4, B7-B10) behave.
+- structural/anchor run comparison and pooling preserve their observations without semantic acceptance.
 Standard library only, no model, no server.
 """
 
@@ -88,14 +88,16 @@ def test_the_known_cases_cover_every_category_once_with_briefs_of_the_right_leng
 
 
 @pytest.mark.parametrize("folder", KNOWN, ids=lambda p: p.name)
-def test_every_key_passes_the_checker_and_scores_100_against_itself(folder):
+def test_every_key_passes_the_checker_and_has_100_diagnostic_percent_against_itself(folder):
     key, brief, sha = cps.load_case(folder)  # raises BrokenKey when the key does not lint clean
     checked = cpc.check(key["profile"], brief, sha, VALIDATOR)
     assert checked["ok"], checked["errors"]
-    result = cps.score(key, key["profile"], brief, VALIDATOR)
-    assert result["clean"], result["failures"]
-    assert result["score_pct"] == 100.0
+    grade = cps.score(key, key["profile"], brief, VALIDATOR)
+    result = grade["structural_anchor"]
+    assert result["diagnostics_ok"], result["failures"]
+    assert result["diagnostic_score_pct"] == 100.0
     assert result["facts"]["total"] >= 8 and result["constraints"]["total"] >= 1 and result["goals"]["total"] >= 3
+    assert grade["semantic_status"] == "NOT_MEASURED" and not grade["clean"]
 
 
 # ---------------------------------------------------------------- planted profiles
@@ -117,7 +119,7 @@ def test_every_planted_profile_causes_exactly_its_expected_failures(path):
     result = cps.score(key, profile, brief, VALIDATOR)
     verdict = cps.against_plant(result, plant)
     assert verdict["as_expected"], verdict
-    assert not result["clean"]
+    assert not result["structural_anchor"]["diagnostics_ok"]
 
 
 def test_a_planted_edit_that_does_not_fit_the_profile_is_refused():
@@ -229,7 +231,7 @@ def test_short_quotes_wrong_hashes_duplicate_ids_and_unknown_keys_fail(k02):
 # ---------------------------------------------------------------- scorer faults, one at a time
 
 def _failures(key: dict, profile: dict, brief: str) -> set[tuple[str, str]]:
-    return {(f["reason"], f["ref"]) for f in cps.score(key, profile, brief, VALIDATOR)["failures"]}
+    return {(f["reason"], f["ref"]) for f in cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]["failures"]}
 
 
 def test_a_mandatory_privacy_requirement_as_a_tradeable_goal_fails():
@@ -254,9 +256,9 @@ def test_an_assumption_filling_a_field_the_brief_leaves_open_is_invented():
     key, brief = _case("k08-missing-volunteers")
     profile = copy.deepcopy(key["profile"])
     profile["budget"]["run_monthly"] = {"value": "free tier", "source": {"kind": "assumption", "why": "charities get free hosting"}}
-    result = cps.score(key, profile, brief, VALIDATOR)
+    result = cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]
     assert {(f["reason"], f["ref"]) for f in result["failures"]} == {("guessed_unknown", "budget.run_monthly")}
-    assert result["invented"] == 1 and result["rates"]["no_invention"] == 0.0
+    assert result["invented"] == 1 and result["proxy_rates"]["no_invention"] == 0.0
 
 
 def test_a_forecast_used_as_observed_workload_is_caught_by_its_trap():
@@ -281,23 +283,26 @@ def test_a_missed_fact_and_a_wrong_goal_order_fail():
 def test_runs_that_agree_are_consistent_and_a_changed_maturity_is_not():
     key, brief = _case("k03-growing-scheduling")
     same = [cps.score(key, key["profile"], brief, VALIDATOR) for _ in range(3)]
-    assert cps.consistency(same)["consistent"]
+    assert cps.consistency(same)["structural_anchor"]["consistent"]
     other = copy.deepcopy(key["profile"])
     other["maturity"]["stage"] = "startup"
-    report = cps.consistency(same[:2] + [cps.score(key, other, brief, VALIDATOR)])
+    report = cps.consistency(same[:2] + [cps.score(key, other, brief, VALIDATOR)])["structural_anchor"]
     assert not report["consistent"] and report["differs"] == ["maturity"]
 
 
-def test_the_keys_pooled_meet_every_bar_and_a_planted_run_does_not():
+def test_the_keys_pooled_meet_proxy_thresholds_and_a_planted_run_does_not():
     results = [cps.score(k, k["profile"], b, VALIDATOR) for k, b, _ in (cps.load_case(f) for f in KNOWN)]
-    pooled = cps.pool(results)
-    assert pooled["meets_bars"] and pooled["fact_recall"] == 1.0 and pooled["invented"] == 0
+    grade = cps.pool(results)
+    pooled = grade["structural_anchor"]
+    assert pooled["diagnostics_ok"] and pooled["fact_anchor_recall"] == 1.0 and pooled["invention_signals"] == 0
+    assert not grade["meets_bars"] and grade["semantic_status"] == "NOT_MEASURED"
     plant = json.loads((FIXTURES / "planted" / "p01-k05-hipaa-as-goal.json").read_text())
     key, brief = _case(plant["case_id"])
     bad = cps.score(key, cps.unwrap(plant, key["profile"])[0], brief, VALIDATOR)
-    pooled = cps.pool([r for r in results if r["case_id"] != plant["case_id"]] + [bad])
-    assert not pooled["meets_bars"]
-    assert [name for name, ok in pooled["bars"].items() if not ok] == ["B4_constraints_classified"]
+    grade = cps.pool([r for r in results if r["case_id"] != plant["case_id"]] + [bad])
+    pooled = grade["structural_anchor"]
+    assert not grade["meets_bars"] and not pooled["diagnostics_ok"]
+    assert [name for name, ok in pooled["proxy_thresholds"].items() if not ok] == ["constraint_anchor_classification"]
 
 
 def test_a_broken_key_is_refused():
@@ -318,7 +323,7 @@ def test_a_broken_key_is_refused():
 def test_the_command_lines_exit_codes(tmp_path, capsys):
     folder = FIXTURES / "known" / "k04-large-photos"
     assert cpc.main(["--brief", str(folder / "brief.md"), str(folder / "key.json")]) == 0
-    assert cps.main(["--case", str(folder), "--self"]) == 0
+    assert cps.main(["--case", str(folder), "--self"]) == 1
     bad = json.loads((folder / "key.json").read_text())["profile"]
     bad["goals"][0]["rank"] = 9
     path = tmp_path / "bad.json"
@@ -329,7 +334,7 @@ def test_the_command_lines_exit_codes(tmp_path, capsys):
     assert cps.main(["--case", str(folder), str(path)]) == 2
     plant = PLANTED[0]
     case = json.loads(plant.read_text())["case_id"]
-    assert cps.main(["--case", str(FIXTURES / "known" / case), str(plant)]) == 0
+    assert cps.main(["--case", str(FIXTURES / "known" / case), str(plant)]) == 1
     capsys.readouterr()
 
 
@@ -396,7 +401,7 @@ def test_an_external_system_cannot_borrow_another_systems_quote():
     profile["external_systems"][0]["name"] = "InventedGateway"
     checked = _check(profile, brief, key)
     assert _reasons(checked) == {"system_name_not_in_quote"}
-    assert cps.score(key, profile, brief, VALIDATOR)["invented"] == 1
+    assert cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]["invented"] == 1
 
 
 def test_a_performance_number_has_to_be_in_its_own_quote():
@@ -513,15 +518,17 @@ def test_a_padded_quote_can_credit_only_one_of_its_three_facts():
     plant = json.loads((FIXTURES / "planted" / "p18-k02-padded-three-facts.json").read_text())
     profile, _header = cps.unwrap(plant, key["profile"])
     assert _check(profile, brief, key)["ok"]  # not a long-quote failure
-    result = cps.score(key, profile, brief, VALIDATOR)
+    result = cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]
     assert set(result["facts"]["captured_ids"]) & {"F1", "F2", "F3"} == {"F1"}
     assert result["facts"]["captured"] == result["facts"]["total"] - 2
     assert _failures(key, profile, brief) == {("fact_quote_shared", "F2"), ("fact_quote_shared", "F3")}
 
 
 def test_duplicate_failures_do_not_disappear_when_checking_a_plants_exact_reasons():
-    plant = {"case_id": "example", "expect": [{"reason": "fault", "ref": "F1"}]}
-    result = {"case_id": "example", "failures": [{"reason": "fault", "ref": "F1"}] * 2}
+    key, brief = _case("k02-startup-invoicing")
+    result = cps.score(key, key["profile"], brief, VALIDATOR)
+    plant = {"case_id": result["case_id"], "expect": [{"reason": "fault", "ref": "F1"}]}
+    result["structural_anchor"]["failures"] = [{"reason": "fault", "ref": "F1"}] * 2
     verdict = cps.against_plant(result, plant)
     assert not verdict["as_expected"] and verdict["unexpected"] == [["fault", "F1"]]
 
@@ -533,13 +540,13 @@ def test_extra_material_unknowns_and_quote_lengths_are_report_only(k02):
     profile["unknowns"].append({"question": "Who approves accessible language translations?", "material": True,
                                 "why_it_matters": "Translations change localisation choices.",
                                 "decisions_affected": ["localisation"]})
-    result = cps.score(key, profile, brief, VALIDATOR)
-    assert result["clean"] and result["score_pct"] == 100.0
+    result = cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]
+    assert result["diagnostics_ok"] and result["diagnostic_score_pct"] == 100.0
     assert result["material_unknowns_not_in_key"] == [{"field": None, "question": "Who approves accessible language translations?"}]
     lengths = [len(cpc.norm(i.quote).split()) for i in cpc.iter_items(profile) if i.kind == "quote"]
     assert result["quote_words"] == {"median": median(lengths), "max": max(lengths)}
     profile["unknowns"][-1]["material"] = False
-    assert cps.score(key, profile, brief, VALIDATOR)["material_unknowns_not_in_key"] == []
+    assert cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]["material_unknowns_not_in_key"] == []
 
 
 @pytest.mark.parametrize("fault", ["no_primary", "legacy_in", "alt_without_why", "why_without_alt", "many_alternatives"])

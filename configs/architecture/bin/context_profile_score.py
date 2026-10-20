@@ -1,27 +1,19 @@
 #!/usr/bin/env python3
-"""Score context profiles against a known case's answer key (System architecture, queue #122; v2 #127, 2026-10-20).
+"""Structural/anchor diagnostics, NOT semantic grading (Architecture #134, output v3).
 
-Deterministic: no model, standard library only. A key (configs/architecture/fixtures/context_profile/known/
-<case>/key.json, written before any model run) holds a reference profile and what to look for: the material
-facts with the quote anchors that may carry each, the material unknowns, the hard constraints, the ranked
-goals, the fields the brief leaves unknown, and traps (text that must not carry a given kind of item).
-Matching is by text, never by a model: an item can carry a fact when its quote contains one of the fact's
-anchors, compared the way the checker compares quotes (context_profile_check.norm), in the fact's primary or
-alternative section. Items and facts are then paired one to one by maximum matching, so one item counts for
-at most one fact however much its quote holds.
+Profile/key/plant formats remain v2. Matching, numeric checks and finding reasons are unchanged;
+context_profile_grade/v3 separates those observations from unmeasured assertion meaning. Every completed
+grade is BLOCKED with NOT_MEASURED semantics, null semantic scores and no final clean/meets_bars.
 
-  context_profile_score.py --case DIR PROFILE.json      one profile against DIR/key.json and DIR/brief.md;
-                                                        a planted file (a whole profile, or edits to the
-                                                        key's reference profile) passes when it causes
-                                                        exactly the failures it expects
-  context_profile_score.py --case DIR --self            the key's own reference profile: must score 100%
-  context_profile_score.py --case DIR --runs P1 P2 P3   several runs of one case: each scored, and whether
-                                                        they agree (bar B5)
-  context_profile_score.py --pool SCORE.json ...        one run's case scores pooled: bars B0-B4, B7-B10
+  --case DIR PROFILE.json     diagnose a profile or a planted fixture (including expected findings)
+  --case DIR --self           diagnose the key's own reference: 100 diagnostic percent is not correctness
+  --case DIR --runs P1 P2 P3  diagnose runs and compare structural/anchor observations, not semantic B5
+  --pool SCORE.json ...       pool v3 profile diagnostics; no semantic acceptance, even for green proxies
 
-Every mode lints the key first (anchors in the brief, the brief's sha256, ids, sections); a broken key
-stops the run. Failure reasons and the bars: STANDARD.md, "The scorer" and "Bars".
-Exit 0 = clean (no failure / consistent / bars met), 1 = not, 2 = cannot run (bad file, broken key).
+Case modes lint the key first. Pool mode consumes stored diagnostics, not proof of provenance or meaning.
+No semantic receipt, evaluator, caller override or success-producing option exists here.
+STANDARD.md preserves all bars; SEMANTIC-GRADE.md defines the output and proposed future evidence boundary.
+Exit 1 = completed but final acceptance blocked (also for expected plants); 2 = cannot run. No exit-0 route.
 """
 from __future__ import annotations
 
@@ -56,12 +48,81 @@ OPEN_FIELDS = ("maturity.stage", "current_system.state", "current_system.items",
 # What an unknown may name in its field: the contract's unknown.field enum (a test holds them equal).
 UNKNOWN_FIELDS = (*OPEN_FIELDS, "constraints", "goals")
 TRAP_SECTIONS = tuple(s for s in cpc.SECTIONS if s != "product")
-# Checker reasons that mean a fact was made up, not just badly formed.
+# Checker invention signals only: absence of these reasons does NOT prove absence of invented meaning.
 INVENTING = ("quote_not_in_brief", "number_not_in_quote", "observed_not_quoted", "system_name_not_in_quote")
 PLANTED_FORMAT = "context_profile_planted/v2"
 COMPONENTS = ("facts", "unknowns", "constraints", "goals", "goal_order", "maturity", "sensitivity",
               "unknown_fields", "no_invention")
 RECALL_BAR, ORDER_BAR = 0.95, 0.90
+GRADE_FORMAT = "context_profile_grade/v3"
+BAR_NAMES = ("B0_contract", "B1_no_invented", "B2_fact_recall_95", "B3_unknowns_flagged",
+             "B4_constraints_classified", "B5_consistent_runs", "B6_cost_and_time", "B7_maturity",
+             "B8_sensitivity", "B9_goal_order_90", "B10_goals_stay_goals")
+
+
+def _blocked(kind: str, diagnostics: dict, checker_ok: bool | None) -> dict:
+    """The only grading decision in v3. There is intentionally no positive meaning-result consumer."""
+    bars = {name: {"status": "NOT_MEASURED", "meets_bar": None} for name in BAR_NAMES}
+    if checker_ok is not None:
+        bars["B0_contract"] = {"status": "MEASURED", "meets_bar": checker_ok}
+    return {
+        "grading_output": GRADE_FORMAT,
+        "kind": kind,
+        "status": "BLOCKED",
+        "semantic_status": "NOT_MEASURED",
+        "semantic_score_pct": None,
+        "score_pct": None,
+        "clean": False,
+        "meets_bars": False,
+        "blockers": ["assertion_meaning_not_measured"],
+        "bars": bars,
+        "structural_anchor": diagnostics,
+    }
+
+
+class BadGrade(ValueError):
+    """Not a usable v3 profile diagnostic; never substitute an empty or legacy success result."""
+
+
+def _profile_diagnostics(result: object) -> dict:
+    """Read diagnostic fields only. Alleged semantic receipts/statuses cannot authorise anything."""
+    if not isinstance(result, dict) or result.get("grading_output") != GRADE_FORMAT or result.get("kind") != "profile":
+        raise BadGrade(f"aggregate inputs must be {GRADE_FORMAT} profile results")
+    if not isinstance(result.get("case_id"), str) or not result["case_id"].strip():
+        raise BadGrade("aggregate input needs a case_id")
+    d = result.get("structural_anchor")
+    if not isinstance(d, dict):
+        raise BadGrade("aggregate input needs structural_anchor diagnostics")
+
+    def require(condition: bool) -> None:
+        if not condition:
+            raise BadGrade("incomplete or malformed structural_anchor diagnostics")
+
+    try:
+        require(type(d["checker_ok"]) is bool and type(d["diagnostics_ok"]) is bool)
+        for name, count, ids in (("facts", "captured", "captured_ids"), ("unknowns", "flagged", "flagged_ids")):
+            require(type(d[name][count]) is int and type(d[name]["total"]) is int)
+            require(0 <= d[name][count] <= d[name]["total"])
+            require(isinstance(d[name][ids], list) and all(isinstance(i, str) for i in d[name][ids]))
+            require(len(set(d[name][ids])) == len(d[name][ids]) == d[name][count])
+        for name in ("constraints", "goals"):
+            require(type(d[name]["right"]) is int and type(d[name]["total"]) is int)
+            require(0 <= d[name]["right"] <= d[name]["total"])
+            require(isinstance(d[name]["status"], dict) and len(d[name]["status"]) == d[name]["total"])
+        require(type(d["goal_order"]["agree"]) is int and type(d["goal_order"]["total"]) is int)
+        require(0 <= d["goal_order"]["agree"] <= d["goal_order"]["total"])
+        require(isinstance(d["goal_order"]["got"], list))
+        for name in ("maturity", "sensitivity"):
+            require(isinstance(d[name]["got"], (str, type(None))) and isinstance(d[name]["accepted"], list))
+        require(type(d["invented"]) is int and d["invented"] >= 0)
+        require(isinstance(d["failures"], list) and all(isinstance(f, dict) and isinstance(f["reason"], str)
+                                                      and isinstance(f["ref"], str) for f in d["failures"]))
+        require(isinstance(d["proxy_rates"], dict))
+        require(all(type(d["proxy_rates"][c]) in (float, int) and 0 <= d["proxy_rates"][c] <= 1 for c in COMPONENTS))
+        require(type(d["diagnostic_score_pct"]) in (float, int) and 0 <= d["diagnostic_score_pct"] <= 100)
+    except (KeyError, TypeError) as exc:
+        raise BadGrade("incomplete or malformed structural_anchor diagnostics") from exc
+    return d
 
 
 class BrokenKey(Exception):
@@ -300,7 +361,7 @@ def _states_value(item, expected: float) -> bool:
 
 
 def score(key: dict, profile: object, brief_text: str, validator) -> dict:
-    """One profile against one key: metrics, failures and score_pct. The key must already lint clean."""
+    """One profile's structural/anchor observations plus a blocked grade. The key must already lint clean."""
     checked = cpc.check(profile, brief_text, key["brief_sha256"], validator)
     failures = [_fail(f"checker:{e['reason']}", e["path"], e["detail"]) for e in checked["errors"]]
     invented = sum(1 for e in checked["errors"] if e["reason"] in INVENTING)
@@ -451,8 +512,7 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
         "unknown_fields": _rate(open_kept, len(key["fields_unknown"])),
         "no_invention": 1.0 if invented == 0 else 0.0,
     }
-    return {
-        "case_id": key["case_id"],
+    diagnostics = {
         "checker_ok": checked["ok"],
         "facts": facts,
         "unknowns": unknowns,
@@ -465,64 +525,73 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
         "invented": invented,
         "material_unknowns_not_in_key": extra_unknowns,
         "quote_words": {"median": _median(words), "max": max(words, default=0)},
-        "rates": rates,
-        "score_pct": round(100 * sum(rates[c] for c in COMPONENTS) / len(COMPONENTS), 1),
+        "proxy_rates": rates,
+        "diagnostic_score_pct": round(100 * sum(rates[c] for c in COMPONENTS) / len(COMPONENTS), 1),
         "failures": failures,
-        "clean": not failures,
+        "diagnostics_ok": not failures,
     }
+    return {"case_id": key["case_id"], **_blocked("profile", diagnostics, checked["ok"])}
 
 
 # ---------------------------------------------------------------- several runs, several cases
 
 def consistency(results: list[dict]) -> dict:
-    """Bar B5: do runs of one case give the same answers?"""
+    """Compare structural/anchor observations only; agreement does not qualify semantic B5."""
+    diagnostics = [_profile_diagnostics(r) for r in results]
     dims = {
-        "maturity": [r["maturity"]["got"] for r in results],
-        "sensitivity": [r["sensitivity"]["got"] for r in results],
-        "constraints": [r["constraints"]["status"] for r in results],
-        "goals": [r["goals"]["status"] for r in results],
-        "unknowns_flagged": [sorted(r["unknowns"]["flagged_ids"]) for r in results],
-        "goal_order_top3": [r["goal_order"]["got"] for r in results],
+        "maturity": [r["maturity"]["got"] for r in diagnostics],
+        "sensitivity": [r["sensitivity"]["got"] for r in diagnostics],
+        "constraints": [r["constraints"]["status"] for r in diagnostics],
+        "goals": [r["goals"]["status"] for r in diagnostics],
+        "unknowns_flagged": [sorted(r["unknowns"]["flagged_ids"]) for r in diagnostics],
+        "goal_order_top3": [r["goal_order"]["got"] for r in diagnostics],
     }
     differs = [name for name, values in dims.items() if any(v != values[0] for v in values)]
-    sets = [set(r["facts"]["captured_ids"]) for r in results]
+    sets = [set(r["facts"]["captured_ids"]) for r in diagnostics]
     union = set().union(*sets)
-    agreement = round(len(set.intersection(*sets)) / len(union), 4) if union else 1.0
-    return {"runs": len(results), "consistent": not differs, "differs": differs, "facts_agreement": agreement}
+    agreement = (round(len(set.intersection(*sets)) / len(union), 4) if union else 1.0) if sets else None
+    same_case = len({r["case_id"] for r in results}) == 1
+    observed = {"runs": len(results), "same_case": same_case, "empty_runs": not results,
+                "consistent": len(results) >= 2 and same_case and not differs,
+                "differs": differs, "fact_anchor_agreement": agreement,
+                "diagnostics_ok": len(results) >= 2 and same_case and not differs
+                                  and all(r["diagnostics_ok"] for r in diagnostics)}
+    return _blocked("consistency", observed, all(r["checker_ok"] for r in diagnostics) if diagnostics else None)
 
 
 def pool(results: list[dict]) -> dict:
-    """One run's scores over the case set, against bars B0-B4 and B7-B10 (B5: --runs; B6: run records)."""
+    """Pool structural/anchor proxies, never infer standard bars or meaning from their thresholds."""
+    diagnostics = [_profile_diagnostics(r) for r in results]
     ids = [r["case_id"] for r in results]
-    total = {name: sum(r[name][part] for r in results) for name, part in
+    total = {name: sum(r[name][part] for r in diagnostics) for name, part in
              (("facts", "total"), ("unknowns", "total"), ("constraints", "total"), ("goal_order", "total"))}
-    recall = _rate(sum(r["facts"]["captured"] for r in results), total["facts"])
-    order = _rate(sum(r["goal_order"]["agree"] for r in results), total["goal_order"])
-    promoted = [f"{r['case_id']} {f['ref']}" for r in results for f in r["failures"]
+    recall = _rate(sum(r["facts"]["captured"] for r in diagnostics), total["facts"]) if total["facts"] else None
+    order = _rate(sum(r["goal_order"]["agree"] for r in diagnostics), total["goal_order"]) if total["goal_order"] else None
+    promoted = [f"{ident} {f['ref']}" for ident, r in zip(ids, diagnostics, strict=True) for f in r["failures"]
                 if f["reason"] in ("goal_as_constraint", "goal_also_constraint")]
-    bars = {
-        "B0_contract": all(r["checker_ok"] for r in results),
-        "B1_no_invented": sum(r["invented"] for r in results) == 0,
-        "B2_fact_recall_95": recall >= RECALL_BAR,
-        "B3_unknowns_flagged": sum(r["unknowns"]["flagged"] for r in results) == total["unknowns"],
-        "B4_constraints_classified": sum(r["constraints"]["right"] for r in results) == total["constraints"],
-        "B7_maturity": all(r["maturity"]["got"] in r["maturity"]["accepted"] for r in results),
-        "B8_sensitivity": all(r["sensitivity"]["got"] in r["sensitivity"]["accepted"] for r in results),
-        "B9_goal_order_90": order >= ORDER_BAR,
-        "B10_goals_stay_goals": not promoted,
+    thresholds = {
+        "checker_contract": all(r["checker_ok"] for r in diagnostics),
+        "no_invention_signals": sum(r["invented"] for r in diagnostics) == 0,
+        "fact_anchor_recall_95": recall >= RECALL_BAR if recall is not None else None,
+        "unknown_marker_coverage": sum(r["unknowns"]["flagged"] for r in diagnostics) == total["unknowns"],
+        "constraint_anchor_classification": sum(r["constraints"]["right"] for r in diagnostics) == total["constraints"],
+        "maturity_label_membership": all(r["maturity"]["got"] in r["maturity"]["accepted"] for r in diagnostics),
+        "sensitivity_label_membership": all(r["sensitivity"]["got"] in r["sensitivity"]["accepted"] for r in diagnostics),
+        "goal_criterion_order_90": order >= ORDER_BAR if order is not None else None,
+        "no_goal_anchor_promoted": not promoted,
+    } if results else {}
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    observed = {
+        "cases": len(results), "empty_pool": not results, "duplicate_cases": duplicates,
+        "fact_anchor_recall": recall, "goal_criterion_order": order,
+        "invention_signals": sum(r["invented"] for r in diagnostics),
+        "proxy_thresholds": thresholds,
+        "diagnostics_ok": bool(results) and not duplicates and all(v is True for v in thresholds.values()),
+        "per_case": [{"case_id": ident, "diagnostic_score_pct": r["diagnostic_score_pct"],
+                      "fact_anchor_recall": r["proxy_rates"]["facts"],
+                      "failures": [f["reason"] for f in r["failures"]]} for ident, r in zip(ids, diagnostics, strict=True)],
     }
-    return {
-        "cases": len(results),
-        "duplicate_cases": sorted({i for i in ids if ids.count(i) > 1}),
-        "fact_recall": recall,
-        "goal_order": order,
-        "invented": sum(r["invented"] for r in results),
-        "bars": bars,
-        "meets_bars": all(bars.values()) and len(set(ids)) == len(ids),
-        "not_measured_here": {"B5_consistent_runs": "--runs, per case", "B6_cost_and_time": "the runs' records"},
-        "per_case": [{"case_id": r["case_id"], "score_pct": r["score_pct"], "fact_recall": r["rates"]["facts"],
-                      "failures": [f["reason"] for f in r["failures"]]} for r in results],
-    }
+    return _blocked("pool", observed, all(r["checker_ok"] for r in diagnostics) if diagnostics else None)
 
 
 # ---------------------------------------------------------------- command line
@@ -593,9 +662,9 @@ def unwrap(document: object, base: object = None) -> tuple[object, dict | None]:
 
 
 def against_plant(result: dict, plant: dict) -> dict:
-    """Does the score report exactly the failures the planted file expects, no more and no fewer?"""
+    """Compare expected diagnostic findings, NOT semantic correctness or final acceptance."""
     from collections import Counter
-    got = Counter((f["reason"], f["ref"]) for f in result["failures"])
+    got = Counter((f["reason"], f["ref"]) for f in _profile_diagnostics(result)["failures"])
     want = Counter((e.get("reason"), e.get("ref")) for e in plant.get("expect") or [] if isinstance(e, dict))
     missing, unexpected = sorted((want - got).elements()), sorted((got - want).elements())
     same_case = plant.get("case_id") == result["case_id"]
@@ -605,7 +674,7 @@ def against_plant(result: dict, plant: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Score context profiles against a known case's key.")
+    parser = argparse.ArgumentParser(description="Diagnose structural/anchor matches; semantic acceptance is blocked.")
     parser.add_argument("profiles", type=Path, nargs="*", help="profile(s), or score files with --pool")
     parser.add_argument("--case", type=Path, help="a known case folder (brief.md + key.json)")
     mode = parser.add_mutually_exclusive_group()
@@ -619,7 +688,6 @@ def main(argv: list[str] | None = None) -> int:
             if not args.profiles:
                 parser.error("--pool needs score files")
             report = pool([_read_json(p) for p in args.profiles])
-            ok = report["meets_bars"]
         else:
             if args.case is None:
                 parser.error("--case is needed unless --pool")
@@ -627,27 +695,24 @@ def main(argv: list[str] | None = None) -> int:
             validator = cpc.load_validator(args.schema)
             if args.self_check:
                 report = score(key, key["profile"], brief_text, validator)
-                ok = report["clean"] and report["score_pct"] == 100.0
             elif args.runs:
                 if len(args.profiles) < 2:
                     parser.error("--runs needs two or more profiles")
                 runs = [score(key, _read_json(p), brief_text, validator) for p in args.profiles]
-                report = {"case_id": key["case_id"], "consistency": consistency(runs), "runs": runs}
-                ok = report["consistency"]["consistent"] and all(r["clean"] for r in runs)
+                compared = consistency(runs)
+                report = {"case_id": key["case_id"], **compared, "runs": runs}
             else:
                 if len(args.profiles) != 1:
                     parser.error("give one profile (or --runs for several)")
                 profile, plant = unwrap(_read_json(args.profiles[0]), key["profile"])
                 report = score(key, profile, brief_text, validator)
-                ok = report["clean"]
                 if plant is not None:
-                    report["planted"] = against_plant(report, plant)
-                    ok = report["planted"]["as_expected"]
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, BrokenKey, BadPlant, cpc.SchemaError) as exc:
-        print(json.dumps({"ok": False, "error": f"cannot run: {exc}"}, ensure_ascii=False))
+                    report["structural_anchor"]["planted"] = against_plant(report, plant)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, BrokenKey, BadPlant, BadGrade, cpc.SchemaError) as exc:
+        print(json.dumps({**_blocked("error", {}, None), "error": f"cannot run: {exc}"}, ensure_ascii=False))
         return 2
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    return 0 if ok else 1
+    return 1
 
 
 if __name__ == "__main__":

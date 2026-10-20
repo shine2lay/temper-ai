@@ -75,7 +75,7 @@ def _checked(key, profile, brief):
 
 def _diagnostics(key, profile, brief):
     # Inspect only specific existing diagnostics, never overall semantic acceptance.
-    return {(f["reason"], f["ref"]) for f in cps.score(key, profile, brief, VALIDATOR)["failures"]}
+    return {(f["reason"], f["ref"]) for f in cps.score(key, profile, brief, VALIDATOR)["structural_anchor"]["failures"]}
 
 
 @pytest.mark.parametrize("case_id", [K06, K07])

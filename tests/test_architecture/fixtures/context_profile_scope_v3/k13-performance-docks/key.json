@@ -1,0 +1,137 @@
+{
+  "key": "context_profile_key/v2",
+  "case_id": "k13-performance-docks",
+  "category": "performance_critical",
+  "tests": "Existing arrival board under rapid proven demand. Contractual latency, freshness and ingestion capacity are targets and constraints, not goals. A partner API and vendor scales are external. The supplier's capacity and a future integration are traps; retry ordering is a material unknown.",
+  "brief_sha256": "2115fe549d42ed15ea352b4d7d8a4a0865a9d13d8bde52950ee1dae7bc2e7a2a",
+  "maturity": {"accepted": [{"stage": "growing", "quotes": ["The number of paying warehouses has tripled in the last year", "Demand is proven; keeping up with new sites is now stretching both our event processing and our small operations team"]}]},
+  "sensitivity": {"accepted": ["moderate"]},
+  "facts": [
+    {"id": "F1", "anchors": ["Twelve warehouses use it daily and pay for it"], "primary": "maturity.evidence"},
+    {"id": "F2", "anchors": ["paying warehouses has tripled in the last year"], "primary": "maturity.evidence"},
+    {"id": "F3", "anchors": ["The current system is a Go worker"], "primary": "current_system"},
+    {"id": "F4", "anchors": ["Go worker with PostgreSQL on a single virtual machine"], "primary": "current_system.items"},
+    {"id": "F5", "anchors": ["A browser board polls the worker"], "primary": "current_system.items"},
+    {"id": "F6", "anchors": ["gate events from the CourierMesh partner API"], "primary": "external_systems"},
+    {"id": "F7", "anchors": ["weight readings from vendor-owned DockSense scales"], "primary": "external_systems"},
+    {"id": "F8", "anchors": ["Normal traffic is 120 events per second"], "primary": "workload.observed", "value": 120},
+    {"id": "F9", "anchors": ["peaks at 400 events per second for ten minutes"], "primary": "workload.peaks", "value": 400},
+    {"id": "F10", "anchors": ["another six are contracted to start next quarter"], "primary": "workload.projected", "value": 6},
+    {"id": "F11", "anchors": ["p95 response time to stay below 250 milliseconds"], "primary": "performance.targets", "value": 250},
+    {"id": "F12", "anchors": ["displayed gate status to be at most 3 seconds behind receipt of an event"], "primary": "performance.targets", "value": 3},
+    {"id": "F13", "anchors": ["sustained ingestion of 400 events per second during that burst"], "primary": "performance.targets", "value": 400},
+    {"id": "F14", "anchors": ["99.9% monthly availability"], "primary": "reliability.availability", "value": 99.9},
+    {"id": "F15", "anchors": ["An event we have acknowledged must never be lost"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F16", "anchors": ["service must recover within 30 minutes"], "primary": "reliability.recovery_time", "value": 30},
+    {"id": "F17", "anchors": ["driver badge identifiers and carrier references"], "primary": "privacy.data_categories"},
+    {"id": "F18", "anchors": ["retain gate records for 30 days, then delete them"], "primary": "privacy.retention", "value": 30},
+    {"id": "F19", "anchors": ["No records leave the dispatch operation"], "primary": "privacy.sharing"},
+    {"id": "F20", "anchors": ["Six engineers"], "primary": "team.size", "value": 6},
+    {"id": "F21", "anchors": ["Six engineers know Go and PostgreSQL"], "primary": "team.skills"},
+    {"id": "F22", "anchors": ["Two rotate on the overnight pager"], "primary": "team.operating_capacity", "value": 2},
+    {"id": "F23", "anchors": ["$80,000 to change the system"], "primary": "budget.build", "value": 80000},
+    {"id": "F24", "anchors": ["$2,200 monthly hosting cap"], "primary": "budget.run_monthly", "value": 2200},
+    {"id": "F25", "anchors": ["keep the existing scanner certificates valid through the migration"], "primary": "security.requirements"}
+  ],
+  "constraints": [
+    {"id": "C1", "anchors": ["p95 response time to stay below 250 milliseconds"]},
+    {"id": "C2", "anchors": ["displayed gate status to be at most 3 seconds behind receipt of an event"]},
+    {"id": "C3", "anchors": ["sustained ingestion of 400 events per second during that burst"]},
+    {"id": "C4", "anchors": ["99.9% monthly availability"]},
+    {"id": "C5", "anchors": ["An event we have acknowledged must never be lost"]},
+    {"id": "C6", "anchors": ["service must recover within 30 minutes"]},
+    {"id": "C7", "anchors": ["$80,000 to change the system"]},
+    {"id": "C8", "anchors": ["$2,200 monthly hosting cap"]},
+    {"id": "C9", "anchors": ["keep the existing scanner certificates valid through the migration"]}
+  ],
+  "goals": [
+    {"id": "G1", "anchors": ["make the board fast enough for dispatchers"], "criterion": "performance", "rank": 1},
+    {"id": "G2", "anchors": ["use less compute per event"], "criterion": "efficiency", "rank": 2},
+    {"id": "G3", "anchors": ["make adding a partner less work"], "criterion": "change_cost", "rank": 3}
+  ],
+  "goal_order": {"accepted_top3": [["performance", "efficiency", "change_cost"]]},
+  "unknowns": [{"id": "U1", "terms": [["couriermesh", "retry", "retries"], ["order", "ordering"]]}],
+  "traps": [
+    {"id": "T1", "anchors": ["20,000 events per second"], "reason": "not_this_product", "forbidden_in": ["workload.observed", "workload.projected", "performance.targets", "constraints"]},
+    {"id": "T2", "anchors": ["RailVista integration"], "reason": "future_scope", "forbidden_in": ["external_systems", "constraints", "goals"]}
+  ],
+  "fields_unknown": [
+    {"field": "privacy.jurisdictions_or_rules", "open_anchors": [], "not_material_reason": "No jurisdiction or data rule is stated; operational retention and sharing are known."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack or incident is stated."},
+    {"field": "security.compliance", "open_anchors": [], "not_material_reason": "No audit or compliance regime is stated; contractual performance and scanner credentials are separately constraints."}
+  ],
+  "profile": {
+    "contract": "context_profile/v2", "brief_sha256": "2115fe549d42ed15ea352b4d7d8a4a0865a9d13d8bde52950ee1dae7bc2e7a2a",
+    "product": {"summary": "Arrival board for warehouse dispatchers", "source": {"kind": "quote", "quote": "DockPulse shows warehouse dispatchers which trailers have reached a loading door"}},
+    "maturity": {"stage": "growing", "evidence": [
+      {"value": "paying daily use at twelve warehouses", "source": {"kind": "quote", "quote": "Twelve warehouses use it daily and pay for it"}},
+      {"value": "paying sites tripled in the last year", "source": {"kind": "quote", "quote": "The number of paying warehouses has tripled in the last year"}}
+    ]},
+    "current_system": {"state": "exists", "source": {"kind": "quote", "quote": "The current system is a Go worker"}, "items": [
+      {"kind": "stack", "text": "Go worker and PostgreSQL on a single virtual machine", "source": {"kind": "quote", "quote": "Go worker with PostgreSQL on a single virtual machine"}},
+      {"kind": "client", "text": "browser board polls the worker", "source": {"kind": "quote", "quote": "A browser board polls the worker"}}
+    ]},
+    "external_systems": [
+      {"name": "CourierMesh", "role": "partner API supplies gate events", "source": {"kind": "quote", "quote": "gate events from the CourierMesh partner API"}},
+      {"name": "DockSense scales", "role": "vendor-owned devices supply weight readings", "source": {"kind": "quote", "quote": "weight readings from vendor-owned DockSense scales"}}
+    ],
+    "performance": {"targets": [
+      {"what": "board API p95 response time below", "value": 250, "unit": "milliseconds", "source": {"kind": "quote", "quote": "p95 response time to stay below 250 milliseconds"}},
+      {"what": "displayed gate status age at most", "value": 3, "unit": "seconds after receipt", "source": {"kind": "quote", "quote": "displayed gate status to be at most 3 seconds behind receipt of an event"}},
+      {"what": "sustained ingestion during burst", "value": 400, "unit": "events per second", "source": {"kind": "quote", "quote": "sustained ingestion of 400 events per second during that burst"}}
+    ]},
+    "workload": {
+      "observed": [{"what": "normal event traffic", "value": 120, "unit": "events per second", "source": {"kind": "quote", "quote": "Normal traffic is 120 events per second"}}],
+      "projected": [{"what": "contracted new warehouses next quarter", "value": 6, "unit": "warehouses", "source": {"kind": "quote", "quote": "another six are contracted to start next quarter"}}],
+      "peaks": [{"what": "shift change for ten minutes", "value": 400, "unit": "events per second", "source": {"kind": "quote", "quote": "peaks at 400 events per second for ten minutes"}}]
+    },
+    "reliability": {
+      "availability": {"value": "99.9% monthly availability", "source": {"kind": "quote", "quote": "99.9% monthly availability"}},
+      "data_loss_tolerance": {"value": "acknowledged events never lost", "source": {"kind": "quote", "quote": "An event we have acknowledged must never be lost"}},
+      "recovery_time": {"value": "recover within 30 minutes", "source": {"kind": "quote", "quote": "service must recover within 30 minutes"}}
+    },
+    "privacy": {
+      "data_categories": [{"value": "driver badge identifiers and carrier references", "source": {"kind": "quote", "quote": "driver badge identifiers and carrier references"}}],
+      "sensitivity": {"level": "moderate", "source": {"kind": "assumption", "why": "Badge-linked arrival records are personal movement records."}},
+      "retention": [{"value": "delete after 30 days", "source": {"kind": "quote", "quote": "retain gate records for 30 days, then delete them"}}],
+      "sharing": [{"value": "no records outside dispatch", "source": {"kind": "quote", "quote": "No records leave the dispatch operation"}}],
+      "jurisdictions_or_rules": []
+    },
+    "security": {
+      "requirements": [{"value": "keep existing scanner certificates valid through migration", "source": {"kind": "quote", "quote": "keep the existing scanner certificates valid through the migration"}}],
+      "threats": [], "compliance": []
+    },
+    "team": {
+      "size": {"value": "six engineers", "source": {"kind": "quote", "quote": "Six engineers"}},
+      "skills": [{"value": "Go and PostgreSQL", "source": {"kind": "quote", "quote": "Six engineers know Go and PostgreSQL"}}],
+      "operating_capacity": [{"value": "two on overnight pager rotation", "source": {"kind": "quote", "quote": "Two rotate on the overnight pager"}}]
+    },
+    "budget": {
+      "build": {"value": "$80,000 to change the system", "source": {"kind": "quote", "quote": "$80,000 to change the system"}},
+      "run_monthly": {"value": "$2,200 monthly cap", "source": {"kind": "quote", "quote": "$2,200 monthly hosting cap"}}
+    },
+    "constraints": [
+      {"id": "C1", "text": "API p95 below 250 milliseconds", "source": {"kind": "quote", "quote": "p95 response time to stay below 250 milliseconds"}},
+      {"id": "C2", "text": "gate status at most 3 seconds behind receipt", "source": {"kind": "quote", "quote": "displayed gate status to be at most 3 seconds behind receipt of an event"}},
+      {"id": "C3", "text": "sustain 400 events per second in the burst", "source": {"kind": "quote", "quote": "sustained ingestion of 400 events per second during that burst"}},
+      {"id": "C4", "text": "99.9% monthly availability", "source": {"kind": "quote", "quote": "99.9% monthly availability"}},
+      {"id": "C5", "text": "never lose acknowledged events", "source": {"kind": "quote", "quote": "An event we have acknowledged must never be lost"}},
+      {"id": "C6", "text": "recover within 30 minutes", "source": {"kind": "quote", "quote": "service must recover within 30 minutes"}},
+      {"id": "C7", "text": "build within $80,000", "source": {"kind": "quote", "quote": "$80,000 to change the system"}},
+      {"id": "C8", "text": "hosting cap $2,200 per month", "source": {"kind": "quote", "quote": "$2,200 monthly hosting cap"}},
+      {"id": "C9", "text": "preserve scanner certificates through migration", "source": {"kind": "quote", "quote": "keep the existing scanner certificates valid through the migration"}}
+    ],
+    "goals": [
+      {"id": "G1", "criterion": "performance", "rank": 1, "note": "fast board above the mandatory floor", "source": {"kind": "quote", "quote": "make the board fast enough for dispatchers"}},
+      {"id": "G2", "criterion": "efficiency", "rank": 2, "note": "less compute per event", "source": {"kind": "quote", "quote": "use less compute per event"}},
+      {"id": "G3", "criterion": "change_cost", "rank": 3, "note": "less work to add a partner", "source": {"kind": "quote", "quote": "make adding a partner less work"}}
+    ],
+    "unknowns": [
+      {"question": "Can CourierMesh retries arrive out of order?", "why_it_matters": "Ordering changes deduplication and buffering.", "decisions_affected": ["event processing"], "material": true, "field": "external_systems"},
+      {"question": "Is a jurisdiction or data rule specified?", "why_it_matters": "No rule is stated; operational sharing and retention are known.", "decisions_affected": ["data location"], "material": false, "field": "privacy.jurisdictions_or_rules"},
+      {"question": "Is an attack specified?", "why_it_matters": "None is stated.", "decisions_affected": ["threat controls"], "material": false, "field": "security.threats"},
+      {"question": "Is there a compliance regime?", "why_it_matters": "No audit regime is stated; contractual performance and credentials are already constraints.", "decisions_affected": ["audit"], "material": false, "field": "security.compliance"}
+    ],
+    "assumptions": []
+  }
+}

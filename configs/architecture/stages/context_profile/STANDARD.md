@@ -4,6 +4,12 @@ System architecture, queue #122, 2026-10-20. Initiative system-arch-in-temper, p
 Accountable lead: architecture. Frozen before any model stage is built: what a great "product context and
 priorities" stage must produce, and how it is measured. Nothing here runs a model.
 
+**Grading-output scope correction (#134, H-CTX-4):** output `context_profile_grade/v3` reports structural/anchor
+diagnostics separately from assertion meaning. Meaning is NOT_MEASURED and final acceptance BLOCKED in every
+mode. The B0–B10 rows and ceilings below remain unchanged requirements, not claims that this implementation
+measures them all. Historical hypotheses below retain their original predictions and misses. See
+[SEMANTIC-GRADE.md](SEMANTIC-GRADE.md) for the exact output mapping and proposed, non-operational evidence boundary.
+
 The stage reads one product brief and returns a **context profile**: lifecycle maturity, current and
 external systems, workload, performance, reliability, privacy, security, team, budget, hard constraints,
 ranked goals, unknowns and assumptions, every item
@@ -224,11 +230,15 @@ contains. Duplicate mentions can be separate items; padding one item cannot buy 
 an augmenting path may move it to another item. If there are too few items, later facts in key order are
 left unmatched. This is deterministic and finds maximum cardinality, not a greedy first-hit count.
 
-- `--case DIR PROFILE` one profile; `--case DIR --self` the key's reference profile (must score 100%);
-  `--case DIR --runs P1 P2 P3` several runs of one case, each scored, then compared (B5);
-  `--pool S1 ... SN` one run's case scores pooled against the bars. Every mode lints the key first and
-  refuses a broken key (anchor not in the brief, wrong brief hash, duplicate ids, a fact allowed in a field
-  the key says is open).
+- `--case DIR PROFILE` one profile; `--case DIR --self` the key's reference profile (structural/anchor diagnostic
+  percent only); `--case DIR --runs P1 P2 P3` several runs compared for structural/anchor agreement, not B5;
+  `--pool S1 ... SN` one run's stored v3 profile diagnostics pooled as proxies, not final bar acceptance.
+  Case modes lint the key first and refuse a broken key (anchor not in the brief, wrong brief hash, duplicate
+  ids, a fact allowed in a field the key says is open). Pool mode requires complete v3 diagnostic inputs.
+  Every result has `status: BLOCKED`, `semantic_status: NOT_MEASURED`, null semantic/overall percentages,
+  `clean: false` and `meets_bars: false`. Completed grades exit 1, unusable inputs 2; there is no scorer exit 0.
+  B0 is independently measured by the checker; other complete bars remain NOT_MEASURED, with real label,
+  marker, anchor and ordering observations retained separately. No positive meaning receipt or override exists.
 
 | Reason | Means |
 |---|---|
@@ -254,9 +264,12 @@ a fact), `future_scope` (a later idea used as a current need), `superseded` (a f
 
 **Invented** = checker `quote_not_in_brief`, `number_not_in_quote`, `observed_not_quoted` or
 `system_name_not_in_quote`, plus
-`unsupported_fill`, `guessed_unknown` and every trap hit. `score_pct` is the mean of nine rates (facts,
-unknowns, constraints, goals, goal order, maturity, sensitivity, open fields kept open, no invention), for
-tracking only; the bars decide.
+`unsupported_fill`, `guessed_unknown` and every trap hit. This frozen signal definition is not exhaustive
+assertion-meaning validation: zero signals does not establish semantic B1. The original mean of nine rates
+(facts, unknowns, constraints, goals, goal order, maturity, sensitivity, open fields kept open, no invention)
+is now `structural_anchor.diagnostic_score_pct`, for proxy tracking only; `proxy_rates` and the original
+findings are in that same explicit namespace. Top-level `score_pct` and `semantic_score_pct` are null.
+Quote/number/field membership does not prove meaning; green proxies never discharge missing semantic bars.
 
 **Key format** (`"key": "context_profile_key/v2"`): `case_id`, `category`, `tests` (what the case tests),
 `brief_sha256`; `maturity.accepted[]` `{stage, quotes[]}` (each accepted stage has supporting brief quotes),
@@ -278,7 +291,8 @@ They invite review, not an automatic failure or a lower bar.
 **Planted profile format** (`"planted": "context_profile_planted/v2"`): `plant_id`, `case_id`, `fault`,
 `expect[]` `{reason, ref}` (every failure, no more or fewer), and either a full `profile` or `edits[]`
 `{op: set|remove|append, path: [key or index, ...], value?}` applied to the reference profile. The CLI exits
-0 when the bad profile fails exactly as expected; this is a plant-test pass, not a clean profile.
+1 even when the bad profile produces exactly the expected findings. The comparison remains available as
+`structural_anchor.planted.as_expected`; it is a diagnostic expectation match, not final profile acceptance.
 
 ## Bars
 
@@ -308,7 +322,8 @@ later option (the mirror of B4).
 Synthetic briefs, no real customer data or secrets. The case table lives only in
 `fixtures/context_profile/known/README.md`, not in this standard or the schema: stage and held-out writers
 may read these two documents without seeing known-case answers. Known keys predate any model run and must
-pass the checker and score 100% against themselves.
+pass the checker and achieve 100% structural/anchor diagnostic arithmetic against themselves. That does not
+validate their meaning or their own independent correctness, and cannot grant final acceptance.
 
 ## Changes from the plan's contract sketch, and why
 

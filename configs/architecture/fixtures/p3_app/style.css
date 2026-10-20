@@ -1,0 +1,14 @@
+body { font-family: system-ui, sans-serif; font-size: 1rem; line-height: 1.45; margin: 0; }
+main { max-width: 40rem; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
+h1 { font-size: 1.5rem; }
+input, button { font: inherit; min-height: 44px; }
+#banner { border: 2px solid #a00; padding: 0.5rem; }
+.msg:empty, .hint:empty { display: none; }
+.msg { color: #a00; font-size: 0.875rem; }
+.hint { font-size: 0.875rem; }
+#list { list-style: none; padding: 0; }
+#list li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.25rem 0; }
+.item-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; flex: 1 1 10rem; }
+.item-by { font-size: 0.875rem; }
+li.done .item-text { text-decoration: line-through; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

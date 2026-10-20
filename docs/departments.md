@@ -518,6 +518,8 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/bin/first_app_check.py` | script |
 | `architecture/fixtures/first_app/` | checker controls (synthetic page) |
 | `architecture/fixtures/first_app_reworded/` | checker controls (the synthetic page reworded, with its profile) |
+| `architecture/bin/first_app_p3.py` | script (first_app_check's Project 3 journey: WebKit phone, exact text, kill and start) |
+| `architecture/fixtures/p3_app/` | checker controls (synthetic Project-3-style page, with its plants) |
 | `architecture/stages/context_profile/STANDARD.md` | stage standard (context profile: bars, contract, cases) |
 | `architecture/stages/context_profile/contract.v1.schema.json` | contract (JSON Schema) |
 | `architecture/bin/context_profile_check.py` | script (contract checker) |

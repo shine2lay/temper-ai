@@ -19,6 +19,13 @@
 #   mode=live with a profile holding "journey": "shared": three people (A, B, C) in separate browser contexts,
 #     the host (Ops) stopping and starting the app at rows R-1, D-1 and D-5: the check writes
 #     check/host/WAITING-<row>.json and waits for check/host/<row>.json. Up to 3500 s; the first app's modes keep 840 s.
+# Project 3 journey (Architecture queue #124, 2026-10-20; rows PENDING-SPEC until QA's kit is frozen): by
+# configs/architecture/bin/first_app_p3.py (loaded only for it): Chromium 1280x800 contexts A, B and WebKit phone
+# contexts P, Q (390x844, touch; the second browser service given by its --browser-webkit, default
+# http://playwright-mcp-webkit:8931/mcp; not answering = the WebKit rows NOT RUN, never PASS), exact typed text,
+# the app killed and started again (host action "kill"; receipts must carry exit_code), two adds in the same tick.
+#   mode=controls_p3: its controls on a synthetic Project-3-style page and server (fixtures/p3_app).
+#   mode=live with a profile holding "journey_p3": the served build. Up to 3500 s.
 # Writes check/ in the workspace: receipt.json + summary.md + after-reload.png (live), or one folder per
 # control plus controls.json. A FAIL, REFUSED or BLOCKED verdict is a result, not a step failure: the step
 # fails only when the checker gives no result at all.
@@ -43,11 +50,17 @@ agent:
 
     mode = (os.environ.get("{{ mode | env }}") or "").strip()
     profile = os.environ.get("{{ profile | env }}") or ""
-    if mode not in ("controls", "live", "controls_shared"):
-        raise SystemExit("first_app_check needs mode = controls, live or controls_shared, got %r" % mode)
+    if mode not in ("controls", "live", "controls_shared", "controls_p3"):
+        raise SystemExit("first_app_check needs mode = controls, live, controls_shared or controls_p3, got %r" % mode)
     if profile.strip() and mode != "live":
         raise SystemExit("first_app_check: profile is for mode=live; the controls bring their own")
+    try:
+        p3 = mode == "controls_p3" or "journey_p3" in json.loads(profile)
+    except (ValueError, TypeError):
+        p3 = False
     script = "/app/configs/architecture/bin/first_app_check.py"
+    if p3:
+        script = "/app/configs/architecture/bin/first_app_p3.py"
     cmd = [sys.executable, "-u", script, "--mode", mode, "--out", "check"]
     if profile.strip():
         cmd += ["--profile", profile]
@@ -55,17 +68,17 @@ agent:
         shared = mode == "controls_shared" or "journey" in json.loads(profile)
     except (ValueError, TypeError):
         shared = False
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=3500 if shared else 840)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=3500 if shared or p3 else 840)
     log = [x for x in res.stdout.strip().splitlines() if not x.startswith("{")]
     sys.stderr.write("\n".join(log)[-40000:] + "\n" + res.stderr[-20000:])
     with open("check/run.log", "w", encoding="utf-8") as f:
         f.write(res.stdout + res.stderr)
     lines = [x for x in res.stdout.strip().splitlines() if x.startswith("{")]
     if not lines:
-        raise SystemExit("first_app_check.py gave no result (exit %d)" % res.returncode)
+        raise SystemExit("%s gave no result (exit %d)" % (os.path.basename(script), res.returncode))
     out = json.loads(lines[-1])
     out.update({"status": "completed", "exit_code": res.returncode, "workspace": os.getcwd(),
                 "summary_path": "check/summary.md" if mode == "live" else "check/controls.json"})
-    out.setdefault("journey", "shared" if shared else "first_app")
+    out.setdefault("journey", "p3" if p3 else "shared" if shared else "first_app")
     print(json.dumps(out))
     PYEOF

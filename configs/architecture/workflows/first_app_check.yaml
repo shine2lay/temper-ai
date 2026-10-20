@@ -25,10 +25,17 @@ workflow:
     check/host/). mode=controls_shared proves it on a synthetic shared server first (18 controls);
     mode=live with a profile holding "journey": "shared" checks the served app (profile form:
     first_app_check.py --print-shared-profile). Without a journey key nothing changes.
+    Project 3 journey (queue #124, 2026-10-20; rows PENDING-SPEC until QA freezes its kit):
+    first_app_p3.py runs Chromium 1280x800 contexts and WebKit phone contexts (390x844, touch, a
+    second browser service; if it does not answer the WebKit rows are NOT RUN, never PASS), typed
+    non-English text read back exactly after a reload, right-to-left items rendered rtl, the app
+    killed and started again by the host (receipts must carry exit_code), two adds in the same tick.
+    mode=controls_p3 proves it on a synthetic Project-3-style page and server; mode=live with a
+    profile holding "journey_p3" checks a served build (form: first_app_p3.py --print-p3-profile).
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
-    mode: {type: string, required: true}      # controls | live | controls_shared
+    mode: {type: string, required: true}      # controls | live | controls_shared | controls_p3
     profile: {type: string, required: false}  # live only; left out = the first app, exactly as before
   outputs:
     mode: check.structured.mode
@@ -40,6 +47,9 @@ workflow:
     profile: check.structured.profile
     all_ok: check.structured.all_ok
     verdicts: check.structured.verdicts
+    statuses: check.structured.statuses
+    not_run: check.structured.not_run
+    webkit: check.structured.webkit
     summary_path: check.structured.summary_path
     workspace: check.structured.workspace
     journey: check.structured.journey

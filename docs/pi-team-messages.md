@@ -8,7 +8,7 @@ A send names a reachable member, a kind (`work_request`, `reply`, `info`) and bo
 
 A send is fenced by run, host, participant, session, turn and epoch. A client call id makes it idempotent: repeating the same call returns its first answer; reusing the id for different content is refused. Identity-like fields, credentials and forged claims are rejected and audited. The host never trusts a text prefix as authorization.
 
-Messages and acts are held until the sending turn settles. A completed or accepted turn releases them in order. A failed, cut-off, superseded or cancelled turn voids outgoing sends and acts; a retry does not leak them. A pending message wakes an idle recipient. Member waits hold only that member, while unrelated senders and recipients continue working.
+Messages and acts are held until the sending turn settles. A completed or accepted turn releases them in order. A failed, cut-off, superseded or cancelled turn voids outgoing sends and acts; a retry does not leak them. A pending message wakes an idle recipient. Member waits hold only that member, while unrelated senders and recipients continue working. So a member gets its messages in release order: each handover (a claim's batch, or one mid-turn hand-in) takes everything pending for it in seq order, and one sender's messages stay in order, but no order is promised between overlapping turns' sends: a message held with a long turn can arrive after a later one whose turn settled first.
 
 ## Inboxes and mid-turn delivery
 

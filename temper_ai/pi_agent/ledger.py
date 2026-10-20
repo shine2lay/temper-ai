@@ -14,12 +14,17 @@ Identities kept apart on purpose:
 * message -- one row per message, with one id from arrival to use (R2 B1). A member's message
   is keyed by (run, sender, client message id) and carries a digest of its content: the same
   send again returns the original, a different one under the same key is refused (B3).
-* turn -- one row per Pi prompt cycle. It takes the member's pending messages as one ordered
-  batch at a turn boundary (later ones wait for the next); what it sends is held with it and
-  released only when it settles (B4). At most one unsettled turn per team, enforced by the
-  database (``claim_key``), and every write of a turn's owner is fenced by the turn's epoch,
-  so a second process can never run or finish the same turn (B6, A3's lease).
-* wait -- one owner question at a time per team: while any is open no turn starts (B6, B11).
+* turn -- one row per Pi prompt cycle. It takes all the member's pending messages as one
+  ordered batch at a turn boundary; in a free-flowing team ones released while it runs are
+  handed in (FLOW), otherwise they wait for the next. What it sends is held with it and
+  released only when it settles (B4), so a member gets its messages in release order:
+  overlapping turns' sends keep no order between them. At most one unsettled turn per member,
+  enforced by the database (``claim_key``); a round team's claim also waits until none of the
+  team's turns is unsettled. Every write of a turn's owner is fenced by the turn's epoch, so a
+  second process can never run or finish the same turn (B6, A3's lease).
+* wait -- an owner question. In a round team, one at a time: while any is open no turn starts
+  (B6, B11). In a free-flowing team a member's own wait holds only that member, and a run-level
+  hold (``RUN_HOLD_KINDS``) holds every member.
 * review -- the leader's review record (#38 writes it; read here for the quiet-team check).
 * act -- one review-tool call of the leader loop (#38), counted only once its turn settled.
 

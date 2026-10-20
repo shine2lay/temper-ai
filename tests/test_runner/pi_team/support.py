@@ -370,16 +370,10 @@ def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
             assert m["state"] == "undelivered", ("I4", m["seq"], t["state"], m["state"])
             assert m["undelivered_reason"] in reasons[t["state"]], ("I4", m["undelivered_reason"])
 
-    # I5 per member, turns take messages in seq order, never above the claim's cutoff.
-    for t in turns.values():
-        seqs = list(t["input_seqs"] or [])
-        assert seqs == sorted(seqs), ("I5 batch order", t["turn_id"])
-        assert t["cut_seq"] is not None and all(s <= t["cut_seq"] for s in seqs), "I5 cutoff"
-    for pid in parts:
-        mine = sorted((t for t in turns.values() if t["participant_id"] == pid
-                       and t["state"] != "superseded"), key=lambda t: t["turn_no"])
-        flat = [s for t in mine for s in (t["input_seqs"] or [])]
-        assert flat == sorted(flat) and len(flat) == len(set(flat)), ("I5 order", pid, flat)
+    # I5 a member gets its messages in release order: each handover takes everything pending
+    # for it then, in seq order; one sender's messages stay in order; a claim never goes
+    # above its cutoff (check_release_order).
+    check_release_order(parts, turns, msgs, team_events(led, run_id, host))
 
     # I6 nothing crosses runs or teams.
     for m in msgs:
@@ -425,3 +419,131 @@ def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
                                    if m["kind"] == "view").items() if n > 1]
     assert not twice, ("A2 a view twice", twice)
     _ = by_seq
+
+
+def team_events(led: Ledger, run_id: str, host: str = HOST) -> list[dict]:
+    """The team's whole event feed, oldest first by ``pi_team_events.seq`` (no page limit)."""
+    from temper_ai.pi_agent.ledger import events
+
+    with led.engine.connect() as conn:
+        q = (sa.select(events).where(events.c.run_id == run_id, events.c.host_path == host)
+             .order_by(events.c.seq))
+        return [dict(r) for r in conn.execute(q).mappings()]
+
+
+def check_release_order(parts: dict[str, dict], turns: dict[str, dict], msgs: list[dict],
+                        events: list[dict]) -> None:
+    """I5 (Architecture's ruling rm-1deb65bf): a member gets its messages in release order.
+
+    A message is held until its sending turn settles, and every handover takes all that is
+    pending, so no order is promised between overlapping turns' sends: a member may get a
+    lower seq after a higher one. Checked per member by replaying the team's event feed in
+    ``pi_team_events.seq`` order -- written in the same team transactions as the rows: a
+    ``message`` event when a message becomes pending, ``turn_start`` (``messages=N``, the
+    claim's batch) at a claim, one ``handed_in`` per message of a mid-turn hand-in -- never by
+    ``released_at`` or ``started_at``, wall-clock strings two of which can be equal. A
+    handover is a claim's batch or one hand-in:
+
+    1. it takes every message pending for the member at that moment, in seq order; a
+       retry's batch is exactly the ids its superseded turn gave back;
+    2. nothing pending is skipped: what was pending at a handover never arrives at a later
+       one. A message a requeue or an unhand put back is pending from then (both happen
+       as the member's turn ends, so before its next claim);
+    3. one sender's messages reach the member in seq order (an unhand that breaks this is
+       a finding, not a reason to loosen it);
+    4. a claim's batch never goes above its ``cut_seq``; a hand-in is not bound by it.
+
+    Read from the feed as it is: consecutive ``handed_in`` events of one turn are one hand-in
+    (a later one needs a message released in between, whose event parts them). A round team's
+    review views are written pending with no ``message`` event of their own (team_leader
+    ``_collect``), so a view counts as pending from the first handover that takes it; any other
+    message handed over without one fails.
+    """
+    by_id = {m["message_id"]: m for m in msgs}
+    by_seq = {m["seq"]: m for m in msgs}
+    evented = {by_id[e["data"]["message_id"]]["seq"] for e in events if e["kind"] == "message"}
+    arrived: set[int] = set()  # every seq handed over so far
+    handed: dict[str, list[int]] = defaultdict(list)  # turn -> every seq handed into it
+    starts = Counter(e["data"]["turn_id"] for e in events if e["kind"] == "turn_start")
+    for e in events:
+        if e["kind"] == "handed_in":
+            handed[e["data"]["turn_id"]].append(by_id[e["data"]["message_id"]]["seq"])
+    assert all(starts[tid] == 1 for tid in turns), ("I5 one turn_start per turn", starts)
+    claimed = {tid: [s for s in t["input_seqs"] or [] if s not in set(handed[tid])]
+               for tid, t in turns.items()}
+
+    pending: dict[str, set[int]] = defaultdict(set)  # member -> seqs pending for it now
+    got: dict[tuple, set[int]] = defaultdict(set)  # (member, sender) -> seqs it has now
+    gave_back: dict[str, list[int]] = {}  # superseded turn -> the ids it gave back
+    ended: set[str] = set()  # turns whose ending (unhand, requeue) is applied
+
+    def sender(seq: int) -> tuple:
+        return by_seq[seq]["sender_kind"], by_seq[seq]["sender"]
+
+    def put_back(pid: str, seqs: list[int]) -> None:
+        for s in seqs:
+            pending[pid].add(s)
+            got[(pid, *sender(s))].discard(s)
+
+    def end_turns_before(t: dict) -> None:
+        """The member's earlier turns ended before this claim: what each handed in but its
+        session never showed (unhand), and all a superseded one took (requeue, owner's
+        retry), are pending again."""
+        pid = t["participant_id"]
+        for p in sorted((p for p in turns.values() if p["participant_id"] == pid
+                         and p["turn_no"] < t["turn_no"] and p["turn_id"] not in ended),
+                        key=lambda p: p["turn_no"]):
+            ended.add(p["turn_id"])
+            kept = set(p["input_seqs"] or [])
+            put_back(pid, [s for s in handed[p["turn_id"]] if s not in kept])
+            if p["state"] == "superseded":
+                put_back(pid, sorted(kept))
+                gave_back[p["turn_id"]] = sorted(kept)
+
+    def hand_over(t: dict, seqs: list[int], retry: list[int] | None) -> None:
+        pid, tid = t["participant_id"], t["turn_id"]
+        who = parts[pid]["member"] if pid in parts else pid
+        for s in seqs:
+            if s not in evented and s not in arrived:
+                assert by_seq[s]["kind"] == "view", ("I5 no release event", who, tid, s)
+                pending[pid].add(s)
+        assert seqs == sorted(set(seqs)), ("I5.1 batch order", who, tid, seqs)
+        early = [s for s in seqs if s not in pending[pid]]
+        assert not early, ("I5.1 not pending", who, tid, early)
+        if retry:
+            assert seqs == retry, ("I5.1 retry batch", who, tid, seqs, retry)
+        else:
+            skipped = sorted(pending[pid] - set(seqs))
+            assert not skipped, ("I5.2 skip", who, tid, skipped)
+        for s in seqs:
+            mine = got[(pid, *sender(s))]
+            later = sorted(g for g in mine if g > s)
+            assert not later, ("I5.3 sender order", who, sender(s), s, later)
+            pending[pid].discard(s)
+            mine.add(s)
+            arrived.add(s)
+
+    hand_in: tuple[str, list[int]] | None = None  # the hand-in being read: (turn, seqs)
+    for e in [*events, None]:
+        if hand_in is not None and (e is None or e["kind"] != "handed_in"
+                                    or e["data"]["turn_id"] != hand_in[0]):
+            hand_over(turns[hand_in[0]], hand_in[1], None)
+            hand_in = None
+        if e is None:
+            break
+        if e["kind"] == "message":
+            m = by_id[e["data"]["message_id"]]
+            if m["to_participant"]:
+                pending[m["to_participant"]].add(m["seq"])
+        elif e["kind"] == "turn_start":
+            t = turns[e["data"]["turn_id"]]
+            end_turns_before(t)
+            batch = claimed[t["turn_id"]]
+            assert len(batch) == e["data"]["messages"], ("I5 claim size", t["turn_id"], batch)
+            assert not batch or (t["cut_seq"] is not None and batch[-1] <= t["cut_seq"]), \
+                ("I5.4 cutoff", t["turn_id"], batch, t["cut_seq"])
+            hand_over(t, batch, gave_back.get(t["retry_of"] or ""))
+        elif e["kind"] == "handed_in":
+            seq = by_id[e["data"]["message_id"]]["seq"]
+            hand_in = (hand_in or (e["data"]["turn_id"], []))
+            hand_in[1].append(seq)

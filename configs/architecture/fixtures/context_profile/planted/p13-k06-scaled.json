@@ -1,0 +1,10 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p13-k06-scaled", "case_id": "k06-large-simple-transit",
+  "fault": "The removed maturity label scaled is not a lifecycle stage, irrespective of workload or operations.",
+  "expect": [
+    {"reason": "checker:bad_enum", "ref": "$.maturity.stage"},
+    {"reason": "maturity_mismatch", "ref": "maturity.stage"}
+  ],
+  "edits": [{"op": "set", "path": ["maturity", "stage"], "value": "scaled"}]
+}

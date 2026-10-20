@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a context profile against contract v1 and its brief (System architecture, queue #122, 2026-10-20).
+"""Check a context profile against contract v2 and its brief (System architecture, queue #122; v2 #127, 2026-10-20).
 
 The context stage (configs/architecture/stages/context_profile/STANDARD.md) turns a product brief into a
 context profile that every later architecture stage reuses. This script is the stage's deterministic gate,
@@ -10,14 +10,17 @@ that is really in the brief?
   context_profile_check.py --brief brief.md key.json       a known case's key: its reference profile
 
 Reasons it reports (STANDARD.md, "The checker"):
-  missing_section, bad_enum, schema    contract.v1.schema.json, by a small validator that knows only the
+  missing_section, bad_enum, schema    contract.v2.schema.json, by a small validator that knows only the
                                        keywords the schema uses and refuses any other
   brief_hash_mismatch                  brief_sha256, when given, is the brief's
-  quote_not_in_brief, quote_too_short  each quote is one span of the brief (case, whitespace, quote marks,
-                                       dashes and markdown emphasis normalised), at least two words
+  quote_not_in_brief, quote_too_short, each quote is one span of the brief (case, whitespace, quote marks,
+  quote_too_long                       dashes and markdown emphasis normalised), 2 to 40 words
   number_not_in_quote                  each number a quoted item states is in its quote
+  system_name_not_in_quote             a quoted external system's name is in its quote
   observed_not_quoted                  observed workload is quoted, never assumed
+  current_system_not_quoted            current_system.state none or exists stands on a quote
   maturity_without_evidence            a stage other than unknown names its evidence
+  unknown_field_unnamed                every unknown scalar or empty fact list is named in unknowns
   rank_duplicate, rank_gap             goal ranks are 1..n, each once
   duplicate_id                         constraint ids and goal ids are each unique
   constraint_goal_overlap              no constraint and goal stand on the same text
@@ -36,13 +39,15 @@ from collections.abc import Iterator
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SCHEMA_PATH = HERE.parent / "stages" / "context_profile" / "contract.v1.schema.json"
-CONTRACT = "context_profile/v1"
-KEY_FORMAT = "context_profile_key/v1"
-STAGES = ("idea", "startup", "growing", "scaled", "large", "unknown")
+SCHEMA_PATH = HERE.parent / "stages" / "context_profile" / "contract.v2.schema.json"
+CONTRACT = "context_profile/v2"
+KEY_FORMAT = "context_profile_key/v2"
+STAGES = ("idea", "startup", "growing", "established", "unknown")
+SYSTEM_STATES = ("none", "exists", "unknown")
 LEVELS = ("none", "low", "moderate", "high")
-CRITERIA = ("cost", "efficiency", "privacy", "security", "reliability", "delivery_speed", "operability",
-            "change_cost", "scalability", "other")
+CRITERIA = ("cost", "efficiency", "performance", "privacy", "security", "reliability", "delivery_speed",
+            "operability", "change_cost", "scalability", "other")
+QUOTE_WORDS = (2, 40)
 
 # Where items with a source live. The scorer names sections the same way.
 LIST_FACTS = ("maturity.evidence", "privacy.data_categories", "privacy.retention", "privacy.sharing",
@@ -51,7 +56,13 @@ LIST_FACTS = ("maturity.evidence", "privacy.data_categories", "privacy.retention
 SCALAR_FACTS = ("reliability.availability", "reliability.data_loss_tolerance", "reliability.recovery_time",
                 "team.size", "budget.build", "budget.run_monthly")
 WORKLOAD = ("workload.observed", "workload.projected", "workload.peaks")
-SECTIONS = ("product", *LIST_FACTS, *WORKLOAD, *SCALAR_FACTS, "privacy.sensitivity", "constraints", "goals")
+MEASURES = (*WORKLOAD, "performance.targets")
+# current_system: the state's own source, and the items of the system as it is now.
+SYSTEM = ("current_system", "current_system.items", "external_systems")
+SECTIONS = ("product", *SYSTEM, *LIST_FACTS, *MEASURES, *SCALAR_FACTS, "privacy.sensitivity", "constraints",
+            "goals")
+# Fields a profile may leave "unknown": each must then be named in unknowns, with field = its path.
+UNKNOWN_SCALARS = ("maturity.stage", "current_system.state", *SCALAR_FACTS, "privacy.sensitivity")
 
 
 # ---------------------------------------------------------------- text
@@ -205,7 +216,7 @@ def _type_name(value: object) -> str:
 
 
 class Validator:
-    """JSON Schema (2020-12) for exactly the keywords contract.v1.schema.json uses."""
+    """JSON Schema (2020-12) for exactly the keywords contract.v2.schema.json uses."""
 
     def __init__(self, schema: dict):
         self.schema = schema
@@ -344,12 +355,25 @@ def iter_items(profile: object) -> Iterator[Item]:
     product = profile.get("product")
     if isinstance(product, dict):
         yield Item("product", "$.product", product, [_text(product.get("summary"))])
+    system = profile.get("current_system")
+    if isinstance(system, dict):
+        if "source" in system:
+            yield Item("current_system", "$.current_system", system, [])
+        nodes = system.get("items")
+        for i, node in enumerate(nodes if isinstance(nodes, list) else []):
+            if isinstance(node, dict):
+                yield Item("current_system.items", f"$.current_system.items[{i}]", node, [_text(node.get("text"))])
+    nodes = profile.get("external_systems")
+    for i, node in enumerate(nodes if isinstance(nodes, list) else []):
+        if isinstance(node, dict):
+            yield Item("external_systems", f"$.external_systems[{i}]", node,
+                       [_text(node.get("name")), _text(node.get("role"))])
     for section in LIST_FACTS:
         nodes = at(profile, section)
         for i, node in enumerate(nodes if isinstance(nodes, list) else []):
             if isinstance(node, dict):
                 yield Item(section, f"$.{section}[{i}]", node, [_text(node.get("value"))])
-    for section in WORKLOAD:
+    for section in MEASURES:
         nodes = at(profile, section)
         for i, node in enumerate(nodes if isinstance(nodes, list) else []):
             if isinstance(node, dict):
@@ -400,8 +424,12 @@ def check(profile: object, brief_text: str, brief_sha256: str, validator: Valida
             counts["quoted"] += 1
             quote = norm(item.quote)
             where = f"{item.path}.source.quote"
-            if len(quote.split()) < 2:
-                errors.append(_error("quote_too_short", where, "a quote needs at least two words"))
+            words = len(quote.split())
+            if words < QUOTE_WORDS[0]:
+                errors.append(_error("quote_too_short", where, f"a quote needs at least {QUOTE_WORDS[0]} words"))
+            elif words > QUOTE_WORDS[1]:
+                errors.append(_error("quote_too_long", where,
+                                     f"{words} words; quote at most {QUOTE_WORDS[1]}, the shortest span that carries the item"))
             elif quote not in brief:
                 errors.append(_error("quote_not_in_brief", where, f"not one span of the brief: {item.quote[:160]!r}"))
             else:
@@ -409,10 +437,35 @@ def check(profile: object, brief_text: str, brief_sha256: str, validator: Valida
                 if missing:
                     errors.append(_error("number_not_in_quote", item.path,
                                          f"{', '.join(missing)} not in its quote; a derived number is an assumption"))
+                if item.section == "external_systems" and norm(item.texts[0]) not in quote:
+                    errors.append(_error("system_name_not_in_quote", item.path,
+                                         f"{item.texts[0]!r} is not in its quote: name a system as the brief names it"))
         elif item.kind == "assumption":
             counts["assumed"] += 1
         if item.section == "workload.observed" and item.kind != "quote":
             errors.append(_error("observed_not_quoted", item.path, "observed workload must quote the brief"))
+        if (item.section == "current_system" and item.node.get("state") in ("none", "exists")
+                and item.kind != "quote"):
+            errors.append(_error("current_system_not_quoted", item.path,
+                                 "whether a system exists now must quote the brief; if it does not say, the state is unknown"))
+
+    system = profile.get("current_system")
+    if isinstance(system, dict) and system.get("state") in ("none", "exists") and "source" not in system:
+        errors.append(_error("current_system_not_quoted", "$.current_system",
+                             f"state {system.get('state')!r} with no quote; if the brief does not say, the state is unknown"))
+
+    named = {u.get("field") for u in _dicts(profile.get("unknowns"))}
+    empty_lists = ("external_systems", *(f for f in LIST_FACTS if f != "maturity.evidence"),
+                   *MEASURES, "constraints", "goals")
+    if isinstance(system, dict) and system.get("state") == "exists":
+        empty_lists = (*empty_lists, "current_system.items")
+    open_fields = [f for f in UNKNOWN_SCALARS if at(profile, f) == "unknown"]
+    open_fields += [f for f in empty_lists if at(profile, f) == []]
+    for field in open_fields:
+        if field not in named:
+            errors.append(_error("unknown_field_unnamed", f"$.{field}",
+                                 f"{field} is unknown or empty: name it in unknowns (field {field!r}, "
+                                 "material true or false, why it matters)"))
 
     maturity = profile.get("maturity")
     if (isinstance(maturity, dict) and maturity.get("stage") in STAGES and maturity.get("stage") != "unknown"
@@ -459,7 +512,7 @@ def load_validator(path: Path = SCHEMA_PATH) -> Validator:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check a context profile (contract v1) against its brief.")
+    parser = argparse.ArgumentParser(description="Check a context profile (contract v2) against its brief.")
     parser.add_argument("profile", type=Path, help="a profile, or a known case's key.json (its reference profile)")
     parser.add_argument("--brief", type=Path, required=True, help="the brief the profile was made from")
     parser.add_argument("--schema", type=Path, default=SCHEMA_PATH)

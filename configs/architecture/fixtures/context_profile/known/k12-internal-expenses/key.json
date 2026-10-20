@@ -1,28 +1,34 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k12-internal-expenses",
   "category": "internal_tool_deadline",
-  "tests": "Internal expenses tool with a hard deadline (licence ends 31 March, no extension, nobody reimbursed otherwise) and systems that must be kept (SAP ledger, Okta sign-in, existing Azure subscription): all constraints, as are 7-year tax retention and who may see a claim. Finance-owned approval rules, low running cost and office-hours-only support are ranked goals. Later travel booking is future scope, not a goal or constraint. Which SAP interface exists is a material unknown. An established firm replacing a nine-year-old tool: growing or scaled, not idea.",
+  "tests": "Internal expenses tool with a hard deadline (licence ends 31 March, no extension, nobody reimbursed otherwise) and systems that must be kept (SAP ledger, Okta sign-in, existing Azure subscription): all constraints, as are 7-year tax retention and who may see a claim. Finance-owned approval rules, low running cost and office-hours-only support are ranked goals. Later travel booking is future scope, not a goal or constraint. Which SAP interface exists is a material unknown. The organisation's size is not the product's lifecycle. The brief does not settle whether the target is the continuing expense service or its not-yet-built replacement, or state its demand trend: stage unknown.",
   "brief_sha256": "0fd4fcbd8990faef10d10b3167a5e5f511ff3b3f24d4ce3a85e9772f6b4a286c",
-  "maturity": {"accepted": ["growing", "scaled"]},
+  "maturity": {"accepted": [{"stage": "unknown", "quotes": ["a hosted tool we have used for nine years", "We want to build a replacement in-house"]}], "why_unknown": "The target is a new replacement of an existing service; the brief does not settle the lifecycle boundary or demand trend. Organisation size and governance cannot supply it."},
   "sensitivity": {"accepted": ["moderate", "high"]},
   "facts": [
-    {"id": "F1", "anchors": ["Kestrel Engineering has 600 employees"], "in": ["workload.observed", "maturity.evidence"], "value": 600},
-    {"id": "F2", "anchors": ["a hosted tool we have used for nine years"], "in": ["maturity.evidence"]},
-    {"id": "F3", "anchors": ["about 2,400 claims a month"], "in": ["workload.observed"], "value": 2400},
-    {"id": "F4", "anchors": ["Around 40% of them arrive in the last three days of the month"], "in": ["workload.peaks"], "value": 40},
-    {"id": "F5", "anchors": ["sign people in through Okta"], "in": ["security.requirements"]},
-    {"id": "F6", "anchors": ["the bank account details we pay into"], "in": ["privacy.data_categories"]},
-    {"id": "F7", "anchors": ["name, staff number, cost centre, the receipts"], "in": ["privacy.data_categories"]},
-    {"id": "F8", "anchors": ["keep receipts and claim records for 7 years"], "in": ["privacy.retention", "privacy.jurisdictions_or_rules", "security.compliance"], "value": 7},
-    {"id": "F9", "anchors": ["Only the employee, their manager and the finance team may see a claim"], "in": ["security.requirements", "privacy.sharing"]},
-    {"id": "F10", "anchors": ["Two developers from internal IT"], "in": ["team.size"], "value": 2},
-    {"id": "F11", "anchors": ["both work in C# and .NET"], "in": ["team.skills"]},
-    {"id": "F12", "anchors": ["neither has built anything that posts to SAP"], "in": ["team.skills"]},
-    {"id": "F13", "anchors": ["gives it two days a week"], "in": ["team.operating_capacity", "team.size"], "value": 2},
-    {"id": "F14", "anchors": ["The budget is $120,000 to build it"], "in": ["budget.build"], "value": 120000},
-    {"id": "F15", "anchors": ["run on our existing Azure subscription"], "in": ["budget.run_monthly", "team.operating_capacity"]},
-    {"id": "F16", "anchors": ["IT supports it during office hours only"], "in": ["team.operating_capacity", "reliability.recovery_time"]}
+    {"id": "F1", "anchors": ["Kestrel Engineering has 600 employees"], "primary": "workload.observed", "value": 600},
+    {"id": "F2", "anchors": ["a hosted tool we have used for nine years"], "primary": "maturity.evidence"},
+    {"id": "F3", "anchors": ["about 2,400 claims a month"], "primary": "workload.observed", "value": 2400},
+    {"id": "F4", "anchors": ["Around 40% of them arrive in the last three days of the month"], "primary": "workload.peaks", "value": 40},
+    {"id": "F5", "anchors": ["sign people in through Okta"], "primary": "security.requirements"},
+    {"id": "F6", "anchors": ["the bank account details we pay into"], "primary": "privacy.data_categories"},
+    {"id": "F7", "anchors": ["name, staff number, cost centre, the receipts"], "primary": "privacy.data_categories"},
+    {"id": "F8", "anchors": ["keep receipts and claim records for 7 years"], "primary": "privacy.retention", "alt": "security.compliance", "why_alt": "tax retention is also a legal compliance duty", "value": 7},
+    {"id": "F9", "anchors": ["Only the employee, their manager and the finance team may see a claim"], "primary": "security.requirements", "alt": "privacy.sharing", "why_alt": "access boundaries also restrict who receives claim data"},
+    {"id": "F10", "anchors": ["Two developers from internal IT"], "primary": "team.size", "value": 2},
+    {"id": "F11", "anchors": ["both work in C# and .NET"], "primary": "team.skills"},
+    {"id": "F12", "anchors": ["neither has built anything that posts to SAP"], "primary": "team.skills"},
+    {"id": "F13", "anchors": ["gives it two days a week"], "primary": "team.operating_capacity", "value": 2},
+    {"id": "F14", "anchors": ["The budget is $120,000 to build it"], "primary": "budget.build", "value": 120000},
+    {"id": "F15", "anchors": ["run on our existing Azure subscription"], "primary": "current_system.items"},
+    {"id": "F16", "anchors": ["IT supports it during office hours only"], "primary": "team.operating_capacity"},
+    {"id": "F17", "anchors": ["Staff claim travel and other expenses through ClaimPro"], "primary": "current_system"},
+    {"id": "F18", "anchors": ["Staff claim travel and other expenses through ClaimPro"], "primary": "external_systems"},
+    {"id": "F19", "anchors": ["must post to our SAP finance ledger"], "primary": "external_systems"},
+    {"id": "F20", "anchors": ["sign people in through Okta"], "primary": "external_systems"},
+    {"id": "F21", "anchors": ["payment goes out with the next payroll"], "primary": "external_systems"},
+    {"id": "F22", "anchors": ["Staff claim travel and other expenses through ClaimPro"], "primary": "current_system.items"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["our licence ends on 31 March", "the vendor has refused to extend it"]},
@@ -39,22 +45,44 @@
   ],
   "goal_order": {"accepted_top3": [["change_cost", "cost", "operability"], ["operability", "cost", "operability"], ["other", "cost", "operability"]]},
   "unknowns": [
-    {"id": "U1", "terms": [["sap"], ["api", "interface", "file import", "integration", "how"]]}
+    {"id": "U1", "terms": [["sap"], ["api", "interface", "file import", "integration", "how"]]},
+    {"id": "U2", "field": "reliability.data_loss_tolerance", "terms": [["loss", "lost"]]},
+    {"id": "U3", "field": "budget.run_monthly", "terms": [["budget", "cap", "allowance", "limit"]]}
   ],
   "traps": [
     {"id": "T1", "anchors": ["add travel booking to the same tool"], "reason": "future_scope", "forbidden_in": ["constraints", "goals", "workload.observed", "workload.projected"]}
   ],
-  "fields_unknown": [],
+  "fields_unknown": [
+    {"field": "maturity.stage", "open_anchors": [], "not_material_reason": "New replacement versus continuing service is ambiguous, and trend is unstated; measured workload and policy, not a lifecycle label, drive the design."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed concern or engineering response target is stated."},
+    {"field": "workload.projected", "open_anchors": [], "not_material_reason": "No growth forecast is stated; existing claims and month-end peak bound current capacity."},
+    {"field": "reliability.availability", "open_anchors": [], "not_material_reason": "No uptime promise is stated; office-hours support sets operating scope without implying a numeric SLA."},
+    {"field": "reliability.data_loss_tolerance", "open_anchors": []},
+    {"field": "reliability.recovery_time", "open_anchors": [], "not_material_reason": "No single-outage deadline is stated; the licence deadline is for delivery, not recovery."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack or incident is stated."},
+    {"field": "budget.run_monthly", "open_anchors": []}
+  ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "0fd4fcbd8990faef10d10b3167a5e5f511ff3b3f24d4ce3a85e9772f6b4a286c",
     "product": {"summary": "An in-house expense claims tool: employees submit claims with receipts, managers approve, finance checks, payment goes out with payroll.",
       "source": {"kind": "quote", "quote": "employees submit a claim with receipt photos, their manager approves it, finance checks it and the payment goes out with the next payroll"}},
-    "maturity": {"stage": "scaled", "evidence": [
+    "maturity": {"stage": "unknown", "evidence": [
       {"value": "600 employees across four offices", "source": {"kind": "quote", "quote": "Kestrel Engineering has 600 employees across four offices."}},
       {"value": "the current tool has been in use for nine years", "source": {"kind": "quote", "quote": "a hosted tool we have used for nine years"}},
       {"value": "IT policy and a finance ledger already govern internal tools", "source": {"kind": "quote", "quote": "IT policy requires every internal tool to sign people in through Okta"}}
     ]},
+    "current_system": {"state": "exists", "source": {"kind": "quote", "quote": "Staff claim travel and other expenses through ClaimPro"}, "items": [
+      {"kind": "hosting", "text": "existing Azure subscription must host replacement", "source": {"kind": "quote", "quote": "run on our existing Azure subscription"}},
+      {"kind": "component", "text": "hosted ClaimPro tool is the current baseline to replace", "source": {"kind": "quote", "quote": "Staff claim travel and other expenses through ClaimPro"}}
+    ]},
+    "external_systems": [
+      {"name": "ClaimPro", "role": "vendor's current hosted expense tool to replace", "source": {"kind": "quote", "quote": "Staff claim travel and other expenses through ClaimPro"}},
+      {"name": "SAP", "role": "finance ledger receives approved claims", "source": {"kind": "quote", "quote": "Approved claims must post to our SAP finance ledger"}},
+      {"name": "Okta", "role": "identity provider for internal-tool sign-in", "source": {"kind": "quote", "quote": "sign people in through Okta"}},
+      {"name": "payroll", "role": "pays approved claims", "source": {"kind": "quote", "quote": "the payment goes out with the next payroll"}}
+    ],
+    "performance": {"targets": []},
     "workload": {
       "observed": [
         {"what": "employees who may claim", "value": 600, "unit": "employees", "source": {"kind": "quote", "quote": "Kestrel Engineering has 600 employees"}},
@@ -68,7 +96,7 @@
     "reliability": {
       "availability": "unknown",
       "data_loss_tolerance": "unknown",
-      "recovery_time": {"value": "IT support during office hours only", "source": {"kind": "quote", "quote": "IT supports it during office hours only"}}
+      "recovery_time": "unknown"
     },
     "privacy": {
       "data_categories": [
@@ -109,7 +137,7 @@
     },
     "budget": {
       "build": {"value": "$120,000 to build", "source": {"kind": "quote", "quote": "The budget is $120,000 to build it."}},
-      "run_monthly": {"value": "must run within the existing Azure subscription; no figure given", "source": {"kind": "quote", "quote": "After launch it has to run on our existing Azure subscription"}}
+      "run_monthly": "unknown"
     },
     "constraints": [
       {"id": "C1", "text": "Live before the ClaimPro licence ends on 31 March; no extension", "source": {"kind": "quote", "quote": "our licence ends on 31 March and the vendor has refused to extend it. If there is no replacement by then, nobody can be reimbursed"}},
@@ -125,6 +153,14 @@
       {"id": "G3", "criterion": "operability", "rank": 3, "note": "No out-of-hours care from IT", "source": {"kind": "quote", "quote": "Third, IT should not need to look after it outside office hours."}}
     ],
     "unknowns": [
+      {"question": "Is this a continuing expense service or a new product, and is demand stable?", "why_it_matters": "The lifecycle boundary and trend are ambiguous; measured workload and mandatory policies remain usable without the label.", "decisions_affected": ["lifecycle classification"], "material": false, "field": "maturity.stage"},
+      {"question": "Is there a speed target?", "why_it_matters": "No speed concern or response target is stated.", "decisions_affected": ["capacity"], "material": false, "field": "performance.targets"},
+      {"question": "Is growth forecast?", "why_it_matters": "Current claim volume and peak are known.", "decisions_affected": ["capacity"], "material": false, "field": "workload.projected"},
+      {"question": "Is there an uptime target?", "why_it_matters": "Office-hours support is known but no uptime promise is stated.", "decisions_affected": ["availability design"], "material": false, "field": "reliability.availability"},
+      {"question": "How much claim data loss is tolerable?", "why_it_matters": "Lost claims affect reimbursement and the tax record; the answer sets backup durability.", "decisions_affected": ["backup design"], "material": true, "field": "reliability.data_loss_tolerance"},
+      {"question": "Is a single-outage recovery deadline required?", "why_it_matters": "The launch deadline is not a recovery-time promise.", "decisions_affected": ["recovery design"], "material": false, "field": "reliability.recovery_time"},
+      {"question": "Is any attack named?", "why_it_matters": "None is stated.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
+      {"question": "What monthly budget cap or allowance is available?", "why_it_matters": "An existing Azure subscription is a hosting constraint, not money; the answer determines affordable operating options for the cost goal.", "decisions_affected": ["hosting cost"], "material": true, "field": "budget.run_monthly"},
       {"question": "Which interface does SAP offer for posting claims: an API we may call, or only a file import run by hand?", "why_it_matters": "It decides the integration design, how quickly payments post, and whether the 31 March deadline is reachable by a team new to SAP.", "decisions_affected": ["SAP integration", "delivery plan"], "material": true, "field": "constraints"}
     ],
     "assumptions": [

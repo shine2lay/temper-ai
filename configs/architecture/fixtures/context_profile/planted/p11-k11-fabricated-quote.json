@@ -1,5 +1,5 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p11-k11-fabricated-quote",
   "case_id": "k11-privacy-reading",
   "fault": "Fabricated quote: the 90-day recording deletion is retold as 180 days, with a quote the brief does not contain.",

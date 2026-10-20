@@ -1,8 +1,8 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p05-k06-maturity-enum",
   "case_id": "k06-large-simple-transit",
-  "fault": "Wrong maturity value: 'enterprise' is not a contract stage (and a million users with two part-time people is not large either).",
+  "fault": "Wrong maturity value: 'enterprise' is not a lifecycle stage; product volume and organisation size are not lifecycle evidence.",
   "expect": [
     {"reason": "checker:bad_enum", "ref": "$.maturity.stage"},
     {"reason": "maturity_mismatch", "ref": "maturity.stage"}

@@ -1,31 +1,38 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k09-projected-fitness",
   "category": "projected_as_observed",
   "tests": "The brief opens with investor-deck figures in the present tense (250,000 active members, 2 million workout logs a month) that it later calls targets for next year: they are projected, never observed or maturity evidence; today's 3,800 paying members and 41,000 workouts a month are observed. 'Fastest-growing in North America' is deck copy, not evidence. HealthKit's no-advertising rule, the export-and-delete promise and the $80,000 cap are constraints; cloud cost, coach-chat by spring and readiness for growth are ranked goals. Coach employment and countries are open.",
   "brief_sha256": "c6c1b6c0a91fc39783485ffb5197f0f46bdb4be8b025f3e95ed20e1a6c5128f0",
-  "maturity": {"accepted": ["startup", "growing"]},
+  "maturity": {"accepted": [{"stage": "startup", "quotes": ["We launched eighteen months ago", "Today we have about 3,800 paying members", "are our targets for the end of next year, not today's numbers"]}]} ,
   "sensitivity": {"accepted": ["moderate", "high"]},
   "facts": [
-    {"id": "F1", "anchors": ["about 3,800 paying members"], "in": ["workload.observed", "maturity.evidence"], "value": 3800},
-    {"id": "F2", "anchors": ["about 41,000 workouts a month"], "in": ["workload.observed"], "value": 41000},
-    {"id": "F3", "anchors": ["about three times a normal month"], "in": ["workload.peaks"], "value": 3},
-    {"id": "F4", "anchors": ["We launched eighteen months ago"], "in": ["maturity.evidence"]},
-    {"id": "F5", "anchors": ["members pay $12 a month"], "in": ["maturity.evidence"], "value": 12},
-    {"id": "F6", "anchors": ["heart rate, sleep and workout data"], "in": ["privacy.data_categories"]},
-    {"id": "F7", "anchors": ["a short outage of our servers is tolerable"], "in": ["reliability.availability", "reliability.recovery_time"]},
-    {"id": "F8", "anchors": ["losing workouts a member has already logged is not"], "in": ["reliability.data_loss_tolerance"]},
-    {"id": "F9", "anchors": ["for as long as the account is open"], "in": ["privacy.retention"]},
-    {"id": "F10", "anchors": ["Members are in the US, Canada and the UK"], "in": ["privacy.jurisdictions_or_rules"]},
-    {"id": "F11", "anchors": ["forbid using health data for advertising"], "in": ["privacy.sharing", "privacy.jurisdictions_or_rules", "security.compliance"]},
-    {"id": "F12", "anchors": ["export and delete all of their data at any time"], "in": ["privacy.retention", "privacy.jurisdictions_or_rules", "security.requirements"]},
-    {"id": "F13", "anchors": ["We are seven engineers"], "in": ["team.size"], "value": 7},
-    {"id": "F14", "anchors": ["four on the mobile apps, two on the Python backend, and one on data"], "in": ["team.skills"]},
-    {"id": "F15", "anchors": ["Nobody is on call at night yet"], "in": ["team.operating_capacity", "reliability.recovery_time"]},
-    {"id": "F16", "anchors": ["Our cloud bill is $6,500 a month"], "in": ["budget.run_monthly"], "value": 6500},
-    {"id": "F17", "anchors": ["capped this rebuild at $80,000"], "in": ["budget.build"], "value": 80000},
-    {"id": "F18", "anchors": ["250,000 active members"], "in": ["workload.projected"], "value": 250000},
-    {"id": "F19", "anchors": ["2 million workout logs a month"], "in": ["workload.projected"], "value": 2000000}
+    {"id": "F1", "anchors": ["about 3,800 paying members"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "paying members also show the product is in use", "value": 3800},
+    {"id": "F2", "anchors": ["about 41,000 workouts a month"], "primary": "workload.observed", "value": 41000},
+    {"id": "F3", "anchors": ["about three times a normal month"], "primary": "workload.peaks", "value": 3},
+    {"id": "F4", "anchors": ["We launched eighteen months ago"], "primary": "maturity.evidence"},
+    {"id": "F5", "anchors": ["members pay $12 a month"], "primary": "maturity.evidence", "value": 12},
+    {"id": "F6", "anchors": ["heart rate, sleep and workout data"], "primary": "privacy.data_categories"},
+    {"id": "F7", "anchors": ["a short outage of our servers is tolerable"], "primary": "reliability.availability"},
+    {"id": "F8", "anchors": ["losing workouts a member has already logged is not"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F9", "anchors": ["for as long as the account is open"], "primary": "privacy.retention"},
+    {"id": "F10", "anchors": ["Members are in the US, Canada and the UK"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F11", "anchors": ["forbid using health data for advertising"], "primary": "privacy.sharing", "alt": "privacy.jurisdictions_or_rules", "why_alt": "HealthKit's rule also binds the use of health data"},
+    {"id": "F12", "anchors": ["export and delete all of their data at any time"], "primary": "privacy.retention", "alt": "privacy.jurisdictions_or_rules", "why_alt": "the export/delete right is also a binding promise in the terms"},
+    {"id": "F13", "anchors": ["We are seven engineers"], "primary": "team.size", "value": 7},
+    {"id": "F14", "anchors": ["four on the mobile apps, two on the Python backend, and one on data"], "primary": "team.skills"},
+    {"id": "F15", "anchors": ["Nobody is on call at night yet"], "primary": "team.operating_capacity"},
+    {"id": "F16", "anchors": ["Our cloud bill is $6,500 a month"], "primary": "budget.run_monthly", "value": 6500},
+    {"id": "F17", "anchors": ["capped this rebuild at $80,000"], "primary": "budget.build", "value": 80000},
+    {"id": "F18", "anchors": ["250,000 active members"], "primary": "workload.projected", "value": 250000},
+    {"id": "F19", "anchors": ["2 million workout logs a month"], "primary": "workload.projected", "value": 2000000},
+    {"id": "F20", "anchors": ["Members log workouts offline and the app syncs later"], "primary": "current_system"},
+    {"id": "F21", "anchors": ["Members log workouts offline and the app syncs later"], "primary": "current_system.items"},
+    {"id": "F22", "anchors": ["Python backend"], "primary": "current_system.items"},
+    {"id": "F23", "anchors": ["Apple Watch"], "primary": "external_systems"},
+    {"id": "F24", "anchors": ["Garmin devices"], "primary": "external_systems"},
+    {"id": "F25", "anchors": ["We use Apple HealthKit"], "primary": "external_systems"},
+    {"id": "F26", "anchors": ["a weekly plan from our coaching engine"], "primary": "current_system.items"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["forbid using health data for advertising"]},
@@ -46,17 +53,36 @@
     {"id": "T1", "anchors": ["FitLoop serves 250,000 active members", "processes 2 million workout logs a month"], "reason": "projected_as_observed", "forbidden_in": ["workload.observed", "maturity.evidence"]},
     {"id": "T2", "anchors": ["the fastest-growing coaching app in North America"], "reason": "hedged_as_fact", "forbidden_in": ["maturity.evidence", "workload.observed", "workload.projected"]}
   ],
-  "fields_unknown": [],
+  "fields_unknown": [
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed problem or engineering response target is stated; the business growth targets are keyed in workload.projected."},
+    {"field": "reliability.recovery_time", "open_anchors": [], "not_material_reason": "Offline logging makes short server outages tolerable; no tighter recovery threshold is needed to compare the options here."},
+    {"field": "security.requirements", "open_anchors": [], "not_material_reason": "No particular control is named; the HealthKit and export/delete rules are binding privacy duties, not an invented access-control design."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack or incident is stated."}
+  ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "c6c1b6c0a91fc39783485ffb5197f0f46bdb4be8b025f3e95ed20e1a6c5128f0",
     "product": {"summary": "A paid fitness coaching app that syncs watch data, logs workouts and gives members a weekly plan.",
       "source": {"kind": "quote", "quote": "Members connect their watches, log every session and get a weekly plan from our coaching engine."}},
     "maturity": {"stage": "startup", "evidence": [
       {"value": "about 3,800 paying members today", "source": {"kind": "quote", "quote": "Today we have about 3,800 paying members"}},
-      {"value": "launched eighteen months ago; members pay $12 a month", "source": {"kind": "quote", "quote": "We launched eighteen months ago and members pay $12 a month."}},
-      {"value": "no night on-call yet", "source": {"kind": "quote", "quote": "Nobody is on call at night yet."}}
+      {"value": "launched eighteen months ago", "source": {"kind": "quote", "quote": "We launched eighteen months ago"}},
+      {"value": "members pay $12 a month", "source": {"kind": "quote", "quote": "members pay $12 a month"}}
     ]},
+    "current_system": {
+      "state": "exists", "source": {"kind": "quote", "quote": "Members log workouts offline and the app syncs later"},
+      "items": [
+        {"kind": "client", "text": "mobile app logs offline and syncs later", "source": {"kind": "quote", "quote": "Members log workouts offline and the app syncs later"}},
+        {"kind": "stack", "text": "Python backend", "source": {"kind": "quote", "quote": "two on the Python backend"}},
+        {"kind": "component", "text": "coaching engine gives weekly plans", "source": {"kind": "quote", "quote": "get a weekly plan from our coaching engine"}}
+      ]
+    },
+    "external_systems": [
+      {"name": "Apple Watch", "role": "source of health and workout data", "source": {"kind": "quote", "quote": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices."}},
+      {"name": "Garmin devices", "role": "source of health and workout data", "source": {"kind": "quote", "quote": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices."}},
+      {"name": "Apple HealthKit", "role": "health-data integration under agreed terms", "source": {"kind": "quote", "quote": "We use Apple HealthKit"}}
+    ],
+    "performance": {"targets": []},
     "workload": {
       "observed": [
         {"what": "paying members", "value": 3800, "unit": "members", "source": {"kind": "quote", "quote": "Today we have about 3,800 paying members"}},
@@ -93,9 +119,7 @@
       ]
     },
     "security": {
-      "requirements": [
-        {"value": "members can export and delete all their data at any time", "source": {"kind": "quote", "quote": "Our terms promise members that they can export and delete all of their data at any time"}}
-      ],
+      "requirements": [],
       "threats": [],
       "compliance": [
         {"value": "Apple HealthKit terms agreed", "source": {"kind": "quote", "quote": "its rules forbid using health data for advertising; we have agreed to them"}}
@@ -125,6 +149,10 @@
       {"id": "G3", "criterion": "scalability", "rank": 3, "note": "Be ready for the deck's growth when it comes", "source": {"kind": "quote", "quote": "Third, being ready for the growth in the deck when it comes."}}
     ],
     "unknowns": [
+      {"question": "Is there a speed target?", "why_it_matters": "No speed problem is stated; growth targets are keyed separately.", "decisions_affected": ["capacity"], "material": false, "field": "performance.targets"},
+      {"question": "How quickly must the server recover?", "why_it_matters": "Offline logging makes short outages tolerable.", "decisions_affected": ["recovery design"], "material": false, "field": "reliability.recovery_time"},
+      {"question": "Are specific security controls required?", "why_it_matters": "None is stated; the binding privacy duties are already kept as constraints.", "decisions_affected": ["security controls"], "material": false, "field": "security.requirements"},
+      {"question": "Is any attack or incident named?", "why_it_matters": "None is stated.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
       {"question": "Will coaches be employees or contractors, and in which countries will they work?", "why_it_matters": "Coaches would read members' health-related messages; who they are and where they work decides access control, data transfers and the rules that apply.", "decisions_affected": ["access control", "data residency", "coach-chat design"], "material": true, "field": "privacy.sharing"},
       {"question": "Whether and when the deck's growth targets will arrive", "why_it_matters": "The targets are about 65 times today's members; designing for them now costs money the first goal wants to save.", "decisions_affected": ["capacity planning", "scaling approach"], "material": true, "field": "workload.projected"}
     ],

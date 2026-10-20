@@ -1,25 +1,28 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k01-idea-pantry",
   "category": "idea_stage",
-  "tests": "Idea-stage startup: nothing built, only a waitlist; founders' guesses stay projected; a competitor's 2 million households are not this product's workload; a public deletion promise and a fixed savings budget are constraints, the hosting wish is a cost goal; allergy storage, launch country and receipts per week are material unknowns.",
+  "tests": "Idea-stage startup: nothing built, only a waitlist, so maturity is idea and there is no current system; founders' guesses stay projected; a competitor's 2 million households are not this product's workload; a public deletion promise and a fixed savings budget are constraints, the hosting wish is a cost goal; allergy storage, launch country and receipts per week are material unknowns; every field the brief is silent on is named as an unknown.",
   "brief_sha256": "4f62ed718bc6c610a69a663f3da2ae22afa659e3dac585ea94877e220fa912c6",
-  "maturity": {"accepted": ["idea"]},
+  "maturity": {"accepted": [
+    {"stage": "idea", "quotes": ["Pantry Pal is still an idea", "Nothing is built yet"]}
+  ]},
   "sensitivity": {"accepted": ["low", "moderate"]},
   "facts": [
-    {"id": "F1", "anchors": ["We are two founders"], "in": ["team.size"], "value": 2},
-    {"id": "F2", "anchors": ["Luis is a backend developer"], "in": ["team.skills"]},
-    {"id": "F3", "anchors": ["Neither of us has run anything in production"], "in": ["team.skills", "team.operating_capacity"]},
-    {"id": "F4", "anchors": ["about 15 hours a week each"], "in": ["team.operating_capacity"], "value": 15},
-    {"id": "F5", "anchors": ["$12,000 in total for the first year"], "in": ["budget.build", "budget.run_monthly"], "value": 12000},
-    {"id": "F6", "anchors": ["hosting to stay under $150 a month"], "in": ["budget.run_monthly"], "value": 150},
-    {"id": "F7", "anchors": ["a waitlist with 340 email sign-ups"], "in": ["maturity.evidence", "workload.observed"], "value": 340},
-    {"id": "F8", "anchors": ["Nothing is built yet", "Pantry Pal is still an idea"], "in": ["maturity.evidence"]},
-    {"id": "F9", "anchors": ["2,000 people in the beta"], "in": ["workload.projected"], "value": 2000},
-    {"id": "F10", "anchors": ["10,000 users by the end of next year"], "in": ["workload.projected"], "value": 10000},
-    {"id": "F11", "anchors": ["Users sign in with email"], "in": ["privacy.data_categories"]},
-    {"id": "F12", "anchors": ["We store the food they buy and the meals they cook"], "in": ["privacy.data_categories"]},
-    {"id": "F13", "anchors": ["Receipt photos should be deleted once the items are read"], "in": ["privacy.retention"]}
+    {"id": "F1", "anchors": ["We are two founders"], "primary": "team.size", "value": 2},
+    {"id": "F2", "anchors": ["Luis is a backend developer"], "primary": "team.skills"},
+    {"id": "F3", "anchors": ["Neither of us has run anything in production"], "primary": "team.skills"},
+    {"id": "F4", "anchors": ["about 15 hours a week each"], "primary": "team.operating_capacity", "value": 15},
+    {"id": "F5", "anchors": ["$12,000 in total for the first year"], "primary": "budget.build", "value": 12000},
+    {"id": "F6", "anchors": ["hosting to stay under $150 a month"], "primary": "budget.run_monthly", "value": 150},
+    {"id": "F7", "anchors": ["a waitlist with 340 email sign-ups"], "primary": "maturity.evidence", "value": 340},
+    {"id": "F8", "anchors": ["Nothing is built yet", "Pantry Pal is still an idea"], "primary": "maturity.evidence"},
+    {"id": "F9", "anchors": ["2,000 people in the beta"], "primary": "workload.projected", "value": 2000},
+    {"id": "F10", "anchors": ["10,000 users by the end of next year"], "primary": "workload.projected", "value": 10000},
+    {"id": "F11", "anchors": ["Users sign in with email"], "primary": "privacy.data_categories"},
+    {"id": "F12", "anchors": ["We store the food they buy and the meals they cook"], "primary": "privacy.data_categories"},
+    {"id": "F13", "anchors": ["Receipt photos should be deleted once the items are read"], "primary": "privacy.retention"},
+    {"id": "F14", "anchors": ["Nothing is built yet"], "primary": "current_system"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["$12,000 in total for the first year"]},
@@ -34,7 +37,7 @@
   "goal_order": {"accepted_top3": [["delivery_speed", "cost", "operability"], ["delivery_speed", "cost", "change_cost"]]},
   "unknowns": [
     {"id": "U1", "terms": [["allerg"]]},
-    {"id": "U2", "terms": [["country", "countries", "jurisdiction", "market"], ["launch", "law", "legal", "gdpr", "pipeda", "rules", "region"]]},
+    {"id": "U2", "field": "privacy.jurisdictions_or_rules", "terms": [["country", "countries", "jurisdiction", "market"], ["launch", "law", "legal", "gdpr", "pipeda", "rules", "region"]]},
     {"id": "U3", "terms": [["receipt", "scan"], ["week", "how many", "per user", "often", "frequency", "volume"]]}
   ],
   "traps": [
@@ -42,19 +45,29 @@
     {"id": "T2", "anchors": ["2,000 people in the beta", "10,000 users by the end of next year"], "reason": "projected_as_observed", "forbidden_in": ["workload.observed"]}
   ],
   "fields_unknown": [
-    {"field": "reliability.availability"},
-    {"field": "reliability.data_loss_tolerance"},
-    {"field": "reliability.recovery_time"},
-    {"field": "security.compliance", "open_anchors": ["we are not sure what that means legally"]}
+    {"field": "external_systems", "open_anchors": [], "not_material_reason": "The brief names no outside system; which receipt reader or mail service to use is a design choice, not a fact of the brief."},
+    {"field": "workload.observed", "open_anchors": ["Nothing yet beyond the interviews"], "not_material_reason": "Nothing is in users' hands, so there is no load to measure; the open load question that matters is receipts per week (U3)."},
+    {"field": "workload.peaks", "open_anchors": [], "not_material_reason": "No peak is named; at a few thousand projected beta users a peak would not change the design."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed target is named; suggestions come once an evening, so no latency target would change the design."},
+    {"field": "reliability.availability", "open_anchors": [], "not_material_reason": "A beta with no one on call; the brief's wish to avoid night work is goal G3, and no availability figure would change the first design."},
+    {"field": "reliability.data_loss_tolerance", "open_anchors": [], "not_material_reason": "Nothing is stored yet; ordinary backups of one small database cover any plausible answer for a beta."},
+    {"field": "reliability.recovery_time", "open_anchors": [], "not_material_reason": "No one is on call; any plausible answer for a beta leads to the same simple setup."},
+    {"field": "privacy.sharing", "open_anchors": [], "not_material_reason": "No one else is named as getting data; any processor chosen later is a design choice."},
+    {"field": "privacy.jurisdictions_or_rules", "open_anchors": ["We have not picked a country to launch in"]},
+    {"field": "security.requirements", "open_anchors": [], "not_material_reason": "No control is asked for beyond email sign-in; the allergy question (U1) is where security could change."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "Nothing is built and no threat is named."},
+    {"field": "security.compliance", "open_anchors": ["we are not sure what that means legally"], "not_material_reason": "The legal doubt is about allergies and the launch country, named as U1 and U2; no certification is asked for."}
   ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "4f62ed718bc6c610a69a663f3da2ae22afa659e3dac585ea94877e220fa912c6",
     "product": {"summary": "A phone app that tracks kitchen food from scanned grocery receipts and suggests meals that use it before it spoils.", "source": {"kind": "quote", "quote": "A phone app that keeps track of what is in your kitchen and suggests meals that use up food before it spoils."}},
     "maturity": {"stage": "idea", "evidence": [
       {"value": "Still an idea; nothing built yet", "source": {"kind": "quote", "quote": "Pantry Pal is still an idea. Nothing is built yet."}},
       {"value": "Landing page and a waitlist of 340 email sign-ups", "source": {"kind": "quote", "quote": "We have a landing page and a waitlist with 340 email sign-ups"}}
     ]},
+    "current_system": {"state": "none", "source": {"kind": "quote", "quote": "Nothing is built yet."}, "items": []},
+    "external_systems": [],
     "workload": {
       "observed": [],
       "projected": [
@@ -63,6 +76,7 @@
       ],
       "peaks": []
     },
+    "performance": {"targets": []},
     "reliability": {"availability": "unknown", "data_loss_tolerance": "unknown", "recovery_time": "unknown"},
     "privacy": {
       "data_categories": [
@@ -106,7 +120,17 @@
       {"question": "Will Pantry Pal store users' food allergies?", "why_it_matters": "Allergy data is health data: it raises sensitivity to high and brings stricter rules on consent, storage and security.", "decisions_affected": ["data model", "security controls", "consent flow", "hosting region"], "material": true, "field": "privacy.data_categories"},
       {"question": "Which country will the beta launch in first?", "why_it_matters": "Germany brings GDPR and Canada PIPEDA; the answer decides the hosting region and the privacy duties.", "decisions_affected": ["hosting region", "privacy compliance"], "material": true, "field": "privacy.jurisdictions_or_rules"},
       {"question": "How many receipts does a typical user scan per week?", "why_it_matters": "Reading receipts is the main processing load and cost; it sizes the receipt-reading service.", "decisions_affected": ["receipt processing design", "running cost"], "material": true, "field": "workload.projected"},
-      {"question": "What availability and data-loss tolerance does the beta need?", "why_it_matters": "With no one on call at night, the answer decides how much redundancy and managed hosting to pay for.", "decisions_affected": ["hosting choice", "backups"], "material": false, "field": "reliability.availability"}
+      {"question": "Which outside services, if any, will the product use?", "why_it_matters": "None is named; any receipt reader or mail service is a later design choice.", "decisions_affected": ["receipt processing design"], "material": false, "field": "external_systems"},
+      {"question": "What load is there now?", "why_it_matters": "Nothing is in users' hands yet, so there is none to measure.", "decisions_affected": ["sizing"], "material": false, "field": "workload.observed"},
+      {"question": "When are the busiest moments?", "why_it_matters": "No peak is named; at beta size a peak would not change the design.", "decisions_affected": ["sizing"], "material": false, "field": "workload.peaks"},
+      {"question": "How fast must the app answer?", "why_it_matters": "No speed target is named; suggestions come once an evening.", "decisions_affected": ["suggestion pipeline"], "material": false, "field": "performance.targets"},
+      {"question": "What availability does the beta need?", "why_it_matters": "With no one on call at night, the answer would only tune how much managed hosting to pay for.", "decisions_affected": ["hosting choice"], "material": false, "field": "reliability.availability"},
+      {"question": "How much data may the beta lose?", "why_it_matters": "Nothing is stored yet; ordinary backups cover any plausible answer.", "decisions_affected": ["backups"], "material": false, "field": "reliability.data_loss_tolerance"},
+      {"question": "How fast must the beta come back after a failure?", "why_it_matters": "No one is on call; any plausible answer leads to the same simple setup.", "decisions_affected": ["hosting choice"], "material": false, "field": "reliability.recovery_time"},
+      {"question": "Does anyone else receive users' data?", "why_it_matters": "No one is named; processors are a later design choice.", "decisions_affected": ["processor choice"], "material": false, "field": "privacy.sharing"},
+      {"question": "Are security controls needed beyond email sign-in?", "why_it_matters": "None is asked for; the allergy question is where this would change.", "decisions_affected": ["security controls"], "material": false, "field": "security.requirements"},
+      {"question": "Are there named threats?", "why_it_matters": "Nothing is built and none is named.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
+      {"question": "Does any certification or audit apply?", "why_it_matters": "None is asked for; the legal doubt is about allergies and the launch country.", "decisions_affected": ["compliance work"], "material": false, "field": "security.compliance"}
     ],
     "assumptions": [
       {"text": "The beta is one region and one small database.", "why": "Two part-time founders, a few thousand projected users and no stated peaks."}

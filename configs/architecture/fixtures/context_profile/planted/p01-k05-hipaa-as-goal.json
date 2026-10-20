@@ -1,5 +1,5 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p01-k05-hipaa-as-goal",
   "case_id": "k05-small-therapy",
   "fault": "A mandatory privacy requirement made a tradeable goal: HIPAA compliance is removed from the constraints and added as a privacy goal ranked last.",

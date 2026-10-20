@@ -520,11 +520,11 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/fixtures/first_app_reworded/` | checker controls (the synthetic page reworded, with its profile) |
 | `architecture/bin/first_app_p3.py` | script (first_app_check's Project 3 journey: WebKit phone, exact text, kill and start) |
 | `architecture/fixtures/p3_app/` | checker controls (synthetic Project-3-style page, with its plants) |
-| `architecture/stages/context_profile/STANDARD.md` | stage standard (context profile: bars, contract, cases) |
-| `architecture/stages/context_profile/contract.v1.schema.json` | contract (JSON Schema) |
+| `architecture/stages/context_profile/STANDARD.md` | stage standard (context profile v2: bars and contract; no case content) |
+| `architecture/stages/context_profile/contract.v2.schema.json` | contract (JSON Schema) |
 | `architecture/bin/context_profile_check.py` | script (contract checker) |
 | `architecture/bin/context_profile_score.py` | script (scorer against a case key) |
-| `architecture/fixtures/context_profile/known/` | known cases (briefs with answer keys) |
+| `architecture/fixtures/context_profile/known/` | known-case table (README.md) and 14 briefs with v2 answer keys |
 | `architecture/fixtures/context_profile/planted/` | planted bad profiles (expected failures) |
 | `epd/workflows/epd_pattern_audit.yaml` | workflow |
 | `epd/workflows/epd_plan.yaml` | workflow |

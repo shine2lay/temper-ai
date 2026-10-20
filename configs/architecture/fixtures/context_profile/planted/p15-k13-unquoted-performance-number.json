@@ -1,0 +1,10 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p15-k13-unquoted-performance-number", "case_id": "k13-performance-docks",
+  "fault": "The p95 performance number is changed to 100 while its quote still says 250. The checker refuses the invented number; the scorer also records the lost correct value.",
+  "expect": [
+    {"reason": "checker:number_not_in_quote", "ref": "$.performance.targets[0]"},
+    {"reason": "fact_wrong_value", "ref": "F11"}
+  ],
+  "edits": [{"op": "set", "path": ["performance", "targets", 0, "value"], "value": 100}]
+}

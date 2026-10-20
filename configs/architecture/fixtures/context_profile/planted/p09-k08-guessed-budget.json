@@ -1,5 +1,5 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p09-k08-guessed-budget",
   "case_id": "k08-missing-volunteers",
   "fault": "Assumption shown as fact: the brief sets no budget, but the build budget is filled with a guessed figure.",

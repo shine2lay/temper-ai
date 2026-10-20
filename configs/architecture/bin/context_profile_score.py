@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Score context profiles against a known case's answer key (System architecture, queue #122, 2026-10-20).
+"""Score context profiles against a known case's answer key (System architecture, queue #122; v2 #127, 2026-10-20).
 
 Deterministic: no model, standard library only. A key (configs/architecture/fixtures/context_profile/known/
 <case>/key.json, written before any model run) holds a reference profile and what to look for: the material
 facts with the quote anchors that may carry each, the material unknowns, the hard constraints, the ranked
 goals, the fields the brief leaves unknown, and traps (text that must not carry a given kind of item).
-Matching is by text, never by a model: an item carries a fact when its quote contains one of the fact's
-anchors, compared the way the checker compares quotes (context_profile_check.norm).
+Matching is by text, never by a model: an item can carry a fact when its quote contains one of the fact's
+anchors, compared the way the checker compares quotes (context_profile_check.norm), in the fact's primary or
+alternative section. Items and facts are then paired one to one by maximum matching, so one item counts for
+at most one fact however much its quote holds.
 
   context_profile_score.py --case DIR PROFILE.json      one profile against DIR/key.json and DIR/brief.md;
                                                         a planted file (a whole profile, or edits to the
@@ -43,17 +45,20 @@ cpc = _load_checker()
 
 CATEGORIES = ("idea_stage", "startup_paying", "growing_b2b_saas", "large_consumer", "small_high_risk",
               "large_simple", "conflicting_priorities", "missing_budget_workload", "projected_as_observed",
-              "misleading_claim", "privacy_vs_cost", "internal_tool_deadline")
+              "misleading_claim", "privacy_vs_cost", "internal_tool_deadline", "performance_critical",
+              "large_org_internal")
 FACT_SECTIONS = tuple(s for s in cpc.SECTIONS if s not in ("product", "privacy.sensitivity", "constraints", "goals"))
-# Fields a brief can leave open (key fields_unknown): every fact field but maturity.evidence.
-OPEN_FIELDS = tuple(s for s in (*cpc.LIST_FACTS, *cpc.WORKLOAD, *cpc.SCALAR_FACTS, "privacy.sensitivity")
-                    if s != "maturity.evidence")
+# Fields a brief can leave open (key fields_unknown): every fact field but maturity.evidence, plus whether a
+# system exists now.
+OPEN_FIELDS = ("maturity.stage", "current_system.state", "current_system.items", "external_systems",
+               *(s for s in cpc.LIST_FACTS if s != "maturity.evidence"), *cpc.MEASURES, *cpc.SCALAR_FACTS,
+               "privacy.sensitivity")
 # What an unknown may name in its field: the contract's unknown.field enum (a test holds them equal).
-UNKNOWN_FIELDS = ("maturity.stage", *OPEN_FIELDS, "constraints", "goals")
+UNKNOWN_FIELDS = (*OPEN_FIELDS, "constraints", "goals")
 TRAP_SECTIONS = tuple(s for s in cpc.SECTIONS if s != "product")
 # Checker reasons that mean a fact was made up, not just badly formed.
-INVENTING = ("quote_not_in_brief", "number_not_in_quote", "observed_not_quoted")
-PLANTED_FORMAT = "context_profile_planted/v1"
+INVENTING = ("quote_not_in_brief", "number_not_in_quote", "observed_not_quoted", "system_name_not_in_quote")
+PLANTED_FORMAT = "context_profile_planted/v2"
 COMPONENTS = ("facts", "unknowns", "constraints", "goals", "goal_order", "maturity", "sensitivity",
               "unknown_fields", "no_invention")
 RECALL_BAR, ORDER_BAR = 0.95, 0.90
@@ -86,15 +91,31 @@ def lint_key(key: object, brief_text: str, brief_sha256: str) -> list[str]:
             problems.append(f"{name} is missing")
     if key.get("category") not in CATEGORIES:
         problems.append(f"category {key.get('category')!r} is not one of {', '.join(CATEGORIES)}")
-    for name, allowed in (("maturity", cpc.STAGES), ("sensitivity", (*cpc.LEVELS, "unknown"))):
-        accepted = (key.get(name) or {}).get("accepted") if isinstance(key.get(name), dict) else None
-        if not isinstance(accepted, list) or not accepted or any(a not in allowed for a in accepted):
-            problems.append(f"{name}.accepted must list values from {', '.join(allowed)}")
-    if not isinstance(key.get("profile"), dict):
+    accepted = (key.get("sensitivity") or {}).get("accepted") if isinstance(key.get("sensitivity"), dict) else None
+    if not isinstance(accepted, list) or not accepted or any(a not in (*cpc.LEVELS, "unknown") for a in accepted):
+        problems.append(f"sensitivity.accepted must list values from {', '.join((*cpc.LEVELS, 'unknown'))}")
+    texts: list[tuple[str, str]] = []
+    stages = (key.get("maturity") or {}).get("accepted") if isinstance(key.get("maturity"), dict) else None
+    if not isinstance(stages, list) or not stages:
+        problems.append("maturity.accepted must list {stage, quotes} entries")
+        stages = []
+    for i, entry in enumerate(stages):
+        if not isinstance(entry, dict) or entry.get("stage") not in cpc.STAGES:
+            problems.append(f"maturity.accepted[{i}]: stage must be one of {', '.join(cpc.STAGES)}")
+            continue
+        quotes = entry.get("quotes")
+        if not isinstance(quotes, list) or not quotes or not all(isinstance(q, str) and q.strip() for q in quotes):
+            problems.append(f"maturity.accepted[{i}] ({entry['stage']}): quotes must list the brief text that supports it")
+        else:
+            texts += [(f"maturity.accepted[{i}] ({entry['stage']})", q) for q in quotes]
+    if len({e.get("stage") for e in stages if isinstance(e, dict)}) != len(stages):
+        problems.append("maturity.accepted: a stage is listed twice")
+    profile = key.get("profile")
+    if not isinstance(profile, dict):
         problems.append("profile (the reference profile) is missing")
+        profile = {}
 
     seen: set[str] = set()
-    texts: list[tuple[str, str]] = []
     for group in ("facts", "constraints", "goals", "unknowns", "traps"):
         entries = key.get(group)
         if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
@@ -109,9 +130,15 @@ def lint_key(key: object, brief_text: str, brief_sha256: str) -> list[str]:
             if group != "unknowns":
                 texts += [(f"{where} ({ident})", a) for a in _anchors(entry, where, problems)]
             if group == "facts":
-                sections = entry.get("in")
-                if not isinstance(sections, list) or not sections or any(s not in FACT_SECTIONS for s in sections):
-                    problems.append(f"{where}: in must list sections from {', '.join(FACT_SECTIONS)}")
+                if "in" in entry:
+                    problems.append(f"{where}: v1's in is replaced by primary (and alt with why_alt)")
+                if entry.get("primary") not in FACT_SECTIONS:
+                    problems.append(f"{where}: primary must be one of {', '.join(FACT_SECTIONS)}")
+                if "alt" in entry and (entry["alt"] not in FACT_SECTIONS or entry["alt"] == entry.get("primary")):
+                    problems.append(f"{where}: alt must be another section from {', '.join(FACT_SECTIONS)}")
+                why_alt = entry.get("why_alt")
+                if ("alt" in entry) != (isinstance(why_alt, str) and bool(why_alt.strip())):
+                    problems.append(f"{where}: an alt needs a why_alt note, and a why_alt needs an alt")
                 if "value" in entry and not cpc._is_type(entry["value"], "number"):
                     problems.append(f"{where}: value must be a number")
             if group == "goals":
@@ -149,18 +176,32 @@ def lint_key(key: object, brief_text: str, brief_sha256: str) -> list[str]:
     if not isinstance(unknown_fields, list) or not all(isinstance(f, dict) for f in unknown_fields):
         problems.append("fields_unknown must be a list of objects")
         unknown_fields = []
+    material_fields = {u.get("field") for u in key.get("unknowns") or [] if isinstance(u, dict) and u.get("field")}
     for i, entry in enumerate(unknown_fields):
-        if entry.get("field") not in OPEN_FIELDS:
-            problems.append(f"fields_unknown[{i}]: field {entry.get('field')!r} is not a fact field")
+        field = entry.get("field")
+        if field not in OPEN_FIELDS:
+            problems.append(f"fields_unknown[{i}]: field {field!r} is not a fact field")
         open_anchors = entry.get("open_anchors", [])
         if not isinstance(open_anchors, list) or not all(isinstance(a, str) and a.strip() for a in open_anchors):
             problems.append(f"fields_unknown[{i}]: open_anchors must be a list of text")
         else:
             texts += [(f"fields_unknown[{i}]", a) for a in open_anchors]
-    open_fields = {e.get("field") for e in unknown_fields}
+        reason = entry.get("not_material_reason")
+        has_reason = isinstance(reason, str) and bool(reason.strip())
+        if (field in material_fields) == has_reason:
+            problems.append(f"fields_unknown[{i}] ({field}): either a material unknown in unknowns names this field, "
+                            "or the entry carries a not_material_reason; exactly one")
+    open_fields = [e.get("field") for e in unknown_fields]
+    if len(set(open_fields)) != len(open_fields):
+        problems.append("fields_unknown: a field is listed twice")
     for fact in key.get("facts") or []:
-        if isinstance(fact, dict) and isinstance(fact.get("in"), list) and open_fields & set(fact["in"]):
-            problems.append(f"fact {fact.get('id')}: may sit in {sorted(open_fields & set(fact['in']))}, which fields_unknown says the brief leaves open")
+        if isinstance(fact, dict) and set(fact_sections(fact)) & set(open_fields):
+            problems.append(f"fact {fact.get('id')}: may sit in {sorted(set(fact_sections(fact)) & set(open_fields))}, "
+                            "which fields_unknown says the brief leaves open")
+    left_open = sorted(f for f in OPEN_FIELDS if is_open(profile, f))
+    if left_open != sorted(set(open_fields)):
+        problems.append(f"fields_unknown {sorted(set(open_fields))} must list exactly the fields the reference profile "
+                        f"leaves unknown or empty: {left_open}")
 
     problems += [f"{where}: anchor {text!r} is not in the brief" for where, text in texts if cpc.norm(text) not in brief]
     return problems
@@ -178,6 +219,70 @@ def _rate(right: int, total: int) -> float:
 
 def _carries(quote: str, anchors: list[str]) -> bool:
     return any(cpc.norm(anchor) in quote for anchor in anchors)
+
+
+def fact_sections(fact: dict) -> list[str]:
+    """The sections a key fact may sit in: its primary section, and its alternative when the key gives one."""
+    return [s for s in (fact.get("primary"), fact.get("alt")) if isinstance(s, str)]
+
+
+def accepted_stages(key: dict) -> list[str]:
+    return [entry["stage"] for entry in key["maturity"]["accepted"]]
+
+
+def is_open(profile: object, field: str) -> bool:
+    """Does the profile leave this field open: "unknown", or an empty list? current_system.items counts only when
+    a system exists (with none, or an unknown state, there are no items to give)."""
+    if field == "current_system.items" and cpc.at(profile, "current_system.state") != "exists":
+        return False
+    value = cpc.at(profile, field)
+    return value == "unknown" or value == []
+
+
+def filled_nodes(profile: object, field: str) -> list[dict]:
+    """The items a profile put in a field (current_system.state: the current_system node, unless unknown)."""
+    if field == "current_system.state":
+        node = cpc.at(profile, "current_system")
+        return [node] if isinstance(node, dict) and node.get("state") in ("none", "exists") else []
+    node = cpc.at(profile, field)
+    if isinstance(node, list):
+        return [n for n in node if isinstance(n, dict)]
+    return [node] if isinstance(node, dict) else []
+
+
+def match_facts(facts: list[dict], quoted: list[tuple]) -> tuple[dict[int, int], list[list[int]]]:
+    """Pair key facts with profile items one to one, by maximum bipartite matching (Kuhn's augmenting paths).
+
+    An item can carry a fact when its quote holds one of the fact's anchors, it sits in the fact's primary or
+    alternative section, and it states the fact's number when the key gives one. Tie-break: facts are tried in
+    key order and items in profile order; a fact once matched stays matched (a later fact may move it to
+    another item, never unmatch it), so when not every fact can be paired, the ones left out are the later
+    facts in key order. Returns ({fact index: item index}, the items each fact could use)."""
+    eligible = [[j for j, (item, quote) in enumerate(quoted)
+                 if item.section in fact_sections(fact) and _carries(quote, fact["anchors"])
+                 and ("value" not in fact or _states_value(item, fact["value"]))] for fact in facts]
+    owner: dict[int, int] = {}
+
+    def augment(i: int, seen: set[int]) -> bool:
+        for j in eligible[i]:
+            if j not in seen:
+                seen.add(j)
+                if j not in owner or augment(owner[j], seen):
+                    owner[j] = i
+                    return True
+        return False
+
+    for i in range(len(facts)):
+        augment(i, set())
+    return {i: j for j, i in owner.items()}, eligible
+
+
+def _median(values: list[int]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    mid = len(ordered) // 2
+    return float(ordered[mid]) if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
 
 
 def criteria_of(goal: dict) -> list[str]:
@@ -202,28 +307,36 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
     items = list(cpc.iter_items(profile))
     quoted = [(item, cpc.norm(item.quote)) for item in items if item.kind == "quote" and item.quote]
 
-    # Material facts: quoted in a section the key allows, with the key's number when it names one.
+    # Material facts: paired one to one with items in a section the key allows, with the key's number when it
+    # names one (match_facts). An unpaired fact says why: its only carriers went to other facts, its number is
+    # wrong, it sits in the wrong section, or nothing quotes it.
+    matched, eligible = match_facts(key["facts"], quoted)
     captured: list[str] = []
-    for fact in key["facts"]:
+    for i, fact in enumerate(key["facts"]):
+        sections = fact_sections(fact)
         hits = [item for item, quote in quoted if _carries(quote, fact["anchors"])]
-        placed = [item for item in hits if item.section in fact["in"]]
-        if placed and ("value" not in fact or any(_states_value(item, fact["value"]) for item in placed)):
+        placed = [item for item in hits if item.section in sections]
+        if i in matched:
             captured.append(fact["id"])
+        elif eligible[i]:
+            failures.append(_fail("fact_quote_shared", fact["id"],
+                                  f"only {', '.join(quoted[j][0].path for j in eligible[i])} carry it, and each counts for "
+                                  "another fact: one item carries one fact"))
         elif placed:
             failures.append(_fail("fact_wrong_value", fact["id"],
                                   f"quoted in {placed[0].path} without the value {fact['value']}"))
         elif hits:
             failures.append(_fail("fact_misplaced", fact["id"],
-                                  f"quoted in {', '.join(sorted({i.section for i in hits}))}; belongs in {' or '.join(fact['in'])}"))
+                                  f"quoted in {', '.join(sorted({i.section for i in hits}))}; belongs in {' or '.join(sections)}"))
         else:
             failures.append(_fail("fact_missed", fact["id"],
-                                  f"no item in {' or '.join(fact['in'])} quotes {fact['anchors'][0]!r}"))
+                                  f"no item in {' or '.join(sections)} quotes {fact['anchors'][0]!r}"))
 
-    # Fields the brief leaves open stay open.
+    # Fields the brief leaves open stay open. The checker requires unknowns entries for unknown scalars and
+    # empty lists; here the key also prevents filling them by invention.
     open_kept = 0
     for entry in key["fields_unknown"]:
-        node = cpc.at(profile, entry["field"])
-        filled = [n for n in node if isinstance(n, dict)] if isinstance(node, list) else [node] if isinstance(node, dict) else []
+        filled = filled_nodes(profile, entry["field"])
         if not filled:
             open_kept += 1
         for n in filled:
@@ -241,17 +354,20 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
                 failures.append(_fail("guessed_unknown", entry["field"],
                                       f"the brief gives no {entry['field']}: unknown, never guessed"))
 
-    # Material unknowns: flagged material, matched by field or by every term group.
+    # Material unknowns: explicit field paths take priority. Use every term group only when either side
+    # has no field; a question about another named field must not mask this field's material gap.
     asked = []
     for u in profile.get("unknowns", []) if isinstance(profile, dict) and isinstance(profile.get("unknowns"), list) else []:
         if isinstance(u, dict):
             said = [u.get("question"), u.get("why_it_matters"), *(u.get("decisions_affected") or [])]
             asked.append((u, cpc.norm(" ".join(s for s in said if isinstance(s, str)))))
     flagged: list[str] = []
+    in_key: set[int] = set()
     for ku in key["unknowns"]:
         matches = [u for u, text in asked
-                   if (ku.get("field") and u.get("field") == ku["field"])
-                   or (ku.get("terms") and all(any(cpc.norm(t) in text for t in group) for group in ku["terms"]))]
+                   if (u["field"] == ku["field"] if ku.get("field") and u.get("field") else
+                       ku.get("terms") and all(any(cpc.norm(t) in text for t in group) for group in ku["terms"]))]
+        in_key |= {id(u) for u in matches}
         if any(u.get("material") is True for u in matches):
             flagged.append(ku["id"])
         elif matches:
@@ -297,8 +413,9 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
         failures.append(_fail("goal_order", "goals", f"top three {got}; the key accepts {accepted}"))
 
     stage = profile.get("maturity", {}).get("stage") if isinstance(profile, dict) and isinstance(profile.get("maturity"), dict) else None
-    if stage not in key["maturity"]["accepted"]:
-        failures.append(_fail("maturity_mismatch", "maturity.stage", f"{stage!r}; the key accepts {key['maturity']['accepted']}"))
+    stages = accepted_stages(key)
+    if stage not in stages:
+        failures.append(_fail("maturity_mismatch", "maturity.stage", f"{stage!r}; the key accepts {stages}"))
     sensitivity = cpc.at(profile, "privacy.sensitivity")
     level = sensitivity.get("level") if isinstance(sensitivity, dict) else sensitivity
     if level not in key["sensitivity"]["accepted"]:
@@ -310,6 +427,12 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
             if item.section in trap["forbidden_in"] and _carries(quote, trap["anchors"]):
                 invented += 1
                 failures.append(_fail(f"trap:{trap['reason']}", trap["id"], f"{item.path} stands on {trap['anchors'][0]!r}"))
+
+    # Reported, not barred: material unknowns the key does not hold (a later key review reads them), and how
+    # long the quotes are.
+    extra_unknowns = [{"field": u.get("field"), "question": u.get("question")} for u, _text in asked
+                      if u.get("material") is True and id(u) not in in_key]
+    words = [len(quote.split()) for _item, quote in quoted]
 
     facts = {"captured": len(captured), "total": len(key["facts"]), "captured_ids": captured}
     unknowns = {"flagged": len(flagged), "total": len(key["unknowns"]), "flagged_ids": flagged}
@@ -323,7 +446,7 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
         "constraints": _rate(constraints["right"], constraints["total"]),
         "goals": _rate(goals_["right"], goals_["total"]),
         "goal_order": _rate(agree, len(best)),
-        "maturity": 1.0 if stage in key["maturity"]["accepted"] else 0.0,
+        "maturity": 1.0 if stage in stages else 0.0,
         "sensitivity": 1.0 if level in key["sensitivity"]["accepted"] else 0.0,
         "unknown_fields": _rate(open_kept, len(key["fields_unknown"])),
         "no_invention": 1.0 if invented == 0 else 0.0,
@@ -336,10 +459,12 @@ def score(key: dict, profile: object, brief_text: str, validator) -> dict:
         "constraints": constraints,
         "goals": goals_,
         "goal_order": order,
-        "maturity": {"got": stage, "accepted": key["maturity"]["accepted"]},
+        "maturity": {"got": stage, "accepted": stages},
         "sensitivity": {"got": level, "accepted": key["sensitivity"]["accepted"]},
         "unknown_fields": {"kept": open_kept, "total": len(key["fields_unknown"])},
         "invented": invented,
+        "material_unknowns_not_in_key": extra_unknowns,
+        "quote_words": {"median": _median(words), "max": max(words, default=0)},
         "rates": rates,
         "score_pct": round(100 * sum(rates[c] for c in COMPONENTS) / len(COMPONENTS), 1),
         "failures": failures,

@@ -1,33 +1,39 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k04-large-photos",
   "category": "large_consumer",
-  "tests": "Large consumer product: 31 million monthly users, 420 engineers, three regions and 24/7 on-call; public availability and recovery commitments, never losing a confirmed photo, the age floor, 30-day deletion, GDPR, LGPD, Brazilian residency and the DSA are all constraints; the leadership's ranked priorities, the cost cut among them, are goals; cold-storage access and backup residency are open.",
+  "tests": "Large consumer product: 31 million monthly users, 420 engineers, three regions and 24/7 on-call; public availability and recovery commitments, never losing a confirmed photo, the age floor, 30-day deletion, GDPR, LGPD, Brazilian residency and the DSA are all constraints; the leadership's ranked priorities, the cost cut among them, are goals; cold-storage access and backup residency are open. Maturity is the lifecycle stage only: age and demand do not establish growth or stability, so its lifecycle is unknown; its size comes from workload and team facts, not from the stage. The media pipeline in three cloud regions is the current system; no outside system or speed target is named.",
   "brief_sha256": "9296e309519b43c7502f13b4be3e04a4c0d80d38a5acd1eee34c2fe5d5b5faa2",
-  "maturity": {"accepted": ["large"]},
+  "maturity": {"accepted": [
+    {"stage": "unknown", "quotes": ["It is ten years old", "31 million monthly active users, 9 million of them daily"]}
+  ]},
   "sensitivity": {"accepted": ["moderate", "high"]},
   "facts": [
-    {"id": "F1", "anchors": ["31 million monthly active users"], "in": ["workload.observed", "maturity.evidence"], "value": 31000000},
-    {"id": "F2", "anchors": ["9 million of them daily"], "in": ["workload.observed", "maturity.evidence"], "value": 9000000},
-    {"id": "F3", "anchors": ["upload about 40 million photos and 6 million short videos a day"], "in": ["workload.observed"], "value": 40000000},
-    {"id": "F4", "anchors": ["roughly 1.5 billion media views a day"], "in": ["workload.observed"], "value": 1500000000},
-    {"id": "F5", "anchors": ["uploads run at about 4 times the normal rate"], "in": ["workload.peaks"], "value": 4},
-    {"id": "F6", "anchors": ["Engineering has 420 people in 38 teams"], "in": ["team.size", "maturity.evidence"], "value": 420},
-    {"id": "F7", "anchors": ["A central platform group of 60 runs the infrastructure"], "in": ["team.operating_capacity", "team.size", "team.skills"], "value": 60},
-    {"id": "F8", "anchors": ["24/7 on-call rotation"], "in": ["team.operating_capacity", "maturity.evidence"]},
-    {"id": "F9", "anchors": ["99.95% availability for viewing"], "in": ["reliability.availability"], "value": 99.95},
-    {"id": "F10", "anchors": ["A photo a user has uploaded and seen confirmed must never be lost"], "in": ["reliability.data_loss_tolerance"]},
-    {"id": "F11", "anchors": ["viewing must be back within 15 minutes"], "in": ["reliability.recovery_time"], "value": 15},
-    {"id": "F12", "anchors": ["contacts they choose to sync", "we hold users' photos, videos"], "in": ["privacy.data_categories"]},
-    {"id": "F13", "anchors": ["Users must be 16 or older"], "in": ["privacy.jurisdictions_or_rules", "privacy.data_categories", "security.requirements"], "value": 16},
-    {"id": "F14", "anchors": ["delete an account's media within 30 days"], "in": ["privacy.retention"], "value": 30},
-    {"id": "F15", "anchors": ["EU users' data is processed under GDPR", "Brazilian users' data under LGPD"], "in": ["privacy.jurisdictions_or_rules"]},
-    {"id": "F16", "anchors": ["keep Brazilian users' media in Brazil"], "in": ["privacy.jurisdictions_or_rules"]},
-    {"id": "F17", "anchors": ["EU Digital Services Act"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
-    {"id": "F18", "anchors": ["account takeovers are our most common serious incident"], "in": ["security.threats"]},
-    {"id": "F19", "anchors": ["a bug bounty and a yearly external penetration test"], "in": ["security.compliance", "security.requirements"]},
-    {"id": "F20", "anchors": ["costs about $4.2M a month to run"], "in": ["budget.run_monthly"], "value": 4200000},
-    {"id": "F21", "anchors": ["no fixed limit on the redesign project itself"], "in": ["budget.build"]}
+    {"id": "F1", "anchors": ["31 million monthly active users"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the user count is also evidence of proven demand", "value": 31000000},
+    {"id": "F2", "anchors": ["9 million of them daily"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the user count is also evidence of proven demand", "value": 9000000},
+    {"id": "F3", "anchors": ["upload about 40 million photos and 6 million short videos a day"], "primary": "workload.observed", "value": 40000000},
+    {"id": "F4", "anchors": ["roughly 1.5 billion media views a day"], "primary": "workload.observed", "value": 1500000000},
+    {"id": "F5", "anchors": ["uploads run at about 4 times the normal rate"], "primary": "workload.peaks", "value": 4},
+    {"id": "F6", "anchors": ["Engineering has 420 people in 38 teams"], "primary": "team.size", "value": 420},
+    {"id": "F7", "anchors": ["A central platform group of 60 runs the infrastructure"], "primary": "team.operating_capacity", "alt": "team.skills", "why_alt": "a 60-person platform group is also where the organisation's infrastructure skill sits", "value": 60},
+    {"id": "F8", "anchors": ["24/7 on-call rotation"], "primary": "team.operating_capacity"},
+    {"id": "F9", "anchors": ["99.95% availability for viewing"], "primary": "reliability.availability", "value": 99.95},
+    {"id": "F10", "anchors": ["A photo a user has uploaded and seen confirmed must never be lost"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F11", "anchors": ["viewing must be back within 15 minutes"], "primary": "reliability.recovery_time", "value": 15},
+    {"id": "F12", "anchors": ["contacts they choose to sync", "we hold users' photos, videos"], "primary": "privacy.data_categories"},
+    {"id": "F13", "anchors": ["Users must be 16 or older"], "primary": "privacy.jurisdictions_or_rules", "value": 16},
+    {"id": "F14", "anchors": ["delete an account's media within 30 days"], "primary": "privacy.retention", "value": 30},
+    {"id": "F15", "anchors": ["EU users' data is processed under GDPR", "Brazilian users' data under LGPD"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F16", "anchors": ["keep Brazilian users' media in Brazil"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F17", "anchors": ["EU Digital Services Act"], "primary": "privacy.jurisdictions_or_rules", "alt": "security.compliance", "why_alt": "the Digital Services Act is also a compliance regime the platform answers to"},
+    {"id": "F18", "anchors": ["account takeovers are our most common serious incident"], "primary": "security.threats"},
+    {"id": "F19", "anchors": ["a bug bounty and a yearly external penetration test"], "primary": "security.compliance"},
+    {"id": "F20", "anchors": ["costs about $4.2M a month to run"], "primary": "budget.run_monthly", "value": 4200000},
+    {"id": "F21", "anchors": ["no fixed limit on the redesign project itself"], "primary": "budget.build"},
+    {"id": "F22", "anchors": ["It is ten years old"], "primary": "maturity.evidence"},
+    {"id": "F23", "anchors": ["The media pipeline (upload, transcoding, storage, delivery)", "runs the infrastructure across three cloud regions"], "primary": "current_system"},
+    {"id": "F24", "anchors": ["upload, transcoding, storage, delivery"], "primary": "current_system.items"},
+    {"id": "F25", "anchors": ["three cloud regions (Frankfurt, Virginia and São Paulo)"], "primary": "current_system.items"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["must never be lost"]},
@@ -50,16 +56,30 @@
     {"id": "U2", "terms": [["backup"], ["brazil", "residency", "lgpd"]]}
   ],
   "traps": [],
-  "fields_unknown": [],
+  "fields_unknown": [
+    {"field": "maturity.stage", "open_anchors": [], "not_material_reason": "Demand trend is absent; measured workload, reliability promises and team capacity drive the redesign independently."},
+    {"field": "external_systems", "open_anchors": [], "not_material_reason": "No outside system is named; the pipeline runs in the company's own cloud regions."},
+    {"field": "workload.projected", "open_anchors": [], "not_material_reason": "No forecast is given; the daily upload volume already gives the storage growth the cost plan needs."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed target is named; how often old media is read is the brief's own open question (U1)."},
+    {"field": "privacy.sharing", "open_anchors": [], "not_material_reason": "No sharing with outside parties is named."},
+    {"field": "security.requirements", "open_anchors": [], "not_material_reason": "No new control is asked of the media pipeline; the account-takeover threat is keyed, and login is not part of this redesign."}
+  ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "9296e309519b43c7502f13b4be3e04a4c0d80d38a5acd1eee34c2fe5d5b5faa2",
     "product": {"summary": "A photo and short-video sharing app.", "source": {"kind": "quote", "quote": "Glimmer is a photo and short-video sharing app."}},
-    "maturity": {"stage": "large", "evidence": [
-      {"value": "Ten years old; 31 million monthly active users, 9 million daily", "source": {"kind": "quote", "quote": "It is ten years old and is one of the larger consumer apps in its category: 31 million monthly active users, 9 million of them daily"}},
-      {"value": "420 engineers in 38 teams", "source": {"kind": "quote", "quote": "Engineering has 420 people in 38 teams."}},
-      {"value": "24/7 on-call and a mature incident process", "source": {"kind": "quote", "quote": "with a 24/7 on-call rotation and a mature incident process"}}
+    "maturity": {"stage": "unknown", "evidence": [
+      {"value": "Ten years old; 31 million monthly active users, 9 million daily", "source": {"kind": "quote", "quote": "It is ten years old and is one of the larger consumer apps in its category: 31 million monthly active users, 9 million of them daily"}}
     ]},
+    "current_system": {
+      "state": "exists",
+      "source": {"kind": "quote", "quote": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams."},
+      "items": [
+        {"kind": "component", "text": "media pipeline: upload, transcoding, storage, delivery", "source": {"kind": "quote", "quote": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams."}},
+        {"kind": "hosting", "text": "three cloud regions: Frankfurt, Virginia, São Paulo", "source": {"kind": "quote", "quote": "runs the infrastructure across three cloud regions (Frankfurt, Virginia and São Paulo)"}}
+      ]
+    },
+    "external_systems": [],
     "workload": {
       "observed": [
         {"what": "monthly active users", "value": 31000000, "unit": "users per month", "source": {"kind": "quote", "quote": "31 million monthly active users"}},
@@ -73,6 +93,7 @@
         {"what": "uploads on New Year's Eve and during big football finals, for several hours", "value": 4, "unit": "times the normal rate", "source": {"kind": "quote", "quote": "On New Year's Eve and during big football finals, uploads run at about 4 times the normal rate for several hours."}}
       ]
     },
+    "performance": {"targets": []},
     "reliability": {
       "availability": {"value": "99.95% for viewing and 99.9% for uploading, committed on the public status page", "source": {"kind": "quote", "quote": "our public status page commits to 99.95% availability for viewing and 99.9% for uploading"}},
       "data_loss_tolerance": {"value": "A confirmed uploaded photo must never be lost", "source": {"kind": "quote", "quote": "A photo a user has uploaded and seen confirmed must never be lost."}},
@@ -134,8 +155,14 @@
       {"id": "G4", "criterion": "delivery_speed", "rank": 4, "note": "Speed of delivery matters less than doing this safely", "source": {"kind": "quote", "quote": "Speed of delivery matters less than doing this safely."}}
     ],
     "unknowns": [
+      {"question": "Is demand steady or rising fast?", "why_it_matters": "Age and size cannot establish lifecycle; known workload and reliability promises independently drive the redesign.", "decisions_affected": ["lifecycle classification"], "material": false, "field": "maturity.stage"},
       {"question": "How much stored media is viewed again after its first year?", "why_it_matters": "It decides how much can move to colder, cheaper storage, the main lever for the cost cut.", "decisions_affected": ["storage tiering", "cost plan"], "material": true, "field": "workload.observed"},
-      {"question": "Will the Brazilian residency rule extend to backups?", "why_it_matters": "If it does, backups of Brazilian media must stay in Brazil too, which changes backup and regional recovery.", "decisions_affected": ["backup placement", "regional recovery design"], "material": true, "field": "privacy.jurisdictions_or_rules"}
+      {"question": "Will the Brazilian residency rule extend to backups?", "why_it_matters": "If it does, backups of Brazilian media must stay in Brazil too, which changes backup and regional recovery.", "decisions_affected": ["backup placement", "regional recovery design"], "material": true, "field": "privacy.jurisdictions_or_rules"},
+      {"question": "Does the pipeline depend on any outside service?", "why_it_matters": "None is named; it runs in the company's own cloud regions.", "decisions_affected": ["integration design"], "material": false, "field": "external_systems"},
+      {"question": "How fast will users and uploads grow?", "why_it_matters": "No forecast is given; the daily upload volume already gives storage growth.", "decisions_affected": ["capacity planning"], "material": false, "field": "workload.projected"},
+      {"question": "Is there a speed target for viewing or uploading?", "why_it_matters": "None is named; how often old media is read is already an open question.", "decisions_affected": ["storage tiering"], "material": false, "field": "performance.targets"},
+      {"question": "Is media or profile data shared with outside parties?", "why_it_matters": "None is named.", "decisions_affected": ["data sharing controls"], "material": false, "field": "privacy.sharing"},
+      {"question": "Does the pipeline need new security controls?", "why_it_matters": "None is asked for; the account-takeover threat sits in login, outside this redesign.", "decisions_affected": ["access control"], "material": false, "field": "security.requirements"}
     ],
     "assumptions": []
   }

@@ -1,0 +1,7 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p19-k14-unnamed-unknown", "case_id": "k14-large-org-roomkeys",
+  "fault": "Recovery time remains unknown, but its non-material unknowns entry is removed. Even non-material silent fields must be named; this creates no missed material unknown or other fault.",
+  "expect": [{"reason": "checker:unknown_field_unnamed", "ref": "$.reliability.recovery_time"}],
+  "edits": [{"op": "remove", "path": ["unknowns", 3]}]
+}

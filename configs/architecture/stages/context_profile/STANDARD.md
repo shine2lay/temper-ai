@@ -1,11 +1,12 @@
-# Context profile stage: the standard (contract v1)
+# Context profile stage: the standard (contract v2)
 
 System architecture, queue #122, 2026-10-20. Initiative system-arch-in-temper, project arch-stage-context.
 Accountable lead: architecture. Frozen before any model stage is built: what a great "product context and
 priorities" stage must produce, and how it is measured. Nothing here runs a model.
 
-The stage reads one product brief and returns a **context profile**: maturity, workload, reliability,
-privacy, security, team, budget, hard constraints, ranked goals, unknowns and assumptions, every item
+The stage reads one product brief and returns a **context profile**: lifecycle maturity, current and
+external systems, workload, performance, reliability, privacy, security, team, budget, hard constraints,
+ranked goals, unknowns and assumptions, every item
 standing on an exact quote from the brief or labelled as an assumption. Every later architecture stage
 (options, trade-offs, ADRs, reviews) reuses the profile instead of reading the brief its own way.
 
@@ -31,14 +32,38 @@ standing on an exact quote from the brief or labelled as an assumption. Every la
   classification). (c) Profiles that meet the bars still let a later stage make a decision the brief rules
   out: the contract misses something decisions need.
 
+## H-CTX-2 (rule 20 hypothesis, contract v2)
+
+Written before any v2 change (queue #127, 2026-10-20), from the architecture lead's review of #122's landed
+foundation (temper-ai 3794e277).
+
+- **What is wrong.** (1) The maturity scale contradicts three keys: `scaled` needs formal operations, yet
+  three keys accept it for products without them, and one key fits no stage at all. (2) The contract has no
+  place for the current system, the systems the product depends on, or performance targets: C4's context
+  level and ATAM's performance attribute have no home, and such facts in five briefs are unkeyed or squeezed
+  into `team.skills`. (3) A field left open is not required to be named as an unknown, so material gaps can
+  pass silently. (4) Quotes have no length cap and the scorer matches by containment with no one-to-one
+  pairing, so one padded quote can carry several facts and inflate recall (B2).
+- **The one change.** Contract v2: a lifecycle-only maturity scale; `current_system`, `external_systems`
+  and `performance.targets` with a `performance` goal criterion; every unknown or silent field named in
+  `unknowns`; quotes of 2 to 40 words; one-to-one matching of items to key facts; one primary section per
+  key fact; two more known cases and new planted profiles. Bars and ceilings unchanged.
+- **Expected result, and how it is measured.** All known keys pass checker v2 and score 100% against
+  themselves; every planted profile fails with exactly its named reasons, including the padded quote
+  (credited once) and the long quote; no brief fact about current systems, external systems or performance
+  is left unkeyed.
+- **What would prove it wrong.** A known brief cannot be keyed without ambiguity under the new definitions,
+  or padding still raises recall.
+
 ## Where things are
 
 | Path (under configs/architecture/) | What |
 |---|---|
 | `stages/context_profile/STANDARD.md` | this standard |
-| `stages/context_profile/contract.v1.schema.json` | the contract, JSON Schema 2020-12 |
+| `stages/context_profile/contract.v2.schema.json` | the contract, JSON Schema 2020-12 |
 | `bin/context_profile_check.py` | the checker: contract + brief, deterministic |
 | `bin/context_profile_score.py` | the scorer: profile against a case's key, deterministic |
+| `fixtures/context_profile/known/README.md` | the known-case table; no case content belongs in this standard or the schema |
 | `fixtures/context_profile/known/<case-id>/brief.md` | a known case's brief (synthetic) |
 | `fixtures/context_profile/known/<case-id>/key.json` | its answer key, written before any model run |
 | `fixtures/context_profile/planted/<plant-id>.json` | a bad profile for a known case, with the failures it must cause |
@@ -50,54 +75,63 @@ refuses any other rather than skipping it.
 
 ## The contract
 
-One JSON object, `"contract": "context_profile/v1"`. All sections are required; a section with nothing in
+One JSON object, `"contract": "context_profile/v2"`. All sections are required; a section with nothing in
 the brief is still present (an empty list, or `"unknown"`). No other keys are allowed anywhere.
 
 **Sources.** Every item carries `source`, one of:
-- `{"kind": "quote", "quote": "<exact text from the brief>"}`: one span of the brief, at least two words.
+- `{"kind": "quote", "quote": "<exact text from the brief>"}`: one span of the brief, **2 to 40 words**.
   Compared after normalising case, whitespace, curly quote marks, dashes and markdown emphasis (`*`, `_`,
   backticks). Quote the shortest span that carries the whole item.
 - `{"kind": "assumption", "why": "<the reasoning>"}`: the stage's own reading or derivation.
 
-| Field | Shape | Holds | Example |
-|---|---|---|---|
-| `brief_sha256` | optional hex | the brief it was made from; checked when present | |
-| `product` | `{summary, source}` | one line: what the product is | "A phone app that tracks kitchen food and suggests meals" |
-| `maturity.stage` | idea, startup, growing, scaled, large, unknown | see Maturity | `"startup"` |
-| `maturity.evidence[]` | facts | what the stage is read from | "140 paying customers" |
-| `workload.observed[]` | `{what, value, unit, source}` | measured now; must be quoted | 1,200,000 page views a month |
-| `workload.projected[]` | same | forecasts, targets, hopes | 10,000 users by the end of next year |
-| `workload.peaks[]` | same | busiest moments, bursts, seasonality | 5x normal traffic on Monday 9-10am |
-| `reliability.availability` | fact or `"unknown"` | uptime target or SLA | "99.9% monthly uptime in contracts" |
-| `reliability.data_loss_tolerance` | fact or `"unknown"` | how much data may be lost (RPO) | "no booking may ever be lost" |
-| `reliability.recovery_time` | fact or `"unknown"` | how fast it must come back (RTO) | "back within 4 hours" |
-| `privacy.data_categories[]` | facts | kinds of personal data held | "therapists' session notes" |
-| `privacy.sensitivity` | `{level, source}` or `"unknown"` | none, low, moderate, high; see Sensitivity | |
-| `privacy.retention[]` | facts | how long data is kept, when deleted | "delete photos once read" |
-| `privacy.sharing[]` | facts | who else gets data (processors, partners) | "Stripe handles card payments" |
-| `privacy.jurisdictions_or_rules[]` | facts | laws, regions, contracts that bind data | "HIPAA", "data stays in the EU" |
-| `security.requirements[]` | facts | controls the brief asks for | "SSO through the company's Okta" |
-| `security.threats[]` | facts | named attackers, abuse, incidents | "a competitor scraped our listings" |
-| `security.compliance[]` | facts | certifications and audits | "SOC 2 Type II by Q3" |
-| `team.size` | fact or `"unknown"` | people who build and run it | "3 engineers" |
-| `team.skills[]` | facts | what they know and don't | "no one has run Kubernetes" |
-| `team.operating_capacity[]` | facts | time and on-call they can give | "part-time, 15 hours a week each" |
-| `budget.build` | fact or `"unknown"` | money to build (or total money) | "$12,000 for the first year" |
-| `budget.run_monthly` | fact or `"unknown"` | money to run, per month | "hosting under $150 a month" |
-| `constraints[]` | `{id: C<n>, text, source}` | must-holds; see Constraints and goals | |
-| `goals[]` | `{id: G<n>, criterion, rank, note, source}` | ranked, tradeable preferences | |
-| `unknowns[]` | `{question, why_it_matters, decisions_affected[], material, field?}` | what the brief leaves open | |
-| `assumptions[]` | `{text, why}` | working assumptions the stage made | |
+| Field | Shape | Holds |
+|---|---|---|
+| `brief_sha256` | optional hex | the brief it was made from; checked when present |
+| `product` | `{summary, source}` | one line: what the product is |
+| `maturity.stage` | idea, startup, growing, established, unknown | lifecycle only; see Maturity |
+| `maturity.evidence[]` | facts | the evidence for that lifecycle stage |
+| `current_system` | `{state: none\|exists\|unknown, source?, items[]}` | whether a system exists now; none and exists require a quote; unknown needs an unknowns entry and may omit source |
+| `current_system.items[]` | `{kind, text, source}` | owned components, stack, hosting, data stores and clients as they are now; kind is component, stack, hosting, data_store, client or other |
+| `external_systems[]` | `{name, role, source}` | systems not owned by the product that it reads from, writes to or depends on: feeds, ERPs, identity providers, payment processors, devices, partner APIs |
+| `workload.observed[]` | `{what, value, unit, source}` | measured load now; must be quoted |
+| `workload.projected[]` | same | forecasts, capacity forecasts and hoped-for workload |
+| `workload.peaks[]` | same | busiest moments, bursts, seasonality and qualitative load or speed complaints without a stated response target |
+| `performance.targets[]` | same | stated latency, throughput, freshness or capacity targets, not observations or invented numbers |
+| `reliability.availability` | fact or `"unknown"` | uptime target, SLA or stated outage tolerance |
+| `reliability.data_loss_tolerance` | fact or `"unknown"` | how much data may be lost (RPO) |
+| `reliability.recovery_time` | fact or `"unknown"` | how fast it must come back (RTO), not uptime or on-call coverage |
+| `privacy.data_categories[]` | facts | kinds of personal data held |
+| `privacy.sensitivity` | `{level, source}` or `"unknown"` | none, low, moderate, high; see Sensitivity |
+| `privacy.retention[]` | facts | how long data is kept, when deleted |
+| `privacy.sharing[]` | facts | who else gets data (processors, partners) |
+| `privacy.jurisdictions_or_rules[]` | facts | laws, regions, contracts that bind data |
+| `security.requirements[]` | facts | controls the brief asks for |
+| `security.threats[]` | facts | named attackers, abuse, incidents; not a load slowdown |
+| `security.compliance[]` | facts | certifications, audits and binding compliance obligations |
+| `team.size` | fact or `"unknown"` | people who build and run it |
+| `team.skills[]` | facts | what they know and do not know; not a substitute for the installed stack |
+| `team.operating_capacity[]` | facts | time and on-call they can give |
+| `budget.build` | fact or `"unknown"` | money available to build (or total available funding), never a revenue figure |
+| `budget.run_monthly` | fact or `"unknown"` | money to run, per month |
+| `constraints[]` | `{id: C<n>, text, source}` | must-holds; see Constraints and goals |
+| `goals[]` | `{id: G<n>, criterion, rank, note, source}` | ranked, tradeable preferences |
+| `unknowns[]` | `{question, why_it_matters, decisions_affected[], material, field?}` | what the brief leaves open |
+| `assumptions[]` | `{text, why}` | working assumptions the stage made |
 
 A fact is `{value, source}`; `value` is a short statement in the stage's words. `unknowns[].field`, when
 given, names the contract field the unknown is about (the schema lists the allowed names).
 
 ## Rules for filling it
 
-**Unknown, never guessed.** A fact the brief does not give is `"unknown"` (scalar fields) or left out (list
-fields), and when it is material it is named in `unknowns` with `material: true`. An assumption may
-*interpret* or *derive from* what the brief says (a sensitivity level, a figure computed from stated
-numbers); it may not fill a field the brief says nothing about. Working assumptions go in `assumptions`.
+**Unknown, never guessed.** A fact the brief does not give is `"unknown"` (scalar fields) or an empty
+list. Every such field needs an `unknowns` entry with `field` equal to its path, `material: true` or `false`,
+and `why_it_matters`. This includes non-material silence: explain why no decision turns on it rather than
+silently dropping it. The checker enforces this without a key. Empty `current_system.items` is exempt when
+state is none or unknown (there is no known system to describe); empty maturity evidence is covered by
+`maturity.stage: unknown`. Empty `unknowns` and `assumptions` do not recursively create unknowns. Empty
+constraints or goals do need their own entries. An assumption may *interpret* or *derive from* stated
+facts (sensitivity, a computed number); it may not fill a field the brief says nothing about.
+Working assumptions go in `assumptions`.
 
 **Numbers.** Every number an item states (digits, words like "two hundred", scales like "1.2M" or "40k")
 must appear in that item's quote, by value. A number the brief does not say, such as a rate computed from a
@@ -108,15 +142,16 @@ hopes and investor-deck figures are projected, however they are worded. A number
 and later called a target or a plan is projected. Someone else's numbers (a competitor, a market size) are
 not this product's workload at all.
 
-**Maturity** is read from the product's life stage and stakes, not from its user count alone:
-- `idea`: nothing in users' hands yet; validating demand.
-- `startup`: live with early or first paying users; small team; still finding fit; changes weekly.
-- `growing`: proven demand, growing customers and team; customers depend on it; repeatability and scale
-  start to hurt.
-- `scaled`: established product with stable demand and formal operations (on-call, SLAs, several teams).
-- `large`: a large organisation or product: many teams, high volume, strict governance.
-- `unknown`: the brief gives no evidence. Any other stage must name its evidence.
-A product with a million users and a two-person team serving read-mostly pages is not "large".
+**Maturity is lifecycle only**, never a scale or organisation label:
+- `idea`: nothing in users' hands.
+- `startup`: in use, demand not yet proven or stable.
+- `growing`: proven demand rising fast enough that scale or team growth is a near-term concern.
+- `established`: proven, steady demand with slow or flat growth, at any size or team.
+- `unknown`: the brief does not settle which stage applies. Any other stage must name its evidence.
+
+`scaled` and `large` are removed. Workload, team and constraint facts carry volume, organisation size and
+governance. Age, user count and formal operations alone cannot settle demand trend. A replacement does not
+automatically reset an existing product's lifecycle: if its boundary is unclear, name that unknown.
 
 **Sensitivity** of the personal data held:
 - `none`: no personal data.
@@ -139,11 +174,14 @@ the decisions in `decisions_affected`. A contradiction or an unclear authority i
   explicit must, never or non-negotiable from someone with authority; a fixed money cap; a hard deadline
   with a stated consequence; a system that must be kept. Privacy and security requirements the brief makes
   mandatory (a promise to users, a regulation, a customer contract) are constraints, never goals, and are
-  never traded for cost (owner, 2026-10-20).
+  never traded for cost (owner, 2026-10-20). A mandatory performance target is also a constraint, on the
+  same rule; record the target in performance and its must-hold in constraints.
 - A **goal** is a preference to rank and trade: want, prefer, ideally, as cheap as possible, fast. Each goal
-  has one criterion: `cost` (money spent), `efficiency` (resources used per unit of work), `privacy`,
-  `security`, `reliability`, `delivery_speed`, `operability` (effort to run it), `change_cost` (effort to
-  change it), `scalability`, `other`. Cost and efficiency are separate; so are privacy and security.
+  has one criterion: `cost` (money spent), `efficiency` (resource use per unit of work), `performance`
+  (speed for users: latency, throughput, freshness), `privacy`, `security`, `reliability`, `delivery_speed`,
+  `operability` (effort to run it), `change_cost` (effort to change it), `scalability`, `other`. Efficiency
+  is not user-visible speed; delivery speed is how quickly the team ships. Cost and efficiency are
+  separate; so are privacy and security.
 - Nothing is both. When a brief has a mandatory floor and a wish beyond it ("must be HIPAA compliant; we'd
   like more than the minimum"), the floor is a constraint and the wish is a goal, each on its own text.
 - **Ranks** run 1 (top) to n, each once, from the brief's own words of priority ("above all", "first",
@@ -162,9 +200,13 @@ profile). Prints one JSON report; exit 0 clean, 1 errors, 2 cannot run.
 | `schema` | anything else the schema refuses: wrong type, unknown key, empty text, bad id |
 | `brief_hash_mismatch` | `brief_sha256` is given and is not the brief's |
 | `quote_too_short` | a quote of fewer than two words |
+| `quote_too_long` | a quote of more than 40 words (counted after normalising, split on whitespace) |
 | `quote_not_in_brief` | a quote that is not one span of the brief after normalising |
 | `number_not_in_quote` | an item states a number its quote does not hold |
+| `system_name_not_in_quote` | a quoted external system's name is not in its quote |
 | `observed_not_quoted` | observed workload sourced as an assumption |
+| `current_system_not_quoted` | state none or exists has no quote |
+| `unknown_field_unnamed` | a scalar is unknown, or a fact list is empty, without an unknowns entry for its path |
 | `maturity_without_evidence` | a stage other than unknown with no evidence |
 | `rank_duplicate`, `rank_gap` | goal ranks are not 1 to n, each once |
 | `duplicate_id` | two constraints or two goals share an id |
@@ -172,12 +214,19 @@ profile). Prints one JSON report; exit 0 clean, 1 errors, 2 cannot run.
 
 ## The scorer: context_profile_score.py
 
-Compares a profile with a known case's key, by text, never by a model: an item carries a key entry when its
-quote contains one of the entry's anchors (normalised as the checker does).
+Compares a profile with a known case's key, by text, never by a model. An item is eligible for a fact when
+its quote contains a key anchor (normalised as the checker does), it is in the primary or alternative
+section, and it states the key's number, if any. Facts and items are then paired **one-to-one by maximum
+bipartite matching** (augmenting paths): one item counts for at most one fact, however much its quote
+contains. Duplicate mentions can be separate items; padding one item cannot buy several facts.
+
+**Tie-break:** facts in key order, eligible items in profile order. A matched fact stays matched, although
+an augmenting path may move it to another item. If there are too few items, later facts in key order are
+left unmatched. This is deterministic and finds maximum cardinality, not a greedy first-hit count.
 
 - `--case DIR PROFILE` one profile; `--case DIR --self` the key's reference profile (must score 100%);
   `--case DIR --runs P1 P2 P3` several runs of one case, each scored, then compared (B5);
-  `--pool S1 ... S12` one run's case scores pooled against the bars. Every mode lints the key first and
+  `--pool S1 ... SN` one run's case scores pooled against the bars. Every mode lints the key first and
   refuses a broken key (anchor not in the brief, wrong brief hash, duplicate ids, a fact allowed in a field
   the key says is open).
 
@@ -185,12 +234,13 @@ quote contains one of the entry's anchors (normalised as the checker does).
 |---|---|
 | `checker:<reason>` | any checker error, carried over |
 | `fact_missed` | no item quotes the fact |
+| `fact_quote_shared` | every eligible item is already paired with another fact; no extra recall credit |
 | `fact_misplaced` | quoted, but in a section the key does not allow |
 | `fact_wrong_value` | quoted in the right section without the key's number |
 | `open_field_filled` | a field the brief says is open was filled from that very sentence |
 | `unsupported_fill` | a field the brief leaves open was filled from a quote that does not carry it (invented) |
 | `guessed_unknown` | a field the brief leaves open was filled by assumption (invented) |
-| `unknown_not_flagged` | no unknown matches the key's material unknown (by field, or by every term group) |
+| `unknown_not_flagged` | no unknown matches the key's material unknown (equal field paths when both named; otherwise every term group) |
 | `unknown_not_material` | it is named but marked `material: false` |
 | `constraint_as_goal`, `constraint_also_goal`, `constraint_missing` | a hard constraint was made a goal, made both, or left out |
 | `goal_as_constraint`, `goal_also_constraint`, `goal_missing`, `goal_wrong_criterion` | the same for a goal, or its criterion is wrong |
@@ -202,24 +252,33 @@ Trap reasons: `projected_as_observed` (a forecast used as measured), `not_this_p
 numbers), `contradicted_claim` (a claim the brief later corrects), `hedged_as_fact` (a hope or guess used as
 a fact), `future_scope` (a later idea used as a current need), `superseded` (a figure the brief replaces).
 
-**Invented** = checker `quote_not_in_brief`, `number_not_in_quote` or `observed_not_quoted`, plus
+**Invented** = checker `quote_not_in_brief`, `number_not_in_quote`, `observed_not_quoted` or
+`system_name_not_in_quote`, plus
 `unsupported_fill`, `guessed_unknown` and every trap hit. `score_pct` is the mean of nine rates (facts,
 unknowns, constraints, goals, goal order, maturity, sensitivity, open fields kept open, no invention), for
 tracking only; the bars decide.
 
-**Key format** (`"key": "context_profile_key/v1"`): `case_id`, `category`, `tests` (what the case tests),
-`brief_sha256`; `maturity.accepted` and `sensitivity.accepted` (lists); `facts[]` `{id, anchors[], in[],
-value?}`; `constraints[]` `{id, anchors[]}`; `goals[]` `{id, anchors[], criterion, rank}`;
-`goal_order.accepted_top3` (optional; default the key's own top three); `unknowns[]` `{id, field?,
-terms?}` where `terms` is a list of groups and every group needs one of its words; `traps[]` `{id,
-anchors[], reason, forbidden_in[]}`; `fields_unknown[]` `{field, open_anchors[]}` (fields the brief leaves
-open; `open_anchors` is where it says so); and `profile`, the reference profile. Ids are unique across the
-key. Anchors are short exact spans of the brief. A key is written before any model run and changes only
-with a recorded reason.
+**Key format** (`"key": "context_profile_key/v2"`): `case_id`, `category`, `tests` (what the case tests),
+`brief_sha256`; `maturity.accepted[]` `{stage, quotes[]}` (each accepted stage has supporting brief quotes),
+`sensitivity.accepted[]`; `facts[]` `{id, anchors[], primary, alt?, why_alt?, value?}` (one primary section,
+at most one alternative, justified by why_alt); `constraints[]` `{id, anchors[]}`; `goals[]` `{id, anchors[],
+criterion, rank}`; `goal_order.accepted_top3` (optional; default the key's own top three); `unknowns[]`
+`{id, field?, terms?}` where explicit field paths take priority when both sides name one, otherwise every
+terms group needs one of its words; `traps[]` `{id, anchors[], reason,
+forbidden_in[]}`; `fields_unknown[]` `{field, open_anchors[], not_material_reason?}`; and `profile`, the
+reference profile. Each fields_unknown entry either names a required material unknown in unknowns, or
+has a not_material_reason, never both. It lists exactly the fact fields the reference leaves unknown or
+empty. Ids are unique across the key. Anchors are short exact spans. A key is written before model runs
+and changes only with a recorded reason.
 
-**Planted profile format** (`"planted": "context_profile_planted/v1"`): `plant_id`, `case_id`, `fault` (what
-was planted), `expect[]` `{reason, ref}` (every failure the scorer must report, no more, no fewer) and
-`profile`.
+**Report only, no new bar:** `material_unknowns_not_in_key` lists material profile unknowns not matched to
+a key unknown (field and question); `quote_words` gives median and maximum word length over quoted items.
+They invite review, not an automatic failure or a lower bar.
+
+**Planted profile format** (`"planted": "context_profile_planted/v2"`): `plant_id`, `case_id`, `fault`,
+`expect[]` `{reason, ref}` (every failure, no more or fewer), and either a full `profile` or `edits[]`
+`{op: set|remove|append, path: [key or index, ...], value?}` applied to the reference profile. The CLI exits
+0 when the bad profile fails exactly as expected; this is a plant-test pass, not a clean profile.
 
 ## Bars
 
@@ -246,23 +305,10 @@ later option (the mirror of B4).
 
 ## Known cases
 
-Synthetic briefs (300-1,500 words), no real customer data, no secrets. Each key was written before any
-model run and passes the checker and scores 100% against itself (the tests hold both).
-
-| Case | Category | What it tests |
-|---|---|---|
-| k01-idea-pantry | idea_stage | nothing built; guesses kept projected; a competitor's numbers; a public deletion promise is a constraint |
-| k02-startup-invoicing | startup_paying | paying customers; card data handled by a processor; small budget; reliability stated loosely |
-| k03-growing-scheduling | growing_b2b_saas | growing B2B SaaS; contract SLA and SOC 2 from customers; EU data; peaks |
-| k04-large-photos | large_consumer | large consumer product; many teams; regional rules; minors excluded |
-| k05-small-therapy | small_high_risk | three people holding therapy notes: HIPAA is a constraint, never a cost trade-off |
-| k06-large-simple-transit | large_simple | a million monthly users, read-mostly, two-person team: not "large" |
-| k07-conflict-marketplace | conflicting_priorities | CEO, CTO and sales disagree; the decider's ranking; the conflict is an unknown |
-| k08-missing-volunteers | missing_budget_workload | no budget and no workload numbers: unknown, never guessed |
-| k09-projected-fitness | projected_as_observed | deck figures in the present tense that are targets |
-| k10-misleading-logistics | misleading_claim | "no personal data" contradicted later by stored GPS traces |
-| k11-privacy-reading | privacy_vs_cost | children's data minimisation and retention limits against a cheaper hosting push |
-| k12-internal-expenses | internal_tool_deadline | internal tool, hard deadline, systems that must be kept |
+Synthetic briefs, no real customer data or secrets. The case table lives only in
+`fixtures/context_profile/known/README.md`, not in this standard or the schema: stage and held-out writers
+may read these two documents without seeing known-case answers. Known keys predate any model run and must
+pass the checker and score 100% against themselves.
 
 ## Changes from the plan's contract sketch, and why
 
@@ -281,11 +327,32 @@ model run and passes the checker and scores 100% against itself (the tests hold 
   one decision; `unknowns[].field` (optional) names the field an unknown is about, so the scorer can match it
   without reading the text.
 
+## v2 changes and why
+
+Architecture lead review of #122 (temper-ai 3794e277), queue #127, 2026-10-20; H-CTX-2 above. No consumer
+exists yet, so v2 replaces v1 rather than maintaining a compatibility path; v1 remains in git history.
+
+- Lifecycle-only maturity removes size and governance labels that contradicted the keys. Each accepted
+  stage is re-derived from the brief with its own supporting quotes; absence of trend evidence stays unknown.
+- Current and external systems give C4 context a home; performance targets and a separate performance goal
+  give ATAM's user-visible response measures a home. Efficiency means resource use per unit of work.
+- Every silent field is explicitly named, material or not; key omissions need a non-material rationale or
+  a required material unknown. This closes silent gaps without inventing answers.
+- Quotes are bounded to 2–40 words; maximum one-to-one matching prevents padded evidence inflating B2.
+  Facts have one primary section and at most one justified alternative, not broad section allowances.
+- Two fresh cases and seven additional planted profiles exercise these changes. The case table and all
+  case-derived examples are outside the standard and schema; no model stage is built or run here.
+- Extra material unknowns and quote-length summaries are report-only. **B0–B10 and all cost and time
+  ceilings are unchanged.** The task report records the hypothesis result and any keying ambiguity.
+
 ## Sources
 
+- Simon Brown's C4 model: a system context includes what is being changed and the external systems it
+  reads, writes or depends on. Here: current_system and external_systems separate installed reality from
+  team skills and proposed architecture.
 - SEI's ATAM (Kazman, Klein, Clements): business drivers and a quality-attribute utility tree, refined into
   measurable scenarios ranked by importance. Here: goals with one criterion each and a rank are the tree's
-  top; workload, reliability and peak items with value and unit are the scenarios' response measures;
+  top; workload, performance, reliability and peak items with value and unit are the scenarios' response measures;
   unknowns feed ATAM's risks and sensitivity points.
 - Privacy by design (Cavoukian's seven principles) and GDPR article 5: data minimisation, purpose and
   storage limitation; article 9 special categories; HIPAA's minimum-necessary rule. Here: data kinds,

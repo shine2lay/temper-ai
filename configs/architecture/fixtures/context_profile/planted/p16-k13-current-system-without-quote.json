@@ -1,0 +1,10 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p16-k13-current-system-without-quote", "case_id": "k13-performance-docks",
+  "fault": "The current system is declared to exist without any source. The checker refuses it; the scorer records its missing evidence fact, while the system's quoted components remain intact.",
+  "expect": [
+    {"reason": "checker:current_system_not_quoted", "ref": "$.current_system"},
+    {"reason": "fact_missed", "ref": "F3"}
+  ],
+  "edits": [{"op": "remove", "path": ["current_system", "source"]}]
+}

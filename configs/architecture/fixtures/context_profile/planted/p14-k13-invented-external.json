@@ -1,0 +1,9 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p14-k13-invented-external", "case_id": "k13-performance-docks",
+  "fault": "An invented identity provider is added with fabricated evidence. All real integrations remain intact.",
+  "expect": [{"reason": "checker:quote_not_in_brief", "ref": "$.external_systems[2].source.quote"}],
+  "edits": [{"op": "append", "path": ["external_systems"], "value": {
+    "name": "KeyHarbor", "role": "identity provider", "source": {"kind": "quote", "quote": "KeyHarbor authenticates every dispatcher"}
+  }}]
+}

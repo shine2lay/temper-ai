@@ -1,0 +1,7 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p17-k02-sixty-word-quote", "case_id": "k02-startup-invoicing",
+  "fault": "One product quote is an exact 60-word span, rather than the shortest evidence for the item. No fact is changed or removed.",
+  "expect": [{"reason": "checker:quote_too_long", "ref": "$.product.source.quote"}],
+  "edits": [{"op": "set", "path": ["product", "source", "quote"], "value": "Subject: Ledgerly: context for the rebuild Hi, Ledgerly lets freelancers send invoices, chase late payments and see who owes them money. We launched fourteen months ago. Today we have 140 paying customers on our $19-a-month plan and about 600 more on the free tier. Revenue is around $2,700 a month, growing slowly but steadily. Customers send about 9,000 invoices a"}]
+}

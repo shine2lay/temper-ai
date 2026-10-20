@@ -1,0 +1,16 @@
+{
+  "planted": "context_profile_planted/v2",
+  "plant_id": "p18-k02-padded-three-facts", "case_id": "k02-startup-invoicing",
+  "fault": "One 34-word quote and one workload item replace three facts (paying users, free users, invoices); the alternative maturity carriers are removed too. Maximum matching credits exactly one of the three, F1 by key-order tie-break. F2 and F3 are not credited; padding cannot inflate recall.",
+  "expect": [
+    {"reason": "fact_quote_shared", "ref": "F2"},
+    {"reason": "fact_quote_shared", "ref": "F3"}
+  ],
+  "edits": [
+    {"op": "set", "path": ["workload", "observed"], "value": [
+      {"what": "paying users, free users and invoices", "value": "140 paying customers; 600 free users; 9,000 invoices a month", "unit": "mixed measures", "source": {"kind": "quote", "quote": "140 paying customers on our $19-a-month plan and about 600 more on the free tier. Revenue is around $2,700 a month, growing slowly but steadily. Customers send about 9,000 invoices a month in total."}}
+    ]},
+    {"op": "remove", "path": ["maturity", "evidence", 3]},
+    {"op": "remove", "path": ["maturity", "evidence", 2]}
+  ]
+}

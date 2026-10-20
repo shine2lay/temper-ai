@@ -1,5 +1,5 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p02-k05-mfa-both",
   "case_id": "k05-small-therapy",
   "fault": "A constraint duplicated as a goal: the multi-factor sign-in rule stays a constraint and is also added as a security goal on the same text.",

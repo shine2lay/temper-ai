@@ -1,31 +1,34 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k11-privacy-reading",
   "category": "privacy_vs_cost",
   "tests": "Children's reading recordings under school contracts: data minimisation, 30-day and 90-day deletion and UK-only storage are constraints that cost pressure cannot trade. The CFO's unagreed proposals (a US region, keeping recordings indefinitely) must not appear as constraints, retention facts or goals. The decider's order puts privacy beyond the minimum first, then cost, then morning reliability. Consent for model training and the missing recovery target are material unknowns; the recovery time stays unknown.",
   "brief_sha256": "cb2f48597ddb6f1b73a6c30ee1aa3c091a3f91a668fa090ffc068b44c110b1aa",
-  "maturity": {"accepted": ["growing", "scaled"]},
+  "maturity": {"accepted": [{"stage": "unknown", "quotes": ["ReadAlong is used by 1,200 schools and about 140,000 pupils", "We have run for four years"]}], "why_unknown": "Use and age are stated, but demand trend and stability are not. Neither growing nor established can be inferred from scale, age or on-call."},
   "sensitivity": {"accepted": ["high"]},
   "facts": [
-    {"id": "F1", "anchors": ["used by 1,200 schools"], "in": ["workload.observed", "maturity.evidence"], "value": 1200},
-    {"id": "F2", "anchors": ["about 140,000 pupils"], "in": ["workload.observed", "maturity.evidence"], "value": 140000},
-    {"id": "F3", "anchors": ["most sessions fall between 9am and 11am"], "in": ["workload.peaks"]},
-    {"id": "F4", "anchors": ["about 2 TB of new audio a month"], "in": ["workload.observed"], "value": 2},
-    {"id": "F5", "anchors": ["We have run for four years"], "in": ["maturity.evidence"]},
-    {"id": "F6", "anchors": ["an on-call rota of three engineers"], "in": ["team.operating_capacity", "maturity.evidence"]},
-    {"id": "F7", "anchors": ["Children aged 6 to 11"], "in": ["privacy.data_categories"]},
-    {"id": "F8", "anchors": ["read a short book aloud into a tablet"], "in": ["privacy.data_categories"]},
-    {"id": "F9", "anchors": ["only each pupil's first name, class and reading level"], "in": ["privacy.data_categories"]},
-    {"id": "F10", "anchors": ["deleted within 30 days of the school telling us the pupil has left"], "in": ["privacy.retention"], "value": 30},
-    {"id": "F11", "anchors": ["Recordings are deleted after 90 days"], "in": ["privacy.retention"], "value": 90},
-    {"id": "F12", "anchors": ["All pupil data stays in UK data centres"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
-    {"id": "F13", "anchors": ["follow the ICO's Children's Code"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
-    {"id": "F14", "anchors": ["Hosting costs $19,000 a month"], "in": ["budget.run_monthly"], "value": 19000},
-    {"id": "F15", "anchors": ["approved $60,000 for this review"], "in": ["budget.build"], "value": 60000},
-    {"id": "F16", "anchors": ["We are nine people, three of them engineers"], "in": ["team.size"], "value": 9},
-    {"id": "F17", "anchors": ["Our backend is Python on a single cloud provider"], "in": ["team.skills"]},
-    {"id": "F18", "anchors": ["we have never run a second region"], "in": ["team.skills", "team.operating_capacity"]},
-    {"id": "F19", "anchors": ["teachers lose the session"], "in": ["reliability.availability"]}
+    {"id": "F1", "anchors": ["used by 1,200 schools"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "school usage also establishes that the product is live", "value": 1200},
+    {"id": "F2", "anchors": ["about 140,000 pupils"], "primary": "workload.observed", "value": 140000},
+    {"id": "F3", "anchors": ["most sessions fall between 9am and 11am"], "primary": "workload.peaks"},
+    {"id": "F4", "anchors": ["about 2 TB of new audio a month"], "primary": "workload.observed", "value": 2},
+    {"id": "F5", "anchors": ["We have run for four years"], "primary": "maturity.evidence"},
+    {"id": "F6", "anchors": ["an on-call rota of three engineers"], "primary": "team.operating_capacity"},
+    {"id": "F7", "anchors": ["Children aged 6 to 11"], "primary": "privacy.data_categories"},
+    {"id": "F8", "anchors": ["read a short book aloud into a tablet"], "primary": "privacy.data_categories"},
+    {"id": "F9", "anchors": ["only each pupil's first name, class and reading level"], "primary": "privacy.data_categories"},
+    {"id": "F10", "anchors": ["deleted within 30 days of the school telling us the pupil has left"], "primary": "privacy.retention", "value": 30},
+    {"id": "F11", "anchors": ["Recordings are deleted after 90 days"], "primary": "privacy.retention", "value": 90},
+    {"id": "F12", "anchors": ["All pupil data stays in UK data centres"], "primary": "privacy.jurisdictions_or_rules", "alt": "security.compliance", "why_alt": "contractual residency also binds compliance"},
+    {"id": "F13", "anchors": ["follow the ICO's Children's Code"], "primary": "privacy.jurisdictions_or_rules", "alt": "security.compliance", "why_alt": "the contractual code is also a compliance duty"},
+    {"id": "F14", "anchors": ["Hosting costs $19,000 a month"], "primary": "budget.run_monthly", "value": 19000},
+    {"id": "F15", "anchors": ["approved $60,000 for this review"], "primary": "budget.build", "value": 60000},
+    {"id": "F16", "anchors": ["We are nine people, three of them engineers"], "primary": "team.size", "value": 9},
+    {"id": "F17", "anchors": ["Our backend is Python on a single cloud provider"], "primary": "current_system.items", "alt": "team.skills", "why_alt": "the backend stack also indicates the team's direct experience"},
+    {"id": "F18", "anchors": ["we have never run a second region"], "primary": "team.skills", "alt": "team.operating_capacity", "why_alt": "lack of multi-region experience also limits the team's immediate operating capacity"},
+    {"id": "F19", "anchors": ["teachers lose the session"], "primary": "reliability.availability"},
+    {"id": "F20", "anchors": ["the app listens, highlights words"], "primary": "current_system"},
+    {"id": "F21", "anchors": ["the app listens, highlights words"], "primary": "current_system.items"},
+    {"id": "F22", "anchors": ["a weekly report"], "primary": "current_system.items"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["only each pupil's first name, class and reading level"]},
@@ -48,17 +51,32 @@
     {"id": "T2", "anchors": ["keep reading recordings indefinitely"], "reason": "future_scope", "forbidden_in": ["constraints", "goals", "privacy.retention"]}
   ],
   "fields_unknown": [
-    {"field": "reliability.recovery_time", "open_anchors": ["we have never agreed a recovery target with schools"]}
+    {"field": "maturity.stage", "open_anchors": [], "not_material_reason": "Growth and stability are unstated, so the lifecycle label is unknown; workload, team and contractual stakes are independently known."},
+    {"field": "external_systems", "open_anchors": [], "not_material_reason": "A speech-model licence is only implied by a rejected future proposal; no present provider or system boundary is identified."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "Weekly reporting is an existing behaviour, not an engineering response target; availability and recovery are the stated concern."},
+    {"field": "workload.projected", "open_anchors": [], "not_material_reason": "No growth forecast is stated; the known lesson peak and recording volume bound capacity."},
+    {"field": "reliability.data_loss_tolerance", "open_anchors": [], "not_material_reason": "No durability promise beyond deletion is given; the immediate decision concerns residency, retention and lesson availability."},
+    {"field": "reliability.recovery_time", "open_anchors": ["we have never agreed a recovery target with schools"]},
+    {"field": "privacy.sharing", "open_anchors": [], "not_material_reason": "No outside processor or recipient is identified; the proposed training use is a material consent question."},
+    {"field": "security.requirements", "open_anchors": [], "not_material_reason": "No particular control is named; the non-negotiable data duties are already constraints."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack, abuse or incident is named."}
   ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "cb2f48597ddb6f1b73a6c30ee1aa3c091a3f91a668fa090ffc068b44c110b1aa",
     "product": {"summary": "A reading app for primary schools: children read aloud into a tablet, the app highlights struggles and reports weekly to teachers.",
       "source": {"kind": "quote", "quote": "ReadAlong is a reading app for primary schools in England."}},
-    "maturity": {"stage": "growing", "evidence": [
+    "maturity": {"stage": "unknown", "evidence": [
       {"value": "1,200 schools and about 140,000 pupils", "source": {"kind": "quote", "quote": "ReadAlong is used by 1,200 schools and about 140,000 pupils."}},
       {"value": "four years running, with a support desk and on-call rota", "source": {"kind": "quote", "quote": "We have run for four years and have a support desk and an on-call rota of three engineers."}}
     ]},
+    "current_system": {"state": "exists", "source": {"kind": "quote", "quote": "the app listens, highlights words they struggle with"}, "items": [
+      {"kind": "stack", "text": "Python backend on one cloud provider", "source": {"kind": "quote", "quote": "Our backend is Python on a single cloud provider"}},
+      {"kind": "client", "text": "tablet app listens and highlights words", "source": {"kind": "quote", "quote": "the app listens, highlights words they struggle with"}},
+      {"kind": "component", "text": "weekly teacher report", "source": {"kind": "quote", "quote": "gives their teacher a weekly report"}}
+    ]},
+    "external_systems": [],
+    "performance": {"targets": []},
     "workload": {
       "observed": [
         {"what": "schools using the app", "value": 1200, "unit": "schools", "source": {"kind": "quote", "quote": "ReadAlong is used by 1,200 schools"}},
@@ -102,7 +120,7 @@
     "team": {
       "size": {"value": "nine people, three of them engineers", "source": {"kind": "quote", "quote": "We are nine people, three of them engineers."}},
       "skills": [
-        {"value": "Python backend on one cloud provider; never run a second region", "source": {"kind": "quote", "quote": "Our backend is Python on a single cloud provider; we have never run a second region."}}
+        {"value": "never run a second region", "source": {"kind": "quote", "quote": "we have never run a second region"}}
       ],
       "operating_capacity": [
         {"value": "support desk and on-call rota of three engineers", "source": {"kind": "quote", "quote": "a support desk and an on-call rota of three engineers"}}
@@ -124,6 +142,14 @@
       {"id": "G3", "criterion": "reliability", "rank": 3, "note": "Work through the morning reading peak", "source": {"kind": "quote", "quote": "third, keep the app working through the morning reading peak"}}
     ],
     "unknowns": [
+      {"question": "Is demand steady or rising fast?", "why_it_matters": "Use and age do not establish lifecycle; measured workload and contractual stakes are independently known.", "decisions_affected": ["lifecycle classification"], "material": false, "field": "maturity.stage"},
+      {"question": "Which external systems are used?", "why_it_matters": "The brief does not identify an existing provider or boundary.", "decisions_affected": ["integrations"], "material": false, "field": "external_systems"},
+      {"question": "Is there a speed target?", "why_it_matters": "The stated concern is availability through lessons, not a response-time target.", "decisions_affected": ["capacity"], "material": false, "field": "performance.targets"},
+      {"question": "Is growth forecast?", "why_it_matters": "Known recording volume and lesson peaks bound current capacity.", "decisions_affected": ["capacity"], "material": false, "field": "workload.projected"},
+      {"question": "How much data loss is tolerable?", "why_it_matters": "No durability promise is stated; this review is about retention, residency and availability.", "decisions_affected": ["durability"], "material": false, "field": "reliability.data_loss_tolerance"},
+      {"question": "Is data shared externally?", "why_it_matters": "No outside processor is identified; model-training consent is already a material question.", "decisions_affected": ["sharing controls"], "material": false, "field": "privacy.sharing"},
+      {"question": "Are particular security controls required?", "why_it_matters": "No particular control is named; binding data duties are already constraints.", "decisions_affected": ["security controls"], "material": false, "field": "security.requirements"},
+      {"question": "Is an attack named?", "why_it_matters": "No attack, abuse or incident is named.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
       {"question": "Would parents' consent, given through schools, cover training a speech model on recordings?", "why_it_matters": "Without it the recordings cannot be kept or used for training, so the CFO's licence saving is not available.", "decisions_affected": ["recording retention", "speech model plan"], "material": true, "field": "privacy.retention"},
       {"question": "What recovery time after an outage do schools need?", "why_it_matters": "No recovery target has been agreed; it decides failover and backup design within one UK region.", "decisions_affected": ["failover", "backup and restore"], "material": true, "field": "reliability.recovery_time"}
     ],

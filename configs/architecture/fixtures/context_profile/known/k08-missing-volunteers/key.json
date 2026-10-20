@@ -1,27 +1,29 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k08-missing-volunteers",
   "category": "missing_budget_workload",
   "tests": "No budget and no workload numbers: build budget, monthly running cost and observed volunteers and deliveries must stay unknown and be flagged as material unknowns, never guessed; the hedged 'between a few dozen and a few hundred' is not a count. Nothing built yet (idea). The address-visibility policy and the trustees' Google Workspace sign-in ruling are constraints; the November date is hedged ('if we can manage it') and stays a goal. Client delivery notes can hold health details of housebound people.",
   "brief_sha256": "2ef23d4295a29931023a40b6ed78c5c2250ba50cc08f2724b1b2e5f608e5436c",
-  "maturity": {"accepted": ["idea"]},
+  "maturity": {"accepted": [{"stage": "idea", "quotes": ["Nothing has been built yet; this note is the start"]}]} ,
   "sensitivity": {"accepted": ["moderate", "high"]},
   "facts": [
-    {"id": "F1", "anchors": ["volunteers' names, phone numbers and availability"], "in": ["privacy.data_categories"]},
-    {"id": "F2", "anchors": ["clients' names, addresses and delivery notes"], "in": ["privacy.data_categories"]},
-    {"id": "F3", "anchors": ["mostly older and housebound clients"], "in": ["privacy.data_categories"]},
-    {"id": "F4", "anchors": ["Today we coordinate them with a shared spreadsheet", "Nothing has been built yet"], "in": ["maturity.evidence"]},
-    {"id": "F5", "anchors": ["December is our busiest month"], "in": ["workload.peaks"]},
-    {"id": "F6", "anchors": ["Our IT is one volunteer, Dev"], "in": ["team.size"], "value": 1},
-    {"id": "F7", "anchors": ["about five hours a week"], "in": ["team.operating_capacity"], "value": 5},
-    {"id": "F8", "anchors": ["He knows Linux and networks"], "in": ["team.skills"]},
-    {"id": "F9", "anchors": ["he has not built a web app before"], "in": ["team.skills"]},
-    {"id": "F10", "anchors": ["must sign them in with their Google Workspace accounts"], "in": ["security.requirements"]},
-    {"id": "F11", "anchors": ["may only be shown to the volunteer who has accepted that delivery"], "in": ["privacy.sharing", "security.requirements"]},
-    {"id": "F12", "anchors": ["must disappear from the volunteer's view once the delivery is done"], "in": ["privacy.retention", "privacy.sharing", "security.requirements"]},
-    {"id": "F13", "anchors": ["registered with the Information Commissioner's Office"], "in": ["privacy.jurisdictions_or_rules", "security.compliance"]},
-    {"id": "F14", "anchors": ["If the app is down for a day", "nobody goes hungry"], "in": ["reliability.availability", "reliability.recovery_time"]},
-    {"id": "F15", "anchors": ["Losing the record of who accepted which delivery"], "in": ["reliability.data_loss_tolerance"]}
+    {"id": "F1", "anchors": ["volunteers' names, phone numbers and availability"], "primary": "privacy.data_categories"},
+    {"id": "F2", "anchors": ["clients' names, addresses and delivery notes"], "primary": "privacy.data_categories"},
+    {"id": "F3", "anchors": ["mostly older and housebound clients"], "primary": "privacy.data_categories"},
+    {"id": "F4", "anchors": ["Today we coordinate them with a shared spreadsheet", "Nothing has been built yet"], "primary": "maturity.evidence"},
+    {"id": "F5", "anchors": ["December is our busiest month"], "primary": "workload.peaks"},
+    {"id": "F6", "anchors": ["Our IT is one volunteer, Dev"], "primary": "team.size", "value": 1},
+    {"id": "F7", "anchors": ["about five hours a week"], "primary": "team.operating_capacity", "value": 5},
+    {"id": "F8", "anchors": ["He knows Linux and networks"], "primary": "team.skills"},
+    {"id": "F9", "anchors": ["he has not built a web app before"], "primary": "team.skills"},
+    {"id": "F10", "anchors": ["must sign them in with their Google Workspace accounts"], "primary": "security.requirements"},
+    {"id": "F11", "anchors": ["may only be shown to the volunteer who has accepted that delivery"], "primary": "privacy.sharing", "alt": "security.requirements", "why_alt": "the visibility limit is also an access-control requirement"},
+    {"id": "F12", "anchors": ["must disappear from the volunteer's view once the delivery is done"], "primary": "privacy.retention", "alt": "privacy.sharing", "why_alt": "it also limits how long a volunteer receives the address"},
+    {"id": "F13", "anchors": ["registered with the Information Commissioner's Office"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F14", "anchors": ["If the app is down for a day", "nobody goes hungry"], "primary": "reliability.availability"},
+    {"id": "F15", "anchors": ["Losing the record of who accepted which delivery"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F16", "anchors": ["Nothing has been built yet"], "primary": "current_system"},
+    {"id": "F17", "anchors": ["Google Workspace for Nonprofits", "Google Workspace accounts"], "primary": "external_systems"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["may only be shown to the volunteer who has accepted that delivery"]},
@@ -44,10 +46,15 @@
   "fields_unknown": [
     {"field": "budget.build", "open_anchors": ["We have not set a budget for this"]},
     {"field": "budget.run_monthly", "open_anchors": ["what running it each month could cost"]},
-    {"field": "workload.observed", "open_anchors": ["we don't know how many volunteers we have", "how many deliveries we do a week"]}
+    {"field": "workload.observed", "open_anchors": ["we don't know how many volunteers we have", "how many deliveries we do a week"]},
+    {"field": "workload.projected", "open_anchors": [], "not_material_reason": "Counting today's volunteers and deliveries is the material sizing question; no growth forecast is given."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed problem is named for this low-volume rota."},
+    {"field": "reliability.recovery_time", "open_anchors": [], "not_material_reason": "A day on the phone and spreadsheet is explicitly tolerable; no tighter recovery target shapes the options."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack is named; the address policy sets the access controls."},
+    {"field": "security.compliance", "open_anchors": [], "not_material_reason": "ICO registration is keyed as a privacy duty; no separate certification or audit is requested."}
   ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "2ef23d4295a29931023a40b6ed78c5c2250ba50cc08f2724b1b2e5f608e5436c",
     "product": {"summary": "A volunteer rota app for a food-bank charity: volunteers see and take shifts and deliveries; coordinators post shifts and match deliveries to drivers.",
       "source": {"kind": "quote", "quote": "We want a small app where volunteers can see open shifts, sign up for them and see the deliveries they have accepted."}},
@@ -55,6 +62,11 @@
       {"value": "Coordination runs on a spreadsheet, WhatsApp and phone calls today", "source": {"kind": "quote", "quote": "Today we coordinate them with a shared spreadsheet, a WhatsApp group and a lot of phone calls"}},
       {"value": "Nothing built yet", "source": {"kind": "quote", "quote": "Nothing has been built yet; this note is the start."}}
     ]},
+    "current_system": {"state": "none", "source": {"kind": "quote", "quote": "Nothing has been built yet; this note is the start."}, "items": []},
+    "external_systems": [
+      {"name": "Google Workspace", "role": "coordinator identity provider; already used for email and documents", "source": {"kind": "quote", "quote": "must sign them in with their Google Workspace accounts, not new passwords"}}
+    ],
+    "performance": {"targets": []},
     "workload": {
       "observed": [],
       "projected": [],
@@ -112,6 +124,11 @@
       {"id": "G3", "criterion": "operability", "rank": 3, "note": "Little looking after by Dev", "source": {"kind": "quote", "quote": "And Dev should not have to babysit it."}}
     ],
     "unknowns": [
+      {"question": "How much will usage grow?", "why_it_matters": "Counting today's users and deliveries matters first; no forecast is given.", "decisions_affected": ["capacity"], "material": false, "field": "workload.projected"},
+      {"question": "Is there a speed target?", "why_it_matters": "No speed problem is named for this small rota.", "decisions_affected": ["capacity"], "material": false, "field": "performance.targets"},
+      {"question": "How quickly must it recover?", "why_it_matters": "A day on the phone and spreadsheet is explicitly tolerable.", "decisions_affected": ["recovery"], "material": false, "field": "reliability.recovery_time"},
+      {"question": "Is any attack named?", "why_it_matters": "None is named; the address policy sets access controls.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
+      {"question": "Is any certification or audit required?", "why_it_matters": "ICO registration is already keyed as a privacy duty; no separate audit is requested.", "decisions_affected": ["audit scope"], "material": false, "field": "security.compliance"},
       {"question": "What budget, if any, will the trustees set for building it?", "why_it_matters": "Whether anything can be bought or paid for decides between a free off-the-shelf tool, a hosted product and a small custom build.", "decisions_affected": ["build or buy", "hosting choice"], "material": true, "field": "budget.build"},
       {"question": "What monthly running cost can the charity afford, and who pays it?", "why_it_matters": "A charity with no running budget needs a free tier or donated hosting; this narrows every option.", "decisions_affected": ["hosting choice", "build or buy"], "material": true, "field": "budget.run_monthly"},
       {"question": "How many volunteers and how many deliveries a week are there?", "why_it_matters": "The number of users and deliveries decides whether a spreadsheet-backed tool is enough or a database-backed app is needed, and how big the December peak is.", "decisions_affected": ["data store", "tool choice"], "material": true, "field": "workload.observed"}

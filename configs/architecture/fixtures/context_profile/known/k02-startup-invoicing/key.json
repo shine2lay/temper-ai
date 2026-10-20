@@ -1,28 +1,37 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k02-startup-invoicing",
   "category": "startup_paying",
-  "tests": "Startup with paying users: 140 paying customers and one full-time developer; a month-end peak; card data kept with Stripe, six-year invoice retention and a fixed rebuild budget are constraints; the founder's ordered priorities are goals; an unsigned 300-client deal stays out of observed workload; no uptime target is an unknown.",
+  "tests": "A small, young product with 140 paying customers and slow, steady revenue growth: established under v2, not startup merely because it launched fourteen months ago or has one full-time developer. A month-end peak; card data kept with Stripe, six-year invoice retention and a fixed rebuild budget are constraints; the founder's priorities are goals; an unsigned 300-client deal is an unknown, never observed workload. Current Rails app on a rented server, outages and Stripe Checkout are keyed.",
   "brief_sha256": "3ccb28c2e6853ace973fe46f5427c106eb32c44aa2d492f1c59443174c73850c",
-  "maturity": {"accepted": ["startup"]},
+  "maturity": {"accepted": [
+    {"stage": "established", "quotes": ["growing slowly but steadily", "Today we have 140 paying customers"]}
+  ]},
   "sensitivity": {"accepted": ["low", "moderate"]},
   "facts": [
-    {"id": "F1", "anchors": ["140 paying customers"], "in": ["maturity.evidence", "workload.observed"], "value": 140},
-    {"id": "F2", "anchors": ["about 600 more on the free tier"], "in": ["maturity.evidence", "workload.observed"], "value": 600},
-    {"id": "F3", "anchors": ["about 9,000 invoices a month"], "in": ["workload.observed"], "value": 9000},
-    {"id": "F4", "anchors": ["roughly 40% of the month's invoices"], "in": ["workload.peaks"], "value": 40},
-    {"id": "F5", "anchors": ["they expect the app to be up when they bill", "do not have a written uptime promise"], "in": ["reliability.availability"]},
-    {"id": "F6", "anchors": ["lose a day of draft edits than a single sent invoice", "losing an invoice they already sent would be very bad"], "in": ["reliability.data_loss_tolerance"]},
-    {"id": "F7", "anchors": ["We store our customers' names", "their clients' names and emails"], "in": ["privacy.data_categories"]},
-    {"id": "F8", "anchors": ["through Stripe Checkout", "card data must stay with Stripe"], "in": ["privacy.sharing", "security.requirements"]},
-    {"id": "F9", "anchors": ["keep invoices for six years"], "in": ["privacy.retention", "privacy.jurisdictions_or_rules"], "value": 6},
-    {"id": "F10", "anchors": ["customers are in the UK and Ireland"], "in": ["privacy.jurisdictions_or_rules"]},
-    {"id": "F11", "anchors": ["the only full-time developer"], "in": ["team.size"]},
-    {"id": "F12", "anchors": ["about two days a week"], "in": ["team.size", "team.operating_capacity"], "value": 2},
-    {"id": "F13", "anchors": ["Sam knows React well", "I know Rails and Postgres"], "in": ["team.skills"]},
-    {"id": "F14", "anchors": ["manage servers by hand"], "in": ["team.operating_capacity", "team.skills"]},
-    {"id": "F15", "anchors": ["up to $25,000 on the rebuild"], "in": ["budget.build"], "value": 25000},
-    {"id": "F16", "anchors": ["the current $400 a month"], "in": ["budget.run_monthly"], "value": 400}
+    {"id": "F1", "anchors": ["140 paying customers"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "paying customers are also evidence of demand", "value": 140},
+    {"id": "F2", "anchors": ["about 600 more on the free tier"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "free-tier users are also evidence of demand", "value": 600},
+    {"id": "F3", "anchors": ["about 9,000 invoices a month"], "primary": "workload.observed", "value": 9000},
+    {"id": "F4", "anchors": ["roughly 40% of the month's invoices"], "primary": "workload.peaks", "value": 40},
+    {"id": "F5", "anchors": ["they expect the app to be up when they bill", "do not have a written uptime promise"], "primary": "reliability.availability"},
+    {"id": "F6", "anchors": ["lose a day of draft edits than a single sent invoice", "losing an invoice they already sent would be very bad"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F7", "anchors": ["We store our customers' names", "their clients' names and emails"], "primary": "privacy.data_categories"},
+    {"id": "F8", "anchors": ["card data must stay with Stripe", "We never see or store card numbers"], "primary": "security.requirements"},
+    {"id": "F9", "anchors": ["keep invoices for six years"], "primary": "privacy.retention", "alt": "privacy.jurisdictions_or_rules", "why_alt": "the six years are a tax rule as well as a retention period", "value": 6},
+    {"id": "F10", "anchors": ["customers are in the UK and Ireland"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F11", "anchors": ["the only full-time developer"], "primary": "team.size"},
+    {"id": "F12", "anchors": ["about two days a week"], "primary": "team.operating_capacity", "alt": "team.size", "why_alt": "the contractor's two days a week are part of the team's size in full-time terms", "value": 2},
+    {"id": "F13", "anchors": ["Sam knows React well", "I know Rails and Postgres"], "primary": "team.skills"},
+    {"id": "F14", "anchors": ["manage servers by hand"], "primary": "team.operating_capacity"},
+    {"id": "F15", "anchors": ["up to $25,000 on the rebuild"], "primary": "budget.build", "value": 25000},
+    {"id": "F16", "anchors": ["the current $400 a month"], "primary": "budget.run_monthly", "value": 400},
+    {"id": "F17", "anchors": ["The current app is a single Rails app"], "primary": "current_system"},
+    {"id": "F18", "anchors": ["a single Rails app"], "primary": "current_system.items"},
+    {"id": "F19", "anchors": ["one rented server that I set up myself"], "primary": "current_system.items"},
+    {"id": "F20", "anchors": ["It has gone down twice this year"], "primary": "current_system.items"},
+    {"id": "F21", "anchors": ["Stripe Checkout"], "primary": "external_systems", "alt": "privacy.sharing", "why_alt": "paying through Stripe Checkout is also how card data goes to Stripe"},
+    {"id": "F22", "anchors": ["We launched fourteen months ago"], "primary": "maturity.evidence"},
+    {"id": "F23", "anchors": ["Revenue is around $2,700 a month"], "primary": "maturity.evidence", "value": 2700}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["card data must stay with Stripe"]},
@@ -36,22 +45,41 @@
   ],
   "goal_order": {"accepted_top3": [["reliability", "cost", "change_cost"], ["reliability", "cost", "delivery_speed"]]},
   "unknowns": [
-    {"id": "U1", "terms": [["accounting firm", "300"]]},
+    {"id": "U1", "field": "workload.projected", "terms": [["accounting firm", "300"]]},
     {"id": "U2", "field": "reliability.recovery_time", "terms": [["uptime", "availability", "downtime", "recover", "outage"]]}
   ],
   "traps": [
     {"id": "T1", "anchors": ["300 of its own clients"], "reason": "hedged_as_fact", "forbidden_in": ["workload.observed", "maturity.evidence"]}
   ],
-  "fields_unknown": [],
+  "fields_unknown": [
+    {"field": "workload.projected", "open_anchors": []},
+    {"field": "reliability.recovery_time", "open_anchors": []},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed target is named; the month-end worry is staying up and not losing invoices, which is reliability."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No threat or incident is named, and card data never reaches the app."},
+    {"field": "security.compliance", "open_anchors": [], "not_material_reason": "No certification or audit is asked for; keeping card data with Stripe keeps card rules out of the app."}
+  ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "3ccb28c2e6853ace973fe46f5427c106eb32c44aa2d492f1c59443174c73850c",
     "product": {"summary": "Invoicing for freelancers: send invoices, chase late payments, see who owes money.", "source": {"kind": "quote", "quote": "Ledgerly lets freelancers send invoices, chase late payments and see who owes them money."}},
-    "maturity": {"stage": "startup", "evidence": [
+    "maturity": {"stage": "established", "evidence": [
       {"value": "Launched fourteen months ago", "source": {"kind": "quote", "quote": "We launched fourteen months ago."}},
+      {"value": "Revenue around $2,700 a month, growing slowly but steadily", "source": {"kind": "quote", "quote": "Revenue is around $2,700 a month, growing slowly but steadily."}},
       {"value": "140 paying customers on the $19-a-month plan", "source": {"kind": "quote", "quote": "Today we have 140 paying customers on our $19-a-month plan"}},
       {"value": "about 600 more on the free tier", "source": {"kind": "quote", "quote": "about 600 more on the free tier"}}
     ]},
+    "current_system": {
+      "state": "exists",
+      "source": {"kind": "quote", "quote": "The current app is a single Rails app on one rented server that I set up myself."},
+      "items": [
+        {"kind": "component", "text": "a single Rails app", "source": {"kind": "quote", "quote": "The current app is a single Rails app"}},
+        {"kind": "hosting", "text": "one rented server, set up by Dana", "source": {"kind": "quote", "quote": "on one rented server that I set up myself"}},
+        {"kind": "other", "text": "went down twice this year, once for most of a day; two customers cancelled", "source": {"kind": "quote", "quote": "It has gone down twice this year, once for most of a day, and two customers cancelled because of it."}}
+      ]
+    },
+    "external_systems": [
+      {"name": "Stripe Checkout", "role": "takes clients' card payments for invoices; holds all card data", "source": {"kind": "quote", "quote": "clients pay invoices by card through Stripe Checkout"}}
+    ],
     "workload": {
       "observed": [
         {"what": "paying customers", "value": 140, "unit": "customers", "source": {"kind": "quote", "quote": "Today we have 140 paying customers"}},
@@ -63,6 +91,7 @@
         {"what": "share of a month's invoices sent in its last three working days", "value": 40, "unit": "percent", "source": {"kind": "quote", "quote": "the last three working days of the month carry roughly 40% of the month's invoices"}}
       ]
     },
+    "performance": {"targets": []},
     "reliability": {
       "availability": {"value": "No written uptime promise; customers expect it up when they bill, at month end", "source": {"kind": "quote", "quote": "Customers do not have a written uptime promise, but they expect the app to be up when they bill"}},
       "data_loss_tolerance": {"value": "A sent invoice must not be lost; a day of draft edits may be", "source": {"kind": "quote", "quote": "I would rather lose a day of draft edits than a single sent invoice."}},
@@ -117,7 +146,10 @@
     ],
     "unknowns": [
       {"question": "Will the accounting firm put 300 of its clients on Ledgerly next year?", "why_it_matters": "Nothing is signed; if it happens, customers and the month-end peak grow several times over.", "decisions_affected": ["capacity and peak sizing", "tenant model for a firm with many clients"], "material": true, "field": "workload.projected"},
-      {"question": "How much downtime is acceptable at month end, and how fast must the app recover?", "why_it_matters": "There is no written uptime promise, yet staying up at month end is the top priority; the target sets how much redundancy to pay for.", "decisions_affected": ["hosting and redundancy", "backup and restore design"], "material": true, "field": "reliability.recovery_time"}
+      {"question": "How much downtime is acceptable at month end, and how fast must the app recover?", "why_it_matters": "There is no written uptime promise, yet staying up at month end is the top priority; the target sets how much redundancy to pay for.", "decisions_affected": ["hosting and redundancy", "backup and restore design"], "material": true, "field": "reliability.recovery_time"},
+      {"question": "Does the app need any speed target?", "why_it_matters": "None is named; the month-end worry is staying up, so no option turns on speed.", "decisions_affected": ["hosting size"], "material": false, "field": "performance.targets"},
+      {"question": "Has the app faced any named threat or incident?", "why_it_matters": "None is named, and card data never reaches the app.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
+      {"question": "Does any certification or audit apply?", "why_it_matters": "None is asked for; card rules stay with Stripe.", "decisions_affected": ["compliance work"], "material": false, "field": "security.compliance"}
     ],
     "assumptions": [
       {"text": "Card data stays out of scope by keeping Stripe Checkout as the only card path.", "why": "The brief says card numbers are never seen or stored and must stay with Stripe."}

@@ -1,31 +1,38 @@
 {
-  "key": "context_profile_key/v1",
+  "key": "context_profile_key/v2",
   "case_id": "k03-growing-scheduling",
   "category": "growing_b2b_saas",
-  "tests": "Growing B2B SaaS: 380 customers, 14 engineers, 60% growth; a contract SLA, EU data residency from processing agreements, a works-council promise and a SOC 2 report needed for renewal are constraints, while the CTO's ranked priorities are goals; Sunday-evening and shift-start peaks; prospects in the pipeline are not workload; build budget is never given.",
+  "tests": "Growing B2B SaaS: 380 customers, 14 engineers, 60% growth; a contract SLA, EU data residency from processing agreements, a works-council promise and a SOC 2 report needed for renewal are constraints, while the CTO's ranked priorities are goals; Sunday-evening and shift-start peaks; prospects in the pipeline are not workload; build budget is never given. The current Postgres database and phone app are the current system; customers' identity providers and payroll are outside systems; no speed target is named.",
   "brief_sha256": "4a9f0a3a71dd3e394ac64a3c807f948932381cd2732a90d936b498a7a5468efc",
-  "maturity": {"accepted": ["growing"]},
+  "maturity": {"accepted": [
+    {"stage": "growing", "quotes": ["has grown about 60% a year for two years", "Annual recurring revenue passed $3.1M last quarter"]}
+  ]},
   "sensitivity": {"accepted": ["moderate", "high"]},
   "facts": [
-    {"id": "F1", "anchors": ["380 business customers"], "in": ["maturity.evidence", "workload.observed"], "value": 380},
-    {"id": "F2", "anchors": ["about 45,000 staff who use the app each month"], "in": ["maturity.evidence", "workload.observed"], "value": 45000},
-    {"id": "F3", "anchors": ["has grown about 60% a year"], "in": ["maturity.evidence", "workload.observed", "workload.projected"], "value": 60},
-    {"id": "F4", "anchors": ["Engineering is 14 people in three teams"], "in": ["team.size", "maturity.evidence"], "value": 14},
-    {"id": "F5", "anchors": ["one person who looks after infrastructure part of the time"], "in": ["team.operating_capacity", "team.size", "team.skills"]},
-    {"id": "F6", "anchors": ["2.5 million API requests on a normal weekday"], "in": ["workload.observed"], "value": 2500000},
-    {"id": "F7", "anchors": ["about 8 times the weekday average"], "in": ["workload.peaks"], "value": 8},
-    {"id": "F8", "anchors": ["Clock-ins cluster at the start of shifts"], "in": ["workload.peaks"]},
-    {"id": "F9", "anchors": ["The main Postgres database is 900 GB"], "in": ["workload.observed"], "value": 900},
-    {"id": "F10", "anchors": ["grows about 25 GB a month"], "in": ["workload.observed", "workload.projected"], "value": 25},
-    {"id": "F11", "anchors": ["promise 99.9% monthly uptime for clock-in"], "in": ["reliability.availability"], "value": 99.9},
-    {"id": "F12", "anchors": ["losing a confirmed clock-in is not acceptable"], "in": ["reliability.data_loss_tolerance"]},
-    {"id": "F13", "anchors": ["an hour of lost draft edits would be annoying but tolerable", "rebuilt from the last published version"], "in": ["reliability.data_loss_tolerance", "reliability.recovery_time"]},
-    {"id": "F14", "anchors": ["SOC 2 Type II report before they renew"], "in": ["security.compliance"]},
-    {"id": "F15", "anchors": ["single sign-on through their own identity providers"], "in": ["security.requirements"]},
-    {"id": "F16", "anchors": ["We hold staff names, phone numbers, emails, availability, hours worked and pay rates"], "in": ["privacy.data_categories"]},
-    {"id": "F17", "anchors": ["Location is recorded at clock-in only"], "in": ["privacy.data_categories", "privacy.jurisdictions_or_rules"]},
-    {"id": "F18", "anchors": ["their data must stay in the EU"], "in": ["privacy.jurisdictions_or_rules"]},
-    {"id": "F19", "anchors": ["now $38,000 a month"], "in": ["budget.run_monthly"], "value": 38000}
+    {"id": "F1", "anchors": ["380 business customers"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the customer count is also evidence of demand", "value": 380},
+    {"id": "F2", "anchors": ["about 45,000 staff who use the app each month"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the user count is also evidence of demand", "value": 45000},
+    {"id": "F3", "anchors": ["has grown about 60% a year"], "primary": "maturity.evidence", "value": 60},
+    {"id": "F4", "anchors": ["Engineering is 14 people in three teams"], "primary": "team.size", "value": 14},
+    {"id": "F5", "anchors": ["one person who looks after infrastructure part of the time"], "primary": "team.operating_capacity"},
+    {"id": "F6", "anchors": ["2.5 million API requests on a normal weekday"], "primary": "workload.observed", "value": 2500000},
+    {"id": "F7", "anchors": ["about 8 times the weekday average"], "primary": "workload.peaks", "value": 8},
+    {"id": "F8", "anchors": ["Clock-ins cluster at the start of shifts"], "primary": "workload.peaks"},
+    {"id": "F9", "anchors": ["The main Postgres database is 900 GB"], "primary": "workload.observed", "value": 900},
+    {"id": "F10", "anchors": ["grows about 25 GB a month"], "primary": "workload.observed", "value": 25},
+    {"id": "F11", "anchors": ["promise 99.9% monthly uptime for clock-in"], "primary": "reliability.availability", "value": 99.9},
+    {"id": "F12", "anchors": ["losing a confirmed clock-in is not acceptable", "an hour of lost draft edits would be annoying but tolerable"], "primary": "reliability.data_loss_tolerance"},
+    {"id": "F13", "anchors": ["clock in on their phones"], "primary": "current_system.items"},
+    {"id": "F14", "anchors": ["SOC 2 Type II report before they renew"], "primary": "security.compliance"},
+    {"id": "F15", "anchors": ["single sign-on through their own identity providers"], "primary": "security.requirements"},
+    {"id": "F16", "anchors": ["We hold staff names, phone numbers, emails, availability, hours worked and pay rates"], "primary": "privacy.data_categories"},
+    {"id": "F17", "anchors": ["Location is recorded at clock-in only"], "primary": "privacy.data_categories"},
+    {"id": "F18", "anchors": ["their data must stay in the EU"], "primary": "privacy.jurisdictions_or_rules"},
+    {"id": "F19", "anchors": ["now $38,000 a month"], "primary": "budget.run_monthly", "value": 38000},
+    {"id": "F20", "anchors": ["The main Postgres database"], "primary": "current_system.items"},
+    {"id": "F21", "anchors": ["The main Postgres database", "clock in on their phones", "2.5 million API requests"], "primary": "current_system"},
+    {"id": "F22", "anchors": ["their own identity providers"], "primary": "external_systems"},
+    {"id": "F23", "anchors": ["Clock-in records feed payroll"], "primary": "external_systems"},
+    {"id": "F24", "anchors": ["We are four years old"], "primary": "maturity.evidence"}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["promise 99.9% monthly uptime for clock-in"]},
@@ -49,10 +56,17 @@
     {"id": "T1", "anchors": ["40 prospects in the sales pipeline"], "reason": "future_scope", "forbidden_in": ["workload.observed", "maturity.evidence"]}
   ],
   "fields_unknown": [
-    {"field": "budget.build"}
+    {"field": "budget.build", "open_anchors": []},
+    {"field": "workload.projected", "open_anchors": [], "not_material_reason": "No forecast is given, but the observed 60% yearly growth and 25 GB a month of database growth give the planning rate; the pipeline is a separate unknown."},
+    {"field": "performance.targets", "open_anchors": [], "not_material_reason": "No speed target is named; the clock-in worry is uptime, which the 99.9% promise covers."},
+    {"field": "reliability.recovery_time", "open_anchors": [], "not_material_reason": "The 99.9% monthly uptime promise already bounds downtime at about 43 minutes a month."},
+    {"field": "privacy.retention", "open_anchors": [], "not_material_reason": "No retention period is named; it sets deletion jobs, not the shape of the options."},
+    {"field": "privacy.sharing", "open_anchors": [], "not_material_reason": "No third party is named that receives staff data beyond the customers' own payroll and identity providers, keyed as outside systems."},
+    {"field": "security.threats", "open_anchors": [], "not_material_reason": "No threat or incident is named; SOC 2 and single sign-on carry the security work."},
+    {"field": "team.skills", "open_anchors": [], "not_material_reason": "Teams are named by area, not technology; with 14 engineers, skills do not narrow the options as they do for a team of two."}
   ],
   "profile": {
-    "contract": "context_profile/v1",
+    "contract": "context_profile/v2",
     "brief_sha256": "4a9f0a3a71dd3e394ac64a3c807f948932381cd2732a90d936b498a7a5468efc",
     "product": {"summary": "Shift scheduling and time tracking for restaurants and cafés.", "source": {"kind": "quote", "quote": "Shiftwise sells shift scheduling and time tracking to restaurants and cafés."}},
     "maturity": {"stage": "growing", "evidence": [
@@ -60,6 +74,18 @@
       {"value": "ARR passed $3.1M, growing about 60% a year for two years", "source": {"kind": "quote", "quote": "Annual recurring revenue passed $3.1M last quarter and has grown about 60% a year for two years."}},
       {"value": "14 engineers in three teams", "source": {"kind": "quote", "quote": "Engineering is 14 people in three teams"}}
     ]},
+    "current_system": {
+      "state": "exists",
+      "source": {"kind": "quote", "quote": "The main Postgres database is 900 GB and grows about 25 GB a month."},
+      "items": [
+        {"kind": "data_store", "text": "main Postgres database, 900 GB", "source": {"kind": "quote", "quote": "The main Postgres database is 900 GB"}},
+        {"kind": "client", "text": "phone app where staff swap shifts and clock in", "source": {"kind": "quote", "quote": "staff swap shifts and clock in on their phones"}}
+      ]
+    },
+    "external_systems": [
+      {"name": "identity providers", "role": "single sign-on that several chains want", "source": {"kind": "quote", "quote": "Several chains want single sign-on through their own identity providers."}},
+      {"name": "payroll", "role": "receives clock-in records", "source": {"kind": "quote", "quote": "Clock-in records feed payroll"}}
+    ],
     "workload": {
       "observed": [
         {"what": "business customers", "value": 380, "unit": "customers", "source": {"kind": "quote", "quote": "380 business customers"}},
@@ -74,6 +100,7 @@
         {"what": "clock-ins at shift starts", "value": "6-7am and 4-5pm local time", "unit": "time of day", "source": {"kind": "quote", "quote": "Clock-ins cluster at the start of shifts, especially 6-7am and 4-5pm local time."}}
       ]
     },
+    "performance": {"targets": []},
     "reliability": {
       "availability": {"value": "99.9% monthly uptime for clock-in, promised in the largest customers' contracts, with service credits", "source": {"kind": "quote", "quote": "Their contracts promise 99.9% monthly uptime for clock-in and give them service credits when we miss it."}},
       "data_loss_tolerance": {"value": "No confirmed clock-in may be lost; the rota can be rebuilt from its last published version and an hour of draft edits may be lost", "source": {"kind": "quote", "quote": "losing a confirmed clock-in is not acceptable: it means someone may be paid wrongly. The rota itself can be rebuilt from the last published version if we must, and an hour of lost draft edits would be annoying but tolerable"}},
@@ -127,7 +154,14 @@
     "unknowns": [
       {"question": "How many of the 40 prospects in the sales pipeline will need EU hosting?", "why_it_matters": "It decides how much capacity and operations the EU region needs.", "decisions_affected": ["EU region sizing", "data residency design"], "material": true, "field": "privacy.jurisdictions_or_rules"},
       {"question": "What will the SOC 2 auditors ask us to change?", "why_it_matters": "The audit may require controls that change access, logging and deployment; the renewals depend on it.", "decisions_affected": ["access control", "audit logging", "change management"], "material": true, "field": "security.compliance"},
-      {"question": "What budget is there for the platform work?", "why_it_matters": "The brief gives running costs but no money for building; it bounds how much can change in 18 months.", "decisions_affected": ["scope of the platform changes", "build versus buy"], "material": true, "field": "budget.build"}
+      {"question": "What budget is there for the platform work?", "why_it_matters": "The brief gives running costs but no money for building; it bounds how much can change in 18 months.", "decisions_affected": ["scope of the platform changes", "build versus buy"], "material": true, "field": "budget.build"},
+      {"question": "How much will load grow?", "why_it_matters": "No forecast is given; the observed growth rates are enough to plan with.", "decisions_affected": ["capacity planning"], "material": false, "field": "workload.projected"},
+      {"question": "Is there a speed target?", "why_it_matters": "None is named; the clock-in worry is uptime.", "decisions_affected": ["hosting size"], "material": false, "field": "performance.targets"},
+      {"question": "How fast must clock-in recover after a failure?", "why_it_matters": "The 99.9% monthly promise already bounds downtime at about 43 minutes a month.", "decisions_affected": ["failover design"], "material": false, "field": "reliability.recovery_time"},
+      {"question": "How long is staff data kept?", "why_it_matters": "It sets deletion jobs, not the shape of the options.", "decisions_affected": ["data deletion"], "material": false, "field": "privacy.retention"},
+      {"question": "Is staff data shared with anyone beyond the customers' own systems?", "why_it_matters": "None is named.", "decisions_affected": ["data sharing controls"], "material": false, "field": "privacy.sharing"},
+      {"question": "Has the product faced any named threat or incident?", "why_it_matters": "None is named; SOC 2 and single sign-on carry the security work.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"},
+      {"question": "What technologies do the teams know?", "why_it_matters": "Teams are named by area; with 14 engineers, skills do not narrow the options much.", "decisions_affected": ["technology choice"], "material": false, "field": "team.skills"}
     ],
     "assumptions": []
   }

@@ -1,5 +1,5 @@
 {
-  "planted": "context_profile_planted/v1",
+  "planted": "context_profile_planted/v2",
   "plant_id": "p06-k06-invented-workload",
   "case_id": "k06-large-simple-transit",
   "fault": "Invented workload: a requests-per-second figure the brief never gives is added to observed workload, sourced as an assumption.",

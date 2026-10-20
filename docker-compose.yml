@@ -95,6 +95,51 @@ services:
         max-size: "50m"
         max-file: "3"
 
+  # Playwright MCP, WebKit: the same MCP server as playwright-mcp above, driving WebKit (Safari's
+  # engine) instead of Chromium, so a check can walk an app in the engine an iPhone's browser uses.
+  # Reached at http://playwright-mcp-webkit:8931/mcp on this network (the server container and run
+  # boxes). Used by configs/architecture/bin/first_app_check.py when that URL is its --browser: QA's
+  # Project 3 kit, PH-1, walks the journey in WebKit at 390x844 with touch next to Chromium at
+  # 1280x800 (temper queue #123, Architecture rm-ebb68a75). The device is the checker's own
+  # browser.newContext (viewport, hasTouch, isMobile), not fixed here.
+  #
+  # What it can touch: no published port, no volumes or mounts, and it is not in
+  # configs/mcp_servers, so no agent has it as a tool: only a script handed its URL drives it. Like
+  # playwright-mcp, its pages can open any address this network reaches. Using it on a build
+  # (calibration or Project) waits for Security's review of WebKit (Project 3 profile).
+  #
+  # Image: docker/playwright-mcp-webkit/Dockerfile, playwright-mcp's image pinned by digest plus
+  # WebKit. temper-deploy and temper-ci recreate only server and worker and never build or start
+  # this one, so after a change to it, from the main folder:
+  #   docker compose build playwright-mcp-webkit && docker compose up -d --no-deps playwright-mcp-webkit
+  # pull_policy never: the image is only ever built here. Without it `docker compose pull`, and `up`
+  # when the image is missing, first ask Docker Hub for temper-ai/playwright-mcp-webkit, a name
+  # nobody here owns (Compose 5.0.2, 2026-10-20); with it, pull skips it and up builds it.
+  #
+  # --isolated and --output-dir as playwright-mcp (cwd stays the image's /home/node, node's own).
+  # No --no-sandbox: Playwright applies it to Chromium only, and WebKit starts without it.
+  playwright-mcp-webkit:
+    build: docker/playwright-mcp-webkit
+    image: temper-ai/playwright-mcp-webkit
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    entrypoint: node
+    command: >
+      /app/cli.js
+      --headless
+      --browser webkit
+      --isolated
+      --port 8931
+      --host 0.0.0.0
+      --allowed-hosts playwright-mcp-webkit:8931,localhost:8931,127.0.0.1:8931
+      --output-dir /tmp/browser-output
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   server:
     build:
       context: .

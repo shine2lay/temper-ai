@@ -5,15 +5,24 @@
  * Node so the unit tests (src/__tests__/teamPageTruth.test.ts) can feed it known answers.
  *
  * The page side is what a person sees: the Team list and each Project's run view, read
- * from the rendered pages by role, label and text. The record side is Temper's
- * lower-level records, never the Team API (/api/team/*), which builds the page:
- *   - the run list (GET /api/workflows): each run's status and total_cost_usd;
- *   - the run (GET /api/workflows/{id}): its nodes' cost, workflow_output, stopped, error_message;
- *   - its turns (GET /api/workflows/{id}/agents): each member's turns and their cost;
- *   - its waits (GET /api/runs/{id}/gates, and /decisions for the ones still waiting);
- *   - its configs (GET /api/studio/configs/workflow/<name> and .../agent/<name>): members, roles, leader.
- * The Team API is read only to say where a gap most likely comes from. Where two records
- * disagree, the report names both and picks neither.
+ * from the rendered pages by role, label and text. The record side is Temper's own records,
+ * and for each field the one record Temper names as the truth, which the page is judged by:
+ *   - members: the configs (GET /api/studio/configs/workflow/<name> and .../agent/<name>:
+ *     members, roles, leader) and the names in the turns record;
+ *   - state: the run list's status (GET /api/workflows) and workflow_output.decision;
+ *   - waits: the open gates (GET /api/runs/{id}/gates, and /decisions for the ones still waiting);
+ *   - cost: the recorded model calls, i.e. the turns record (GET /api/workflows/{id}/agents)
+ *     summed, and per member summed per agent_name;
+ *   - result: the decision (workflow_output.decision, else the run list's status), the team's
+ *     outcome reason (workflow_output.reason), and the words given with a stop: the team's stop
+ *     record, the last owner_actions entry of kind "stop" in GET /api/team/runs/{id}
+ *     (detail.reason and by), which is where Temper records them.
+ * Temper's other records of the same things (the run list's and the run's total_cost_usd, the
+ * nodes' cost_usd, the run's stopped.reason and error_message) are compared with that record,
+ * not with the page: where they hold something else, the report lists them under "Temper's
+ * records disagree" for the temper role, and they are not page mismatches. Apart from the stop
+ * record, the Team API (/api/team/*), which builds the page, is read only to say where a gap
+ * most likely comes from.
  *
  * Five fields per Project (members, state, waits, cost, result), plus whether the Team list
  * shows the Project at all ("listed"). No model calls: every check here is a rule.
@@ -48,6 +57,13 @@ export interface PageListRow {
   cost: string | null;
 }
 
+/** A stop-words quote as the page shows it: a figure named by its caption, the words in its blockquote. */
+export interface PageWords {
+  /** The caption, which names the figure: "Your words", "temper's words", "Words from an unknown caller". */
+  label: string;
+  words: string;
+}
+
 /** One Project's run view (/app/team/runs/<id>). */
 export interface PageRunView {
   executionId: string;
@@ -66,6 +82,8 @@ export interface PageRunView {
   outcomeReason: string | null;
   /** All text of the outcome area, searched for the record's reason. */
   outcomeText: string | null;
+  /** The stop-words quotes the outcome shows (flow: the Status band; rounds: the outcome card). */
+  stopWords: PageWords[];
 }
 
 export interface PageRead {
@@ -81,26 +99,41 @@ export interface RecordMember {
   leader: boolean;
 }
 
-/** What Temper's lower-level records hold for one team-trial-* run. */
+/** The words given with a stop, from the record that keeps them. */
+export interface StopRecord {
+  /** "stop": the last owner_actions entry of kind "stop" (a cancel; its words are detail.reason).
+   * "stop answer": a team a stop answer ended, whose words the team's outcome record keeps. */
+  from: 'stop' | 'stop answer';
+  /** Who stopped it, as the record names them ("owner", "temper", "unknown caller"). */
+  by: string | null;
+  /** The words, trimmed; null when none were given. */
+  words: string | null;
+  at: string | null;
+}
+
+/** The run's own record (GET /api/workflows/{id}), the fields read here. */
+export interface RunDetail {
+  status: string | null;
+  costUsd: number | null;
+  /** The sum of its top-level nodes' cost_usd. */
+  nodeCostUsd: number | null;
+  /** workflow_output.decision and .reason: the team's outcome as the run keeps it. */
+  decision: string | null;
+  outputReason: string | null;
+  stoppedReason: string | null;
+  errorMessage: string | null;
+}
+
+/** What Temper's records hold for one team-trial-* run. */
 export interface ProjectRecords {
   executionId: string;
   workflow: string;
-  /** The run list's status and total_cost_usd. */
+  /** The run list's status and total_cost_usd (the total is compared with the turns record, not the page). */
   status: string;
   costUsd: number | null;
   /** GET /api/workflows/{id}; null when it couldn't be read. */
-  detail: {
-    status: string | null;
-    costUsd: number | null;
-    /** The sum of its top-level nodes' cost_usd. */
-    nodeCostUsd: number | null;
-    /** workflow_output.decision. */
-    decision: string | null;
-    /** workflow_output.reason, else (not completed) stopped.reason, else error_message. */
-    reason: string | null;
-    reasonFrom: string | null;
-  } | null;
-  /** GET /api/workflows/{id}/agents, per agent_name: turns and their summed estimated_cost_usd. */
+  detail: RunDetail | null;
+  /** GET /api/workflows/{id}/agents, per agent_name: turns and their summed estimated_cost_usd (the recorded model calls). */
   turns: Record<string, { turns: number; costUsd: number }> | null;
   /** The workflow config's agents, each agent config's role, and the strategy's leader. */
   members: RecordMember[] | null;
@@ -108,6 +141,10 @@ export interface ProjectRecords {
   openWaits: Array<{ node: string; asker: string | null }> | null;
   /** GET /api/runs/{id}/decisions still "waiting". */
   waitingDecisions: number | null;
+  /** The team's stop record (GET /api/team/runs/{id}); null when nothing stopped the team. */
+  stop: StopRecord | null;
+  /** Whether GET /api/team/runs/{id} could be read: without it the stop record isn't known. */
+  stopRead: boolean;
 }
 
 /** The Team API's view of a Project: read only to say where a gap comes from. */
@@ -120,6 +157,8 @@ export interface TeamApiProject {
   openWaits: number | null;
   decision: string | null;
   reason: string | null;
+  /** The outcome's owner_words: the stop words the page shows. */
+  ownerWords: string | null;
 }
 
 export interface CheckInput {
@@ -150,6 +189,21 @@ export interface Row {
   why: string | null;
 }
 
+/** A field on which Temper's own records disagree: listed for the temper role, never a page mismatch. */
+export interface Disagreement {
+  project: string;
+  workflow: string | null;
+  field: Field;
+  /** The record (or records) the page is judged by, with what it holds. */
+  judgedBy: Array<{ record: string; value: string }>;
+  /** Each other record that holds something else, with what it holds. */
+  differ: Array<{ record: string; value: string }>;
+  /** The other records, which agree. */
+  agree: string[];
+  /** Who fixes the records. */
+  owner: 'temper';
+}
+
 export interface Report {
   base: string;
   at: string;
@@ -157,6 +211,107 @@ export interface Report {
   projects: string[];
   rows: Row[];
   totals: Record<Verdict, number>;
+  disagreements: Disagreement[];
+}
+
+// ---------------------------------------------------------------- the records' answers
+
+/** The fields of GET /api/workflows/{id} read here. */
+export interface RunBody {
+  status?: string | null;
+  total_cost_usd?: number | string | null;
+  nodes?: Array<{ cost_usd?: number | string | null } | null> | null;
+  workflow_output?: unknown;
+  stopped?: { reason?: string | null } | null;
+  error_message?: string | null;
+}
+
+/** One row of GET /api/workflows/{id}/agents: one per turn, with its model calls' cost. */
+export interface TurnRow {
+  agent_name?: string | null;
+  estimated_cost_usd?: number | string | null;
+}
+
+/** One entry of GET /api/team/runs/{id}'s owner_actions (a stop's words are its detail.reason). */
+export interface OwnerAction {
+  at?: string | null;
+  kind?: string | null;
+  by?: string | null;
+  source?: string | null;
+  request_id?: string | null;
+  detail?: Record<string, unknown> | null;
+}
+
+/** The fields of GET /api/team/runs/{id} read here: its owner_actions and its outcome (the team's outcome record). */
+export interface TeamRunBody {
+  owner_actions?: Array<OwnerAction | null> | null;
+  outcome?: {
+    decision?: string | null;
+    reason?: string | null;
+    owner_words?: string | null;
+    problems?: unknown;
+    by?: string | null;
+    at?: string | null;
+    done?: unknown;
+  } | null;
+}
+
+/** A record's number: null when missing, empty or not a number. */
+export function numberOf(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** A record's text, trimmed: null when missing or empty. */
+function textOf(v: unknown): string | null {
+  if (v === null || v === undefined || typeof v === 'object') return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+/** GET /api/workflows/{id} -> the run's own record. */
+export function runDetail(d: RunBody): RunDetail {
+  const wo = d.workflow_output && typeof d.workflow_output === 'object' ? (d.workflow_output as Record<string, unknown>) : null;
+  const costs = (Array.isArray(d.nodes) ? d.nodes : []).map((n) => numberOf(n?.cost_usd)).filter((v): v is number => v !== null);
+  return {
+    status: textOf(d.status),
+    costUsd: numberOf(d.total_cost_usd),
+    nodeCostUsd: costs.length ? costs.reduce((s, v) => s + v, 0) : null,
+    decision: textOf(wo?.decision),
+    outputReason: textOf(wo?.reason),
+    stoppedReason: textOf(d.stopped?.reason),
+    errorMessage: textOf(d.error_message),
+  };
+}
+
+/** GET /api/workflows/{id}/agents (one row per turn) -> per member: how many turns and their summed cost. */
+export function turnsRecord(rows: ReadonlyArray<TurnRow | null>): Record<string, { turns: number; costUsd: number }> {
+  const out: Record<string, { turns: number; costUsd: number }> = {};
+  for (const a of rows) {
+    const name = textOf(a?.agent_name);
+    if (!name) continue;
+    out[name] ??= { turns: 0, costUsd: 0 };
+    out[name].turns += 1;
+    out[name].costUsd += numberOf(a?.estimated_cost_usd) ?? 0;
+  }
+  return out;
+}
+
+/**
+ * GET /api/team/runs/{id} -> the team's stop record: the last owner_actions entry of kind "stop"
+ * (its detail.reason and by). For a team a stop answer ended (outcome decision "stopped", no stop
+ * entry), the team's outcome record, which keeps that answer's words (owner_words, by). Null when
+ * nothing stopped the team.
+ */
+export function stopRecord(body: TeamRunBody | null | undefined): StopRecord | null {
+  const list = body?.owner_actions;
+  let last: OwnerAction | null = null;
+  for (const a of Array.isArray(list) ? list : []) if (a?.kind === 'stop') last = a;
+  if (last) return { from: 'stop', by: textOf(last.by), words: textOf(last.detail?.reason), at: textOf(last.at) };
+  const o = body?.outcome;
+  if (o?.decision === 'stopped') return { from: 'stop answer', by: textOf(o.by), words: textOf(o.owner_words), at: textOf(o.at) };
+  return null;
 }
 
 // ---------------------------------------------------------------- small rules
@@ -281,6 +436,44 @@ export function showsReason(text: string | null | undefined, reason: string): bo
     const stem = t.slice(0, -1).trim();
     return stem.length >= 40 && want.includes(stem.slice(-40));
   });
+}
+
+/** The same words: verbatim, with each run of whitespace as one space. */
+export function sameWords(a: string | null | undefined, b: string | null | undefined): boolean {
+  const w = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+  return w(a) === w(b);
+}
+
+const UNKNOWN_CALLER = 'unknown caller';
+
+/** Who a record says gave the words: its name ("owner", "temper"), or "unknown caller" when none is
+ * recorded (Temper stores an unknown caller as "unknown caller"). */
+export function recordWho(by: string | null | undefined): string {
+  const b = (by ?? '').trim();
+  return !b || b === UNKNOWN_CALLER ? UNKNOWN_CALLER : b;
+}
+
+/** The caption a person should see over the words from `by` (the page's rule: "owner" is "Your words"). */
+export function captionFor(by: string | null | undefined): string {
+  const who = recordWho(by);
+  if (who === 'owner') return 'Your words';
+  if (who === UNKNOWN_CALLER) return 'Words from an unknown caller';
+  return `${who}'s words`;
+}
+
+/** Who a stop-words caption names: "Your words" -> owner, "Words from an unknown caller" ->
+ * unknown caller, "<who>'s words" -> who; null for any other caption. */
+export function captionWho(label: string): string | null {
+  const t = label.replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').trim();
+  if (/^your words$/i.test(t)) return 'owner';
+  if (/^words from an unknown caller$/i.test(t)) return UNKNOWN_CALLER;
+  const m = /^(.+)'s words$/i.exec(t);
+  return m ? m[1].trim() : null;
+}
+
+/** Whether a caption names the one the record says gave the words (case aside). */
+export function captionMatches(label: string, by: string | null | undefined): boolean {
+  return (captionWho(label) ?? '').toLowerCase() === recordWho(by).toLowerCase();
 }
 
 function cut(s: string | null | undefined, n = 140): string {
@@ -468,6 +661,24 @@ function waits(rec: ProjectRecords, after: ProjectRecords | undefined, row: Page
     : result(page, record, gaps, 'Team API bug', `the Team API has ${api.openWaits} open waits; the gates ${rec.openWaits.length}`);
 }
 
+/** What the recorded model calls cost: the turns record summed; null when it couldn't be read. */
+export function turnsSum(r: ProjectRecords): number | null {
+  return r.turns ? Object.values(r.turns).reduce((s, t) => s + t.costUsd, 0) : null;
+}
+
+/** Temper's other records of a run's total cost: compared with the recorded model calls, never with the page. */
+function otherCosts(r: ProjectRecords): Array<[string, number]> {
+  return (
+    [
+      ['run list total_cost_usd', r.costUsd],
+      ['run total_cost_usd', r.detail?.costUsd ?? null],
+      ['node cost_usd', r.detail?.nodeCostUsd ?? null],
+    ] as Array<[string, number | null]>
+  ).filter((s): s is [string, number] => s[1] !== null);
+}
+
+const CALLS = 'the recorded model calls (turns record)';
+
 function cost(rec: ProjectRecords, after: ProjectRecords | undefined, row: PageListRow | undefined, view: PageRunView | undefined, api: TeamApiProject | undefined): FieldResult {
   const shownTotals: Array<{ place: string; value: string }> = [];
   if (row && !row.subRow && row.cost !== null) shownTotals.push({ place: 'the Team list', value: row.cost });
@@ -481,31 +692,21 @@ function cost(rec: ProjectRecords, after: ProjectRecords | undefined, row: PageL
       .filter(Boolean)
       .join('; ') || 'not shown';
 
-  const turnSum = (r: ProjectRecords) => (r.turns ? Object.values(r.turns).reduce((s, t) => s + t.costUsd, 0) : null);
-  const sources = (r: ProjectRecords): Array<[string, number]> =>
-    (
-      [
-        ['run list total_cost_usd', r.costUsd],
-        ['run total_cost_usd', r.detail?.costUsd ?? null],
-        ['node cost_usd', r.detail?.nodeCostUsd ?? null],
-        ['turns (agents) sum', turnSum(r)],
-      ] as Array<[string, number | null]>
-    ).filter((s): s is [string, number] => s[1] !== null);
-  const recordWords = (r: ProjectRecords) =>
+  const sum = turnsSum(rec);
+  const others = otherCosts(rec);
+  const record =
     [
-      sources(r)
-        .map(([k, v]) => `${k} ${usd(v)}`)
-        .join('; '),
-      r.turns
-        ? `per member: ${Object.entries(r.turns)
+      sum !== null ? `recorded model calls (turns record) ${usd(sum)}` : '',
+      rec.turns
+        ? `per member: ${Object.entries(rec.turns)
             .map(([n, t]) => `${n} ${usd(t.costUsd)}`)
             .join(', ')}`
         : '',
+      others.length ? `other records: ${others.map(([k, v]) => `${k} ${usd(v)}`).join(', ')}` : '',
     ]
       .filter(Boolean)
-      .join('; ');
-  const record = recordWords(rec) || 'none';
-  if (rec.costUsd === null) return noRecord(page, record, "the run list's total_cost_usd is missing");
+      .join('; ') || 'none';
+  if (sum === null) return noRecord(page, record, 'the turns record (GET /api/workflows/{id}/agents) could not be read');
 
   // A running Project's numbers move while the page is read: an amount that matches either read of
   // the records, or lies between them, counts as right.
@@ -513,48 +714,119 @@ function cost(rec: ProjectRecords, after: ProjectRecords | undefined, row: PageL
     v !== null && (sameCent(v, a) || (b !== null && (sameCent(v, b) || (v >= Math.min(a, b) && v <= Math.max(a, b)))));
   const memberCost = (r: ProjectRecords | undefined, name: string): number | null =>
     r?.turns ? (r.turns[name]?.costUsd ?? 0) : null;
-  const total = rec.costUsd;
-  const totalAfter = after?.costUsd ?? null;
+  const sumAfter = after ? turnsSum(after) : null;
   const gaps: string[] = [];
   for (const t of shownTotals) {
-    if (!fits(parseMoney(t.value), total, totalAfter)) {
-      gaps.push(`${t.place} shows ${t.value}; the run list's total_cost_usd is ${usd(total)}`);
-    }
+    if (!fits(parseMoney(t.value), sum, sumAfter)) gaps.push(`${t.place} shows ${t.value}; ${CALLS} sum to ${usd(sum)}`);
   }
+  const wrongMembers: string[] = [];
   for (const m of shownMembers) {
     const want = memberCost(rec, m.name);
     if (want === null) continue;
     if (!fits(parseMoney(m.cost), want, memberCost(after, m.name))) {
-      gaps.push(`the run view shows ${m.name} ${m.cost}; its turns (agents record) cost ${usd(want)}`);
+      wrongMembers.push(m.name);
+      gaps.push(`the run view shows ${m.name} ${m.cost}; its recorded model calls (turns record) sum to ${usd(want)}`);
     }
   }
   if (gaps.length === 0) return result(page, record, [], null, null);
-
-  const vals = sources(rec);
-  const split = vals.some(([, a]) => vals.some(([, b]) => !sameCent(a, b)));
-  if (split) {
-    return result(
-      page,
-      record,
-      gaps,
-      'engine record bug',
-      `Temper's own records disagree (${vals.map(([k, v]) => `${k} ${usd(v)}`).join(', ')}); which one is right is the temper role's call${
-        api?.costUsd != null ? `; the Team API says ${usd(api.costUsd)}` : ''
-      }`,
-    );
-  }
   if (!api || api.costUsd === null) return result(page, record, gaps, 'not known', 'the Team API was not read');
-  return sameCent(api.costUsd, rec.costUsd)
-    ? result(page, record, gaps, 'page bug', `the Team API says ${usd(api.costUsd)}, as the records do`)
-    : result(page, record, gaps, 'Team API bug', `the Team API says ${usd(api.costUsd)}`);
+  if (!sameCent(api.costUsd, sum)) {
+    return result(page, record, gaps, 'Team API bug', `the Team API says ${usd(api.costUsd)}; ${CALLS} sum to ${usd(sum)}`);
+  }
+  const apiMembersOk = wrongMembers.every((name) => {
+    const m = api.members?.find((x) => x.name === name);
+    const want = memberCost(rec, name);
+    const shown = m?.costUsd ?? null;
+    return shown !== null && want !== null && sameCent(shown, want);
+  });
+  return apiMembersOk
+    ? result(page, record, gaps, 'page bug', `the Team API says ${usd(api.costUsd)}, as ${CALLS} do`)
+    : result(page, record, gaps, 'Team API bug', `the Team API's member costs differ from ${CALLS} too`);
+}
+
+/** Where the run list's and the run's totals and the nodes' costs differ from the recorded model calls. */
+function costDisagreement(rec: ProjectRecords, after: ProjectRecords | undefined): Omit<Disagreement, 'project' | 'workflow'> | null {
+  const sum = turnsSum(rec);
+  if (sum === null) return null;
+  const sumAfter = after ? turnsSum(after) : null;
+  const later = new Map(after ? otherCosts(after) : []);
+  const differ: Array<{ record: string; value: string }> = [];
+  const agree: string[] = [];
+  for (const [k, v] of otherCosts(rec)) {
+    // A running Project's numbers move: a record that agrees in the second read agrees.
+    const l = later.get(k);
+    if (sameCent(v, sum) || (l !== undefined && sumAfter !== null && sameCent(l, sumAfter))) agree.push(k);
+    else differ.push({ record: k, value: usd(v) });
+  }
+  if (differ.length === 0) return null;
+  return { field: 'cost', judgedBy: [{ record: 'recorded model calls (turns record, summed)', value: usd(sum) }], differ, agree, owner: 'temper' };
 }
 
 function statusDecision(status: string): string | null {
   return ({ completed: 'done', cancelled: 'cancelled', failed: 'failed' } as Record<string, string>)[status] ?? null;
 }
 
+/** The team's generic sentence for a cancelled run: it says nothing the decision doesn't. */
+function isGenericCancel(s: string): boolean {
+  return norm(s).replace(/[.!?]+$/, '') === 'the run was cancelled';
+}
+
+interface ResultRecord {
+  decision: string | null;
+  decisionFrom: string;
+  /** The stop record, for a run that ended without being done. */
+  stop: StopRecord | null;
+  /** The reason the page must show, and its record; null when there is none to show. */
+  reason: string | null;
+  reasonFrom: string | null;
+  /** The run's other records of why it ended: compared with the stop words and the reason, never the page. */
+  others: Array<[string, string]>;
+}
+
+/**
+ * What the records say an ended run's result is. The decision: workflow_output.decision, else the
+ * run list's status. The words given with a stop: the team's stop record. The reason: the team's
+ * outcome reason (workflow_output.reason), except its generic "the run was cancelled" where the
+ * stop words say why; with no stop recorded and no outcome reason, the run's stopped.reason, else
+ * its error_message (then the only record of why). Otherwise stopped.reason and error_message are
+ * compared with those, record against record.
+ */
+function resultRecord(rec: ProjectRecords): ResultRecord {
+  const d = rec.detail;
+  const decision = d?.decision ?? statusDecision(rec.status);
+  const decisionFrom = d?.decision ? 'workflow_output.decision' : 'run list status';
+  const stop = recordStateClass(rec.status, decision) === 'done' ? null : rec.stop;
+  const words = stop?.words ?? null;
+  const output = genuineReason(d?.outputReason);
+  const stopped = genuineReason(d?.stoppedReason);
+  const error = genuineReason(d?.errorMessage);
+  let reason: string | null = null;
+  let reasonFrom: string | null = null;
+  if (output && !(words && isGenericCancel(output))) [reason, reasonFrom] = [output, 'workflow_output.reason'];
+  else if (!output && !stop && rec.status !== 'completed') {
+    if (stopped) [reason, reasonFrom] = [stopped, 'stopped.reason'];
+    else if (error) [reason, reasonFrom] = [error, 'error_message'];
+  }
+  const others = (
+    [
+      ['stopped.reason', stopped],
+      ['error_message', error],
+    ] as Array<[string, string | null]>
+  ).filter((o): o is [string, string] => o[1] !== null && o[0] !== reasonFrom);
+  return { decision, decisionFrom, stop, reason, reasonFrom, others };
+}
+
+function stopSource(s: StopRecord): string {
+  return s.from === 'stop' ? "the team's stop record" : "a stop answer, kept in the team's outcome record";
+}
+
+function quoteWords(shown: PageWords[]): string {
+  return shown.map((w) => `"${cut(w.words)}" under "${w.label}"`).join(', ');
+}
+
 function resultField(rec: ProjectRecords, view: PageRunView | undefined, api: TeamApiProject | undefined): FieldResult {
   const ended = ENDED.has(recordStateClass(rec.status));
+  const shownWords = view && !view.problem ? view.stopWords : [];
   const shown = view
     ? view.problem
       ? `not read (${view.problem})`
@@ -562,59 +834,114 @@ function resultField(rec: ProjectRecords, view: PageRunView | undefined, api: Te
         ? `${view.outcomeWord}${view.outcomeReason ? ` \u2014 "${cut(view.outcomeReason)}"` : ''}`
         : 'no outcome'
     : 'not read';
+  const page = `run view: ${shown}${shownWords.length ? `; stop words: ${quoteWords(shownWords)}` : ''}`;
   if (!ended) {
-    const page = `run view: ${shown}`;
     const gaps =
       view?.outcomeWord && ENDED.has(pageStateClass(view.outcomeWord))
         ? [`the run view shows an outcome (${view.outcomeWord}); the run list says ${rec.status}`]
         : [];
     return result(page, `not ended (run list: ${rec.status})`, gaps, gaps.length ? 'not known' : null, gaps.length ? 'the run has no result yet' : null);
   }
-  const decision = rec.detail?.decision ?? statusDecision(rec.status);
-  const decisionFrom = rec.detail?.decision ? 'workflow_output.decision' : 'run list status';
-  const reason = genuineReason(rec.detail?.reason);
-  const record = `${decision ?? 'no decision'} (${decisionFrom})${reason ? `; reason (${rec.detail?.reasonFrom}): "${cut(reason)}"` : '; no reason'}`;
-  const page = `run view: ${shown}`;
+  const r = resultRecord(rec);
+  const words = r.stop?.words ?? null;
+  const record = [
+    `${r.decision ?? 'no decision'} (${r.decisionFrom})`,
+    r.reason ? `reason (${r.reasonFrom}): "${cut(r.reason)}"` : 'no reason to show',
+    r.stop
+      ? words
+        ? `stop words (${stopSource(r.stop)}, by ${recordWho(r.stop.by)}): "${cut(words)}"`
+        : `stopped by ${recordWho(r.stop.by)} (${stopSource(r.stop)}), no words given`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
   if (!rec.detail) return noRecord(page, record, 'GET /api/workflows/{id} could not be read');
+  if (recordStateClass(rec.status, r.decision) !== 'done' && !rec.stopRead) {
+    return noRecord(page, record, "GET /api/team/runs/{id}, which holds the team's stop record, could not be read");
+  }
 
   const gaps: string[] = [];
   if (!view || view.problem) gaps.push(`the run view wasn't read${view?.problem ? `: ${view.problem}` : ''}`);
   else {
-    if (!view.outcomeWord) gaps.push(`the run view shows no outcome; record: ${decision}`);
-    else if (!stateAgrees(pageStateClass(view.outcomeWord), recordStateClass(null, decision))) {
-      gaps.push(`the run view's outcome is ${view.outcomeWord}; record decision: ${decision}`);
+    if (!view.outcomeWord) gaps.push(`the run view shows no outcome; record: ${r.decision}`);
+    else if (!stateAgrees(pageStateClass(view.outcomeWord), recordStateClass(null, r.decision))) {
+      gaps.push(`the run view's outcome is ${view.outcomeWord}; record decision: ${r.decision}`);
     }
-    if (reason && !showsReason(view.outcomeText, reason)) {
-      gaps.push(`the run view doesn't show the reason "${cut(reason)}" (${rec.detail.reasonFrom}); it says "${cut(view.outcomeReason) || 'no reason'}"`);
+    if (r.reason && !showsReason(view.outcomeText, r.reason)) {
+      gaps.push(`the run view doesn't show the reason "${cut(r.reason)}" (${r.reasonFrom}); it says "${cut(view.outcomeReason) || 'no reason'}"`);
+    }
+    if (r.stop && words) {
+      const by = r.stop.by;
+      const want = `"${cut(words)}" (${stopSource(r.stop)}, by ${recordWho(by)})`;
+      const same = shownWords.find((w) => sameWords(w.words, words));
+      if (!same) {
+        gaps.push(shownWords.length ? `the run view's stop words are ${quoteWords(shownWords)}; the record holds ${want}` : `the run view doesn't show the stop words ${want}`);
+      } else if (!captionMatches(same.label, by)) {
+        gaps.push(`the run view puts the stop words under "${same.label}"; they are from ${recordWho(by)} ("${captionFor(by)}")`);
+      }
+    } else if (shownWords.length) {
+      gaps.push(
+        `the run view shows stop words ${quoteWords(shownWords)}; ${
+          r.stop ? `the team's stop record holds none (stopped by ${recordWho(r.stop.by)})` : 'no stop is recorded for this run'
+        }`,
+      );
     }
   }
   if (gaps.length === 0) return result(page, record, [], null, null);
   if (!api) return result(page, record, gaps, 'not known', 'the Team API was not read');
   const apiReason = genuineReason(api.reason);
-  const apiHasReason = !reason || (apiReason !== null && showsReason(apiReason, reason));
-  const apiDecisionOk = api.decision !== null && stateAgrees(recordStateClass(null, api.decision), recordStateClass(null, decision));
-  if (apiHasReason && apiDecisionOk) return result(page, record, gaps, 'page bug', "the Team API's outcome matches the record");
+  const apiHasReason = !r.reason || (apiReason !== null && showsReason(apiReason, r.reason));
+  const apiDecisionOk = api.decision !== null && stateAgrees(recordStateClass(null, api.decision), recordStateClass(null, r.decision));
+  const apiWordsOk = words ? api.ownerWords !== null && sameWords(api.ownerWords, words) : !api.ownerWords;
+  if (apiHasReason && apiDecisionOk && apiWordsOk) return result(page, record, gaps, 'page bug', "the Team API's outcome matches the records");
   if (api.decision === null) return result(page, record, gaps, 'not known', 'the Team API has no outcome for this ended run');
   // The Team API serves the team's own outcome record (pi_team_outcomes) as it is: when that
-  // differs from the run's record, two of Temper's records disagree.
-  return result(
-    page,
-    record,
-    gaps,
-    'engine record bug',
-    `two records disagree: the team's outcome record (pi_team_outcomes, as the Team API serves it) says ${api.decision}${
-      api.reason ? ` "${cut(api.reason, 80)}"` : ' with no reason'
-    }; the run's record says ${decision}${reason ? ` "${cut(reason, 80)}" (${rec.detail.reasonFrom})` : ''}; which one the page should show is the temper role's call`,
-  );
+  // differs from the run's record or from the stop record, two of Temper's records disagree.
+  const parts: string[] = [];
+  if (!apiHasReason || !apiDecisionOk) {
+    parts.push(
+      `the team's outcome record (pi_team_outcomes, as the Team API serves it) says ${api.decision}${
+        api.reason ? ` "${cut(api.reason, 80)}"` : ' with no reason'
+      }; the run's record says ${r.decision}${r.reason ? ` "${cut(r.reason, 80)}" (${r.reasonFrom})` : ''}`,
+    );
+  }
+  if (!apiWordsOk) {
+    parts.push(
+      `the team's outcome record holds the stop words ${api.ownerWords ? `"${cut(api.ownerWords, 80)}"` : 'none'}; ${
+        r.stop ? stopSource(r.stop) : 'no stop record'
+      } holds ${words ? `"${cut(words, 80)}"` : 'none'}`,
+    );
+  }
+  return result(page, record, gaps, 'engine record bug', `two records disagree: ${parts.join('; ')}; which one the page should show is the temper role's call`);
+}
+
+/** Where the run's stopped.reason or error_message holds something other than the stop words and the reason. */
+function resultDisagreement(rec: ProjectRecords): Omit<Disagreement, 'project' | 'workflow'> | null {
+  if (!rec.detail || !ENDED.has(recordStateClass(rec.status))) return null;
+  const r = resultRecord(rec);
+  if (recordStateClass(rec.status, r.decision) !== 'done' && !rec.stopRead) return null;
+  const judgedBy: Array<{ record: string; value: string }> = [];
+  if (r.stop?.words) judgedBy.push({ record: `stop words (${stopSource(r.stop)}, by ${recordWho(r.stop.by)})`, value: r.stop.words });
+  if (r.reason) judgedBy.push({ record: r.reasonFrom ?? 'reason', value: r.reason });
+  if (judgedBy.length === 0) return null;
+  const differ: Array<{ record: string; value: string }> = [];
+  const agree: string[] = [];
+  for (const [k, v] of r.others) {
+    if (judgedBy.some((j) => sameWords(j.value, v))) agree.push(k);
+    else differ.push({ record: k, value: v });
+  }
+  if (differ.length === 0) return null;
+  return { field: 'result', judgedBy, differ, agree, owner: 'temper' };
 }
 
 // ---------------------------------------------------------------- the report
 
-/** Compare every Project's five fields (and whether it is listed). */
+/** Compare every Project's five fields (and whether it is listed), and list where Temper's own records disagree. */
 export function compareAll(input: CheckInput): Report {
   const only = input.only && input.only.length > 0 ? new Set(input.only) : null;
   const ids = Object.keys(input.records).filter((id) => !only || only.has(id));
   const rows: Row[] = [];
+  const disagreements: Disagreement[] = [];
   const push = (project: string, workflow: string | null, field: Field, r: FieldResult) => rows.push({ project, workflow, field, ...r });
   for (const id of ids) {
     const rec = input.records[id];
@@ -628,6 +955,9 @@ export function compareAll(input: CheckInput): Report {
     push(id, rec.workflow, 'waits', waits(rec, after, row, view, api));
     push(id, rec.workflow, 'cost', cost(rec, after, row, view, api));
     push(id, rec.workflow, 'result', resultField(rec, view, api));
+    for (const d of [costDisagreement(rec, after), resultDisagreement(rec)]) {
+      if (d) disagreements.push({ project: id, workflow: rec.workflow, ...d });
+    }
   }
   if (!only) {
     for (const r of input.page.rows) {
@@ -660,12 +990,13 @@ export function compareAll(input: CheckInput): Report {
   }
   const totals: Record<Verdict, number> = { match: 0, mismatch: 0, 'no record': 0 };
   for (const r of rows) totals[r.verdict] += 1;
-  return { base: input.base, at: input.at, runListTotal: input.runListTotal, projects: ids, rows, totals };
+  return { base: input.base, at: input.at, runListTotal: input.runListTotal, projects: ids, rows, totals, disagreements };
 }
 
-/** 0 when nothing mismatches ("no record" rows don't fail it), 1 when anything does. */
+/** 1 when the page mismatches a record or a record is missing, else 0. Temper's records that disagree
+ * with each other alone don't fail it: they are listed for the temper role. */
 export function exitCode(report: Report): number {
-  return report.totals.mismatch > 0 ? 1 : 0;
+  return report.totals.mismatch > 0 || report.totals['no record'] > 0 ? 1 : 0;
 }
 
 /** Where each field is shown, what builds it, and what it is checked against (step 2's field table). */
@@ -692,13 +1023,13 @@ export const FIELD_TABLE: ReadonlyArray<readonly [string, string, string, string
     'cost',
     'list: "Cost $X"; run view: flow "Spend" and each card\'s "N turns \u00b7 $X", rounds header and outcome "Cost" and each member line',
     'TeamReader.usage() and members_view: the ledger turns\' worker usage',
-    'run list total_cost_usd (also the run\'s total_cost_usd, its nodes\' cost_usd and the turns record, compared with each other); per member: the turns record (GET /api/workflows/{id}/agents) summed per agent_name',
+    'the recorded model calls: the turns record (GET /api/workflows/{id}/agents) summed, per member summed per agent_name. Record against record (listed, not a page mismatch): the run list\'s total_cost_usd, the run\'s total_cost_usd, its nodes\' cost_usd',
   ],
   [
     'result',
-    'run view: flow "Now" word with its sentence (and an interrupted run\'s reason), rounds outcome card heading and "Temper\'s reason"',
-    'outcome_view(): the pi_team_outcomes row (decision, reason)',
-    'workflow_output.decision and .reason; for a run that didn\'t complete, stopped.reason, else error_message',
+    'run view: flow "Now" word with its sentence (and an interrupted run\'s reason), rounds outcome card heading and "Temper\'s reason"; the stop-words quote (a figure named by its caption "Your words", "<who>\'s words" or "Words from an unknown caller", the words in its blockquote) in the flow "Status" band and on the rounds outcome card',
+    'outcome_view(): the pi_team_outcomes row (decision, reason, owner_words, by)',
+    'the decision: workflow_output.decision, else the run list status; the stop words and who gave them: the team\'s stop record, the last owner_actions entry of kind "stop" in GET /api/team/runs/{id} (detail.reason, by; a stop answer\'s words: the team\'s outcome record); the reason: workflow_output.reason, else (no stop recorded, not completed) stopped.reason, else error_message. Record against record (listed, not a page mismatch): stopped.reason and error_message against the stop words and the reason',
   ],
 ];
 
@@ -706,7 +1037,7 @@ function cell(s: string | null | undefined): string {
   return (s ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
 }
 
-/** The report as Markdown: totals, the gaps, every Project and field, and the field table. */
+/** The report as Markdown: totals, the gaps, where Temper's records disagree, every Project and field, and the field table. */
 export function toMarkdown(report: Report): string {
   const short = (id: string) => (id.length > 8 && id !== '(all)' ? id.slice(0, 8) : id);
   const out: string[] = [];
@@ -714,7 +1045,8 @@ export function toMarkdown(report: Report): string {
   out.push(`Temper ${report.base}, read ${report.at}. Projects checked: ${report.projects.length} (the run list holds ${report.runListTotal} runs).`);
   out.push(
     `Rows (Project \u00d7 field): ${report.totals.match} match, ${report.totals.mismatch} mismatch, ${report.totals['no record']} no record. ` +
-      (report.totals.mismatch > 0 ? 'Exit 1: something mismatches.' : 'Exit 0: nothing mismatches.'),
+      `Temper's records disagree: ${report.disagreements.length} (listed for the temper role; not page mismatches). ` +
+      (exitCode(report) === 1 ? 'Exit 1: the page mismatches a record, or a record is missing.' : 'Exit 0: the page shows what the records it is judged by hold.'),
     '',
   );
   const gaps = report.rows.filter((r) => r.verdict !== 'match');
@@ -727,6 +1059,23 @@ export function toMarkdown(report: Report): string {
     }
     out.push('');
   }
+  out.push("## Temper's records disagree", '');
+  out.push(
+    "Each field is judged by one record: the cost by the recorded model calls (the turns record, summed), the words given with a stop by the team's stop record. " +
+      "Where another of Temper's records holds something else, it is listed here for the temper role. It is not a page mismatch and doesn't fail the check.",
+    '',
+  );
+  if (report.disagreements.length === 0) out.push("None: Temper's records agree with each other.", '');
+  else {
+    const value = (field: Field, v: string) => (field === 'cost' ? v : `"${cut(v, 200)}"`);
+    out.push('| Project | Field | Judged by | Records that differ | Records that agree | Owner |', '|---|---|---|---|---|---|');
+    for (const d of report.disagreements) {
+      const judged = d.judgedBy.map((j) => `${j.record}: ${value(d.field, j.value)}`).join('<br>');
+      const differ = d.differ.map((x) => `${x.record}: ${value(d.field, x.value)}`).join('<br>');
+      out.push(`| ${short(d.project)} | ${d.field} | ${cell(judged)} | ${cell(differ)} | ${cell(d.agree.join(', ') || 'none')} | ${d.owner} |`);
+    }
+    out.push('');
+  }
   out.push('## Every Project and field', '');
   out.push('| Project | Field | Verdict | Page shows | Records hold |', '|---|---|---|---|---|');
   for (const r of report.rows) out.push(`| ${short(r.project)} | ${r.field} | ${r.verdict} | ${cell(r.page)} | ${cell(r.record)} |`);
@@ -736,12 +1085,13 @@ export function toMarkdown(report: Report): string {
   for (const [f, page, api, rec] of FIELD_TABLE) out.push(`| ${f} | ${cell(page)} | ${cell(api)} | ${cell(rec)} |`);
   out.push(
     '',
-    'Costs are compared to the cent: the page\'s amount must be the record rounded to the cent. ' +
-      'Where Temper\'s records disagree with each other, the report names every value and picks none. ' +
-      'The Team API is read only to name the likely cause: page bug (the Team API agrees with the records), ' +
-      'Team API bug (it agrees with the page), engine record bug (the records disagree), no record. ' +
+    "Costs are compared to the cent: the page's amount must be the recorded model calls' sum rounded to the cent. " +
+      "Stop words are compared verbatim, each run of whitespace as one space, and who gave them by the quote's caption. " +
+      "The Team API is read for the team's stop record (owner_actions) and otherwise only to name a gap's likely cause: page bug (the Team API agrees with the records), " +
+      "Team API bug (it agrees with the page), engine record bug (two of Temper's records disagree), no record. " +
       "For the result, the Team API's outcome is the team's own outcome record (pi_team_outcomes) as it is, " +
-      "so where it differs from the run's record, two records disagree.",
+      "so where it differs from the run's record or the stop record, two records disagree. " +
+      'Exit 1 only for a page mismatch or a missing record; records that disagree with each other alone exit 0.',
     '',
   );
   return out.join('\n');

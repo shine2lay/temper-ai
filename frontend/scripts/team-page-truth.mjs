@@ -4,10 +4,14 @@
  *
  * Opens the Team list and every Project's run view in headless Chromium and reads what a
  * person sees there, by role, label and text (never the Team API, never CSS classes). Then
- * it fetches Temper's lower-level records for each Project and compares five fields:
- * members, state, waits, cost so far and result, plus whether the Team list shows the
- * Project at all. Every Project is every team-trial-* run in the run list, paged to its
- * total. The comparing is scripts/teamPageTruth.ts (tests: src/__tests__/teamPageTruth.test.ts).
+ * it fetches Temper's own records for each Project and compares five fields: members, state,
+ * waits, cost so far and result (with the words given with a stop), plus whether the Team
+ * list shows the Project at all. Each field is judged by the one record Temper names as its
+ * truth (the cost: the recorded model calls; the stop words: the team's stop record); where
+ * Temper's other records of it hold something else, the report lists them under "Temper's
+ * records disagree", for the temper role. Every Project is every team-trial-* run in the run
+ * list, paged to its total. The comparing is scripts/teamPageTruth.ts (tests:
+ * src/__tests__/teamPageTruth.test.ts).
  *
  * Read only: the page may send nothing but GET (anything else is aborted and reported), and
  * the records are GETs. No model calls.
@@ -16,15 +20,16 @@
  *     (from frontend/) --base: Temper's address, default http://127.0.0.1:8420. Without ids, every
  *     Project. --out writes <stem>.json and <stem>.md there (stem: --name, default
  *     team-page-truth-<time>); without it the Markdown goes to stdout.
- *     Exit 0: nothing mismatches ("no record" rows are listed, not failed); 1: something
- *     mismatches; 2: the check couldn't run.
+ *     Exit 0: the page shows what the records it is judged by hold (Temper's records that
+ *     disagree with each other are listed, not failed); 1: the page mismatches a record, or a
+ *     record is missing ("no record"); 2: the check couldn't run.
  *   Chromium keeps a socket under TMPDIR, and a long TMPDIR makes it abort ("Socket path too
  *   long"): run it with a short one, e.g. TMPDIR=/tmp.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
-import { compareAll, exitCode, pageStateClass, toMarkdown } from './teamPageTruth.ts';
+import { compareAll, exitCode, numberOf, pageStateClass, runDetail, stopRecord, toMarkdown, turnsRecord } from './teamPageTruth.ts';
 
 const DEFAULT_BASE = 'http://127.0.0.1:8420';
 const PAGE = 200;
@@ -47,6 +52,8 @@ const STATE_WORDS = [
 ];
 /** A rounds run's outcome card is a region named by its title (frontend/src/lib/teamOutcome.ts). */
 const OUTCOME_TITLES = /^(Done: the leader's version was approved|Stopped|Failed|Didn't start)$/;
+/** A stop-words quote is a figure named by its caption (frontend/src/lib/teamText.ts ownerWordsLabel). */
+const WORDS_CAPTION = /^(Your words|Words from an unknown caller|.+['\u2019]s words)$/;
 
 const USAGE = `Usage: node scripts/team-page-truth.mjs [--base <url>] [--out <folder> [--name <stem>]] [<execution id> ...]`;
 
@@ -78,12 +85,6 @@ async function getJson(url) {
   }
 }
 
-function num(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 /** Every run in the run list, paged until its total. */
 async function readRunList(base) {
   const byId = new Map();
@@ -97,37 +98,6 @@ async function readRunList(base) {
     if (runs.length === 0 || offset + runs.length >= total) break;
   }
   return { total, runs: [...byId.values()] };
-}
-
-function detailOf(d) {
-  const wo = d.workflow_output && typeof d.workflow_output === 'object' ? d.workflow_output : null;
-  const nodeCosts = (Array.isArray(d.nodes) ? d.nodes : []).map((n) => num(n.cost_usd)).filter((v) => v !== null);
-  let reason = null;
-  let reasonFrom = null;
-  if (wo?.reason) [reason, reasonFrom] = [String(wo.reason), 'workflow_output.reason'];
-  else if (d.status !== 'completed' && d.stopped?.reason) [reason, reasonFrom] = [String(d.stopped.reason), 'stopped.reason'];
-  else if (d.status !== 'completed' && d.error_message) [reason, reasonFrom] = [String(d.error_message), 'error_message'];
-  return {
-    status: d.status ?? null,
-    costUsd: num(d.total_cost_usd),
-    nodeCostUsd: nodeCosts.length ? nodeCosts.reduce((s, v) => s + v, 0) : null,
-    decision: wo?.decision ? String(wo.decision) : null,
-    reason,
-    reasonFrom,
-  };
-}
-
-/** One row per turn -> per member: how many turns and their summed cost. */
-function turnsOf(agents) {
-  const out = {};
-  for (const a of agents) {
-    const name = String(a.agent_name ?? '');
-    if (!name) continue;
-    out[name] ??= { turns: 0, costUsd: 0 };
-    out[name].turns += 1;
-    out[name].costUsd += num(a.estimated_cost_usd) ?? 0;
-  }
-  return out;
 }
 
 /** The members a Project was made with: its workflow config's agents, their roles, the leader. */
@@ -154,23 +124,27 @@ function waitOf(g) {
 
 async function readRecords(base, run) {
   const id = encodeURIComponent(run.id);
-  const [detail, agents, gates, decisions, wf] = await Promise.all([
+  const [detail, agents, gates, decisions, wf, team] = await Promise.all([
     getJson(`${base}/api/workflows/${id}`),
     getJson(`${base}/api/workflows/${id}/agents`),
     getJson(`${base}/api/runs/${id}/gates`),
     getJson(`${base}/api/runs/${id}/decisions`),
     getJson(`${base}/api/studio/configs/workflow/${encodeURIComponent(run.workflow_name)}`),
+    // The team's own record of the run: its owner_actions hold each stop, with the words given (detail.reason).
+    getJson(`${base}/api/team/runs/${id}`),
   ]);
   return {
     executionId: run.id,
     workflow: run.workflow_name,
     status: run.status,
-    costUsd: num(run.total_cost_usd),
-    detail: detail.ok ? detailOf(detail.body) : null,
-    turns: agents.ok ? turnsOf(agents.body?.agents ?? []) : null,
+    costUsd: numberOf(run.total_cost_usd),
+    detail: detail.ok ? runDetail(detail.body ?? {}) : null,
+    turns: agents.ok ? turnsRecord(agents.body?.agents ?? []) : null,
     members: wf.ok ? await membersOf(base, wf.body?.workflow) : null,
     openWaits: gates.ok ? (gates.body?.gates ?? []).map(waitOf) : null,
     waitingDecisions: decisions.ok ? (decisions.body?.decisions ?? []).filter((d) => d.status === 'waiting').length : null,
+    stop: team.ok ? stopRecord(team.body) : null,
+    stopRead: team.ok,
   };
 }
 
@@ -190,7 +164,7 @@ async function readTeamApi(base, ids) {
     const r = await getJson(`${base}/api/team/runs/${encodeURIComponent(id)}`);
     const run = r.ok ? r.body : null;
     const members = run?.members
-      ? run.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: Boolean(m.leader), costUsd: num(m.cost_usd) }))
+      ? run.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: Boolean(m.leader), costUsd: numberOf(m.cost_usd) }))
       : t?.members
         ? t.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: m.name === t.leader, costUsd: null }))
         : null;
@@ -199,10 +173,11 @@ async function readTeamApi(base, ids) {
       members,
       state: run?.state ?? t?.state ?? null,
       runStatus: run?.run_status ?? t?.run_status ?? null,
-      costUsd: num(run?.cost_usd ?? t?.cost_usd),
+      costUsd: numberOf(run?.cost_usd ?? t?.cost_usd),
       openWaits: Array.isArray(run?.open_waits) ? run.open_waits.length : null,
       decision: run?.outcome?.decision ?? t?.decision ?? null,
       reason: run?.outcome?.reason ?? run?.phase?.reason ?? null,
+      ownerWords: run?.outcome?.owner_words ? String(run.outcome.owner_words) : null,
     };
   }
   return out;
@@ -334,6 +309,23 @@ function readCardsInPage(sec) {
 
 const money = (s) => (s ? (/\$\d+(?:\.\d+)?/.exec(s)?.[0] ?? null) : null);
 
+/**
+ * The stop-words quotes a person sees in a part of the page: figures named by their caption
+ * ("Your words", "temper's words", "Words from an unknown caller"), the words in their blockquote.
+ * The caption is read as written (its text is the figure's name), not as styled (capitals).
+ */
+async function readWords(scope) {
+  const out = [];
+  for (const figure of await scope.getByRole('figure', { name: WORDS_CAPTION }).all()) {
+    if (!(await figure.isVisible())) continue;
+    const label = (await figure.locator('figcaption').first().textContent()) ?? '';
+    const quote = figure.getByRole('blockquote');
+    const words = (await quote.count()) ? ((await quote.first().textContent()) ?? '') : '';
+    out.push({ label: label.replace(/\s+/g, ' ').trim(), words });
+  }
+  return out;
+}
+
 async function readFlowOnce(page, id) {
   const status = page.getByRole('region', { name: 'Status', exact: true });
   const cells = await status.evaluate(readStatusInPage);
@@ -362,6 +354,8 @@ async function readFlowOnce(page, id) {
     outcomeWord: ended ? word : null,
     outcomeReason: ended ? cells.now.slice(1).join(' / ') || null : null,
     outcomeText: ended ? cells.nowText : null,
+    // A stopped run's words, as the Status band quotes them.
+    stopWords: await readWords(status),
   };
 }
 
@@ -431,6 +425,8 @@ async function readRoundsOnce(page, id) {
     outcomeWord: outcome ? outcome.title : null,
     outcomeReason: outcome ? after("Temper's reason") : null,
     outcomeText: outcome ? outcome.text : null,
+    // A stopped run's words, as the outcome card quotes them.
+    stopWords: outcome ? await readWords(outcomeRegion.first()) : [],
   };
 }
 
@@ -446,23 +442,28 @@ function problemView(id, problem) {
     outcomeWord: null,
     outcomeReason: null,
     outcomeText: null,
+    stopWords: [],
   };
 }
 
 async function readRunView(page, base, id) {
-  await page.goto(`${base}/app/team/runs/${encodeURIComponent(id)}`, { waitUntil: 'domcontentloaded' });
   const status = page.getByRole('region', { name: 'Status', exact: true });
   const rounds = page.getByRole('region', { name: /^Members \(\d+\)$/ });
   const notTeam = page.getByText("This run isn't a team project", { exact: true });
-  try {
-    // The flow view's Status band first shows empty cells while it loads: wait for the Now word.
-    await until(async () => {
-      if ((await rounds.count()) > 0 || (await notTeam.count()) > 0) return true;
-      if ((await status.count()) === 0) return false;
-      return (await status.evaluate(readStatusInPage)).now.length > 0;
-    }, 'the run view');
-  } catch {
-    return problemView(id, 'the run view showed neither a Status band nor a Members card in 45 s');
+  // A busy machine can keep a view from loading in time: open it once more before calling it a problem.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto(`${base}/app/team/runs/${encodeURIComponent(id)}`, { waitUntil: 'domcontentloaded' });
+    try {
+      // The flow view's Status band first shows empty cells while it loads: wait for the Now word.
+      await until(async () => {
+        if ((await rounds.count()) > 0 || (await notTeam.count()) > 0) return true;
+        if ((await status.count()) === 0) return false;
+        return (await status.evaluate(readStatusInPage)).now.length > 0;
+      }, 'the run view');
+      break;
+    } catch {
+      if (attempt >= 2) return problemView(id, 'the run view showed neither a Status band nor a Members card in 45 s, opened twice');
+    }
   }
   if ((await notTeam.count()) > 0) return problemView(id, "it says \"This run isn't a team project\"");
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
@@ -570,7 +571,10 @@ async function main() {
     process.stdout.write(md);
   }
   const t = out.report.totals;
-  console.error(`team-page-truth: ${out.report.projects.length} Projects; ${t.match} match, ${t.mismatch} mismatch, ${t['no record']} no record`);
+  console.error(
+    `team-page-truth: ${out.report.projects.length} Projects; ${t.match} match, ${t.mismatch} mismatch, ${t['no record']} no record; ` +
+      `Temper's records disagree on ${out.report.disagreements.length}`,
+  );
   return exitCode(out.report);
 }
 

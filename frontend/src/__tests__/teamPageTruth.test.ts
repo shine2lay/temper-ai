@@ -3,23 +3,34 @@
  * scripts/team-page-truth.mjs).
  *
  * The check reads the Team page as a person sees it and compares five fields per Project
- * (members, state, waits, cost so far, result) with Temper's lower-level records. These tests
- * feed it made-up Projects whose right answers are known: a clean one must match everywhere,
- * and each planted break must be caught at its own field, with both values in the report.
+ * (members, state, waits, cost so far, result) with Temper's records, each field judged by the
+ * one record Temper names as its truth (cost: the recorded model calls; the words given with a
+ * stop: the team's stop record). Where Temper's other records disagree with that one, they are
+ * listed apart for the temper role and don't count against the page. These tests feed it made-up
+ * Projects whose right answers are known: a clean one must match everywhere, each planted break
+ * must be caught at its own field with both values in the report, and records that disagree must
+ * be listed without failing a page that is right.
  */
 import { describe, expect, it } from 'vitest';
 
 import {
+  captionFor,
+  captionMatches,
+  captionWho,
   compareAll,
   exitCode,
   genuineReason,
   pageStateClass,
   parseMoney,
   recordStateClass,
+  runDetail,
   sameCent,
+  sameWords,
   showsReason,
   stateAgrees,
+  stopRecord,
   toMarkdown,
+  turnsRecord,
   usd,
   type CheckInput,
   type PageListRow,
@@ -38,7 +49,7 @@ function records(over: Partial<ProjectRecords> = {}): ProjectRecords {
     workflow: 'team-trial-aaaa',
     status: 'completed',
     costUsd: 3.456789,
-    detail: { status: 'completed', costUsd: 3.456789, nodeCostUsd: 3.456789, decision: 'done', reason: null, reasonFrom: null },
+    detail: { status: 'completed', costUsd: 3.456789, nodeCostUsd: 3.456789, decision: 'done', outputReason: null, stoppedReason: null, errorMessage: null },
     turns: { lead: { turns: 2, costUsd: 1.234567 }, tester: { turns: 1, costUsd: 2.222222 } },
     members: [
       { name: 'lead', role: 'product', leader: true },
@@ -46,6 +57,8 @@ function records(over: Partial<ProjectRecords> = {}): ProjectRecords {
     ],
     openWaits: [],
     waitingDecisions: 0,
+    stop: null,
+    stopRead: true,
     ...over,
   };
 }
@@ -81,6 +94,7 @@ function runView(over: Partial<PageRunView> = {}): PageRunView {
     outcomeWord: 'Done',
     outcomeReason: null,
     outcomeText: 'Done',
+    stopWords: [],
     ...over,
   };
 }
@@ -98,6 +112,7 @@ function teamApi(over: Partial<TeamApiProject> = {}): TeamApiProject {
     openWaits: 0,
     decision: 'done',
     reason: null,
+    ownerWords: null,
     ...over,
   };
 }
@@ -126,6 +141,32 @@ function check({ rec = records(), after, rows = [listRow()], view = runView(), a
 
 const mismatches = (r: Report) => r.rows.filter((x) => x.verdict === 'mismatch').map((x) => `${x.project}:${x.field}`);
 const row = (r: Report, field: string, project = ID) => r.rows.find((x) => x.project === project && x.field === field)!;
+
+/** The words given with a stop, made up (neutral). */
+const WORDS = 'Paused for the night; pick it up after the review.';
+
+/** A Project its stop ended, the stop words in the team's stop record, the run's records agreeing,
+ * and a page that shows it all: Stopped, and the words under the stopper's caption. */
+function stopped(over: { rec?: Partial<ProjectRecords>; view?: Partial<PageRunView>; api?: Partial<TeamApiProject> } = {}): Parts {
+  return {
+    rec: records({
+      status: 'cancelled',
+      detail: { status: 'cancelled', costUsd: 3.456789, nodeCostUsd: 3.456789, decision: null, outputReason: null, stoppedReason: WORDS, errorMessage: WORDS },
+      stop: { from: 'stop', by: 'temper', words: WORDS, at: '2026-10-12T19:00:00+00:00' },
+      ...over.rec,
+    }),
+    rows: [listRow({ stateWord: 'Stopped', runListWord: 'cancelled' })],
+    view: runView({
+      stateWord: 'Stopped',
+      outcomeWord: 'Stopped',
+      outcomeReason: 'The run was cancelled',
+      outcomeText: `Stopped\nThe run was cancelled\ntemper's words\n${WORDS}`,
+      stopWords: [{ label: "temper's words", words: WORDS }],
+      ...over.view,
+    }),
+    api: teamApi({ state: 'stopped', runStatus: 'cancelled', decision: 'cancelled', reason: 'the run was cancelled', ownerWords: WORDS, ...over.api }),
+  };
+}
 
 describe('small rules', () => {
   it('reads dollar amounts the way the page writes them', () => {
@@ -185,18 +226,145 @@ describe('small rules', () => {
     expect(showsReason('Stopped\nThe run was cancelled', reason)).toBe(false);
     expect(showsReason(null, reason)).toBe(false);
   });
+
+  it('compares stop words verbatim, each run of whitespace as one space', () => {
+    expect(sameWords('Stop  here,\nthanks. ', 'Stop here, thanks.')).toBe(true);
+    expect(sameWords('stop here, thanks.', 'Stop here, thanks.')).toBe(false);
+    expect(sameWords('Stop here, thanks', 'Stop here, thanks.')).toBe(false);
+  });
+
+  it('reads who a stop-words caption names, the way the page writes it', () => {
+    expect(captionFor('owner')).toBe('Your words');
+    expect(captionFor('temper')).toBe("temper's words");
+    expect(captionFor(null)).toBe('Words from an unknown caller');
+    expect(captionFor('unknown caller')).toBe('Words from an unknown caller');
+    expect(captionWho('Your words')).toBe('owner');
+    expect(captionWho('temper-ci\u2019s words')).toBe('temper-ci');
+    expect(captionWho('Words from an unknown caller')).toBe('unknown caller');
+    expect(captionWho("Temper's reason")).toBeNull();
+    expect(captionMatches("temper's words", 'temper')).toBe(true);
+    expect(captionMatches('Your words', 'temper')).toBe(false);
+    expect(captionMatches('Words from an unknown caller', '')).toBe(true);
+  });
+});
+
+describe("reading Temper's records as its API sends them", () => {
+  it("finds the team's stop record: the last owner_actions entry of kind stop, its words and who", () => {
+    const body = {
+      kind: 'flow',
+      state: 'stopped',
+      owner_actions: [
+        { at: '2026-10-12T18:00:00+00:00', kind: 'start', by: 'owner', source: 'team_page', request_id: 'r-1', detail: { workflow: 'team-trial-aaaa', trial_id: 'aaaa' } },
+        { at: '2026-10-12T18:20:00+00:00', kind: 'stop', by: 'temper', source: 'api', request_id: 'r-2', detail: { reason: 'First words.' } },
+        { at: '2026-10-12T18:30:00+00:00', kind: 'answer', by: 'owner', source: 'team_page', request_id: 'r-3', detail: { wait_id: 'w-1', wait_kind: 'pause', answer: 'continue' } },
+        { at: '2026-10-12T19:00:00+00:00', kind: 'stop', by: 'owner', source: 'api', request_id: 'r-4', detail: { reason: '  Stop here, thanks.  ' } },
+      ],
+      outcome: { decision: 'cancelled', reason: 'the run was cancelled', owner_words: 'Stop here, thanks.', problems: [], by: 'owner', at: '2026-10-12T19:00:01+00:00', done: null },
+    };
+    expect(stopRecord(body)).toEqual({ from: 'stop', by: 'owner', words: 'Stop here, thanks.', at: '2026-10-12T19:00:00+00:00' });
+    const noWords = { owner_actions: [{ at: '2026-10-12T19:00:00+00:00', kind: 'stop', by: 'unknown caller', source: 'api', request_id: 'r-5', detail: {} }] };
+    expect(stopRecord(noWords)).toEqual({ from: 'stop', by: 'unknown caller', words: null, at: '2026-10-12T19:00:00+00:00' });
+  });
+
+  it("takes a stop answer's words from the team's outcome record, and finds nothing for a run nobody stopped", () => {
+    const answered = {
+      owner_actions: [{ at: '2026-10-12T18:00:00+00:00', kind: 'answer', by: 'owner', source: 'team_page', request_id: 'r-1', detail: { wait_id: 'w-1', wait_kind: 'pause', answer: 'stop' } }],
+      outcome: { decision: 'stopped', reason: 'stopped at the pause after round 3', owner_words: 'Enough for today.', problems: [], by: 'owner', at: '2026-10-12T18:00:02+00:00', done: null },
+    };
+    expect(stopRecord(answered)).toEqual({ from: 'stop answer', by: 'owner', words: 'Enough for today.', at: '2026-10-12T18:00:02+00:00' });
+    const done = { owner_actions: [], outcome: { decision: 'done', reason: 'built', owner_words: null, problems: [], by: null, at: null, done: {} } };
+    expect(stopRecord(done)).toBeNull();
+    expect(stopRecord(null)).toBeNull();
+  });
+
+  it("reads the run's own record and sums the recorded model calls per member", () => {
+    const run = {
+      id: ID,
+      workflow_name: 'team-trial-aaaa',
+      status: 'cancelled',
+      total_cost_usd: 0,
+      nodes: [
+        { id: 'n-1', name: 'trial', type: 'agent', status: 'cancelled', cost_usd: 10.2243246 },
+        { id: 'n-2', name: 'after', type: 'agent', status: 'skipped', cost_usd: null },
+      ],
+      workflow_output: null,
+      error_message: WORDS,
+      stopped: { path: 'trial', reason: WORDS, at: '2026-10-12T19:00:00+00:00', mode: 'cancel', held: false },
+    };
+    expect(runDetail(run)).toEqual({
+      status: 'cancelled',
+      costUsd: 0,
+      nodeCostUsd: 10.2243246,
+      decision: null,
+      outputReason: null,
+      stoppedReason: WORDS,
+      errorMessage: WORDS,
+    });
+    expect(runDetail({ status: 'cancelled', workflow_output: { decision: 'stopped', reason: 'stopped at the pause after round 3' } })).toMatchObject({
+      decision: 'stopped',
+      outputReason: 'stopped at the pause after round 3',
+      costUsd: null,
+      nodeCostUsd: null,
+    });
+    const agents = {
+      execution_id: ID,
+      agents: [
+        { id: 'a-1', agent_name: 'lead', round: 1, status: 'completed', estimated_cost_usd: 1.2, role: 'product', model: 'm' },
+        { id: 'a-2', agent_name: 'lead', round: 2, status: 'completed', estimated_cost_usd: 0.034567, role: 'product', model: 'm' },
+        { id: 'a-3', agent_name: 'tester', round: 1, status: 'failed', estimated_cost_usd: null, role: 'qa', model: 'm' },
+        { id: 'a-4', agent_name: null, round: 1, status: 'completed', estimated_cost_usd: 9, role: null, model: 'm' },
+      ],
+    };
+    const turns = turnsRecord(agents.agents);
+    expect(Object.keys(turns)).toEqual(['lead', 'tester']);
+    expect(turns.lead.turns).toBe(2);
+    expect(turns.lead.costUsd).toBeCloseTo(1.234567, 9);
+    expect(turns.tester).toEqual({ turns: 1, costUsd: 0 });
+  });
 });
 
 describe('a Project whose page shows what its records hold', () => {
-  it('matches every field and exits 0', () => {
+  it('matches every field, lists no disagreement and exits 0', () => {
     const r = check();
     expect(mismatches(r)).toEqual([]);
     expect(r.totals).toEqual({ match: 7, mismatch: 0, 'no record': 0 });
     expect(r.rows.map((x) => x.field)).toEqual(['listed', 'members', 'state', 'waits', 'cost', 'result', 'listed']);
+    expect(r.disagreements).toEqual([]);
     expect(exitCode(r)).toBe(0);
   });
 
-  it('leaves out a role the page doesn\'t repeat when it equals the name', () => {
+  it('a stopped one, its stop words shown under the caption that names who gave them', () => {
+    const r = check(stopped());
+    expect(mismatches(r)).toEqual([]);
+    expect(r.disagreements).toEqual([]);
+    expect(row(r, 'result').record).toContain(`stop words (the team's stop record, by temper): "${WORDS}"`);
+    expect(row(r, 'result').page).toContain(`stop words: "${WORDS}" under "temper's words"`);
+    expect(exitCode(r)).toBe(0);
+  });
+
+  it('stop words shown with other spacing are the same words', () => {
+    const r = check(stopped({ view: { stopWords: [{ label: "temper's words", words: 'Paused for the  night;\npick it up after the review.' }] } }));
+    expect(mismatches(r)).toEqual([]);
+  });
+
+  it("a stop answer's words from the owner, and a stop with no words given", () => {
+    const answer = stopped({
+      rec: { stop: { from: 'stop answer', by: 'owner', words: 'Enough for today.', at: null }, detail: { ...records().detail!, status: 'cancelled', decision: 'stopped', stoppedReason: null, errorMessage: null } },
+      view: { stopWords: [{ label: 'Your words', words: 'Enough for today.' }] },
+      api: { decision: 'stopped', ownerWords: 'Enough for today.' },
+    });
+    expect(mismatches(check(answer))).toEqual([]);
+    const none = stopped({
+      rec: { stop: { from: 'stop', by: 'owner', words: null, at: null }, detail: { ...records().detail!, status: 'cancelled', decision: null, stoppedReason: 'Workflow cancelled by user', errorMessage: 'Workflow cancelled by user' } },
+      view: { stopWords: [] },
+      api: { ownerWords: null },
+    });
+    const r = check(none);
+    expect(mismatches(r)).toEqual([]);
+    expect(r.disagreements).toEqual([]);
+  });
+
+  it("leaves out a role the page doesn't repeat when it equals the name", () => {
     const rec = records({
       members: [
         { name: 'lead', role: 'lead', leader: true },
@@ -210,16 +378,59 @@ describe('a Project whose page shows what its records hold', () => {
     expect(row(check({ rec, rows, view: wrongRole }), 'members').gaps).toEqual(["the run view shows lead's role as product; record: lead"]);
   });
 
-  it('accepts a running Project\'s cost anywhere between two reads of its records', () => {
+  it("accepts a running Project's cost anywhere between two reads of its recorded model calls", () => {
     const live = { status: 'running', detail: null } as const;
-    const rec = records({ ...live, costUsd: 1.0, turns: null });
-    const after = records({ ...live, costUsd: 1.2, turns: null });
+    const rec = records({ ...live, costUsd: 1.0, turns: { lead: { turns: 1, costUsd: 1.0 } } });
+    const after = records({ ...live, costUsd: 1.2, turns: { lead: { turns: 2, costUsd: 1.2 } } });
     const view = runView({ stateWord: 'Running', outcomeWord: null, outcomeText: null, costs: [{ place: 'Spend', value: '$1.10' }], members: null });
     const rows = [listRow({ stateWord: 'Running', cost: '$1.05' })];
-    const r = check({ rec, after, rows, view, api: teamApi({ state: 'running', runStatus: 'running', decision: null }) });
+    const api = teamApi({ state: 'running', runStatus: 'running', decision: null, costUsd: 1.1 });
+    const r = check({ rec, after, rows, view, api });
     expect(row(r, 'cost').verdict).toBe('match');
-    const beyond = check({ rec, after, rows, view: { ...view, costs: [{ place: 'Spend', value: '$1.30' }] } });
+    expect(r.disagreements).toEqual([]);
+    const beyond = check({ rec, after, rows, view: { ...view, costs: [{ place: 'Spend', value: '$1.30' }] }, api });
     expect(row(beyond, 'cost').verdict).toBe('mismatch');
+  });
+});
+
+describe("Temper's records that disagree with each other", () => {
+  it('cost: the page is judged by the recorded model calls; a run list total of $0.0 is listed for temper, and exits 0', () => {
+    const rec = records({ costUsd: 0, detail: { ...records().detail!, costUsd: 0 } });
+    const r = check({ rec });
+    expect(mismatches(r)).toEqual([]);
+    expect(row(r, 'cost').verdict).toBe('match');
+    expect(r.disagreements).toEqual([
+      {
+        project: ID,
+        workflow: 'team-trial-aaaa',
+        field: 'cost',
+        judgedBy: [{ record: 'recorded model calls (turns record, summed)', value: '$3.456789' }],
+        differ: [
+          { record: 'run list total_cost_usd', value: '$0.0' },
+          { record: 'run total_cost_usd', value: '$0.0' },
+        ],
+        agree: ['node cost_usd'],
+        owner: 'temper',
+      },
+    ]);
+    expect(exitCode(r)).toBe(0);
+  });
+
+  it("result: the run's stopped.reason holds other words than the team's stop record; listed, the page still right", () => {
+    const r = check(stopped({ rec: { detail: { ...stopped().rec!.detail!, stoppedReason: 'Workflow cancelled by user' } } }));
+    expect(mismatches(r)).toEqual([]);
+    expect(r.disagreements).toEqual([
+      {
+        project: ID,
+        workflow: 'team-trial-aaaa',
+        field: 'result',
+        judgedBy: [{ record: "stop words (the team's stop record, by temper)", value: WORDS }],
+        differ: [{ record: 'stopped.reason', value: 'Workflow cancelled by user' }],
+        agree: ['error_message'],
+        owner: 'temper',
+      },
+    ]);
+    expect(exitCode(r)).toBe(0);
   });
 });
 
@@ -227,27 +438,30 @@ describe('each planted break is caught at its own field', () => {
   it('a cost one cent off', () => {
     const r = check({ rows: [listRow({ cost: '$3.47' })] });
     expect(mismatches(r)).toEqual([`${ID}:cost`]);
-    expect(row(r, 'cost').gaps.join(' ')).toContain('the Team list shows $3.47; the run list\'s total_cost_usd is $3.456789');
+    expect(row(r, 'cost').gaps).toEqual(['the Team list shows $3.47; the recorded model calls (turns record) sum to $3.456789']);
     expect(row(r, 'cost').cause).toBe('page bug');
     expect(exitCode(r)).toBe(1);
   });
 
-  it('a member\'s cost one cent off', () => {
+  it('a page that shows the run list\'s $0.0 instead of what the model calls cost', () => {
+    const rec = records({ costUsd: 0, detail: { ...records().detail!, costUsd: 0 } });
+    const rows = [listRow({ cost: '$0.00' })];
+    const view = runView({ costs: [{ place: 'Spend', value: '$0.00' }] });
+    const r = check({ rec, rows, view });
+    expect(mismatches(r)).toEqual([`${ID}:cost`]);
+    expect(row(r, 'cost').gaps).toEqual([
+      'the Team list shows $0.00; the recorded model calls (turns record) sum to $3.456789',
+      "the run view's Spend shows $0.00; the recorded model calls (turns record) sum to $3.456789",
+    ]);
+    expect(r.disagreements.map((d) => `${d.project}:${d.field}`)).toEqual([`${ID}:cost`]);
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it("a member's cost one cent off", () => {
     const view = runView({ members: [{ name: 'lead', role: 'product', leader: true, cost: '$1.24' }, runView().members![1]] });
     const r = check({ view });
     expect(mismatches(r)).toEqual([`${ID}:cost`]);
-    expect(row(r, 'cost').gaps).toEqual(['the run view shows lead $1.24; its turns (agents record) cost $1.234567']);
-  });
-
-  it('records that disagree with each other: both named, none picked', () => {
-    const rec = records({ costUsd: 0, detail: { ...records().detail!, costUsd: 0 } });
-    const r = check({ rec });
-    expect(mismatches(r)).toEqual([`${ID}:cost`]);
-    const cost = row(r, 'cost');
-    expect(cost.cause).toBe('engine record bug');
-    expect(cost.why).toContain('run list total_cost_usd $0.0');
-    expect(cost.why).toContain('turns (agents) sum $3.456789');
-    expect(cost.why).toContain("the temper role's call");
+    expect(row(r, 'cost').gaps).toEqual(['the run view shows lead $1.24; its recorded model calls (turns record) sum to $1.234567']);
   });
 
   it('a missing member', () => {
@@ -258,7 +472,7 @@ describe('each planted break is caught at its own field', () => {
     expect(row(r, 'members').cause).toBe('Team API bug');
   });
 
-  it('a leader the page doesn\'t mark', () => {
+  it("a leader the page doesn't mark", () => {
     const view = runView({ members: [{ ...runView().members![0], leader: false }, runView().members![1]] });
     const r = check({ view });
     expect(mismatches(r)).toEqual([`${ID}:members`]);
@@ -273,7 +487,7 @@ describe('each planted break is caught at its own field', () => {
   });
 
   it('a "run list: X" phrase that isn\'t what the run list says', () => {
-    const rec = records({ status: 'cancelled', detail: { ...records().detail!, status: 'cancelled', decision: null, reason: 'stopped by hand', reasonFrom: 'stopped.reason' } });
+    const rec = records({ status: 'cancelled', detail: { ...records().detail!, status: 'cancelled', decision: null, stoppedReason: 'stopped by hand' } });
     const rows = [listRow({ stateWord: 'Stopped', runListWord: 'failed' })];
     const view = runView({ stateWord: 'Stopped', outcomeWord: 'Stopped', outcomeText: 'Stopped\nstopped by hand' });
     const r = check({ rec, rows, view, api: teamApi({ state: 'stopped', runStatus: 'cancelled', decision: 'cancelled', reason: 'stopped by hand' }) });
@@ -304,10 +518,11 @@ describe('each planted break is caught at its own field', () => {
     ]);
   });
 
-  it('a wrong result: the reason the records hold isn\'t shown', () => {
+  it("a wrong result: the reason the records hold isn't shown", () => {
     const rec = records({
       status: 'cancelled',
-      detail: { ...records().detail!, status: 'cancelled', decision: 'stopped', reason: 'stopped at the pause after round 3', reasonFrom: 'workflow_output.reason' },
+      detail: { ...records().detail!, status: 'cancelled', decision: 'stopped', outputReason: 'stopped at the pause after round 3', errorMessage: 'stopped at the pause after round 3' },
+      stop: { from: 'stop answer', by: 'owner', words: null, at: null },
     });
     const view = runView({ stateWord: 'Stopped', outcomeWord: 'Stopped', outcomeReason: 'stopped at the pause after round 2', outcomeText: "Stopped\nTemper's reason\nstopped at the pause after round 2" });
     const rows = [listRow({ stateWord: 'Stopped', runListWord: 'cancelled' })];
@@ -318,12 +533,13 @@ describe('each planted break is caught at its own field', () => {
       'the run view doesn\'t show the reason "stopped at the pause after round 3" (workflow_output.reason); it says "stopped at the pause after round 2"',
     ]);
     expect(row(r, 'result').cause).toBe('page bug');
+    expect(r.disagreements).toEqual([]);
   });
 
   it("a team outcome record that differs from the run's record: two records disagree", () => {
     const rec = records({
       status: 'cancelled',
-      detail: { ...records().detail!, status: 'cancelled', decision: null, reason: 'the stage window ended', reasonFrom: 'stopped.reason' },
+      detail: { ...records().detail!, status: 'cancelled', decision: null, stoppedReason: 'the time slot ran out' },
     });
     const view = runView({ stateWord: 'Stopped', outcomeWord: 'Stopped', outcomeReason: 'The run was cancelled', outcomeText: 'Stopped\nThe run was cancelled' });
     const rows = [listRow({ stateWord: 'Stopped', runListWord: 'cancelled' })];
@@ -332,23 +548,66 @@ describe('each planted break is caught at its own field', () => {
     expect(mismatches(r)).toEqual([`${ID}:result`]);
     expect(row(r, 'result').cause).toBe('engine record bug');
     expect(row(r, 'result').why).toContain('"the run was cancelled"');
-    expect(row(r, 'result').why).toContain('"the stage window ended" (stopped.reason)');
+    expect(row(r, 'result').why).toContain('"the time slot ran out" (stopped.reason)');
   });
 
-  it('a missing Project row, and the list\'s count', () => {
+  it('stop words that differ from the stop record', () => {
+    const r = check(stopped({ view: { stopWords: [{ label: "temper's words", words: 'Other words entirely.' }] } }));
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+    expect(row(r, 'result').gaps).toEqual([
+      `the run view's stop words are "Other words entirely." under "temper's words"; the record holds "${WORDS}" (the team's stop record, by temper)`,
+    ]);
+    expect(row(r, 'result').cause).toBe('page bug');
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it('stop words in other letters are other words', () => {
+    const r = check(stopped({ view: { stopWords: [{ label: "temper's words", words: WORDS.toLowerCase() }] } }));
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+  });
+
+  it('a stopped run whose page drops its stop words', () => {
+    const r = check(stopped({ view: { stopWords: [] } }));
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+    expect(row(r, 'result').gaps).toEqual([`the run view doesn't show the stop words "${WORDS}" (the team's stop record, by temper)`]);
+    expect(row(r, 'result').cause).toBe('page bug');
+  });
+
+  it('stop words under a caption that names someone else', () => {
+    const r = check(stopped({ view: { stopWords: [{ label: 'Your words', words: WORDS }] } }));
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+    expect(row(r, 'result').gaps).toEqual([`the run view puts the stop words under "Your words"; they are from temper ("temper's words")`]);
+    const unknown = check(stopped({ rec: { stop: { from: 'stop', by: 'unknown caller', words: WORDS, at: null } }, view: { stopWords: [{ label: 'Your words', words: WORDS }] } }));
+    expect(row(unknown, 'result').gaps).toEqual([`the run view puts the stop words under "Your words"; they are from unknown caller ("Words from an unknown caller")`]);
+  });
+
+  it("stop words the Team API serves wrong: the team's outcome record and its stop record disagree", () => {
+    const r = check(stopped({ view: { stopWords: [{ label: "temper's words", words: 'Other words.' }] }, api: { ownerWords: 'Other words.' } }));
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+    expect(row(r, 'result').cause).toBe('engine record bug');
+    expect(row(r, 'result').why).toContain(`the team's outcome record holds the stop words "Other words."; the team's stop record holds "${WORDS}"`);
+  });
+
+  it('stop words on a run nobody stopped', () => {
+    const r = check({ view: runView({ stopWords: [{ label: 'Your words', words: 'Stray words.' }] }) });
+    expect(mismatches(r)).toEqual([`${ID}:result`]);
+    expect(row(r, 'result').gaps).toEqual(['the run view shows stop words "Stray words." under "Your words"; no stop is recorded for this run']);
+  });
+
+  it("a missing Project row, and the list's count", () => {
     const r = check({ rows: [], listTotal: 0, api: teamApi({ listed: false }) });
     expect(mismatches(r)).toEqual([`${ID}:listed`, '(all):listed']);
     expect(row(r, 'listed').cause).toBe('Team API bug');
     expect(row(r, 'listed', '(all)').gaps).toEqual(['the Team list says it has 0 Projects; the run list has 1 team-trial-* runs']);
   });
 
-  it('an extra Project row the run list doesn\'t have', () => {
+  it("an extra Project row the run list doesn't have", () => {
     const r = check({ rows: [listRow(), listRow({ executionId: OTHER })], listTotal: 2 });
     expect(mismatches(r)).toEqual([`${OTHER}:listed`, '(all):listed']);
     expect(row(r, 'listed', OTHER).gaps).toEqual([`the Team list shows ${OTHER}; the run list has no team-trial-* run with that id`]);
   });
 
-  it('a run view that didn\'t load is a mismatch, never a quiet pass', () => {
+  it("a run view that didn't load is a mismatch, never a quiet pass", () => {
     const view = runView({ problem: 'the run view showed neither a Status band nor a Members card in 45 s', members: null, waits: null, costs: [], stateWord: null, outcomeWord: null, outcomeText: null });
     const r = check({ view });
     expect(mismatches(r)).toEqual([`${ID}:members`, `${ID}:state`, `${ID}:result`]);
@@ -356,13 +615,22 @@ describe('each planted break is caught at its own field', () => {
 });
 
 describe('missing records', () => {
-  it('says "no record" instead of comparing the Team API with itself, and doesn\'t fail for it', () => {
+  it('says "no record" instead of comparing the Team API with itself, and fails: a field without its record is unchecked', () => {
     const rec = records({ members: null, turns: null, openWaits: null, waitingDecisions: null });
     const r = check({ rec });
     expect(row(r, 'members').verdict).toBe('no record');
     expect(row(r, 'waits').verdict).toBe('no record');
-    expect(r.totals['no record']).toBe(2);
-    expect(exitCode(r)).toBe(0);
+    expect(row(r, 'cost').verdict).toBe('no record');
+    expect(r.totals['no record']).toBe(3);
+    expect(r.disagreements).toEqual([]);
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it("a stopped run whose team record couldn't be read: its stop words aren't known", () => {
+    const r = check(stopped({ rec: { stop: null, stopRead: false } }));
+    expect(row(r, 'result').verdict).toBe('no record');
+    expect(row(r, 'result').why).toContain("the team's stop record");
+    expect(exitCode(r)).toBe(1);
   });
 });
 
@@ -388,8 +656,21 @@ describe('the Markdown report', () => {
   it('puts each gap first, with both values and its likely cause, then every row and the field table', () => {
     const md = toMarkdown(check({ rows: [listRow({ cost: '$3.47' })] }));
     expect(md).toContain('1 mismatch');
-    expect(md).toContain("| aaaaaaaa | cost | mismatch | the Team list shows $3.47; the run list's total_cost_usd is $3.456789 | page bug: the Team API says $3.456789, as the records do |");
+    expect(md).toContain(
+      '| aaaaaaaa | cost | mismatch | the Team list shows $3.47; the recorded model calls (turns record) sum to $3.456789 | page bug: the Team API says $3.456789, as the recorded model calls (turns record) do |',
+    );
+    expect(md).toContain("## Temper's records disagree");
+    expect(md).toContain("None: Temper's records agree with each other.");
     expect(md).toContain('## Every Project and field');
     expect(md).toContain('## Where each field comes from');
+    expect(md).toContain('Exit 1');
+  });
+
+  it("lists Temper's records that disagree apart, with each value and the temper role, and exits 0", () => {
+    const md = toMarkdown(check({ rec: records({ costUsd: 0, detail: { ...records().detail!, costUsd: 0 } }) }));
+    expect(md).toContain('0 mismatch');
+    expect(md).toContain("Temper's records disagree: 1");
+    expect(md).toContain('| aaaaaaaa | cost | recorded model calls (turns record, summed): $3.456789 | run list total_cost_usd: $0.0<br>run total_cost_usd: $0.0 | node cost_usd | temper |');
+    expect(md).toContain('Exit 0');
   });
 });

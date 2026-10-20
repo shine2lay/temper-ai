@@ -1,0 +1,31 @@
+{
+ "label": "bar-interact-a11-v1: the A11 (d) motion key of the A-bar meter's part 2 (Design queue #113), sealed before the meter's version 4 code existed and before any real page was measured for A11 (d)",
+ "recorded_at": "2026-10-20T04:11:36-0700",
+ "repo": "temper-ai, branch homepage-bar-motion (worktree /home/shinelay/temper-ai-homepage-bar-motion), on 83fec470",
+ "files": {
+  "configs/design/testpages/bar-interact-a11-v1/expected.json": "b911ac91f7e1fc99abe691f42d022b32fbbe43db2ca11ddf8bf318310c4a0fdf"
+ },
+ "file_count": 1,
+ "model_runs_started": 0,
+ "pages_at_seal": {
+  "base.css": "641661269e1a2cf95a3ad9a653198371ecd0f8093a94741b05ffefb28486844a",
+  "clean-motion.html": "5ae40c18c4be897aaaee3e61366de64e3a666a53b1faeae4e55e565eabca5fe9",
+  "entrance-second-screen.html": "175dccd07b8fb0ae8f68e51c72c93bf255d7e8fb02bf394e692f8a07f34c77ad",
+  "linear-easing.html": "cad81c2796d54fed63aeade130f8f635070c20381cebc6ac01b8fd887d379415",
+  "loop-1000.html": "57b88924e5930093031d9d9768092b37953666449e7a58b9e7f5872e0481b336",
+  "loop-1100.html": "3301ec14afb69be5e6ddf8f2de239d2c062c8dffaae29e1f3ae625c2e6a61d89",
+  "loop-600.html": "14398e2d07f65a3e00aa8630ba821a39240a58813c37a32623748587567a80a9",
+  "motion.css": "45946bfd427c1686ff856a58b1ad3f0c29f14467906437691887d7b90832ddfb",
+  "motion.js": "9806da39e0e0c5ed799b462c49a838f1f51277249b27400ee0efe9c7b2323a06",
+  "no-hover-button.html": "981d25719937265f462304bdec5e80c4db1e5154ccd426e89a21a062b6b8624c",
+  "reduced-ignored.html": "b7c5503bef3045c8bda23043ffedbab3735ff09e7c6cac25895ea23b73f3f9e0",
+  "scroll-linked.html": "1dbf93c2e0f770b7b2ea3fdf488162b9a6bdd01e286378715d6180a6ec8ab809",
+  "static.html": "943d61ee1f69b454cba6a32cf2ca81beca11c7792acdff45d2c7763f1421dd4a",
+  "timing-110.html": "530479d71606342c69e3454a97d0c344e2dc60de85e500a0a9abd1e6c79def4e",
+  "timing-120.html": "36d8d4f4018e4a7de06c6bb43d5005dd9aca56e66931ec99513056f8b1a13397",
+  "timing-500.html": "0e6ee215e964f68d9569f59316a37da5bdf9bea7d8a8032e266628d762d47260",
+  "timing-520.html": "95b3a4becae03f54f47b1aa9bccbcee3d8612edf64eb5dc50fe5a04c73501d62",
+  "transition-800.html": "e738bc63b9c2935aa58d908b069dd9835a8610b8f0efd03a2021aed2bb9d565e"
+ },
+ "notes": "The seal is the key's sha256 (files). pages_at_seal records the fixture pages, styles and script as they were when the key was sealed, for reference: a page may only be corrected so that it is what the key says it is, with the reason written in docs/design-homepage-bar-interaction.md; the key never changes. Before sealing, every page was loaded in the browser (playwright-mcp Chromium) at 1440x900 and 390x844, normal and reduced motion, with a scratch probe that is not the meter: the animations it reported (kind, name, target, duration, iterations, delay, timing functions), smooth scrolling, scroll-timeline progress and the planted parts' layout boxes matched each page's plant. Never edit this file; a new key is bar-interact-a11-v2."
+}

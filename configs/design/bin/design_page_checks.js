@@ -185,7 +185,7 @@
       const rg = document.createRange();
       rg.selectNodeContents(n);
       for (const q of rg.getClientRects()) {
-        if (q.width > 1 && q.height > 1) boxes.push([q.left, q.top + scrollY, q.right, q.bottom + scrollY]);
+        if (q.width > 1 && q.height > 1) boxes.push(Object.assign([q.left, q.top + scrollY, q.right, q.bottom + scrollY], { el }));
       }
     }
     const rootW = root.getBoundingClientRect().width;
@@ -205,9 +205,132 @@
           || ["Top", "Right", "Bottom", "Left"].some((sd) => parseFloat(cs["border" + sd + "Width"]) > 0
             && !["none", "hidden"].includes(cs["border" + sd + "Style"]) && (parse(cs["border" + sd + "Color"]) || [0, 0, 0, 0])[3] > 0.2);
       }
-      if (seen) boxes.push([r.left, r.top + scrollY, r.right, r.bottom + scrollY]);
+      if (seen) boxes.push(Object.assign([r.left, r.top + scrollY, r.right, r.bottom + scrollY], { el }));
     }
     return boxes;
+  };
+
+  // H12: classify an already-found run by the slots of its containing layout. Opt-in only: the
+  // live critic can read the raw JSON. Nothing here changes the bands, filters or candidate order.
+  const vacancyOf = (run, beside, boxes, fx0, fx1, band) => {
+    try {
+      const V = T.vacancy;
+      const E = V.edge_px;
+      const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+      const yOver = (a, b) => overlap(a.y0, a.y1, b.y0, b.y1) > E;
+      const rr = { y0: run.first, y1: run.last };
+      const rect = (el) => {
+        const q = el.getBoundingClientRect();
+        return { x0: q.left, x1: q.right, y0: q.top + scrollY, y1: q.bottom + scrollY, w: q.width, h: q.height };
+      };
+      const holds = (q) => q.x0 <= run.x0 + E && q.x1 >= run.x1 - E
+        && q.y0 <= run.first + band && q.y1 >= run.last - band;
+      const containers = new Set();
+      for (const el of new Set(beside.map((b) => b.el))) {
+        for (let e = el; e; e = e.parentElement) {
+          const cs = getComputedStyle(e);
+          const row = ["flex", "inline-flex"].includes(cs.display) && ["row", "row-reverse"].includes(cs.flexDirection);
+          if ((["grid", "inline-grid"].includes(cs.display) || row) && holds(rect(e))) {
+            containers.add(e);
+            break;
+          }
+        }
+      }
+      const container = [...containers].sort((a, b) => {
+        const aa = rect(a), bb = rect(b);
+        return aa.w * aa.h - bb.w * bb.h;
+      })[0];
+      if (!container) return { answer: "no", reason: "block", container: null,
+        evidence: { why: "No grid or flex-row ancestor beside the run contains it (block flow)." } };
+      const cs = getComputedStyle(container), cr = rect(container);
+      const px = (name) => parseFloat(cs[name]) || 0;
+      const left = cr.x0 + px("borderLeftWidth") + px("paddingLeft");
+      const right = cr.x1 - px("borderRightWidth") - px("paddingRight");
+      const children = [];
+      const collect = (parent) => {
+        for (const el of parent.children) {
+          const style = getComputedStyle(el);
+          if (style.display === "none" || ["absolute", "fixed"].includes(style.position)) continue;
+          if (style.display === "contents") { collect(el); continue; }
+          if (!visible(el)) continue;
+          const q = rect(el);
+          if (q.w < 1 || q.h < 1) continue;
+          const ink = boxes.filter((b) => b.el === el || el.contains(b.el));
+          children.push({ el, style, ...q,
+            e0: ink.length ? Math.min(...ink.map((b) => b[0])) : q.x0,
+            e1: ink.length ? Math.max(...ink.map((b) => b[2])) : q.x1 });
+        }
+      };
+      collect(container);
+      const grid = ["grid", "inline-grid"].includes(cs.display);
+      const tracks = [];
+      if (grid) {
+        const sizes = cs.gridTemplateColumns.replace(/\[[^\]]*\]/g, " ").trim().split(/\s+/)
+          .filter((v) => /^\d*\.?\d+px$/.test(v)).map(parseFloat);
+        if (!sizes.length) throw new Error("Grid tracks did not resolve to pixel sizes.");
+        let gap = px("columnGap"), start = left;
+        const free = Math.max(0, right - left - sizes.reduce((a, b) => a + b, 0) - gap * (sizes.length - 1));
+        const justify = cs.justifyContent.replace(/\b(safe|unsafe)\s+/g, "");
+        if (["end", "flex-end", "right"].includes(justify)) start += free;
+        if (justify === "center") start += free / 2;
+        if (justify === "space-between" && sizes.length > 1) gap += free / (sizes.length - 1);
+        if (justify === "space-around") { start += free / sizes.length / 2; gap += free / sizes.length; }
+        if (justify === "space-evenly") { start += free / (sizes.length + 1); gap += free / (sizes.length + 1); }
+        for (const width of sizes) { tracks.push([start, start + width]); start += width + gap; }
+      }
+      const placed = grid ? tracks.map(() => 0) : null;
+      for (const item of grid ? children : []) {
+        let first = tracks.findIndex((t) => item.x0 < t[1] - E);
+        if (first < 0) first = tracks.length - 1;
+        const a = item.style.gridColumnStart, b = item.style.gridColumnEnd;
+        const line = (s) => /^-?\d+$/.test(s) ? (Number(s) < 0 ? tracks.length + 2 + Number(s) : Number(s)) : null;
+        const aa = line(a), bb = line(b);
+        const spanText = /\bspan\s+(\d+)/.exec(a + " " + b);
+        const span = aa !== null && bb !== null ? Math.max(1, Math.abs(bb - aa))
+          : (spanText ? Number(spanText[1]) : 1);
+        for (let k = first; k < Math.min(tracks.length, first + span); k++) placed[k]++;
+      }
+      const info = { sel: sel(container), display: cs.display, tracks: grid ? tracks.map((t) => t.map(Math.round)) : null,
+        placed, items: children.length };
+      const result = (answer, reason, evidence) => ({ answer, reason, container: info, evidence });
+      if (grid && tracks.length === 1) return result("no", "block", { why: "A one-column grid container." });
+      const vacant = tracks.map((t, k) => ({ k, t, cover: t[1] > t[0] ? overlap(run.x0, run.x1, ...t) / (t[1] - t[0]) : 0 }))
+        .filter(({ k, t }) => placed[k] === 0 && overlap(run.x0, run.x1, ...t) > E);
+      const full = vacant.find((v) => v.cover >= V.track_cover);
+      const trackEvidence = (v) => ({ track: v.k + 1, track_x: info.tracks[v.k], cover: v.cover });
+      if (full) return result("yes", "vacant_track", trackEvidence(full));
+      const row = children.filter((i) => yOver(i, rr));
+      if (!grid && row.length && !row.some((i) => overlap(i.e0, i.e1, run.x0, run.x1) > E)) {
+        const reverse = cs.flexDirection === "row-reverse";
+        const edge = reverse ? Math.max(left, fx0) : Math.min(right, fx1);
+        if (reverse ? run.x0 <= edge + E : run.x1 >= edge - E) {
+          return result("yes", "trailing", { row_items: row.map((i) => sel(i.el)), end_edge: Math.round(edge) });
+        }
+      }
+      const classes = (el) => [...el.classList].sort().join(" ");
+      for (const lone of row.filter((i) => i.e1 <= run.x0 + E || i.e0 >= run.x1 - E)) {
+        if (children.some((i) => i !== lone && yOver(i, lone))) continue;
+        if (run.x1 - run.x0 < lone.w - E) continue;
+        const set = children.filter((i) => i !== lone && i.el.localName === lone.el.localName
+          && classes(i.el) === classes(lone.el) && Math.abs(lone.w - i.w) <= V.set_size_tolerance * i.w
+          && Math.abs(lone.h - i.h) <= V.set_size_tolerance * i.h);
+        for (let a = 0; a < set.length; a++) {
+          const b = set.slice(a + 1).find((i) => yOver(set[a], i));
+          if (b) return result("yes", "orphan", { lone: sel(lone.el), lone_size: [Math.round(lone.w), Math.round(lone.h)],
+            set: set.length + 1, abreast: [sel(set[a].el), sel(b.el)] });
+        }
+      }
+      const inside = children.map((i) => ({ i, overlap: overlap(i.x0, i.x1, run.x0, run.x1) }))
+        .filter((v) => v.overlap > E).sort((a, b) => b.overlap - a.overlap)[0];
+      if (inside) return result("no", "in_item", { item: sel(inside.i.el), overlap: Math.round(inside.overlap) });
+      const before = row.find((i) => i.x1 <= run.x0 + E), after = row.find((i) => i.x0 >= run.x1 - E);
+      if (before && after) return result("no", "between", { left: sel(before.el), right: sel(after.el) });
+      if (vacant.length) return result("no", "below_bar", trackEvidence(vacant[0]));
+      return result("no", "outside_items", { why: "No vacant track, trailing row or lone member of a repeating set." });
+    } catch (error) {
+      // A failed measurement is unanswered, never silently interpreted as purposeful layout.
+      return { answer: null, reason: "error", container: null, evidence: { error: String(error) } };
+    }
   };
 
   // Empty columns: per section, horizontal bands; a gap in the page's content frame that stays at
@@ -290,9 +413,11 @@
             const q = el.getBoundingClientRect();
             if (q.top + scrollY < r.last && q.bottom + scrollY > r.first && visible(el)) { words = snip(el.innerText, 60); break; }
           }
-          out.columns.push({ section: sectionName(s), x: Math.round(r.x0), width: Math.round(r.x1 - r.x0),
+          const column = { section: sectionName(s), x: Math.round(r.x0), width: Math.round(r.x1 - r.x0),
             share: Math.round((r.x1 - r.x0) / FW * 100) / 100, top: Math.round(r.first), height: Math.round(tall),
-            side: r.x0 <= fx0 + 1 ? "left" : (r.x1 >= fx1 - 1 ? "right" : "middle"), beside: words });
+            side: r.x0 <= fx0 + 1 ? "left" : (r.x1 >= fx1 - 1 ? "right" : "middle"), beside: words };
+          if (opts.vacancy) column.vacancy = vacancyOf(r, beside, boxes, fx0, fx1, C.band);
+          out.columns.push(column);
         }
       }
       out.columns.sort((a, b) => b.share * b.height - a.share * a.height);

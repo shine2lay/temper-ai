@@ -1,0 +1,984 @@
+{
+ "url": "/index.html",
+ "title": "Loamwise: weekly kitchen compost pickup",
+ "viewport": [
+  1280,
+  800
+ ],
+ "page_height": 4167,
+ "contrast_failures": [],
+ "contrast_exempt": [],
+ "type_styles": [
+  {
+   "style": "56px 600",
+   "count": 1
+  },
+  {
+   "style": "40px 600",
+   "count": 7
+  },
+  {
+   "style": "22px 600",
+   "count": 6
+  },
+  {
+   "style": "22px 400",
+   "count": 1
+  },
+  {
+   "style": "18px 600",
+   "count": 10
+  },
+  {
+   "style": "18px 400",
+   "count": 22
+  },
+  {
+   "style": "15px 600",
+   "count": 3
+  },
+  {
+   "style": "15px 800",
+   "count": 4
+  },
+  {
+   "style": "15px 400",
+   "count": 5
+  }
+ ],
+ "largest_text": [
+  {
+   "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > h1",
+   "tag": "h1",
+   "text": "Your food scraps, collected every week and turned into compost.",
+   "size": 56,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    182,
+    581,
+    246
+   ]
+  },
+  {
+   "sel": "#how > div.wrap > h2",
+   "tag": "h2",
+   "text": "How a pickup works",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    904,
+    1120,
+    44
+   ]
+  },
+  {
+   "sel": "#makes > div.wrap > div > h2",
+   "tag": "h2",
+   "text": "What your scraps become",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    1688,
+    528,
+    44
+   ]
+  },
+  {
+   "sel": "#prices > div.wrap > h2",
+   "tag": "h2",
+   "text": "What it costs",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    2178,
+    1120,
+    44
+   ]
+  },
+  {
+   "sel": "div.wrap > div.plans > div.plan:nth-of-type(1) > p.price:nth-of-type(1)",
+   "tag": "p",
+   "text": "$6",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(210,196,174)",
+   "transform": "none",
+   "box": [
+    113,
+    2402,
+    114,
+    62
+   ]
+  },
+  {
+   "sel": "div.wrap > div.plans > div.plan:nth-of-type(2) > p.price:nth-of-type(1)",
+   "tag": "p",
+   "text": "$4",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(210,196,174)",
+   "transform": "none",
+   "box": [
+    685,
+    2402,
+    118,
+    62
+   ]
+  },
+  {
+   "sel": "div.wrap > div.faq-grid > div > h2",
+   "tag": "h2",
+   "text": "Questions",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    2889,
+    429,
+    44
+   ]
+  },
+  {
+   "sel": "#book > div.wrap > h2",
+   "tag": "h2",
+   "text": "Start with one Tuesday",
+   "size": 40,
+   "weight": 600,
+   "color": "rgb(241,232,218)",
+   "transform": "none",
+   "box": [
+    80,
+    3756,
+    1120,
+    44
+   ]
+  }
+ ],
+ "headings": [
+  {
+   "level": 1,
+   "text": "Your food scraps, collected every week and turned into compost.",
+   "size": 56,
+   "weight": 600,
+   "box": [
+    80,
+    182,
+    581,
+    246
+   ]
+  },
+  {
+   "level": 2,
+   "text": "How a pickup works",
+   "size": 40,
+   "weight": 600,
+   "box": [
+    80,
+    904,
+    1120,
+    44
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Fill the caddy",
+   "size": 22,
+   "weight": 600,
+   "box": [
+    80,
+    1322,
+    352,
+    28
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Put the bin out on Tuesday",
+   "size": 22,
+   "weight": 600,
+   "box": [
+    464,
+    1322,
+    352,
+    28
+   ]
+  },
+  {
+   "level": 3,
+   "text": "We swap it",
+   "size": 22,
+   "weight": 600,
+   "box": [
+    848,
+    1322,
+    352,
+    28
+   ]
+  },
+  {
+   "level": 2,
+   "text": "What your scraps become",
+   "size": 40,
+   "weight": 600,
+   "box": [
+    80,
+    1688,
+    528,
+    44
+   ]
+  },
+  {
+   "level": 2,
+   "text": "What it costs",
+   "size": 40,
+   "weight": 600,
+   "box": [
+    80,
+    2178,
+    1120,
+    44
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Weekly",
+   "size": 22,
+   "weight": 600,
+   "box": [
+    113,
+    2366,
+    80,
+    28
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Every other week",
+   "size": 22,
+   "weight": 600,
+   "box": [
+    685,
+    2366,
+    188,
+    28
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Questions",
+   "size": 40,
+   "weight": 600,
+   "box": [
+    80,
+    2889,
+    429,
+    44
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Start with one Tuesday",
+   "size": 40,
+   "weight": 600,
+   "box": [
+    80,
+    3756,
+    1120,
+    44
+   ]
+  }
+ ],
+ "long_lines": [],
+ "controls": [
+  {
+   "sel": "header.site-header > div.wrap > a.logo",
+   "tag": "a",
+   "role": "",
+   "name": "Loamwise home",
+   "name_from": "aria-label",
+   "box": [
+    80,
+    20,
+    152,
+    34
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "How it works",
+   "name_from": "content",
+   "box": [
+    943,
+    25,
+    91,
+    23
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "Prices",
+   "name_from": "content",
+   "box": [
+    1062,
+    25,
+    41,
+    23
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(3)",
+   "tag": "a",
+   "role": "",
+   "name": "Questions",
+   "name_from": "content",
+   "box": [
+    1131,
+    25,
+    69,
+    23
+   ]
+  },
+  {
+   "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a.btn:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "Book a pickup",
+   "name_from": "content",
+   "box": [
+    80,
+    613,
+    169,
+    60
+   ]
+  },
+  {
+   "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "See how it works",
+   "name_from": "content",
+   "box": [
+    269,
+    629,
+    135,
+    28
+   ]
+  },
+  {
+   "sel": "div.wrap > div.plans > div.plan:nth-of-type(1) > a.btn-line",
+   "tag": "a",
+   "role": "",
+   "name": "Choose weekly",
+   "name_from": "content",
+   "box": [
+    113,
+    2556,
+    175,
+    56
+   ]
+  },
+  {
+   "sel": "div.wrap > div.plans > div.plan:nth-of-type(2) > a.btn-line",
+   "tag": "a",
+   "role": "",
+   "name": "Choose every other week",
+   "name_from": "content",
+   "box": [
+    685,
+    2556,
+    260,
+    56
+   ]
+  },
+  {
+   "sel": "dl.qa > div:nth-of-type(5) > dd > a",
+   "tag": "a",
+   "role": "",
+   "name": "hello@loamwise.example",
+   "name_from": "content",
+   "box": [
+    577,
+    3450,
+    202,
+    22
+   ]
+  },
+  {
+   "sel": "#book > div.wrap > a.btn",
+   "tag": "a",
+   "role": "",
+   "name": "Book a pickup",
+   "name_from": "content",
+   "box": [
+    556,
+    3899,
+    169,
+    60
+   ]
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "How it works",
+   "name_from": "content",
+   "box": [
+    855,
+    4095,
+    89,
+    23
+   ]
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "Prices",
+   "name_from": "content",
+   "box": [
+    968,
+    4095,
+    40,
+    23
+   ]
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(3)",
+   "tag": "a",
+   "role": "",
+   "name": "hello@loamwise.example",
+   "name_from": "content",
+   "box": [
+    1032,
+    4095,
+    168,
+    23
+   ]
+  }
+ ],
+ "small_targets": [],
+ "targets_pass": [
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(1)",
+   "name": "How it works",
+   "box": [
+    943,
+    25,
+    91,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(2)",
+    "name": "Prices",
+    "edge": 73.5,
+    "centre": 94
+   }
+  },
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(2)",
+   "name": "Prices",
+   "box": [
+    1062,
+    25,
+    41,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(1)",
+    "name": "How it works",
+    "edge": 48.5,
+    "centre": 94
+   }
+  },
+  {
+   "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(3)",
+   "name": "Questions",
+   "box": [
+    1131,
+    25,
+    69,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "header.site-header > div.wrap > nav.site-nav > a:nth-of-type(2)",
+    "name": "Prices",
+    "edge": 62.5,
+    "centre": 83
+   }
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(1)",
+   "name": "How it works",
+   "box": [
+    855,
+    4095,
+    89,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(2)",
+    "name": "Prices",
+    "edge": 68.5,
+    "centre": 88.5
+   }
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(2)",
+   "name": "Prices",
+   "box": [
+    968,
+    4095,
+    40,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(1)",
+    "name": "How it works",
+    "edge": 44,
+    "centre": 88.5
+   }
+  },
+  {
+   "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(3)",
+   "name": "hello@loamwise.example",
+   "box": [
+    1032,
+    4095,
+    168,
+    23
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "footer.site-footer > div.wrap > nav > a:nth-of-type(2)",
+    "name": "Prices",
+    "edge": 108,
+    "centre": 128
+   }
+  }
+ ],
+ "weak_boundaries": [],
+ "fields": [],
+ "unnamed_graphics": [],
+ "page_width": {
+  "scroll": 1280,
+  "viewport": 1280,
+  "overflows": false
+ },
+ "landmarks": [
+  {
+   "tag": "header",
+   "label": ""
+  },
+  {
+   "tag": "nav",
+   "label": "Main"
+  },
+  {
+   "tag": "main",
+   "label": ""
+  },
+  {
+   "tag": "footer",
+   "label": ""
+  },
+  {
+   "tag": "nav",
+   "label": "Footer"
+  }
+ ],
+ "text_count": 59,
+ "axe": [],
+ "tab_stops": [],
+ "no_focus_ring": [],
+ "tiles": [
+  {
+   "file": "shots/index-desktop-dark-1.png",
+   "y": 0,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-dark-2.png",
+   "y": 800,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-dark-3.png",
+   "y": 1600,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-dark-4.png",
+   "y": 2400,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-dark-5.png",
+   "y": 3200,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-dark-6.png",
+   "y": 4000,
+   "height": 167
+  }
+ ],
+ "page_checks": {
+  "viewport": [
+   1280,
+   800
+  ],
+  "page_height": 4167,
+  "sections": [
+   {
+    "name": "Header",
+    "chrome": true,
+    "box": [
+     0,
+     0,
+     1280,
+     75
+    ]
+   },
+   {
+    "name": "Hero",
+    "chrome": false,
+    "box": [
+     0,
+     75,
+     1280,
+     733
+    ]
+   },
+   {
+    "name": "How it works",
+    "chrome": false,
+    "box": [
+     0,
+     808,
+     1280,
+     729
+    ]
+   },
+   {
+    "name": "What it makes",
+    "chrome": false,
+    "box": [
+     0,
+     1538,
+     1280,
+     544
+    ]
+   },
+   {
+    "name": "Prices",
+    "chrome": false,
+    "box": [
+     0,
+     2082,
+     1280,
+     711
+    ]
+   },
+   {
+    "name": "Questions",
+    "chrome": false,
+    "box": [
+     0,
+     2792,
+     1280,
+     875
+    ]
+   },
+   {
+    "name": "Start",
+    "chrome": false,
+    "box": [
+     0,
+     3668,
+     1280,
+     380
+    ]
+   },
+   {
+    "name": "Footer",
+    "chrome": true,
+    "box": [
+     0,
+     4047,
+     1280,
+     119
+    ]
+   }
+  ],
+  "dark": true,
+  "nav": {
+   "found": true,
+   "sel": "header.site-header > div.wrap > nav.site-nav",
+   "header_height": 75,
+   "links": [
+    {
+     "text": "How it works",
+     "box": [
+      943,
+      25,
+      91,
+      23
+     ]
+    },
+    {
+     "text": "Prices",
+     "box": [
+      1062,
+      25,
+      41,
+      23
+     ]
+    },
+    {
+     "text": "Questions",
+     "box": [
+      1131,
+      25,
+      69,
+      23
+     ]
+    }
+   ],
+   "lines": 1,
+   "rows": [
+    [
+     "How it works",
+     "Prices",
+     "Questions"
+    ]
+   ],
+   "wrapped": [],
+   "overflow": []
+  },
+  "cues": {
+   "checked": 6,
+   "nav_links": 7,
+   "without": [],
+   "without_count": 0,
+   "by_cue": {
+    "fill": 2,
+    "underline": 2,
+    "border": 2
+   }
+  },
+  "overlays": [
+   {
+    "id": 0,
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.eyebrow:nth-of-type(1)",
+    "text": "KITCHEN COMPOST PICKUP",
+    "size": 15,
+    "weight": 800,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 10.19,
+    "lines": [
+     [
+      80,
+      153,
+      230,
+      9
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 1,
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > h1",
+    "text": "Your food scraps, collected every week and turned into compo",
+    "size": 56,
+    "weight": 600,
+    "large": true,
+    "needs": 3,
+    "color": [
+     241,
+     232,
+     218,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 14.4,
+    "lines": [
+     [
+      80,
+      196,
+      470,
+      34
+     ],
+     [
+      80,
+      257,
+      559,
+      34
+     ],
+     [
+      80,
+      319,
+      420,
+      34
+     ],
+     [
+      80,
+      380,
+      248,
+      34
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 2,
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.lede:nth-of-type(2)",
+    "text": "Keep a sealed caddy under the sink for peels, coffee grounds",
+    "size": 22,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 10.19,
+    "lines": [
+     [
+      80,
+      458,
+      506,
+      14
+     ],
+     [
+      80,
+      492,
+      560,
+      14
+     ],
+     [
+      80,
+      526,
+      548,
+      14
+     ],
+     [
+      80,
+      560,
+      48,
+      14
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 3,
+    "sel": "div.wrap > div.hero-text:nth-of-type(1) > div.actions > a:nth-of-type(2)",
+    "text": "See how it works",
+    "size": 18,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     165,
+     216,
+     157,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 10.75,
+    "lines": [
+     [
+      269,
+      636,
+      135,
+      11
+     ]
+    ],
+    "section": "Hero"
+   },
+   {
+    "id": 4,
+    "sel": "section.hero:nth-of-type(1) > div.wrap > div.hero-text:nth-of-type(1) > p.note:nth-of-type(3)",
+    "text": "From $6 a week. Skip or stop any week.",
+    "size": 15,
+    "weight": 400,
+    "large": false,
+    "needs": 4.5,
+    "color": [
+     210,
+     196,
+     174,
+     1
+    ],
+    "kind": "gradient",
+    "declared": 10.19,
+    "lines": [
+     [
+      80,
+      695,
+      264,
+      9
+     ]
+    ],
+    "section": "Hero"
+   }
+  ],
+  "small_dark": [],
+  "pixels": {
+   "0": {
+    "ratio": 9.16,
+    "bg": "rgb(40,34,27)"
+   },
+   "1": {
+    "ratio": 13.09,
+    "bg": "rgb(39,33,26)"
+   },
+   "2": {
+    "ratio": 9.9,
+    "bg": "rgb(32,28,22)"
+   },
+   "3": {
+    "ratio": 10.75,
+    "bg": "rgb(29,25,20)"
+   },
+   "4": {
+    "ratio": 10.19,
+    "bg": "rgb(29,25,20)"
+   }
+  }
+ }
+}

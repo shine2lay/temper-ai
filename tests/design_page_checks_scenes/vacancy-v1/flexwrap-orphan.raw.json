@@ -1,0 +1,125 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Orchard School",
+    "height": 384,
+    "section": "Stories",
+    "share": 0.34,
+    "side": "right",
+    "top": 684,
+    "vacancy": {
+     "answer": "yes",
+     "container": {
+      "display": "flex",
+      "items": 5,
+      "placed": null,
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.flexwrap:nth-of-type(2)",
+      "tracks": null
+     },
+     "evidence": {
+      "end_edge": 1200,
+      "row_items": [
+       "section:nth-of-type(2) > div.wrap > div.flexwrap:nth-of-type(2) > article.card.story:nth-of-type(4)",
+       "section:nth-of-type(2) > div.wrap > div.flexwrap:nth-of-type(2) > article.card.story:nth-of-type(5)"
+      ]
+     },
+     "reason": "trailing"
+    },
+    "width": 384,
+    "x": 816
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Stories",
+     "Harbour Legal",
+     "Forty lawyers, nine rooms and no more double bookings.",
+     "Fieldnote Studio",
+     "The studio found two rooms it never used and let one go.",
+     "Kestrel Clinic",
+     "Front desk staff book consult rooms while the phone rings.",
+     "Orchard School",
+     "Teachers hold the music room for practice in two taps.",
+     "Tidewater Bank",
+     "Branch meetings start on time because the room is ready."
+    ],
+    "name": "Stories"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 1099,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     934
+    ],
+    "chrome": false,
+    "name": "Stories"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Stories"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Stories",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

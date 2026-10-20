@@ -1,0 +1,151 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Willow",
+    "height": 448,
+    "section": "Rooms",
+    "share": 0.69,
+    "side": "right",
+    "top": 1164,
+    "vacancy": {
+     "answer": "yes",
+     "container": {
+      "display": "grid",
+      "items": 7,
+      "placed": [
+       3,
+       2,
+       2
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        432
+       ],
+       [
+        464,
+        816
+       ],
+       [
+        848,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "abreast": [
+       "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.tile:nth-of-type(1)",
+       "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.tile:nth-of-type(2)"
+      ],
+      "lone": "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.tile:nth-of-type(7)",
+      "lone_size": [
+       352,
+       436
+      ],
+      "set": 7
+     },
+     "reason": "orphan"
+    },
+    "width": 768,
+    "x": 432
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Rooms",
+     "Harbour",
+     "Seats ten, with a screen and a whiteboard wall.",
+     "Lantern",
+     "Seats four, quiet, good for calls.",
+     "Orchard",
+     "Seats twenty, splits into two rooms.",
+     "Quarry",
+     "Seats six, next to the kitchen.",
+     "Saltmarsh",
+     "Seats eight, with a camera for hybrid meetings.",
+     "Tidewater",
+     "Seats two, a phone booth by the stairs.",
+     "Willow",
+     "Seats twelve, on the roof terrace in summer."
+    ],
+    "name": "Rooms"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 1647,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     1482
+    ],
+    "chrome": false,
+    "name": "Rooms"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Rooms"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Rooms",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

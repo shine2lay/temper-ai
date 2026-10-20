@@ -141,6 +141,21 @@ def candidate_metrics() -> Iterator[None]:
         v2.craft_metrics = live
 
 
+@contextlib.contextmanager
+def vacancy_pass() -> Iterator[None]:
+    """Only the candidate capture asks for H12's vacancy answer. Restore even on failure/nesting."""
+    env = mf.pc.VACANCY_ENV
+    previous = os.environ.get(env)
+    os.environ[env] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = previous
+
+
 def note_spacing(review: Path) -> int:
     """Say on craft-facts.md's spacing lines which values the share counts (idempotent). Lines changed."""
     facts, metrics_path = review / "craft-facts.md", review / "craft-metrics.json"
@@ -165,7 +180,7 @@ def note_spacing(review: Path) -> int:
 
 
 def measure(job: v2.Job, review: Path) -> dict:
-    with candidate_metrics():
+    with candidate_metrics(), vacancy_pass():
         result = job.measure()
     return {**result, "spacing_from_px": SPACING_FROM_PX, "spacing_lines_noted": note_spacing(review)}
 
@@ -173,7 +188,7 @@ def measure(job: v2.Job, review: Path) -> dict:
 def bench_prepare(root: Path, site: str, page: str) -> dict:
     if not site or not page:
         raise ValueError("bench_prepare needs --site and --page")
-    with candidate_metrics():
+    with candidate_metrics(), vacancy_pass():
         result = cb.prepare(root, Path(site), page, page_checks=True)
     return {**result, "spacing_from_px": SPACING_FROM_PX, "spacing_lines_noted": note_spacing(root / "review")}
 
@@ -191,9 +206,13 @@ def measured(review: Path) -> dict:
 
 def craft_anchors(review: Path) -> dict:
     _require(review, "craft-metrics.json", why="measure (or bench_prepare) runs first")
-    res = v2.load(ca.write(review))
+    path = ca.write(review)
+    res = v2.load(path)
+    candidates = res.pop("candidates", [])
+    # H12: the critic gets anchors, not empty-column questions or measured answers. The join reads the capture.
+    _write_json(path, res)
     return {"status": "completed", "anchors_path": "review/anchors.json", "findings": len(res["findings"]),
-            "severity_counts": res["counts"], "candidates": len(res["candidates"])}
+            "severity_counts": res["counts"], "candidates": len(candidates)}
 
 
 def deck_words(root: Path) -> dict:
@@ -405,10 +424,11 @@ def merge_join(review: Path) -> dict:
                       key=lambda f: (f.get("status") != "confirmed", -int(f.get("severity") or 0),
                                      f.get("kind") != "measured"))
     rejected = merge.get("rejected") if isinstance(merge.get("rejected"), list) else []
-    # Empty columns are the craft review's yes/no (H5), never findings here: listed so the review twin, which
-    # has no craft critic, shows what it left to that review (W8 tallies them apart).
+    # Empty columns stay with craft, never usability findings here. H12 settles the answer when captured
+    # on the candidate path; old captures without a vacancy measurement remain unanswered.
     candidates = [{"id": c["id"], "page": c["page"], "viewport": c["viewport"], "element": c["element"],
-                   "if_yes": c["if_yes"]} for c in mf.craft_candidates(review, measured_res.get("primary_action"))]
+                   "if_yes": c["if_yes"], "answer": c.get("answer"), "reason": c.get("reason")}
+                  for c in mf.craft_candidates(review, measured_res.get("primary_action"))]
     summary = {
         "version": measured_res.get("version"), "primary_action": measured_res.get("primary_action"),
         "findings": len(measured_res["findings"]), "groups": len(groups),
@@ -442,10 +462,10 @@ def merge_join(review: Path) -> dict:
         lines += [f"- {', '.join(map(str, c.get('source_ids') or []))} -> {c.get('measured_id')}"
                   for c in merge["covered"] if isinstance(c, dict)]
     if candidates:
-        lines += ["", "Left to the craft review (empty columns: dead space or purposeful layout is its yes/no; "
+        lines += ["", "Left to the craft review (empty columns: the page check's measured vacancy answer; "
                   "not findings here):", ""]
-        lines += [f"- {c['id']}: [{c['viewport']}] {_cell(c['element'])} (level {c['if_yes']} if confirmed)"
-                  for c in candidates]
+        lines += [f"- {c['id']}: [{c['viewport']}] {_cell(c['element'])} (level {c['if_yes']} if confirmed); "
+                  f"{c['answer'] or 'not measured'} ({c['reason'] or 'no vacancy measurement'})" for c in candidates]
     judged_md = review / "report-judged.md"
     lines += ["", "---", "", judged_md.read_text(encoding="utf-8") if judged_md.is_file()
               else "(The merge wrote no report-judged.md.)"]
@@ -494,14 +514,14 @@ def craft_join(review: Path) -> dict:
                          "severity": f["severity"], "confidence": "high", "suggestion": suggestion,
                          "kind": "anchored", "rule": f["rule"], "metric": f.get("metric"), "value": f.get("value"),
                          "threshold": f.get("threshold"), "width": f.get("width"), "page": f.get("page")})
-    answers = _answers(critic.get("candidate_answers"), "candidate")
     rows, n = [], 0
-    for c in anchors.get("candidates") or []:
-        got = answers.get(c["id"])
+    for c in mf.craft_candidates(review):
+        v = c.get("vacancy") or {}
+        answer = v.get("answer") if v.get("answer") in ("yes", "no") else None
+        evidence = mf.vacancy_text(v) if v else "No vacancy measurement; re-capture on the candidate path."
         rows.append({"candidate": c["id"], "element": c["element"], "viewport": c["viewport"],
-                     "if_yes": c["if_yes"], "answer": got["answer"] if got else None,
-                     "evidence": got["evidence"] if got else ""})
-        if not got or got["answer"] != "yes":
+                     "if_yes": c["if_yes"], "answer": answer, "reason": v.get("reason"), "evidence": evidence})
+        if answer != "yes":
             continue
         n += 1
         ev = c.get("evidence") or {}
@@ -509,7 +529,7 @@ def craft_join(review: Path) -> dict:
             "id": f"craft-empty-column-{n}", "check": "space", "viewport": c["viewport"], "element": c["element"],
             "problem": (f"Dead empty column: {ev.get('width')} px ({_percent(ev.get('share'))} of the content width), "
                         f"{ev.get('height')} px tall, on the {ev.get('side')} of {ev.get('section')}."),
-            "evidence": f"facts.md empty-column (measured, {c['id']}); the critic: {got['evidence']}",
+            "evidence": f"facts.md empty-column (measured, {c['id']}); the page check's vacancy: {evidence}",
             "severity": c["if_yes"], "confidence": "high",
             "suggestion": "Give the column content that earns its place, or let the content use the width.",
             "kind": "candidate", "rule": c.get("rule", "craft-empty-column"), "measured_id": c["id"],

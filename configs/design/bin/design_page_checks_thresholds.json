@@ -26,6 +26,12 @@
   "center_tolerance": 0.1,
   "min_content_bands": 0.5
  },
+ "vacancy": {
+  "track_cover": 0.5,
+  "set_size_tolerance": 0.1,
+  "edge_px": 2,
+  "decided": "2026-10-20 by Design (home), H12 (queue #114), before any code; not calibrated on results"
+ },
  "signifier": {
   "min_channel_diff": 10,
   "max_icon": 48

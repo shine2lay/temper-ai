@@ -465,11 +465,14 @@ def page_check_findings(view: dict, facts: dict, raw: dict, primary: str, t: dic
         for c in raw.get("columns") or []:
             first_screen = c["top"] < height
             beside_primary = bool(primary) and _same(c.get("beside"), primary)
-            out.append(_finding(view, "empty-column", f'{c["section"]}: {c["side"]} column beside "{c["beside"]}"', {
+            f = _finding(view, "empty-column", f'{c["section"]}: {c["side"]} column beside "{c["beside"]}"', {
                 "width": c["width"], "share": c["share"], "content_width": frame[1] - frame[0], "side": c["side"],
                 "height": c["height"], "top": c["top"], "beside": c["beside"], "section": c["section"],
                 "first_screen": first_screen, "beside_primary_action": beside_primary},
-                "craft-empty-column", 3 if first_screen or beside_primary else 2))
+                "craft-empty-column", 3 if first_screen or beside_primary else 2)
+            if isinstance(c.get("vacancy"), dict):
+                f["vacancy"] = c["vacancy"]  # not in evidence: ordering and Rule C stay unchanged
+            out.append(f)
 
     if "signifier" in fired:
         cues = raw.get("cues") or {}
@@ -553,9 +556,40 @@ def measured_findings(review: pathlib.Path, primary_action: str | None = None) -
 
 
 def craft_candidates(review: pathlib.Path, primary_action: str | None = None) -> list[dict]:
-    """The empty columns the page check measured, as candidates for the craft critic's yes/no."""
-    return [{**f, "question": CANDIDATE_QUESTION, "answers": ["yes", "no"], "if_yes": f["severity"]}
-            for f in _measure(review, primary_action)["all"] if f["check"] in CANDIDATE_CHECKS]
+    """Empty-column candidates. H12's measured vacancy settles them; old captures retain the old question."""
+    candidates = []
+    for f in _measure(review, primary_action)["all"]:
+        if f["check"] not in CANDIDATE_CHECKS:
+            continue
+        v = f.get("vacancy") or {}
+        settled = {"answer": v["answer"], "reason": v["reason"]} if v.get("answer") in ("yes", "no") else {
+            "question": CANDIDATE_QUESTION, "answers": ["yes", "no"]}
+        # W4e's vacancy level is fixed, not raised by Rule C on a multi-page capture (H12).
+        ev = f["evidence"]
+        level = (3 if ev["first_screen"] or ev["beside_primary_action"] else 2) if "answer" in settled else f["severity"]
+        candidates.append({**f, **settled, "if_yes": level})
+    return candidates
+
+
+def vacancy_text(v: dict) -> str:
+    """One line of structural evidence, for craft_join and the facts-only real-page sheet."""
+    reason, e, c = v.get("reason"), v.get("evidence") or {}, v.get("container") or {}
+    if reason in ("vacant_track", "below_bar"):
+        detail = (f"track {e.get('track')} of {len(c.get('tracks') or [])} ({e.get('track_x')}) holds no item; "
+                  f"the run covers {e.get('cover', 0):.1%} of it")
+    elif reason == "trailing":
+        detail = f"past the row's items {e.get('row_items')}; reaches end edge {e.get('end_edge')} px"
+    elif reason == "orphan":
+        detail = (f"lone {e.get('lone')} {e.get('lone_size')} px; set of {e.get('set')}; "
+                  f"two abreast elsewhere: {e.get('abreast')}")
+    elif reason == "in_item":
+        detail = f"inside the x-range of the item {e.get('item')} ({e.get('overlap')} px of it)"
+    elif reason == "between":
+        detail = f"between {e.get('left')} and {e.get('right')}"
+    else:
+        detail = str(e.get("why") or e.get("error") or "No measured answer.")
+    container = f"; container {c.get('display')} {c.get('sel')}" if c else ""
+    return f"{reason}: {detail}{container}"
 
 
 def _measure(review: pathlib.Path, primary_action: str | None = None) -> dict:

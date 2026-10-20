@@ -1,0 +1,122 @@
+{
+  "counts": {
+    "Could": 0,
+    "Must": 0,
+    "Should": 1
+  },
+  "findings": [
+    {
+      "check": "repeated-copy",
+      "criterion": "page check: repeated-copy",
+      "element": "",
+      "evidence": {
+        "phrases": [
+          {
+            "phrase": "add a plant by photo",
+            "sections": [
+              "Hero",
+              "Price",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "say which way the window faces and how far the plant sits from",
+            "sections": [
+              "Hero",
+              "How it works",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "the day a plant needs water",
+            "sections": [
+              "Value",
+              "How it works",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "east window 1 m away",
+            "sections": [
+              "Value",
+              "How it works",
+              "Sample care plan"
+            ]
+          },
+          {
+            "phrase": "plant window and season together set the schedule",
+            "sections": [
+              "How it works",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "the seasons change the schedule changes with",
+            "sections": [
+              "How it works",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "log the watering with one tap and it goes quiet until the next one",
+            "sections": [
+              "How it works",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "how often to water it",
+            "sections": [
+              "Sample care plan",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "light it likes and when to feed",
+            "sections": [
+              "Sample care plan",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "a care plan puts all your plants care cards and watering days in one place",
+            "sections": [
+              "Sample care plan",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "a leaf that looks wrong",
+            "sections": [
+              "Price",
+              "FAQ"
+            ]
+          },
+          {
+            "phrase": "free and fernlight plus both let you add a plant",
+            "sections": [
+              "Price",
+              "FAQ"
+            ]
+          }
+        ]
+      },
+      "grade": "Should",
+      "id": "index-desktop-repeated-copy-1",
+      "kind": "measured",
+      "page": "index.html",
+      "rule": "E-repeated-copy",
+      "severity": 2,
+      "viewport": "desktop",
+      "width": 1280
+    }
+  ],
+  "pages": 1,
+  "primary_action": "See a sample care plan",
+  "version": 1,
+  "viewports": {
+    "index": [
+      "desktop"
+    ]
+  }
+}

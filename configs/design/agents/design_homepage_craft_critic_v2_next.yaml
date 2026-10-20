@@ -2,8 +2,8 @@
 # for design_homepage_v2_next and design_craft_bench_next: the measured craft numbers come settled
 # in review/anchors.json (design_craft_anchors.py: spacing grid share, scale ratio, text sizes,
 # fonts that failed to load; its "checks" list says which numbers are settled), so the critic no
-# longer levels them; the empty columns facts.md measures come as candidates for a fenced yes/no
-# (dead space or purposeful layout?) at the fixed level the script gives (H5). Writes
+# longer levels them; empty-column candidates carry the page check's measured vacancy answer
+# at the fixed level the script gives (H12). Writes
 # review/craft-critic.json; the craft_join script writes review/craft/craft.json. Live critic
 # unchanged; promotion after the W10 trials win.
 # Live header: Design-owned craft critic for design_homepage_v2. The existing design_critic
@@ -50,8 +50,7 @@ agent:
                                metric, value and level per width): spacing share on a 4 px
                                grid, scale ratio, distinct text sizes, fonts that failed
                                to load. "findings" are the ones that crossed a level; they
-                               go into the review as they are. "candidates" are empty
-                               columns facts.md measured, each with a question for you.
+                               go into the review as they are.
       review/facts.md          the usability capture's facts (lists the screenshots),
                                with the measured PAGE CHECKS (lines ending "(page
                                check: <name>)") and "Page
@@ -81,7 +80,6 @@ agent:
                   edges and baselines align to a grid; nothing cramped or floating;
                   (the numbers in anchors.json "checks" are settled: judge only what
                   they don't measure, such as grouping and alignment).
-                  Empty columns: answer each anchors.json candidate (below).
       visual-purpose  pictures judged by what each section is for (below).
       atmosphere  backgrounds have depth (texture, pattern, layered colour) where the
                   direction calls for it; nothing flat by accident.
@@ -122,12 +120,6 @@ agent:
     and never re-rate them. A finding may still cite a settled number as evidence for a
     problem the number does not measure ("the hero has no clear first read" is judged; "the
     ratio is 1.8x" is not a finding of yours).
-    EMPTY COLUMNS. For each anchors.json candidate, look at the tiles and answer its
-    question: is this empty column dead space, or a purposeful part of the layout
-    (breathing room the direction asks for, a deliberate asymmetric grid, space that
-    frames the key element)? "yes" = dead space, "no" = purposeful, with the evidence (tile,
-    what sits beside it, concept.md's direction). Only answer: a script applies the
-    candidate's level on "yes". Never also report it as a finding.
     CONTRAST. A measured text-contrast ratio (a button's text on its fill included) is the
     usability review's, settled by its rule; you judge visual prominence (does the primary
     action stand out as the page's one accent?), never the ratio.
@@ -177,8 +169,6 @@ agent:
     OUTPUT: write review/craft-critic.json (valid JSON; a script joins it with anchors.json
     into review/craft/craft.json):
       {"critic": "craft", "findings": [... your judged findings only ...],
-       "candidate_answers": [{"candidate": "<anchors.json candidate id>", "answer": "yes" | "no",
-                              "evidence": "..."}],
        "template_test": {"verdict": "distinctive" | "generic", "evidence": "..."},
        "strengths_to_keep": ["short: what the reviser must not lose"],
        "visual_purpose": [{"section": "...", "purpose": "...", "purpose_from": "plan" |
@@ -192,6 +182,6 @@ agent:
     Working directory: {{ workspace_path }}
     Review the homepage's craft following your instructions: read review/brief.md,
     review/concept.md, review/craft-facts.md, review/anchors.json and review/facts.md, open
-    every screenshot tile and at least four reference screenshots, answer every anchors.json
-    candidate, then write review/craft-critic.json and emit the JSON block as your whole
+    every screenshot tile and at least four reference screenshots, then write
+    review/craft-critic.json and emit the JSON block as your whole
     final message.

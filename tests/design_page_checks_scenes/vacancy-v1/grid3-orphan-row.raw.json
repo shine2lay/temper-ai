@@ -1,0 +1,151 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Guest passes",
+    "height": 368,
+    "section": "Features",
+    "share": 0.69,
+    "side": "right",
+    "top": 1084,
+    "vacancy": {
+     "answer": "yes",
+     "container": {
+      "display": "grid",
+      "items": 7,
+      "placed": [
+       3,
+       2,
+       2
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        432
+       ],
+       [
+        464,
+        816
+       ],
+       [
+        848,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "abreast": [
+       "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.feature:nth-of-type(1)",
+       "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.feature:nth-of-type(2)"
+      ],
+      "lone": "section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2) > article.card.feature:nth-of-type(7)",
+      "lone_size": [
+       352,
+       360
+      ],
+      "set": 7
+     },
+     "reason": "orphan"
+    },
+    "width": 768,
+    "x": 432
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Features",
+     "Live room status",
+     "See which rooms are free right now, on every floor.",
+     "Two-tap booking",
+     "Hold a room for the next half hour from your phone.",
+     "No-show release",
+     "Rooms nobody turns up for go back on the board.",
+     "Calendar sync",
+     "Bookings show up in the calendar your team already uses.",
+     "Room displays",
+     "A tablet by the door shows who has the room and until when.",
+     "Usage reports",
+     "Find out which rooms are too big, too small or never used.",
+     "Guest passes",
+     "Visitors get a pass by email and find their room on a map."
+    ],
+    "name": "Features"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 1491,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     1326
+    ],
+    "chrome": false,
+    "name": "Features"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Features"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Features",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

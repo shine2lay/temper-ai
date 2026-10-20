@@ -1,0 +1,123 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Your bookings stay yours",
+    "height": 352,
+    "section": "Security",
+    "share": 0.5,
+    "side": "right",
+    "top": 300,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 5,
+      "placed": [
+       5
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.onecol:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        640
+       ]
+      ]
+     },
+     "evidence": {
+      "why": "A one-column grid container."
+     },
+     "reason": "block"
+    },
+    "width": 563,
+    "x": 637
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Security",
+     "Your bookings stay yours",
+     "Room names, bookings and guest passes are stored in one region you choose, and they are encrypted on disk and on the wire.",
+     "People sign in with the work account they already have. When someone leaves, their access ends the moment their account is closed.",
+     "Every change to a room or a booking is kept in a log that office managers can read and export at any time.",
+     "We never sell or share booking data, and we delete it within thirty days of the day you close your account."
+    ],
+    "name": "Security"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     526
+    ],
+    "chrome": false,
+    "name": "Security"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Security"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Security",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

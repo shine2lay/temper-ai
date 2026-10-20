@@ -1,0 +1,132 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Thirty days with every feature. Add a card only when you dec",
+    "height": 512,
+    "section": "Trial",
+    "share": 0.34,
+    "side": "middle",
+    "top": 284,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       1
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.pitch-form",
+      "tracks": [
+       [
+        80,
+        608
+       ],
+       [
+        672,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "item": "section:nth-of-type(2) > div.wrap > div.pitch-form > div.pitch",
+      "overlap": 317
+     },
+     "reason": "in_item"
+    },
+    "width": 381,
+    "x": 291
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Start your free trial",
+     "Thirty days with every feature. Add a card only when you decide to stay.",
+     "Set up in a minute",
+     "Invite your whole office",
+     "Cancel any time"
+    ],
+    "name": "Trial"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "border": 5,
+    "fill": 6,
+    "native control": 1
+   },
+   "checked": 6,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 835,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     670
+    ],
+    "chrome": false,
+    "name": "Trial"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Trial"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Trial",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,1150 @@
+{
+ "url": "/index.html",
+ "title": "Claybird Studio \u2014 pottery classes for beginners",
+ "viewport": [
+  1280,
+  800
+ ],
+ "page_height": 3668,
+ "contrast_failures": [],
+ "contrast_exempt": [],
+ "type_styles": [
+  {
+   "style": "76px 400",
+   "count": 1
+  },
+  {
+   "style": "44px 400",
+   "count": 5
+  },
+  {
+   "style": "24px 400",
+   "count": 18
+  },
+  {
+   "style": "18px 600",
+   "count": 17
+  },
+  {
+   "style": "18px 400",
+   "count": 14
+  },
+  {
+   "style": "14px 600",
+   "count": 2
+  },
+  {
+   "style": "14px 400",
+   "count": 11
+  }
+ ],
+ "largest_text": [
+  {
+   "sel": "section.hero:nth-of-type(1) > div.wrap.hero-grid > div:nth-of-type(1) > h1",
+   "tag": "h1",
+   "text": "Make something you\u2019ll keep.",
+   "size": 76,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    236,
+    653,
+    152
+   ]
+  },
+  {
+   "sel": "#classes > div.wrap > h2",
+   "tag": "h2",
+   "text": "Three ways in",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    813,
+    1184,
+    48
+   ]
+  },
+  {
+   "sel": "#how > div.wrap.how-grid > div > h2",
+   "tag": "h2",
+   "text": "How a class runs",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    1488,
+    467,
+    48
+   ]
+  },
+  {
+   "sel": "section.band:nth-of-type(4) > div.wrap.band-row > div > h2",
+   "tag": "h2",
+   "text": "Keep going after your course",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(251,246,240)",
+   "transform": "none",
+   "box": [
+    48,
+    2138,
+    612,
+    48
+   ]
+  },
+  {
+   "sel": "#prices > div.wrap > h2",
+   "tag": "h2",
+   "text": "Prices",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    2468,
+    1184,
+    48
+   ]
+  },
+  {
+   "sel": "#questions > div.wrap.faq-grid > h2",
+   "tag": "h2",
+   "text": "Questions",
+   "size": 44,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    3150,
+    373,
+    205
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap.nav > a.mark:nth-of-type(1)",
+   "tag": "a",
+   "text": "Claybird",
+   "size": 24,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    48,
+    27,
+    91,
+    38
+   ]
+  },
+  {
+   "sel": "div.wrap > div.cards > article.card > h3",
+   "tag": "h3",
+   "text": "Wheel basics",
+   "size": 24,
+   "weight": 400,
+   "color": "rgb(43,33,28)",
+   "transform": "none",
+   "box": [
+    81,
+    1046,
+    307,
+    30
+   ]
+  }
+ ],
+ "headings": [
+  {
+   "level": 1,
+   "text": "Make something you\u2019ll keep.",
+   "size": 76,
+   "weight": 400,
+   "box": [
+    48,
+    236,
+    653,
+    152
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Three ways in",
+   "size": 44,
+   "weight": 400,
+   "box": [
+    48,
+    813,
+    1184,
+    48
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Wheel basics",
+   "size": 24,
+   "weight": 400,
+   "box": [
+    81,
+    1046,
+    307,
+    30
+   ]
+  },
+  {
+   "level": 2,
+   "text": "How a class runs",
+   "size": 44,
+   "weight": 400,
+   "box": [
+    48,
+    1488,
+    467,
+    48
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Arrive and settle in",
+   "size": 18,
+   "weight": 600,
+   "box": [
+    659,
+    1488,
+    573,
+    29
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Watch, then try",
+   "size": 18,
+   "weight": 600,
+   "box": [
+    659,
+    1607,
+    573,
+    29
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Shape now, trim later",
+   "size": 18,
+   "weight": 600,
+   "box": [
+    659,
+    1725,
+    573,
+    29
+   ]
+  },
+  {
+   "level": 3,
+   "text": "Glaze and collect",
+   "size": 18,
+   "weight": 600,
+   "box": [
+    659,
+    1843,
+    573,
+    29
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Keep going after your course",
+   "size": 44,
+   "weight": 400,
+   "box": [
+    48,
+    2138,
+    612,
+    48
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Prices",
+   "size": 44,
+   "weight": 400,
+   "box": [
+    48,
+    2468,
+    1184,
+    48
+   ]
+  },
+  {
+   "level": 2,
+   "text": "Questions",
+   "size": 44,
+   "weight": 400,
+   "box": [
+    48,
+    3150,
+    373,
+    205
+   ]
+  }
+ ],
+ "long_lines": [],
+ "controls": [
+  {
+   "sel": "header.site-header > div.wrap.nav > a.mark:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "Claybird",
+   "name_from": "content",
+   "box": [
+    48,
+    27,
+    91,
+    38
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(1) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Classes",
+   "name_from": "content",
+   "box": [
+    409,
+    35,
+    60,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(2) > a",
+   "tag": "a",
+   "role": "",
+   "name": "How it works",
+   "name_from": "content",
+   "box": [
+    501,
+    35,
+    108,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(3) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Prices",
+   "name_from": "content",
+   "box": [
+    641,
+    35,
+    51,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(4) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Questions",
+   "name_from": "content",
+   "box": [
+    724,
+    35,
+    82,
+    22
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap.nav > a.btn-line:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "Book a taster",
+   "name_from": "content",
+   "box": [
+    1075,
+    24,
+    157,
+    45
+   ]
+  },
+  {
+   "sel": "div.wrap.hero-grid > div:nth-of-type(1) > div.actions > a.btn:nth-of-type(1)",
+   "tag": "a",
+   "role": "",
+   "name": "Book a taster class",
+   "name_from": "content",
+   "box": [
+    48,
+    531,
+    212,
+    57
+   ]
+  },
+  {
+   "sel": "div.wrap.hero-grid > div:nth-of-type(1) > div.actions > a.link:nth-of-type(2)",
+   "tag": "a",
+   "role": "",
+   "name": "See how a class runs",
+   "name_from": "content",
+   "box": [
+    284,
+    545,
+    165,
+    29
+   ]
+  },
+  {
+   "sel": "#top > section.band:nth-of-type(4) > div.wrap.band-row > a.btn",
+   "tag": "a",
+   "role": "",
+   "name": "Join open studio",
+   "name_from": "content",
+   "box": [
+    1033,
+    2170,
+    199,
+    57
+   ]
+  },
+  {
+   "sel": "footer.footer > div.wrap.foot > div > a.mark",
+   "tag": "a",
+   "role": "",
+   "name": "Claybird",
+   "name_from": "content",
+   "box": [
+    48,
+    3551,
+    53,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(1) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Classes",
+   "name_from": "content",
+   "box": [
+    1031,
+    3582,
+    49,
+    17
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(2) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Prices",
+   "name_from": "content",
+   "box": [
+    1104,
+    3582,
+    39,
+    17
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(3) > a",
+   "tag": "a",
+   "role": "",
+   "name": "Questions",
+   "name_from": "content",
+   "box": [
+    1167,
+    3582,
+    65,
+    17
+   ]
+  }
+ ],
+ "small_targets": [],
+ "targets_pass": [
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(1) > a",
+   "name": "Classes",
+   "box": [
+    409,
+    35,
+    60,
+    22
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(2) > a",
+    "name": "How it works",
+    "edge": 62,
+    "centre": 116
+   }
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(2) > a",
+   "name": "How it works",
+   "box": [
+    501,
+    35,
+    108,
+    22
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(1) > a",
+    "name": "Classes",
+    "edge": 86,
+    "centre": 116
+   }
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(3) > a",
+   "name": "Prices",
+   "box": [
+    641,
+    35,
+    51,
+    22
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(2) > a",
+    "name": "How it works",
+    "edge": 57.5,
+    "centre": 111.5
+   }
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(4) > a",
+   "name": "Questions",
+   "box": [
+    724,
+    35,
+    82,
+    22
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(3) > a",
+    "name": "Prices",
+    "edge": 73,
+    "centre": 98.5
+   }
+  },
+  {
+   "sel": "footer.footer > div.wrap.foot > div > a.mark",
+   "name": "Claybird",
+   "box": [
+    48,
+    3551,
+    53,
+    22
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(1) > a",
+    "name": "Classes",
+    "edge": 956.7,
+    "centre": 981.4
+   }
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(1) > a",
+   "name": "Classes",
+   "box": [
+    1031,
+    3582,
+    49,
+    17
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(2) > a",
+    "name": "Prices",
+    "edge": 48.5,
+    "centre": 68
+   }
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(2) > a",
+   "name": "Prices",
+   "box": [
+    1104,
+    3582,
+    39,
+    17
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(1) > a",
+    "name": "Classes",
+    "edge": 43.5,
+    "centre": 68
+   }
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(3) > a",
+   "name": "Questions",
+   "box": [
+    1167,
+    3582,
+    65,
+    17
+   ],
+   "passes": "spacing",
+   "nearest": {
+    "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(2) > a",
+    "name": "Prices",
+    "edge": 56.5,
+    "centre": 76
+   }
+  }
+ ],
+ "weak_boundaries": [],
+ "fields": [],
+ "unnamed_graphics": [],
+ "page_width": {
+  "scroll": 1280,
+  "viewport": 1280,
+  "overflows": false
+ },
+ "landmarks": [
+  {
+   "tag": "header",
+   "label": ""
+  },
+  {
+   "tag": "main",
+   "label": ""
+  },
+  {
+   "tag": "footer",
+   "label": ""
+  }
+ ],
+ "text_count": 68,
+ "axe": [],
+ "tab_stops": [
+  {
+   "sel": "header.site-header > div.wrap.nav > a.mark:nth-of-type(1)",
+   "name": "Claybird",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    48,
+    27,
+    91,
+    38
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(1) > a",
+   "name": "Classes",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    409,
+    35,
+    60,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(2) > a",
+   "name": "How it works",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    501,
+    35,
+    108,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(3) > a",
+   "name": "Prices",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    641,
+    35,
+    51,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.nav > ul.nav-links > li:nth-of-type(4) > a",
+   "name": "Questions",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    724,
+    35,
+    82,
+    22
+   ]
+  },
+  {
+   "sel": "header.site-header > div.wrap.nav > a.btn-line:nth-of-type(2)",
+   "name": "Book a taster",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    1075,
+    24,
+    157,
+    45
+   ]
+  },
+  {
+   "sel": "div.wrap.hero-grid > div:nth-of-type(1) > div.actions > a.btn:nth-of-type(1)",
+   "name": "Book a taster class",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    48,
+    531,
+    212,
+    57
+   ]
+  },
+  {
+   "sel": "div.wrap.hero-grid > div:nth-of-type(1) > div.actions > a.link:nth-of-type(2)",
+   "name": "See how a class runs",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    284,
+    545,
+    165,
+    29
+   ]
+  },
+  {
+   "sel": "#top > section.band:nth-of-type(4) > div.wrap.band-row > a.btn",
+   "name": "Join open studio",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    1033,
+    2170,
+    199,
+    57
+   ]
+  },
+  {
+   "sel": "footer.footer > div.wrap.foot > div > a.mark",
+   "name": "Claybird",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    48,
+    3551,
+    53,
+    22
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(1) > a",
+   "name": "Classes",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    1031,
+    3582,
+    49,
+    17
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(2) > a",
+   "name": "Prices",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    1104,
+    3582,
+    39,
+    17
+   ]
+  },
+  {
+   "sel": "div.wrap.foot > ul.foot-links > li:nth-of-type(3) > a",
+   "name": "Questions",
+   "ring": true,
+   "outline": "solid 3px",
+   "box_shadow": "none",
+   "box": [
+    1167,
+    3582,
+    65,
+    17
+   ]
+  }
+ ],
+ "no_focus_ring": [],
+ "tiles": [
+  {
+   "file": "shots/index-desktop-1.png",
+   "y": 0,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-2.png",
+   "y": 800,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-3.png",
+   "y": 1600,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-4.png",
+   "y": 2400,
+   "height": 800
+  },
+  {
+   "file": "shots/index-desktop-5.png",
+   "y": 3200,
+   "height": 468
+  }
+ ],
+ "page_checks": {
+  "viewport": [
+   1280,
+   800
+  ],
+  "page_height": 3668,
+  "sections": [
+   {
+    "name": "header",
+    "chrome": true,
+    "box": [
+     0,
+     0,
+     1280,
+     93
+    ]
+   },
+   {
+    "name": "hero",
+    "chrome": false,
+    "box": [
+     0,
+     93,
+     1280,
+     608
+    ]
+   },
+   {
+    "name": "classes",
+    "chrome": false,
+    "box": [
+     0,
+     701,
+     1280,
+     676
+    ]
+   },
+   {
+    "name": "how",
+    "chrome": false,
+    "box": [
+     0,
+     1376,
+     1280,
+     666
+    ]
+   },
+   {
+    "name": "open-studio",
+    "chrome": false,
+    "box": [
+     0,
+     2042,
+     1280,
+     314
+    ]
+   },
+   {
+    "name": "prices",
+    "chrome": false,
+    "box": [
+     0,
+     2356,
+     1280,
+     682
+    ]
+   },
+   {
+    "name": "questions",
+    "chrome": false,
+    "box": [
+     0,
+     3038,
+     1280,
+     445
+    ]
+   },
+   {
+    "name": "footer",
+    "chrome": true,
+    "box": [
+     0,
+     3483,
+     1280,
+     185
+    ]
+   }
+  ],
+  "dark": false,
+  "copy": [
+   {
+    "name": "hero",
+    "blocks": [
+     "Pottery classes on Harbour Street",
+     "Make something you\u2019ll keep.",
+     "Small wheel and hand-building classes for complete beginners and returning potters. Six people a class, with clay, glazes and firing included."
+    ]
+   },
+   {
+    "name": "classes",
+    "blocks": [
+     "Three ways in",
+     "Every class is taught by a working potter and capped at six people, so there is always a hand free when the clay misbehaves.",
+     "Wednesdays, six weeks",
+     "Wheel basics",
+     "Centre the clay, open it and pull your first cylinders. By week six you will trim and glaze a set of cups.",
+     "$240, clay and firing included"
+    ]
+   },
+   {
+    "name": "how",
+    "blocks": [
+     "How a class runs",
+     "Two hours, one skill at a time. You leave with clay under your nails and a piece on the drying shelf.",
+     "1",
+     "Arrive and settle in",
+     "Aprons, tools and tea are ready. Six people a class means there is room to ask anything.",
+     "2",
+     "Watch, then try",
+     "A short demonstration, then your hands in the clay with a teacher beside you.",
+     "3",
+     "Shape now, trim later",
+     "Pieces dry for a week before trimming. Nothing is wasted: spare clay is recycled.",
+     "4",
+     "Glaze and collect",
+     "Choose from twelve house glazes. We fire everything and send a message when it is ready."
+    ]
+   },
+   {
+    "name": "open-studio",
+    "blocks": [
+     "Keep going after your course",
+     "Open studio gives members wheel time four evenings a week, a shelf of their own and firing included."
+    ]
+   },
+   {
+    "name": "prices",
+    "blocks": [
+     "Prices",
+     "Clay, glazes and firing are included in every price. Gift vouchers cover any class.",
+     "Taster evening Two hours, one fired piece $45",
+     "Open studio Monthly membership, four evenings a week $95",
+     "Hand-building Four Saturday sessions $160",
+     "Private session Two hours for one or two people $120",
+     "Wheel basics Six Wednesday sessions $240",
+     "Gift voucher Any class, valid for a year from $45"
+    ]
+   },
+   {
+    "name": "questions",
+    "blocks": [
+     "Questions",
+     "Do I need any experience?",
+     "None. Taster evenings and Wheel basics start from zero.",
+     "What should I wear?",
+     "Clothes you do not mind getting muddy. We lend aprons and towels.",
+     "Can I miss a week?",
+     "Tell us a day ahead and join the same session of the next course.",
+     "Is it suitable for children?",
+     "Classes are for ages 16 and up. Family afternoons run in school holidays."
+    ]
+   }
+  ],
+  "nav": {
+   "found": false
+  },
+  "columns": [
+   {
+    "section": "classes",
+    "x": 664,
+    "width": 568,
+    "share": 0.48,
+    "top": 806,
+    "height": 464,
+    "side": "right",
+    "beside": "Three ways in",
+    "vacancy": {
+     "answer": "no",
+     "reason": "block",
+     "container": null,
+     "evidence": {
+      "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+     }
+    }
+   },
+   {
+    "section": "how",
+    "x": 48,
+    "width": 531,
+    "share": 0.45,
+    "top": 1609,
+    "height": 320,
+    "side": "left",
+    "beside": "Two hours, one skill at a time. You leave with clay under yo",
+    "vacancy": {
+     "answer": "no",
+     "reason": "in_item",
+     "container": {
+      "sel": "#how > div.wrap.how-grid",
+      "display": "grid",
+      "tracks": [
+       [
+        48,
+        515
+       ],
+       [
+        579,
+        1232
+       ]
+      ],
+      "placed": [
+       1,
+       1
+      ],
+      "items": 2
+     },
+     "evidence": {
+      "item": "#how > div.wrap.how-grid > div",
+      "overlap": 467
+     }
+    }
+   }
+  ],
+  "frame": [
+   48,
+   1232
+  ],
+  "cues": {
+   "checked": 3,
+   "nav_links": 10,
+   "without": [],
+   "without_count": 0,
+   "by_cue": {
+    "fill": 2,
+    "underline": 1
+   }
+  },
+  "visuals": {
+   "sections": [
+    {
+     "name": "header",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "hero",
+     "chrome": false,
+     "count": 1,
+     "share": 0.18,
+     "items": [
+      {
+       "kind": "svg",
+       "size": [
+        403,
+        336
+       ],
+       "top": 221,
+       "name": "Three handmade pots on a wooden shelf",
+       "decorative": false
+      }
+     ]
+    },
+    {
+     "name": "classes",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "how",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "open-studio",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "prices",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "questions",
+     "chrome": false,
+     "count": 0,
+     "share": 0,
+     "items": []
+    },
+    {
+     "name": "footer",
+     "chrome": true,
+     "count": 0,
+     "share": 0,
+     "items": []
+    }
+   ],
+   "first_screen_share": 0.14,
+   "none": [
+    "classes",
+    "how",
+    "open-studio",
+    "prices",
+    "questions"
+   ]
+  },
+  "overlays": [],
+  "small_dark": []
+ }
+}

@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -21,7 +22,6 @@ BIN = ROOT / "configs/design/bin"
 FIXTURES = ROOT / "configs/design/testpages/vacancy-v1"
 SCENES = Path(__file__).resolve().parent / "design_page_checks_scenes" / "vacancy-v1"
 SEAL = Path.home() / "design-lab/seals/vacancy-v1.json"
-H12 = "H12 (queue #114): the measured vacancy rule is not built yet"
 sys.path.insert(0, str(BIN))
 
 
@@ -59,7 +59,6 @@ def test_every_fixture_page_has_a_keyed_run_and_a_kind():
                        "outside_items"}
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_the_vacancy_numbers_are_the_ones_decided_before_the_code():
     assert T["empty_column"] == {"viewport": "desktop", "min_share": 0.3, "min_height": 300, "band": 16,
                                  "center_tolerance": 0.1, "min_content_bands": 0.5}  # candidates unchanged
@@ -67,7 +66,6 @@ def test_the_vacancy_numbers_are_the_ones_decided_before_the_code():
     assert (v["track_cover"], v["set_size_tolerance"], v["edge_px"]) == (0.5, 0.1, 2)
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_the_vacancy_pass_is_off_unless_asked_for():
     """Live stages never ask: the in-page options stay what they were, so no live output can change."""
     js = (BIN / "design_page_checks.js").read_text(encoding="utf-8")
@@ -79,7 +77,6 @@ def test_the_vacancy_pass_is_off_unless_asked_for():
     assert pc.VACANCY_ENV == "DESIGN_PAGE_CHECKS_VACANCY"
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_the_capture_asks_for_the_vacancy_pass_only_on_the_desktop_view_and_only_when_switched_on(monkeypatch):
     sent = []
 
@@ -102,7 +99,6 @@ def _recorded(page):
     return json.loads((SCENES / page.replace(".html", ".raw.json")).read_text(encoding="utf-8"))["desktop"]
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 @pytest.mark.parametrize("page", sorted(KEY["pages"]))
 def test_each_keyed_page_gets_its_keyed_answer_and_reason(page):
     raw = _recorded(page)
@@ -113,7 +109,6 @@ def test_each_keyed_page_gets_its_keyed_answer_and_reason(page):
     assert got == want
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_each_answer_carries_its_container_and_the_numbers_it_was_decided_by():
     for page in sorted(KEY["pages"]):
         for c in _recorded(page)["columns"]:
@@ -133,10 +128,38 @@ def test_each_answer_carries_its_container_and_the_numbers_it_was_decided_by():
                 assert v["evidence"]["set"] >= 2 and len(v["evidence"]["abreast"]) == 2, page
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_judged_text_ignores_the_vacancy_answer():
     """facts.md's empty-column line is the same with or without the measured answer."""
     for page in sorted(KEY["pages"]):
         raw = _recorded(page)
         bare = {**raw, "columns": [{k: v for k, v in c.items() if k != "vacancy"} for c in raw["columns"]]}
         assert pc.judge("desktop", raw, T, raw.get("pixels")) == pc.judge("desktop", bare, T, bare.get("pixels"))
+
+
+@pytest.mark.parametrize("page", ["quarry-b4", "new-craft02", "fernlight-price"])
+def test_live_text_outputs_stay_byte_identical_to_the_base_capture(tmp_path, page):
+    """Before = origin/master 19e24046, after-off = H12 default, after-on = H12 opt-in, same known local page,
+    same host browser at 1280x800. Browser proof: w10b/live/proof.json. The checked-in recordings let this
+    regression run without a browser: compare bytes, then regenerate the live reports with today's code."""
+    fixtures = SCENES.parent / "vacancy-live" / page
+    before, off, on = (fixtures / arm for arm in ("before", "after-off", "after-on"))
+    files = ["capture.json", "facts.md", "craft-metrics.json", "measured.json", "candidates.json", "anchors.json"]
+    files += [str(p.relative_to(before)) for p in sorted((before / "facts").glob("*.json"))]
+    for name in files:
+        assert (before / name).read_bytes() == (off / name).read_bytes(), name
+    assert (before / "facts.md").read_bytes() == (on / "facts.md").read_bytes()
+    plain = json.loads((before / "facts/index-desktop.json").read_text())["page_checks"]
+    measured = json.loads((on / "facts/index-desktop.json").read_text())["page_checks"]
+    stripped = {**measured, "columns": [{k: v for k, v in c.items() if k != "vacancy"} for c in measured["columns"]]}
+    assert plain == stripped  # every other measurement and every candidate's geometry is unchanged
+    shutil.copytree(before, tmp_path / "review")
+    review = tmp_path / "review"
+    cap.write_summary(review, json.loads((review / "capture.json").read_text()))
+    mf, ca = _load("design_measured_findings"), _load("design_craft_anchors")
+    mf.write(review)
+    ca.write(review)
+    assert (review / "facts.md").read_bytes() == (before / "facts.md").read_bytes()
+    assert (review / "measured.json").read_bytes() == (before / "measured.json").read_bytes()
+    assert (review / "anchors.json").read_bytes() == (before / "anchors.json").read_bytes()
+    candidates = json.dumps(mf.craft_candidates(review), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+    assert candidates.encode() == (before / "candidates.json").read_bytes()

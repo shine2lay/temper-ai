@@ -324,7 +324,6 @@ def test_empty_column_is_a_craft_candidate_never_a_measured_finding(tmp_path, fi
     assert "dead space" in mf.CANDIDATE_QUESTION and "purposeful layout" in mf.CANDIDATE_QUESTION
 
 
-@pytest.mark.xfail(strict=True, reason="H12 (queue #114): the measured vacancy rule is not built yet")
 @pytest.mark.parametrize("answer,reason,evidence", [
     ("yes", "vacant_track", {"track": 1, "track_x": [80, 566], "cover": 0.98}),
     ("no", "in_item", {"item": "div.label", "overlap": 477}),
@@ -350,6 +349,26 @@ def test_a_measured_vacancy_settles_the_candidate_and_moves_no_measured_finding(
     assert reason in mf.vacancy_text(vacancy) and evidence.get("item", "track 1") in mf.vacancy_text(vacancy)
     (p,) = mf.craft_candidates(views["plain"])  # measured without the vacancy pass: the old question stays
     assert p["answers"] == ["yes", "no"] and "answer" not in p and "vacancy" not in p
+
+
+def test_measured_vacancies_keep_w4es_fixed_level_on_a_multi_page_capture(tmp_path, fired):
+    fired["judge"] = ["empty-column"]
+    col = {"width": 477, "share": 0.43, "side": "left", "height": 560, "beside": "Questions",
+           "section": "FAQ", "top": 3014, "vacancy": {"answer": "yes", "reason": "vacant_track"}}
+    facts = {"page_checks": {"columns": [col], "frame": [80, 1200]}}
+    review = _review(tmp_path, {(p, "desktop"): facts for p in ("one.html", "two.html")})
+    assert [c["if_yes"] for c in mf.craft_candidates(review)] == [2, 2]  # not Rule C's repeated-page raise
+
+
+def test_a_repeated_vacancy_still_uses_the_fixed_craft_level(tmp_path, fired):
+    fired["judge"] = ["empty-column"]
+    col = {"width": 477, "share": 0.43, "side": "left", "height": 560, "beside": "Questions",
+           "section": "FAQ", "top": 3014, "vacancy": {"answer": "yes", "reason": "vacant_track"}}
+    review = _review(tmp_path, {(f"page-{n}.html", "desktop"): {
+        "page_checks": {"columns": [col], "frame": [80, 1200]}} for n in range(3)}, "Book a pickup")
+    candidates = mf.craft_candidates(review)
+    assert len(candidates) == 3
+    assert all(c["if_yes"] == 2 for c in candidates)  # Rule C cannot raise a structural vacancy
 
 
 @pytest.mark.parametrize("bare,primary,level", [(14, "", 2), (15, "", 3), (1, "Review roll order", 3), (1, "Export", 2)])

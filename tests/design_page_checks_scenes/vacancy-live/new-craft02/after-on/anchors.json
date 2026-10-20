@@ -1,0 +1,162 @@
+{
+  "candidates": [
+    {
+      "answer": "no",
+      "check": "empty-column",
+      "criterion": "page check: empty-column",
+      "element": "classes: right column beside \"Three ways in\"",
+      "evidence": {
+        "beside": "Three ways in",
+        "beside_primary_action": false,
+        "content_width": 1184,
+        "first_screen": false,
+        "height": 464,
+        "section": "classes",
+        "share": 0.48,
+        "side": "right",
+        "top": 806,
+        "width": 568
+      },
+      "grade": "Should",
+      "id": "index-desktop-empty-column-1",
+      "if_yes": 2,
+      "kind": "measured",
+      "page": "index.html",
+      "reason": "block",
+      "rule": "craft-empty-column",
+      "severity": 2,
+      "vacancy": {
+        "answer": "no",
+        "container": null,
+        "evidence": {
+          "why": "No grid or flex-row ancestor beside the run contains it (block flow)."
+        },
+        "reason": "block"
+      },
+      "viewport": "desktop",
+      "width": 1280
+    },
+    {
+      "answer": "no",
+      "check": "empty-column",
+      "criterion": "page check: empty-column",
+      "element": "how: left column beside \"Two hours, one skill at a time. You leave with clay under yo\"",
+      "evidence": {
+        "beside": "Two hours, one skill at a time. You leave with clay under yo",
+        "beside_primary_action": false,
+        "content_width": 1184,
+        "first_screen": false,
+        "height": 320,
+        "section": "how",
+        "share": 0.45,
+        "side": "left",
+        "top": 1609,
+        "width": 531
+      },
+      "grade": "Should",
+      "id": "index-desktop-empty-column-2",
+      "if_yes": 2,
+      "kind": "measured",
+      "page": "index.html",
+      "reason": "in_item",
+      "rule": "craft-empty-column",
+      "severity": 2,
+      "vacancy": {
+        "answer": "no",
+        "container": {
+          "display": "grid",
+          "items": 2,
+          "placed": [
+            1,
+            1
+          ],
+          "sel": "#how > div.wrap.how-grid",
+          "tracks": [
+            [
+              48,
+              515
+            ],
+            [
+              579,
+              1232
+            ]
+          ]
+        },
+        "evidence": {
+          "item": "#how > div.wrap.how-grid > div",
+          "overlap": 467
+        },
+        "reason": "in_item"
+      },
+      "viewport": "desktop",
+      "width": 1280
+    }
+  ],
+  "checks": [
+    {
+      "metric": "spacing_on_4px",
+      "rule": "spacing-grid",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": 1,
+        "390": 1
+      }
+    },
+    {
+      "metric": "scale_ratio",
+      "rule": "scale-ratio",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": 4.22,
+        "390": 3.06
+      }
+    },
+    {
+      "metric": "text_sizes",
+      "rule": "text-sizes",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": 5,
+        "390": 5
+      }
+    },
+    {
+      "metric": "unloaded_families",
+      "rule": "font-loading",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": [],
+        "390": []
+      }
+    }
+  ],
+  "counts": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0
+  },
+  "findings": [],
+  "page": "index.html",
+  "version": 1,
+  "widths": [
+    1440,
+    390
+  ]
+}

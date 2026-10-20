@@ -1,0 +1,128 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "North office",
+    "height": 416,
+    "section": "Offices",
+    "share": 0.36,
+    "side": "middle",
+    "top": 300,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       1
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.between-grid:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        440
+       ],
+       [
+        840,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "left": "section:nth-of-type(2) > div.wrap > div.between-grid:nth-of-type(2) > article.card.office:nth-of-type(1)",
+      "right": "section:nth-of-type(2) > div.wrap > div.between-grid:nth-of-type(2) > article.card.office:nth-of-type(2)"
+     },
+     "reason": "between"
+    },
+    "width": 400,
+    "x": 440
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Offices",
+     "North office",
+     "Twelve rooms on two floors, one display by every door.",
+     "South office",
+     "Six rooms and a large hall that can be split in two."
+    ],
+    "name": "Offices"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     582
+    ],
+    "chrome": false,
+    "name": "Offices"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Offices"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Offices",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

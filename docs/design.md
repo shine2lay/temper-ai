@@ -352,8 +352,11 @@ when `DESIGN_PAGE_CHECKS_VACANCY=1` is set, which only the candidate path
 entry of `page_checks.columns` in `review/facts/*.json` gets a `vacancy`
 object, `design_measured_findings.craft_candidates` carries it as the
 candidate's measured answer, and `craft_join` confirms a candidate from it.
-The candidate craft critic (`design_homepage_craft_critic_v2_next`) no
-longer answers empty columns. Readers of these outputs:
+The candidate `craft_anchors` stage leaves candidates out of the critic's
+`anchors.json`; `craft_join` reads them directly from the capture through
+`craft_candidates`. The candidate craft critic
+(`design_homepage_craft_critic_v2_next`) no longer gets or answers them.
+Readers of these outputs:
 `~/design-lab/homepage-workflow/wave2/w10b/READERS.md`.
 
 ## Files

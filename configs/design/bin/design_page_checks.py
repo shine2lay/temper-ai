@@ -28,6 +28,7 @@ import re
 HERE = pathlib.Path(__file__).resolve().parent
 JS = HERE / "design_page_checks.js"
 THRESHOLDS = HERE / "design_page_checks_thresholds.json"
+VACANCY_ENV = "DESIGN_PAGE_CHECKS_VACANCY"  # opt-in for _next capture only (H12)
 PLAYBOOK = HERE.parent / "knowledge" / "context-playbook.json"
 
 STOPWORDS = frozenset(
@@ -108,10 +109,12 @@ def thresholds() -> dict:
     return json.loads(THRESHOLDS.read_text(encoding="utf-8"))
 
 
-def source(t: dict, primary: str, copy: bool, columns: bool, visuals: bool) -> str:
-    """The in-page script for one view, with its options filled in."""
+def source(t: dict, primary: str, copy: bool, columns: bool, visuals: bool, vacancy: bool = False) -> str:
+    """The in-page script for one view. H12's vacancy pass is opt-in; live options stay unchanged."""
     opts = {"thresholds": t, "primary": primary or "", "copy": copy, "columns": columns, "visuals": visuals,
             "cues": True, "overlays": True, "small_dark": True}
+    if vacancy:
+        opts["vacancy"] = True
     return JS.read_text(encoding="utf-8").replace("__OPTS__", json.dumps(opts))
 
 

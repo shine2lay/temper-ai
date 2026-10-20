@@ -1,0 +1,144 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "When a meeting ends early, the person who booked it can give",
+    "height": 496,
+    "section": "Board",
+    "share": 0.53,
+    "side": "right",
+    "top": 460,
+    "vacancy": {
+     "answer": "no",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       1
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.media-short",
+      "tracks": [
+       [
+        80,
+        608
+       ],
+       [
+        672,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "item": "section:nth-of-type(2) > div.wrap > div.media-short > figure.media",
+      "overlap": 528
+     },
+     "reason": "in_item"
+    },
+    "width": 592,
+    "x": 608
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "One board for every room",
+     "The board lists every room in the office with who has it, until when, and how many people it seats.",
+     "Free rooms are at the top. Tap one to hold it for the next half hour, or drag the end time to keep it longer.",
+     "Rooms with a display by the door show the same board, so people in the corridor see it too.",
+     "When a meeting ends early, the person who booked it can give the room back with one tap.",
+     "Office managers can close a room for cleaning or repairs, and every booking in it moves to a free room.",
+     "The board works on any phone or laptop, with no app to install and nothing to keep up to date.",
+     "Guests get a pass by email that opens the front door and shows them the way to their room.",
+     "Each evening the board sends office managers a short note of rooms that were booked but never used.",
+     "Recurring meetings release their room on their own when nobody checks in for three weeks in a row.",
+     "Everything on the board can be read aloud by a screen reader, and every action works from the keyboard."
+    ],
+    "name": "Board"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 999,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     834
+    ],
+    "chrome": false,
+    "name": "Board"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0.13,
+   "none": [
+    "Intro"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "A board of six rooms, two of them free",
+       "size": [
+        528,
+        240
+       ],
+       "top": 205
+      }
+     ],
+     "name": "Board",
+     "share": 0.12
+    }
+   ]
+  }
+ }
+}

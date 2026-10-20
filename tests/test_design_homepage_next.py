@@ -372,10 +372,10 @@ def test_candidate_critics_no_longer_ask_for_what_the_scripts_count():
     assert "never do those checks yourself" in merge
     assert "facts.md measures it, OR" not in merge and "with one exception: for a measured" not in merge
     assert "review/measured.json" in merge and "is this element the page's primary action?" in merge
-    # H6: the settled numbers are anchors.json's; empty columns are a fenced yes/no.
+    # H6: the settled numbers are anchors.json's; H12 settles empty columns by measurement.
     assert "spacing share on a 4 px grid below 0.6" not in craft and "scale ratio below 2x" not in craft
     assert "more than 8 distinct text sizes" not in craft and "review/anchors.json" in craft
-    assert "dead space, or a purposeful part of the layout" in craft and "candidate_answers" in craft
+    assert "dead space, or a purposeful part of the layout" not in craft and "candidate_answers" not in craft
     # H7: the word checks the script counts are gone from the content checklist.
     assert "a paragraph over about three lines" not in content
     assert "a call to action that does not say what happens" not in content
@@ -445,7 +445,8 @@ def test_measured_and_anchor_stages_write_beside_the_critics_never_among_them(tm
     assert "empty-column" not in {f["check"] for f in measured["findings"]}  # never a measured finding
     anchors = json.loads((review / "anchors.json").read_text(encoding="utf-8"))
     assert [c["rule"] for c in anchors["checks"]] == ["spacing-grid", "scale-ratio", "text-sizes", "font-loading"]
-    (cand,) = anchors["candidates"]
+    assert "candidates" not in anchors  # H12: the critic never sees empty-column questions or answers
+    (cand,) = hn.mf.craft_candidates(review)
     assert cand["check"] == "empty-column" and cand["answers"] == ["yes", "no"] and cand["if_yes"] in (2, 3)
 
 
@@ -487,18 +488,17 @@ def test_craft_join_settles_anchors_and_applies_the_empty_column_answer(tmp_path
     _stage("craft_anchors", ws)
     critic = {"critic": "craft", "findings": [], "template_test": {"verdict": "distinctive", "evidence": "e"},
               "strengths_to_keep": [], "visual_purpose": [], "not_checked": []}
-    for answer, expect in (("no", 0), ("yes", 1)):
+    for answer in ("no", "yes"):
+        # An old capture has no vacancy answer. The critic cannot settle it, even if it still writes one.
         (review / "craft-critic.json").write_text(json.dumps({**critic, "candidate_answers": [
             {"candidate": "index-desktop-empty-column-1", "answer": answer, "evidence": "tile 6"}]}), encoding="utf-8")
         out = _stage("craft_join", ws)
-        assert out["findings_path"] == "review/craft/craft.json" and out["candidates_confirmed"] == expect
+        assert out["findings_path"] == "review/craft/craft.json" and out["candidates_confirmed"] == 0
+        assert out["candidates_unanswered"] == 1
         craft = json.loads((review / "craft/craft.json").read_text(encoding="utf-8"))
         assert [f["rule"] for f in craft["findings"] if f["kind"] == "anchored"] == ["text-sizes"]
-        assert len([f for f in craft["findings"] if f["kind"] == "candidate"]) == expect
+        assert not [f for f in craft["findings"] if f["kind"] == "candidate"]
     assert [p.name for p in (review / "craft").glob("*.json")] == ["craft.json"]  # combine reads every file there
-
-
-H12 = "H12 (queue #114): the measured vacancy rule is not built yet"
 
 
 def _measured_vacancy(review: Path, answer: str, reason: str) -> None:
@@ -514,7 +514,6 @@ def _measured_vacancy(review: Path, answer: str, reason: str) -> None:
     path.write_text(json.dumps(facts), encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_craft_join_settles_the_empty_column_from_the_measured_vacancy(tmp_path):
     ws = _workspace(tmp_path)
     review = ws / "review"
@@ -524,6 +523,7 @@ def test_craft_join_settles_the_empty_column_from_the_measured_vacancy(tmp_path)
     for answer, reason, expect in (("no", "between", 0), ("yes", "vacant_track", 1)):
         _measured_vacancy(review, answer, reason)
         _stage("craft_anchors", ws)
+        assert "candidates" not in json.loads((review / "anchors.json").read_text())
         out = _stage("craft_join", ws)
         assert (out["candidates_confirmed"], out["candidates_declined"], out["candidates_unanswered"]) == (
             expect, 1 - expect, 0)
@@ -536,14 +536,12 @@ def test_craft_join_settles_the_empty_column_from_the_measured_vacancy(tmp_path)
     assert found[0]["severity"] in (2, 3) and found[0]["measured_id"] == "index-desktop-empty-column-1"
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_the_craft_critic_candidate_leaves_empty_columns_to_the_measure():
     craft = _prompt("design_homepage_craft_critic_v2_next")
     assert "EMPTY COLUMNS" not in craft and "candidate_answers" not in craft
     assert "dead space, or a purposeful part of the layout" not in craft and "anchors.json candidate" not in craft
 
 
-@pytest.mark.xfail(strict=True, reason=H12)
 def test_only_the_candidate_path_turns_the_vacancy_pass_on(monkeypatch):
     import inspect
     import os
@@ -553,6 +551,13 @@ def test_only_the_candidate_path_turns_the_vacancy_pass_on(monkeypatch):
     with hn.vacancy_pass():
         assert os.environ[env] == "1"
     assert env not in os.environ
+    monkeypatch.setenv(env, "preserved")
+    with pytest.raises(RuntimeError), hn.vacancy_pass():
+        assert os.environ[env] == "1"
+        with hn.vacancy_pass():
+            assert os.environ[env] == "1"
+        raise RuntimeError("test restoration on failure")
+    assert os.environ[env] == "preserved"
     assert all("vacancy_pass()" in inspect.getsource(fn) for fn in (hn.measure, hn.bench_prepare))
     named = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "configs").rglob("*")
                    if p.is_file() and p.suffix in (".py", ".yaml", ".js", ".json", ".md")
@@ -595,6 +600,7 @@ def test_live_combine_reads_what_the_candidate_joins_write(tmp_path):
     combine stage (design_homepage_v2.py, unchanged), and no content finding is dropped for its quote."""
     ws = _workspace(tmp_path)
     review = ws / "review"
+    _measured_vacancy(review, "yes", "vacant_track")
     for name in ("measured", "craft_anchors", "page_words"):
         _stage(name, ws)
     _critics_and_verify(review)

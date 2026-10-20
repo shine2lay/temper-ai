@@ -1,0 +1,130 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Room of the month",
+    "height": 416,
+    "section": "Spotlight",
+    "share": 0.39,
+    "side": "right",
+    "top": 300,
+    "vacancy": {
+     "answer": "yes",
+     "container": {
+      "display": "grid",
+      "items": 1,
+      "placed": [
+       1,
+       0
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.overflow-grid:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        400
+       ],
+       [
+        400,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "cover": 0.55,
+      "track": 2,
+      "track_x": [
+       400,
+       1200
+      ]
+     },
+     "reason": "vacant_track"
+    },
+    "width": 440,
+    "x": 760
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Spotlight",
+     "Room of the month",
+     "Orchard seats twenty and splits into two rooms for workshops."
+    ],
+    "name": "Spotlight"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     582
+    ],
+    "chrome": false,
+    "name": "Spotlight"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Spotlight"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Spotlight",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

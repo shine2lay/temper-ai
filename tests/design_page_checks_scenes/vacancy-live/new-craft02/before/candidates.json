@@ -1,0 +1,64 @@
+[
+ {
+  "answers": [
+   "yes",
+   "no"
+  ],
+  "check": "empty-column",
+  "criterion": "page check: empty-column",
+  "element": "classes: right column beside \"Three ways in\"",
+  "evidence": {
+   "beside": "Three ways in",
+   "beside_primary_action": false,
+   "content_width": 1184,
+   "first_screen": false,
+   "height": 464,
+   "section": "classes",
+   "share": 0.48,
+   "side": "right",
+   "top": 806,
+   "width": 568
+  },
+  "grade": "Should",
+  "id": "index-desktop-empty-column-1",
+  "if_yes": 2,
+  "kind": "measured",
+  "page": "index.html",
+  "question": "Is this column dead space (an empty area that looks unfinished or wastes the screen) rather than purposeful layout (a deliberate two-column split, an image or artifact column, a short label column)?",
+  "rule": "craft-empty-column",
+  "severity": 2,
+  "viewport": "desktop",
+  "width": 1280
+ },
+ {
+  "answers": [
+   "yes",
+   "no"
+  ],
+  "check": "empty-column",
+  "criterion": "page check: empty-column",
+  "element": "how: left column beside \"Two hours, one skill at a time. You leave with clay under yo\"",
+  "evidence": {
+   "beside": "Two hours, one skill at a time. You leave with clay under yo",
+   "beside_primary_action": false,
+   "content_width": 1184,
+   "first_screen": false,
+   "height": 320,
+   "section": "how",
+   "share": 0.45,
+   "side": "left",
+   "top": 1609,
+   "width": 531
+  },
+  "grade": "Should",
+  "id": "index-desktop-empty-column-2",
+  "if_yes": 2,
+  "kind": "measured",
+  "page": "index.html",
+  "question": "Is this column dead space (an empty area that looks unfinished or wastes the screen) rather than purposeful layout (a deliberate two-column split, an image or artifact column, a short label column)?",
+  "rule": "craft-empty-column",
+  "severity": 2,
+  "viewport": "desktop",
+  "width": 1280
+ }
+]

@@ -1,0 +1,141 @@
+{
+  "candidates": [
+    {
+      "answer": "no",
+      "check": "empty-column",
+      "criterion": "page check: empty-column",
+      "element": "Price: middle column beside \"No ads.\"",
+      "evidence": {
+        "beside": "No ads.",
+        "beside_primary_action": false,
+        "content_width": 1124,
+        "first_screen": false,
+        "height": 384,
+        "section": "Price",
+        "share": 0.35,
+        "side": "middle",
+        "top": 4368,
+        "width": 388
+      },
+      "grade": "Should",
+      "id": "index-desktop-empty-column-1",
+      "if_yes": 2,
+      "kind": "measured",
+      "page": "index.html",
+      "reason": "in_item",
+      "rule": "craft-empty-column",
+      "severity": 2,
+      "vacancy": {
+        "answer": "no",
+        "container": {
+          "display": "grid",
+          "items": 2,
+          "placed": [
+            1,
+            1
+          ],
+          "sel": "#price > div.wrap.price-grid",
+          "tracks": [
+            [
+              78,
+              513
+            ],
+            [
+              593,
+              1202
+            ]
+          ]
+        },
+        "evidence": {
+          "item": "#price > div.wrap.price-grid > div.price-copy:nth-of-type(1)",
+          "overlap": 308
+        },
+        "reason": "in_item"
+      },
+      "viewport": "desktop",
+      "width": 1280
+    }
+  ],
+  "checks": [
+    {
+      "metric": "spacing_on_4px",
+      "rule": "spacing-grid",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": 0.96,
+        "390": 1
+      }
+    },
+    {
+      "metric": "scale_ratio",
+      "rule": "scale-ratio",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": 5.76,
+        "390": 3.06
+      }
+    },
+    {
+      "metric": "text_sizes",
+      "rule": "text-sizes",
+      "severities": {
+        "1440": 3,
+        "390": 3
+      },
+      "severity": 3,
+      "values": {
+        "1440": 13,
+        "390": 13
+      }
+    },
+    {
+      "metric": "unloaded_families",
+      "rule": "font-loading",
+      "severities": {
+        "1440": 0,
+        "390": 0
+      },
+      "severity": 0,
+      "values": {
+        "1440": [],
+        "390": []
+      }
+    }
+  ],
+  "counts": {
+    "1": 0,
+    "2": 0,
+    "3": 1,
+    "4": 0
+  },
+  "findings": [
+    {
+      "check": "type",
+      "element": "text sizes across the whole page",
+      "evidence": "craft-metrics.json: text sizes 13 at 1440 and 13 at 390",
+      "id": "craft-text-sizes",
+      "metric": "text_sizes",
+      "page": "index.html",
+      "rule": "text-sizes",
+      "severity": 3,
+      "threshold": "more than 8",
+      "value": 13,
+      "viewport": "all",
+      "width": 1440
+    }
+  ],
+  "page": "index.html",
+  "version": 1,
+  "widths": [
+    1440,
+    390
+  ]
+}

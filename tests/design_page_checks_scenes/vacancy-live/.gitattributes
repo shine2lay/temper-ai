@@ -1,0 +1,2 @@
+# Literal byte-regression recordings retain the live writer's intentional empty tab-order suffix.
+**/facts.md whitespace=-blank-at-eol

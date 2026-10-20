@@ -1,0 +1,137 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Before Roomwise",
+    "height": 416,
+    "section": "Compare",
+    "share": 0.37,
+    "side": "middle",
+    "top": 300,
+    "vacancy": {
+     "answer": "yes",
+     "container": {
+      "display": "grid",
+      "items": 2,
+      "placed": [
+       1,
+       0,
+       1
+      ],
+      "sel": "main > section:nth-of-type(2) > div.wrap > div.grid3:nth-of-type(2)",
+      "tracks": [
+       [
+        80,
+        432
+       ],
+       [
+        464,
+        816
+       ],
+       [
+        848,
+        1200
+       ]
+      ]
+     },
+     "evidence": {
+      "cover": 1,
+      "track": 2,
+      "track_x": [
+       464,
+       816
+      ]
+     },
+     "reason": "vacant_track"
+    },
+    "width": 416,
+    "x": 432
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Roomwise, layout fixture"
+    ],
+    "name": "Intro"
+   },
+   {
+    "blocks": [
+     "Compare",
+     "Before Roomwise",
+     "Rooms booked on paper, meetings that start late, rooms nobody uses.",
+     "With Roomwise",
+     "Every room on one board, freed again the moment nobody turns up."
+    ],
+    "name": "Compare"
+   }
+  ],
+  "cues": {
+   "by_cue": {},
+   "checked": 0,
+   "nav_links": 0,
+   "without": [],
+   "without_count": 0
+  },
+  "dark": false,
+  "frame": [
+   80,
+   1200
+  ],
+  "nav": {
+   "found": false
+  },
+  "overlays": [],
+  "page_height": 800,
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     165
+    ],
+    "chrome": false,
+    "name": "Intro"
+   },
+   {
+    "box": [
+     0,
+     165,
+     1280,
+     582
+    ],
+    "chrome": false,
+    "name": "Compare"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0,
+   "none": [
+    "Intro",
+    "Compare"
+   ],
+   "sections": [
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Intro",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Compare",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

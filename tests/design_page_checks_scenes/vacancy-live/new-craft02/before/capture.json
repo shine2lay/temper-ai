@@ -1,0 +1,55 @@
+{
+ "base_url": "(local site)",
+ "viewports": {
+  "desktop": [
+   1280,
+   800
+  ]
+ },
+ "axe": "4.13.0",
+ "axe_tags": [
+  "wcag2a",
+  "wcag2aa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag22aa"
+ ],
+ "pages": [
+  {
+   "page": "index.html",
+   "name": "index",
+   "views": [
+    {
+     "viewport": "desktop",
+     "size": [
+      1280,
+      800
+     ],
+     "tiles": [
+      "shots/index-desktop-1.png",
+      "shots/index-desktop-2.png",
+      "shots/index-desktop-3.png",
+      "shots/index-desktop-4.png",
+      "shots/index-desktop-5.png"
+     ],
+     "facts": "facts/index-desktop.json",
+     "axe_violations": 0,
+     "measured": {
+      "contrast_failures": 0,
+      "small_targets": 0,
+      "weak_boundaries": 0,
+      "unnamed_graphics": 0,
+      "long_lines": 0,
+      "no_focus_ring": 0,
+      "overflows": false,
+      "page_checks": 2
+     }
+    }
+   ]
+  }
+ ],
+ "page_checks": {
+  "primary_action": "Book a taster class",
+  "thresholds": "design_page_checks_thresholds.json"
+ }
+}

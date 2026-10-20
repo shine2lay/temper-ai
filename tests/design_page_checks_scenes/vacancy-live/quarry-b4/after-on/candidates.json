@@ -1,0 +1,57 @@
+[
+ {
+  "answer": "no",
+  "check": "empty-column",
+  "criterion": "page check: empty-column",
+  "element": "Questions: left column beside \"What can go in?\"",
+  "evidence": {
+   "beside": "What can go in?",
+   "beside_primary_action": false,
+   "content_width": 1120,
+   "first_screen": false,
+   "height": 560,
+   "section": "Questions",
+   "share": 0.43,
+   "side": "left",
+   "top": 3014,
+   "width": 477
+  },
+  "grade": "Should",
+  "id": "index-desktop-empty-column-1",
+  "if_yes": 2,
+  "kind": "measured",
+  "page": "index.html",
+  "reason": "in_item",
+  "rule": "craft-empty-column",
+  "severity": 2,
+  "vacancy": {
+   "answer": "no",
+   "container": {
+    "display": "grid",
+    "items": 2,
+    "placed": [
+     1,
+     1
+    ],
+    "sel": "#faq > div.wrap > div.faq-grid",
+    "tracks": [
+     [
+      80,
+      509
+     ],
+     [
+      557,
+      1200
+     ]
+    ]
+   },
+   "evidence": {
+    "item": "#faq > div.wrap > div.faq-grid > div",
+    "overlap": 429
+   },
+   "reason": "in_item"
+  },
+  "viewport": "desktop",
+  "width": 1280
+ }
+]

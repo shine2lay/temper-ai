@@ -1,0 +1,16 @@
+{
+  "counts": {
+    "Could": 0,
+    "Must": 0,
+    "Should": 0
+  },
+  "findings": [],
+  "pages": 1,
+  "primary_action": "Book a taster class",
+  "version": 1,
+  "viewports": {
+    "index": [
+      "desktop"
+    ]
+  }
+}

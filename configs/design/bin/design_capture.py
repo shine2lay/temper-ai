@@ -37,6 +37,7 @@ import base64
 import functools
 import http.server
 import json
+import os
 import pathlib
 import re
 import socket
@@ -230,7 +231,7 @@ async def page_checks(s: ClientSession, vp: str, view: str, checks: dict) -> dic
     t = checks["thresholds"]
     desktop = vp == "desktop" and view == vp
     src = pc.source(t, checks.get("primary", "") if vp == "mobile" else "", copy=desktop, columns=desktop,
-                    visuals=view == vp)
+                    visuals=view == vp, vacancy=desktop and bool(checks.get("vacancy")))
     raw = await run(s, "async (page) => await page.evaluate(" + json.dumps(src) + ")")
     raw = raw if isinstance(raw, dict) else {"error": str(raw)[:500]}
     if raw.get("overlays"):
@@ -517,6 +518,9 @@ async def main(args) -> dict:
         primary = getattr(args, "primary_action", "") or pc.primary_action(brief_text)
         checks = {"thresholds": pc.thresholds(), "primary": primary}
         index["page_checks"] = {"primary_action": primary, "thresholds": pc.THRESHOLDS.name}
+        if os.environ.get(pc.VACANCY_ENV) == "1":
+            checks["vacancy"] = True
+            index["page_checks"]["vacancy"] = True
     # The design context: --context, else (page checks on) the brief's "Design context:" line.
     context = getattr(args, "context", "") or (pc.design_context(brief_text) if checks is not None else "")
     if context:

@@ -1,13 +1,16 @@
-"""design_homepage_bar_interact (Design, queues #79, #96 and #110): the pure scorer and its maths. No browser.
+"""design_homepage_bar_interact (Design, queues #79, #96, #110 and #113): the pure scorer and its maths. No browser.
 
 The recorded raw files in configs/design/testpages/bar-interact-v1/raw/ and bar-interact-v2/raw/ come
 from real runs of the meter on the fixture pages; scoring each must give exactly the failing rows in
 its set's expected.json. bar-interact-v2 holds version 2's UI-part cases (H3c, WCAG 1.4.11). The
 test_h3d_* cases are version 3's speed gate (H3d): a fake load reader, clock and Lighthouse run.
+The test_a11* cases are version 4's A11 (d), motion with a purpose (#113): its sealed key
+bar-interact-a11-v1, and readings made up to hit each part of the definition.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -790,3 +793,432 @@ def test_h3d_e_a_real_speed_fail_still_differs(tmp_path, capsys):
     assert "fixture proof: 18/19 pages match, 1 differ, 0 could not measure" in (
         capsys.readouterr().out
     )
+
+
+# ---------------------------------------------------------------- A11 (d): motion with a purpose (#113)
+
+A11 = FIX.parent / "bar-interact-a11-v1"
+A11_KEY = json.loads((A11 / "expected.json").read_text())
+# The key's sha256, sealed in ~/design-lab/seals/bar-interact-a11-v1.json before version 4's code.
+A11_KEY_SHA256 = "b911ac91f7e1fc99abe691f42d022b32fbbe43db2ca11ddf8bf318310c4a0fdf"
+A11_SEAL = pathlib.Path.home() / "design-lab" / "seals" / "bar-interact-a11-v1.json"
+A11_WIDTHS = ("1440x900", "390x844")
+A11_ROWS = ("motion-signature", "motion-feedback", "motion-timing", "motion-reduced")
+A11D = pytest.mark.xfail(
+    strict=True, reason="A11d: the meter's version 4 code is written after its sealed key (#113)"
+)
+
+
+def test_a11_key_is_the_sealed_one():
+    assert hashlib.sha256((A11 / "expected.json").read_bytes()).hexdigest() == A11_KEY_SHA256
+    if A11_SEAL.exists():  # the seal is kept outside the repo, in ~/design-lab
+        seal = json.loads(A11_SEAL.read_text())
+        assert seal["files"] == {
+            "configs/design/testpages/bar-interact-a11-v1/expected.json": A11_KEY_SHA256
+        }
+
+
+def test_a11_key_holds_the_planned_cases():
+    pages = A11_KEY["pages"]
+    assert set(pages) == {p.name for p in A11.glob("*.html")} and len(pages) == 15
+    assert [tuple(c) for c in A11_KEY["checks"]] == [("A11", c) for c in A11_ROWS]
+    assert tuple(A11_KEY["widths"]) == A11_WIDTHS
+    fails = {p: {tuple(x) for x in spec["failing"]} for p, spec in pages.items()}
+    for page, rows in fails.items():
+        assert all(b == "A11" and c in A11_ROWS and w in A11_WIDTHS for b, c, w in rows), page
+
+    def both(*checks):
+        return {("A11", c, w) for c in checks for w in A11_WIDTHS}
+
+    assert fails["clean-motion.html"] == set()
+    assert fails["static.html"] == both("motion-signature", "motion-feedback")
+    plants = {
+        "entrance-second-screen.html": "motion-signature",
+        "no-hover-button.html": "motion-feedback",
+        "transition-800.html": "motion-timing",
+        "linear-easing.html": "motion-timing",
+        "loop-600.html": "motion-timing",
+        "reduced-ignored.html": "motion-reduced",
+    }
+    for page, check in plants.items():
+        assert fails[page] == both(check), page
+    for bad, good in (
+        ("timing-110.html", "timing-120.html"),
+        ("timing-520.html", "timing-500.html"),
+        ("loop-1000.html", "loop-1100.html"),
+    ):
+        assert fails[bad] == both("motion-timing") and fails[good] == set(), (bad, good)
+    assert fails["scroll-linked.html"] == set()
+    assert {c for rows in fails.values() for _, c, _ in rows} == set(A11_ROWS)
+
+
+def _a11_anim(**kw) -> dict:
+    """One recorded animation, as the reading writes it: by default the hero's 400 ms rise at load."""
+    rec = {
+        "kind": "CSSAnimation",
+        "name": "rise",
+        "selector": "h1.rise",
+        "pseudo": "",
+        "text": "Tide tables you can trust",
+        "box": [40, 568, 461, 110],
+        "duration": 400,
+        "iterations": 1,
+        "delay": 0,
+        "easings": [["linear", 0.0], ["cubic-bezier(0.2, 0, 0, 1)", 0.4127]],
+        "props": ["opacity", "transform"],
+        "seen": "load",
+        "scroll_driven": False,
+        "progress": None,
+    }
+    rec.update(kw)
+    return rec
+
+
+def _drift(**kw) -> dict:
+    """A scroll-driven animation (a scroll timeline): no duration in time, progress per scroll step."""
+    rec = dict(
+        name="drift",
+        selector="div.hero-art",
+        text="",
+        box=[1160, 160, 240, 160],
+        duration=None,
+        easings=[["linear", 0.0], ["linear", 0.0]],
+        props=["scale", "translate"],
+        scroll_driven=True,
+        progress=[0.171, 0.3, 0.45, 0.6, 0.75, 0.9, 1, 1],
+    )
+    rec.update(kw)
+    return _a11_anim(**rec)
+
+
+def _fb(sel: str, result: str) -> dict:
+    changes = [] if result in ("none", "covered") else [
+        ["self", "background-color", "rgb(14, 92, 99)", "rgb(10, 70, 76)"]
+    ]
+    return {
+        "selector": sel,
+        "text": sel.split(".")[-1],
+        "box": [40, 773, 200, 47],
+        "result": result,
+        "changes": changes,
+    }
+
+
+def _a11_reading(anims=(), feedback=(), smooth=(), vw=1440, vh=900) -> dict:
+    return {
+        "vw": vw,
+        "vh": vh,
+        "window_ms": 3000,
+        "steps": 8,
+        "anims": list(anims),
+        "feedback": list(feedback),
+        "smooth": list(smooth),
+    }
+
+
+def _a11_rows(normal, reduced, width="1440x900") -> dict:
+    rows = bi.score_a11d(normal, reduced, width)
+    assert [(r["bar"], r["check"], r["width"]) for r in rows] == [
+        ("A11", c, width) for c in A11_ROWS
+    ]
+    return {r["check"]: r for r in rows}
+
+
+@A11D
+def test_a11d_checks_and_sets():
+    assert bi.VERSION == 4
+    assert bi.FIXTURE_SETS == ("bar-interact-v1", "bar-interact-v2", "bar-interact-a11-v1")
+    assert [(b, c) for b, c, _ in bi.A11_CHECKS] == [("A11", c) for c in A11_ROWS]
+    assert bi.covered(KEY) == {(b, c) for b, c, _ in bi.CHECKS + bi.SPEED_CHECKS}
+    assert bi.covered(A11_KEY) == {("A11", c) for c in A11_ROWS}
+
+
+@A11D
+def test_a11d_signature_cases():
+    def sig(*anims, width="1440x900", vw=1440, vh=900):
+        return _a11_rows(
+            _a11_reading(anims, vw=vw, vh=vh), _a11_reading(vw=vw, vh=vh), width
+        )["motion-signature"]
+
+    r = sig(_a11_anim())
+    assert (r["value"], r["pass"]) == (1, True)
+    assert r["evidence"] == [
+        {
+            "selector": "h1.rise",
+            "text": "Tide tables you can trust",
+            "box": [40, 568, 461, 110],
+            "property": "opacity, transform",
+            "value": "animation rise 400 ms, load",
+        }
+    ]
+    assert (sig()["value"], sig()["pass"]) == (0, False)
+    # On an element of the first screen: its box overlaps the first viewport by more than 0.
+    assert sig(_a11_anim(box=[40, 1058, 437, 114]))["value"] == 0
+    assert sig(_a11_anim(box=[40, 899, 437, 114]))["value"] == 1
+    assert sig(_a11_anim(box=[40, 900, 437, 114]))["value"] == 0
+    assert sig(_a11_anim(box=[1440, 100, 50, 50]))["value"] == 0
+    assert sig(_a11_anim(box=[0, 0, 0, 0]))["value"] == 0
+    small = sig(_a11_anim(box=[20, 860, 350, 92]), width="390x844", vw=390, vh=844)
+    assert small["value"] == 0 and small["width"] == "390x844"
+    # It changes transform, translate, scale, rotate, opacity, clip-path or offset.
+    for prop in ("transform", "translate", "scale", "rotate", "opacity", "clip-path"):
+        assert sig(_a11_anim(props=[prop]))["value"] == 1, prop
+    for prop in ("offset", "offset-path", "offset-distance", "offset-rotate"):
+        assert sig(_a11_anim(props=[prop]))["value"] == 1, prop
+    for prop in ("color", "background-color", "filter", "box-shadow", "width", "top"):
+        assert sig(_a11_anim(props=[prop]))["value"] == 0, prop
+    # It starts within 3 s of load, or as the first 2 screens are scrolled.
+    assert sig(_a11_anim(seen="load-late"))["value"] == 0
+    reveal = _a11_anim(kind="CSSTransition", name="transform", props=["transform"])
+    assert sig(dict(reveal, seen="scroll3"))["value"] == 1
+    assert sig(dict(reveal, seen="scroll3"))["evidence"][0]["value"] == (
+        "transition transform 400 ms, scroll step 3"
+    )
+    assert sig(dict(reveal, seen="hover-press"))["value"] == 0
+    assert sig(dict(reveal, seen="end"))["value"] == 0
+    # It lasts 120 ms or more: its active duration (infinite counts).
+    assert sig(_a11_anim(duration=110))["value"] == 0
+    assert sig(_a11_anim(duration=120))["value"] == 1
+    assert sig(_a11_anim(duration=60, iterations=2))["value"] == 1
+    assert sig(_a11_anim(duration=100, iterations="infinite"))["value"] == 1
+    # Scroll-linked: a scroll-driven animation whose progress moves with the scroll.
+    r = sig(_drift())
+    assert (r["value"], r["evidence"][0]["value"]) == (1, "animation drift, scroll-linked")
+    assert sig(_drift(progress=[1] * 8))["value"] == 0
+    assert sig(_drift(progress=None))["value"] == 0
+    assert sig(_drift(box=[40, 1058, 437, 114]))["value"] == 0
+    assert sig(_a11_anim(), _drift(), reveal)["value"] == 2
+
+
+@A11D
+def test_a11d_timing_cases():
+    def timing(*anims):
+        return _a11_rows(_a11_reading(anims), _a11_reading())["motion-timing"]
+
+    ok = timing(_a11_anim(), _a11_anim(duration=120), _a11_anim(duration=500))
+    assert (ok["value"], ok["pass"], ok["evidence"]) == (0, True, [])
+    for ms in (110, 520, 800):
+        assert (timing(_a11_anim(duration=ms))["value"], timing(_a11_anim(duration=ms))["pass"]) == (1, False), ms
+    assert timing(_a11_anim(duration=110))["evidence"][0]["value"] == (
+        "animation 110 ms cubic-bezier(0.2, 0, 0, 1): under 120 ms"
+    )
+    # Linear: every timing function that applies is on the diagonal (within 0.001).
+    lin = timing(_a11_anim(easings=[["linear", 0.0], ["linear", 0.0]]))
+    assert (lin["value"], lin["evidence"][0]["property"], lin["evidence"][0]["value"]) == (
+        1,
+        "rise",
+        "animation 400 ms linear: linear timing",
+    )
+    flat = [["linear", 0.0], ["cubic-bezier(0.3, 0.3, 0.7, 0.7)", 0.0004]]
+    assert timing(_a11_anim(easings=flat))["value"] == 1
+    assert timing(_a11_anim(easings=[["linear", 0.0], ["steps(4, end)", 0.2]]))["value"] == 0
+    # A CSS transition's timing function is on its effect.
+    tr = _a11_anim(
+        kind="CSSTransition",
+        name="background-color",
+        selector="a.btn",
+        easings=[["cubic-bezier(0, 0, 0.58, 1)", 0.2],["linear", 0.0]],
+        props=["background-color"],
+        duration=800,
+        seen="hover-press",
+    )
+    ev = timing(tr)["evidence"][0]
+    assert (ev["selector"], ev["property"], ev["value"]) == (
+        "a.btn",
+        "background-color",
+        "transition 800 ms cubic-bezier(0, 0, 0.58, 1): over 500 ms",
+    )
+    both = timing(dict(tr, easings=[["linear", 0.0], ["linear", 0.0]]))["evidence"][0]
+    assert both["value"] == "transition 800 ms linear: over 500 ms, linear timing"
+    # Infinite loops longer than 1000 ms are exempt; a loop of exactly 1000 ms is not.
+    assert timing(_a11_anim(duration=1100, iterations="infinite"))["value"] == 0
+    assert timing(_a11_anim(duration=1100, iterations="infinite", easings=[["linear", 0.0]]))["value"] == 0
+    loop = timing(_a11_anim(name="pulse", duration=1000, iterations="infinite"))
+    assert loop["value"] == 1
+    assert loop["evidence"][0]["value"] == (
+        "animation 1000 ms cubic-bezier(0.2, 0, 0, 1), infinite: over 500 ms"
+    )
+    assert timing(_a11_anim(duration=600, iterations="infinite"))["value"] == 1
+    assert timing(_a11_anim(duration=1100, iterations=3))["value"] == 1
+    # Delays are not counted; 0 s means none; a scroll-driven animation has no duration in time.
+    assert timing(_a11_anim(delay=2000, duration=300))["value"] == 0
+    assert timing(_a11_anim(duration=0))["value"] == 0
+    assert timing(_drift())["value"] == 0
+    # Every animation of the normal reading counts, wherever it is and however it starts.
+    far = _a11_anim(box=[40, 3000, 100, 100], seen="end", props=["color"], duration=900)
+    assert timing(far)["value"] == 1
+    six = timing(*[_a11_anim(name=f"a{i}", duration=900) for i in range(6)])
+    assert (six["value"], len(six["evidence"])) == (6, 5)
+    # The reduced reading is not read here.
+    assert _a11_rows(_a11_reading(), _a11_reading([_a11_anim(duration=900)]))[
+        "motion-timing"
+    ]["pass"] is True
+
+
+@A11D
+def test_a11d_linear_is_every_timing_function_on_the_diagonal():
+    assert bi.is_linear([["linear", 0.0]])
+    assert bi.is_linear([["linear", 0.0], ["cubic-bezier(0.3, 0.3, 0.7, 0.7)", 0.001]])
+    assert not bi.is_linear([["linear", 0.0], ["ease", 0.0912]])
+    assert not bi.is_linear([["linear", 0.0], ["linear", 0.0011]])
+
+
+@A11D
+def test_a11d_reduced_cases():
+    def red(*anims, smooth=()):
+        return _a11_rows(
+            _a11_reading([_a11_anim()]), _a11_reading(anims, smooth=smooth)
+        )["motion-reduced"]
+
+    assert (red()["value"], red()["pass"], red()["evidence"]) == (0, True, [])
+    r = red(_a11_anim())
+    assert (r["value"], r["pass"]) == (1, False)
+    assert (r["evidence"][0]["property"], r["evidence"][0]["value"]) == (
+        "transform",
+        "animation rise 400 ms",
+    )
+    moves = (
+        "transform", "translate", "scale", "rotate", "offset", "offset-distance",
+        "top", "left", "inset", "inset-inline-start", "margin-top", "width", "max-height",
+        "min-width", "block-size", "background-position", "background-position-x",
+        "object-position",
+    )
+    for prop in moves:
+        assert red(_a11_anim(props=[prop]))["value"] == 1, prop
+    for prop in ("opacity", "color", "background-color", "filter", "box-shadow", "clip-path"):
+        assert red(_a11_anim(props=[prop]))["value"] == 0, prop
+    # Under one frame (17 ms) nothing is drawn between start and end.
+    assert red(_a11_anim(duration=0.01))["value"] == 0
+    assert red(_a11_anim(duration=16.9))["value"] == 0
+    assert red(_a11_anim(duration=17))["value"] == 1
+    assert red(_a11_anim(duration=0.01, iterations="infinite"))["value"] == 0
+    # A scroll-driven one moves when its progress is not the same after every step.
+    assert red(_drift())["value"] == 1
+    assert red(_drift(progress=[0] * 8))["value"] == 0
+    s = red(smooth=[{"selector": "html", "text": "", "box": [0, 0, 1440, 2400]}])
+    assert (s["value"], s["evidence"][0]["property"], s["evidence"][0]["value"]) == (
+        1,
+        "scroll-behavior",
+        "smooth",
+    )
+    assert red(_a11_anim(), _drift(), smooth=[{"selector": "html", "text": "", "box": [0, 0, 1, 1]}])["value"] == 3
+    # The normal reading is not read here.
+    assert _a11_rows(_a11_reading([_a11_anim()]), _a11_reading())["motion-reduced"]["pass"] is True
+
+
+@A11D
+def test_a11d_feedback_cases():
+    def fb(*items):
+        return _a11_rows(_a11_reading([_a11_anim()], feedback=items), _a11_reading())[
+            "motion-feedback"
+        ]
+
+    r = fb(_fb("a.btn", "hover"), _fb("input.email", "press"))
+    assert (r["value"], r["pass"], r["evidence"]) == (0, True, [])
+    many = [_fb(f"a.n{i}", "none") for i in range(7)] + [
+        _fb("a.skip", "covered"),
+        _fb("a.ok", "hover"),
+    ]
+    r = fb(*many)
+    assert (r["value"], r["pass"], len(r["evidence"])) == (8, False, 8)
+    assert r["evidence"][0] == {
+        "selector": "a.n0",
+        "text": "n0",
+        "box": [40, 773, 200, 47],
+        "property": "feedback",
+        "value": "no change on hover or press",
+    }
+    assert (r["evidence"][-1]["selector"], r["evidence"][-1]["value"]) == ("a.skip", "covered")
+    assert (fb()["value"], fb()["pass"]) == (0, True)
+
+
+@A11D
+def test_a11d_a_failed_reading_could_not_measure():
+    rows = _a11_rows({"error": "TimeoutError: boom"}, _a11_reading())
+    assert [rows[c]["pass"] for c in A11_ROWS] == [None, None, None, True]
+    assert rows["motion-signature"]["evidence"] == [
+        {
+            "selector": "",
+            "text": "error: TimeoutError: boom",
+            "box": [0, 0, 0, 0],
+            "property": "",
+            "value": "",
+        }
+    ]
+    rows = _a11_rows(_a11_reading([_a11_anim()]), {"error": "TimeoutError: boom"})
+    assert [rows[c]["pass"] for c in A11_ROWS] == [True, True, True, None]
+    rows = _a11_rows(None, None)
+    assert [rows[c]["pass"] for c in A11_ROWS] == [None] * 4
+
+
+@A11D
+def test_a11d_rows_come_last_and_older_raw_files_have_none():
+    old = json.loads((FIX / "raw" / "clean.json").read_text())
+    before = bi.score(old)
+    assert not any(r["bar"] == "A11" for r in before["rows"])
+    assert "A11" not in bi.to_md(before)
+    raw = json.loads(json.dumps(old))
+    raw["version"] = 4
+    for width in A11_WIDTHS:
+        vw, vh = (int(v) for v in width.split("x"))
+        raw["phases"][width]["a11d"] = _a11_reading(
+            [_a11_anim()], [_fb("a.btn", "hover")], vw=vw, vh=vh
+        )
+        raw["phases"][width]["a11d_reduced"] = _a11_reading(vw=vw, vh=vh)
+    doc = bi.score(raw)
+    n = 2 * len(bi.CHECKS) + len(bi.SPEED_CHECKS)
+    assert len(doc["rows"]) == n + 8 and doc["version"] == 4
+    assert doc["rows"][:n] == before["rows"]
+    assert [(r["bar"], r["check"], r["width"]) for r in doc["rows"][n:]] == [
+        ("A11", c, w) for c in A11_ROWS for w in A11_WIDTHS
+    ]
+    assert all(r["pass"] is True for r in doc["rows"][n:])
+    for r in doc["rows"][n:]:
+        for e in r["evidence"]:
+            assert set(e) == {"selector", "text", "box", "property", "value"}
+    assert bi.tally(doc)["bars"]["A11"] == "met"
+    cls = next(r for r in doc["rows"] if r["check"] == "cls")
+    md = bi.to_md(doc)
+    assert "- A11 (d): met\n" in md
+    assert (
+        f"  - A8 cls 412x823, next to (d): {cls['value']} ({bi.OUTCOME[cls['pass']]})\n" in md
+    )
+    raw["phases"]["390x844"]["a11d"]["anims"] = []
+    md = bi.to_md(bi.score(raw))
+    assert "- A11 (d): not met (motion-signature 390x844)\n" in md
+    # A version 4 raw file with no readings could not measure them.
+    del raw["phases"]["1440x900"]["a11d"]
+    rows = {(r["check"], r["width"]): r for r in bi.score(raw)["rows"]}
+    assert rows[("motion-signature", "1440x900")]["pass"] is None
+    assert rows[("motion-reduced", "1440x900")]["pass"] is True
+
+
+@A11D
+@pytest.mark.parametrize("page", sorted(A11_KEY["pages"]))
+def test_a11d_recorded_raw_scores_to_the_key(page):
+    raw = json.loads((A11 / "raw" / (page.rsplit(".", 1)[0] + ".json")).read_text())
+    assert raw["version"] == 4 and raw["page"] == f"bar-interact-a11-v1/{page}"
+    cov = bi.covered(A11_KEY)
+    rows = [r for r in bi.score(raw)["rows"] if (r["bar"], r["check"]) in cov]
+    assert len(rows) == 8 and all(r["pass"] is not None for r in rows)
+    got = {(r["bar"], r["check"], r["width"]) for r in rows if r["pass"] is not True}
+    assert got == {tuple(x) for x in A11_KEY["pages"][page]["failing"]}
+
+
+@A11D
+def test_a11d_fixture_proof_from_the_recorded_raw_files(tmp_path, capsys):
+    out = tmp_path / "all"
+    code = bi.main(["--fixture-proof", "--from-raw", str(FIX.parent), "--out", str(out)])
+    proof = json.loads((out / "fixture-proof.json").read_text())
+    assert code == 0 and proof["all_match"] is True
+    assert (proof["match"], len(proof["pages"])) == (34, 34)
+    assert [p["set"] for p in proof["pages"]].count("bar-interact-a11-v1") == 15
+    assert "fixture proof: 34/34 pages match, 0 differ, 0 could not measure" in (
+        capsys.readouterr().out
+    )
+    one = tmp_path / "a11"
+    args = ["--fixture-proof", "--from-raw", str(FIX.parent), "--out", str(one)]
+    code = bi.main(args + ["--set", "bar-interact-a11-v1"])
+    proof = json.loads((one / "fixture-proof.json").read_text())
+    assert code == 0 and (proof["match"], len(proof["pages"])) == (15, 15)
+    assert {p["set"] for p in proof["pages"]} == {"bar-interact-a11-v1"}

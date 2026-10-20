@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidewell: calm tide charts (bar-interact-a11-v1 reduced-ignored)</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="motion.css">
+<script src="motion.js" defer></script>
+<style>
+/* The plant: this page ignores prefers-reduced-motion. The hero's rise and smooth scrolling are set
+   outside the media query, so under reduce the hero still moves in and the page still scrolls
+   smoothly. */
+html { scroll-behavior: smooth; }
+.rise { animation: rise 400ms cubic-bezier(0.2, 0, 0, 1) both; }
+.rise-2 { animation-delay: 80ms; }
+.rise-3 { animation-delay: 160ms; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="#top">Tidewell</a>
+  <nav aria-label="Main">
+    <a class="nav-link" href="#how">How it works</a>
+    <a class="nav-link" href="#faq">Questions</a>
+    <a class="nav-link" href="#join">Join</a>
+  </nav>
+</header>
+<main id="top">
+  <section class="hero">
+    <h1 class="rise">Calm tide charts for small harbours</h1>
+    <p class="rise rise-2">Tidewell turns the tide tables for your harbour into one clear chart each morning.</p>
+    <div class="actions rise rise-3">
+      <a class="btn btn-primary" href="#join">Start a free chart</a>
+      <div class="btn btn-outline" role="button" tabindex="0">Play the tour</div>
+    </div>
+  </section>
+  <section class="cards" id="how">
+    <h2>How it works</h2>
+    <div class="grid">
+      <article class="card reveal"><h3><a class="card-link" href="#pick">Pick a harbour</a></h3><p>Choose one of the harbours we chart.</p></article>
+      <article class="card reveal"><h3><a class="card-link" href="#set">Set your hours</a></h3><p>Tell us when you go out on the water.</p></article>
+      <article class="card reveal"><h3><a class="card-link" href="#read">Read the chart</a></h3><p>One chart shows the safe hours for the day.</p></article>
+    </div>
+  </section>
+  <section class="faq" id="faq">
+    <h2>Questions</h2>
+    <details><summary>Which harbours do you chart?</summary><p>Forty small harbours on the south and west coasts.</p></details>
+    <details><summary>When does the chart arrive?</summary><p>At five each morning, before the first tide turns.</p></details>
+  </section>
+  <section class="join" id="join">
+    <h2>Join the list</h2>
+    <form class="signup" action="#join">
+      <label for="email">Email address</label>
+      <input id="email" name="email" type="email" autocomplete="email">
+      <label for="harbour">Harbour</label>
+      <select id="harbour" name="harbour"><option>Port Isaac</option><option>Mousehole</option><option>Tenby</option></select>
+      <button class="btn btn-primary" type="submit">Join the list</button>
+    </form>
+  </section>
+</main>
+<footer class="site-footer">
+  <a class="foot-link" href="#privacy">Privacy</a>
+  <a class="foot-link" href="#contact">Contact</a>
+</footer>
+</body>
+</html>

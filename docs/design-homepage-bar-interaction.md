@@ -2,8 +2,9 @@
 
 Part 2 measures what part 1 (`docs/design-homepage-bar.md`, queue #78) leaves out: keyboard,
 focus, hover, motion, reduced motion and speed, for one built homepage, against the interaction
-and speed lines of `~/design-lab/homepage-workflow/BAR.md` (A4, A7, A8). It uses no model
-(AGENTS rule 17): every row is a measured number checked against a fixed limit.
+and speed lines of `~/design-lab/homepage-workflow/BAR.md` (A4, A7, A8) and, since version 4, A11 (d),
+motion with a purpose. It uses no model (AGENTS rule 17): every row is a measured number checked
+against a fixed limit.
 
 - `configs/design/bin/design_homepage_bar_interact.js`: in-page helpers (one function expression
   that installs `window.__bi`). They return raw measurements only, with no limits in them.
@@ -14,6 +15,9 @@ and speed lines of `~/design-lab/homepage-workflow/BAR.md` (A4, A7, A8). It uses
 - `configs/design/testpages/bar-interact-v2/`: the keyed cases for version 2's UI-part reading
   (each page is bar-interact-v1's `clean.html` plus one case), with a copy of `base.css`, its own
   `expected.json` and `raw/*.json`.
+- `configs/design/testpages/bar-interact-a11-v1/`: the sealed keyed cases for version 4's A11 (d)
+  rows (each planted page is its `clean-motion.html` plus one plant), with its own `base.css`,
+  `expected.json` and `raw/*.json`. The key's sha256 is in `~/design-lab/seals/bar-interact-a11-v1.json`.
 - `tests/test_design_homepage_bar_interact.py`: the scorer on every recorded raw file must give
   exactly the key, plus unit tests of the maths. No browser in the tests.
 
@@ -26,7 +30,7 @@ page pass. Limits are BAR.md's, word for word; the meter never changes a limit.
 ```
 design_homepage_bar_interact.py --site DIR [--page index.html] --out DIR [--browser URL] \
     [--serve-host HOST] [--lighthouse DIR] [--chrome PATH] [--no-speed] [--raw-only | --from-raw DIR]
-design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw DIR] [...]
+design_homepage_bar_interact.py --fixture-proof --out DIR [--set NAME ...] [--record] [--from-raw DIR] [...]
 ```
 
 - Browser: temper's playwright-mcp service (default `http://playwright-mcp:8931/mcp`; from the host
@@ -45,8 +49,10 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   `bars-interact.md`, plus `shots/` (the focus crops, for checking a row by eye).
   `--raw-only` stops after `raw-interact.json`; `--from-raw DIR` scores `DIR/raw-interact.json`
   with no browser.
-- `--fixture-proof` measures every page in `bar-interact-v1/expected.json` and
-  `bar-interact-v2/expected.json` and compares its failing rows with the key (exact set equality).
+- `--fixture-proof` measures every page in `bar-interact-v1/expected.json`,
+  `bar-interact-v2/expected.json` and `bar-interact-a11-v1/expected.json` and compares its failing
+  rows with the key (exact set equality, over the rows the key covers). `--set NAME` (repeatable)
+  limits it to the named sets.
   `--record` also saves each raw file to its set's `raw/`. With `--from-raw DIR` it re-scores
   `DIR/<set>/raw/<page>.json` instead (DIR is normally `configs/design/testpages`, the recorded runs).
   Its outputs go to `--out`'s `<set>/<page>/` folders.
@@ -56,9 +62,9 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
 `bars-interact.json`:
 `{meter, version, page, page_sha256, widths, rows: [{bar, check, width, value, limit, pass, evidence}]}`
 
-- `meter` is `design_homepage_bar_interact`; `version` is `3` (UI parts read per WCAG 1.4.11 since
-  version 2, and speed rows measured only on a quiet machine since version 3, both 2026-10-19; see
-  "Changes to definitions").
+- `meter` is `design_homepage_bar_interact`; `version` is `4` (UI parts read per WCAG 1.4.11 since
+  version 2, and speed rows measured only on a quiet machine since version 3, both 2026-10-19; the
+  four A11 (d) rows since version 4, 2026-10-20; see "Changes to definitions").
 - `page` is the page's path; `page_sha256` is the sha256 of its HTML file.
 - `widths`: `["1440x900", "390x844", "412x823"]`. `412x823` is Lighthouse's mobile preset (its
   emulated Moto G Power screen) and is used only by the three speed rows.
@@ -69,7 +75,11 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   coordinates in CSS px, for the elements that fail the row (for motion-present, the elements
   that move). For an element that moves (animation, transition or transform evidence), the box is
   its layout box without transforms (the offset box), so it does not drift from run to run.
-- Rows come in a fixed order (the check order below, then width), and the file has no timestamps.
+  The A11 (d) rows' items also have `property` and `value` (what moves or fails, and how: for
+  example `property: "background-color"`, `value: "transition 800 ms ease"`). The motion-feedback
+  row's evidence lists every element without feedback, not only 5 (BAR.md's row names them all).
+- Rows come in a fixed order (the check order below, then width; the speed rows, then the four
+  A11 (d) rows at each of the two widths, come last), and the file has no timestamps.
   Two runs of the same page give identical rows, except the speed rows' values (lab timings
   vary run to run; their pass or fail must not). On a busy machine a speed row may come out `null`
   (could not measure) instead; the gate never turns it into a pass or a fail.
@@ -77,7 +87,9 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
 `bars-interact.md` has the table `bar | check | width | value | limit | pass` (pass `yes`, `no` or
 `could not measure`) and a summary per bar. A bar is met only when every one of its rows passes:
 its line says `met`; otherwise `not met (check width, ...)` for the rows that fail and
-`could not measure (check width, ...)` for the rows with no value, joined by `; `. Under the bars,
+`could not measure (check width, ...)` for the rows with no value, joined by `; `. The A11 line
+covers only the (d) rows (part 1 has A11's other rows), and the line under it reports A8's `cls`
+row next to (d), unchanged (see "Motion with a purpose"). Under the bars,
 the line `Rows: X met, Y not met, Z could not measure.` counts the rows apart. Then come
 "Evidence for rows not met" (the `false` rows, with their evidence) and "Rows that could not be
 measured" (each `null` row with its reason, and the elements its evidence names, if any). Merging
@@ -324,7 +336,152 @@ before.
 | cls | A8 | 412x823 | CLS 0.1 or less |
 | tbt | A8 | 412x823 | total blocking time 200 ms or less |
 
-## The fixture proof (bar-interact-v1 and bar-interact-v2)
+### Motion with a purpose (A11 (d), version 4)
+BAR.md A11 (d): "Motion with a purpose: one signature motion moment on the first screen (entrance or
+scroll-linked); hover or press feedback on every interactive element (transform, shadow or colour
+change); transitions 120-500 ms with easing, and nothing but loops longer than 1 s; all of it stops
+under prefers-reduced-motion, and A8's CLS still holds." BAR.md's words are fixed. The numbers they
+leave open were set by Design (home) for queue #113, before any code and before any real page was
+measured, and the sealed key `bar-interact-a11-v1` holds the meter to them. The row's own sources:
+Material 3 motion durations, NN/g animation timing (100-500 ms), Apple HIG motion, WCAG 2.3.3.
+Widths: 1440x900 and 390x844.
+
+Two readings per width, each a fresh load, taken after every older phase of both widths (so the
+older rows are measured exactly as before): the normal reading (`prefers-reduced-motion:
+no-preference`) for the signature, feedback and timing rows, and the reduced reading (`reduce`
+emulated) for the reduced-motion row. Each reading has four steps:
+
+1. Load. A script added before the page's own scripts reads `document.getAnimations()` on every
+   animation frame, from the start of the load to the end of the reading, and records every
+   animation it sees whose target is an element: CSS animations, CSS transitions and Web
+   Animations. The page loads with the mouse off the page (-20, -20). The meter waits for network
+   idle and fonts, then until 3,100 ms after the end of the load event (`loadEventEnd`), so every
+   animation that starts within 3 s of load has been seen.
+2. Scroll. The first 2 screens are scrolled in 8 instant steps of a quarter of the viewport height
+   (to twice its height), with 200 ms after each step. After each step the progress of every
+   scroll-driven animation (one on a scroll or view timeline) is read.
+3. Hover and press: every element of the feedback check, as described there.
+4. End. The page is scrolled to the top and settled (as in "How a page is loaded"). Each recorded
+   animation's target box is read: its layout box without transforms, at scroll 0. The elements
+   whose computed `scroll-behavior` is `smooth` are listed.
+
+An animation's record: its kind (CSS animation, CSS transition or Web Animation); its name (the
+animation name, the transition's property or the Web Animation's id); its target (selector and
+pseudo-element); its duration (one iteration, in ms), iterations and delay; its timing functions
+(the effect's, and each keyframe's except the last, which never applies); the properties it
+changes (a transition's property; for the others, each property in its keyframes, except one
+that has the same value in every keyframe, the first and last included); when it was first seen
+(the load step, scroll step 1 to 8, or hover and press); and, if it is scroll-driven, its progress
+after each scroll step. One animation is one (kind, target, pseudo-element, name, duration, timing
+function): a transition that runs on every hover counts once. An animation that starts and ends
+between two frames (under about 17 ms) is not seen.
+
+motion-signature. "At least one animation (document.getAnimations(): CSS animation, transition or
+Web Animations) on an element of the first screen. It must change transform, translate, scale,
+rotate, opacity, clip-path or offset. It starts within 3 s of load, or as the first 2 screens are
+scrolled (a scroll-timeline or view-timeline, or a class or style change on scroll, read after
+each scroll step). It lasts 120 ms or more." Read as:
+
+- An element of the first screen: its target box (above) overlaps the first viewport (0 to the
+  width, 0 to the height) by more than 0.
+- Offset: any of `offset-path`, `offset-distance`, `offset-rotate`, `offset-anchor` and
+  `offset-position`.
+- Starts within 3 s of load: first seen in the load step, and its active start (start time plus
+  delay, on the document timeline) is at most 3,000 ms after the end of the load event.
+- Starts as the first 2 screens are scrolled: first seen during a scroll step (a class or style
+  change on scroll started it), or scroll-driven with a progress that is not the same after every
+  scroll step (it moves with the scroll). A script that writes a style on every scroll event, with
+  no animation or transition, makes nothing in `document.getAnimations()`, so it is not an
+  animation here.
+- Lasts 120 ms or more: its active duration (duration times iterations; infinite counts) is
+  120 ms or more. A scroll-driven animation has no length in time; it lasts as long as the scroll,
+  so its progress changing stands for it.
+
+motion-feedback. "Every visible interactive element is checked: a[href], button, [role=button],
+input, select, textarea and summary. Scroll each one into view. Hover it, wait past its transition,
+and compare computed styles. If nothing changed, press (mouse down, read, mouse up). Met per element
+when transform, box-shadow, filter, opacity or a colour property (color, background-color or
+background-image, border-color, outline-color, text-decoration-color or text-decoration-line, fill,
+stroke) differs. The row lists the elements without feedback." Read as:
+
+- The elements: visible (as defined above), not `input[type=hidden]`, not disabled, not inside
+  `[inert]`, in document order.
+- For each: the mouse moves off the page (-20, -20); the element is scrolled to the viewport's
+  centre; 2 animation frames; settle; the rest values are read.
+- Hover: the mouse moves to the element's hover point, found as for hover states (its centre, or
+  the first of its four inset corners where `elementFromPoint` is the element or inside it). An
+  element with no such point is first given focus and its rest values are read focused; with none
+  even then, it is "covered" and has no feedback. 2 frames; settle (every finite animation and
+  transition is finished, so the reading is past its transition); the values are read.
+- Press, only when the hover changed nothing: mouse down at the same point; 2 frames; settle; the
+  values are read; mouse up. The click that follows is cancelled by a listener the meter adds
+  before the page's own, so nothing navigates, submits or toggles. Then the element is blurred,
+  and for a `select`, Escape closes its list.
+- Compared, on the element, its descendant elements (the first 60) and their rendered `::before`
+  and `::after`, as for hover states: `transform`, `translate`, `scale` and `rotate` (transform),
+  `box-shadow`, `filter`, `opacity`, `color`, `background-color`, `background-image`, the four
+  border colours (border-color), `outline-color`, `text-decoration-color`, `text-decoration-line`,
+  `fill` and `stroke`. As for hover states, a property that draws nothing is not compared: a border
+  side's colour only when its style is not none or hidden and its width is more than 0 in at least
+  one of the two states; `outline-color` only when `outline-style` is not none and `outline-width`
+  is more than 0 in at least one; `text-decoration-color` only when `text-decoration-line` is not
+  none in at least one.
+
+motion-timing. "Every transition and animation duration is 120-500 ms, with a non-linear timing
+function. Infinite loops longer than 1000 ms are exempt. Delays are not counted. 0 s means none."
+Read as:
+
+- Every animation of the normal reading (load, scroll, hover and press).
+- Its duration is one iteration's. 120 ms and 500 ms are inside the range. A duration of 0 is no
+  animation and is not counted. A scroll-driven animation has no duration in time and is not
+  counted here.
+- An infinite loop longer than 1000 ms: infinite iterations and a duration of more than 1000 ms
+  (a loop of exactly 1000 ms is not exempt).
+- Linear: every timing function that applies to it (the effect's, and each keyframe's except the
+  last) is linear, that is, its output equals its input at 0.1, 0.2, ... 0.9 within 0.001. So
+  `linear`, `cubic-bezier(a, a, b, b)` and a `linear()` on the diagonal are linear; `ease`, other
+  curves and `steps()` are not. (A CSS animation's timing function is on its keyframes; a CSS
+  transition's is on its effect.)
+
+motion-reduced. "Reload with prefers-reduced-motion: reduce emulated. Met when no animation or
+transition changes transform, translate, scale, rotate, offset, position, size or scroll." Read as:
+
+- Every animation of the reduced reading (the same load, scroll, hover and press).
+- Offset: as above. Position: `top`, `right`, `bottom`, `left` and the `inset` properties, the
+  margins, `background-position` and `object-position` (each moves a box or its picture). Size:
+  `width`, `height`, `inline-size` and `block-size`, and their `min-` and `max-`. Scroll: smooth
+  scrolling, read as an element whose computed `scroll-behavior` is `smooth`.
+- Counted: an animation that changes one of these with a duration of 17 ms or more (under one
+  frame at 60 Hz no step is drawn between its start and end, so nothing moves; the common reset
+  `animation-duration: 0.01ms` lands here), or a scroll-driven one whose progress is not the same
+  after every scroll step.
+- Colour, opacity and blur (`filter`) may remain, because WCAG 2.3.3's Understanding defines
+  motion animation as movement, not colour or opacity changes. The definition it quotes (WCAG 2.2,
+  fetched 2026-10-20): "addition of steps between conditions to create the illusion of movement or
+  to give a sense of a smooth transition", and "Motion animation does not include changes of color,
+  blurring, or opacity which do not change the perceived size, shape, or position of the element."
+  The page also lists an erratum, "Amending the definition to not exclude blurring"; blur stays
+  allowed here, as decided, and a later version may follow the erratum.
+- Video is not read here; A4's reduced-motion-video row reads it.
+
+CLS: A8's `cls` row (412x823) is reported next to (d), unchanged. In `bars-interact.md` the A11
+line is followed by its value and outcome. It is not a new row: its value, limit and pass are A8's
+(BAR.md: "and A8's CLS still holds").
+
+| check | bar | definition | limit |
+|---|---|---|---|
+| motion-signature | A11 | Signature animations, as above. Value: their number; met at 1 or more. Evidence: up to 5 (property: what they change; value: kind, name, duration and how they start, for example `animation rise 400 ms, load`). | one signature motion moment on the first screen (entrance or scroll-linked) |
+| motion-feedback | A11 | Elements with no hover or press feedback. Value: their number; met at 0. Evidence: every one of them (value `no change on hover or press`, or `covered`). | hover or press feedback on every interactive element (transform, shadow or colour change) |
+| motion-timing | A11 | Animations of the normal reading outside 120-500 ms, or linear, and not exempt. Value: their number; met at 0. Evidence: up to 5 (property: the animation name or transition property; value: kind, duration and timing function, for example `transition 800 ms ease`). | transitions 120-500 ms with easing, and nothing but loops longer than 1 s |
+| motion-reduced | A11 | Animations of the reduced reading that move, plus elements with smooth scrolling. Value: their number; met at 0. Evidence: up to 5 (property: what moves; value: kind, name and duration, or `scroll-behavior smooth`). | all of it stops under prefers-reduced-motion |
+
+Raw file: `phases[width]` gets `a11d` (the normal reading) and `a11d_reduced`, each
+`{vw, vh, window_ms, steps, anims, feedback, smooth}`, or `{error}` when the reading failed; then its
+rows are `null` (could not measure): the first three rows for the normal reading, motion-reduced
+for the reduced one. Raw files from before version 4 have no such readings and are scored as
+before, with no A11 rows.
+
+## The fixture proof (bar-interact-v1, bar-interact-v2 and bar-interact-a11-v1)
 `bar-interact-v1/expected.json` was written before the meter, with each page's exact failing
 `(bar, check, width)` rows. `bar-interact-v2/expected.json` (five keyed cases for version 2's UI-part
 reading) was written before version 2's code. `clean.html` meets every part-2 check; each planted page is
@@ -332,6 +489,21 @@ reading) was written before version 2's code. `clean.html` meets every part-2 ch
 right only when its failing rows equal the key exactly on every page, in two runs, with identical
 non-speed rows and the same pass or fail on every speed row in both runs. When they differ, the
 meter is fixed, never the key.
+
+`bar-interact-a11-v1/expected.json` (version 4's key) was written before version 4's code, and its
+sha256 was sealed in `~/design-lab/seals/bar-interact-a11-v1.json` before the code too. Its
+`clean-motion.html` meets every A11 (d) row; `static.html` (no motion at all) fails the signature
+and feedback rows; every other page is `clean-motion.html` plus one plant, one plant per check,
+with near-threshold pairs (110 against 120 ms, 500 against 520 ms, a 1000 against an 1100 ms loop)
+and a page whose only signature is scroll-linked. A key may name the rows it covers (`checks`, a
+list of `[bar, check]`): the A11 set covers only the four A11 (d) rows, and the older sets, which
+name none, cover every row but A11's. Rows a key does not cover are left out of its comparison.
+Version 4's proof: every page of the three sets matches its key in 3 of 3 runs, with the non-speed
+rows byte-identical between runs, and the raw A11 readings (`a11d`, `a11d_reduced`) byte-identical
+too. (The older normal-motion reading keeps the live transform values of running animations, so
+that part of the raw file differs from run to run by design, as it has since version 1; its rows do
+not.) The A11 set keys no speed row, so its repeat runs may use `--no-speed`; one full run with
+speed is kept.
 
 Since version 3 each page gets one of three verdicts:
 
@@ -492,3 +664,34 @@ each run, so a run under way finishes, and a page's speed step takes at most 600
 the last reading of 6 or more, to two decimals; the load is the whole machine's, the meter's own
 Lighthouse and Chrome included; a Lighthouse error still ends the step as before; raw files measured
 before version 3 have no loads and are scored as before. `version` becomes 3.
+
+### Version 4, 2026-10-20 (Design, queue #113): A11 (d), motion with a purpose
+
+Written before version 4's code, and before any page was measured with it. This is a new
+measurement, not an improvement: the owner asked on 2026-10-19 for pages that are modern and
+dynamic, BAR.md row A11 measures it, and `~/design-lab/homepage-workflow/HYPOTHESES.md` ("A11
+meter") says it gets a proof instead of a hypothesis. The numbers BAR.md's (d) leaves open were set
+by Design (home), not the owner, in the plan for #113. Its key is
+`bar-interact-a11-v1/expected.json`, committed with this entry and sealed (its sha256) in
+`~/design-lab/seals/bar-interact-a11-v1.json` before the code. The meter is fixed to the key, never
+the key to the meter; a new key would be `bar-interact-a11-v2`.
+
+1. Four new rows, bar A11, at 1440x900 and 390x844, after the speed rows: motion-signature,
+   motion-feedback, motion-timing and motion-reduced (see "Motion with a purpose"). No older row,
+   limit or method changed: the two new readings run after every older phase of both widths, and
+   A8's CLS row is only reported next to them.
+2. Raw file (output): `phases[width]` gets `a11d` and `a11d_reduced`. Raw files measured before
+   version 4 have neither, and are scored as before, with no A11 rows.
+3. Fixture proof (method): a key may name the rows it covers (`checks`); the older keys, which name
+   none, cover every row but A11's, so their comparison is unchanged. `--set NAME` limits the proof
+   to the named sets (repeatable). Version 4's proof is 3 of 3 runs (see "The fixture proof").
+
+Precisions written with this entry, beyond the plan's words, so that the reading is exact and
+deterministic: the first screen is the target's layout box at scroll 0 (an entrance's own transform
+does not move it out); offset is the five `offset-*` properties; one animation is one (kind, target,
+pseudo-element, name, duration, timing function); a scroll-driven animation stands in for "lasts
+120 ms" by moving with the scroll, and is not timed; linear is checked numerically at nine points;
+position and size are the properties listed under motion-reduced; smooth scrolling is the computed
+`scroll-behavior`; an animation under 17 ms moves nothing that is drawn; feedback compares the same
+nodes, and gates the same properties, as hover states; the click after a press is cancelled; and
+evidence is the selector, the property and the value per element and width. `version` becomes 4.

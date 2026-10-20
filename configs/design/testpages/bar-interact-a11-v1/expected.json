@@ -1,0 +1,70 @@
+{
+  "fixture": "bar-interact-a11-v1",
+  "meter": "design_homepage_bar_interact",
+  "written": "2026-10-20, before the version 4 code and before any real page was measured with it (Design, queue #113: BAR.md A11 (d), motion with a purpose). Sealed: its sha256 is in ~/design-lab/seals/bar-interact-a11-v1.json, written before the code. clean-motion.html meets every A11 (d) row; static.html has no motion at all; every other page is clean-motion.html plus one plant.",
+  "rule": "For each page, the exact set of failing (bar, check, width) rows over the rows in 'checks', where failing means pass is false or null. The meter is right only when its failing rows equal this set exactly on every page, in three runs. When they differ, the meter is fixed, never this key.",
+  "widths": ["1440x900", "390x844"],
+  "checks": [["A11", "motion-signature"], ["A11", "motion-feedback"], ["A11", "motion-timing"], ["A11", "motion-reduced"]],
+  "pages": {
+    "clean-motion.html": {
+      "plant": "none: the hero rises in at load (400 ms, eased), every interactive element changes colour, border or shadow on hover, every transition is 200 ms ease-out and every animation 400 ms eased, and all movement is inside prefers-reduced-motion: no-preference; meets every A11 (d) row",
+      "failing": []
+    },
+    "static.html": {
+      "plant": "base.css alone, with no motion.css or motion.js: nothing moves and nothing changes on hover or press (no signature, no feedback; with no motion at all, timing and reduced motion are met)",
+      "failing": [["A11", "motion-signature", "1440x900"], ["A11", "motion-signature", "390x844"], ["A11", "motion-feedback", "1440x900"], ["A11", "motion-feedback", "390x844"]]
+    },
+    "entrance-second-screen.html": {
+      "plant": "the hero's rise is removed, so the only entrance is the cards' reveal on the second screen (a class change on scroll): no signature on the first screen",
+      "failing": [["A11", "motion-signature", "1440x900"], ["A11", "motion-signature", "390x844"]]
+    },
+    "no-hover-button.html": {
+      "plant": "one more button in the hero, 'Download the tide guide', with no hover or press style and no transition",
+      "failing": [["A11", "motion-feedback", "1440x900"], ["A11", "motion-feedback", "390x844"]]
+    },
+    "transition-800.html": {
+      "plant": "the buttons' hover transitions take 800 ms (ease-out)",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "linear-easing.html": {
+      "plant": "the hero's rise (400 ms) runs on linear timing",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "loop-600.html": {
+      "plant": "a 'live' dot in the hero pulses for ever, 600 ms a cycle (ease-in-out): not exempt, and over 500 ms",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "reduced-ignored.html": {
+      "plant": "the hero's rise and smooth scrolling are set outside prefers-reduced-motion, so under reduce the hero still moves in and the page still scrolls smoothly",
+      "failing": [["A11", "motion-reduced", "1440x900"], ["A11", "motion-reduced", "390x844"]]
+    },
+    "timing-110.html": {
+      "plant": "near threshold: the buttons' hover transitions take 110 ms (ease-out), under 120 ms",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "timing-120.html": {
+      "plant": "near threshold: the buttons' hover transitions take 120 ms (ease-out), at the limit: met",
+      "failing": []
+    },
+    "timing-500.html": {
+      "plant": "near threshold: the hero's rise takes 500 ms (eased), at the limit: met",
+      "failing": []
+    },
+    "timing-520.html": {
+      "plant": "near threshold: the hero's rise takes 520 ms (eased), over 500 ms",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "loop-1000.html": {
+      "plant": "near threshold: the 'live' dot pulses for ever, 1000 ms a cycle (ease-in-out): only loops longer than 1000 ms are exempt, and 1000 ms is over 500 ms",
+      "failing": [["A11", "motion-timing", "1440x900"], ["A11", "motion-timing", "390x844"]]
+    },
+    "loop-1100.html": {
+      "plant": "near threshold: the 'live' dot pulses for ever, 1100 ms a cycle (ease-in-out): an infinite loop longer than 1000 ms is exempt: met",
+      "failing": []
+    },
+    "scroll-linked.html": {
+      "plant": "the hero's rise is removed, and a shape in the hero drifts up and grows with the scroll (a scroll timeline on the root, inside prefers-reduced-motion: no-preference): the only signature is scroll-linked: met",
+      "failing": []
+    }
+  }
+}

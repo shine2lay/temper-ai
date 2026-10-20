@@ -17,7 +17,8 @@ against a fixed limit.
   `expected.json` and `raw/*.json`.
 - `configs/design/testpages/bar-interact-a11-v1/`: the sealed keyed cases for version 4's A11 (d)
   rows (each planted page is its `clean-motion.html` plus one plant), with its own `base.css`,
-  `expected.json` and `raw/*.json`. The key's sha256 is in `~/design-lab/seals/bar-interact-a11-v1.json`.
+  `expected.json` and `raw/*.json`. The key's sha256 is in `~/design-lab/seals/bar-interact-a11-v1.json`,
+  archived verbatim as this fixture folder's `seal.json` in a commit before the meter code.
 - `tests/test_design_homepage_bar_interact.py`: the scorer on every recorded raw file must give
   exactly the key, plus unit tests of the maths. No browser in the tests.
 
@@ -374,7 +375,9 @@ that has the same value in every keyframe, the first and last included); when it
 (the load step, scroll step 1 to 8, or hover and press); and, if it is scroll-driven, its progress
 after each scroll step. One animation is one (kind, target, pseudo-element, name, duration, timing
 function): a transition that runs on every hover counts once. An animation that starts and ends
-between two frames (under about 17 ms) is not seen.
+between two frames (under about 17 ms) is not seen. An animation is first seen once it is running
+(its delay included) or finished, so one paused from the start, which moves nothing, is not
+recorded.
 
 motion-signature. "At least one animation (document.getAnimations(): CSS animation, transition or
 Web Animations) on an element of the first screen. It must change transform, translate, scale,
@@ -478,7 +481,12 @@ line is followed by its value and outcome. It is not a new row: its value, limit
 Raw file: `phases[width]` gets `a11d` (the normal reading) and `a11d_reduced`, each
 `{vw, vh, window_ms, steps, anims, feedback, smooth}`, or `{error}` when the reading failed; then its
 rows are `null` (could not measure): the first three rows for the normal reading, motion-reduced
-for the reduced one. Raw files from before version 4 have no such readings and are scored as
+for the reduced one. An animation's `seen` is `load`, or `load-late` when it was first seen in the
+load step but its active start is more than 3,000 ms after the end of the load event (it does not
+start within 3 s of load); `scroll1` to `scroll8`; `hover-press`; or `end`, first seen while the
+end step scrolled back to the top (an animation of the reading, so it is timed, but never a
+signature). A feedback item's `result` is `hover`, `press`, `none` or `covered`, with up to 3
+`changes` (`[node, property, rest, state]`). Raw files from before version 4 have no such readings and are scored as
 before, with no A11 rows.
 
 ## The fixture proof (bar-interact-v1, bar-interact-v2 and bar-interact-a11-v1)
@@ -498,12 +506,19 @@ with near-threshold pairs (110 against 120 ms, 500 against 520 ms, a 1000 agains
 and a page whose only signature is scroll-linked. A key may name the rows it covers (`checks`, a
 list of `[bar, check]`): the A11 set covers only the four A11 (d) rows, and the older sets, which
 name none, cover every row but A11's. Rows a key does not cover are left out of its comparison.
-Version 4's proof: every page of the three sets matches its key in 3 of 3 runs, with the non-speed
-rows byte-identical between runs, and the raw A11 readings (`a11d`, `a11d_reduced`) byte-identical
-too. (The older normal-motion reading keeps the live transform values of running animations, so
-that part of the raw file differs from run to run by design, as it has since version 1; its rows do
-not.) The A11 set keys no speed row, so its repeat runs may use `--no-speed`; one full run with
-speed is kept.
+Version 4's proof: every page of the three sets matches its key in 3 of 3 valid measurements,
+with all non-speed scored rows byte-identical between runs, and the raw A11 readings (`a11d`,
+`a11d_reduced`) byte-identical too. The old non-A11/non-speed rows, including values and evidence,
+must match the frozen master v3 meter. **Whole non-speed-raw equality is not established:** legacy
+normal/reduced readings retain live transform samples (`t_before` and `t_after`, each selector's
+`v`), plus only `reduced/videos/0/current` on `bar-interact-v1/autoplay-video.html` at 1440x900 and
+390x844. Design home explicitly excepted those pre-existing samples (technical rulings
+`rm-0b3aa611`, `rm-1465656d`, 2026-10-20), not the owner. The full raw stays intact, and an exact
+leaf-path/page/value audit must show the same variability in frozen v3 and unchanged sampling
+methods. No hover, A11, other clock, missing reading, error, unexplained difference or scored-row
+change is excepted. Retain unmeasurable attempts; recover only their failed stages, never retry a
+measured key mismatch or replace a successful reading to select a pass. The A11 set keys no speed
+row, so its repeat runs may use `--no-speed`; one full run with speed is kept.
 
 Since version 3 each page gets one of three verdicts:
 
@@ -695,3 +710,10 @@ position and size are the properties listed under motion-reduced; smooth scrolli
 `scroll-behavior`; an animation under 17 ms moves nothing that is drawn; feedback compares the same
 nodes, and gates the same properties, as hover states; the click after a press is cancelled; and
 evidence is the selector, the property and the value per element and width. `version` becomes 4.
+
+Precisions written with the code, after the key was sealed, describing what the code records
+without changing a definition, a number or the key: an animation is first seen once it is running
+(its delay included) or finished, so one paused from the start is not recorded; and the raw file's
+`seen` values, `load-late` and `end` included, and the feedback item's `result` (see the raw-file
+paragraph under "Motion with a purpose"). No page of `bar-interact-a11-v1` has a paused, late or
+end-only animation.

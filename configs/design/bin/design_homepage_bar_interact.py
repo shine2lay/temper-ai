@@ -4,13 +4,15 @@
 Measures the interaction and speed lines of ~/design-lab/homepage-workflow/BAR.md that part 1
 (design_homepage_bar, queue #78) leaves out: keyboard reach and order, visible and unhidden focus,
 3:1 UI parts and focus indicators, reduced motion (A4); hover and focus states and motion present
-(A7); Lighthouse LCP, CLS and TBT (A8). No model anywhere (AGENTS rule 17).
+(A7); Lighthouse LCP, CLS and TBT (A8); motion with a purpose (A11 (d), queue #113). No model
+anywhere (AGENTS rule 17).
 
 Definitions, limits and the output contract: docs/design-homepage-bar-interaction.md.
 
     design_homepage_bar_interact.py --site DIR [--page index.html] --out DIR [--browser URL]
         [--serve-host HOST] [--lighthouse DIR] [--chrome PATH] [--raw-only | --from-raw DIR]
-    design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw DIR] [...]
+    design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw DIR] [--set NAME ...]
+        [...]
 
 The browser is temper's playwright-mcp (pages served and driven with design_capture's serve and
 run, imported unchanged). Reduced motion is emulated there with page.emulateMedia. Speed uses the
@@ -40,12 +42,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 METER = "design_homepage_bar_interact"
-# 2: UI parts per WCAG 1.4.11 (H3c, #96); 3: speed only on a quiet machine (H3d, #110)
-VERSION = 3
+# 2: UI parts per WCAG 1.4.11 (H3c, #96); 3: speed only on a quiet machine (H3d, #110);
+# 4: A11 (d), motion with a purpose (#113)
+VERSION = 4
 HELPERS = HERE / "design_homepage_bar_interact.js"
 FIXTURES = HERE.parent / "testpages" / "bar-interact-v1"
-# Fixture sets of the proof: version 1's key, then version 2's UI-part cases (H3c).
-FIXTURE_SETS = ("bar-interact-v1", "bar-interact-v2")
+# Fixture sets of the proof: version 1's key, then version 2's UI-part cases (H3c), then version
+# 4's A11 (d) key (sealed in ~/design-lab/seals/bar-interact-a11-v1.json before its code).
+FIXTURE_SETS = ("bar-interact-v1", "bar-interact-v2", "bar-interact-a11-v1")
 # Version 2's inside pixels: centres at least this far (CSS px) inside the padding box and its rounded corners.
 ICON_INSET = 1.0
 WIDTHS = {"1440x900": (1440, 900), "390x844": (390, 844)}
@@ -121,6 +125,71 @@ SPEED_CHECKS = [
     ("A8", "cls", "CLS 0.1 or less"),
     ("A8", "tbt", "total blocking time 200 ms or less"),
 ]
+# A11 (d), version 4 (doc, "Motion with a purpose"): the measured threshold, then BAR.md's words.
+A11_CHECKS = [
+    (
+        "A11",
+        "motion-signature",
+        "1 or more (one signature motion moment on the first screen (entrance or scroll-linked))",
+    ),
+    (
+        "A11",
+        "motion-feedback",
+        "0 without (hover or press feedback on every interactive element"
+        " (transform, shadow or colour change))",
+    ),
+    (
+        "A11",
+        "motion-timing",
+        "0 outside (transitions 120-500 ms with easing, and nothing but loops longer than 1 s)",
+    ),
+    ("A11", "motion-reduced", "0 (all of it stops under prefers-reduced-motion)"),
+]
+# The readings: 3 s after the end of the load event, then 8 scroll steps of a quarter viewport
+# (the first 2 screens), 200 ms each.
+A11D_WINDOW_MS = 3000
+A11D_WAIT_MS = 3100
+A11D_STEPS = 8
+A11D_PAUSE_MS = 200
+OFFSET_PROPS = {
+    "offset",
+    "offset-path",
+    "offset-distance",
+    "offset-rotate",
+    "offset-anchor",
+    "offset-position",
+}
+SIGNATURE_PROPS = {
+    "transform",
+    "translate",
+    "scale",
+    "rotate",
+    "opacity",
+    "clip-path",
+} | OFFSET_PROPS
+SIGNATURE_MS = 120
+TIMING_MIN_MS = 120
+TIMING_MAX_MS = 500
+LOOP_EXEMPT_MS = 1000
+LINEAR_DEV = 0.001
+# Reduced motion: transform, offset, position (a box or its picture) and size; the inset and margin
+# properties (inset, inset-inline-start, margin-top, ...) are matched by their prefix.
+_SIZES = ("width", "height", "inline-size", "block-size")
+MOVE_PROPS = (
+    {"transform", "translate", "scale", "rotate", "top", "right", "bottom", "left"}
+    | OFFSET_PROPS
+    | {
+        "background-position",
+        "background-position-x",
+        "background-position-y",
+        "object-position",
+    }
+    | set(_SIZES)
+    | {f"{p}-{s}" for p in ("min", "max") for s in _SIZES}
+)
+MOVE_PREFIXES = ("inset", "margin")
+# Under one frame at 60 Hz no step is drawn between start and end.
+FRAME_MS = 17
 
 
 # ---------------------------------------------------------------- colour and pixel maths (pure)
@@ -745,6 +814,227 @@ def _null_rows(width: str, checks, err: str) -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------- A11 (d): motion with a purpose (pure)
+
+_KIND = {"CSSAnimation": "animation", "CSSTransition": "transition"}
+
+
+def _ev11(sel: str, text: str, box, prop: str, value: str) -> dict:
+    return dict(_ev(sel, text, box), property=prop, value=value)
+
+
+def _row11(check: str, width: str, value, ok, evidence=(), cap: bool = True) -> dict:
+    limit = {c: lim for _, c, lim in A11_CHECKS}[check]
+    row = _row("A11", check, width, value, limit, ok, evidence)
+    if not cap:
+        row["evidence"] = list(evidence)
+    return row
+
+
+def _null11(width: str, checks, err: str) -> list[dict]:
+    return [
+        _row11(c, width, None, None, [_ev11("", ("error: " + err)[:80], None, "", "")])
+        for c in checks
+    ]
+
+
+def covered(key: dict) -> set[tuple[str, str]]:
+    """The (bar, check) rows a fixture key covers: its own `checks`, or every row but A11's."""
+    if key.get("checks"):
+        return {(b, c) for b, c in key["checks"]}
+    return {(b, c) for b, c, _ in CHECKS + SPEED_CHECKS}
+
+
+def is_linear(easings) -> bool:
+    """Every timing function that applies is on the diagonal (within LINEAR_DEV at 0.1 ... 0.9)."""
+    devs = [d for _, d in easings or []]
+    return bool(devs) and all(d is not None and d <= LINEAR_DEV for d in devs)
+
+
+def _ms(v) -> str:
+    return f"{v:g}"
+
+
+def _kind(a: dict) -> str:
+    return _KIND.get(a.get("kind"), "web animation")
+
+
+def _moves_with_scroll(a: dict) -> bool:
+    prog = a.get("progress")
+    return (
+        bool(a.get("scroll_driven"))
+        and prog is not None
+        and len({p for p in prog if p is not None}) > 1
+    )
+
+
+def _first_screen(box, vw: float, vh: float) -> bool:
+    x, y, w, h = box or (0, 0, 0, 0)
+    return min(x + w, vw) - max(x, 0) > 0 and min(y + h, vh) - max(y, 0) > 0
+
+
+def _active_ms(a: dict) -> float:
+    d = a.get("duration") or 0
+    it = a.get("iterations")
+    if it == "infinite":
+        return float("inf") if d > 0 else 0
+    return d * (it if isinstance(it, (int, float)) else 1)
+
+
+def _signature(a: dict, vw: float, vh: float) -> str | None:
+    """How a signature animation starts (the evidence value), or None when it isn't one."""
+    if not _first_screen(a.get("box"), vw, vh):
+        return None
+    if not set(a.get("props") or ()) & SIGNATURE_PROPS:
+        return None
+    if a.get("scroll_driven"):
+        return (
+            f"{_kind(a)} {a['name']}, scroll-linked" if _moves_with_scroll(a) else None
+        )
+    seen = a.get("seen") or ""
+    if seen == "load":
+        how = "load"
+    elif seen.startswith("scroll") and seen[6:].isdigit():
+        how = f"scroll step {seen[6:]}"
+    else:
+        return None
+    if _active_ms(a) < SIGNATURE_MS:
+        return None
+    return f"{_kind(a)} {a['name']} {_ms(a['duration'])} ms, {how}"
+
+
+def _timing(a: dict) -> list[str]:
+    """Why an animation's timing is outside the row's limits ([] when it is inside or not counted)."""
+    d = a.get("duration")
+    if a.get("scroll_driven") or d is None or d <= 0:
+        return []
+    if a.get("iterations") == "infinite" and d > LOOP_EXEMPT_MS:
+        return []
+    why = []
+    if d < TIMING_MIN_MS:
+        why.append(f"under {TIMING_MIN_MS} ms")
+    elif d > TIMING_MAX_MS:
+        why.append(f"over {TIMING_MAX_MS} ms")
+    if is_linear(a.get("easings")):
+        why.append("linear timing")
+    return why
+
+
+def _easing_shown(a: dict) -> str:
+    names = [s for s, _ in a.get("easings") or []]
+    return next((s for s in names if s != "linear"), "linear")
+
+
+def _moving(a: dict) -> list[str]:
+    """The properties of a reduced-reading animation that move something, when it moves at all."""
+    props = [
+        p
+        for p in a.get("props") or ()
+        if p in MOVE_PROPS or p.startswith(MOVE_PREFIXES)
+    ]
+    if not props:
+        return []
+    if a.get("scroll_driven"):
+        return props if _moves_with_scroll(a) else []
+    d = a.get("duration")
+    return props if d is not None and d >= FRAME_MS else []
+
+
+def _a11_ok(r: dict | None) -> bool:
+    return isinstance(r, dict) and not r.get("error") and "anims" in r
+
+
+def score_a11d(normal: dict | None, reduced: dict | None, width: str) -> list[dict]:
+    """A11 (d)'s four rows at one width, from the normal and the reduced reading."""
+    rows: dict[str, dict] = {}
+    if _a11_ok(normal):
+        vw = normal.get("vw") or WIDTHS[width][0]
+        vh = normal.get("vh") or WIDTHS[width][1]
+        sig = []
+        for a in normal["anims"]:
+            how = _signature(a, vw, vh)
+            if how:
+                sig.append(
+                    _ev11(
+                        a["selector"],
+                        a.get("text"),
+                        a.get("box"),
+                        ", ".join(a["props"]),
+                        how,
+                    )
+                )
+        rows["motion-signature"] = _row11(
+            "motion-signature", width, len(sig), len(sig) >= 1, sig
+        )
+        none = [
+            _ev11(
+                f["selector"],
+                f.get("text"),
+                f.get("box"),
+                "feedback",
+                "covered"
+                if f["result"] == "covered"
+                else "no change on hover or press",
+            )
+            for f in normal.get("feedback") or ()
+            if f.get("result") in ("none", "covered")
+        ]
+        rows["motion-feedback"] = _row11(
+            "motion-feedback", width, len(none), not none, none, cap=False
+        )
+        bad = []
+        for a in normal["anims"]:
+            why = _timing(a)
+            if why:
+                loop = ", infinite" if a.get("iterations") == "infinite" else ""
+                value = f"{_kind(a)} {_ms(a['duration'])} ms {_easing_shown(a)}{loop}: {', '.join(why)}"
+                bad.append(
+                    _ev11(a["selector"], a.get("text"), a.get("box"), a["name"], value)
+                )
+        rows["motion-timing"] = _row11("motion-timing", width, len(bad), not bad, bad)
+    else:
+        err = (normal or {}).get("error") or "no a11d"
+        for r in _null11(
+            width, ["motion-signature", "motion-feedback", "motion-timing"], err
+        ):
+            rows[r["check"]] = r
+    if _a11_ok(reduced):
+        moved = []
+        for a in reduced["anims"]:
+            props = _moving(a)
+            if props:
+                if a.get("scroll_driven"):
+                    value = f"{_kind(a)} {a['name']}, scroll-linked"
+                else:
+                    value = f"{_kind(a)} {a['name']} {_ms(a['duration'])} ms"
+                moved.append(
+                    _ev11(
+                        a["selector"],
+                        a.get("text"),
+                        a.get("box"),
+                        ", ".join(props),
+                        value,
+                    )
+                )
+        for s in reduced.get("smooth") or ():
+            moved.append(
+                _ev11(
+                    s["selector"],
+                    s.get("text"),
+                    s.get("box"),
+                    "scroll-behavior",
+                    "smooth",
+                )
+            )
+        rows["motion-reduced"] = _row11(
+            "motion-reduced", width, len(moved), not moved, moved
+        )
+    else:
+        err = (reduced or {}).get("error") or "no a11d_reduced"
+        rows["motion-reduced"] = _null11(width, ["motion-reduced"], err)[0]
+    return [rows[c] for _, c, _ in A11_CHECKS]
+
+
 def score(raw: dict) -> dict:
     """Raw measurements to the bars-interact.json document. Pure: no browser, no files."""
     limits = {c: limit for _, c, limit in CHECKS}
@@ -803,6 +1093,13 @@ def score(raw: dict) -> dict:
             by_check[(r["check"], width)] = r
     ordered = [by_check[(c, w)] for _, c, _ in CHECKS for w in WIDTHS]
     ordered += score_speed(raw.get("speed") or {})
+    if (raw.get("version") or 0) >= 4:
+        a11 = {}
+        for width in WIDTHS:
+            ph = (raw.get("phases") or {}).get(width) or {}
+            for r in score_a11d(ph.get("a11d"), ph.get("a11d_reduced"), width):
+                a11[(r["check"], width)] = r
+        ordered += [a11[(c, w)] for _, c, _ in A11_CHECKS for w in WIDTHS]
     return {
         "meter": METER,
         "version": VERSION,
@@ -867,7 +1164,10 @@ def _reason(row: dict) -> str:
 
 
 def _ev_line(e: dict) -> str:
-    return f'  - `{e["selector"]}` "{e["text"]}" box {e["box"]}'
+    line = f'  - `{e["selector"]}` "{e["text"]}" box {e["box"]}'
+    if e.get("property") or e.get("value"):
+        line += f" {e['property']}: {e['value']}"
+    return line
 
 
 def _fmt(v) -> str:
@@ -891,14 +1191,24 @@ def to_md(doc: dict) -> str:
             f"| {r['bar']} | {r['check']} | {r['width']} | {_fmt(r['value'])} | {r['limit']} | {ok} |"
         )
     lines += ["", "## Bars (part 2 rows only)", ""]
-    for bar in ("A4", "A7", "A8"):
+    for bar in ("A4", "A7", "A8", "A11"):
         rows = [r for r in doc["rows"] if r["bar"] == bar]
+        if bar == "A11" and not rows:
+            continue
         parts = []
         for outcome in (False, None):
             named = [f"{r['check']} {r['width']}" for r in rows if r["pass"] is outcome]
             if named:
                 parts.append(f"{OUTCOME[outcome]} ({', '.join(named)})")
-        lines.append(f"- {bar}: {'; '.join(parts) or 'met'}")
+        label = "A11 (d)" if bar == "A11" else bar
+        lines.append(f"- {label}: {'; '.join(parts) or 'met'}")
+        if bar == "A11":
+            # A8's CLS row, next to (d) and unchanged (BAR.md: "and A8's CLS still holds").
+            for r in doc["rows"]:
+                if (r["bar"], r["check"]) == ("A8", "cls"):
+                    lines.append(
+                        f"  - A8 cls {r['width']}, next to (d): {_fmt(r['value'])} ({OUTCOME[r['pass']]})"
+                    )
     n = tally(doc)["rows"]
     lines += [
         "",
@@ -961,6 +1271,7 @@ class Driver:
             helpers,
             shots,
         )
+        self.a11d_ready = False
 
     async def run(self, code: str):
         return await self.dc.run(self.s, code)
@@ -1257,6 +1568,117 @@ class Driver:
             "const t_after = __bi.transforms(); return {r1, r2: [a, b, c], videos, t_before, t_after}; }); }"
         )
 
+    async def _a11d_press(self, eid: int, select: bool) -> dict:
+        """One element of A11 (d)'s feedback check: rest, hover, and press when the hover changed nothing."""
+        read = (
+            f"page.evaluate(async () => {{ const el = __bi.el({eid}); await __bi.frames2(); "
+            "getComputedStyle(el).color; __bi.a11dSnap(); __bi.settle(); "
+            "return __bi.fbDiff(__bi.rest, __bi.readFb(el)); })"
+        )
+        return await self.run(
+            "async (page) => { await page.mouse.move(-20, -20); "
+            f"let pt = await page.evaluate(async () => {{ const el = __bi.el({eid}); __bi.centreTo(el); "
+            "await __bi.frames2(); __bi.a11dSnap(); __bi.settle(); __bi.rest = __bi.readFb(el); "
+            "return __bi.hoverPoint(el); }); "
+            "let focused = false; "
+            "if (!pt) { focused = true; "
+            f"pt = await page.evaluate(async () => {{ const el = __bi.el({eid}); el.focus(); "
+            "if (document.activeElement !== el) return null; await __bi.waitScroll(); await __bi.frames2(); "
+            "__bi.a11dSnap(); __bi.settle(); __bi.rest = __bi.readFb(el); return __bi.hoverPoint(el); }); } "
+            f"const off = () => page.evaluate(() => {{ const el = __bi.el({eid}); "
+            "if (document.activeElement === el) el.blur(); __bi.a11dSnap(); return true; }); "
+            "if (!pt) { if (focused) await off(); return {result: 'covered', changes: []}; } "
+            "await page.mouse.move(pt[0], pt[1]); "
+            f"let changes = await {read}; let result = changes.length ? 'hover' : 'none'; "
+            "if (!changes.length) { "
+            "await page.evaluate(() => __bi.a11dPhase('hover-press', true)); "
+            "await page.mouse.down(); "
+            f"changes = await {read}; "
+            "await page.mouse.up(); "
+            "await page.evaluate(() => new Promise((r) => setTimeout(() => r(__bi.a11dPhase('hover-press', false)), 0))); "
+            "if (changes.length) result = 'press'; "
+            f"if ({json.dumps(select)}) await page.keyboard.press('Escape'); }} "
+            "await page.mouse.move(-20, -20); await off(); "
+            "return {result, changes: changes.slice(0, 3)}; }"
+        )
+
+    async def a11d(self, width: str, motion: str) -> dict:
+        """A11 (d)'s reading at one width (doc, "Motion with a purpose"): load, scroll, hover and
+        press, end. The recorder is added once, before the page's own scripts, and stays for the
+        page's later loads (only A11 (d)'s, which come after every older phase)."""
+        if not self.a11d_ready:
+            init = (
+                "("
+                + self.helpers.strip()
+                + f")(); window.__bi.a11dStart({A11D_STEPS});"
+            )
+            await self.run(
+                f"async (page) => {{ await page.addInitScript({json.dumps(init)}); return true; }}"
+            )
+            self.a11d_ready = True
+        await self.open(width, motion)
+        # Load: until A11D_WAIT_MS after the end of the load event.
+        await self.run(
+            "async (page) => page.evaluate(async () => { "
+            "const nav = performance.getEntriesByType('navigation')[0]; "
+            "const end = (nav && nav.loadEventEnd) || 0; "
+            f"while (performance.now() < end + {A11D_WAIT_MS}) await __bi.sleep(50); "
+            "return __bi.a11dSnap(); })"
+        )
+        # Scroll: the first 2 screens in A11D_STEPS steps.
+        await self.run(
+            f"async (page) => page.evaluate(() => __bi.a11dScroll({A11D_STEPS}, {A11D_PAUSE_MS}))"
+        )
+        # Hover and press: every element of the feedback check.
+        els = await self.run(
+            "async (page) => page.evaluate(() => { __bi.a11dPhase('hover-press'); "
+            "if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); "
+            "return __bi.a11dTargets(); })"
+        )
+        feedback = []
+        for e in els:
+            r = await self._a11d_press(e["id"], bool(e.get("select")))
+            feedback.append(
+                {
+                    "selector": e["sel"],
+                    "text": e["text"],
+                    "box": e["box"],
+                    "result": r["result"],
+                    "changes": r["changes"],
+                }
+            )
+        # End: back to the top, settled; each animation's target box at scroll 0.
+        end = await self.run(
+            "async (page) => { await page.mouse.move(-20, -20); "
+            f"return await page.evaluate(() => __bi.a11dEnd({A11D_WINDOW_MS})); }}"
+        )
+        return {
+            "vw": end["vw"],
+            "vh": end["vh"],
+            "window_ms": A11D_WINDOW_MS,
+            "steps": A11D_STEPS,
+            "anims": _sorted_anims(end["anims"]),
+            "feedback": feedback,
+            "smooth": end["smooth"],
+        }
+
+
+def _sorted_anims(anims: list[dict]) -> list[dict]:
+    """A11 (d)'s records in a stable order, so two runs compare equal."""
+
+    def key(a: dict) -> tuple:
+        return (
+            a.get("selector") or "",
+            a.get("pseudo") or "",
+            a.get("kind") or "",
+            a.get("name") or "",
+            json.dumps(a.get("duration")),
+            json.dumps(a.get("easings")),
+            a.get("seen") or "",
+        )
+
+    return sorted(anims, key=key)
+
 
 def _sorted_motion(m: dict) -> dict:
     """Stable order for samples and events so two runs compare equal."""
@@ -1309,6 +1731,20 @@ async def measure_browser(url: str, browser: str, shots: pathlib.Path | None) ->
                     ) as e:  # recorded as a could-not-measure row, never a pass
                         ph[name] = {"error": f"{type(e).__name__}: {e}"[:300]}
                 phases[width] = ph
+            # A11 (d), version 4: after every older phase of both widths, so they run as before.
+            for width in WIDTHS:
+                for name, motion in (
+                    ("a11d", "no-preference"),
+                    ("a11d_reduced", "reduce"),
+                ):
+                    try:
+                        phases[width][name] = await d.a11d(width, motion)
+                    except (
+                        Exception
+                    ) as e:  # recorded as could-not-measure rows, never a pass
+                        phases[width][name] = {
+                            "error": f"{type(e).__name__}: {e}"[:300]
+                        }
             try:
                 await s.call_tool("browser_close", {})
             except Exception:
@@ -1529,9 +1965,10 @@ def fixture_proof(args) -> int:
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     report = []
-    for name in FIXTURE_SETS:
+    for name in args.set or FIXTURE_SETS:
         fixtures = FIXTURES.parent / name
         key = json.loads((fixtures / "expected.json").read_text())
+        cov = covered(key)
         for page, spec in key["pages"].items():
             stem = page.rsplit(".", 1)[0]
             if args.from_raw:
@@ -1550,6 +1987,10 @@ def fixture_proof(args) -> int:
                     )
             doc = score(raw)
             write_outputs(out / name / stem, raw, doc)
+            # Only the rows the key covers are compared (version 4: the older keys don't cover A11).
+            doc = dict(
+                doc, rows=[r for r in doc["rows"] if (r["bar"], r["check"]) in cov]
+            )
             got, nulls = failing(doc), unmeasured(doc)
             want = {tuple(x) for x in spec["failing"]}
             verdict = page_verdict(doc, want)
@@ -1626,6 +2067,12 @@ def main(argv=None) -> int:
     g.add_argument("--from-raw")
     ap.add_argument("--fixture-proof", action="store_true")
     ap.add_argument("--record", action="store_true")
+    ap.add_argument(
+        "--set",
+        action="append",
+        choices=FIXTURE_SETS,
+        help="fixture proof: only this set (repeatable; default every set)",
+    )
     args = ap.parse_args(argv)
     if args.fixture_proof:
         return fixture_proof(args)

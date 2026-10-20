@@ -358,11 +358,220 @@
   });
   const scrollOne = () => { window.scrollTo({left: 0, top: scrollY + innerHeight, behavior: 'instant'}); return scrollY; };
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const frames2 = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+
+  // A11 (d), version 4: motion with a purpose (doc, "Motion with a purpose"). a11dStart runs with
+  // these helpers before the page's own scripts and reads document.getAnimations() on every frame;
+  // the driver names the step (load, scroll1 to scroll8, hover-press, end). Raw facts only.
+  const A11D_SKIP = new Set(['offset', 'easing', 'composite', 'computedOffset']);
+  const kebab = (p) => (p === 'cssFloat' ? 'float' : p === 'cssOffset' ? 'offset'
+    : p.startsWith('--') ? p : p.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()));
+  // A timing function's largest distance from the diagonal at 0.1, 0.2, ... 0.9, read by the
+  // browser on a detached effect (null when it can't be read).
+  const devs = new Map();
+  const easingDev = (s) => {
+    if (devs.has(s)) return devs.get(s);
+    let d = null;
+    try {
+      const a = new Animation(new KeyframeEffect(null, null, {duration: 1000, easing: s, fill: 'both'}), document.timeline);
+      d = 0;
+      for (let i = 1; i <= 9; i++) {
+        a.currentTime = i * 100;
+        d = Math.max(d, Math.abs(a.effect.getComputedTiming().progress - i / 10));
+      }
+      a.cancel();
+      d = Math.round(d * 10000) / 10000;
+    } catch (e) { d = null; }
+    devs.set(s, d);
+    return d;
+  };
+  // What an animation changes: a transition's property; otherwise each keyframe property, except one
+  // with the same value in every keyframe, the first (0) and last (1) included.
+  const animProps = (a, kfs) => {
+    if (typeof a.transitionProperty === 'string') return [a.transitionProperty];
+    const vals = new Map();
+    for (const k of kfs) {
+      for (const p of Object.keys(k)) {
+        if (A11D_SKIP.has(p)) continue;
+        if (!vals.has(p)) vals.set(p, []);
+        vals.get(p).push(String(k[p]));
+      }
+    }
+    const whole = kfs.length >= 2 && kfs[0].computedOffset === 0 && kfs[kfs.length - 1].computedOffset === 1;
+    const out = new Set();
+    for (const [p, vs] of vals) {
+      if (whole && vs.length === kfs.length && vs.every((v) => v === vs[0])) continue;
+      out.add(kebab(p));
+    }
+    return Array.from(out).sort();
+  };
+  // One animation is one (kind, target, pseudo-element, name, duration, timing functions).
+  const a11dRecord = (st, a, e, t) => {
+    const timing = e.getTiming();
+    const scrollDriven = !!a.timeline && !(a.timeline instanceof DocumentTimeline);
+    let dur = null;
+    if (!scrollDriven) {
+      const d = e.getComputedTiming().duration;
+      dur = typeof d === 'number' && isFinite(d) ? r2(d) : null;
+    }
+    let kfs = [];
+    try { kfs = e.getKeyframes(); } catch (x) { kfs = []; }
+    const easings = [timing.easing || 'linear'].concat(kfs.slice(0, -1).map((k) => k.easing || 'linear'))
+      .map((s) => [s, easingDev(s)]);
+    const kind = a.constructor.name;
+    const name = a.animationName || a.transitionProperty || a.id || '';
+    const pseudo = e.pseudoElement || '';
+    const key = JSON.stringify([kind, pseudo, name, dur, easings.map((x) => x[0])]);
+    let m = st.byEl.get(t);
+    if (!m) { m = new Map(); st.byEl.set(t, m); }
+    let rec = m.get(key);
+    if (!rec) {
+      const it = timing.iterations;
+      rec = {
+        el: t, anim: a, kind, name, pseudo, duration: dur, iterations: isFinite(it) ? it : 'infinite',
+        delay: r2(timing.delay || 0), easings, props: animProps(a, kfs), seen: st.phase, start: null,
+        scroll_driven: scrollDriven, progress: scrollDriven ? new Array(st.steps).fill(null) : null,
+        first: {selector: selector(t), text: text(t), box: layoutBox(t)},
+      };
+      m.set(key, rec);
+      st.recs.push(rec);
+    }
+    return rec;
+  };
+  // Every animation whose target is an element, first seen once it has started (running or finished).
+  const a11dSnap = () => {
+    const st = window.__a11d;
+    if (!st) return 0;
+    let n = 0;
+    for (const a of document.getAnimations()) {
+      let rec = st.anims.get(a);
+      if (!rec) {
+        const e = a.effect, t = e && e.target;
+        if (!t || t.nodeType !== 1) continue;
+        if (a.playState !== 'running' && a.playState !== 'finished') continue;
+        rec = a11dRecord(st, a, e, t);
+        st.anims.set(a, rec);
+        n += 1;
+      }
+      if (rec.start === null && rec.anim === a && typeof a.startTime === 'number') rec.start = a.startTime + rec.delay;
+    }
+    return n;
+  };
+  const a11dStart = (steps) => {
+    if (window.__a11d) return true;
+    const st = {phase: 'load', block: false, steps, recs: [], byEl: new Map(), anims: new WeakMap()};
+    window.__a11d = st;
+    // The click after a press is cancelled before any of the page's own listeners.
+    const stop = (e) => { if (st.block) { e.preventDefault(); e.stopImmediatePropagation(); } };
+    window.addEventListener('click', stop, true);
+    window.addEventListener('auxclick', stop, true);
+    const loop = () => { a11dSnap(); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+    return true;
+  };
+  const a11dPhase = (name, block) => {
+    a11dSnap();
+    window.__a11d.phase = name;
+    if (block !== undefined) window.__a11d.block = block;
+    return true;
+  };
+  const a11dScroll = async (steps, pause) => {
+    const st = window.__a11d;
+    for (let k = 1; k <= steps; k++) {
+      a11dPhase('scroll' + k);
+      window.scrollTo({left: 0, top: k * innerHeight / 4, behavior: 'instant'});
+      await sleep(pause);
+      a11dSnap();
+      for (const r of st.recs) {
+        if (!r.scroll_driven) continue;
+        let p = null;
+        try { p = r.anim.effect.getComputedTiming().progress; } catch (e) { p = null; }
+        r.progress[k - 1] = typeof p === 'number' ? Math.round(p * 10000) / 10000 : null;
+      }
+    }
+    return true;
+  };
+  // Feedback: the elements, and their values on the element, its first 60 descendants and their
+  // rendered ::before and ::after (nodesOf, as for hover states).
+  const FB_SEL = 'a[href], button, [role=button], input, select, textarea, summary';
+  const FB_PROPS = ['transform', 'translate', 'scale', 'rotate', 'box-shadow', 'filter', 'opacity',
+    'color', 'background-color', 'background-image',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+    'outline-color', 'text-decoration-color', 'text-decoration-line', 'fill', 'stroke'];
+  const FB_READ = FB_PROPS.concat(['border-top-style', 'border-top-width', 'border-right-style',
+    'border-right-width', 'border-bottom-style', 'border-bottom-width', 'border-left-style',
+    'border-left-width', 'outline-style', 'outline-width']);
+  const a11dTargets = () => Array.from(document.querySelectorAll(FB_SEL))
+    .filter((el) => !el.matches('input[type=hidden]') && !el.disabled && !el.matches(':disabled') &&
+      !el.closest('[inert]') && visible(el))
+    .map((el) => ({id: idOf(el), sel: selector(el), text: text(el), box: layoutBox(el), select: el.tagName === 'SELECT'}));
+  const readFb = (el) => {
+    const st = {};
+    for (const [n, pseudo, key] of nodesOf(el)) {
+      const s = cs(n, pseudo);
+      const m = {};
+      for (const p of FB_READ) m[p] = s.getPropertyValue(p);
+      st[key] = m;
+    }
+    return st;
+  };
+  const borderDraws = (m, side) => {
+    const s = m['border-' + side + '-style'];
+    return s !== 'none' && s !== 'hidden' && parseFloat(m['border-' + side + '-width']) > 0;
+  };
+  // A property that draws nothing in both states is not compared (as for hover states).
+  const fbCompared = (p, a, b) => {
+    const side = /^border-(top|right|bottom|left)-color$/.exec(p);
+    if (side) return borderDraws(a, side[1]) || borderDraws(b, side[1]);
+    if (p === 'outline-color') {
+      return [a, b].some((m) => m['outline-style'] !== 'none' && parseFloat(m['outline-width']) > 0);
+    }
+    if (p === 'text-decoration-color') return [a, b].some((m) => m['text-decoration-line'] !== 'none');
+    return true;
+  };
+  // [node, property, rest, state] for each compared property that differs; a node in one state only
+  // (a pseudo-element that appears) is a change too.
+  const fbDiff = (a, b) => {
+    const out = [];
+    for (const k of new Set(Object.keys(a).concat(Object.keys(b)))) {
+      const x = a[k] || null, y = b[k] || null;
+      if (!x || !y) { out.push([k, 'content', x ? 'present' : 'none', y ? 'present' : 'none']); continue; }
+      for (const p of FB_PROPS) if (x[p] !== y[p] && fbCompared(p, x, y)) out.push([k, p, x[p], y[p]]);
+    }
+    return out;
+  };
+  // Each recorded animation, its target read at scroll 0 (a removed target as first seen); "load"
+  // becomes "load-late" when its active start is more than windowMs after the end of the load event.
+  const a11dEnd = async (windowMs) => {
+    const st = window.__a11d;
+    a11dPhase('end');
+    window.scrollTo({left: 0, top: 0, behavior: 'instant'});
+    await frames2();
+    a11dSnap();
+    settle();
+    a11dSnap();
+    const nav = performance.getEntriesByType('navigation')[0];
+    const loadEnd = nav ? nav.loadEventEnd : 0;
+    const anims = st.recs.map((r) => {
+      const where = r.el.isConnected ? {selector: selector(r.el), text: text(r.el), box: layoutBox(r.el)} : r.first;
+      const late = r.seen === 'load' && r.start !== null && r.start - loadEnd > windowMs;
+      return {
+        kind: r.kind, name: r.name, selector: where.selector, pseudo: r.pseudo, text: where.text, box: where.box,
+        duration: r.duration, iterations: r.iterations, delay: r.delay, easings: r.easings, props: r.props,
+        seen: late ? 'load-late' : r.seen, scroll_driven: r.scroll_driven, progress: r.progress,
+      };
+    });
+    const page = (el) => el === document.documentElement || el === document.body;
+    const smooth = Array.from(document.querySelectorAll('*')).filter((el) => cs(el).scrollBehavior === 'smooth')
+      .map((el) => ({selector: selector(el), text: page(el) ? '' : text(el), box: layoutBox(el)}));
+    return {vw: innerWidth, vh: innerHeight, anims, smooth};
+  };
 
   window.__bi = {
     idOf, byId, selector, text, pageBox, layoutBox, viewBox, visible, isInteractive, interactive, settle, waitScroll,
     hiddenPoints, active, readState, stateDiff, centreTo, hoverPoint, uiCandidates, uiStyle, hasVisibleText, running,
     transforms, boxOf, videos, scrollOne, sleep, fixedContainer,
+    frames2, a11dStart, a11dSnap, a11dPhase, a11dScroll, a11dTargets, readFb, fbDiff, a11dEnd,
     el: (id) => byId[id],
   };
   return true;

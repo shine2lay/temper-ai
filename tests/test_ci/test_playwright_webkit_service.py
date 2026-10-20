@@ -4,8 +4,12 @@ The same MCP server as playwright-mcp, from that service's image pinned by diges
 (docker/playwright-mcp-webkit/Dockerfile), for configs/architecture/bin/first_app_check.py
 --browser http://playwright-mcp-webkit:8931/mcp (QA's Project 3 kit, PH-1: the journey in WebKit
 at 390x844 with touch). The narrowest access that does the job: no host port, no mounts, never
-pulled from a registry, and no agent has it as a tool. The Chromium service beside it stays as
-it was.
+pulled from a registry, and no agent has it as a tool. The Chromium service beside it keeps its
+command.
+
+Both browser services run with no-new-privileges and every capability dropped (temper queue
+#124): neither browser has a sandbox of its own here (Chromium runs --no-sandbox, WPE WebKit has
+no bubblewrap), so the container is the only boundary.
 
 Each guard is one function in GUARDS. test_each_guard_bites breaks the real files one way at a
 time and checks that the guard meant to catch it names the break, and
@@ -28,6 +32,10 @@ COMPOSE = ROOT / "docker-compose.yml"
 DOCKERFILE = ROOT / "docker" / "playwright-mcp-webkit" / "Dockerfile"
 MCP_SERVERS = ROOT / "configs" / "mcp_servers"
 SERVICE = "playwright-mcp-webkit"
+CHROMIUM = "playwright-mcp"
+#: The browser services, each the only boundary around its browser (#124).
+BROWSERS = (CHROMIUM, SERVICE)
+NO_NEW_PRIVILEGES = "no-new-privileges:true"
 BUILD = "docker/playwright-mcp-webkit"
 BASE = "mcr.microsoft.com/playwright/mcp"
 INSTALL = "node /app/node_modules/playwright-core/cli.js install --with-deps webkit"
@@ -150,14 +158,34 @@ def not_an_agent_tool(data: dict) -> list[str]:
 
 
 def chromium_untouched(data: dict) -> list[str]:
-    args = _args(data["services"].get("playwright-mcp") or {})
-    return [] if args == CHROMIUM_COMMAND else [f"playwright-mcp: command is now {args}"]
+    args = _args(data["services"].get(CHROMIUM) or {})
+    return [] if args == CHROMIUM_COMMAND else [f"{CHROMIUM}: command is now {args}"]
+
+
+def no_new_privileges(data: dict) -> list[str]:
+    found = []
+    for name in BROWSERS:
+        options = (data["services"].get(name) or {}).get("security_opt") or []
+        if NO_NEW_PRIVILEGES not in options:
+            found.append(f"{name}: security_opt {options} lacks {NO_NEW_PRIVILEGES}, so a setuid binary"
+                         " could raise a process's privileges")
+    return found
+
+
+def all_capabilities_dropped(data: dict) -> list[str]:
+    found = []
+    for name in BROWSERS:
+        dropped = (data["services"].get(name) or {}).get("cap_drop")
+        if dropped != ["ALL"]:
+            found.append(f"{name}: cap_drop {dropped} is not ['ALL'], so Docker's default capabilities"
+                         " stay in the bounding set")
+    return found
 
 
 GUARDS: dict[str, Callable[[dict], list[str]]] = {g.__name__: g for g in (
     drives_webkit, headless, isolated, answers_by_its_name, no_host_access, built_from_its_folder,
     never_pulled, base_pinned_by_digest, no_latest, own_playwright_core, runs_as_node,
-    not_an_agent_tool, chromium_untouched)}
+    not_an_agent_tool, chromium_untouched, no_new_privileges, all_capabilities_dropped)}
 
 
 def problems(data: dict) -> dict[str, list[str]]:
@@ -167,12 +195,12 @@ def problems(data: dict) -> dict[str, list[str]]:
 # ---------------------------------------------------------------- the breaks each guard must catch
 
 
-def _set(key: str, value: object) -> Callable[[dict], None]:
-    return lambda data: _service(data).__setitem__(key, value)
+def _set(key: str, value: object, service: str = SERVICE) -> Callable[[dict], None]:
+    return lambda data: data["services"][service].__setitem__(key, value)
 
 
-def _drop(key: str) -> Callable[[dict], None]:
-    return lambda data: _service(data).pop(key)
+def _drop(key: str, service: str = SERVICE) -> Callable[[dict], None]:
+    return lambda data: data["services"][service].pop(key)
 
 
 def _command(old: str, new: str, service: str = SERVICE) -> Callable[[dict], None]:
@@ -230,8 +258,14 @@ BREAKS: list[tuple[str, str, Callable[[dict], None]]] = [
     ("own_playwright_core", "no install", _dockerfile("install --with-deps webkit", "--version")),
     ("runs_as_node", "stays root", _dockerfile("\nUSER node", "\n")),
     ("not_an_agent_tool", "registered in mcp_servers", _register),
-    ("chromium_untouched", "Chromium loses --no-sandbox", _command("--no-sandbox", "", "playwright-mcp")),
-    ("chromium_untouched", "Chromium becomes webkit", _command("--browser chromium", "--browser webkit", "playwright-mcp")),
+    ("chromium_untouched", "Chromium loses --no-sandbox", _command("--no-sandbox", "", CHROMIUM)),
+    ("chromium_untouched", "Chromium becomes webkit", _command("--browser chromium", "--browser webkit", CHROMIUM)),
+    ("no_new_privileges", "WebKit without it", _drop("security_opt")),
+    ("no_new_privileges", "Chromium without it", _drop("security_opt", CHROMIUM)),
+    ("no_new_privileges", "turned off", _set("security_opt", ["no-new-privileges:false"])),
+    ("all_capabilities_dropped", "WebKit keeps them", _drop("cap_drop")),
+    ("all_capabilities_dropped", "Chromium keeps them", _drop("cap_drop", CHROMIUM)),
+    ("all_capabilities_dropped", "only one dropped", _set("cap_drop", ["NET_RAW"], CHROMIUM)),
 ]
 
 

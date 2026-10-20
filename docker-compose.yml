@@ -69,10 +69,16 @@ services:
   # on the host picks the files up from workspaces/browser-output to put them
   # on the pull request. The host directory must exist and be writable by uid
   # 1000 (`node`) before `up`; docker would otherwise create it owned by root.
+  #
+  # no-new-privileges and cap_drop ALL (temper queue #124, Security's #123 review): with
+  # the browser's own sandbox off, the container is the only boundary, so no process in it
+  # may gain privileges (a setuid binary) or keep a capability, even in its bounding set.
   playwright-mcp:
     image: mcr.microsoft.com/playwright/mcp:latest
     restart: unless-stopped
     init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     ports:
       - "${TEMPER_BIND:-127.0.0.1}:${PLAYWRIGHT_MCP_PORT:-8931}:8931"
     working_dir: /tmp/browser-output
@@ -111,19 +117,30 @@ services:
   # Image: docker/playwright-mcp-webkit/Dockerfile, playwright-mcp's image pinned by digest plus
   # WebKit. temper-deploy and temper-ci recreate only server and worker and never build or start
   # this one, so after a change to it, from the main folder:
-  #   docker compose build playwright-mcp-webkit && docker compose up -d --no-deps playwright-mcp-webkit
+  # - a change to this block only, same image:
+  #     docker compose up -d --no-deps --no-build --pull never playwright-mcp-webkit
+  # - a change to the Dockerfile: a plain `docker build -t temper-ai/playwright-mcp-webkit
+  #   docker/playwright-mcp-webkit`, then tell Security the new image id before the container
+  #   runs on it: its review pins the image id and looks again at any change (W1, W2).
+  # Never `docker compose build`: Compose stamps its own labels into what it builds, so the same
+  # bytes get a new image id (Compose 5.0.2, 2026-10-20).
   # pull_policy never: the image is only ever built here. Without it `docker compose pull`, and `up`
   # when the image is missing, first ask Docker Hub for temper-ai/playwright-mcp-webkit, a name
-  # nobody here owns (Compose 5.0.2, 2026-10-20); with it, pull skips it and up builds it.
+  # nobody here owns (Compose 5.0.2, 2026-10-20); with it, pull skips it, and up without
+  # --no-build would build it the Compose way.
   #
   # --isolated and --output-dir as playwright-mcp (cwd stays the image's /home/node, node's own).
   # No --no-sandbox: Playwright applies it to Chromium only, and WebKit starts without it.
+  # no-new-privileges and cap_drop ALL as playwright-mcp (#124): WPE WebKit has no sandbox of its
+  # own here (no bubblewrap), so the container is the only boundary.
   playwright-mcp-webkit:
     build: docker/playwright-mcp-webkit
     image: temper-ai/playwright-mcp-webkit
     pull_policy: never
     restart: unless-stopped
     init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     entrypoint: node
     command: >
       /app/cli.js

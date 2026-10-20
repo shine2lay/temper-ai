@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinewick Candle Co.: pseudo-element test page</title>
+<!--
+  Keyed pseudo-element page pseudo-v1 (queue #103, W13b, hypothesis H9). Its answer key is expected.json,
+  written and sealed (~/design-lab/seals/pseudo-v1.json) before the converter change. Every element with a
+  ::before or ::after has an id that the key lists, with the outcome the converter must give at each width.
+  Drawn (visible paint): P1a-P1c ticks "✓" (inline text, as on Signalbox's pricing cards), P2 "→" in a flex
+  button, P3 the word "New" on a pill, P4a-P4b status dots (empty content, background, round, as on Signalbox),
+  P5 a border-only rule under a heading, P6 a border-only ring, P7 an absolutely placed accent bar, P8 "↗" after
+  an inline link, P9 attr() text, P10 the plain word "Note:".
+  Not drawn and not counted (no visible paint): N1 content: none; N2 an empty clearfix ::after with no paint.
+  control.html holds the kind the converter can't draw (a CSS counter); it must make the pseudo check fail.
+  Static: no script, no outside URL, fonts in this folder. Pinewick Candle Co. is made up.
+-->
+<style>
+@font-face { font-family: "Figtree"; font-weight: 400; font-style: normal; src: url("fonts/figtree/Figtree-400.ttf") format("truetype"); }
+@font-face { font-family: "Figtree"; font-weight: 600; font-style: normal; src: url("fonts/figtree/Figtree-600.ttf") format("truetype"); }
+@font-face { font-family: "Figtree"; font-weight: 800; font-style: normal; src: url("fonts/figtree/Figtree-800.ttf") format("truetype"); }
+*, *::before, *::after { box-sizing: border-box; }
+/* Amended before any converter change (W13b): the page's colours as shared custom properties, as real pages declare them. */
+:root { --paper: #ffffff; --ink: #1f2937; --accent: #1d4ed8; }
+html { background: #ffffff; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Figtree", Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 1.5; }
+a { color: #1e40af; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 32px 24px 48px; }
+h1 { margin: 0 0 16px; color: #111827; font-size: 40px; font-weight: 800; line-height: 1.15; }
+h2 { margin: 40px 0 16px; color: #111827; font-size: 28px; font-weight: 800; line-height: 1.25; }
+p { margin: 0 0 16px; }
+.lead { color: #374151; font-size: 20px; }
+/* P2: "→" after the button text; the button is a flex box, so its ::after is a flex item */
+.go { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 8px; background: #1d4ed8; color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; }
+.go::after { content: "→"; }
+/* P3: the word "New" on a pill, before a sentence */
+.news::before { content: "New"; display: inline-block; margin-right: 8px; padding: 0 10px; border-radius: 999px; background: #fde68a; color: #713f12; font-size: 14px; font-weight: 600; line-height: 24px; }
+/* P10: the plain word "Note:" before a sentence */
+.note::before { content: "Note:"; margin-right: 6px; color: #111827; font-weight: 600; }
+/* P1: ticks before each item, inline text (as on Signalbox's pricing cards) */
+.ticks { margin: 0 0 16px; padding: 0; list-style: none; display: grid; gap: 8px; }
+.ticks li::before { content: "✓"; margin-right: 8px; color: #3f6212; font-weight: 600; }
+/* P4: status dots, empty content with a background, round (as on Signalbox) */
+.status { margin: 0 0 16px; padding: 0; list-style: none; display: grid; gap: 8px; }
+.status li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.state { display: flex; align-items: center; gap: 8px; color: #4b5563; font-size: 16px; }
+.state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #15803d; }
+.state.slow::before { background: #b45309; }
+/* P5: a border-only rule under a heading */
+.ruled::after { content: ""; display: block; width: 48px; margin-top: 8px; border-bottom: 3px solid #1d4ed8; }
+/* P6: a border-only ring before a sentence */
+.legend::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 2px solid #1d4ed8; border-radius: 50%; vertical-align: -1px; }
+/* P7: an absolutely placed accent bar on a card */
+.card { position: relative; margin: 0 0 16px; padding: 16px 16px 16px 24px; border-radius: 8px; background: #f3f4f6; }
+.card p { margin: 0; }
+.card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 6px; border-radius: 8px 0 0 8px; background: #1d4ed8; }
+/* P8: "↗" after an inline link */
+.ext::after { content: "↗"; margin-left: 2px; }
+/* P9: attr() text after a price */
+.price { color: #111827; font-size: 28px; font-weight: 800; }
+.price::after { content: " " attr(data-unit); color: #4b5563; font-size: 16px; font-weight: 400; }
+/* N1: content none; its background and size must not be drawn */
+.plain::before { content: none; display: block; width: 12px; height: 12px; background: #dc2626; }
+/* N2: an empty clearfix ::after with no paint */
+.clearfix::after { content: ""; display: table; clear: both; }
+.thumb { float: left; width: 48px; height: 48px; margin-right: 16px; border-radius: 8px; background: #fbbf24; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Pinewick Candle Co.</h1>
+  <p class="lead">Hand-poured candles from a small workshop. This made-up page tests drawing ::before and ::after content.</p>
+  <p><a class="go" id="P2" href="#prices">See the prices</a></p>
+  <p class="news" id="P3">Winter scents are back in stock.</p>
+  <p class="note" id="P10">Orders placed before noon ship the same day.</p>
+
+  <h2 class="ruled" id="P5">What every candle has</h2>
+  <ul class="ticks">
+    <li id="P1a">Soy wax, poured by hand</li>
+    <li id="P1b">A cotton wick, trimmed</li>
+    <li id="P1c">Forty hours of burn time</li>
+  </ul>
+  <p class="legend" id="P6">Ringed scents ship within a week.</p>
+
+  <h2 id="prices">Prices</h2>
+  <p class="price" id="P9" data-unit="per candle">$24</p>
+  <div class="card" id="P7"><p>Refills are half price when you bring the jar back.</p></div>
+  <p>Before you light one, read the <a class="ext" id="P8" href="#care">care guide</a>.</p>
+
+  <h2>Workshop status</h2>
+  <ul class="status">
+    <li><span>Shop</span><span class="state" id="P4a">Open</span></li>
+    <li><span>Shipping</span><span class="state slow" id="P4b">Slow</span></li>
+  </ul>
+
+  <h2 id="care">Care</h2>
+  <p class="plain" id="N1">Keep the wick short and the flame away from drafts.</p>
+  <div class="clearfix" id="N2"><span class="thumb"></span><p>Burn each candle for two hours the first time, so the wax melts evenly to the edge.</p></div>
+</main>
+</body>
+</html>

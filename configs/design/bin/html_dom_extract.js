@@ -539,6 +539,8 @@
   };
   const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const nameOf = (el, kind) => {
+    // A ::before/::after turned into an element (see "pseudo-elements" below) is named after its host.
+    if (el.dataset && el.dataset.ppPseudo) return (el.dataset.ppSide || 'Pseudo') + ' / ' + nameOf(el.parentElement);
     const d = el.dataset && (el.dataset.component || el.dataset.name);
     if (d) return short(d, 60);
     const label = el.getAttribute('aria-label');
@@ -806,6 +808,7 @@
     let plain = '';
     let brk = null;             // what ended the line so far: 'space', 'end' (paragraph) or none
     let spaceEl = null;         // the element of the last space seen
+    const pkeys = new Set();    // pseudo-elements whose text this run draws
     const pushChar = (ch, leafRef, rc) => {
       const top = rc.top + sy, bottom = rc.bottom + sy, left = rc.left + sx, right = rc.right + sx;
       const cyy = (top + bottom) / 2;
@@ -872,6 +875,7 @@
           leaf.text += ch;
           lastWasSpace = ch === ' ';
           if (!isWs) anyText = true;
+          if (!isWs && parent.dataset && parent.dataset.ppPseudo) pkeys.add(parent.dataset.ppPseudo);
           pushChar(ch, leaf, rc);
         }
         return;
@@ -887,7 +891,8 @@
         const rects = [...node.getClientRects()];
         for (const rc of rects) {
           decor.push({kind: 'rect', name: nameOf(node) + ' (inline box)', box: box(rc), fills: dec.fills, strokes: dec.strokes,
-            radius: dec.radius, shadows: dec.shadows, opacity: 1, deco: 'under', z: 0});
+            radius: dec.radius, shadows: dec.shadows, opacity: 1, deco: 'under', z: 0,
+            ...(node.dataset && node.dataset.ppPseudo ? {pseudo: [node.dataset.ppPseudo]} : {})});
         }
         // Side borders (a dotted leader, an underline border) under the words; a box split over lines
         // keeps its fill only.
@@ -977,7 +982,8 @@
         : {x: r2(x), y: r2(top), w: r2(right - x), h: r2(bottom - top)},
       text: {align, lineHeight: r2(lineBox), paragraphs: paragraphs.map((para) => para.map((leaf) => ({text: leaf.text, style: leaf.style}))), lines: frags,
         wrap, plain: clean(plain), ...(nowrap ? {nowrap: true} : {}),
-        ...(clipped ? {clipped: true, clamp, clipHeight: r2(clipHeight), heightSpec} : {})}});
+        ...(clipped ? {clipped: true, clamp, clipHeight: r2(clipHeight), heightSpec} : {})},
+      ...(pkeys.size ? {pseudo: [...pkeys]} : {})});
     stats.texts += 1;
     // Independent CSS underline colour/offset cannot be represented by a Penpot text leaf.
     // Draw editable lines from measured fragments; do not rewrite the source or bake its HTML.
@@ -1317,13 +1323,6 @@
       if (el.querySelector('*') && cs.visibility === 'hidden') issue('hidden-subtree-skipped', el, 'visibility:hidden');
       return;
     }
-    for (const pseudo of ['::before', '::after']) {
-      const ps = getComputedStyle(el, pseudo);
-      if (ps.content && ps.content !== 'none' && ps.content !== 'normal' && ps.display !== 'none') {
-        const pd = (parseColor(ps.backgroundColor) || {}).opacity > 0 || ps.backgroundImage !== 'none' || (ps.content !== '""' && ps.content !== "''");
-        if (pd) issue('pseudo-element-ignored', el, pseudo + ' ' + ps.content.slice(0, 30));
-      }
-    }
     if (cs.transform && cs.transform !== 'none' && !/^matrix\(1, 0, 0, 1, [-\d.]+, [-\d.]+\)$/.test(cs.transform)) issue('transform-approximated', el, cs.transform);
     if (cs.filter && cs.filter !== 'none') issue('filter-ignored', el, cs.filter.slice(0, 60));
     if (cs.mixBlendMode && cs.mixBlendMode !== 'normal') issue('blend-mode-ignored', el, cs.mixBlendMode);
@@ -1398,6 +1397,7 @@
       clip: cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || false,
       section, component, layout: layoutOf(el, cs), item: itemOf(el, cs, pcs), z: zz, tag, children: kids};
     if (!own) node.wrapper = true;
+    if (el.dataset && el.dataset.ppPseudo) node.pseudo = [el.dataset.ppPseudo];
     if (!kids.length && parseFloat(cs.flexGrow) > 0 && b.w > 0 && b.h < 1) {
       node.layoutSpacer = true; node.box.h = 1;
     }
@@ -1426,6 +1426,193 @@
     out.push(node);
   };
 
+  // ---------- pseudo-elements (::before, ::after) ----------
+  // Each ::before/::after with visible paint (text, or a background, border, shadow or outline on a box
+  // with a size) becomes a real temporary element: a span with the pseudo's computed style copied inline
+  // and its text, in the pseudo's place, while the pseudo itself is switched off. The extraction below
+  // then draws it like any element: live text or a shape. Nothing about the page may change: every
+  // element's box is compared before and after, and one that moves undoes that pseudo (filed as
+  // pseudo-element-not-drawn); the caller can also compare screenshots (keepPseudo, then
+  // window.__ppPseudoRestore()). Content that can't become plain text (counter(), quotes, url(),
+  // images) is filed as pseudo-element-not-drawn and left as it was. Every pseudo with paint is
+  // recorded in scene.pseudo, with whether a layer draws it, so the converter can fail on any it missed.
+  const pseudoRecords = [];
+  const pseudoSpans = [];
+  const pseudoHosts = [];
+  const NO_PSEUDO = new Set(['img', 'input', 'textarea', 'select', 'video', 'audio', 'canvas', 'iframe', 'embed', 'object', 'br', 'wbr', 'option', 'optgroup']);
+  const cssUnescape = (s) => s.replace(/\\(?:([0-9a-fA-F]{1,6})[ \t\n\r\f]?|(\n)|([\s\S]))/g, (m, hex, nl, ch) => {
+    if (hex) { const cp = parseInt(hex, 16); return cp === 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) ? '\uFFFD' : String.fromCodePoint(cp); }
+    return nl ? '' : ch;
+  });
+  // A computed content value -> {text} or {undrawable: why}.
+  const pseudoContent = (value, host) => {
+    let i = 0, text = '';
+    while (i < value.length) {
+      const ch = value[i];
+      if (/\s/.test(ch)) { i++; continue; }
+      if (ch === '"' || ch === "'") {
+        let j = i + 1, raw = '';
+        while (j < value.length && value[j] !== ch) { if (value[j] === '\\') { raw += value[j] + (value[j + 1] || ''); j += 2; } else raw += value[j++]; }
+        text += cssUnescape(raw);
+        i = j + 1;
+        continue;
+      }
+      if (ch === '/') break;  // alternative text for screen readers follows: not drawn
+      const m = value.slice(i).match(/^([a-zA-Z-]+)(\()?/);
+      if (!m) return {undrawable: 'content ' + value.slice(0, 40)};
+      const name = m[1].toLowerCase();
+      if (m[2]) {
+        let depth = 0, j = i;
+        for (; j < value.length; j++) { if (value[j] === '(') depth++; else if (value[j] === ')' && --depth === 0) break; }
+        const inner = value.slice(i + m[0].length, j).trim();
+        if (name === 'attr') text += host.getAttribute(inner.split(/[\s,]/)[0]) || '';
+        else if (name === 'counter' || name === 'counters') return {undrawable: 'counter'};
+        else return {undrawable: name === 'url' || /image|gradient/.test(name) ? 'image' : name};
+        i = j + 1;
+        continue;
+      }
+      if (name === 'no-open-quote' || name === 'no-close-quote') { i += m[0].length; continue; }
+      return {undrawable: /quote/.test(name) ? 'quote' : name};
+    }
+    return {text};
+  };
+  const seen = (v) => { const c = parseColor(v); return !!c && c.opacity > 0.001; };
+  const boxPaint = (ps) => seen(ps.backgroundColor) || (ps.backgroundImage || 'none') !== 'none' ||
+    ['Top', 'Right', 'Bottom', 'Left'].some((s) => parseFloat(ps['border' + s + 'Width']) > 0 &&
+      !/none|hidden/.test(ps['border' + s + 'Style']) && seen(ps['border' + s + 'Color'])) ||
+    (ps.boxShadow || 'none') !== 'none' ||
+    (!/none/.test(ps.outlineStyle || 'none') && parseFloat(ps.outlineWidth) > 0 && seen(ps.outlineColor));
+  // A host the walk below never draws (not rendered, hidden, see-through, screen-reader-only): its
+  // pseudo-elements show nothing either.
+  const hiddenHost = (el) => {
+    const cs = getComputedStyle(el);
+    if (cs.display !== 'contents' && !el.getClientRects().length) return true;
+    if (cs.visibility === 'hidden') return true;
+    for (let a = el; a && a !== doc; a = a.parentElement) {
+      const acs = getComputedStyle(a);
+      if (parseFloat(acs.opacity) === 0 || screenReaderOnly(a, acs)) return true;
+    }
+    return false;
+  };
+  const layoutSnap = (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; });
+  const layoutSame = (a, b) => a.length === b.length && a.every((r, i) => r.every((v, k) => Math.abs(v - b[i][k]) <= 0.01));
+  let pseudoStyle = null;
+  const pseudoUndo = (rec) => {
+    rec.span.remove();
+    const sides = (rec.host.getAttribute('data-pp-pseudo-off') || '').split(' ').filter((s) => s && s !== rec.side);
+    if (sides.length) rec.host.setAttribute('data-pp-pseudo-off', sides.join(' '));
+    else rec.host.removeAttribute('data-pp-pseudo-off');
+  };
+  const pseudoDo = (rec) => {
+    if (rec.side === 'before') rec.host.insertBefore(rec.span, rec.host.firstChild);
+    else rec.host.appendChild(rec.span);
+    const sides = new Set((rec.host.getAttribute('data-pp-pseudo-off') || '').split(' ').filter(Boolean));
+    sides.add(rec.side);
+    rec.host.setAttribute('data-pp-pseudo-off', [...sides].join(' '));
+  };
+  const materialise = () => {
+    const els = [...document.body.querySelectorAll('*')].filter((e) => e.namespaceURI === 'http://www.w3.org/1999/xhtml' && !SKIP.has(e.localName));
+    const todo = [];
+    for (const el of els) {
+      if (NO_PSEUDO.has(el.localName)) continue;
+      for (const side of ['before', 'after']) {
+        const pseudo = '::' + side;
+        const ps = getComputedStyle(el, pseudo);
+        const value = ps.content;
+        if (!value || value === 'none' || value === 'normal' || ps.display === 'none') continue;
+        if (ps.visibility === 'hidden' || parseFloat(ps.opacity) === 0) continue;
+        const parsed = pseudoContent(value, el);
+        const boxy = boxPaint(ps);
+        const hasText = parsed.undrawable ? parsed.undrawable !== 'image' : /[^ \t\n\r\f]/.test(parsed.text) && seen(ps.color);
+        if (!boxy && !hasText && !parsed.undrawable) continue;
+        if (hiddenHost(el)) continue;
+        const kind = hasText ? (boxy ? 'box' : 'text') : 'shape';
+        const rec = {key: 'p' + pseudoRecords.length, where: where(el), id: el.id || '', pseudo, kind,
+          text: parsed.undrawable ? '' : (hasText ? parsed.text : ''), content: value.slice(0, 80), drawn: false};
+        pseudoRecords.push(rec);
+        if (parsed.undrawable) {
+          rec.not_drawn = parsed.undrawable;
+          issue('pseudo-element-not-drawn', el, pseudo + ' ' + value.slice(0, 40) + ' (' + parsed.undrawable + ')');
+          continue;
+        }
+        // The pseudo's computed style, read now: once it is switched off it has no used sizes any more.
+        const want = [];
+        for (let i = 0; i < ps.length; i++) {
+          const name = ps[i];
+          if (name === 'content' || name.startsWith('--')) continue;
+          want.push([name, ps.getPropertyValue(name)]);
+        }
+        const span = document.createElement('span');
+        span.dataset.ppPseudo = rec.key;
+        span.dataset.ppSide = pseudo;
+        if (rec.text) span.textContent = rec.text;
+        todo.push({rec, span, host: el, side, want});
+      }
+    }
+    if (!todo.length) return;
+    pseudoStyle = document.createElement('style');
+    pseudoStyle.textContent = '[data-pp-pseudo-off~="before"]::before{content:none!important}[data-pp-pseudo-off~="after"]::after{content:none!important}';
+    document.head.appendChild(pseudoStyle);
+    const before = layoutSnap(els);
+    const keep = (t) => {
+      // A box-only pseudo whose box has no size paints nothing: not drawn, not counted.
+      const r = t.span.getBoundingClientRect();
+      if (t.rec.kind === 'shape' && (r.width < 0.5 || r.height < 0.5) && (t.span.style.boxShadow || 'none') === 'none') {
+        pseudoUndo(t); pseudoRecords.splice(pseudoRecords.indexOf(t.rec), 1); return false;
+      }
+      return true;
+    };
+    for (const t of todo) pseudoDo(t);
+    // Style each span like its pseudo, in its place: set only the properties whose value differs from what
+    // the span already gets there (inherited from the host, or initial), then once more for any that changed
+    // with the first ones (display, font-size), line-height only then. Copying every computed value instead
+    // pins inherited ones such as line-height to their rounded strings, which can grow a line by 1/64 px
+    // and move the page (W13b: Signalbox's pricing ticks at 390 px).
+    for (const t of todo) {
+      for (const pass of [1, 2]) {
+        const cs = getComputedStyle(t.span);
+        const set = t.want.filter(([n, v]) => !(pass === 1 && n === 'line-height') && cs.getPropertyValue(n) !== v);
+        for (const [n, v] of set) t.span.style.setProperty(n, v);
+      }
+    }
+    // A text pseudo usually sizes to its text: its computed width/height are then the used size, and a
+    // fixed copy can differ from the shaped text by a fraction of a pixel, which shifts the glyphs after
+    // it. Where the span sized by itself comes within 1/20 px of that computed size (the computed string is
+    // rounded; an explicit size would differ by whole pixels), keep it auto, as the pseudo was.
+    for (const t of todo) {
+      if (t.rec.kind === 'shape') continue;
+      const st = t.span.style, scs = getComputedStyle(t.span);
+      const want = {width: scs.width, height: scs.height};
+      const kept = {width: st.width, height: st.height, inlineSize: st.inlineSize, blockSize: st.blockSize};
+      for (const k of Object.keys(kept)) st[k] = '';
+      const got = getComputedStyle(t.span);
+      const same = (a, b) => a === b || (parseFloat(a) >= 0 && Math.abs(parseFloat(a) - parseFloat(b)) < 0.05);
+      if (!same(got.width, want.width) || !same(got.height, want.height)) Object.assign(st, kept);
+    }
+    let live = todo.filter(keep);
+    if (!layoutSame(before, layoutSnap(els))) {
+      // Something moved: undo all, then add them one at a time and undo each one that moves anything.
+      for (const t of live) pseudoUndo(t);
+      const kept = [];
+      for (const t of live) {
+        pseudoDo(t);
+        if (layoutSame(before, layoutSnap(els))) { kept.push(t); continue; }
+        pseudoUndo(t);
+        t.rec.not_drawn = 'layout-changed';
+        issue('pseudo-element-not-drawn', t.host, t.rec.pseudo + ' ' + t.rec.content.slice(0, 40) + ' (as an element it moved the page)');
+      }
+      live = kept;
+    }
+    for (const t of live) { pseudoSpans.push(t.span); pseudoHosts.push(t.host); }
+  };
+  const pseudoRestore = () => {
+    for (const s of pseudoSpans) s.remove();
+    for (const h of pseudoHosts) h.removeAttribute('data-pp-pseudo-off');
+    if (pseudoStyle) pseudoStyle.remove();
+    pseudoSpans.length = 0; pseudoHosts.length = 0; pseudoStyle = null;
+  };
+  materialise();
+
   const body = document.body;
   const bodyCs = getComputedStyle(body);
   let pageBg = parseColor(bodyCs.backgroundColor);
@@ -1436,6 +1623,23 @@
   for (const f of bodyDec.fills) if (f.type !== 'color') pageFills.push(f);
   const nodes = [];
   processChildren(body, nodes, bodyCs);
+  {
+    // Which recorded pseudo-elements a layer now draws: text kinds need a text layer, shape kinds a
+    // box layer, a text on a painted box both.
+    const textKeys = new Set(), shapeKeys = new Set();
+    const visitKeys = (list) => {
+      for (const n of list) {
+        for (const k of n.pseudo || []) (n.kind === 'text' ? textKeys : shapeKeys).add(k);
+        if (n.children) visitKeys(n.children);
+      }
+    };
+    visitKeys(nodes);
+    for (const r of pseudoRecords) {
+      if (r.not_drawn) continue;
+      r.drawn = r.kind === 'text' ? textKeys.has(r.key) : r.kind === 'shape' ? shapeKeys.has(r.key) : textKeys.has(r.key) && shapeKeys.has(r.key);
+      if (!r.drawn) { r.not_drawn = 'no-layer'; issue('pseudo-element-not-drawn', null, r.where + ' ' + r.pseudo + ' ' + r.content.slice(0, 40) + ' (no layer draws it)'); }
+    }
+  }
 
   // ---------- component states (hover, focus) -> Penpot variants ----------
   // State rules are copied with the pseudo-class swapped for a class, so each state can be switched
@@ -1489,7 +1693,12 @@
       Object.assign(stats, savedStats);
     }
   }
-  return {version: 2, url: location.href, title: document.title, width: W, height: H,
+  // The page goes back as it was, unless the caller wants to screenshot it with the elements in place first.
+  if (opts.keepPseudo) window.__ppPseudoRestore = pseudoRestore;
+  else pseudoRestore();
+  const pseudoOut = {records: pseudoRecords.map(({key, where, id, pseudo, kind, text, content, drawn, not_drawn}) =>
+    ({key, where, id, pseudo, kind, text, content, drawn, ...(not_drawn ? {not_drawn} : {})})), kept: !!opts.keepPseudo};
+  return {version: 2, pseudo: pseudoOut, url: location.href, title: document.title, width: W, height: H,
     viewport: [window.innerWidth, window.innerHeight], background: pageFills, vars,
     body: {box: box(body.getBoundingClientRect()), layout: layoutOf(body, bodyCs)},
     // The requested weight can be synthetic (600 text with a 400-only mono face). Keep the

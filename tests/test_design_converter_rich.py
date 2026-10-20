@@ -27,7 +27,11 @@ WIDTHS = (390, 1440)
 
 
 def scenes():
-    return {w: json.loads((SCENES / f"scene-{w}.json").read_text()) for w in WIDTHS}
+    # Recorded before the extractor recorded ::before/::after (queue #103); rich.html has none.
+    recorded = {w: json.loads((SCENES / f"scene-{w}.json").read_text()) for w in WIDTHS}
+    for scene in recorded.values():
+        scene.setdefault("pseudo", {"records": [], "kept": False})
+    return recorded
 
 
 @pytest.fixture(scope="module")

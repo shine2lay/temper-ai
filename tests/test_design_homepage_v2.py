@@ -39,7 +39,12 @@ RUNTIME_SCENES = Path(__file__).resolve().parent / "design_runtime_scenes"  # re
 
 
 def scenes(widths=(390, 1440)):
-    return {w: json.loads((SCENES / f"scene-{w}.json").read_text()) for w in widths}
+    # Recorded before the extractor recorded ::before/::after (queue #103). atlas.html has none
+    # (test_recorded_fixture_pages_have_no_pseudo_elements), so its record is empty, not unknown.
+    recorded = {w: json.loads((SCENES / f"scene-{w}.json").read_text()) for w in widths}
+    for scene in recorded.values():
+        scene.setdefault("pseudo", {"records": [], "kept": False})
+    return recorded
 
 
 # --------------------------------------------------------------------------- workflows

@@ -59,6 +59,10 @@ CHUNK = 250
 # differing pixels or a mean difference above tile_mean_max levels.
 FIDELITY = {"threshold": 48, "shift": 1, "overall_pct": 2.0, "nontext_pct": 1.0, "text_pct": 12.0,
             "tile": 32, "tile_max_pct": 20.0, "tile_mean_max": 40.0}
+# Turning ::before/::after into temporary elements (html_dom_extract.js) must leave the page's own
+# pixels as they were: the screenshot with the elements in place and the one after they are removed
+# may differ on at most this share of pixels (H9, queue #103).
+PSEUDO_PIXEL_PCT = 0.01
 FALLBACK_FONT = "sourcesanspro"
 FONT_MAGIC = {b"\x00\x01\x00\x00": ("font/ttf", "ttf"), b"true": ("font/ttf", "ttf"),
               b"OTTO": ("font/otf", "otf"), b"wOFF": ("font/woff", "woff")}
@@ -238,8 +242,35 @@ def capture_code(base: str, page: str, widths: tuple[int, ...]) -> str:
     });
     await page.waitForTimeout(150);
     // Component states (hover, focus) are read once, at the widest width, for the Penpot variants.
-    const scene = await page.evaluate('(' + A.src + ')(' + JSON.stringify({states: w === Math.max(...A.widths)}) + ')');
+    // ::before/::after drawn as temporary elements stay in place for one screenshot, then go; the
+    // page's own screenshot is taken after, and the two must match (scene.pseudo.guard).
+    const scene = await page.evaluate('(' + A.src + ')(' + JSON.stringify({states: w === Math.max(...A.widths), keepPseudo: true}) + ')');
+    const drawnPseudo = ((scene.pseudo || {}).records || []).some((r) => r.drawn);
+    const shotPseudo = drawnPseudo ? await page.screenshot({fullPage: true, animations: 'disabled', caret: 'hide', scale: 'css'}) : null;
+    await page.evaluate(() => { if (window.__ppPseudoRestore) { window.__ppPseudoRestore(); delete window.__ppPseudoRestore; } });
     const shot = await page.screenshot({fullPage: true, animations: 'disabled', caret: 'hide', scale: 'css'});
+    if (shotPseudo && scene.pseudo) {
+      if (shotPseudo.equals(shot)) scene.pseudo.guard = {identical: true, same_size: true, differing: 0, pct: 0};
+      else {
+        const dp = await page.context().newPage();
+        try {
+          await dp.goto(A.base + '/__blank', {waitUntil: 'load'});
+          scene.pseudo.guard = await dp.evaluate(async ({a, b}) => {
+            const load = (s) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'data:image/png;base64,' + s; });
+            const [ia, ib] = await Promise.all([load(a), load(b)]);
+            const W = Math.max(ia.naturalWidth, ib.naturalWidth), H = Math.max(ia.naturalHeight, ib.naturalHeight);
+            const px = (img) => { const c = document.createElement('canvas'); c.width = W; c.height = H;
+              const g = c.getContext('2d', {willReadFrequently: true}); g.drawImage(img, 0, 0); return g.getImageData(0, 0, W, H).data; };
+            const P = px(ia), Q = px(ib);
+            let n = 0;
+            for (let i = 0; i < P.length; i += 4) if (P[i] !== Q[i] || P[i + 1] !== Q[i + 1] || P[i + 2] !== Q[i + 2] || P[i + 3] !== Q[i + 3]) n++;
+            return {identical: false, same_size: ia.naturalWidth === ib.naturalWidth && ia.naturalHeight === ib.naturalHeight,
+              with_pseudo: [ia.naturalWidth, ia.naturalHeight], page: [ib.naturalWidth, ib.naturalHeight],
+              pixels: W * H, differing: n, pct: Math.round(n / (W * H) * 100 * 100000) / 100000};
+          }, {a: shotPseudo.toString('base64'), b: shot.toString('base64')});
+        } finally { await dp.close(); }
+      }
+    }
     let r = await page.request.put(A.base + '/__put/browser-' + w + '.png', {data: shot, headers: {'content-type': 'application/octet-stream'}});
     if (!r.ok()) throw new Error('upload screenshot failed ' + r.status());
     r = await page.request.put(A.base + '/__put/scene-' + w + '.json', {data: JSON.stringify(scene), headers: {'content-type': 'application/octet-stream'}});
@@ -686,6 +717,8 @@ class Builder:
         self.boards: list[dict] = []
         self.plain: dict[str, str] = {}
         self.list_markers: list[dict] = []
+        self.pseudo_layers: list[dict] = []  # layers that draw a ::before/::after (scene node "pseudo" keys)
+        self.width: int | None = None        # the page board being built
         self.made: dict[int, str] = {}       # id(scene node) -> its Penpot layer (grid cells name their layer)
         self.paths: dict[str, tuple] = {}    # Penpot layer -> its path under its component root (links instances)
         self.variants: list[dict] = []
@@ -710,6 +743,8 @@ class Builder:
         self._segment["objects"].append(obj)
         if n is not None:
             self.made[id(n)] = obj["id"]
+            if n.get("pseudo") and n.get("kind") != "text":  # text layers are recorded in text()
+                self.pseudo_layers.append({"id": obj["id"], "keys": list(n["pseudo"]), "type": obj["type"], "width": self.width})
         self.paths[obj["id"]] = path
         return obj
 
@@ -1078,6 +1113,8 @@ class Builder:
         self.put(obj, n if viewport is None else None, path if viewport is None else path + ("clip-text",))
         if n.get("listMarker"):
             self.list_markers.append({"id": obj["id"], **n["listMarker"]})
+        if n.get("pseudo"):
+            self.pseudo_layers.append({"id": obj["id"], "keys": list(n["pseudo"]), "type": "text", "width": self.width})
 
     # -- components
     def component_main(self, n: dict, x: float, y: float, name: str, container: dict | None = None,
@@ -1182,6 +1219,7 @@ class Builder:
         """One width's page: a board laid out like the page's body (page: penpot_layout's page node)."""
         self.begin(f"board-{scene['width']}")
         w, h = scene["width"], scene["height"]
+        self.width = w
         board = p.shape("frame", f"{label} — {w}", p.ROOT, p.ROOT, x0, 0, w, h,
                         self.fills(scene.get("background", []), "page"))
         board["show-content"] = False
@@ -1344,7 +1382,11 @@ def build(scenes: dict[int, dict], file_id: str, page_id: str, fonts: Fonts, med
     markers = [m for m in b.list_markers if on_page(m["id"])]
     lists = [{"width": w, **item} for w in widths for item in scenes[w].get("lists", [])]
     omitted = [{"width": w, **item} for w in widths for item in scenes[w].get("omittedText", [])]
-    return {"chunks": [c for c in chunks if c["changes"]], "objects": b.objects, "boards": b.boards,
+    pseudo = {"recorded": all(isinstance(scenes[w].get("pseudo"), dict) for w in widths),
+              "records": [{"width": w, **r} for w in widths for r in (scenes[w].get("pseudo") or {}).get("records", [])],
+              "layers": [layer for layer in b.pseudo_layers if on_page(layer["id"])],
+              "guards": {str(w): (scenes[w].get("pseudo") or {}).get("guard") for w in widths}}
+    return {"chunks": [c for c in chunks if c["changes"]], "objects": b.objects, "boards": b.boards, "pseudo": pseudo,
             "marked_components": marked, "list_items": lists, "list_markers": markers, "omitted_text": omitted,
             "components": [{"id": m["id"], "name": m["name"], "root": m["root"], "objects": len(m["objects"]),
                             **({"state": m["state"]} if m["state"] else {})} for m in b.all_mains],
@@ -1530,6 +1572,56 @@ def content_text(content: dict | None) -> str:
     return "\n".join(out)
 
 
+def pseudo_check(pseudo: dict | None, objects: dict) -> dict:
+    """Every ::before/::after with visible paint is drawn in the (reopened) Penpot file: its text as live
+    text in a text layer of that width's board, its box as a layer; none was filed as not drawn; and
+    drawing them left the page's own pixels as they were (H9, queue #103). Fails closed: scenes from an
+    extractor that records no pseudo-elements fail."""
+    keys = ("painted", "drawn", "not_drawn", "texts", "texts_live", "shapes", "shapes_live")
+    if not isinstance(pseudo, dict) or not pseudo.get("recorded"):
+        return {"passed": False, "counts": dict.fromkeys(keys, 0), "per_width": {},
+                "problems": ["no pseudo-element record (converter or scene without pseudo-element support)"]}
+    by_key: dict[tuple, list[dict]] = {}
+    for layer in pseudo.get("layers", []):
+        for k in layer["keys"]:
+            by_key.setdefault((str(layer["width"]), k), []).append(layer)
+    counts = dict.fromkeys(keys, 0)
+    per_width: dict[str, dict] = {}
+    problems: list[str] = []
+    for r in pseudo.get("records", []):
+        w = str(r["width"])
+        pw = per_width.setdefault(w, dict.fromkeys(keys, 0))
+        has_text, has_shape = r["kind"] in ("text", "box"), r["kind"] in ("box", "shape")
+        found = [layer for layer in by_key.get((w, r["key"]), []) if layer["id"] in objects]
+        want = " ".join((r.get("text") or "").split())
+        text_ok = has_text and bool(r.get("drawn")) and bool(want) and any(
+            layer["type"] == "text" and want in " ".join(content_text(objects[layer["id"]].get("content")).split())
+            for layer in found)
+        shape_ok = has_shape and bool(r.get("drawn")) and any(layer["type"] != "text" for layer in found)
+        ok = (text_ok or not has_text) and (shape_ok or not has_shape)
+        for c in (counts, pw):
+            c["painted"] += 1
+            c["texts"] += has_text
+            c["texts_live"] += text_ok
+            c["shapes"] += has_shape
+            c["shapes_live"] += shape_ok
+            c["drawn" if ok else "not_drawn"] += 1
+        if not ok:
+            problems.append(f"{w} px {r.get('where')} {r.get('pseudo')} {str(r.get('content', ''))[:30]}: "
+                            f"{r.get('not_drawn') or 'not in the reopened file'}")
+    guards = pseudo.get("guards") or {}
+    for w in per_width:
+        if not any(r.get("drawn") for r in pseudo.get("records", []) if str(r["width"]) == w):
+            continue
+        g = guards.get(w)
+        if not isinstance(g, dict):
+            problems.append(f"{w} px: no screenshot check that drawing pseudo-elements left the page unchanged")
+        elif not g.get("same_size", False) or float(g.get("pct", 100.0)) > PSEUDO_PIXEL_PCT:
+            problems.append(f"{w} px: drawing pseudo-elements changed the page's pixels ({g.get('pct')} % > {PSEUDO_PIXEL_PCT} %)")
+    return {"passed": not problems, "counts": counts, "per_width": per_width, "guards": guards,
+            "pixel_bar_pct": PSEUDO_PIXEL_PCT, "problems": problems[:30]}
+
+
 def verify(file: dict, page_id: str, built: dict) -> dict:
     """Fresh reopen: every built layer, board size, text, path, library item and component link."""
     data = file.get("data", {})
@@ -1595,6 +1687,7 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
     expected_markers = sum(bool(i.get("expected")) for i in built.get("list_items", []))
     marker_ok = len(markers) == expected_markers and all(
         content_text(objects.get(m["id"], {}).get("content")) == m["text"] for m in markers)
+    pseudo = pseudo_check(built.get("pseudo"), objects)
     checks = {
         "boards": all(b["ok"] for b in boards) and len(boards) == len(built["boards"]),
         "all_layers_present": not missing,
@@ -1613,8 +1706,9 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
         "text_growth_kept": not grow_bad,
         "variants_kept": not variant_bad,
         "list_markers_drawn": marker_ok,
+        "pseudo_content_drawn": pseudo["passed"],
     }
-    return {"checks": checks, "passed": all(checks.values()), "boards": boards,
+    return {"checks": checks, "passed": all(checks.values()), "boards": boards, "pseudo": pseudo,
             "not_applicable": not_applicable, "warnings": warnings, "omitted_text": omitted,
             "clipping_limits": clipping_limits, "list_items": built.get("list_items", []),
             "counts": {"objects": len(built["objects"]), "reopened_objects": len(objects),
@@ -1628,7 +1722,9 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
                        "components": len(built["components"]), "instances": len(built["instances"]),
                        "frames_with_layout": sum(o["type"] == "frame" and bool(o.get("layout")) for o in built["objects"]),
                        "variant_sets": len(variants), "list_items": len(built.get("list_items", [])),
-                       "expected_markers": expected_markers, "drawn_markers": len(markers)},
+                       "expected_markers": expected_markers, "drawn_markers": len(markers),
+                       "pseudo_painted": pseudo["counts"]["painted"], "pseudo_drawn": pseudo["counts"]["drawn"],
+                       "pseudo_texts": pseudo["counts"]["texts"], "pseudo_texts_live": pseudo["counts"]["texts_live"]},
             "problems": {"missing": missing[:20], "wrong": wrong[:20], "text": text_bad[:20],
                          "line_boxes": pos_missing[:20], "paths": path_bad[:20], "page_text": page_text_bad[:20],
                          "layout": layout_bad[:20], "growth": grow_bad[:20], "variants": variant_bad[:20]}}
@@ -1727,6 +1823,7 @@ def convert(site: Path, page: str, out: Path, name: str, widths: tuple[int, ...]
                                             "letter-spacing", "text-transform")} for t in built["typographies"]],
         "sections": built["sections"], "fonts": font_records, "media": media_records, "layout": built["layout"],
         "issues": built["issues"], "issue_counts": issue_counts, "verify": checked, "exports": exports,
+        "pseudo": built["pseudo"],
         "fidelity": {str(w): f for w, f in fidelity.items()},
         "fidelity_passed": all(f["passed"] for f in fidelity.values()),
         "seconds": round(time.time() - started, 1), "finished_at": now()})

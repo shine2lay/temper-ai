@@ -1,0 +1,45 @@
+{
+ "about": "Answer key for the keyed pseudo-element pages pseudo-v1 (queue #103, W13b, hypothesis H9 in ~/design-lab/homepage-workflow/HYPOTHESES.md). Written from the pages' source and sealed (~/design-lab/seals/pseudo-v1.json, pseudo-v1.sha256) before the converter change. Each ::before/::after is named by its host's id and pseudo. 'drawn' means the converter draws it in the Penpot file (text kinds as live text holding exactly 'text'; shape kinds as a filled or stroked layer) and verify's pseudo check reads it there. 'none' means no visible paint: it must not be drawn and not be counted. 'not-drawn' means visible paint the converter can't draw: it must file pseudo-element-not-drawn and make the pseudo check fail. A mismatch is explained in ~/design-lab/homepage-workflow/wave2/W13b-REPORT.md (page wrong or converter wrong), never fixed by editing this key to match a converter.",
+ "written": "2026-10-19",
+ "widths": [390, 768, 1440],
+ "kinds": {
+  "text": "content holds visible text and the pseudo has no box paint",
+  "box": "content holds visible text and the pseudo also paints a box (background, border or shadow)",
+  "shape": "empty content, the pseudo paints a box only"
+ },
+ "pages": {
+  "index.html": {
+   "pseudo_check_passes": true,
+   "counts": {"painted": 13, "drawn": 13, "not_drawn": 0, "texts": 8, "texts_live": 8},
+   "items": [
+    {"host": "P1a", "pseudo": "::before", "outcome": "drawn", "kind": "text", "text": "✓", "note": "inline tick before an item, as Signalbox's .tier li::before"},
+    {"host": "P1b", "pseudo": "::before", "outcome": "drawn", "kind": "text", "text": "✓"},
+    {"host": "P1c", "pseudo": "::before", "outcome": "drawn", "kind": "text", "text": "✓"},
+    {"host": "P2", "pseudo": "::after", "outcome": "drawn", "kind": "text", "text": "→", "note": "flex item in an inline-flex button"},
+    {"host": "P3", "pseudo": "::before", "outcome": "drawn", "kind": "box", "text": "New", "note": "a word on a pill"},
+    {"host": "P4a", "pseudo": "::before", "outcome": "drawn", "kind": "shape", "note": "8 px round status dot, empty content, as Signalbox's span.state::before"},
+    {"host": "P4b", "pseudo": "::before", "outcome": "drawn", "kind": "shape", "note": "the same dot in the slow colour, as span.state.slow::before"},
+    {"host": "P5", "pseudo": "::after", "outcome": "drawn", "kind": "shape", "note": "border-only rule, no background (today's detector doesn't even see it)"},
+    {"host": "P6", "pseudo": "::before", "outcome": "drawn", "kind": "shape", "note": "border-only ring"},
+    {"host": "P7", "pseudo": "::before", "outcome": "drawn", "kind": "shape", "note": "absolutely placed accent bar"},
+    {"host": "P8", "pseudo": "::after", "outcome": "drawn", "kind": "text", "text": "↗", "note": "::after on inline text"},
+    {"host": "P9", "pseudo": "::after", "outcome": "drawn", "kind": "text", "text": " per candle", "note": "attr(); leading space may collapse in the drawn text, the word must be there"},
+    {"host": "P10", "pseudo": "::before", "outcome": "drawn", "kind": "text", "text": "Note:"},
+    {"host": "N1", "pseudo": "::before", "outcome": "none", "note": "content: none, even though it declares a size and a background"},
+    {"host": "N2", "pseudo": "::after", "outcome": "none", "note": "empty clearfix, no paint"}
+   ]
+  },
+  "control.html": {
+   "pseudo_check_passes": false,
+   "counts": {"painted": 4, "drawn": 1, "not_drawn": 3, "texts": 4, "texts_live": 1},
+   "items": [
+    {"host": "C1a", "pseudo": "::before", "outcome": "not-drawn", "kind": "text", "why": "counter", "note": "content: counter(step) \".\""},
+    {"host": "C1b", "pseudo": "::before", "outcome": "not-drawn", "kind": "text", "why": "counter"},
+    {"host": "C1c", "pseudo": "::before", "outcome": "not-drawn", "kind": "text", "why": "counter"},
+    {"host": "C2", "pseudo": "::before", "outcome": "drawn", "kind": "text", "text": "✓"}
+   ]
+  }
+ },
+ "today": "Before the change (converter at temper-ai master fecacf06), expected: index.html files pseudo-element-ignored for P1a-P1c, P2, P3, P4a, P4b, P7, P8, P9, P10 (11 per width; P5 and P6 are border-only and not even seen), draws none of them, and its converter verify passes. That is the gap.",
+ "pixels": "Turning pseudo-elements into elements must not change the page's own browser pixels: screenshot before vs after, each width, at most 0.01 % of pixels differ."
+}

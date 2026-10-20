@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinewick Candle Co.: pseudo-element control page</title>
+<!--
+  Negative control for pseudo-v1 (queue #103, W13b, hypothesis H9); its key is in expected.json.
+  C1a-C1c: the step numbers come from a CSS counter (content: counter(step) "."), which the converter can't turn
+  into known text. Each must stay undrawn, file pseudo-element-not-drawn, and make the pseudo check fail.
+  C2: one drawable tick "✓" on the same page, which must still be drawn.
+  Static: no script, no outside URL, fonts in this folder. Pinewick Candle Co. is made up.
+-->
+<style>
+@font-face { font-family: "Figtree"; font-weight: 400; font-style: normal; src: url("fonts/figtree/Figtree-400.ttf") format("truetype"); }
+@font-face { font-family: "Figtree"; font-weight: 600; font-style: normal; src: url("fonts/figtree/Figtree-600.ttf") format("truetype"); }
+@font-face { font-family: "Figtree"; font-weight: 800; font-style: normal; src: url("fonts/figtree/Figtree-800.ttf") format("truetype"); }
+*, *::before, *::after { box-sizing: border-box; }
+/* Amended before any converter change (W13b): the page's colours as shared custom properties, as real pages declare them. */
+:root { --paper: #ffffff; --ink: #1f2937; --accent: #1d4ed8; }
+html { background: #ffffff; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Figtree", Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 1.5; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 32px 24px 48px; }
+h1 { margin: 0 0 16px; color: #111827; font-size: 40px; font-weight: 800; line-height: 1.15; }
+/* C1: step numbers from a CSS counter */
+.steps { margin: 0 0 16px; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 8px; }
+.steps li { counter-increment: step; }
+.steps li::before { content: counter(step) "."; margin-right: 8px; color: #1d4ed8; font-weight: 800; }
+/* C2: a drawable tick */
+.ticks { margin: 0; padding: 0; list-style: none; }
+.ticks li::before { content: "✓"; margin-right: 8px; color: #3f6212; font-weight: 600; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Lighting a new candle</h1>
+  <ol class="steps">
+    <li id="C1a">Trim the wick to five millimetres.</li>
+    <li id="C1b">Light it away from drafts.</li>
+    <li id="C1c">Let the top melt to the edge.</li>
+  </ol>
+  <ul class="ticks">
+    <li id="C2">Works with every Pinewick jar</li>
+  </ul>
+</main>
+</body>
+</html>

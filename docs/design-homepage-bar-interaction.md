@@ -45,8 +45,9 @@ design_homepage_bar_interact.py --fixture-proof --out DIR [--record] [--from-raw
   with no browser.
 - `--fixture-proof` measures every page in `bar-interact-v1/expected.json` and
   `bar-interact-v2/expected.json` and compares its failing rows with the key (exact set equality).
-  `--record` also saves each raw file to its set's `raw/`. With `--from-raw DIR` it re-scores the
-  raw files in `DIR/bar-interact-v1/` and `DIR/bar-interact-v2/` instead.
+  `--record` also saves each raw file to its set's `raw/`. With `--from-raw DIR` it re-scores
+  `DIR/<set>/raw/<page>.json` instead (DIR is normally `configs/design/testpages`, the recorded runs).
+  Its outputs go to `--out`'s `<set>/<page>/` folders.
 
 ## Output contract (shared with part 1)
 
@@ -363,8 +364,8 @@ Changes to fixtures and evidence, all made before any real page was measured:
 
 Written before version 2's code, and before any page was measured with it. The decision and its
 hypothesis are H3c in `~/design-lab/homepage-workflow/HYPOTHESES.md` (Design's home chat). Its five
-keyed cases are in `bar-interact-v2/expected.json`, committed with this entry, before the code. No
-limit changed: ui-contrast's limit is still BAR.md A4's "UI parts and focus indicators meet 3:1",
+keyed cases are in `bar-interact-v2/expected.json`, committed with this entry (8e5fb895), before the
+code. No limit changed: ui-contrast's limit is still BAR.md A4's "UI parts and focus indicators meet 3:1",
 and BAR.md's A4 is WCAG 2.2 AA. No other row's definition changed.
 
 Reason: W3C's Understanding document for 1.4.11 (fetched 2026-10-19 from
@@ -394,7 +395,7 @@ in one place and looser in another. The first baseline run (`BASELINE-INTERACT.m
      has no such limit, and it hid Driftwatch's same red button at 390, where it is 122 px tall.
    - New reading: a link is a control when it has a fill that differs from what is behind it, or a
      full border, at any height. Keyed case: `tall-link-icon.html` (120 px tall, a full border, no
-     text, a 1.49:1 icon): not met.
+     text, a 1.48:1 icon): not met.
 4. Fields: unchanged, by border or fill against what is behind them. Keyed case:
    `field-border-faint.html` (a 1.50:1 border): not met.
 

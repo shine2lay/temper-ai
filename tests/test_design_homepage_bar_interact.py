@@ -1,7 +1,8 @@
-"""design_homepage_bar_interact (Design, queue #79): the pure scorer and its maths. No browser.
+"""design_homepage_bar_interact (Design, queues #79 and #96): the pure scorer and its maths. No browser.
 
-The recorded raw files in configs/design/testpages/bar-interact-v1/raw/ come from real runs of the
-meter on the fixture pages; scoring each must give exactly the failing rows in expected.json.
+The recorded raw files in configs/design/testpages/bar-interact-v1/raw/ and bar-interact-v2/raw/ come
+from real runs of the meter on the fixture pages; scoring each must give exactly the failing rows in
+its set's expected.json. bar-interact-v2 holds version 2's UI-part cases (H3c, WCAG 1.4.11).
 """
 
 from __future__ import annotations
@@ -23,17 +24,42 @@ bi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bi)
 
 KEY = json.loads((FIX / "expected.json").read_text())
+KEYS = {
+    name: json.loads((FIX.parent / name / "expected.json").read_text())
+    for name in bi.FIXTURE_SETS
+}
 
 
 # ---------------------------------------------------------------- the key on the recorded runs
 
 
-@pytest.mark.parametrize("page", sorted(KEY["pages"]))
-def test_recorded_raw_scores_to_the_key(page):
-    raw = json.loads((FIX / "raw" / (page.rsplit(".", 1)[0] + ".json")).read_text())
+@pytest.mark.parametrize(
+    "fixture_set,page",
+    [(name, page) for name in bi.FIXTURE_SETS for page in sorted(KEYS[name]["pages"])],
+)
+def test_recorded_raw_scores_to_the_key(fixture_set, page):
+    raw = json.loads(
+        (
+            FIX.parent / fixture_set / "raw" / (page.rsplit(".", 1)[0] + ".json")
+        ).read_text()
+    )
     doc = bi.score(raw)
-    want = {tuple(x) for x in KEY["pages"][page]["failing"]}
+    want = {tuple(x) for x in KEYS[fixture_set]["pages"][page]["failing"]}
     assert bi.failing(doc) == want
+
+
+@pytest.mark.parametrize("fixture_set", bi.FIXTURE_SETS)
+def test_recorded_raw_is_version_2(fixture_set):
+    """Every recorded run was made by version 2: each UI candidate carries its visible-text reading."""
+    for page in KEYS[fixture_set]["pages"]:
+        stem = page.rsplit(".", 1)[0]
+        raw = json.loads(
+            (FIX.parent / fixture_set / "raw" / f"{stem}.json").read_text()
+        )
+        assert raw["version"] == 2 and raw["page"] == f"{fixture_set}/{page}"
+        for width in ("1440x900", "390x844"):
+            parts = raw["phases"][width]["ui"]["parts"]
+            assert parts and all("vtext" in p for p in parts)
 
 
 def test_every_check_is_broken_by_some_fixture():
@@ -257,6 +283,122 @@ def test_part_contrast_cases():
         _part("field", [255, 255, 255, 1], [229, 231, 235, 1], True, section)
     )
     assert is_part and c < 3
+
+
+# ---------------------------------------------------------------- version 2: UI parts (H3c, WCAG 1.4.11)
+
+
+def test_inside_pixels_keep_one_pixel_in_from_a_square_box():
+    clip = {"x": 0, "y": 0, "width": 10, "height": 10}
+    px = [(k, 0, 0) for k in range(100)]  # pixel k is row k // 10, column k % 10
+    got = bi.inside_pixels(px, 10, 10, clip, [0, 0, 10, 10], [0, 0, 0, 0], [[0, 0]] * 4)
+    assert len(got) == 64
+    assert (0, 0, 0) not in got and (11, 0, 0) in got
+    assert (88, 0, 0) in got and (89, 0, 0) not in got
+
+
+def test_inside_pixels_leave_out_round_corners_and_borders():
+    # a 48 px circle: the box's corners show what is behind it, and must never be read as icon
+    clip = {"x": 100, "y": 50, "width": 48, "height": 48}
+    px = [(k % 48, k // 48, 0) for k in range(48 * 48)]
+    box = [100, 50, 48, 48]
+    got = set(bi.inside_pixels(px, 48, 48, clip, box, [0, 0, 0, 0], [[24, 24]] * 4))
+    assert (24, 1, 0) in got and (24, 24, 0) in got
+    assert (3, 3, 0) not in got and (44, 44, 0) not in got
+    assert all(
+        ((x + 0.5 - 24) ** 2 + (y + 0.5 - 24) ** 2) ** 0.5 <= 23 + 1e-9
+        for x, y, _ in got
+    )
+    # a 2 px border is left out, with the 1 px inside it
+    got = set(bi.inside_pixels(px, 48, 48, clip, box, [2, 2, 2, 2], [[0, 0]] * 4))
+    assert (2, 24, 0) not in got and (3, 24, 0) in got
+    assert (45, 24, 0) not in got and (44, 24, 0) in got
+
+
+def test_inside_pixels_map_a_fractional_box_onto_whole_pixels():
+    # the box starts at x 10.5 and the shot at 10 (whole pixels): pixel 1's centre, 11.5, is 1 px in
+    clip = {"x": 10, "y": 0, "width": 12, "height": 12}
+    px = [(k % 12, k // 12, 0) for k in range(144)]
+    got = bi.inside_pixels(
+        px, 12, 12, clip, [10.5, 0, 11, 12], [0, 0, 0, 0], [[0, 0]] * 4
+    )
+    assert sorted({x for x, _, _ in got}) == list(range(1, 11))
+
+
+def test_icon_reading_takes_the_90th_percentile_by_nearest_rank():
+    ref = (29, 78, 216)
+    faint, white = (91, 138, 245), (255, 255, 255)
+    # 9 faint icon pixels and one stray white one, among fill pixels: rank ceil(0.9 x 10) = 9 is faint
+    assert bi.icon_reading([faint] * 9 + [white] + [ref] * 30, ref) == (10, faint)
+    # with 2 white pixels in 10, rank 9 is white
+    assert bi.icon_reading([faint] * 8 + [white] * 2, ref) == (10, white)
+    # within 2 of the reference in every channel: no icon pixels
+    assert bi.icon_reading([ref, (30, 79, 217)], ref) == (0, None)
+
+
+def _v2part(kind, vtext, bg=(0, 0, 0, 0), border=(0, 0, 0, 0), **kw):
+    """A candidate measured by version 2. kw: full (border), behind ("none": not measured), icon."""
+    behind = kw.get("behind", [248, 250, 252])
+    behind = None if behind == "none" else list(behind)
+    p = _part(kind, list(bg), list(border), kw.get("full", False), behind)
+    icon = kw.get("icon")
+    p["vtext"] = vtext
+    if icon is not None:
+        p["icon"] = icon
+    return p
+
+
+def test_ui_reading_version_2_cases():
+    blue, white = [29, 78, 216, 1], [255, 255, 255]
+    # a solid text button with a 1.6:1 fill is identified by its text: not measured here
+    pale = _v2part("button", True, bg=[128, 210, 252, 1])
+    assert bi.ui_reading(pale) == ("text", None)
+    assert bi.ui_reading(_v2part("button", True, behind="none")) == ("text", None)
+    # an icon-only button: its icon against its fill
+    icon = {"ref": blue[:3], "pixels": 80, "p90": [91, 138, 245]}
+    how, c = bi.ui_reading(_v2part("button", False, bg=blue, icon=icon))
+    assert how == "icon" and round(c, 2) == 2.04
+    unseen = _v2part("button", False, bg=blue, behind="none", icon=icon)
+    assert bi.ui_reading(unseen) == ("unknown", None)
+    # a link with no fill and no full border is a text link: not measured, with or without text
+    stray = {"ref": [248, 250, 252], "pixels": 5, "p90": [0, 0, 0]}
+    assert bi.ui_reading(_v2part("link", False, icon=stray))[0] == "none"
+    # a tall link with a full border and a faint icon: the icon against what is behind it
+    faint = {"ref": white, "pixels": 300, "p90": [203, 213, 225]}
+    tall = _v2part("link", False, border=blue, full=True, behind=white, icon=faint)
+    how, c = bi.ui_reading(tall)
+    assert how == "icon" and round(c, 2) == 1.48
+    # no text and no icon: the shape is read by part contrast, as in version 1
+    none = {"ref": blue[:3], "pixels": 0, "p90": None}
+    how, c = bi.ui_reading(_v2part("button", False, bg=blue, icon=none))
+    assert how == "part" and c > 3
+    # no text, no icon, no fill and no border: it draws nothing and is not measured
+    bare = _v2part("button", False, icon=dict(none, ref=[248, 250, 252]))
+    assert bi.ui_reading(bare)[0] == "none"
+    # fields are read as before: a 1.50:1 border
+    grey = [202, 207, 214, 1]
+    field = _v2part("field", False, bg=[255, 255, 255, 1], border=grey, full=True)
+    how, c = bi.ui_reading(field)
+    assert how == "part" and round(c, 2) == 1.5
+
+
+def test_score_ui_reads_version_1_raw_as_version_1():
+    section = [248, 250, 252]
+    red, cobalt = [200, 49, 26, 1], [30, 51, 200]
+    red_on_cobalt = _part("button", red, [0, 0, 0, 0], False, cobalt)
+    faint_field = _part("field", [255, 255, 255, 1], [229, 231, 235, 1], True, section)
+    row = bi.score_ui([red_on_cobalt, faint_field], "1440x900", "limit")
+    assert (row["value"], row["pass"]) == (2, False)
+    assert row["evidence"][0]["text"] == "t (1.65:1)"
+    # the same parts measured by version 2: the text button is identified by its text
+    v2 = [dict(red_on_cobalt, vtext=True), dict(faint_field, vtext=False)]
+    row = bi.score_ui(v2, "1440x900", "limit")
+    assert (row["value"], row["pass"]) == (1, False)
+    assert [e["text"] for e in row["evidence"]] == ["t (1.18:1)"]
+    icon = {"ref": [29, 78, 216], "pixels": 80, "p90": [91, 138, 245]}
+    v2 = [_v2part("button", False, bg=[29, 78, 216, 1], icon=icon)]
+    evidence = bi.score_ui(v2, "390x844", "limit")["evidence"]
+    assert evidence[0]["text"] == "t (icon 2.04:1)"
 
 
 def _props(**kw):

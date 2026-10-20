@@ -22,7 +22,7 @@
       "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
     },
     "tall-link-icon.html": {
-      "plant": "a 120 px tall link with a full border (2 px #1d4ed8) and no visible text, whose play icon (#cbd5e1) is about 1.49:1 against the white section",
+      "plant": "a 120 px tall link with a full border (2 px #1d4ed8) and no visible text, whose play icon (#cbd5e1) is about 1.48:1 against the white section",
       "failing": [["A4", "ui-contrast", "1440x900"], ["A4", "ui-contrast", "390x844"]]
     }
   }

@@ -220,7 +220,8 @@
       return null;
     }
     if (tag === 'button' || el.getAttribute('role') === 'button') return 'button';
-    if (tag === 'a' && el.hasAttribute('href') && el.getBoundingClientRect().height <= 80) return 'button';
+    // Version 2 (H3c): a link at any height; the scorer decides from its fill and border whether it is a control.
+    if (tag === 'a' && el.hasAttribute('href')) return 'link';
     return null;
   };
   // Any CSS colour (rgb, oklch, color(), lab ...) to sRGB [r, g, b, a] by painting it on a canvas.
@@ -246,11 +247,75 @@
       return st !== 'none' && st !== 'hidden' && w >= 1 && rgba(c)[3] > 0;
     });
     const bw = sides.map((d) => parseFloat(s.getPropertyValue('border-' + d + '-width')) || 0);
+    // Rounded corners (version 2's inside pixels): [horizontal, vertical] radius in CSS px for the top-left,
+    // top-right, bottom-right and bottom-left corners, percentages resolved against the border box and
+    // overlapping radii scaled down as CSS does.
+    const b = el.getBoundingClientRect();
+    const len = (v, ref) => (v.endsWith('%') ? parseFloat(v) / 100 * ref : parseFloat(v) || 0);
+    const corners = ['top-left', 'top-right', 'bottom-right', 'bottom-left'].map((k) => {
+      const v = s.getPropertyValue('border-' + k + '-radius').trim().split(/\s+/);
+      return [len(v[0] || '0', b.width), len(v[1] || v[0] || '0', b.height)];
+    });
+    const f = Math.min(1, ...[[0, 1, b.width, 0], [3, 2, b.width, 0], [0, 3, b.height, 1], [1, 2, b.height, 1]].map(
+      ([i, j, side, axis]) => { const sum = corners[i][axis] + corners[j][axis]; return sum > side ? side / sum : 1; }));
     return {
       background_color: s.backgroundColor, background_rgba: rgba(s.backgroundColor),
       background_image: s.backgroundImage,
       border_color: s.borderTopColor, border_rgba: rgba(s.borderTopColor), full_border: full, border_widths: bw,
+      radii: corners.map(([x, y]) => [r2(x * f), r2(y * f)]),
     };
+  };
+  // Visible text (version 2, H3c): the part of a line box that is drawn, after the cuts made by `from` (the
+  // text's parent, itself included) and its ancestors, as visible() cuts an element. null when nothing is left.
+  const drawnPart = (rect, from) => {
+    const box = {l: rect.l, t: rect.t, r: rect.r, b: rect.b};
+    for (let n = from; n && n.nodeType === 1; n = n.parentElement) {
+      const s = cs(n);
+      if (s.display === 'none' || parseFloat(s.opacity) === 0) return null;
+      if (n === from && s.visibility !== 'visible') return null;
+      const pr = n.getBoundingClientRect();
+      if (s.clipPath && s.clipPath !== 'none' && /inset\(\s*(50%|100%)/.test(s.clipPath)) return null;
+      if ((s.position === 'absolute' || s.position === 'fixed') && s.clip && s.clip !== 'auto') {
+        // clip: rect(top, right, bottom, left), offsets from the border box's top-left corner; auto = that edge.
+        const m = /rect\(([^)]*)\)/.exec(s.clip);
+        if (m) {
+          const v = m[1].split(/[\s,]+/).filter(Boolean);
+          const at = (i, edge) => (v[i] === undefined || v[i] === 'auto' ? edge : parseFloat(v[i]));
+          box.t = Math.max(box.t, pr.top + at(0, 0)); box.r = Math.min(box.r, pr.left + at(1, pr.width));
+          box.b = Math.min(box.b, pr.top + at(2, pr.height)); box.l = Math.max(box.l, pr.left + at(3, 0));
+        }
+      }
+      if (s.overflowX !== 'visible') { box.l = Math.max(box.l, pr.left); box.r = Math.min(box.r, pr.right); }
+      if (s.overflowY !== 'visible') { box.t = Math.max(box.t, pr.top); box.b = Math.min(box.b, pr.bottom); }
+      if (!(box.r > box.l && box.b > box.t)) return null;
+      if (s.position === 'fixed') break;
+    }
+    return box;
+  };
+  // A text node with a non-space character whose colour is not transparent and of which more than 1 x 1 px is
+  // drawn inside the control's box. An input button draws its value (submit and reset: a default label if empty).
+  const hasVisibleText = (el) => {
+    if (el.tagName.toLowerCase() === 'input') {
+      const t = (el.getAttribute('type') || '').toLowerCase();
+      return (el.value.trim() !== '' || t === 'submit' || t === 'reset') && rgba(cs(el).color)[3] > 0;
+    }
+    const own = el.getBoundingClientRect();
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!/\S/.test(n.nodeValue)) continue;
+      const p = n.parentElement;
+      if (!p || rgba(cs(p).color)[3] === 0) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        const cut = {l: Math.max(r.left, own.left), t: Math.max(r.top, own.top),
+          r: Math.min(r.right, own.right), b: Math.min(r.bottom, own.bottom)};
+        if (!(cut.r - cut.l > 1 && cut.b - cut.t > 1)) continue;
+        const d = drawnPart(cut, p);
+        if (d && d.r - d.l > 1 && d.b - d.t > 1) return true;
+      }
+    }
+    return false;
   };
   const uiCandidates = () => Array.from(document.querySelectorAll(SEL)).filter(isInteractive)
     .map((el) => ({el, kind: uiKind(el)})).filter((c) => c.kind)
@@ -296,7 +361,7 @@
 
   window.__bi = {
     idOf, byId, selector, text, pageBox, layoutBox, viewBox, visible, isInteractive, interactive, settle, waitScroll,
-    hiddenPoints, active, readState, stateDiff, centreTo, hoverPoint, uiCandidates, uiStyle, running,
+    hiddenPoints, active, readState, stateDiff, centreTo, hoverPoint, uiCandidates, uiStyle, hasVisibleText, running,
     transforms, boxOf, videos, scrollOne, sleep, fixedContainer,
     el: (id) => byId[id],
   };

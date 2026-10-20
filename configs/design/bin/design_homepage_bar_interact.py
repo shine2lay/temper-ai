@@ -39,9 +39,13 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 METER = "design_homepage_bar_interact"
-VERSION = 1
+VERSION = 2
 HELPERS = HERE / "design_homepage_bar_interact.js"
 FIXTURES = HERE.parent / "testpages" / "bar-interact-v1"
+# Fixture sets of the proof: version 1's key, then version 2's UI-part cases (H3c).
+FIXTURE_SETS = ("bar-interact-v1", "bar-interact-v2")
+# Version 2's inside pixels: centres at least this far (CSS px) inside the padding box and its rounded corners.
+ICON_INSET = 1.0
 WIDTHS = {"1440x900": (1440, 900), "390x844": (390, 844)}
 SPEED_WIDTH = "412x823"
 ALL_WIDTHS = list(WIDTHS) + [SPEED_WIDTH]
@@ -172,6 +176,65 @@ def median_lum_pixel(pixels):
         return None
     ranked = sorted(pixels, key=lambda p: (rel_lum(p), tuple(p[:3])))
     return tuple(ranked[(len(ranked) - 1) // 2][:3])
+
+
+def _outside_corners(cx, cy, pad, inner, inset):
+    """True when (cx, cy) lies less than inset px inside one of the padding box's rounded corners."""
+    x0, y0, x1, y1 = pad
+    for (rx, ry), (left, top) in zip(
+        inner, ((True, True), (False, True), (False, False), (True, False)), strict=True
+    ):
+        if rx <= inset or ry <= inset:
+            continue  # the straight-edge inset already keeps this corner's curve out
+        ccx = x0 + rx if left else x1 - rx
+        ccy = y0 + ry if top else y1 - ry
+        if (cx < ccx if left else cx > ccx) and (cy < ccy if top else cy > ccy):
+            if ((cx - ccx) / (rx - inset)) ** 2 + ((cy - ccy) / (ry - inset)) ** 2 > 1:
+                return True
+    return False
+
+
+def inside_pixels(pixels, img_w, img_h, clip, box, borders, radii, inset=ICON_INSET):
+    """The pixels of a shot (row by row) whose centres lie at least inset px inside the element's padding box
+    and inside its rounded corners (version 2's icon reading).
+
+    clip: the shot's {x, y, width, height}; box: the element's border box [x, y, w, h] in the same (viewport)
+    coordinates; borders: [top, right, bottom, left] widths; radii: [rx, ry] for the top-left, top-right,
+    bottom-right and bottom-left corners (outer edge, as resolved by the helpers)."""
+    if img_w < 1 or img_h < 1:
+        return []
+    bt, br, bb, bl = borders
+    pad = (box[0] + bl, box[1] + bt, box[0] + box[2] - br, box[1] + box[3] - bb)
+    sides = ((bl, bt), (br, bt), (br, bb), (bl, bb))
+    inner = [
+        (max(0.0, rx - sx), max(0.0, ry - sy))
+        for (rx, ry), (sx, sy) in zip(radii, sides, strict=True)
+    ]
+    sx, sy = clip["width"] / img_w, clip["height"] / img_h
+    out = []
+    for k, p in enumerate(pixels):
+        cx = clip["x"] + (k % img_w + 0.5) * sx
+        cy = clip["y"] + (k // img_w + 0.5) * sy
+        if not (
+            pad[0] + inset <= cx <= pad[2] - inset
+            and pad[1] + inset <= cy <= pad[3] - inset
+        ):
+            continue
+        if _outside_corners(cx, cy, pad, inner, inset):
+            continue
+        out.append(p)
+    return out
+
+
+def icon_reading(pixels, ref):
+    """(number of icon pixels, the 90th-percentile icon pixel or None). Icon pixels: the given (inside) pixels
+    that differ from ref by more than 2 in a channel. They are ranked by contrast with ref, lowest first, and
+    the pixel at nearest rank ceil(0.9 x n) is returned."""
+    icon = [tuple(p[:3]) for p in pixels if differs(p, ref)]
+    if not icon:
+        return 0, None
+    ranked = sorted(icon, key=lambda p: (contrast(p, ref), p))
+    return len(icon), ranked[(9 * len(icon) + 9) // 10 - 1]
 
 
 def decode_png(data: bytes) -> tuple[int, int, list[tuple[int, int, int]]]:
@@ -369,19 +432,33 @@ def score_walk(walk: dict, width: str, limits: dict) -> list[dict]:
     return rows
 
 
-def part_contrast(part: dict):
-    """(is a UI part, part contrast) from one raw UI candidate."""
-    behind = part.get("behind")
-    if behind is None:
-        return None, None
+def part_fill(part: dict):
+    """A UI candidate's fill over its behind colour (with a background image: that image's median pixel)."""
     st = part["style"]
     if (
         part.get("fill_image") is not None
         and st.get("background_image", "none") != "none"
     ):
-        fill = tuple(part["fill_image"])
-    else:
-        fill = composite(st["background_rgba"], behind)
+        return tuple(part["fill_image"])
+    return composite(st["background_rgba"], part["behind"])
+
+
+def icon_reference(part: dict):
+    """What is directly behind a control's icon: its fill when that differs from the behind colour, else the
+    behind colour (version 2)."""
+    behind = tuple(part["behind"][:3])
+    fill = part_fill(part)
+    return fill if differs(fill, behind) else behind
+
+
+def part_contrast(part: dict):
+    """(is a UI part, part contrast) from one raw UI candidate: version 1's reading, which version 2 keeps for
+    fields, for controls with no text and no icon, and for raw files measured before version 2."""
+    behind = part.get("behind")
+    if behind is None:
+        return None, None
+    st = part["style"]
+    fill = part_fill(part)
     border = composite(st["border_rgba"], behind) if st.get("full_border") else None
     is_part = part["kind"] == "field" or differs(fill, behind) or border is not None
     best = contrast(fill, behind)
@@ -390,14 +467,41 @@ def part_contrast(part: dict):
     return is_part, best
 
 
+def ui_reading(part: dict):
+    """(how a UI candidate is read, its value), version 2 (H3c, WCAG 1.4.11).
+
+    how: "text" (a control identified by its visible text: part 1's text-contrast row, not measured here),
+    "icon" (a control with no visible text: icon contrast), "part" (a field, or a control with no text and no
+    icon: part contrast), "none" (not measured: a link with no fill and no full border, or a control that draws
+    nothing) or "unknown" (no behind colour: could not be measured). Candidates from raw files measured before
+    version 2 (no "vtext") are read as in version 1."""
+    v2 = "vtext" in part and part["kind"] != "field"
+    if v2 and part["vtext"]:
+        return "text", None
+    if part.get("behind") is None:
+        return "unknown", None
+    if v2:
+        behind = tuple(part["behind"][:3])
+        if part["kind"] == "link" and not (
+            differs(part_fill(part), behind) or part["style"].get("full_border")
+        ):
+            return "none", None
+        icon = part.get("icon") or {}
+        if icon.get("pixels"):
+            return "icon", contrast(icon["p90"], icon["ref"])
+    is_part, c = part_contrast(part)
+    return ("part" if is_part else "none"), c
+
+
 def score_ui(parts: list, width: str, limit: str) -> dict:
     fails, unknown = [], 0
     for p in parts:
-        is_part, c = part_contrast(p)
-        if is_part is None:
+        how, c = ui_reading(p)
+        if how == "unknown":
             unknown += 1
-        elif is_part and c < 3.0:
-            fails.append(_ev(p["sel"], f"{p['text']} ({c:.2f}:1)", p["box"]))
+        elif how in ("part", "icon") and c < 3.0:
+            what = "icon " if how == "icon" else ""
+            fails.append(_ev(p["sel"], f"{p['text']} ({what}{c:.2f}:1)", p["box"]))
     if unknown:
         return _row(
             "A4",
@@ -894,12 +998,14 @@ class Driver:
         )
         parts = []
         for c in cands:
-            d = await self._ui_part(c["id"], reveal=False)
+            # A field is read by its boundary, never by an icon.
+            icon = c["kind"] != "field"
+            d = await self._ui_part(c["id"], reveal=False, icon=icon)
             via = None
             if not d.get("behind"):
                 # Not on screen at rest (for example a skip link kept off the page until it has focus):
                 # measure it where it shows, with focus on it, the way a keyboard user reveals it.
-                d2 = await self._ui_part(c["id"], reveal=True)
+                d2 = await self._ui_part(c["id"], reveal=True, icon=icon)
                 if d2.get("behind"):
                     d, via = d2, "focus"
                 else:
@@ -923,7 +1029,22 @@ class Driver:
                 "style": d["st"],
                 "behind": list(behind) if behind else None,
                 "fill_image": fill_image,
+                "vtext": bool(d.get("vtext")),
             }
+            if icon and not part["vtext"] and behind is not None and d.get("self"):
+                # Version 2: a control with no visible text is read by its icon (see icon_reading).
+                w, h, px = decode_png(base64.b64decode(d["self"]))
+                st = d["st"]
+                inside = inside_pixels(
+                    px, w, h, d["selfclip"], d["vb"], st["border_widths"], st["radii"]
+                )
+                ref = icon_reference(part)
+                n, p90 = icon_reading(inside, ref)
+                part["icon"] = {
+                    "ref": list(ref),
+                    "pixels": n,
+                    "p90": list(p90) if p90 else None,
+                }
             if via:
                 part["via"] = via
             parts.append(part)
@@ -935,9 +1056,10 @@ class Driver:
             "el.blur(); __bi.settle(); return true; })"
         )
 
-    async def _ui_part(self, eid: int, reveal: bool) -> dict:
-        """One call per part: bring it into view (centre it, or focus it when reveal), read its style, hide it
-        for the behind shot, restore it. With reveal the element is left focused for the caller to blur."""
+    async def _ui_part(self, eid: int, reveal: bool, icon: bool = True) -> dict:
+        """One call per part: bring it into view (centre it, or focus it when reveal), read its style and visible
+        text, shoot it as it is when it has no visible text (version 2), hide it for the behind shot, restore it.
+        With reveal the element is left focused for the caller to blur."""
         bring = (
             (
                 "el.focus(); if (document.activeElement !== el) return {st: __bi.uiStyle(el), vb: [0, -1e6, 0, 0], "
@@ -951,13 +1073,18 @@ class Driver:
             "async (page) => { "
             f"const d = await page.evaluate(async () => {{ const el = __bi.el({eid}); {bring}"
             "__bi.settle(); const st = __bi.uiStyle(el); const vb = __bi.viewBox(el); "
-            "el.__biVis = [el.style.getPropertyValue('visibility'), el.style.getPropertyPriority('visibility')]; "
-            "el.style.setProperty('visibility', 'hidden', 'important'); "
-            "return {st, vb, vw: innerWidth, vh: innerHeight}; }); "
+            "const vtext = __bi.hasVisibleText(el); "
+            "return {st, vb, vtext, vw: innerWidth, vh: innerHeight}; }); "
             "const [x, y, w, h] = d.vb; const l = Math.max(0, x), t = Math.max(0, y); "
             "const r = Math.min(d.vw, x + w), b = Math.min(d.vh, y + h); "
             "const rd = (v) => Math.round(v * 100) / 100; "
             "const clip = (r - l < 1 || b - t < 1) ? null : {x: rd(l), y: rd(t), width: rd(r - l), height: rd(b - t)}; "
+            f"if (clip && !d.vtext && {json.dumps(icon)}) {{ d.selfclip = {{x: Math.floor(l), y: Math.floor(t), "
+            "width: Math.ceil(r) - Math.floor(l), height: Math.ceil(b) - Math.floor(t)}; "
+            "d.self = (await page.screenshot({type: 'png', scale: 'css', clip: d.selfclip})).toString('base64'); } "
+            f"await page.evaluate(() => {{ const el = __bi.el({eid}); "
+            "el.__biVis = [el.style.getPropertyValue('visibility'), el.style.getPropertyPriority('visibility')]; "
+            "el.style.setProperty('visibility', 'hidden', 'important'); return true; }); "
             "d.behind = clip ? (await page.screenshot({type: 'png', scale: 'css', clip})).toString('base64') : null; "
             f"await page.evaluate(() => {{ const el = __bi.el({eid}); "
             "const [v, p] = el.__biVis; if (v) el.style.setProperty('visibility', v, p); "
@@ -1254,45 +1381,52 @@ def write_outputs(out: pathlib.Path, raw: dict | None, doc: dict) -> None:
 
 
 def fixture_proof(args) -> int:
-    key = json.loads((FIXTURES / "expected.json").read_text())
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     report, ok_all = [], True
-    for page, spec in key["pages"].items():
-        stem = page.rsplit(".", 1)[0]
-        if args.from_raw:
-            raw = json.loads((pathlib.Path(args.from_raw) / f"{stem}.json").read_text())
-        else:
-            raw = measure(FIXTURES, page, args, out / stem / "shots")
-            raw["page"] = f"bar-interact-v1/{page}"
-            if args.record:
-                (FIXTURES / "raw").mkdir(exist_ok=True)
-                (FIXTURES / "raw" / f"{stem}.json").write_text(
-                    json.dumps(raw, indent=1, sort_keys=True) + "\n"
+    for name in FIXTURE_SETS:
+        fixtures = FIXTURES.parent / name
+        key = json.loads((fixtures / "expected.json").read_text())
+        for page, spec in key["pages"].items():
+            stem = page.rsplit(".", 1)[0]
+            if args.from_raw:
+                raw = json.loads(
+                    (
+                        pathlib.Path(args.from_raw) / name / "raw" / f"{stem}.json"
+                    ).read_text()
                 )
-        doc = score(raw)
-        write_outputs(out / stem, raw, doc)
-        got = failing(doc)
-        want = {tuple(x) for x in spec["failing"]}
-        match = got == want
-        ok_all &= match
-        report.append(
-            {
-                "page": page,
-                "match": match,
-                "extra": sorted(got - want),
-                "missing": sorted(want - got),
-            }
-        )
-        print(
-            f"{'MATCH' if match else 'DIFF '} {page}"
-            + (
-                ""
-                if match
-                else f"  extra={sorted(got - want)} missing={sorted(want - got)}"
-            ),
-            flush=True,
-        )
+            else:
+                raw = measure(fixtures, page, args, out / name / stem / "shots")
+                raw["page"] = f"{name}/{page}"
+                if args.record:
+                    (fixtures / "raw").mkdir(exist_ok=True)
+                    (fixtures / "raw" / f"{stem}.json").write_text(
+                        json.dumps(raw, indent=1, sort_keys=True) + "\n"
+                    )
+            doc = score(raw)
+            write_outputs(out / name / stem, raw, doc)
+            got = failing(doc)
+            want = {tuple(x) for x in spec["failing"]}
+            match = got == want
+            ok_all &= match
+            report.append(
+                {
+                    "set": name,
+                    "page": page,
+                    "match": match,
+                    "extra": sorted(got - want),
+                    "missing": sorted(want - got),
+                }
+            )
+            print(
+                f"{'MATCH' if match else 'DIFF '} {name}/{page}"
+                + (
+                    ""
+                    if match
+                    else f"  extra={sorted(got - want)} missing={sorted(want - got)}"
+                ),
+                flush=True,
+            )
     (out / "fixture-proof.json").write_text(
         json.dumps({"all_match": ok_all, "pages": report}, indent=1) + "\n"
     )

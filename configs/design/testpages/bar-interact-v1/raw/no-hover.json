@@ -2419,7 +2419,7 @@
        160
       ],
       "text": "",
-      "v": "matrix(1, 0, 0, 1, -22.8301, 0) | none | none | none"
+      "v": "matrix(1, 0, 0, 1, -22.9145, 0) | none | none | none"
      }
     },
     "t_before": {
@@ -2431,7 +2431,7 @@
        160
       ],
       "text": "",
-      "v": "matrix(1, 0, 0, 1, -12.2301, 0) | none | none | none"
+      "v": "matrix(1, 0, 0, 1, -12.4594, 0) | none | none | none"
      }
     }
    },
@@ -2461,7 +2461,7 @@
        30
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2485,9 +2485,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Tidewell"
+      "text": "Tidewell",
+      "vtext": true
      },
      {
       "behind": [
@@ -2502,7 +2521,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2526,9 +2545,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "How it works"
+      "text": "How it works",
+      "vtext": true
      },
      {
       "behind": [
@@ -2543,7 +2581,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2567,9 +2605,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Plans"
+      "text": "Plans",
+      "vtext": true
      },
      {
       "behind": [
@@ -2584,7 +2641,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2608,9 +2665,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Join"
+      "text": "Join",
+      "vtext": true
      },
      {
       "behind": [
@@ -2625,7 +2701,7 @@
        47.39
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#top > section:nth-child(1) > div:nth-child(4) > a:nth-child(1)",
       "style": {
        "background_color": "rgb(29, 78, 216)",
@@ -2649,9 +2725,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "Start a free chart"
+      "text": "Start a free chart",
+      "vtext": true
      },
      {
       "behind": [
@@ -2666,7 +2761,7 @@
        47.39
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#top > section:nth-child(1) > div:nth-child(4) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2690,9 +2785,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "See how it works"
+      "text": "See how it works",
+      "vtext": true
      },
      {
       "behind": [
@@ -2707,7 +2821,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(1) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2731,9 +2845,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Pick a harbour"
+      "text": "Pick a harbour",
+      "vtext": true
      },
      {
       "behind": [
@@ -2748,7 +2881,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(1) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2772,9 +2905,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -2789,7 +2941,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(2) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2813,9 +2965,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Set your hours"
+      "text": "Set your hours",
+      "vtext": true
      },
      {
       "behind": [
@@ -2830,7 +3001,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(2) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2854,9 +3025,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -2871,7 +3061,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(3) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2895,9 +3085,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read the chart"
+      "text": "Read the chart",
+      "vtext": true
      },
      {
       "behind": [
@@ -2912,7 +3121,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(3) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -2936,9 +3145,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -2977,9 +3205,28 @@
         1,
         1
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": ""
+      "text": "",
+      "vtext": false
      },
      {
       "behind": [
@@ -3018,9 +3265,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "Join the list"
+      "text": "Join the list",
+      "vtext": true
      },
      {
       "behind": [
@@ -3035,7 +3301,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > footer:nth-child(3) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -3059,9 +3325,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Privacy"
+      "text": "Privacy",
+      "vtext": true
      },
      {
       "behind": [
@@ -3076,7 +3361,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > footer:nth-child(3) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -3100,9 +3385,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Contact"
+      "text": "Contact",
+      "vtext": true
      }
     ]
    },
@@ -6506,7 +6810,7 @@
        90
       ],
       "text": "",
-      "v": "matrix(1, 0, 0, 1, -22.9143, 0) | none | none | none"
+      "v": "matrix(1, 0, 0, 1, -22.8306, 0) | none | none | none"
      }
     },
     "t_before": {
@@ -6518,7 +6822,7 @@
        90
       ],
       "text": "",
-      "v": "matrix(1, 0, 0, 1, -12.6884, 0) | none | none | none"
+      "v": "matrix(1, 0, 0, 1, -12.4592, 0) | none | none | none"
      }
     }
    },
@@ -6548,7 +6852,7 @@
        30
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6572,9 +6876,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Tidewell"
+      "text": "Tidewell",
+      "vtext": true
      },
      {
       "behind": [
@@ -6589,7 +6912,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6613,9 +6936,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "How it works"
+      "text": "How it works",
+      "vtext": true
      },
      {
       "behind": [
@@ -6630,7 +6972,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6654,9 +6996,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Plans"
+      "text": "Plans",
+      "vtext": true
      },
      {
       "behind": [
@@ -6671,7 +7032,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > header:nth-child(1) > nav:nth-child(2) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6695,9 +7056,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Join"
+      "text": "Join",
+      "vtext": true
      },
      {
       "behind": [
@@ -6712,7 +7092,7 @@
        47.39
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#top > section:nth-child(1) > div:nth-child(4) > a:nth-child(1)",
       "style": {
        "background_color": "rgb(29, 78, 216)",
@@ -6736,9 +7116,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "Start a free chart"
+      "text": "Start a free chart",
+      "vtext": true
      },
      {
       "behind": [
@@ -6753,7 +7152,7 @@
        47.39
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#top > section:nth-child(1) > div:nth-child(4) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6777,9 +7176,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "See how it works"
+      "text": "See how it works",
+      "vtext": true
      },
      {
       "behind": [
@@ -6794,7 +7212,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(1) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6818,9 +7236,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Pick a harbour"
+      "text": "Pick a harbour",
+      "vtext": true
      },
      {
       "behind": [
@@ -6835,7 +7272,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(1) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6859,9 +7296,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -6876,7 +7332,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(2) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6900,9 +7356,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Set your hours"
+      "text": "Set your hours",
+      "vtext": true
      },
      {
       "behind": [
@@ -6917,7 +7392,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(2) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6941,9 +7416,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -6958,7 +7452,7 @@
        28
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(3) > h3:nth-child(1) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -6982,9 +7476,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read the chart"
+      "text": "Read the chart",
+      "vtext": true
      },
      {
       "behind": [
@@ -6999,7 +7512,7 @@
        22
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "#how > div:nth-child(2) > article:nth-child(3) > a:nth-child(3)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -7023,9 +7536,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Read more"
+      "text": "Read more",
+      "vtext": true
      },
      {
       "behind": [
@@ -7064,9 +7596,28 @@
         1,
         1
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": ""
+      "text": "",
+      "vtext": false
      },
      {
       "behind": [
@@ -7105,9 +7656,28 @@
         2,
         2
        ],
-       "full_border": true
+       "full_border": true,
+       "radii": [
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ],
+        [
+         8,
+         8
+        ]
+       ]
       },
-      "text": "Join the list"
+      "text": "Join the list",
+      "vtext": true
      },
      {
       "behind": [
@@ -7122,7 +7692,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > footer:nth-child(3) > a:nth-child(1)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -7146,9 +7716,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Privacy"
+      "text": "Privacy",
+      "vtext": true
      },
      {
       "behind": [
@@ -7163,7 +7752,7 @@
        27
       ],
       "fill_image": null,
-      "kind": "button",
+      "kind": "link",
       "sel": "body > footer:nth-child(3) > a:nth-child(2)",
       "style": {
        "background_color": "rgba(0, 0, 0, 0)",
@@ -7187,9 +7776,28 @@
         0,
         0
        ],
-       "full_border": false
+       "full_border": false,
+       "radii": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         0
+        ]
+       ]
       },
-      "text": "Contact"
+      "text": "Contact",
+      "vtext": true
      }
     ]
    },
@@ -8199,20 +8807,20 @@
   "runs": [
    {
     "cls": 0.0,
-    "lcp": 901.4694,
-    "tbt": 44.5
+    "lcp": 901.7239,
+    "tbt": 39.0
    },
    {
     "cls": 0.0,
-    "lcp": 934.1079,
-    "tbt": 93.5
-   },
-   {
-    "cls": 0.0,
-    "lcp": 901.1433,
+    "lcp": 902.0688,
     "tbt": 0.0
+   },
+   {
+    "cls": 0.0,
+    "lcp": 903.6901,
+    "tbt": 34.1549
    }
   ]
  },
- "version": 1
+ "version": 2
 }

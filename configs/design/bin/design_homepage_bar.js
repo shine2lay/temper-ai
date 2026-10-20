@@ -1,8 +1,9 @@
-// design_homepage_bar's in-page measurements (Design, queue #78; v2 additions, queue #91). One function
+// design_homepage_bar's in-page measurements (Design, queue #78; v2 additions, queue #91; v3, A11, queue #112). One function
 // expression; the driver calls it as (expr)(opts) in the page after load, document.fonts.ready and settled
 // animations, at scroll 0. It returns raw measurements only: no limits are applied here, every
 // limit is applied by design_homepage_bar.py's scorer. Definitions: docs/design-homepage-bar.md.
-// opts: {min_words: body text needs this many words, chars: count characters per line (1440 only)}.
+// opts: {min_words: body text needs this many words, chars: count characters per line (1440 only),
+// a11: measure A11's raw facts (1440 and 390 only)}.
 // Coordinates are page coordinates in CSS px (x, y from the page's top left), rounded to 0.01.
 (async (OPTS) => {
   const W = innerWidth;
@@ -541,6 +542,7 @@
   // the colour behind it; borders (all four visible: the whole box, else the visible sides). The share is
   // counted on a 4 px grid of cell centres. The element's own background and border are not counted: a
   // plain panel was never an anchor, and type on a panel is still type.
+  let htmlPicEls = [];
   {
     const STEP = 4;
     const cands = [...document.body.querySelectorAll("[role], figure")]
@@ -595,6 +597,8 @@
       cells: p.cells, box: p.box, sec: p.sec,
       anc: list.map((q, k) => (q.el !== p.el && q.el.contains(p.el) ? k : -1)).filter((k) => k >= 0),
       pics: pictureEls.map((e, k) => (p.el.contains(e) ? k : -1)).filter((k) => k >= 0) }));
+    // v3 (A11 visuals): the pictures built in HTML that A1 visual-anchor counts (exposed, a third or more painted).
+    htmlPicEls = list.filter((p) => p.exposed && 3 * p.cells[0] >= p.cells[1]).map((p) => p.el);
   }
 
   // A7 word-split: each word (a run of letters, marks and digits in one text node, 2 or more characters, not
@@ -654,6 +658,287 @@
       }
     }
     out.word_splits = list;
+  }
+
+  // ---------------------------------------------------------------- v3 (queue #112): A11 (a), (b) and (c)
+  // At 1440 and 390 only (opts.a11). Raw facts only: which element holds which, boxes, colours and counts.
+  // Every A11 reading (surface size, steps and levels, crossings, blocks' kinds, signatures, runs, figures,
+  // bars, scopes) is applied by design_homepage_bar.py. (e) uses texts and body above.
+  if (OPTS.a11) {
+    const a11 = {};
+    const r4 = (v) => Math.round(v * 1e4) / 1e4;
+    const NOT_EL = ["script", "style", "template", "noscript"];
+    const NAVFOOT = "nav, footer, [role=navigation], [role=contentinfo]";
+    const FOOT = "footer, [role=contentinfo]";
+    const CONTROL = "a[href], button, [role=button], input, select, textarea";
+    const HEADS = "h1, h2, h3, h4, h5, h6";
+    const COLOUR = /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\)|#[0-9a-fA-F]{3,8}\b|\btransparent\b/g;
+    // A computed list (background-image layers, box-shadows) split at its top-level commas.
+    const splitTop = (v) => {
+      const parts = [];
+      let depth = 0, cur = "";
+      for (const ch of v) {
+        if (ch === "(") depth += 1;
+        else if (ch === ")") depth -= 1;
+        if (ch === "," && depth === 0) { parts.push(cur.trim()); cur = ""; } else cur += ch;
+      }
+      if (cur.trim()) parts.push(cur.trim());
+      return parts;
+    };
+    // An image's mean pixel colour [r, g, b, alpha], alpha-weighted, read from a canvas of at most 64x64; null
+    // when the page cannot read it.
+    const means = new Map();
+    const meanOf = async (u) => {
+      if (means.has(u)) return means.get(u);
+      let v = null;
+      try {
+        const img = new Image();
+        img.src = u;
+        await Promise.race([img.decode(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 5000))]);
+        const w = Math.max(1, Math.min(64, img.naturalWidth || 64)), h = Math.max(1, Math.min(64, img.naturalHeight || 64));
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const x = c.getContext("2d", { willReadFrequently: true });
+        x.drawImage(img, 0, 0, w, h);
+        const d = x.getImageData(0, 0, w, h).data;
+        let sr = 0, sg = 0, sb = 0, sa = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const a = d[i + 3] / 255;
+          sr += d[i] * a; sg += d[i + 1] * a; sb += d[i + 2] * a; sa += a;
+        }
+        v = sa > 0 ? [sr / sa, sg / sa, sb / sa, sa / (d.length / 4)].map(r4) : [0, 0, 0, 0];
+      } catch (e) {
+        v = null;
+      }
+      means.set(u, v);
+      return v;
+    };
+    // Background image layers: a gradient's colour stops, or a url() image's mean pixel colour, each [r, g, b, alpha].
+    const layersOf = async (el) => {
+      const bi = cs(el).backgroundImage;
+      const res = [];
+      if (!bi || bi === "none") return res;
+      for (const layer of splitTop(bi)) {
+        const u = layer.match(/url\(\s*(["']?)(.*?)\1\s*\)/);
+        if (u) {
+          const m = await meanOf(u[2]);
+          if (m) res.push([m]);
+        } else if (/gradient\(/.test(layer)) {
+          const stops = (layer.match(COLOUR) || []).map(parse).filter(Boolean).map((c) => c.map(r4));
+          if (stops.length) res.push(stops);
+        }
+      }
+      return res;
+    };
+    // The largest blur radius of the box-shadows that are not inset and whose colour has an alpha above 0.
+    const blurOf = (el) => {
+      const v = cs(el).boxShadow;
+      let best = 0;
+      if (!v || v === "none") return 0;
+      for (const sh of splitTop(v)) {
+        if (/\binset\b/.test(sh)) continue;
+        const col = sh.match(COLOUR);
+        const c = col ? parse(col[0]) : null;
+        if (!c || !(c[3] > 0)) continue;
+        const lens = sh.replace(COLOUR, " ").trim().split(/\s+/).map(parseFloat).filter((x) => !Number.isNaN(x));
+        best = Math.max(best, lens.length >= 3 ? lens[2] : 0);
+      }
+      return r2(best);
+    };
+    const ownBg = (s) => { const c = parse(s.backgroundColor); return !!(c && c[3] > 0) || (!!s.backgroundImage && s.backgroundImage !== "none"); };
+    // Elements below body, not inside svg (an outermost svg is kept), not script, style, template or noscript.
+    const els = [...document.body.querySelectorAll("*")].filter((el) => !NOT_EL.includes(el.localName)
+      && !(el.parentElement && el.parentElement.closest("svg")));
+
+    // (a) Candidate surfaces: visible elements with their own background, a box-shadow or a backdrop-filter,
+    // any size, in document order. up: the nearest candidate around it (-1: none). ctl: a control holding no
+    // heading. base: its own background colour over its parent's composited background, whole RGB.
+    const candEls = [];
+    const candIdx = new Map();
+    for (const el of els) {
+      if (!region(el)) continue;
+      const s = cs(el);
+      const bd = s.backdropFilter || s.webkitBackdropFilter || "none";
+      if (!ownBg(s) && (!s.boxShadow || s.boxShadow === "none") && bd === "none") continue;
+      candIdx.set(el, candEls.length);
+      candEls.push(el);
+    }
+    const candsOf = (el) => {
+      const res = [];
+      for (let e = el; e && e !== document.body; e = e.parentElement) if (candIdx.has(e)) res.push(candIdx.get(e));
+      return res;
+    };
+    const upOf = (el) => {
+      for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (candIdx.has(e)) return candIdx.get(e);
+      return -1;
+    };
+    a11.page = { base: rgb(bgOf(document.body)), layers: await layersOf(document.body) };
+    a11.cands = [];
+    for (const el of candEls) {
+      const own = parse(cs(el).backgroundColor) || [0, 0, 0, 0];
+      const behind = el.parentElement ? bgOf(el.parentElement) : [255, 255, 255, 1];
+      a11.cands.push({ sel: sel(el), box: xywh(region(el)), up: upOf(el), ctl: el.matches(CONTROL) && !el.querySelector(HEADS),
+        base: rgb(blend(own, behind)), layers: await layersOf(el), blur: blurOf(el) });
+    }
+
+    // Visuals: img, picture, outermost svg, video, canvas, a url() background image, an A1 picture built in HTML.
+    // holds_cands, holds_secs: the candidates and sections that the visual is or holds.
+    const visEls = [];
+    for (const el of els) {
+      let kind = null;
+      if (["img", "picture", "video", "canvas"].includes(el.localName)) kind = el.localName;
+      else if (el.localName === "svg") kind = "svg";
+      else if ((cs(el).backgroundImage || "").includes("url(")) kind = "background-image";
+      else if (htmlPicEls.includes(el)) kind = "html picture";
+      if (kind && region(el)) visEls.push({ el, kind });
+    }
+    a11.visuals = visEls.map(({ el, kind }) => ({ sel: sel(el), kind, box: xywh(region(el)),
+      holds_cands: candEls.map((c, k) => (c === el || el.contains(c) ? k : -1)).filter((k) => k >= 0),
+      holds_secs: sections.map((s, k) => (s === el || el.contains(s) ? k : -1)).filter((k) => k >= 0) }));
+
+    // (b) Blocks of each section. A content child: visible, in normal flow, holding visible text or a visual;
+    // display: contents gives way to its children. Single-child wrappers are gone through; a top-level CSS grid
+    // with 2 or more content children gives way to them (one level).
+    const hasText = new Set();
+    for (const t of textEls) for (let e = t.el; e && !hasText.has(e); e = e.parentElement) hasText.add(e);
+    const hasVis = new Set();
+    for (const v of visEls) for (let e = v.el; e && !hasVis.has(e); e = e.parentElement) hasVis.add(e);
+    const kidsOf = (el) => {
+      const res = [];
+      for (const c of el.children) {
+        if (NOT_EL.includes(c.localName)) continue;
+        const s = cs(c);
+        if (s.display === "contents") { res.push(...kidsOf(c)); continue; }
+        if (s.position === "absolute" || s.position === "fixed") continue;
+        if (!region(c) || (!hasText.has(c) && !hasVis.has(c))) continue;
+        res.push(c);
+      }
+      return res;
+    };
+    const blocksOf = (sec) => {
+      if (!region(sec)) return [];
+      let el = sec;
+      for (;;) {
+        const kids = kidsOf(el);
+        if (textIndex.has(el) || !kids.length) return [el];
+        if (kids.length > 1) {
+          const res = [];
+          for (const k of kids) {
+            const d = cs(k).display;
+            const sub = d === "grid" || d === "inline-grid" ? kidsOf(k) : [];
+            if (sub.length >= 2) res.push(...sub); else res.push(k);
+          }
+          return res;
+        }
+        el = kids[0];
+      }
+    };
+    const isFootLandmark = (e) => (e.getAttribute("role") || "").trim().split(/\s+/)[0] === "contentinfo"
+      || (e.localName === "footer" && !e.getAttribute("role")
+        && !(e.parentElement && e.parentElement.closest("article, aside, main, nav, section, [role=main]")));
+    const secBlocks = sections.map(blocksOf);
+    const blockAt = new Map();
+    secBlocks.forEach((bl) => bl.forEach((b, k) => blockAt.set(b, k)));
+    const blockOf = (el) => { for (let e = el; e; e = e.parentElement) if (blockAt.has(e)) return blockAt.get(e); return -1; };
+    // Per block: visual (the block is a visual), cover (the largest share of its box that one visual in it
+    // covers), text (it holds visible text).
+    a11.sections = sections.map((s, i) => {
+      const g = region(s);
+      return { i, sel: sel(s), chrome: s === pageHeader || s === pageFooter || isBanner(s) || isFootLandmark(s),
+        box: g ? xywh(g) : null, blocks: secBlocks[i].map((b) => {
+          const bg = region(b);
+          let cover = 0;
+          for (const v of visEls) {
+            if (v.el !== b && !b.contains(v.el)) continue;
+            const c = inter(region(v.el), bg);
+            cover = Math.max(cover, (wOf(c) * hOf(c)) / (wOf(bg) * hOf(bg)));
+          }
+          return { sel: sel(b), box: xywh(bg), visual: visEls.some((v) => v.el === b), cover: r4(cover), text: hasText.has(b) };
+        }) };
+    });
+
+    // (b) Runs: consecutive visible element children of one parent (outside navigation and footer) with the same
+    // tag and class set, each text-only; groups of 2 or more, with each member's box (the scorer applies 4 px).
+    a11.runs = [];
+    for (const parent of [document.body, ...els]) {
+      if (parent.closest(SKIP) || parent.closest(NAVFOOT)) continue;
+      let cur = null;
+      const flush = () => { if (cur && cur.items.length >= 2) a11.runs.push(cur); cur = null; };
+      for (const c of parent.children) {
+        if (NOT_EL.includes(c.localName) || !region(c)) continue;
+        const key = c.localName + " " + [...c.classList].sort().join(" ");
+        const textOnly = hasText.has(c) && !c.matches("img, svg, canvas, picture") && !c.querySelector("img, svg, canvas, picture");
+        if (!textOnly) { flush(); continue; }
+        if (cur && cur.key === key) { cur.items.push(c); continue; }
+        flush();
+        cur = { key, items: [c] };
+      }
+      flush();
+    }
+    a11.runs = a11.runs.map((r) => ({ sel: sel(r.items[0]), boxes: r.items.map((e) => xywh(region(e))) }));
+
+    // (c) Text blocks with a digit: visible text elements' own text nodes outside the footer, joined in document
+    // order by their block (the nearest element from the node's parent up whose display is not inline-level); a
+    // br is a line break and a whitespace-only text node a space. cands, sec, blk: what holds the block.
+    const textBlocks = new Map();
+    {
+      const blockEl = (p) => {
+        for (let e = p; e && e !== document.documentElement; e = e.parentElement) {
+          const d = cs(e).display;
+          if (!d.startsWith("inline") && d !== "contents") return e;
+        }
+        return document.body;
+      };
+      const add = (b, s) => textBlocks.set(b, (textBlocks.get(b) || "") + s);
+      const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+      while (tw.nextNode()) {
+        const n = tw.currentNode;
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          if (n.localName === "br" && n.parentElement && !n.closest(SKIP) && !n.closest(FOOT)) add(blockEl(n.parentElement), "\n");
+          continue;
+        }
+        const p = n.parentElement;
+        if (!p || p.closest(SKIP) || p.closest(FOOT)) continue;
+        if (!n.nodeValue.trim()) add(blockEl(p), " ");
+        else if (textIndex.has(p)) add(blockEl(p), n.nodeValue);
+      }
+    }
+    a11.text_blocks = [];
+    for (const [b, t] of textBlocks) {
+      const text = norm(t);
+      if (!/\p{Nd}/u.test(text)) continue;
+      a11.text_blocks.push({ sel: sel(b), text: text.slice(0, 2000), box: xywh(pageRect(b.getBoundingClientRect())),
+        cands: candsOf(b), sec: sectionOf(b), blk: blockOf(b) });
+    }
+
+    // (c) Drawn elements: outermost svg (with its count of shapes), canvas, progress, meter. Fills: visible elements
+    // with their own background and no visible text, with their parent's content box (the track); the scorer
+    // decides which are bars.
+    a11.drawn = [];
+    for (const el of els) {
+      if (!["svg", "canvas", "progress", "meter"].includes(el.localName) || !region(el)) continue;
+      const d = { sel: sel(el), kind: el.localName, box: xywh(region(el)), cands: candsOf(el), sec: sectionOf(el), blk: blockOf(el) };
+      if (el.localName === "svg") d.shapes = el.querySelectorAll("rect, circle, ellipse, line, polyline, polygon, path").length;
+      a11.drawn.push(d);
+    }
+    const parents = new Map();
+    a11.fills = [];
+    for (const el of els) {
+      const g = region(el);
+      if (!g || hasText.has(el) || !ownBg(cs(el))) continue;
+      const p = el.parentElement;
+      if (!parents.has(p)) parents.set(p, parents.size);
+      const r = p.getBoundingClientRect();
+      const s = cs(p);
+      const px = (k) => parseFloat(s[k]) || 0;
+      const l = px("borderLeftWidth") + px("paddingLeft"), t = px("borderTopWidth") + px("paddingTop");
+      const track = [r.left + l, r.top + scrollY + t, r.width - l - px("borderRightWidth") - px("paddingRight"),
+        r.height - t - px("borderBottomWidth") - px("paddingBottom")].map(r2);
+      const pos = cs(el).position;
+      a11.fills.push({ sel: sel(el), box: xywh(g), parent: parents.get(p), track, flow: pos !== "absolute" && pos !== "fixed",
+        cands: candsOf(el), sec: sectionOf(el), blk: blockOf(el) });
+    }
+    out.a11 = a11;
   }
   return out;
 })

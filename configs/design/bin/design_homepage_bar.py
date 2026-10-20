@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""design_homepage_bar (Design, queues #78 and #91): the homepage A-bar meter, version 2. No model (AGENTS rule 17).
+"""design_homepage_bar (Design, queues #78, #91 and #112): the homepage A-bar meter, version 3. No model (AGENTS rule 17).
 
 Measures one built homepage against the script-measurable A bars of
 ~/design-lab/homepage-workflow/BAR.md at 1440x900, 1024x768, 768x1024, 390x844 and 320x568, and
@@ -8,7 +8,7 @@ docs/design-homepage-bar.md; limits are BAR.md's, word for word.
 
     design_homepage_bar.py --site DIR [--page index.html] --brief brief.json --out DIR \
         [--browser URL] [--serve-host HOST] [--raw-only | --from-raw DIR]
-    design_homepage_bar.py --fixture-proof --out DIR [--record] [--browser URL] [--serve-host HOST]
+    design_homepage_bar.py --fixture-proof --out DIR [--record [SET ...]] [--browser URL] [--serve-host HOST]
 
 The browser is temper's playwright-mcp service. The site folder is served over HTTP by
 design_capture.serve. In the page: design_homepage_bar.js (raw measurements), design_measure.js
@@ -16,6 +16,8 @@ design_capture.serve. In the page: design_homepage_bar.js (raw measurements), de
 (text over an image, measured from the pixels behind it). The scorer (score) is pure: raw JSON in,
 rows out; every limit is applied there. Version 2 (queue #91, H3b) reads six of BAR.md's definitions
 more exactly and adds two rows (A5 cta-wording, A7 word-split); the doc's v2 section lists each change.
+Version 3 (queue #112) adds BAR.md A11's parts (a) depth, (b) varied layout, (c) data drawn and (e) expressive
+type as seven rows at 1440 and 390 (the doc's A11 section); no earlier row changed.
 """
 
 import argparse
@@ -28,16 +30,18 @@ import statistics
 import sys
 import urllib.parse
 from decimal import Decimal, InvalidOperation
+from itertools import combinations, pairwise
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 METER = "design_homepage_bar"
-VERSION = 2
+VERSION = 3
 REPO = HERE.parent.parent.parent
 JS = HERE / "design_homepage_bar.js"
 FIXTURES = HERE.parent / "testpages" / "bar-v1"
 FIXTURES_V2 = HERE.parent / "testpages" / "bar-v2"
+FIXTURES_A11 = HERE.parent / "testpages" / "bar-a11-v1"
 VERBS = FIXTURES / "verbs.txt"
 PLACEHOLDERS = FIXTURES / "placeholders.txt"
 SIZES = [(1440, 900), (1024, 768), (768, 1024), (390, 844), (320, 568)]
@@ -82,10 +86,21 @@ CHECKS = [
     ("A7", "overlap", "5", "no text box overlaps another"),
     ("A7", "clipped", "5", "no clipped text"),
     ("A7", "word-split", "5", "no word split across two lines without a hyphen"),
+    ("A11", "depth-levels", "2", "at least 3 surface levels (page, card, raised)"),
+    ("A11", "depth-overlap", "2", "at least one visual that overlaps a card or section edge"),
+    ("A11", "layout-neighbours", "1440", "no two neighbouring sections share a layout signature"),
+    ("A11", "layout-bento", "1440", "at least one section is an asymmetric or bento grid with blocks of different sizes"),
+    ("A11", "layout-runs", "2", "no run of more than 4 identical text-only rows or cards"),
+    ("A11", "data-drawn", "2", "every figure that shows a trend, share or progress also has a chart, bar, ring or diagram"),
+    ("A11", "display-type", "2", "on the first screen the display text is at least 3 times the body size"),
 ]
 # The rows version 2 added (queue #91). bar-v1/expected.json predates them; bar-v2/expected.json keys them
 # for bar-v1's pages (its "bar-v1" section).
 ADDED = {("A5", "cta-wording"), ("A7", "word-split")}
+# The rows version 3 added (queue #112), keyed by bar-a11-v1/expected.json only; bar-v1's and bar-v2's keys
+# predate them.
+A11_ROWS = {"depth-levels", "depth-overlap", "layout-neighbours", "layout-bento", "layout-runs", "data-drawn",
+            "display-type"}
 
 
 def widths_of(spec: str) -> list[str]:
@@ -471,9 +486,389 @@ def fmt(v: float, nd: int = 2) -> str:
     return s if s not in ("-0", "") else "0"
 
 
+# ---------------------------------------------------------------- A11, modern and dynamic (version 3, queue #112)
+# The numbers and patterns are the doc's (docs/design-homepage-bar.md, A11), written before this code. The page
+# side (design_homepage_bar.js, opts.a11) records raw facts at 1440 and 390; every reading is applied here.
+
+A11_SURFACE = (120, 48)  # (a) a surface's box: at least this wide and high, px
+A11_L_STEP = 3.0  # (a) a step: L points apart (OKLCH L, 0 to 100) ...
+A11_BLUR_STEP = 4.0  # (a) ... or a shadow blur of at least this many px over a smaller one behind
+A11_LEVELS = 3  # (a) levels met (page, card, raised)
+A11_VISUAL = 48  # (a) a visual's box: at least this wide and high, px
+A11_CROSSING = 8  # (a) a crossing met, px
+A11_TOUCH = 1  # (b) side by side: overlapping horizontally by this many px or less
+A11_COLUMN_GAP = 8  # (b) left edges more than this many px apart start a new column
+A11_DIFFER = 1.25  # (b) widths or heights that differ by 25% or more
+A11_RUN_SIZE = 4  # (b) a run's widths and heights: within this many px of its first element's
+A11_RUN_MAX = 4  # (b) the longest run met
+A11_BAR_SLACK = 1  # (c) a bar: shorter than its track by more than this, as long as it within this, px
+A11_RATIO = 3.0  # (e) display size over body size met
+A11_NUM = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+A11_MONTH = (r"(?:January|February|March|April|May|June|July|August|September|October|November|December|"
+             r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)")
+# (c) Left out first, in this order (each match becomes a space); then the figures. As written in the doc, with
+# NUM and MONTH standing for the two patterns above (tests/test_design_homepage_bar.py holds them equal).
+A11_LEFT_OUT = [
+    ("price", r"[$£€¥]\s?\d[\d,]*(?:\.\d+)?(?:\s?[kKmMbB]\b)?(?:\s?(?:/|per\s)\s?[A-Za-z]+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP)\b"),
+    ("date", r"\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b|\bMONTH\.?\s\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s\d{4}\b)?|\b\d{1,2}(?:st|nd|rd|th)?\sMONTH\b(?:,?\s\d{4}\b)?"),
+    ("time", r"\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[aApP]\.?[mM]\b\.?)?|\b\d{1,2}\s?[aApP]\.?[mM]\b\.?"),
+    ("version", r"\b[vV]\d+(?:\.\d+)*\b|\b(?:[Vv]ersion|[Rr]elease)\s\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b"),
+    ("phone", r"\+?\(?\d(?:[\s().-]*\d){6,}"),
+]
+A11_FIGURES = [
+    ("progress", r"(?i)\bstep\s(NUM)\sof\s(NUM)\b"),
+    ("trend", r"(?i)\b(?:up|down)\s(?:by\s)?NUM\s?(?:%|×|(?:x|pts?|points?|ms|s|secs?|seconds?|mins?|minutes?|h|hrs?|hours?|days?|weeks?|months?|years?)\b)"),
+    ("trend", r"[↑↓▲▼↗↘⬆⬇]\s?[+\-−]?NUM|(?<![\w.,])NUM\s?%?\s?[↑↓▲▼↗↘⬆⬇]"),
+    ("trend", r"(?<![\w.,+\-−])[+\-−]NUM"),
+    ("part", r"(?i)(?<![\w.,])(NUM)\s(?:of|out\sof)\s(NUM)(?![\d.,]*\d)"),
+    ("part", r"(?<![\w.,/])(NUM)\s?/\s?(NUM)(?![\w/])"),
+    ("share", r"(?<![\w.,])NUM\s?%"),
+]
+A11_PRIORITY = ["progress", "trend", "part", "share"]
+
+
+def a11_pattern(p: str) -> re.Pattern:
+    return re.compile(p.replace("NUM", A11_NUM).replace("MONTH", A11_MONTH))
+
+
+A11_LEFT_OUT_RE = [(name, a11_pattern(p)) for name, p in A11_LEFT_OUT]
+A11_FIGURES_RE = [(kind, a11_pattern(p)) for kind, p in A11_FIGURES]
+
+
+def a11_figures(text: str) -> list[tuple[str, str]]:
+    """(c) The figures in one text block, as (kind, text), in reading order. A progress or part of a whole counts
+    only when its whole is above 0 and its part is not above its whole; overlapping matches are one figure,
+    named by the first of progress, trend, part, share."""
+    t = norm(text)
+    for _, rx in A11_LEFT_OUT_RE:
+        t = rx.sub(" ", t)
+    found = []
+    for kind, rx in A11_FIGURES_RE:
+        for m in rx.finditer(t):
+            if kind in ("progress", "part"):
+                part, whole = (Decimal(g.replace(",", "")) for g in m.groups())
+                if not (whole > 0 and part <= whole):
+                    continue
+            found.append((m.start(), m.end(), kind))
+    found.sort(key=lambda f: (f[0], -f[1]))
+    merged: list[tuple[int, int, set[str]]] = []
+    for s, e, kind in found:
+        if merged and s < merged[-1][1]:
+            ps, pe, kinds = merged[-1]
+            merged[-1] = (ps, max(pe, e), kinds | {kind})
+        else:
+            merged.append((s, e, {kind}))
+    return [(min(kinds, key=A11_PRIORITY.index), t[s:e]) for s, e, kinds in merged]
+
+
+def a11_num(v: float) -> float | int:
+    """A px value for a row: 2 decimals, whole numbers as integers."""
+    v = round(v, 2)
+    return int(v) if v == int(v) else v
+
+
+def a11_light(rgb: list[float]) -> float:
+    """OKLCH L, 0 to 100."""
+    return srgb_to_oklab(rgb)[0] * 100
+
+
+def a11_over(c: list[float], base: list[float]) -> list[int]:
+    """Colour c ([r, g, b, alpha]) composited over base ([r, g, b]), whole RGB."""
+    a = c[3] if len(c) > 3 else 1
+    return [int(c[i] * a + base[i] * (1 - a) + 0.5) for i in range(3)]
+
+
+def a11_colour_light(base: list[float], layers: list) -> float:
+    """(a) A surface's L: its colour's, or the mean over its background image layers (each layer's colours, a
+    gradient's stops or an image's mean pixel colour, composited over its colour)."""
+    if not layers:
+        return a11_light(base)
+    return statistics.fmean(statistics.fmean(a11_light(a11_over(c, base)) for c in layer) for layer in layers)
+
+
+def a11_surfaces(a: dict) -> set[int]:
+    """(a) The candidates that are surfaces: big enough, and not a control (unless it holds a heading)."""
+    w, h = A11_SURFACE
+    return {k for k, c in enumerate(a["cands"]) if c["box"][2] >= w and c["box"][3] >= h and not c["ctl"]}
+
+
+def a11_levels(a: dict) -> dict[int, dict]:
+    """(a) Each surface's level, L, blur, the surface behind it and whether it is one step above it; -1 is the
+    page (level 1)."""
+    surf = a11_surfaces(a)
+    info = {-1: {"level": 1, "light": a11_colour_light(a["page"]["base"], a["page"]["layers"]), "blur": 0,
+                 "behind": None, "step": False}}
+    for k, c in enumerate(a["cands"]):
+        if k not in surf:
+            continue
+        up = c["up"]
+        while up >= 0 and up not in surf:
+            up = a["cands"][up]["up"]
+        b = info[up]
+        light = a11_colour_light(c["base"], c["layers"])
+        step = abs(light - b["light"]) >= A11_L_STEP or (c["blur"] >= A11_BLUR_STEP and b["blur"] < c["blur"])
+        info[k] = {"level": b["level"] + int(step), "light": light, "blur": c["blur"], "behind": up, "step": step}
+    return info
+
+
+def a11_cross(v: list[float], e: list[float]) -> tuple[float, str]:
+    """(a) How far box v crosses one side of box e (the smaller of its reach outside and inside), at the side
+    where that is largest; (0, "") when it crosses none."""
+    vx0, vy0, vx1, vy1 = v[0], v[1], v[0] + v[2], v[1] + v[3]
+    ex0, ey0, ex1, ey1 = e[0], e[1], e[0] + e[2], e[1] + e[3]
+    sides = []
+    if min(vx1, ex1) - max(vx0, ex0) > 0:
+        sides += [(min(ey0 - vy0, min(vy1, ey1) - ey0), "top"), (min(vy1 - ey1, ey1 - max(vy0, ey0)), "bottom")]
+    if min(vy1, ey1) - max(vy0, ey0) > 0:
+        sides += [(min(ex0 - vx0, min(vx1, ex1) - ex0), "left"), (min(vx1 - ex1, ex1 - max(vx0, ex0)), "right")]
+    best = max(sides, default=(0, ""))
+    return (round(best[0], 2), best[1]) if best[0] > 0 else (0, "")
+
+
+def a11_crossings(a: dict) -> list[tuple[float, int, str, str]]:
+    """(a) Each visual's largest crossing of a section or surface edge, as (px, visual, side, edge's selector),
+    largest first."""
+    surf = a11_surfaces(a)
+    edges = [("sec", i, s["sel"], s["box"]) for i, s in enumerate(a["sections"]) if s["box"]]
+    edges += [("cand", k, c["sel"], c["box"]) for k, c in enumerate(a["cands"]) if k in surf]
+    out = []
+    for n, v in enumerate(a["visuals"]):
+        vb = v["box"]
+        if vb[2] < A11_VISUAL or vb[3] < A11_VISUAL:
+            continue
+        best = None
+        for kind, i, esel, eb in edges:
+            if i in (v["holds_secs"] if kind == "sec" else v["holds_cands"]):
+                continue
+            if eb[0] >= vb[0] and eb[1] >= vb[1] and eb[0] + eb[2] <= vb[0] + vb[2] and eb[1] + eb[3] <= vb[1] + vb[3]:
+                continue
+            px, side = a11_cross(vb, eb)
+            if px > 0 and (best is None or px > best[0]):
+                best = (px, n, side, esel)
+        if best:
+            out.append(best)
+    return sorted(out, key=lambda x: (-x[0], x[1]))
+
+
+def a11_content_sections(a: dict) -> list[dict]:
+    """(b) The sections in order, without the header and footer (chrome) and those with no blocks."""
+    return [s for s in a["sections"] if not s["chrome"] and s["blocks"]]
+
+
+def a11_beside(p: list[float], q: list[float]) -> bool:
+    """(b) Side by side: overlapping vertically by half the shorter height or more, horizontally by 1 px or less."""
+    vert = min(p[1] + p[3], q[1] + q[3]) - max(p[1], q[1])
+    horiz = min(p[0] + p[2], q[0] + q[2]) - max(p[0], q[0])
+    return vert >= min(p[3], q[3]) / 2 and horiz <= A11_TOUCH
+
+
+def a11_kind(b: dict) -> str:
+    return "picture" if b["visual"] or b["cover"] >= 0.5 or not b["text"] else "text"
+
+
+def a11_grid(blocks: list[dict]) -> list[int]:
+    """(b) The blocks that sit side by side with another block."""
+    boxes = [b["box"] for b in blocks]
+    return [i for i, p in enumerate(boxes) if any(j != i and a11_beside(p, q) for j, q in enumerate(boxes))]
+
+
+def a11_signature(blocks: list[dict]) -> str:
+    """(b) A section's layout signature: its column count, then its blocks' kinds in reading order, each run of one
+    kind written once."""
+    boxes = [b["box"] for b in blocks]
+    lefts = sorted(boxes[i][0] for i in a11_grid(blocks))
+    cols = 1 + sum(1 for x, y in pairwise(lefts) if y - x > A11_COLUMN_GAP) if lefts else 1
+    rows: list[list[int]] = []
+    for i in sorted(range(len(blocks)), key=lambda i: (boxes[i][1], boxes[i][0])):
+        if rows and a11_beside(boxes[i], boxes[rows[-1][0]]):
+            rows[-1].append(i)
+        else:
+            rows.append([i])
+    kinds: list[str] = []
+    for row in rows:
+        for i in sorted(row, key=lambda i: (boxes[i][0], boxes[i][1])):
+            k = a11_kind(blocks[i])
+            if not kinds or kinds[-1] != k:
+                kinds.append(k)
+    return f"{cols}:{'-'.join(kinds)}"
+
+
+def a11_bento(blocks: list[dict]) -> tuple[bool, list[int], float, float]:
+    """(b) Whether a section is an asymmetric or bento grid; its grid blocks; the widest over the narrowest of them;
+    and the largest height ratio of two of them side by side."""
+    grid = a11_grid(blocks)
+    if len(grid) < 3:
+        return False, grid, 1.0, 1.0
+    boxes = [blocks[i]["box"] for i in grid]
+    ws = [b[2] for b in boxes]
+    wide = max(ws) / min(ws) if min(ws) > 0 else 1.0
+    tall = max((max(p[3], q[3]) / min(p[3], q[3]) for p, q in combinations(boxes, 2)
+                if a11_beside(p, q) and min(p[3], q[3]) > 0), default=1.0)
+    ok = max(ws) >= A11_DIFFER * min(ws) or any(
+        a11_beside(p, q) and max(p[3], q[3]) >= A11_DIFFER * min(p[3], q[3]) for p, q in combinations(boxes, 2))
+    return ok, grid, wide, tall
+
+
+def a11_runs(a: dict) -> list[tuple[int, str, list[float]]]:
+    """(b) Runs of 2 or more identical text-only siblings, as (length, the group's first selector, the run's first
+    box), longest first."""
+    out = []
+    for g in a["runs"]:
+        boxes, start = g["boxes"], 0
+        for i in range(1, len(boxes) + 1):
+            if (i == len(boxes) or abs(boxes[i][2] - boxes[start][2]) > A11_RUN_SIZE
+                    or abs(boxes[i][3] - boxes[start][3]) > A11_RUN_SIZE):
+                if i - start >= 2:
+                    out.append((i - start, g["sel"], boxes[start]))
+                start = i
+    return sorted(out, key=lambda r: -r[0])
+
+
+def a11_bars(fills: list[dict]) -> list[int]:
+    """(c) The fills that are bars: shorter than their track on its long side and as long on its short side, or
+    2 or more in normal flow in one parent whose widths or heights differ (the bars of a chart)."""
+    bars = set()
+    for k, f in enumerate(fills):
+        fw, fh = f["box"][2], f["box"][3]
+        tw, th = f["track"][2], f["track"][3]
+        if tw >= th:
+            if fw < tw - A11_BAR_SLACK and abs(fh - th) <= A11_BAR_SLACK:
+                bars.add(k)
+        elif fh < th - A11_BAR_SLACK and abs(fw - tw) <= A11_BAR_SLACK:
+            bars.add(k)
+    groups: dict[int, list[int]] = {}
+    for k, f in enumerate(fills):
+        if f["flow"]:
+            groups.setdefault(f["parent"], []).append(k)
+    for ks in groups.values():
+        ws = [fills[k]["box"][2] for k in ks]
+        hs = [fills[k]["box"][3] for k in ks]
+        if len(ks) >= 2 and (max(ws) - min(ws) > A11_BAR_SLACK or max(hs) - min(hs) > A11_BAR_SLACK):
+            bars.update(ks)
+    return sorted(bars)
+
+
+def a11_scope(item: dict, surf: set[int]) -> tuple:
+    """(c) A text block's scope: its innermost surface; else its section's block; else its section; else the page."""
+    s = next((k for k in item["cands"] if k in surf), None)
+    if s is not None:
+        return ("surface", s)
+    if item["sec"] >= 0 and item["blk"] >= 0:
+        return ("block", item["sec"], item["blk"])
+    if item["sec"] >= 0:
+        return ("section", item["sec"])
+    return ("page",)
+
+
+def a11_in_scope(item: dict, scope: tuple) -> bool:
+    if scope[0] == "surface":
+        return scope[1] in item["cands"]
+    if scope[0] == "block":
+        return item["sec"] == scope[1] and item["blk"] == scope[2]
+    if scope[0] == "section":
+        return item["sec"] == scope[1]
+    return True
+
+
+def a11_scope_text(a: dict, scope: tuple) -> str:
+    if scope[0] == "surface":
+        return "surface " + a["cands"][scope[1]]["sel"]
+    if scope[0] == "block":
+        return "block " + a["sections"][scope[1]]["blocks"][scope[2]]["sel"]
+    if scope[0] == "section":
+        return "section " + a["sections"][scope[1]]["sel"]
+    return "the page"
+
+
+def a11_data(a: dict) -> tuple[int, list[tuple[str, str, dict, tuple]]]:
+    """(c) The number of figures, and each figure with no drawn element in its scope: (kind, text, block, scope)."""
+    surf = a11_surfaces(a)
+    drawn = [d for d in a["drawn"] if d["kind"] != "svg" or d.get("shapes", 0) >= 2]
+    drawn += [a["fills"][k] for k in a11_bars(a["fills"])]
+    total, bare = 0, []
+    for t in a["text_blocks"]:
+        figs = a11_figures(t["text"])
+        if not figs:
+            continue
+        total += len(figs)
+        scope = a11_scope(t, surf)
+        if not any(a11_in_scope(d, scope) for d in drawn):
+            bare += [(kind, text, t, scope) for kind, text in figs]
+    return total, bare
+
+
+def check_a11(check: str, m: dict) -> tuple:
+    """One (value, pass, evidence) for an A11 row at one width; raw files from before version 3 hold no A11
+    measurements ("not measured")."""
+    a = m.get("a11")
+    if a is None:
+        return "not measured", None, []
+    if check == "depth-levels":
+        info = a11_levels(a)
+        top = max(info, key=lambda k: (info[k]["level"], -k))
+        chain, k = [], top
+        while k is not None:
+            if k == -1 or info[k]["step"]:
+                chain.append(k)
+            k = info[k]["behind"]
+        evid = [ev("(page)" if k == -1 else a["cands"][k]["sel"],
+                   f"level {info[k]['level']}, L {fmt(info[k]['light'])}, blur {fmt(info[k]['blur'])}px",
+                   None if k == -1 else a["cands"][k]["box"]) for k in chain[::-1][:5]]
+        level = info[top]["level"]
+        return level, level >= A11_LEVELS, evid
+    if check == "depth-overlap":
+        cr = a11_crossings(a)
+        best = a11_num(cr[0][0]) if cr else 0
+        evid = [ev(a["visuals"][n]["sel"], f"crosses the {side} edge of {esel} by {fmt(px)}px", a["visuals"][n]["box"])
+                for px, n, side, esel in cr[:5]]
+        return best, best >= A11_CROSSING, evid
+    if check == "layout-neighbours":
+        secs = a11_content_sections(a)
+        sigs = [a11_signature(s["blocks"]) for s in secs]
+        same = [(p, q, x) for (p, x), (q, y) in pairwise(zip(secs, sigs, strict=True)) if x == y]
+        if same:
+            return len(same), False, [ev(f"{p['sel']} | {q['sel']}", x) for p, q, x in same[:5]]
+        return 0, True, [ev(s["sel"], x, s["box"]) for s, x in zip(secs, sigs, strict=True)][:5]
+    if check == "layout-bento":
+        res = [(s, *a11_bento(s["blocks"])) for s in a11_content_sections(a)]
+        hits = [(s, grid) for s, ok, grid, _, _ in res if ok]
+        if hits:
+            return len(hits), True, [ev(s["sel"], ", ".join(
+                f"{fmt(s['blocks'][i]['box'][2])}x{fmt(s['blocks'][i]['box'][3])}" for i in grid), s["box"]) for s, grid in hits[:5]]
+        return 0, False, [ev(s["sel"], f"{len(grid)} grid blocks, widths x{fmt(wide)}, heights side by side x{fmt(tall)}", s["box"])
+                          for s, _, grid, wide, tall in res if len(grid) >= 3][:5]
+    if check == "layout-runs":
+        runs = a11_runs(a)
+        n = runs[0][0] if runs else 0
+        shown = [r for r in runs if r[0] > A11_RUN_MAX] or runs[:1]
+        return n, n <= A11_RUN_MAX, [ev(s, f"{k} in a run, {fmt(b[2])}x{fmt(b[3])}px", b) for k, s, b in shown[:5]]
+    if check == "data-drawn":
+        total, bare = a11_data(a)
+        return (f"{total - len(bare)} of {total} drawn", not bare,
+                [ev(t["sel"], f"{text} ({kind}); scope: {a11_scope_text(a, sc)}", t["box"]) for kind, text, t, sc in bare[:5]])
+    if check == "display-type":
+        w, h = m["viewport"]
+        if not m["body"]:
+            return "no body text", None, []
+        chars: dict[float, int] = {}
+        for b in m["body"]:
+            chars[b["size"]] = chars.get(b["size"], 0) + len(norm(b["text"]))
+        body = min(chars, key=lambda s: (-chars[s], s))
+        first = [t for t in m["texts"] if in_first(t, w, h)]
+        if not first:
+            return "no text on the first screen", None, []
+        top = max(first, key=lambda t: t["size"])
+        ratio = top["size"] / body
+        return (f"{fmt(top['size'])}px / {fmt(body)}px = {fmt(ratio)}", ratio >= A11_RATIO,
+                [ev(top["sel"], top["text"], tbox(top)), ev("(body text)", f"{fmt(body)}px, {chars[body]} characters")])
+    raise KeyError(check)
+
+
 def check_width(check: str, view: dict, brief: dict) -> tuple:
     """One (value, pass, evidence) for a per-width check."""
     m = view["bar"]
+    if check in A11_ROWS:
+        return check_a11(check, m)
     w, h = m["viewport"]
     texts = m["texts"]
     if check == "product-name":
@@ -895,7 +1290,7 @@ async def measure_width(s, url: str, w: int, h: int, srcs: dict) -> dict:
                     f"await page.goto({json.dumps(url)}, {{waitUntil: 'networkidle'}}); "
                     "await page.evaluate(() => document.fonts.ready.then(() => true)); return true; }")
     await dc.run(s, SETTLE)
-    opts = {"min_words": MIN_WORDS, "chars": w == 1440}
+    opts = {"min_words": MIN_WORDS, "chars": w == 1440, "a11": f"{w}x{h}" in FIRST}
     bar = await dc.run(s, "async (page) => await page.evaluate(" + json.dumps(f"({srcs['bar']})({json.dumps(opts)})") + ")")
     if not isinstance(bar, dict):
         return {"error": f"bar measurements: {str(bar)[:300]}"}
@@ -967,10 +1362,11 @@ def page_raw(site: pathlib.Path, page: str, views: dict, label: str | None = Non
     return raw
 
 
-def load_keys() -> tuple[dict, dict]:
-    """bar-v1/expected.json (part 1's key) and bar-v2/expected.json (version 2's cases and added rows)."""
-    return (json.loads((FIXTURES / "expected.json").read_text(encoding="utf-8")),
-            json.loads((FIXTURES_V2 / "expected.json").read_text(encoding="utf-8")))
+def load_keys() -> tuple[dict, dict, dict]:
+    """bar-v1/expected.json (part 1's key), bar-v2/expected.json (version 2's cases and added rows) and
+    bar-a11-v1/expected.json (version 3's A11 rows)."""
+    return tuple(json.loads((f / "expected.json").read_text(encoding="utf-8"))
+                 for f in (FIXTURES, FIXTURES_V2, FIXTURES_A11))
 
 
 def raw_name(page: str) -> str:
@@ -978,35 +1374,55 @@ def raw_name(page: str) -> str:
     return "-".join(pathlib.PurePosixPath(page).with_suffix("").parts[1:])
 
 
-def page_brief(page: str, key1: dict, key2: dict) -> str:
-    return key2["pages"][page]["brief"] if page in key2["pages"] else key1["brief"]
+def page_brief(page: str, key1: dict, key2: dict, key3: dict | None = None) -> str:
+    for k in (key2, key3 or {"pages": {}}):
+        if page in k["pages"]:
+            return k["pages"][page]["brief"]
+    return key1["brief"]
 
 
-def key_match(page: str, rows: list[dict], key1: dict, key2: dict) -> dict:
+def keyed_rows(specs: list[dict], rows: list[dict]) -> list[str]:
+    """Each keyed row's pass, value and evidence items against the measured rows; one note per difference."""
+    notes = []
+    by = {(r["bar"], r["check"], r["width"]): r for r in rows}
+    for spec in specs:
+        where = f"{spec['bar']} {spec['check']} {spec['width']}"
+        r = by.get((spec["bar"], spec["check"], spec["width"]))
+        if r is None:
+            notes.append(f"{where}: no such row")
+            continue
+        if r["pass"] is not spec["pass"]:
+            notes.append(f"{where}: pass {r['pass']}, key {spec['pass']}")
+        if "value" in spec and r["value"] != spec["value"]:
+            notes.append(f"{where}: value {r['value']!r}, key {spec['value']!r}")
+        for e in spec.get("evidence") or []:
+            if not any(("selector" not in e or x["selector"] == e["selector"])
+                       and ("text" not in e or x["text"] == e["text"])
+                       and ("text_has" not in e or e["text_has"] in x["text"]) for x in r["evidence"]):
+                notes.append(f"{where}: no evidence like {e}")
+    return notes
+
+
+def key_match(page: str, rows: list[dict], key1: dict, key2: dict, key3: dict | None = None) -> dict:
     """One fixture page's rows against its key. A bar-v1 page: bar-v1/expected.json for the rows it covers,
     plus bar-v2/expected.json's bar-v1 section for the rows version 2 added. A bar-v2 page: its exact failing
-    set, and each keyed row's pass, value and evidence items."""
+    set, and each keyed row's pass, value and evidence items. Neither key covers A11 (version 3), so their pages
+    are matched on the other rows. A bar-a11-v1 page: the same on its A11 rows only."""
     got = failing(rows)
+    if key3 is not None and page in key3["pages"]:
+        k = key3["pages"][page]
+        got = {x for x in got if x[0] == "A11"}
+        want = {tuple(x) for x in k["failing"]}
+        notes = keyed_rows(k["rows"], rows)
+        missing, extra = sorted(want - got), sorted(got - want)
+        return {"match": not missing and not extra and not notes, "failing": len(got), "missing": missing,
+                "extra": extra, "rows": notes}
+    got = {x for x in got if x[0] != "A11"}
     notes = []
     if page in key2["pages"]:
         k = key2["pages"][page]
         want = {tuple(x) for x in k["failing"]}
-        by = {(r["bar"], r["check"], r["width"]): r for r in rows}
-        for spec in k["rows"]:
-            where = f"{spec['bar']} {spec['check']} {spec['width']}"
-            r = by.get((spec["bar"], spec["check"], spec["width"]))
-            if r is None:
-                notes.append(f"{where}: no such row")
-                continue
-            if r["pass"] is not spec["pass"]:
-                notes.append(f"{where}: pass {r['pass']}, key {spec['pass']}")
-            if "value" in spec and r["value"] != spec["value"]:
-                notes.append(f"{where}: value {r['value']!r}, key {spec['value']!r}")
-            for e in spec.get("evidence") or []:
-                if not any(("selector" not in e or x["selector"] == e["selector"])
-                           and ("text" not in e or x["text"] == e["text"])
-                           and ("text_has" not in e or e["text_has"] in x["text"]) for x in r["evidence"]):
-                    notes.append(f"{where}: no evidence like {e}")
+        notes = keyed_rows(k["rows"], rows)
     else:
         added = {tuple(x) for x in key2["bar-v1"]["checks"]}
         want = {tuple(x) for x in key1["pages"][page] if (x[0], x[1]) not in added}
@@ -1016,27 +1432,31 @@ def key_match(page: str, rows: list[dict], key1: dict, key2: dict) -> dict:
             "rows": notes}
 
 
-def fixture_proof(out: pathlib.Path, browser: str, serve_host: str | None, record: bool) -> dict:
-    """Measure every bar-v1 and bar-v2 fixture page in one browser session; compare each with its key."""
-    key1, key2 = load_keys()
+SETS = {"bar-v1": FIXTURES, "bar-v2": FIXTURES_V2, "bar-a11-v1": FIXTURES_A11}
+
+
+def fixture_proof(out: pathlib.Path, browser: str, serve_host: str | None, record: list[str] | None) -> dict:
+    """Measure every bar-v1, bar-v2 and bar-a11-v1 fixture page in one browser session; compare each with its
+    key. record: the sets whose raw/ folders get this run's raw files (an empty list: every set)."""
+    key1, key2, key3 = load_keys()
     site = REPO / key1["site"]
-    pages = list(key1["pages"]) + list(key2["pages"])
+    pages = list(key1["pages"]) + list(key2["pages"]) + list(key3["pages"])
     measured = asyncio.run(measure_pages(site, pages, browser, serve_host))
     result = {"pages": {}, "match": True}
     for page in pages:
-        name = raw_name(page)
-        brief_path = site / page_brief(page, key1, key2)
+        name, part = raw_name(page), page.split("/")[0]
+        brief_path = site / page_brief(page, key1, key2, key3)
         brief = json.loads(brief_path.read_text(encoding="utf-8"))
         raw = page_raw(site, page, measured[page], label=str((site / page).relative_to(REPO)))
         text = json.dumps(raw, indent=1, ensure_ascii=False) + "\n"
-        (out / name).mkdir(parents=True, exist_ok=True)
-        (out / name / "raw.json").write_text(text, encoding="utf-8")
-        if record:
-            folder = (FIXTURES_V2 if page in key2["pages"] else FIXTURES) / "raw"
+        (out / part / name).mkdir(parents=True, exist_ok=True)
+        (out / part / name / "raw.json").write_text(text, encoding="utf-8")
+        if record is not None and (not record or part in record):
+            folder = SETS[part] / "raw"
             folder.mkdir(exist_ok=True)
             (folder / f"{name}.json").write_text(text, encoding="utf-8")
-        doc = write_outputs(out / name, raw, brief, str(brief_path.relative_to(REPO)))
-        res = key_match(page, doc["rows"], key1, key2)
+        doc = write_outputs(out / part / name, raw, brief, str(brief_path.relative_to(REPO)))
+        res = key_match(page, doc["rows"], key1, key2, key3)
         result["pages"][page] = res
         result["match"] = result["match"] and res["match"]
     (out / "fixture-proof.json").write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -1055,9 +1475,13 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--raw-only", action="store_true")
     mode.add_argument("--from-raw", help="score DIR/raw.json with no browser")
     ap.add_argument("--fixture-proof", action="store_true",
-                    help="measure every bar-v1 and bar-v2 page and compare with their expected.json keys")
-    ap.add_argument("--record", action="store_true", help="with --fixture-proof: save the raw files to bar-v1/raw/ and bar-v2/raw/")
+                    help="measure every bar-v1, bar-v2 and bar-a11-v1 page and compare with their expected.json keys")
+    ap.add_argument("--record", nargs="*", metavar="SET", default=None,
+                    help="with --fixture-proof: save the raw files to the raw/ folders of these sets ("
+                    + ", ".join(SETS) + "; none named: all of them)")
     a = ap.parse_args(argv)
+    if a.record and not set(a.record) <= set(SETS):
+        ap.error(f"--record takes sets from: {', '.join(SETS)}")
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     if a.fixture_proof:

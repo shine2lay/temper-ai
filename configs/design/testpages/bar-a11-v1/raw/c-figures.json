@@ -1,0 +1,9050 @@
+{
+ "meter": "design_homepage_bar",
+ "version": 3,
+ "page": "configs/design/testpages/bar-a11-v1/c-figures.html",
+ "page_sha256": "232bf9e29a38335232a180307dadd0fabc1d4e446549600f8da136a8f0f2570e",
+ "widths": {
+  "1440x900": {
+   "bar": {
+    "viewport": [
+     1440,
+     900
+    ],
+    "scroll_width": 1440,
+    "inner_width": 1440,
+    "page_height": 1182,
+    "title": "Lumen Ledger: see where your household money goes",
+    "lang": "en",
+    "sections": [
+     {
+      "i": 0,
+      "sel": "header.site-head",
+      "tag": "header",
+      "banner": true
+     },
+     {
+      "i": 1,
+      "sel": "#top > section.hero:nth-of-type(1)",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 2,
+      "sel": "#how",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 3,
+      "sel": "footer.site-foot",
+      "tag": "footer",
+      "banner": false
+     }
+    ],
+    "footer_text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "page_text": "Lumen Ledger\nHow it works\nPlans\nHelp\nSee your bills at a glance\n\nLumen Ledger sorts every household bill into clear groups, so each month reads like a short story.\n\nStart a free ledger\nEvery bill in its place\n\nRent, food and travel each get a group, and the ledger keeps them tidy for you.\n\nThis month in numbers\n\nSpending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week\n\n−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved\n\n7 of 9 paid · Occupancy\n82%\n\n62%\n45% of the year so far\nNot figures\n\n$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026\n\n9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100\n\n24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors\n\nFictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "headings": [
+     {
+      "level": 1,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "text": "See your bills at a glance",
+      "box": [
+       208,
+       164,
+       650.66,
+       153.59
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "text": "Every bill in its place",
+      "box": [
+       930.66,
+       322.8,
+       301.34,
+       36
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "text": "This month in numbers",
+      "box": [
+       208,
+       641.16,
+       476,
+       36
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "text": "Not figures",
+      "box": [
+       756,
+       641.16,
+       476,
+       36
+      ]
+     }
+    ],
+    "h1": {
+     "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+     "text": "See your bills at a glance",
+     "box": [
+      208,
+      164,
+      650.66,
+      153.59
+     ]
+    },
+    "controls": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "role": "",
+      "text": "Lumen Ledger",
+      "box": [
+       184,
+       16,
+       132.75,
+       44
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "How it works",
+      "box": [
+       1039.92,
+       18.8,
+       97.05,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Plans",
+      "box": [
+       1152.97,
+       18.8,
+       46.14,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Help",
+      "box": [
+       1215.11,
+       18.8,
+       40.89,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "role": "",
+      "text": "Start a free ledger",
+      "box": [
+       208,
+       407.97,
+       204.84,
+       57.19
+      ],
+      "bg": [
+       29,
+       78,
+       216,
+       1
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 6.7
+     },
+     {
+      "i": 5,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Privacy",
+      "box": [
+       184,
+       1111.67,
+       57.55,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 6,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Terms",
+      "box": [
+       257.55,
+       1111.67,
+       50.61,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 7,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Contact",
+      "box": [
+       324.16,
+       1111.67,
+       62.64,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     }
+    ],
+    "texts": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "text": "Lumen Ledger",
+      "size": 20,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        184,
+        26,
+        132.75,
+        24
+       ]
+      ],
+      "bands": [
+       [
+        184,
+        31,
+        132.75,
+        14
+       ]
+      ],
+      "sec": 0,
+      "ctl": 0,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "How it works",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        1043.92,
+        27.8,
+        89.05,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        1043.92,
+        32.2,
+        89.05,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Plans",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        1156.97,
+        27.8,
+        38.14,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        1156.97,
+        32.2,
+        38.14,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 2,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Help",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        1219.11,
+        27.8,
+        32.89,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        1219.11,
+        32.2,
+        32.89,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 3,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "tag": "h1",
+      "text": "See your bills at a glance",
+      "size": 64,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        208,
+        163,
+        522.13,
+        77
+       ],
+       [
+        208,
+        239.8,
+        197.58,
+        77
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        179.1,
+        522.13,
+        44.8
+       ],
+       [
+        208,
+        255.9,
+        197.58,
+        44.8
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": true,
+      "anc": []
+     },
+     {
+      "i": 5,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        208,
+        334.59,
+        633.31,
+        22
+       ],
+       [
+        208,
+        359.78,
+        134.34,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        339.29,
+        633.31,
+        12.6
+       ],
+       [
+        208,
+        364.48,
+        134.34,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 6,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "text": "Start a free ledger",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       255,
+       255,
+       255
+      ],
+      "lines": [
+       [
+        232,
+        424.97,
+        156.84,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        232,
+        429.67,
+        156.84,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": 4,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 7,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "tag": "h2",
+      "text": "Every bill in its place",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        930.66,
+        321.8,
+        286.69,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        930.66,
+        329.8,
+        286.69,
+        21
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 8,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        930.66,
+        375.8,
+        250.86,
+        22
+       ],
+       [
+        930.66,
+        400.98,
+        300.02,
+        22
+       ],
+       [
+        930.66,
+        426.17,
+        57.31,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        930.66,
+        380.5,
+        250.86,
+        12.6
+       ],
+       [
+        930.66,
+        405.68,
+        300.02,
+        12.6
+       ],
+       [
+        930.66,
+        430.87,
+        57.31,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 9,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "tag": "h2",
+      "text": "This month in numbers",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        208,
+        640.16,
+        317.08,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        648.16,
+        317.08,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 10,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        208,
+        694.16,
+        473.58,
+        22
+       ],
+       [
+        208,
+        719.34,
+        187.45,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        698.86,
+        473.58,
+        12.6
+       ],
+       [
+        208,
+        724.04,
+        187.45,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 11,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        208,
+        756.53,
+        465.58,
+        22
+       ],
+       [
+        208,
+        781.72,
+        114.83,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        761.23,
+        465.58,
+        12.6
+       ],
+       [
+        208,
+        786.42,
+        114.83,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 12,
+      "sel": "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong",
+      "tag": "strong",
+      "text": "7",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        208,
+        818.91,
+        9.78,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        208,
+        823.61,
+        9.78,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": [
+       13
+      ]
+     },
+     {
+      "i": 13,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "of 9 paid · Occupancy 82%",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        217.78,
+        818.91,
+        177.28,
+        22
+       ],
+       [
+        208,
+        844.09,
+        37.64,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        217.78,
+        823.61,
+        177.28,
+        12.6
+       ],
+       [
+        208,
+        848.79,
+        37.64,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 14,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "tag": "h2",
+      "text": "Not figures",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        756,
+        640.16,
+        159.03,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        756,
+        648.16,
+        159.03,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 15,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        756,
+        694.16,
+        461.83,
+        22
+       ],
+       [
+        756,
+        719.34,
+        322.02,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        756,
+        698.86,
+        461.83,
+        12.6
+       ],
+       [
+        756,
+        724.04,
+        322.02,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 16,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        756,
+        756.53,
+        448.73,
+        22
+       ],
+       [
+        756,
+        781.72,
+        126.75,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        756,
+        761.23,
+        448.73,
+        12.6
+       ],
+       [
+        756,
+        786.42,
+        126.75,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 17,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        756,
+        818.91,
+        463.47,
+        22
+       ],
+       [
+        756,
+        844.09,
+        143.58,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        756,
+        823.61,
+        463.47,
+        12.6
+       ],
+       [
+        756,
+        848.79,
+        143.58,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 18,
+      "sel": "footer.site-foot > div.wrap > p",
+      "tag": "p",
+      "text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        184,
+        1082.28,
+        511.28,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        184,
+        1086.68,
+        511.28,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 19,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "Privacy",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        188,
+        1120.67,
+        49.55,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        188,
+        1125.07,
+        49.55,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 5,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 20,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Terms",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        261.55,
+        1120.67,
+        42.61,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        261.55,
+        1125.07,
+        42.61,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 6,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 21,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Contact",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        328.16,
+        1120.67,
+        54.64,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        328.16,
+        1125.07,
+        54.64,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 7,
+      "in_h1": false,
+      "anc": []
+     }
+    ],
+    "pictures": [
+     {
+      "kind": "svg",
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "box": [
+       930.66,
+       116,
+       160,
+       120
+      ],
+      "sec": 1,
+      "alt": null
+     },
+     {
+      "kind": "svg",
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "box": [
+       208,
+       880.28,
+       240,
+       64
+      ],
+      "sec": 2,
+      "alt": null
+     }
+    ],
+    "content_boxes": [
+     [
+      [
+       26,
+       50,
+       "header.site-head > div.wrap > a.logo"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(1) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(2) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(3) > a"
+      ]
+     ],
+     [
+      [
+       116,
+       236,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart"
+      ],
+      [
+       163,
+       316.8,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1"
+      ],
+      [
+       321.8,
+       358.8,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2"
+      ],
+      [
+       334.59,
+       381.78,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p"
+      ],
+      [
+       375.8,
+       448.17,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p"
+      ],
+      [
+       424.97,
+       446.97,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta"
+      ]
+     ],
+     [
+      [
+       640.16,
+       677.16,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2"
+      ],
+      [
+       640.16,
+       677.16,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2"
+      ],
+      [
+       694.16,
+       741.34,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)"
+      ],
+      [
+       694.16,
+       741.34,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)"
+      ],
+      [
+       756.53,
+       803.72,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)"
+      ],
+      [
+       756.53,
+       803.72,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)"
+      ],
+      [
+       818.91,
+       840.91,
+       "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong"
+      ],
+      [
+       818.91,
+       866.09,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)"
+      ],
+      [
+       818.91,
+       866.09,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)"
+      ],
+      [
+       880.28,
+       944.28,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark"
+      ]
+     ],
+     [
+      [
+       1082.28,
+       1102.28,
+       "footer.site-foot > div.wrap > p"
+      ],
+      [
+       1120.67,
+       1140.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(1) > a"
+      ],
+      [
+       1120.67,
+       1140.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(2) > a"
+      ],
+      [
+       1120.67,
+       1140.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(3) > a"
+      ]
+     ]
+    ],
+    "body": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "words": 17,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "box": [
+       208,
+       333.59,
+       648,
+       50.38
+      ],
+      "line_chars": [
+       78,
+       19
+      ],
+      "blocks": [
+       {
+        "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+        "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+        "lines": 2,
+        "line_chars": [
+         78,
+         19
+        ],
+        "box": [
+         208,
+         333.59,
+         648,
+         50.38
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "words": 16,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "box": [
+       930.66,
+       374.8,
+       301.34,
+       75.56
+      ],
+      "line_chars": [
+       32,
+       37,
+       8
+      ],
+      "blocks": [
+       {
+        "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+        "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+        "lines": 3,
+        "line_chars": [
+         32,
+         37,
+         8
+        ],
+        "box": [
+         930.66,
+         374.8,
+         301.34,
+         75.56
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "box": [
+       208,
+       693.16,
+       476,
+       50.38
+      ],
+      "line_chars": [
+       58,
+       23
+      ],
+      "blocks": [
+       {
+        "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+        "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+        "lines": 2,
+        "line_chars": [
+         58,
+         23
+        ],
+        "box": [
+         208,
+         693.16,
+         476,
+         50.38
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 22,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "box": [
+       208,
+       755.53,
+       476,
+       50.38
+      ],
+      "line_chars": [
+       58,
+       13
+      ],
+      "blocks": [
+       {
+        "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+        "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+        "lines": 2,
+        "line_chars": [
+         58,
+         13
+        ],
+        "box": [
+         208,
+         755.53,
+         476,
+         50.38
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "box": [
+       756,
+       693.16,
+       476,
+       50.38
+      ],
+      "line_chars": [
+       57,
+       38
+      ],
+      "blocks": [
+       {
+        "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+        "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+        "lines": 2,
+        "line_chars": [
+         57,
+         38
+        ],
+        "box": [
+         756,
+         693.16,
+         476,
+         50.38
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "box": [
+       756,
+       755.53,
+       476,
+       50.38
+      ],
+      "line_chars": [
+       61,
+       14
+      ],
+      "blocks": [
+       {
+        "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+        "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+        "lines": 2,
+        "line_chars": [
+         61,
+         14
+        ],
+        "box": [
+         756,
+         755.53,
+         476,
+         50.38
+        ]
+       }
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "box": [
+       756,
+       817.91,
+       476,
+       50.38
+      ],
+      "line_chars": [
+       60,
+       20
+      ],
+      "blocks": [
+       {
+        "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+        "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+        "lines": 2,
+        "line_chars": [
+         60,
+         20
+        ],
+        "box": [
+         756,
+         817.91,
+         476,
+         50.38
+        ]
+       }
+      ]
+     }
+    ],
+    "spacing": {
+     "counts": {
+      "4": 12,
+      "8": 16,
+      "12": 6,
+      "16": 14,
+      "24": 27,
+      "32": 9,
+      "48": 1,
+      "64": 4
+     },
+     "keyword_skipped": 8,
+     "typed_om": true
+    },
+    "landmarks": {
+     "main": true,
+     "header_or_nav": true,
+     "footer": true
+    },
+    "images": {
+     "count": 0,
+     "no_alt": []
+    },
+    "svgs": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "w": 160,
+      "h": 120,
+      "role": "img",
+      "name": "Bars of a month of spending by group",
+      "hidden": false,
+      "box": [
+       930.66,
+       116,
+       160,
+       120
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "w": 240,
+      "h": 64,
+      "role": "",
+      "name": "",
+      "hidden": true,
+      "box": [
+       208,
+       880.28,
+       240,
+       64
+      ]
+     }
+    ],
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "text": "Bars of a month of spending by group"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": [],
+    "a11": {
+     "page": {
+      "base": [
+       255,
+       255,
+       255
+      ],
+      "layers": []
+     },
+     "cands": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1)",
+       "box": [
+        0,
+        76,
+        1440,
+        477.16
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        224,
+        231,
+        255
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1)",
+       "box": [
+        184,
+        140,
+        698.66,
+        349.16
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+       "box": [
+        208,
+        407.97,
+        204.84,
+        57.19
+       ],
+       "up": 1,
+       "ctl": true,
+       "base": [
+        29,
+        78,
+        216
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+       "box": [
+        906.66,
+        140,
+        349.34,
+        134.8
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3)",
+       "box": [
+        906.66,
+        298.8,
+        349.34,
+        190.36
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1)",
+       "box": [
+        184,
+        617.16,
+        524,
+        351.13
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        248,
+        250,
+        252
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2)",
+       "box": [
+        732,
+        617.16,
+        524,
+        351.13
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        248,
+        250,
+        252
+       ],
+       "layers": [],
+       "blur": 0
+      }
+     ],
+     "visuals": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "svg",
+       "box": [
+        930.66,
+        116,
+        160,
+        120
+       ],
+       "holds_cands": [],
+       "holds_secs": []
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+       "kind": "svg",
+       "box": [
+        208,
+        880.28,
+        240,
+        64
+       ],
+       "holds_cands": [],
+       "holds_secs": []
+      }
+     ],
+     "sections": [
+      {
+       "i": 0,
+       "sel": "header.site-head",
+       "chrome": true,
+       "box": [
+        0,
+        0,
+        1440,
+        76
+       ],
+       "blocks": [
+        {
+         "sel": "header.site-head > div.wrap > a.logo",
+         "box": [
+          184,
+          16,
+          132.75,
+          44
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "header.site-head > div.wrap > nav",
+         "box": [
+          1039.92,
+          18.8,
+          216.08,
+          38.39
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 1,
+       "sel": "#top > section.hero:nth-of-type(1)",
+       "chrome": false,
+       "box": [
+        0,
+        76,
+        1440,
+        477.16
+       ],
+       "blocks": [
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1)",
+         "box": [
+          184,
+          140,
+          698.66,
+          349.16
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+         "box": [
+          906.66,
+          140,
+          349.34,
+          134.8
+         ],
+         "visual": false,
+         "cover": 0.3262,
+         "text": false
+        },
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3)",
+         "box": [
+          906.66,
+          298.8,
+          349.34,
+          190.36
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 2,
+       "sel": "#how",
+       "chrome": false,
+       "box": [
+        0,
+        553.16,
+        1440,
+        479.13
+       ],
+       "blocks": [
+        {
+         "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1)",
+         "box": [
+          184,
+          617.16,
+          524,
+          351.13
+         ],
+         "visual": false,
+         "cover": 0.0835,
+         "text": true
+        },
+        {
+         "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2)",
+         "box": [
+          732,
+          617.16,
+          524,
+          351.13
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 3,
+       "sel": "footer.site-foot",
+       "chrome": true,
+       "box": [
+        0,
+        1032.28,
+        1440,
+        149.78
+       ],
+       "blocks": [
+        {
+         "sel": "footer.site-foot > div.wrap > p",
+         "box": [
+          184,
+          1081.28,
+          576,
+          22.39
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "footer.site-foot > div.wrap > ul.foot-links",
+         "box": [
+          184,
+          1111.67,
+          1072,
+          38.39
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      }
+     ],
+     "runs": [
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+       "boxes": [
+        [
+         208,
+         693.16,
+         476,
+         50.38
+        ],
+        [
+         208,
+         755.53,
+         476,
+         50.38
+        ],
+        [
+         208,
+         817.91,
+         476,
+         50.38
+        ]
+       ]
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+       "boxes": [
+        [
+         756,
+         693.16,
+         476,
+         50.38
+        ],
+        [
+         756,
+         755.53,
+         476,
+         50.38
+        ],
+        [
+         756,
+         817.91,
+         476,
+         50.38
+        ]
+       ]
+      }
+     ],
+     "text_blocks": [
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+       "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+       "box": [
+        208,
+        693.16,
+        476,
+        50.38
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+       "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+       "box": [
+        208,
+        755.53,
+        476,
+        50.38
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+       "text": "7 of 9 paid · Occupancy 82%",
+       "box": [
+        208,
+        817.91,
+        476,
+        50.38
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+       "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+       "box": [
+        756,
+        693.16,
+        476,
+        50.38
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+       "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+       "box": [
+        756,
+        755.53,
+        476,
+        50.38
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+       "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+       "box": [
+        756,
+        817.91,
+        476,
+        50.38
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      }
+     ],
+     "drawn": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "svg",
+       "box": [
+        930.66,
+        116,
+        160,
+        120
+       ],
+       "cands": [
+        3,
+        0
+       ],
+       "sec": 1,
+       "blk": 1,
+       "shapes": 4
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+       "kind": "svg",
+       "box": [
+        208,
+        880.28,
+        240,
+        64
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0,
+       "shapes": 2
+      }
+     ],
+     "fills": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+       "box": [
+        906.66,
+        140,
+        349.34,
+        134.8
+       ],
+       "parent": 0,
+       "track": [
+        184,
+        140,
+        1072,
+        349.16
+       ],
+       "flow": true,
+       "cands": [
+        3,
+        0
+       ],
+       "sec": 1,
+       "blk": 1
+      }
+     ]
+    }
+   },
+   "measure": {
+    "contrast_failures": [],
+    "small_targets": []
+   },
+   "axe": [],
+   "overlays": [],
+   "pixels": {}
+  },
+  "1024x768": {
+   "bar": {
+    "viewport": [
+     1024,
+     768
+    ],
+    "scroll_width": 1024,
+    "inner_width": 1024,
+    "page_height": 1188,
+    "title": "Lumen Ledger: see where your household money goes",
+    "lang": "en",
+    "sections": [
+     {
+      "i": 0,
+      "sel": "header.site-head",
+      "tag": "header",
+      "banner": true
+     },
+     {
+      "i": 1,
+      "sel": "#top > section.hero:nth-of-type(1)",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 2,
+      "sel": "#how",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 3,
+      "sel": "footer.site-foot",
+      "tag": "footer",
+      "banner": false
+     }
+    ],
+    "footer_text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "page_text": "Lumen Ledger\nHow it works\nPlans\nHelp\nSee your bills at a glance\n\nLumen Ledger sorts every household bill into clear groups, so each month reads like a short story.\n\nStart a free ledger\nEvery bill in its place\n\nRent, food and travel each get a group, and the ledger keeps them tidy for you.\n\nThis month in numbers\n\nSpending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week\n\n−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved\n\n7 of 9 paid · Occupancy\n82%\n\n62%\n45% of the year so far\nNot figures\n\n$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026\n\n9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100\n\n24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors\n\nFictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "headings": [
+     {
+      "level": 1,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "text": "See your bills at a glance",
+      "box": [
+       56,
+       164,
+       576,
+       153.59
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "text": "Every bill in its place",
+      "box": [
+       704,
+       308,
+       264,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "text": "This month in numbers",
+      "box": [
+       56,
+       647.56,
+       420,
+       36
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "text": "Not figures",
+      "box": [
+       548,
+       647.56,
+       420,
+       36
+      ]
+     }
+    ],
+    "h1": {
+     "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+     "text": "See your bills at a glance",
+     "box": [
+      56,
+      164,
+      576,
+      153.59
+     ]
+    },
+    "controls": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "role": "",
+      "text": "Lumen Ledger",
+      "box": [
+       32,
+       16,
+       132.75,
+       44
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "How it works",
+      "box": [
+       775.92,
+       18.8,
+       97.05,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Plans",
+      "box": [
+       888.97,
+       18.8,
+       46.14,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Help",
+      "box": [
+       951.11,
+       18.8,
+       40.89,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "role": "",
+      "text": "Start a free ledger",
+      "box": [
+       56,
+       407.97,
+       204.84,
+       57.19
+      ],
+      "bg": [
+       29,
+       78,
+       216,
+       1
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 6.7
+     },
+     {
+      "i": 5,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Privacy",
+      "box": [
+       32,
+       1118.08,
+       57.55,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 6,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Terms",
+      "box": [
+       105.55,
+       1118.08,
+       50.61,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 7,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Contact",
+      "box": [
+       172.16,
+       1118.08,
+       62.64,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     }
+    ],
+    "texts": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "text": "Lumen Ledger",
+      "size": 20,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        32,
+        26,
+        132.75,
+        24
+       ]
+      ],
+      "bands": [
+       [
+        32,
+        31,
+        132.75,
+        14
+       ]
+      ],
+      "sec": 0,
+      "ctl": 0,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "How it works",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        779.92,
+        27.8,
+        89.05,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        779.92,
+        32.2,
+        89.05,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Plans",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        892.97,
+        27.8,
+        38.14,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        892.97,
+        32.2,
+        38.14,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 2,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Help",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        955.11,
+        27.8,
+        32.89,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        955.11,
+        32.2,
+        32.89,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 3,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "tag": "h1",
+      "text": "See your bills at a glance",
+      "size": 64,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        56,
+        163,
+        522.13,
+        77
+       ],
+       [
+        56,
+        239.8,
+        197.58,
+        77
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        179.1,
+        522.13,
+        44.8
+       ],
+       [
+        56,
+        255.9,
+        197.58,
+        44.8
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": true,
+      "anc": []
+     },
+     {
+      "i": 5,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        334.59,
+        529.19,
+        22
+       ],
+       [
+        56,
+        359.78,
+        238.47,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        339.29,
+        529.19,
+        12.6
+       ],
+       [
+        56,
+        364.48,
+        238.47,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 6,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "text": "Start a free ledger",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       255,
+       255,
+       255
+      ],
+      "lines": [
+       [
+        80,
+        424.97,
+        156.84,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        80,
+        429.67,
+        156.84,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": 4,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 7,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "tag": "h2",
+      "text": "Every bill in its place",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        704,
+        307,
+        204.34,
+        37
+       ],
+       [
+        704,
+        343,
+        75.34,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        704,
+        315,
+        204.34,
+        21
+       ],
+       [
+        704,
+        351,
+        75.34,
+        21
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 8,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        704,
+        397,
+        250.86,
+        22
+       ],
+       [
+        704,
+        422.19,
+        220.92,
+        22
+       ],
+       [
+        704,
+        447.38,
+        136.41,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        704,
+        401.7,
+        250.86,
+        12.6
+       ],
+       [
+        704,
+        426.89,
+        220.92,
+        12.6
+       ],
+       [
+        704,
+        452.08,
+        136.41,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 9,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "tag": "h2",
+      "text": "This month in numbers",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        56,
+        646.56,
+        317.08,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        654.56,
+        317.08,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 10,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        700.56,
+        396.8,
+        22
+       ],
+       [
+        56,
+        725.75,
+        264.25,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        705.26,
+        396.8,
+        12.6
+       ],
+       [
+        56,
+        730.45,
+        264.25,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 11,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        762.94,
+        388.58,
+        22
+       ],
+       [
+        56,
+        788.13,
+        191.81,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        767.64,
+        388.58,
+        12.6
+       ],
+       [
+        56,
+        792.83,
+        191.81,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 12,
+      "sel": "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong",
+      "tag": "strong",
+      "text": "7",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        825.31,
+        9.78,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        830.01,
+        9.78,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": [
+       13
+      ]
+     },
+     {
+      "i": 13,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "of 9 paid · Occupancy 82%",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        65.78,
+        825.31,
+        177.28,
+        22
+       ],
+       [
+        56,
+        850.5,
+        37.64,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        65.78,
+        830.01,
+        177.28,
+        12.6
+       ],
+       [
+        56,
+        855.2,
+        37.64,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 14,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "tag": "h2",
+      "text": "Not figures",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        548,
+        646.56,
+        159.03,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        548,
+        654.56,
+        159.03,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 15,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        548,
+        700.56,
+        382.63,
+        22
+       ],
+       [
+        548,
+        725.75,
+        401.2,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        548,
+        705.26,
+        382.63,
+        12.6
+       ],
+       [
+        548,
+        730.45,
+        401.2,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 16,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        548,
+        762.94,
+        416.34,
+        22
+       ],
+       [
+        548,
+        788.13,
+        159.13,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        548,
+        767.64,
+        416.34,
+        12.6
+       ],
+       [
+        548,
+        792.83,
+        159.13,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 17,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        548,
+        825.31,
+        371.48,
+        22
+       ],
+       [
+        548,
+        850.5,
+        235.55,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        548,
+        830.01,
+        371.48,
+        12.6
+       ],
+       [
+        548,
+        855.2,
+        235.55,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 18,
+      "sel": "footer.site-foot > div.wrap > p",
+      "tag": "p",
+      "text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        32,
+        1088.69,
+        511.28,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        32,
+        1093.09,
+        511.28,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 19,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "Privacy",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        36,
+        1127.08,
+        49.55,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        36,
+        1131.48,
+        49.55,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 5,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 20,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Terms",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        109.55,
+        1127.08,
+        42.61,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        109.55,
+        1131.48,
+        42.61,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 6,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 21,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Contact",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        176.16,
+        1127.08,
+        54.64,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        176.16,
+        1131.48,
+        54.64,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 7,
+      "in_h1": false,
+      "anc": []
+     }
+    ],
+    "pictures": [
+     {
+      "kind": "svg",
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "box": [
+       704,
+       116,
+       160,
+       120
+      ],
+      "sec": 1,
+      "alt": null
+     },
+     {
+      "kind": "svg",
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "box": [
+       56,
+       886.69,
+       240,
+       64
+      ],
+      "sec": 2,
+      "alt": null
+     }
+    ],
+    "content_boxes": [
+     [
+      [
+       26,
+       50,
+       "header.site-head > div.wrap > a.logo"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(1) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(2) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(3) > a"
+      ]
+     ],
+     [
+      [
+       116,
+       236,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart"
+      ],
+      [
+       163,
+       316.8,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1"
+      ],
+      [
+       307,
+       380,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2"
+      ],
+      [
+       334.59,
+       381.78,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p"
+      ],
+      [
+       397,
+       469.38,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p"
+      ],
+      [
+       424.97,
+       446.97,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta"
+      ]
+     ],
+     [
+      [
+       646.56,
+       683.56,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2"
+      ],
+      [
+       646.56,
+       683.56,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2"
+      ],
+      [
+       700.56,
+       747.75,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)"
+      ],
+      [
+       700.56,
+       747.75,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)"
+      ],
+      [
+       762.94,
+       810.13,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)"
+      ],
+      [
+       762.94,
+       810.13,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)"
+      ],
+      [
+       825.31,
+       847.31,
+       "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong"
+      ],
+      [
+       825.31,
+       872.5,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)"
+      ],
+      [
+       825.31,
+       872.5,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)"
+      ],
+      [
+       886.69,
+       950.69,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark"
+      ]
+     ],
+     [
+      [
+       1088.69,
+       1108.69,
+       "footer.site-foot > div.wrap > p"
+      ],
+      [
+       1127.08,
+       1147.08,
+       "div.wrap > ul.foot-links > li:nth-of-type(1) > a"
+      ],
+      [
+       1127.08,
+       1147.08,
+       "div.wrap > ul.foot-links > li:nth-of-type(2) > a"
+      ],
+      [
+       1127.08,
+       1147.08,
+       "div.wrap > ul.foot-links > li:nth-of-type(3) > a"
+      ]
+     ]
+    ],
+    "body": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "words": 17,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "box": [
+       56,
+       333.59,
+       576,
+       50.38
+      ]
+     },
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "words": 16,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "box": [
+       704,
+       396,
+       264,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "box": [
+       56,
+       699.56,
+       420,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 22,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "box": [
+       56,
+       761.94,
+       420,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "box": [
+       548,
+       699.56,
+       420,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "box": [
+       548,
+       761.94,
+       420,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "box": [
+       548,
+       824.31,
+       420,
+       50.38
+      ]
+     }
+    ],
+    "spacing": {
+     "counts": {
+      "4": 12,
+      "8": 16,
+      "12": 6,
+      "16": 14,
+      "24": 27,
+      "32": 9,
+      "48": 1,
+      "64": 4
+     },
+     "keyword_skipped": 8,
+     "typed_om": true
+    },
+    "landmarks": {
+     "main": true,
+     "header_or_nav": true,
+     "footer": true
+    },
+    "images": {
+     "count": 0,
+     "no_alt": []
+    },
+    "svgs": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "w": 160,
+      "h": 120,
+      "role": "img",
+      "name": "Bars of a month of spending by group",
+      "hidden": false,
+      "box": [
+       704,
+       116,
+       160,
+       120
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "w": 240,
+      "h": 64,
+      "role": "",
+      "name": "",
+      "hidden": true,
+      "box": [
+       56,
+       886.69,
+       240,
+       64
+      ]
+     }
+    ],
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "text": "Bars of a month of spending by group"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
+   },
+   "measure": {
+    "contrast_failures": [],
+    "small_targets": []
+   },
+   "overlays": [],
+   "pixels": {}
+  },
+  "768x1024": {
+   "bar": {
+    "viewport": [
+     768,
+     1024
+    ],
+    "scroll_width": 768,
+    "inner_width": 768,
+    "page_height": 1300,
+    "title": "Lumen Ledger: see where your household money goes",
+    "lang": "en",
+    "sections": [
+     {
+      "i": 0,
+      "sel": "header.site-head",
+      "tag": "header",
+      "banner": true
+     },
+     {
+      "i": 1,
+      "sel": "#top > section.hero:nth-of-type(1)",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 2,
+      "sel": "#how",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 3,
+      "sel": "footer.site-foot",
+      "tag": "footer",
+      "banner": false
+     }
+    ],
+    "footer_text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "page_text": "Lumen Ledger\nHow it works\nPlans\nHelp\nSee your bills at a glance\n\nLumen Ledger sorts every household bill into clear groups, so each month reads like a short story.\n\nStart a free ledger\nEvery bill in its place\n\nRent, food and travel each get a group, and the ledger keeps them tidy for you.\n\nThis month in numbers\n\nSpending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week\n\n−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved\n\n7 of 9 paid · Occupancy\n82%\n\n62%\n45% of the year so far\nNot figures\n\n$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026\n\n9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100\n\n24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors\n\nFictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "headings": [
+     {
+      "level": 1,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "text": "See your bills at a glance",
+      "box": [
+       56,
+       164,
+       405.33,
+       153.59
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "text": "Every bill in its place",
+      "box": [
+       533.33,
+       308,
+       178.67,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "text": "This month in numbers",
+      "box": [
+       56,
+       672.75,
+       292,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "text": "Not figures",
+      "box": [
+       420,
+       672.75,
+       292,
+       36
+      ]
+     }
+    ],
+    "h1": {
+     "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+     "text": "See your bills at a glance",
+     "box": [
+      56,
+      164,
+      405.33,
+      153.59
+     ]
+    },
+    "controls": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "role": "",
+      "text": "Lumen Ledger",
+      "box": [
+       32,
+       16,
+       132.75,
+       44
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "How it works",
+      "box": [
+       519.92,
+       18.8,
+       97.05,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Plans",
+      "box": [
+       632.97,
+       18.8,
+       46.14,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Help",
+      "box": [
+       695.11,
+       18.8,
+       40.89,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "role": "",
+      "text": "Start a free ledger",
+      "box": [
+       56,
+       407.97,
+       204.84,
+       57.19
+      ],
+      "bg": [
+       29,
+       78,
+       216,
+       1
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 6.7
+     },
+     {
+      "i": 5,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Privacy",
+      "box": [
+       32,
+       1229.64,
+       57.55,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 6,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Terms",
+      "box": [
+       105.55,
+       1229.64,
+       50.61,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 7,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Contact",
+      "box": [
+       172.16,
+       1229.64,
+       62.64,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     }
+    ],
+    "texts": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "text": "Lumen Ledger",
+      "size": 20,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        32,
+        26,
+        132.75,
+        24
+       ]
+      ],
+      "bands": [
+       [
+        32,
+        31,
+        132.75,
+        14
+       ]
+      ],
+      "sec": 0,
+      "ctl": 0,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "How it works",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        523.92,
+        27.8,
+        89.05,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        523.92,
+        32.2,
+        89.05,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Plans",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        636.97,
+        27.8,
+        38.14,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        636.97,
+        32.2,
+        38.14,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 2,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Help",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        699.11,
+        27.8,
+        32.89,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        699.11,
+        32.2,
+        32.89,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 3,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "tag": "h1",
+      "text": "See your bills at a glance",
+      "size": 64,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        56,
+        163,
+        396.55,
+        77
+       ],
+       [
+        56,
+        239.8,
+        323.14,
+        77
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        179.1,
+        396.55,
+        44.8
+       ],
+       [
+        56,
+        255.9,
+        323.14,
+        44.8
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": true,
+      "anc": []
+     },
+     {
+      "i": 5,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        334.59,
+        399.52,
+        22
+       ],
+       [
+        56,
+        359.78,
+        368.14,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        339.29,
+        399.52,
+        12.6
+       ],
+       [
+        56,
+        364.48,
+        368.14,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 6,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "text": "Start a free ledger",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       255,
+       255,
+       255
+      ],
+      "lines": [
+       [
+        80,
+        424.97,
+        156.84,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        80,
+        429.67,
+        156.84,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": 4,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 7,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "tag": "h2",
+      "text": "Every bill in its place",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        533.33,
+        307,
+        162.25,
+        37
+       ],
+       [
+        533.33,
+        343,
+        117.42,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        533.33,
+        315,
+        162.25,
+        21
+       ],
+       [
+        533.33,
+        351,
+        117.42,
+        21
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 8,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        533.33,
+        397,
+        162.66,
+        22
+       ],
+       [
+        533.33,
+        422.19,
+        172.16,
+        22
+       ],
+       [
+        533.33,
+        447.38,
+        177.27,
+        22
+       ],
+       [
+        533.33,
+        472.56,
+        91.06,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        533.33,
+        401.7,
+        162.66,
+        12.6
+       ],
+       [
+        533.33,
+        426.89,
+        172.16,
+        12.6
+       ],
+       [
+        533.33,
+        452.08,
+        177.27,
+        12.6
+       ],
+       [
+        533.33,
+        477.26,
+        91.06,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 9,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "tag": "h2",
+      "text": "This month in numbers",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        56,
+        671.75,
+        188.14,
+        37
+       ],
+       [
+        56,
+        707.75,
+        121.92,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        679.75,
+        188.14,
+        21
+       ],
+       [
+        56,
+        715.75,
+        121.92,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 10,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        761.75,
+        272.7,
+        22
+       ],
+       [
+        56,
+        786.94,
+        232.06,
+        22
+       ],
+       [
+        56,
+        812.13,
+        151.25,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        766.45,
+        272.7,
+        12.6
+       ],
+       [
+        56,
+        791.64,
+        232.06,
+        12.6
+       ],
+       [
+        56,
+        816.83,
+        151.25,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 11,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        849.31,
+        249.92,
+        22
+       ],
+       [
+        56,
+        874.5,
+        279.7,
+        22
+       ],
+       [
+        56,
+        899.69,
+        45.75,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        854.01,
+        249.92,
+        12.6
+       ],
+       [
+        56,
+        879.2,
+        279.7,
+        12.6
+       ],
+       [
+        56,
+        904.39,
+        45.75,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 12,
+      "sel": "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong",
+      "tag": "strong",
+      "text": "7",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        56,
+        936.88,
+        9.78,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        56,
+        941.58,
+        9.78,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": [
+       13
+      ]
+     },
+     {
+      "i": 13,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "of 9 paid · Occupancy 82%",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        65.78,
+        936.88,
+        177.28,
+        22
+       ],
+       [
+        56,
+        962.06,
+        37.64,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        65.78,
+        941.58,
+        177.28,
+        12.6
+       ],
+       [
+        56,
+        966.76,
+        37.64,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 14,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "tag": "h2",
+      "text": "Not figures",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        420,
+        671.75,
+        159.03,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        420,
+        679.75,
+        159.03,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 15,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        420,
+        725.75,
+        258.5,
+        22
+       ],
+       [
+        420,
+        750.94,
+        267.2,
+        22
+       ],
+       [
+        420,
+        776.13,
+        253.11,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        420,
+        730.45,
+        258.5,
+        12.6
+       ],
+       [
+        420,
+        755.64,
+        267.2,
+        12.6
+       ],
+       [
+        420,
+        780.83,
+        253.11,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 16,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        420,
+        813.31,
+        282.27,
+        22
+       ],
+       [
+        420,
+        838.5,
+        250.98,
+        22
+       ],
+       [
+        420,
+        863.69,
+        42.23,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        420,
+        818.01,
+        282.27,
+        12.6
+       ],
+       [
+        420,
+        843.2,
+        250.98,
+        12.6
+       ],
+       [
+        420,
+        868.39,
+        42.23,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 17,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        420,
+        900.88,
+        257.03,
+        22
+       ],
+       [
+        420,
+        926.06,
+        285.23,
+        22
+       ],
+       [
+        420,
+        951.25,
+        59.75,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        420,
+        905.58,
+        257.03,
+        12.6
+       ],
+       [
+        420,
+        930.76,
+        285.23,
+        12.6
+       ],
+       [
+        420,
+        955.95,
+        59.75,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 18,
+      "sel": "footer.site-foot > div.wrap > p",
+      "tag": "p",
+      "text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        32,
+        1200.25,
+        511.28,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        32,
+        1204.65,
+        511.28,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 19,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "Privacy",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        36,
+        1238.64,
+        49.55,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        36,
+        1243.04,
+        49.55,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 5,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 20,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Terms",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        109.55,
+        1238.64,
+        42.61,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        109.55,
+        1243.04,
+        42.61,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 6,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 21,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Contact",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        176.16,
+        1238.64,
+        54.64,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        176.16,
+        1243.04,
+        54.64,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 7,
+      "in_h1": false,
+      "anc": []
+     }
+    ],
+    "pictures": [
+     {
+      "kind": "svg",
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "box": [
+       533.33,
+       116,
+       160,
+       120
+      ],
+      "sec": 1,
+      "alt": null
+     },
+     {
+      "kind": "svg",
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "box": [
+       56,
+       998.25,
+       240,
+       64
+      ],
+      "sec": 2,
+      "alt": null
+     }
+    ],
+    "content_boxes": [
+     [
+      [
+       26,
+       50,
+       "header.site-head > div.wrap > a.logo"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(1) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(2) > a"
+      ],
+      [
+       27.8,
+       47.8,
+       "nav > ul.menu > li:nth-of-type(3) > a"
+      ]
+     ],
+     [
+      [
+       116,
+       236,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart"
+      ],
+      [
+       163,
+       316.8,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1"
+      ],
+      [
+       307,
+       380,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2"
+      ],
+      [
+       334.59,
+       381.78,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p"
+      ],
+      [
+       397,
+       494.56,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p"
+      ],
+      [
+       424.97,
+       446.97,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta"
+      ]
+     ],
+     [
+      [
+       671.75,
+       708.75,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2"
+      ],
+      [
+       671.75,
+       744.75,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2"
+      ],
+      [
+       725.75,
+       798.13,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)"
+      ],
+      [
+       761.75,
+       834.13,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)"
+      ],
+      [
+       813.31,
+       885.69,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)"
+      ],
+      [
+       849.31,
+       921.69,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)"
+      ],
+      [
+       900.88,
+       973.25,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)"
+      ],
+      [
+       936.88,
+       958.88,
+       "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong"
+      ],
+      [
+       936.88,
+       984.06,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)"
+      ],
+      [
+       998.25,
+       1062.25,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark"
+      ]
+     ],
+     [
+      [
+       1200.25,
+       1220.25,
+       "footer.site-foot > div.wrap > p"
+      ],
+      [
+       1238.64,
+       1258.64,
+       "div.wrap > ul.foot-links > li:nth-of-type(1) > a"
+      ],
+      [
+       1238.64,
+       1258.64,
+       "div.wrap > ul.foot-links > li:nth-of-type(2) > a"
+      ],
+      [
+       1238.64,
+       1258.64,
+       "div.wrap > ul.foot-links > li:nth-of-type(3) > a"
+      ]
+     ]
+    ],
+    "body": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "words": 17,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "box": [
+       56,
+       333.59,
+       405.33,
+       50.38
+      ]
+     },
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "words": 16,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 101,
+      "lines": 4,
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "box": [
+       533.33,
+       396,
+       178.67,
+       100.75
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "box": [
+       56,
+       760.75,
+       292,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 22,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "box": [
+       56,
+       848.31,
+       292,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "box": [
+       420,
+       724.75,
+       292,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "box": [
+       420,
+       812.31,
+       292,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "box": [
+       420,
+       899.88,
+       292,
+       75.56
+      ]
+     }
+    ],
+    "spacing": {
+     "counts": {
+      "4": 12,
+      "8": 16,
+      "12": 6,
+      "16": 14,
+      "24": 27,
+      "32": 9,
+      "48": 1,
+      "64": 4
+     },
+     "keyword_skipped": 8,
+     "typed_om": true
+    },
+    "landmarks": {
+     "main": true,
+     "header_or_nav": true,
+     "footer": true
+    },
+    "images": {
+     "count": 0,
+     "no_alt": []
+    },
+    "svgs": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "w": 160,
+      "h": 120,
+      "role": "img",
+      "name": "Bars of a month of spending by group",
+      "hidden": false,
+      "box": [
+       533.33,
+       116,
+       160,
+       120
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "w": 240,
+      "h": 64,
+      "role": "",
+      "name": "",
+      "hidden": true,
+      "box": [
+       56,
+       998.25,
+       240,
+       64
+      ]
+     }
+    ],
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "text": "Bars of a month of spending by group"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
+   },
+   "measure": {
+    "contrast_failures": [],
+    "small_targets": []
+   },
+   "overlays": [],
+   "pixels": {}
+  },
+  "390x844": {
+   "bar": {
+    "viewport": [
+     390,
+     844
+    ],
+    "scroll_width": 390,
+    "inner_width": 390,
+    "page_height": 2041,
+    "title": "Lumen Ledger: see where your household money goes",
+    "lang": "en",
+    "sections": [
+     {
+      "i": 0,
+      "sel": "header.site-head",
+      "tag": "header",
+      "banner": true
+     },
+     {
+      "i": 1,
+      "sel": "#top > section.hero:nth-of-type(1)",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 2,
+      "sel": "#how",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 3,
+      "sel": "footer.site-foot",
+      "tag": "footer",
+      "banner": false
+     }
+    ],
+    "footer_text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "page_text": "Lumen Ledger\nHow it works\nPlans\nHelp\nSee your bills at a glance\n\nLumen Ledger sorts every household bill into clear groups, so each month reads like a short story.\n\nStart a free ledger\nEvery bill in its place\n\nRent, food and travel each get a group, and the ledger keeps them tidy for you.\n\nThis month in numbers\n\nSpending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week\n\n−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved\n\n7 of 9 paid · Occupancy\n82%\n\n62%\n45% of the year so far\nNot figures\n\n$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026\n\n9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100\n\n24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors\n\nFictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "headings": [
+     {
+      "level": 1,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "text": "See your bills at a glance",
+      "box": [
+       40,
+       202.39,
+       310,
+       201.56
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "text": "Every bill in its place",
+      "box": [
+       40,
+       792.7,
+       310,
+       36
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "text": "This month in numbers",
+      "box": [
+       40,
+       1055.08,
+       310,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "text": "Not figures",
+      "box": [
+       40,
+       1491.39,
+       310,
+       36
+      ]
+     }
+    ],
+    "h1": {
+     "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+     "text": "See your bills at a glance",
+     "box": [
+      40,
+      202.39,
+      310,
+      201.56
+     ]
+    },
+    "controls": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "role": "",
+      "text": "Lumen Ledger",
+      "box": [
+       16,
+       16,
+       132.75,
+       44
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "How it works",
+      "box": [
+       16,
+       76,
+       97.05,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Plans",
+      "box": [
+       129.05,
+       76,
+       46.14,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Help",
+      "box": [
+       191.19,
+       76,
+       40.89,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "role": "",
+      "text": "Start a free ledger",
+      "box": [
+       40,
+       519.52,
+       204.84,
+       57.19
+      ],
+      "bg": [
+       29,
+       78,
+       216,
+       1
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 6.7
+     },
+     {
+      "i": 5,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Privacy",
+      "box": [
+       16,
+       1970.67,
+       57.55,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 6,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Terms",
+      "box": [
+       89.55,
+       1970.67,
+       50.61,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 7,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Contact",
+      "box": [
+       156.16,
+       1970.67,
+       62.64,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     }
+    ],
+    "texts": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "text": "Lumen Ledger",
+      "size": 20,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        16,
+        26,
+        132.75,
+        24
+       ]
+      ],
+      "bands": [
+       [
+        16,
+        31,
+        132.75,
+        14
+       ]
+      ],
+      "sec": 0,
+      "ctl": 0,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "How it works",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        20,
+        85,
+        89.05,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        20,
+        89.4,
+        89.05,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Plans",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        133.05,
+        85,
+        38.14,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        133.05,
+        89.4,
+        38.14,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 2,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Help",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        195.19,
+        85,
+        32.89,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        195.19,
+        89.4,
+        32.89,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 3,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "tag": "h1",
+      "text": "See your bills at a glance",
+      "size": 56,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        202.39,
+        229.11,
+        67
+       ],
+       [
+        40,
+        269.58,
+        214.66,
+        67
+       ],
+       [
+        40,
+        336.77,
+        172.88,
+        67
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        216.29,
+        229.11,
+        39.2
+       ],
+       [
+        40,
+        283.48,
+        214.66,
+        39.2
+       ],
+       [
+        40,
+        350.67,
+        172.88,
+        39.2
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": true,
+      "anc": []
+     },
+     {
+      "i": 5,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        420.95,
+        291.64,
+        22
+       ],
+       [
+        40,
+        446.14,
+        287.69,
+        22
+       ],
+       [
+        40,
+        471.33,
+        183.3,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        425.65,
+        291.64,
+        12.6
+       ],
+       [
+        40,
+        450.84,
+        287.69,
+        12.6
+       ],
+       [
+        40,
+        476.03,
+        183.3,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 6,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "text": "Start a free ledger",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       255,
+       255,
+       255
+      ],
+      "lines": [
+       [
+        64,
+        536.52,
+        156.84,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        64,
+        541.22,
+        156.84,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": 4,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 7,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "tag": "h2",
+      "text": "Every bill in its place",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        791.7,
+        286.69,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        799.7,
+        286.69,
+        21
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 8,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        845.7,
+        305.56,
+        22
+       ],
+       [
+        40,
+        870.89,
+        307.66,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        850.4,
+        305.56,
+        12.6
+       ],
+       [
+        40,
+        875.59,
+        307.66,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 9,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "tag": "h2",
+      "text": "This month in numbers",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        1054.08,
+        188.14,
+        37
+       ],
+       [
+        40,
+        1090.08,
+        121.92,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1062.08,
+        188.14,
+        21
+       ],
+       [
+        40,
+        1098.08,
+        121.92,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 10,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1144.08,
+        272.7,
+        22
+       ],
+       [
+        40,
+        1169.27,
+        309.13,
+        22
+       ],
+       [
+        40,
+        1194.45,
+        74.19,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1148.78,
+        272.7,
+        12.6
+       ],
+       [
+        40,
+        1173.97,
+        309.13,
+        12.6
+       ],
+       [
+        40,
+        1199.15,
+        74.19,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 11,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1231.64,
+        304.22,
+        22
+       ],
+       [
+        40,
+        1256.83,
+        276.17,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1236.34,
+        304.22,
+        12.6
+       ],
+       [
+        40,
+        1261.53,
+        276.17,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 12,
+      "sel": "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong",
+      "tag": "strong",
+      "text": "7",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1294.02,
+        9.78,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1298.72,
+        9.78,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": [
+       13
+      ]
+     },
+     {
+      "i": 13,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "of 9 paid · Occupancy 82%",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        49.78,
+        1294.02,
+        177.28,
+        22
+       ],
+       [
+        40,
+        1319.2,
+        37.64,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        49.78,
+        1298.72,
+        177.28,
+        12.6
+       ],
+       [
+        40,
+        1323.9,
+        37.64,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 14,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "tag": "h2",
+      "text": "Not figures",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        1490.39,
+        159.03,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1498.39,
+        159.03,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 15,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1544.39,
+        258.5,
+        22
+       ],
+       [
+        40,
+        1569.58,
+        267.2,
+        22
+       ],
+       [
+        40,
+        1594.77,
+        253.11,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1549.09,
+        258.5,
+        12.6
+       ],
+       [
+        40,
+        1574.28,
+        267.2,
+        12.6
+       ],
+       [
+        40,
+        1599.47,
+        253.11,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 16,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1631.95,
+        282.27,
+        22
+       ],
+       [
+        40,
+        1657.14,
+        293.2,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1636.65,
+        282.27,
+        12.6
+       ],
+       [
+        40,
+        1661.84,
+        293.2,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 17,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1694.33,
+        257.03,
+        22
+       ],
+       [
+        40,
+        1719.52,
+        300.61,
+        22
+       ],
+       [
+        40,
+        1744.7,
+        44.38,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1699.03,
+        257.03,
+        12.6
+       ],
+       [
+        40,
+        1724.22,
+        300.61,
+        12.6
+       ],
+       [
+        40,
+        1749.4,
+        44.38,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 18,
+      "sel": "footer.site-foot > div.wrap > p",
+      "tag": "p",
+      "text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        16,
+        1918.89,
+        336.39,
+        20
+       ],
+       [
+        16,
+        1941.28,
+        170.42,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        16,
+        1923.29,
+        336.39,
+        11.2
+       ],
+       [
+        16,
+        1945.68,
+        170.42,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 19,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "Privacy",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        20,
+        1979.67,
+        49.55,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        20,
+        1984.07,
+        49.55,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 5,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 20,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Terms",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        93.55,
+        1979.67,
+        42.61,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        93.55,
+        1984.07,
+        42.61,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 6,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 21,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Contact",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        160.16,
+        1979.67,
+        54.64,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        160.16,
+        1984.07,
+        54.64,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 7,
+      "in_h1": false,
+      "anc": []
+     }
+    ],
+    "pictures": [
+     {
+      "kind": "svg",
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "box": [
+       40,
+       600.7,
+       160,
+       120
+      ],
+      "sec": 1,
+      "alt": null
+     },
+     {
+      "kind": "svg",
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "box": [
+       40,
+       1355.39,
+       240,
+       64
+      ],
+      "sec": 2,
+      "alt": null
+     }
+    ],
+    "content_boxes": [
+     [
+      [
+       26,
+       50,
+       "header.site-head > div.wrap > a.logo"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(1) > a"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(2) > a"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(3) > a"
+      ]
+     ],
+     [
+      [
+       202.39,
+       403.77,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1"
+      ],
+      [
+       420.95,
+       493.33,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p"
+      ],
+      [
+       536.52,
+       558.52,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta"
+      ],
+      [
+       600.7,
+       720.7,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart"
+      ],
+      [
+       791.7,
+       828.7,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2"
+      ],
+      [
+       845.7,
+       892.89,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p"
+      ]
+     ],
+     [
+      [
+       1054.08,
+       1127.08,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2"
+      ],
+      [
+       1144.08,
+       1216.45,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)"
+      ],
+      [
+       1231.64,
+       1278.83,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)"
+      ],
+      [
+       1294.02,
+       1316.02,
+       "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong"
+      ],
+      [
+       1294.02,
+       1341.2,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)"
+      ],
+      [
+       1355.39,
+       1419.39,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark"
+      ],
+      [
+       1490.39,
+       1527.39,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2"
+      ],
+      [
+       1544.39,
+       1616.77,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)"
+      ],
+      [
+       1631.95,
+       1679.14,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)"
+      ],
+      [
+       1694.33,
+       1766.7,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)"
+      ]
+     ],
+     [
+      [
+       1918.89,
+       1961.28,
+       "footer.site-foot > div.wrap > p"
+      ],
+      [
+       1979.67,
+       1999.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(1) > a"
+      ],
+      [
+       1979.67,
+       1999.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(2) > a"
+      ],
+      [
+       1979.67,
+       1999.67,
+       "div.wrap > ul.foot-links > li:nth-of-type(3) > a"
+      ]
+     ]
+    ],
+    "body": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "words": 17,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "box": [
+       40,
+       419.95,
+       310,
+       75.56
+      ]
+     },
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "words": 16,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "box": [
+       40,
+       844.7,
+       310,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "box": [
+       40,
+       1143.08,
+       310,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 22,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "box": [
+       40,
+       1230.64,
+       310,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "box": [
+       40,
+       1543.39,
+       310,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 50,
+      "lines": 2,
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "box": [
+       40,
+       1630.95,
+       310,
+       50.38
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "box": [
+       40,
+       1693.33,
+       310,
+       75.56
+      ]
+     }
+    ],
+    "spacing": {
+     "counts": {
+      "4": 12,
+      "8": 16,
+      "12": 6,
+      "16": 22,
+      "24": 27,
+      "32": 1,
+      "48": 3,
+      "64": 2
+     },
+     "keyword_skipped": 8,
+     "typed_om": true
+    },
+    "landmarks": {
+     "main": true,
+     "header_or_nav": true,
+     "footer": true
+    },
+    "images": {
+     "count": 0,
+     "no_alt": []
+    },
+    "svgs": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "w": 160,
+      "h": 120,
+      "role": "img",
+      "name": "Bars of a month of spending by group",
+      "hidden": false,
+      "box": [
+       40,
+       600.7,
+       160,
+       120
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "w": 240,
+      "h": 64,
+      "role": "",
+      "name": "",
+      "hidden": true,
+      "box": [
+       40,
+       1355.39,
+       240,
+       64
+      ]
+     }
+    ],
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "text": "Bars of a month of spending by group"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": [],
+    "a11": {
+     "page": {
+      "base": [
+       255,
+       255,
+       255
+      ],
+      "layers": []
+     },
+     "cands": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1)",
+       "box": [
+        0,
+        130.39,
+        390,
+        836.69
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        224,
+        231,
+        255
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1)",
+       "box": [
+        16,
+        178.39,
+        358,
+        422.31
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+       "box": [
+        40,
+        519.52,
+        204.84,
+        57.19
+       ],
+       "up": 1,
+       "ctl": true,
+       "base": [
+        29,
+        78,
+        216
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+       "box": [
+        16,
+        624.7,
+        358,
+        120
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3)",
+       "box": [
+        16,
+        768.7,
+        358,
+        150.38
+       ],
+       "up": 0,
+       "ctl": false,
+       "base": [
+        255,
+        255,
+        255
+       ],
+       "layers": [],
+       "blur": 24
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1)",
+       "box": [
+        16,
+        1031.08,
+        358,
+        412.31
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        248,
+        250,
+        252
+       ],
+       "layers": [],
+       "blur": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2)",
+       "box": [
+        16,
+        1467.39,
+        358,
+        337.5
+       ],
+       "up": -1,
+       "ctl": false,
+       "base": [
+        248,
+        250,
+        252
+       ],
+       "layers": [],
+       "blur": 0
+      }
+     ],
+     "visuals": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "svg",
+       "box": [
+        40,
+        600.7,
+        160,
+        120
+       ],
+       "holds_cands": [],
+       "holds_secs": []
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+       "kind": "svg",
+       "box": [
+        40,
+        1355.39,
+        240,
+        64
+       ],
+       "holds_cands": [],
+       "holds_secs": []
+      }
+     ],
+     "sections": [
+      {
+       "i": 0,
+       "sel": "header.site-head",
+       "chrome": true,
+       "box": [
+        0,
+        0,
+        390,
+        130.39
+       ],
+       "blocks": [
+        {
+         "sel": "header.site-head > div.wrap > a.logo",
+         "box": [
+          16,
+          16,
+          132.75,
+          44
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "header.site-head > div.wrap > nav",
+         "box": [
+          16,
+          76,
+          216.08,
+          38.39
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 1,
+       "sel": "#top > section.hero:nth-of-type(1)",
+       "chrome": false,
+       "box": [
+        0,
+        130.39,
+        390,
+        836.69
+       ],
+       "blocks": [
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1)",
+         "box": [
+          16,
+          178.39,
+          358,
+          422.31
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+         "box": [
+          16,
+          624.7,
+          358,
+          120
+         ],
+         "visual": false,
+         "cover": 0.3575,
+         "text": false
+        },
+        {
+         "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3)",
+         "box": [
+          16,
+          768.7,
+          358,
+          150.38
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 2,
+       "sel": "#how",
+       "chrome": false,
+       "box": [
+        0,
+        967.08,
+        390,
+        901.81
+       ],
+       "blocks": [
+        {
+         "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1)",
+         "box": [
+          16,
+          1031.08,
+          358,
+          412.31
+         ],
+         "visual": false,
+         "cover": 0.1041,
+         "text": true
+        },
+        {
+         "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2)",
+         "box": [
+          16,
+          1467.39,
+          358,
+          337.5
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      },
+      {
+       "i": 3,
+       "sel": "footer.site-foot",
+       "chrome": true,
+       "box": [
+        0,
+        1868.89,
+        390,
+        172.17
+       ],
+       "blocks": [
+        {
+         "sel": "footer.site-foot > div.wrap > p",
+         "box": [
+          16,
+          1917.89,
+          358,
+          44.78
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        },
+        {
+         "sel": "footer.site-foot > div.wrap > ul.foot-links",
+         "box": [
+          16,
+          1970.67,
+          358,
+          38.39
+         ],
+         "visual": false,
+         "cover": 0,
+         "text": true
+        }
+       ]
+      }
+     ],
+     "runs": [
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+       "boxes": [
+        [
+         40,
+         1143.08,
+         310,
+         75.56
+        ],
+        [
+         40,
+         1230.64,
+         310,
+         50.38
+        ],
+        [
+         40,
+         1293.02,
+         310,
+         50.38
+        ]
+       ]
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+       "boxes": [
+        [
+         40,
+         1543.39,
+         310,
+         75.56
+        ],
+        [
+         40,
+         1630.95,
+         310,
+         50.38
+        ],
+        [
+         40,
+         1693.33,
+         310,
+         75.56
+        ]
+       ]
+      }
+     ],
+     "text_blocks": [
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+       "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+       "box": [
+        40,
+        1143.08,
+        310,
+        75.56
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+       "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+       "box": [
+        40,
+        1230.64,
+        310,
+        50.38
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+       "text": "7 of 9 paid · Occupancy 82%",
+       "box": [
+        40,
+        1293.02,
+        310,
+        50.38
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+       "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+       "box": [
+        40,
+        1543.39,
+        310,
+        75.56
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+       "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+       "box": [
+        40,
+        1630.95,
+        310,
+        50.38
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+       "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+       "box": [
+        40,
+        1693.33,
+        310,
+        75.56
+       ],
+       "cands": [
+        6
+       ],
+       "sec": 2,
+       "blk": 1
+      }
+     ],
+     "drawn": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "svg",
+       "box": [
+        40,
+        600.7,
+        160,
+        120
+       ],
+       "cands": [
+        3,
+        0
+       ],
+       "sec": 1,
+       "blk": 1,
+       "shapes": 4
+      },
+      {
+       "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+       "kind": "svg",
+       "box": [
+        40,
+        1355.39,
+        240,
+        64
+       ],
+       "cands": [
+        5
+       ],
+       "sec": 2,
+       "blk": 0,
+       "shapes": 2
+      }
+     ],
+     "fills": [
+      {
+       "sel": "#top > section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2)",
+       "box": [
+        16,
+        624.7,
+        358,
+        120
+       ],
+       "parent": 0,
+       "track": [
+        16,
+        178.39,
+        358,
+        740.69
+       ],
+       "flow": true,
+       "cands": [
+        3,
+        0
+       ],
+       "sec": 1,
+       "blk": 1
+      }
+     ]
+    }
+   },
+   "measure": {
+    "contrast_failures": [],
+    "small_targets": []
+   },
+   "axe": [],
+   "overlays": [],
+   "pixels": {}
+  },
+  "320x568": {
+   "bar": {
+    "viewport": [
+     320,
+     568
+    ],
+    "scroll_width": 320,
+    "inner_width": 320,
+    "page_height": 2203,
+    "title": "Lumen Ledger: see where your household money goes",
+    "lang": "en",
+    "sections": [
+     {
+      "i": 0,
+      "sel": "header.site-head",
+      "tag": "header",
+      "banner": true
+     },
+     {
+      "i": 1,
+      "sel": "#top > section.hero:nth-of-type(1)",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 2,
+      "sel": "#how",
+      "tag": "section",
+      "banner": false
+     },
+     {
+      "i": 3,
+      "sel": "footer.site-foot",
+      "tag": "footer",
+      "banner": false
+     }
+    ],
+    "footer_text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "page_text": "Lumen Ledger\nHow it works\nPlans\nHelp\nSee your bills at a glance\n\nLumen Ledger sorts every household bill into clear groups, so each month reads like a short story.\n\nStart a free ledger\nEvery bill in its place\n\nRent, food and travel each get a group, and the ledger keeps them tidy for you.\n\nThis month in numbers\n\nSpending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week\n\n−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved\n\n7 of 9 paid · Occupancy\n82%\n\n62%\n45% of the year so far\nNot figures\n\n$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026\n\n9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100\n\n24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors\n\nFictional demo — no real accounts or payments. Uptime 99.9% this year.\n\nPrivacy\nTerms\nContact",
+    "headings": [
+     {
+      "level": 1,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "text": "See your bills at a glance",
+      "box": [
+       40,
+       202.39,
+       240,
+       201.56
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "text": "Every bill in its place",
+      "box": [
+       40,
+       817.89,
+       240,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "text": "This month in numbers",
+      "box": [
+       40,
+       1141.45,
+       240,
+       72
+      ]
+     },
+     {
+      "level": 2,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "text": "Not figures",
+      "box": [
+       40,
+       1602.95,
+       240,
+       36
+      ]
+     }
+    ],
+    "h1": {
+     "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+     "text": "See your bills at a glance",
+     "box": [
+      40,
+      202.39,
+      240,
+      201.56
+     ]
+    },
+    "controls": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "role": "",
+      "text": "Lumen Ledger",
+      "box": [
+       16,
+       16,
+       132.75,
+       44
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "How it works",
+      "box": [
+       16,
+       76,
+       97.05,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Plans",
+      "box": [
+       129.05,
+       76,
+       46.14,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Help",
+      "box": [
+       191.19,
+       76,
+       40.89,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "role": "",
+      "text": "Start a free ledger",
+      "box": [
+       40,
+       544.7,
+       204.84,
+       57.19
+      ],
+      "bg": [
+       29,
+       78,
+       216,
+       1
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 6.7
+     },
+     {
+      "i": 5,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Privacy",
+      "box": [
+       16,
+       2132.61,
+       57.55,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 6,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Terms",
+      "box": [
+       89.55,
+       2132.61,
+       50.61,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     },
+     {
+      "i": 7,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "role": "",
+      "text": "Contact",
+      "box": [
+       156.16,
+       2132.61,
+       62.64,
+       38.39
+      ],
+      "bg": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "behind": [
+       255,
+       255,
+       255
+      ],
+      "bg_ratio": 21
+     }
+    ],
+    "texts": [
+     {
+      "i": 0,
+      "sel": "header.site-head > div.wrap > a.logo",
+      "tag": "a",
+      "text": "Lumen Ledger",
+      "size": 20,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        16,
+        26,
+        132.75,
+        24
+       ]
+      ],
+      "bands": [
+       [
+        16,
+        31,
+        132.75,
+        14
+       ]
+      ],
+      "sec": 0,
+      "ctl": 0,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 1,
+      "sel": "nav > ul.menu > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "How it works",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        20,
+        85,
+        89.05,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        20,
+        89.4,
+        89.05,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 2,
+      "sel": "nav > ul.menu > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Plans",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        133.05,
+        85,
+        38.14,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        133.05,
+        89.4,
+        38.14,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 2,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 3,
+      "sel": "nav > ul.menu > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Help",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       31,
+       41,
+       55
+      ],
+      "lines": [
+       [
+        195.19,
+        85,
+        32.89,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        195.19,
+        89.4,
+        32.89,
+        11.2
+       ]
+      ],
+      "sec": 0,
+      "ctl": 3,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 4,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1",
+      "tag": "h1",
+      "text": "See your bills at a glance",
+      "size": 56,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        202.39,
+        229.11,
+        67
+       ],
+       [
+        40,
+        269.58,
+        214.66,
+        67
+       ],
+       [
+        40,
+        336.77,
+        172.88,
+        67
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        216.29,
+        229.11,
+        39.2
+       ],
+       [
+        40,
+        283.48,
+        214.66,
+        39.2
+       ],
+       [
+        40,
+        350.67,
+        172.88,
+        39.2
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": true,
+      "anc": []
+     },
+     {
+      "i": 5,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        420.95,
+        205.19,
+        22
+       ],
+       [
+        40,
+        446.14,
+        189.3,
+        22
+       ],
+       [
+        40,
+        471.33,
+        228.77,
+        22
+       ],
+       [
+        40,
+        496.52,
+        134.34,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        425.65,
+        205.19,
+        12.6
+       ],
+       [
+        40,
+        450.84,
+        189.3,
+        12.6
+       ],
+       [
+        40,
+        476.03,
+        228.77,
+        12.6
+       ],
+       [
+        40,
+        501.22,
+        134.34,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 6,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta",
+      "tag": "a",
+      "text": "Start a free ledger",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       255,
+       255,
+       255
+      ],
+      "lines": [
+       [
+        64,
+        561.7,
+        156.84,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        64,
+        566.4,
+        156.84,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": 4,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 7,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2",
+      "tag": "h2",
+      "text": "Every bill in its place",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        816.89,
+        204.34,
+        37
+       ],
+       [
+        40,
+        852.89,
+        75.34,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        824.89,
+        204.34,
+        21
+       ],
+       [
+        40,
+        860.89,
+        75.34,
+        21
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 8,
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        906.89,
+        236.34,
+        22
+       ],
+       [
+        40,
+        932.08,
+        235.42,
+        22
+       ],
+       [
+        40,
+        957.27,
+        136.41,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        911.59,
+        236.34,
+        12.6
+       ],
+       [
+        40,
+        936.78,
+        235.42,
+        12.6
+       ],
+       [
+        40,
+        961.97,
+        136.41,
+        12.6
+       ]
+      ],
+      "sec": 1,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 9,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2",
+      "tag": "h2",
+      "text": "This month in numbers",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        1140.45,
+        188.14,
+        37
+       ],
+       [
+        40,
+        1176.45,
+        121.92,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1148.45,
+        188.14,
+        21
+       ],
+       [
+        40,
+        1184.45,
+        121.92,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 10,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1230.45,
+        218.06,
+        22
+       ],
+       [
+        40,
+        1255.64,
+        207.08,
+        22
+       ],
+       [
+        40,
+        1280.83,
+        230.88,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1235.15,
+        218.06,
+        12.6
+       ],
+       [
+        40,
+        1260.34,
+        207.08,
+        12.6
+       ],
+       [
+        40,
+        1285.53,
+        230.88,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 11,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1318.02,
+        235.41,
+        22
+       ],
+       [
+        40,
+        1343.2,
+        225.13,
+        22
+       ],
+       [
+        40,
+        1368.39,
+        114.83,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1322.72,
+        235.41,
+        12.6
+       ],
+       [
+        40,
+        1347.9,
+        225.13,
+        12.6
+       ],
+       [
+        40,
+        1373.09,
+        114.83,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 12,
+      "sel": "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong",
+      "tag": "strong",
+      "text": "7",
+      "size": 18,
+      "weight": 700,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1405.58,
+        9.78,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1410.28,
+        9.78,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": [
+       13
+      ]
+     },
+     {
+      "i": 13,
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "of 9 paid · Occupancy 82%",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        49.78,
+        1405.58,
+        177.28,
+        22
+       ],
+       [
+        40,
+        1430.77,
+        37.64,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        49.78,
+        1410.28,
+        177.28,
+        12.6
+       ],
+       [
+        40,
+        1435.47,
+        37.64,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 14,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2",
+      "tag": "h2",
+      "text": "Not figures",
+      "size": 30,
+      "weight": 800,
+      "color": [
+       17,
+       24,
+       39
+      ],
+      "lines": [
+       [
+        40,
+        1601.95,
+        159.03,
+        37
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1609.95,
+        159.03,
+        21
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 15,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1655.95,
+        227.45,
+        22
+       ],
+       [
+        40,
+        1681.14,
+        229.34,
+        22
+       ],
+       [
+        40,
+        1706.33,
+        224.64,
+        22
+       ],
+       [
+        40,
+        1731.52,
+        92.33,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1660.65,
+        227.45,
+        12.6
+       ],
+       [
+        40,
+        1685.84,
+        229.34,
+        12.6
+       ],
+       [
+        40,
+        1711.03,
+        224.64,
+        12.6
+       ],
+       [
+        40,
+        1736.22,
+        92.33,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 16,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1768.7,
+        182,
+        22
+       ],
+       [
+        40,
+        1793.89,
+        238.58,
+        22
+       ],
+       [
+        40,
+        1819.08,
+        149.86,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1773.4,
+        182,
+        12.6
+       ],
+       [
+        40,
+        1798.59,
+        238.58,
+        12.6
+       ],
+       [
+        40,
+        1823.78,
+        149.86,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 17,
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "size": 18,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        40,
+        1856.27,
+        237.27,
+        22
+       ],
+       [
+        40,
+        1881.45,
+        226.22,
+        22
+       ],
+       [
+        40,
+        1906.64,
+        143.58,
+        22
+       ]
+      ],
+      "bands": [
+       [
+        40,
+        1860.97,
+        237.27,
+        12.6
+       ],
+       [
+        40,
+        1886.15,
+        226.22,
+        12.6
+       ],
+       [
+        40,
+        1911.34,
+        143.58,
+        12.6
+       ]
+      ],
+      "sec": 2,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 18,
+      "sel": "footer.site-foot > div.wrap > p",
+      "tag": "p",
+      "text": "Fictional demo — no real accounts or payments. Uptime 99.9% this year.",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       55,
+       65,
+       81
+      ],
+      "lines": [
+       [
+        16,
+        2080.83,
+        261.14,
+        20
+       ],
+       [
+        16,
+        2103.22,
+        245.67,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        16,
+        2085.23,
+        261.14,
+        11.2
+       ],
+       [
+        16,
+        2107.62,
+        245.67,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": -1,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 19,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(1) > a",
+      "tag": "a",
+      "text": "Privacy",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        20,
+        2141.61,
+        49.55,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        20,
+        2146.01,
+        49.55,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 5,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 20,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(2) > a",
+      "tag": "a",
+      "text": "Terms",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        93.55,
+        2141.61,
+        42.61,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        93.55,
+        2146.01,
+        42.61,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 6,
+      "in_h1": false,
+      "anc": []
+     },
+     {
+      "i": 21,
+      "sel": "div.wrap > ul.foot-links > li:nth-of-type(3) > a",
+      "tag": "a",
+      "text": "Contact",
+      "size": 16,
+      "weight": 400,
+      "color": [
+       29,
+       78,
+       216
+      ],
+      "lines": [
+       [
+        160.16,
+        2141.61,
+        54.64,
+        20
+       ]
+      ],
+      "bands": [
+       [
+        160.16,
+        2146.01,
+        54.64,
+        11.2
+       ]
+      ],
+      "sec": 3,
+      "ctl": 7,
+      "in_h1": false,
+      "anc": []
+     }
+    ],
+    "pictures": [
+     {
+      "kind": "svg",
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "box": [
+       40,
+       625.89,
+       160,
+       120
+      ],
+      "sec": 1,
+      "alt": null
+     },
+     {
+      "kind": "svg",
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "box": [
+       40,
+       1466.95,
+       240,
+       64
+      ],
+      "sec": 2,
+      "alt": null
+     }
+    ],
+    "content_boxes": [
+     [
+      [
+       26,
+       50,
+       "header.site-head > div.wrap > a.logo"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(1) > a"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(2) > a"
+      ],
+      [
+       85,
+       105,
+       "nav > ul.menu > li:nth-of-type(3) > a"
+      ]
+     ],
+     [
+      [
+       202.39,
+       403.77,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > h1"
+      ],
+      [
+       420.95,
+       518.52,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p"
+      ],
+      [
+       561.7,
+       583.7,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > a.cta"
+      ],
+      [
+       625.89,
+       745.89,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart"
+      ],
+      [
+       816.89,
+       889.89,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > h2"
+      ],
+      [
+       906.89,
+       979.27,
+       "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p"
+      ]
+     ],
+     [
+      [
+       1140.45,
+       1213.45,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > h2"
+      ],
+      [
+       1230.45,
+       1302.83,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)"
+      ],
+      [
+       1318.02,
+       1390.39,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)"
+      ],
+      [
+       1405.58,
+       1427.58,
+       "div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3) > strong"
+      ],
+      [
+       1405.58,
+       1452.77,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(3)"
+      ],
+      [
+       1466.95,
+       1530.95,
+       "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark"
+      ],
+      [
+       1601.95,
+       1638.95,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > h2"
+      ],
+      [
+       1655.95,
+       1753.52,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)"
+      ],
+      [
+       1768.7,
+       1841.08,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)"
+      ],
+      [
+       1856.27,
+       1928.64,
+       "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)"
+      ]
+     ],
+     [
+      [
+       2080.83,
+       2123.22,
+       "footer.site-foot > div.wrap > p"
+      ],
+      [
+       2141.61,
+       2161.61,
+       "div.wrap > ul.foot-links > li:nth-of-type(1) > a"
+      ],
+      [
+       2141.61,
+       2161.61,
+       "div.wrap > ul.foot-links > li:nth-of-type(2) > a"
+      ],
+      [
+       2141.61,
+       2161.61,
+       "div.wrap > ul.foot-links > li:nth-of-type(3) > a"
+      ]
+     ]
+    ],
+    "body": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-main:nth-of-type(1) > p",
+      "tag": "p",
+      "words": 17,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 101,
+      "lines": 4,
+      "text": "Lumen Ledger sorts every household bill into clear groups, so each month reads like a short story.",
+      "box": [
+       40,
+       419.95,
+       240,
+       100.75
+      ]
+     },
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-note:nth-of-type(3) > p",
+      "tag": "p",
+      "words": 16,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Rent, food and travel each get a group, and the ledger keeps them tidy for you.",
+      "box": [
+       40,
+       905.89,
+       240,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "Spending is up 12% · 3 of 5 rooms booked · Rated 4/5 stars · +8 bookings this week",
+      "box": [
+       40,
+       1229.45,
+       240,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 22,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "−3 days to pay · down 2 hours a week · ▲ 4 new · Step 2 of 3 · 40% saved",
+      "box": [
+       40,
+       1317.02,
+       240,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(1)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 101,
+      "lines": 4,
+      "text": "$12 a month · $4/mo · €9.99 per month · Oct 19, 2026 · 19 October 2026 · 2026-10-19 · 10/19/2026",
+      "box": [
+       40,
+       1654.95,
+       240,
+       100.75
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(2)",
+      "tag": "p",
+      "words": 19,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "9:30 am · 10 pm · v2.1 · version 3.2 · Release 4 · 2.1.0 · +1 (555) 010-0100",
+      "box": [
+       40,
+       1767.7,
+       240,
+       75.56
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-plain:nth-of-type(2) > p:nth-of-type(3)",
+      "tag": "p",
+      "words": 21,
+      "size": 18,
+      "line_height": "25.2px",
+      "line_height_px": 25.2,
+      "content_height": 76,
+      "lines": 3,
+      "text": "24/7 support · 5 of 3 · ages 3-5 · COVID-19 · 12 groups · 2x faster · up 3 floors",
+      "box": [
+       40,
+       1855.27,
+       240,
+       75.56
+      ]
+     }
+    ],
+    "spacing": {
+     "counts": {
+      "4": 12,
+      "8": 16,
+      "12": 6,
+      "16": 22,
+      "24": 27,
+      "32": 1,
+      "48": 3,
+      "64": 2
+     },
+     "keyword_skipped": 8,
+     "typed_om": true
+    },
+    "landmarks": {
+     "main": true,
+     "header_or_nav": true,
+     "footer": true
+    },
+    "images": {
+     "count": 0,
+     "no_alt": []
+    },
+    "svgs": [
+     {
+      "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+      "w": 160,
+      "h": 120,
+      "role": "img",
+      "name": "Bars of a month of spending by group",
+      "hidden": false,
+      "box": [
+       40,
+       625.89,
+       160,
+       120
+      ]
+     },
+     {
+      "sel": "#how > div.wrap.pair > div.panel.panel-drawn:nth-of-type(1) > svg.spark",
+      "w": 240,
+      "h": 64,
+      "role": "",
+      "name": "",
+      "hidden": true,
+      "box": [
+       40,
+       1466.95,
+       240,
+       64
+      ]
+     }
+    ],
+    "overflowing": [],
+    "claims": {
+     "drop": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "kind": "image",
+       "text": ""
+      }
+     ],
+     "names": [
+      {
+       "sel": "section.hero:nth-of-type(1) > div.wrap.tiles > div.tile.tile-chart:nth-of-type(2) > svg.chart",
+       "text": "Bars of a month of spending by group"
+      }
+     ]
+    },
+    "html_pictures": [],
+    "word_splits": []
+   },
+   "measure": {
+    "contrast_failures": [],
+    "small_targets": []
+   },
+   "overlays": [],
+   "pixels": {}
+  }
+ }
+}

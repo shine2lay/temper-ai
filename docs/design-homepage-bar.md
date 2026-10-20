@@ -44,12 +44,14 @@ design_homepage_bar.py --fixture-proof --out DIR [--record [SET ...]] [--browser
   route to `--serve-host` (default: the browser's host name).
 - `--out DIR` gets `raw.json` (the measurements), `bars.json` and `bars.md`.
   `--raw-only` stops after `raw.json`; `--from-raw DIR` scores `DIR/raw.json` with no browser.
-- `--fixture-proof` measures every page of both keys and compares each page's failing rows with its
-  key (exact set equality). bar-v1 pages are held to `bar-v1/expected.json` on the version 1 checks,
-  and to the `bar-v1` section of `bar-v2/expected.json` on the two version 2 rows. Each `bar-v2` case
-  is held to its failing set and its keyed rows. Each `bar-a11-v1` page is held to its exact set of
-  failing A11 rows and its keyed rows (`bar-a11-v1/expected.json`); bar-v1 and bar-v2 pages are held to
-  their keys on every row but A11's, which those keys predate. `--record` also saves each raw file to
+- `--fixture-proof` measures every page of the three keys and compares each page's failing rows with its
+  key (exact set equality). Each page's `raw.json`, `bars.json` and `bars.md` go to
+  `DIR/<set>/<page name>/`, and the result to `DIR/fixture-proof.json`. bar-v1 pages are held to
+  `bar-v1/expected.json` on the version 1 checks, and to the `bar-v1` section of `bar-v2/expected.json`
+  on the two version 2 rows. Each `bar-v2` case is held to its failing set and its keyed rows. Each
+  `bar-a11-v1` page is held to its exact set of failing A11 rows and its keyed rows
+  (`bar-a11-v1/expected.json`); bar-v1 and bar-v2 pages are held to their keys on every row but
+  A11's, which those keys predate. `--record` also saves each raw file to
   its set's `raw/` folder (`bar-v1`, `bar-v2`, `bar-a11-v1`); `--record SET ...` only for those sets.
 - When the page's folder holds `derivations.json`, `raw.json` carries it, with its sha256 (A5 numbers).
 
@@ -299,8 +301,8 @@ columns); runs of identical rows as the "flat list" the owner rejected (T8).
   content children are the section's top-level blocks. A top-level block that is a CSS grid
   (computed display `grid` or `inline-grid`) with 2 or more content children is a layout wrapper too:
   its content children take its place (one level only).
-- Kind of a block: picture when the block is a visual, when one visual covers at least half of its box,
-  or when it holds no visible text; otherwise text.
+- Kind of a block: picture when the block is a visual, when one visual inside it covers at least half
+  of its box, or when it holds no visible text; otherwise text.
 - Side by side: two boxes overlap vertically by at least half the height of the shorter one, and
   horizontally by 1 px or less.
 - Column count: the left edges of the blocks that sit side by side with another block, clustered
@@ -325,7 +327,7 @@ columns); runs of identical rows as the "flat list" the owner rejected (T8).
 
 | check | widths | definition | limit |
 |---|---|---|---|
-| layout-neighbours | 1440 | Content sections in order; the number of neighbouring pairs whose layout signatures are equal. Evidence: each such pair and its signature. | no two neighbouring sections share a layout signature |
+| layout-neighbours | 1440 | Content sections in order; the number of neighbouring pairs whose layout signatures are equal. Evidence: each such pair and its signature; when none, each content section and its signature. | no two neighbouring sections share a layout signature |
 | layout-bento | 1440 | The number of content sections that are an asymmetric or bento grid. Met at 1 or more. Evidence: the section and its grid blocks' sizes; when none, each section with 3 or more grid blocks and its size ratios. | at least one section is an asymmetric or bento grid with blocks of different sizes |
 | layout-runs | 2 | The longest run. Met at 4 or fewer. Evidence: the run's first element, its length and size. | no run of more than 4 identical text-only rows or cards |
 
@@ -335,7 +337,8 @@ Source: BAR.md's "chart, bar, ring or diagram" for every figure of a trend, shar
 - Text blocks: the visible text elements' own text nodes (outside svg, script, style, noscript and
   template; not inside `footer` or `[role=contentinfo]`), joined in document order by their block, the
   nearest element from the node's parent up whose display is not inline-level (`inline*` or
-  `contents`). A `br` is a line break. Whitespace is collapsed. Blocks without a digit hold no figure.
+  `contents`). A `br` is a line break, and a text node of whitespace only is a space. Whitespace is
+  collapsed. Blocks without a digit hold no figure.
 - Left out first: every match of these patterns (Python `re`), in this order, is replaced by a space.
   - price: `[$£€¥]\s?\d[\d,]*(?:\.\d+)?(?:\s?[kKmMbB]\b)?(?:\s?(?:/|per\s)\s?[A-Za-z]+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP)\b`
   - date: `\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b|\bMONTH\.?\s\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s\d{4}\b)?|\b\d{1,2}(?:st|nd|rd|th)?\sMONTH\b(?:,?\s\d{4}\b)?`,
@@ -415,8 +418,9 @@ Source: BAR.md's 3x; A3's body text.
 
 Known limits of these readings, left for the blind read (f) and Design's hand checks: an svg icon with
 2 or more shapes counts as a drawn element; a bar drawn with a gradient or a pseudo-element is not
-seen; a two-part slashed date is a part of a whole; the signature does not look inside a block, so two
-different sections built from the same blocks share one.
+seen; an element with a background and no text that is as tall as its parent and narrower (a picture
+tile in a one-row grid) reads as a bar; a two-part slashed date is a part of a whole; the signature
+does not look inside a block, so two different sections built from the same blocks share one.
 
 ## Not in part 1
 A6 (model) and A10 (blind read); A9 (the converter's verify); keyboard, focus, focus-indicator
@@ -492,6 +496,13 @@ value. Each page is held to it in each of 3 runs, and the runs' `bars.json` and 
 byte-identical. Before sealing, the pages' geometry (the boxes of their named parts, no A11 logic) was
 checked in the browser, so that each page is what the key says.
 
+Result: all 3 version 3 proof runs (2026-10-20) matched the three keys exactly on all 49 pages (7 bar-v1,
+13 bar-v2, 29 bar-a11-v1), and every page's `bars.json` and `raw.json` were byte-identical across the 3
+runs. The older rows did not move: on the 20 bar-v1 and bar-v2 pages, version 3's rows other than A11's
+equal the version 2 meter's (master, measured in the same browser), and version 3's raw files equal the
+recorded version 2 ones apart from the new `a11` facts and the version number. `bar-v1/raw/` and
+`bar-v2/raw/` were not re-recorded. `bar-a11-v1/expected.json` kept its sealed sha256 (efd56660...).
+
 ## Changes to definitions
 
 ### Version 3, 2026-10-20 (Design, queue #112)
@@ -506,6 +517,12 @@ A11 section gives the reading and its reason: controls are not surfaces; the pag
 are left out of the neighbour and bento checks; the column count clusters blocks that sit side by
 side; a top-level CSS grid's children are blocks; a part of a whole needs its part not above its
 whole; a bar fills its track's short side and falls short on its long side.
+
+Written while coding, before any real page was measured, with no number and no key changed: a
+visual makes a block a picture only from inside it; a text node of whitespace only joins its block as
+a space; layout-neighbours' evidence lists the sections and their signatures when no pair is equal
+(at most 5 items, as every row's); a text-less element as tall as its parent reads as a bar (a known
+limit).
 
 ### Version 2, 2026-10-19 (Design, queue #91, H3b)
 

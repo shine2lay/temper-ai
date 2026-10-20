@@ -1,11 +1,12 @@
-"""Model-free tests for Design's homepage A-bar meter (part 1, queue #78; version 2, queue #91).
+"""Model-free tests for Design's homepage A-bar meter (part 1, queue #78; version 2, queue #91; version 3, queue #112).
 
 configs/design/bin/design_homepage_bar.js measures a page in temper's playwright-mcp browser;
 design_homepage_bar.py scores the raw measurements against BAR.md's A bars. No browser here:
-configs/design/testpages/bar-v1/raw/*.json and bar-v2/raw/*.json were recorded from the fixture pages
-(`design_homepage_bar.py --fixture-proof --record`). bar-v1/expected.json, written before part 1,
-lists each bar-v1 page's exact failing (bar, check, width) rows; bar-v2/expected.json, written before
-version 2's code, keys version 2's cases and the two rows it added. Definitions: docs/design-homepage-bar.md.
+configs/design/testpages/bar-v1/raw/*.json, bar-v2/raw/*.json and bar-a11-v1/raw/*.json were recorded from
+the fixture pages (`design_homepage_bar.py --fixture-proof --record [SET ...]`). bar-v1/expected.json, written
+before part 1, lists each bar-v1 page's exact failing (bar, check, width) rows; bar-v2/expected.json, written
+before version 2's code, keys version 2's cases and the two rows it added; bar-a11-v1/expected.json, written
+and sealed before version 3's code, keys the A11 rows. Definitions: docs/design-homepage-bar.md.
 """
 import copy
 import hashlib
@@ -99,14 +100,24 @@ def test_recorded_raw_is_of_the_current_page(page):
 
 
 def test_clean_page_passes_every_row():
-    rows = hb.score(_raw("bar-v1/clean.html"), BRIEF)
+    """Every row but A11's: the recorded raw predates version 3 (see the next test)."""
+    rows = [r for r in hb.score(_raw("bar-v1/clean.html"), BRIEF) if r["bar"] != "A11"]
     assert rows and all(r["pass"] is True for r in rows)
+
+
+def test_a_raw_from_before_version_3_reads_not_measured_on_a11():
+    raw = _raw("bar-v1/clean.html")
+    assert raw["version"] == 2
+    rows = [r for r in hb.score(raw, BRIEF) if r["bar"] == "A11"]
+    assert len(rows) == 12
+    assert all(r["value"] == "not measured" and r["pass"] is None and r["evidence"] == [] for r in rows)
 
 
 def test_planted_pages_break_every_check_at_least_once():
     broken = {(b, c) for page in PAGES for b, c, _ in KEY["pages"][page]}
     broken |= {(b, c) for rows in KEY2["bar-v1"]["pages"].values() for b, c, _ in rows}
     broken |= {(b, c) for page in PAGES2 for b, c, _ in KEY2["pages"][page]["failing"]}
+    broken |= {(b, c) for page in PAGES3 for b, c, _ in KEY3["pages"][page]["failing"]}
     every = {(b, c) for b, c, _, _ in hb.CHECKS}
     assert every - broken == set()
     assert broken - every == set()
@@ -552,22 +563,31 @@ V1_CHECKS = [
 
 
 def test_version_2_adds_rows_and_renames_none():
-    rows = [(b, c, s) for b, c, s, _ in hb.CHECKS]
+    rows = [(b, c, s) for b, c, s, _ in hb.CHECKS if b != "A11"]
     assert [x for x in rows if (x[0], x[1]) not in hb.ADDED] == V1_CHECKS
     assert hb.ADDED == {("A5", "cta-wording"), ("A7", "word-split")}
     assert rows.index(("A5", "cta-wording", "all")) == rows.index(("A5", "numbers", "all")) + 1
     assert rows.index(("A7", "word-split", "5")) == rows.index(("A7", "clipped", "5")) + 1
 
 
+def test_version_3_adds_the_a11_rows_after_a7():
+    rows = [(b, c, s) for b, c, s, _ in hb.CHECKS]
+    a11 = [x for x in rows if x[0] == "A11"]
+    assert a11 == [("A11", "depth-levels", "2"), ("A11", "depth-overlap", "2"), ("A11", "layout-neighbours", "1440"),
+                   ("A11", "layout-bento", "1440"), ("A11", "layout-runs", "2"), ("A11", "data-drawn", "2"),
+                   ("A11", "display-type", "2")]
+    assert rows[rows.index(("A7", "word-split", "5")) + 1:] == a11
+    assert hb.A11_ROWS == {c for _, c, _ in a11}
+
+
 # ------------------------------------------------------------------ A11, modern and dynamic (version 3, queue #112)
-# bar-a11-v1/expected.json was written and sealed (~/design-lab/seals/bar-a11-v1.json) before the A11 code.
-# Tests marked A11 fail until the meter measures A11 (xfail strict); the code commit removes the marks.
+# bar-a11-v1/expected.json was written and sealed (~/design-lab/seals/bar-a11-v1.json) before the A11 code
+# (d9c4d47c, where the tests that needed the code were xfail strict).
 
 FIX3 = ROOT / "configs/design/testpages/bar-a11-v1"
 KEY3 = json.loads((FIX3 / "expected.json").read_text(encoding="utf-8"))
 PAGES3 = sorted(KEY3["pages"])
 KEY_A11_SHA256 = "efd56660e0fbbf6807cabbc1f5ec91b81dd3556f6d09c4a3d09f931266fa3c01"
-A11 = pytest.mark.xfail(strict=True, reason="A11 (queue #112): the meter does not measure A11 yet")
 
 
 def _raw3(page):
@@ -603,14 +623,12 @@ def test_bar_a11_key_covers_every_a11_row_and_page():
     assert KEY3["pages"]["bar-a11-v1/clean-rich.html"]["failing"] == []
 
 
-@A11
 def test_the_meter_has_the_a11_rows():
     rows = {(b, c, w) for b, c, s, _ in hb.CHECKS if b == "A11" for w in hb.widths_of(s)}
     assert rows == {tuple(c) for c in KEY3["checks"]}
     assert hb.VERSION == 3
 
 
-@A11
 @pytest.mark.parametrize("page", PAGES3)
 def test_bar_a11_recorded_page_matches_its_key(page):
     res = hb.key_match(page, hb.score(_raw3(page), _brief3(page)), KEY, KEY2, KEY3)
@@ -619,7 +637,6 @@ def test_bar_a11_recorded_page_matches_its_key(page):
     assert res["rows"] == [], "keyed rows differ"
 
 
-@A11
 @pytest.mark.parametrize("page", PAGES3)
 def test_bar_a11_recorded_raw_is_of_the_current_page(page):
     raw = _raw3(page)
@@ -658,7 +675,145 @@ A11_FIGURE_CASES = [
 ]
 
 
-@A11
 @pytest.mark.parametrize("text,want", A11_FIGURE_CASES)
 def test_a11_figures_follow_the_docs_patterns(text, want):
     assert hb.a11_figures(text) == want
+
+
+def test_a11_patterns_are_the_docs_in_its_order():
+    doc = (ROOT / "docs/design-homepage-bar.md").read_text(encoding="utf-8")
+    for p in (hb.A11_NUM, hb.A11_MONTH):
+        assert f"`{p}`" in doc
+    for name, p in hb.A11_LEFT_OUT:
+        assert f"- {name}: `{p}`" in doc, name
+    for group in (hb.A11_LEFT_OUT, hb.A11_FIGURES):
+        at = [doc.index(f"`{p}`") for _, p in group]
+        assert at == sorted(at)
+    assert [k for k, _ in hb.A11_FIGURES] == ["progress", "trend", "trend", "trend", "part", "part", "share"]
+
+
+@pytest.mark.parametrize("page", PAGES3)
+def test_a11_rows_follow_the_contract(page):
+    rows = [r for r in hb.score(_raw3(page), _brief3(page)) if r["bar"] == "A11"]
+    assert [(r["bar"], r["check"], r["width"]) for r in rows] == [tuple(c) for c in KEY3["checks"]]
+    for r in rows:
+        assert r["pass"] in (True, False) and len(r["evidence"]) <= 5
+        for e in r["evidence"]:
+            assert set(e) == {"selector", "text", "box"} and len(e["text"]) <= 80 and len(e["box"]) == 4
+
+
+# The scorer's A11 readings on hand-made raw facts (no browser), at the doc's numbers.
+
+
+def _surface(up, colour, blur=0, box=(0, 0, 300, 200), ctl=False, layers=()):
+    return {"sel": f"s{len(colour)}", "box": list(box), "up": up, "ctl": ctl, "base": list(colour),
+            "layers": [list(x) for x in layers], "blur": blur}
+
+
+def _levels(page, *cands):
+    return hb.a11_levels({"page": {"base": list(page), "layers": []}, "cands": list(cands)})
+
+
+@pytest.mark.parametrize("colour,step", [((0xEF, 0xF0, 0xEF), False), ((0xF0, 0xF0, 0xF0), True)])
+def test_a_lightness_step_is_3_l_points(colour, step):
+    info = _levels((0xE6, 0xE6, 0xE6), _surface(-1, colour))
+    assert info[0]["step"] is step and info[0]["level"] == (2 if step else 1)
+
+
+@pytest.mark.parametrize("blur,behind,level", [(3, 0, 2), (4, 0, 3), (4, 4, 2), (8, 4, 3)])
+def test_a_shadow_step_needs_4_px_of_blur_over_less_behind(blur, behind, level):
+    tint = (0xE0, 0xE7, 0xFF)
+    info = _levels((255, 255, 255), _surface(-1, tint, blur=behind), _surface(0, tint, blur=blur))
+    assert info[1]["level"] == level
+
+
+def test_small_boxes_and_controls_are_not_surfaces():
+    a = {"page": {"base": [255, 255, 255], "layers": []},
+         "cands": [_surface(-1, (0, 0, 0), box=(0, 0, 119, 200)), _surface(-1, (0, 0, 0), box=(0, 0, 120, 47)),
+                   _surface(-1, (0, 0, 0), ctl=True), _surface(-1, (0, 0, 0), box=(0, 0, 120, 48))]}
+    assert hb.a11_surfaces(a) == {3}
+
+
+def test_a_gradient_surface_takes_the_mean_l_of_its_layers():
+    s = _surface(-1, (255, 255, 255), layers=[[(0, 0, 0, 1), (255, 255, 255, 1)]])
+    assert _levels((255, 255, 255), s)[0]["light"] == pytest.approx(50.0)
+
+
+@pytest.mark.parametrize("v,px,side", [
+    ((0, -24, 100, 100), 24, "top"),    # 24 px out above, 76 px in
+    ((0, -90, 100, 100), 10, "top"),    # 90 px out, 10 px in: the smaller
+    ((0, 0, 100, 100), 0, ""),          # inside, touching the top edge
+    ((380, 20, 100, 100), 20, "right"),  # 80 px out on the right, 20 px in
+    ((420, 20, 100, 100), 0, ""),        # wholly outside, to the right
+    ((0, 300, 100, 100), 0, ""),        # below, not touching
+])
+def test_a_crossing_is_the_smaller_reach_on_either_side_of_an_edge(v, px, side):
+    assert hb.a11_cross(list(v), [0, 0, 400, 200]) == (px, side)
+
+
+def _blk(x, y, w, h, kind="text"):
+    return {"sel": "b", "box": [x, y, w, h], "visual": kind == "picture", "cover": 0, "text": kind == "text"}
+
+
+def test_a_layout_signature_counts_columns_and_reads_kinds_in_order():
+    split = [_blk(0, 0, 500, 300), _blk(540, 0, 500, 300, "picture")]
+    assert hb.a11_signature(split) == "2:text-picture"
+    stack = [_blk(100, 0, 800, 60), _blk(0, 80, 1000, 300), _blk(104, 400, 790, 60)]
+    assert hb.a11_signature(stack) == "1:text"
+    bento = [_blk(0, 0, 600, 500, "picture"), _blk(624, 0, 300, 238), _blk(948, 0, 300, 238), _blk(624, 262, 624, 238)]
+    assert hb.a11_signature(bento) == "3:picture-text"
+
+
+@pytest.mark.parametrize("shift,cols", [(8, 3), (9, 5)])
+def test_columns_cluster_left_edges_within_8_px(shift, cols):
+    row1 = [_blk(x, 0, 290, 100) for x in (0, 300, 600)]
+    row2 = [_blk(x + shift, 120, 280, 100) for x in (0, 300)]
+    assert hb.a11_signature(row1 + row2) == f"{cols}:text"
+
+
+@pytest.mark.parametrize("w,ok", [(372, False), (375, True)])
+def test_a_bento_grid_needs_widths_25_percent_apart(w, ok):
+    blocks = [_blk(0, 0, w, 400), _blk(w + 24, 0, 300, 400), _blk(w + 348, 0, 300, 400)]
+    assert hb.a11_bento(blocks)[0] is ok
+
+
+def test_a_bento_grid_by_height_needs_two_blocks_side_by_side():
+    tall = [_blk(0, 0, 300, 500), _blk(324, 0, 300, 400), _blk(648, 0, 300, 400)]
+    assert hb.a11_bento(tall)[0] is True
+    two = [_blk(0, 0, 300, 500), _blk(324, 0, 300, 400)]
+    assert hb.a11_bento(two)[0] is False
+
+
+def test_a_run_splits_where_a_size_moves_more_than_4_px():
+    boxes = [[0, i * 60, 300, 50] for i in range(5)] + [[0, 300, 300, 55], [0, 360, 300, 55]]
+    runs = hb.a11_runs({"runs": [{"sel": "li.row", "boxes": boxes}]})
+    assert [n for n, _, _ in runs] == [5, 2]
+    four = hb.a11_runs({"runs": [{"sel": "li.row", "boxes": boxes[:4]}]})
+    assert four[0][0] == 4
+
+
+def _fill(box, track, parent=0, flow=False):
+    return {"sel": "f", "box": list(box), "track": list(track), "parent": parent, "flow": flow}
+
+
+def test_a_bar_falls_short_of_its_track_on_the_long_side_only():
+    fills = [_fill((0, 0, 226, 8), (0, 0, 301.34, 8), parent=1),     # a progress fill
+             _fill((0, 0, 300, 1), (0, 0, 300, 1), parent=2),        # a divider as long as its parent
+             _fill((0, 0, 300, 1), (0, 0, 300.8, 1), parent=3),      # within 1 px: not a bar
+             _fill((0, 40, 8, 60), (0, 0, 8, 100), parent=4)]        # an upright fill
+    assert hb.a11_bars(fills) == [0, 3]
+    chart = [_fill((0, 50, 20, 50), (0, 0, 100, 100), parent=5, flow=True),
+             _fill((24, 20, 20, 80), (0, 0, 100, 100), parent=5, flow=True)]
+    assert hb.a11_bars(chart) == [0, 1]
+
+
+@pytest.mark.parametrize("size,ok", [(52.2, False), (54, True)])
+def test_display_type_is_met_at_3_times_the_body(size, ok):
+    m = {"viewport": [1440, 900], "a11": {},
+         "body": [{"size": 18, "text": "one two three four five six seven eight nine"},
+                  {"size": 16, "text": "a b c"}],
+         "texts": [{"sel": "h1", "text": "Big", "size": size, "lines": [[0, 100, 400, size * 1.1]]},
+                   {"sel": "p.below", "text": "Far", "size": 90, "lines": [[0, 2000, 400, 99]]}]}
+    value, passed, evid = hb.check_a11("display-type", m)
+    assert passed is ok and value.endswith(" / 18px = " + ("2.9" if not ok else "3"))
+    assert evid[0]["selector"] == "h1"

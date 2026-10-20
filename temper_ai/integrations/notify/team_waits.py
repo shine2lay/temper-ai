@@ -1,9 +1,10 @@
 """Fixed alerts for the waits a free-flowing team asks its owner (notice kind ``team_wait``).
 
 A free-flowing team (FLOW, docs/pi-team-messages.md) asks its owner on the Team page: a
-member's question, a $100 spending check-in, whether to restart after a weekly limit, and now
-and then another decision. Each asked wait is also a waiting gate event, which the ordinary
-``question`` notice would show with the member's own words and Approve / Reject buttons. For a
+member's question, a $100 spending check-in, whether to restart after a weekly limit, what to
+tell a leader whose work can't be shared, and now and then another decision. Each asked wait
+is also a waiting gate event, which the ordinary ``question`` notice would show with the
+member's own words and Approve / Reject buttons. For a
 FLOW team run, this module replaces that notice with a fixed alert: one sentence naming the
 kind of wait, and a link to the run's Team page. Nothing a member wrote goes into the alert,
 its closing edit or the ``notify_copies`` row.
@@ -39,15 +40,22 @@ REASONS = {
     "pause": "a spending check-in",
     "limit": "a usage-limit restart decision",
 }
+#: Fixed reasons by the wait's header, which picks before its kind. Temper asks about the
+#: leader's refused git (#115) through an owner wait that the page shows as a question, though
+#: no member asked it (#119). The header is Temper's own: a member's question is always
+#: headed "<name> asks". team_leader's GIT_REFUSED spells it the same.
+HEADER_REASONS = {
+    "git-refused": "the leader's work can't be shared",
+}
 OTHER_REASON = "an owner decision"
 #: The places a team alert can go: Slack only, until a Telegram rendering of the same fixed
 #: alert is built and tested.
 VIAS = ("slack",)
 
 
-def reason_for(shown_kind: str) -> str:
-    """The fixed reason for a wait the Team page shows as ``shown_kind``."""
-    return REASONS.get(shown_kind, OTHER_REASON)
+def reason_for(shown_kind: str, header: str = "") -> str:
+    """The fixed reason for a wait the Team page shows as ``shown_kind`` under ``header``."""
+    return HEADER_REASONS.get(header) or REASONS.get(shown_kind, OTHER_REASON)
 
 
 def alert_text(reason: str) -> str:
@@ -222,7 +230,9 @@ def _scan(gates: list[dict[str, Any]], runs: dict[str, dict[str, Any]], dashboar
                 continue
             event_id = str(entry["event_id"])
             out.alerts.append(TeamAlert(execution_id=eid, wait_id=str(entry["wait_id"]),
-                                        event_id=event_id, reason=reason_for(str(entry.get("kind") or "")),
+                                        event_id=event_id,
+                                        reason=reason_for(str(entry.get("kind") or ""),
+                                                          str(entry.get("header") or "")),
                                         url=url, asked_at=when.get(event_id)))
     return out
 

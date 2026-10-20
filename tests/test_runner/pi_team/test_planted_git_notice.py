@@ -25,8 +25,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 
 from temper_ai.pi_agent import flow_view, member_tree, team_flow
+from temper_ai.pi_agent.ledger import participants
 from temper_ai.pi_agent.shared_version import (
     NO_MARKERS,
     Conflict,
@@ -75,6 +77,8 @@ FIXES = {
                    "it, and try again."),
 }
 WRITER = " while a box of yours is still live: temper-pi-x (running)"
+#: What the resting leader gets when the owner answers its refusals with no words (#119, S5).
+NO_WORDS = "The owner answered with no words: you get another turn."
 NOT_ROOT = pytest.mark.skipif(os.geteuid() == 0, reason="root opens any folder")
 FIXABLE = ("planted", "entries", "depth", pytest.param("unreadable", marks=NOT_ROOT))
 #: What the member reads at a refused share: what to do, or that there's nothing to fix.
@@ -197,6 +201,12 @@ def _notices(led: Any, run_id: str, member: str) -> list[str]:
     msgs = sorted(ts.rows(led, run_id)["messages"], key=lambda m: m["seq"])
     return [m["body"] for m in msgs if m["to_member"] == member
             and m["sender_kind"] == "temper" and m["kind"] == "notice"]
+
+
+def _owner_replies(led: Any, run_id: str, member: str) -> list[str]:
+    """The owner's answers delivered to ``member``, in order."""
+    msgs = sorted(ts.rows(led, run_id)["messages"], key=lambda m: m["seq"])
+    return [m["body"] for m in msgs if m["to_member"] == member and m["kind"] == "owner_reply"]
 
 
 def _events(led: Any, run_id: str, *kinds: str) -> list[dict]:
@@ -590,6 +600,28 @@ def test_the_leaders_own_refusals_ask_the_owner_once_and_only_the_leader_waits(
     assert not [n for n in _notices(led, run_id, "lead") if "is resting" in n]
     assert len(ts.PROMPTS["lead"]) == 3
     assert any(h["kind"] == "owner_reply" for h in ts.headers(ts.PROMPTS["lead"][2]))
+    assert _owner_replies(led, run_id, "lead") == ["Remove sub/.git, then say done."]
+
+
+@pytest.mark.parametrize("answer", ["", "  "], ids=["empty", "blank"])
+def test_an_owner_answer_with_no_words_still_gives_the_resting_leader_its_turn(
+        led, box, run_id, tmp_path, monkeypatch, answer):
+    # #119 (Architecture's S5 on #115): the question promised the leader another turn, so an
+    # answer with no words reaches it as Temper's fixed line, and the owner isn't asked again.
+    owner = ls.Owner(led, answer, "stop").install(monkeypatch)
+    ts.SCRIPTS["lead"] = [
+        [ls.write("lead.md", "# lead\n"), PLANT, ls.op("share", note="mine"), ls.op("idle")],
+        [ls.op("share", note="mine"), ls.op("idle")],
+        [REMOVE, ls.op("done", summary="Done, without the .git.")],
+    ]
+    team = _open(led, box, run_id, tmp_path)
+
+    outcome = team.drive(ls.Context())
+
+    assert outcome.status == "done", outcome.text
+    assert [a["header"] for a in owner.asked] == ["git-refused"] and owner.answers == ["stop"]
+    assert _owner_replies(led, run_id, "lead") == [NO_WORDS]
+    assert len(ts.PROMPTS["lead"]) == 3 and NO_WORDS in ts.PROMPTS["lead"][2]
 
 
 def test_the_leaders_done_with_a_planted_git_is_refused_with_the_reason_and_the_run_carries_on(
@@ -642,6 +674,42 @@ def test_a_fresh_team_over_the_same_ledger_sees_the_same_count(
     assert [n for n in _notices(led, run_id, "lead") if "is resting" in n] == [
         _resting("builder", SHARE_TOLD["planted"])]
     assert team._member_rows()["builder"]["idle_reason"] == "refused"
+
+
+# Rest's guard (#119, Architecture's S1 on #115): a member rests only while idle, and only when
+# nothing but Temper's own notices waits for it. Its refused shares' notices wait in each case.
+
+
+def _refused_twice(led: Any, box: Any, run_id: str, tmp_path: Path) -> FlowTeam:
+    team = _open(led, box, run_id, tmp_path)
+    _plant(ls.workspace(team, "builder"))
+    assert team._share("builder", "act-1", None)["cause"] == "planted"
+    assert team._share("builder", "act-2", None)["cause"] == "planted"
+    return team
+
+
+def test_two_refusals_rest_an_idle_member_with_only_temper_notices_waiting(
+        led, box, run_id, tmp_path):
+    team = _refused_twice(led, box, run_id, tmp_path)
+    assert team._rest_after_refusals("builder", None) is True
+    assert team._member_rows()["builder"]["idle_reason"] == "refused"
+
+
+def test_a_running_member_is_never_rested(led, box, run_id, tmp_path):
+    team = _refused_twice(led, box, run_id, tmp_path)
+    with led.engine.begin() as conn:
+        conn.execute(sa.update(participants).where(
+            participants.c.run_id == run_id, participants.c.member == "builder").values(
+            state="running"))
+    assert team._rest_after_refusals("builder", None) is False
+    assert team._member_rows()["builder"]["idle_reason"] != "refused"
+
+
+def test_an_owner_message_already_waiting_keeps_the_member_on(led, box, run_id, tmp_path):
+    team = _refused_twice(led, box, run_id, tmp_path)
+    led.post(run_id, ts.HOST, "builder", "Please look at sub/.git.")
+    assert team._rest_after_refusals("builder", None) is False
+    assert team._member_rows()["builder"]["idle_reason"] != "refused"
 
 
 # --- the parts on their own ---------------------------------------------------------------------

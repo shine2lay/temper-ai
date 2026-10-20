@@ -293,6 +293,34 @@ def test_each_asked_wait_reaches_the_owner_once_as_a_fixed_alert_and_closes_with
     assert WORDS not in json.dumps(copy_rows(), default=str)
 
 
+def test_the_leaders_refused_git_alerts_and_closes_with_its_own_reason_and_the_rest_keep_theirs(world):
+    # #119 (Architecture's S3 on #115): Temper asks the owner about the leader's refused git
+    # through an owner wait, but no member asked it. Its header picks its own fixed reason.
+    ops, slack, n = world["ops"], world["slack"], world["n"]
+    team = Team(ops)
+    refused = team.wait("owner", {"label": "git-refused", "header": "git-refused",
+                                  "reply_hint": WORDS, "refusals": WORDS})
+    question = team.wait("owner")                               # a member's question
+    check_in = team.wait("pause", {"at_usd": 100})
+
+    at(world, 1)
+    n.tick()
+
+    git_refused = "the leader's work can't be shared"
+    reasons = {refused: git_refused, question: "a member's question", check_in: "a spending check-in"}
+    assert {team_waits.wait_of(c.key, c.state): c.state["reason"] for c in team_copies(team.eid)} == reasons
+    assert sorted(p["text"] for p in slack.posts) == sorted(ALERT.format(r) for r in reasons.values())
+    assert posts_to(slack, "The team is waiting for you: the leader's work can't be shared. Answer on the Team page.")
+
+    team.answer(refused)
+    at(world, 2)
+    assert n.tick() == [{"kind": "team_wait_closed", "execution_id": team.eid, "via": "slack"}]
+    assert [u["text"] for u in slack.updates] == ["No longer waiting for you: the leader's work can't be shared."]
+
+    assert WORDS not in json.dumps(slack.posts + slack.updates)
+    assert WORDS not in json.dumps(copy_rows(), default=str)
+
+
 # --- Which waits get one: the Team page's own rule ----------------------------------------
 
 

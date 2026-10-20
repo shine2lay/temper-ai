@@ -135,6 +135,12 @@ NOT_NOW = "not_now"
 REVIEW_POLICY = "temper-review@1"
 PAUSE_OPTIONS = ("continue", "guide", "stop")
 STALLED_OPTIONS = ("nudge", "stop")
+#: The header of the owner wait Temper opens when the leader's own git is refused in turns in a
+#: row (#115, team_flow's ``_ask_once_about_refusals``; notify's team_waits spells it the same).
+#: Its question promises the leader another turn, so an answer with no words still reaches the
+#: leader, as ``NO_WORDS_ANSWER`` (#119).
+GIT_REFUSED = "git-refused"
+NO_WORDS_ANSWER = "The owner answered with no words: you get another turn."
 #: Keep-going decisions: a refused done counts as one (R2 B9).
 KEEP_GOINGS = ("keep_going", "done_refused")
 MAX_FILES = 500
@@ -1322,7 +1328,9 @@ class LeaderTeam(TeamRows, Team):
     def apply(self, wait: dict, answer: Any) -> None:
         """Apply the owner's answer once (the wait row's compare-and-set): continue / guide /
         stop at the pause, nudge / stop when stalled, accept / retry / stop at a recovery wait,
-        any answer to an owner question (delivered to the member who asked).
+        any answer to an owner question (delivered to the member who asked; to Temper's
+        git-refused question, an answer with no words reaches the leader as
+        :data:`NO_WORDS_ANSWER`).
 
         Every decision keeps who answered (``by``, ``source``: the API guard's record of the
         caller, M3 E21); a stop keeps the words given with it as ``words`` (E18), which become
@@ -1374,9 +1382,12 @@ class LeaderTeam(TeamRows, Team):
                 self.ledger.decide_wait(wid, {"answer": "invalid", **base}, self.attempt_id)
             return
         member = subject.get("member")
+        body = text
+        if subject.get("header") == GIT_REFUSED and not text.strip():
+            body = NO_WORDS_ANSWER  # its question promised the leader another turn
         self.ledger.decide_wait(wid, {"answer": "given", "text_sha256": sha, **who},
                                 self.attempt_id,
-                                deliveries=[(member, text)] if member and text else [])
+                                deliveries=[(member, body)] if member and body else [])
 
     def _apply_settings(self, wait: dict, choice: str | None, rest: str, base: dict) -> None:
         """The owner's answer at the team's settings wait (SW-85). ``go on``: every member it

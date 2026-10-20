@@ -214,6 +214,7 @@ and a link to the run's Team page (`<dashboard_url>/app/team/runs/<run>`).
 | a member's question | The team is waiting for you: a member's question. Answer on the Team page. |
 | a $100 spending check-in | … a spending check-in … |
 | whether to restart after a weekly limit | … a usage-limit restart decision … |
+| what to tell the leader, when Temper refused to run git over its folder in turns in a row | … the leader's work can't be shared … |
 | anything else it asks you | … an owner decision … |
 
 - **Only what the page asks.** The rule is the Team page's own (waits you

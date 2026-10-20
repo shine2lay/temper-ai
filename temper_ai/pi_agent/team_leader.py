@@ -141,6 +141,11 @@ STALLED_OPTIONS = ("nudge", "stop")
 #: leader, as ``NO_WORDS_ANSWER`` (#119).
 GIT_REFUSED = "git-refused"
 NO_WORDS_ANSWER = "The owner answered with no words: you get another turn."
+#: What the member who asked gets when the owner answers any other owner question with no words
+#: (empty or only spaces, possible through the generic approve route): its own question, the
+#: leader's own included. Temper's fixed line, no owner text in it; it promises nothing, so the
+#: member decides what comes next. Without it an empty answer reached nobody (#121).
+OWNER_NO_WORDS = "The owner answered your question with no words."
 #: Keep-going decisions: a refused done counts as one (R2 B9).
 KEEP_GOINGS = ("keep_going", "done_refused")
 MAX_FILES = 500
@@ -1353,9 +1358,10 @@ class LeaderTeam(TeamRows, Team):
     def apply(self, wait: dict, answer: Any) -> None:
         """Apply the owner's answer once (the wait row's compare-and-set): continue / guide /
         stop at the pause, nudge / stop when stalled, accept / retry / stop at a recovery wait,
-        any answer to an owner question (delivered to the member who asked; to Temper's
-        git-refused question, an answer with no words reaches the leader as
-        :data:`NO_WORDS_ANSWER`).
+        any answer to an owner question (delivered to the member who asked; an answer with no
+        words, empty or only spaces, reaches it as :data:`OWNER_NO_WORDS`, or as
+        :data:`NO_WORDS_ANSWER` at Temper's git-refused question to the leader).
+        The decision keeps the digest of the answer as given, never of the line.
 
         Every decision keeps who answered (``by``, ``source``: the API guard's record of the
         caller, M3 E21); a stop keeps the words given with it as ``words`` (E18), which become
@@ -1408,8 +1414,9 @@ class LeaderTeam(TeamRows, Team):
             return
         member = subject.get("member")
         body = text
-        if subject.get("header") == GIT_REFUSED and not text.strip():
-            body = NO_WORDS_ANSWER  # its question promised the leader another turn
+        if not text.strip():  # no words: whoever asked is still told (#121)
+            # the git-refused question promised the leader another turn
+            body = NO_WORDS_ANSWER if subject.get("header") == GIT_REFUSED else OWNER_NO_WORDS
         self.ledger.decide_wait(wid, {"answer": "given", "text_sha256": sha, **who},
                                 self.attempt_id,
                                 deliveries=[(member, body)] if member and body else [])

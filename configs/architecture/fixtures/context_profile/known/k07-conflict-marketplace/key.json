@@ -44,7 +44,8 @@
     {"id": "U3", "field": "workload.projected", "terms": [["german", "germany"], ["traffic", "bookings", "volume", "demand", "load"]]},
     {"id": "U4", "field": "performance.targets", "terms": [["slow", "speed", "fast", "latency", "response time", "performance"]]},
     {"id": "U5", "field": "reliability.recovery_time", "terms": [["recover", "recovery", "restore", "come back", "outage", "downtime"]]},
-    {"id": "U6", "field": "reliability.data_loss_tolerance", "terms": [["loss", "lost"]]}
+    {"id": "U6", "field": "reliability.data_loss_tolerance", "terms": [["loss", "lost"]]},
+    {"id": "U7", "field": "privacy.retention", "terms": [["retention", "retain", "kept", "keep", "delete", "deletion"], ["customer", "personal", "booking"]]}
   ],
   "traps": [
     {"id": "T1", "anchors": ["is basically signed"], "reason": "hedged_as_fact", "forbidden_in": ["workload.observed", "maturity.evidence", "security.requirements", "constraints"]},
@@ -57,7 +58,7 @@
     {"field": "reliability.data_loss_tolerance", "open_anchors": []},
     {"field": "reliability.recovery_time", "open_anchors": []},
     {"field": "performance.targets", "open_anchors": []},
-    {"field": "privacy.retention", "open_anchors": [], "not_material_reason": "No retention period is named; it sets deletion jobs, not the shape of the options."},
+    {"field": "privacy.retention", "open_anchors": []},
     {"field": "security.threats", "open_anchors": [], "not_material_reason": "No attack or incident is named; the Monday slowdowns are a load problem, keyed as workload."}
   ],
   "profile": {
@@ -149,7 +150,7 @@
       {"question": "How fast must booking be on Monday mornings: is there a speed target the slowdowns broke?", "why_it_matters": "Slowdowns at the Monday peak lost two large rental firms, but no target says how fast is fast enough; it sizes the peak capacity work.", "decisions_affected": ["peak capacity", "hosting cost"], "material": true, "field": "performance.targets"},
       {"question": "How quickly must the platform come back after an outage, above all on a Monday morning?", "why_it_matters": "Keeping the platform up ranks second and one person is on call; the answer decides failover and on-call design.", "decisions_affected": ["failover", "on-call"], "material": true, "field": "reliability.recovery_time"},
       {"question": "How much booking data could be lost in a failure?", "why_it_matters": "The provider holds money, not booking records. Lost bookings can invalidate rentals and payments; the answer changes backup durability.", "decisions_affected": ["backups"], "material": true, "field": "reliability.data_loss_tolerance"},
-      {"question": "How long is customer data kept?", "why_it_matters": "It sets deletion jobs, not the shape of the options.", "decisions_affected": ["data deletion"], "material": false, "field": "privacy.retention"},
+      {"question": "How long should personal contact and booking data be retained, and what deletion or archive policy should apply to live data and backups?", "why_it_matters": "No retention period or deletion policy is supplied. Plausible answers could change live-data deletion/archive, backup expiry and restore/re-deletion handling, plus storage cost; these are possible architecture effects, not stated rules or a chosen design.", "decisions_affected": ["live-data deletion or archive", "backup expiry", "restore and re-deletion handling", "storage cost"], "material": true, "field": "privacy.retention"},
       {"question": "Has the platform faced any named attack or incident?", "why_it_matters": "None is named; the slowdowns are a load problem.", "decisions_affected": ["security controls"], "material": false, "field": "security.threats"}
     ],
     "assumptions": []

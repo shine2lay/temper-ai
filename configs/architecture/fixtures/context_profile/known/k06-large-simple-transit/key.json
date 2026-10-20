@@ -11,7 +11,7 @@
   "facts": [
     {"id": "F1", "anchors": ["1.1 million monthly users"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the user count is also evidence of proven demand", "value": 1100000},
     {"id": "F2", "anchors": ["about 180,000 daily users"], "primary": "workload.observed", "alt": "maturity.evidence", "why_alt": "the user count is also evidence of proven demand", "value": 180000},
-    {"id": "F3", "anchors": ["flat for two years"], "primary": "maturity.evidence", "alt": "workload.projected", "why_alt": "a flat trend is the brief's only forecast for current users"},
+    {"id": "F3", "anchors": ["flat for two years"], "primary": "maturity.evidence"},
     {"id": "F4", "anchors": ["We have run NextStop for six years"], "primary": "maturity.evidence"},
     {"id": "F5", "anchors": ["polls every 30 seconds and caches", "Almost everything is reading"], "primary": "workload.observed"},
     {"id": "F6", "anchors": ["requests run at about 5 times the daily average"], "primary": "workload.peaks", "value": 5},
@@ -35,7 +35,8 @@
     {"id": "F24", "anchors": ["the transit agencies' open data feeds"], "primary": "external_systems"},
     {"id": "F25", "anchors": ["Our ad network"], "primary": "external_systems"},
     {"id": "F26", "anchors": ["show its service alerts within 2 minutes of publication"], "primary": "performance.targets", "value": 2},
-    {"id": "F27", "anchors": ["Favourite stops are stored on the phone"], "primary": "current_system.items", "alt": "privacy.data_categories", "why_alt": "favourite stops are also user data, kept on the phone only"}
+    {"id": "F27", "anchors": ["Favourite stops are stored on the phone"], "primary": "current_system.items", "alt": "privacy.data_categories", "why_alt": "favourite stops are also user data, kept on the phone only"},
+    {"id": "F28", "anchors": ["would bring about 400,000 more monthly users"], "primary": "workload.projected", "value": 400000}
   ],
   "constraints": [
     {"id": "C1", "anchors": ["show its service alerts within 2 minutes of publication"]},
@@ -90,7 +91,7 @@
         {"what": "transit feeds polled and cached; almost all traffic is reads", "value": 30, "unit": "seconds between polls", "source": {"kind": "quote", "quote": "Almost everything is reading: departure times and delays come from the transit agencies' open data feeds, which our backend polls every 30 seconds and caches."}}
       ],
       "projected": [
-        {"what": "user numbers expected to stay as they are (flat for two years)", "value": "flat", "unit": "trend", "source": {"kind": "quote", "quote": "these numbers have been flat for two years"}}
+        {"what": "Ashford transit agency's conditional estimate if its invited city is added next year, not guaranteed or current traffic", "value": 400000, "unit": "additional monthly users (about)", "source": {"kind": "quote", "quote": "Ashford's transit agency has invited us to add their city next year, which they say would bring about 400,000 more monthly users."}}
       ],
       "peaks": [
         {"what": "weekday commute peaks, 7-9am and 4-7pm", "value": 5, "unit": "times the daily average", "source": {"kind": "quote", "quote": "On weekdays between 7am and 9am, and again between 4pm and 7pm, requests run at about 5 times the daily average."}},

@@ -290,7 +290,9 @@ class FakeBox:
 
     A steer is answered at once: refused when ``refuse_steer`` (class attribute, set by a
     test) gives a reason for its text, else accepted and kept until Pi's next steering point
-    (:meth:`take_steers`). Every steer's text is logged in ``log["steers"]``.
+    (:meth:`take_steers`). Every steer's text is logged in ``log["steers"]``. One that
+    ``late_steer`` (class attribute, set by a test) picks, Pi is slow to take: Pi's run goes
+    on, and the steer is queued and answered only at :meth:`answer_late`.
     """
 
     behaviour = "answer"
@@ -298,6 +300,7 @@ class FakeBox:
     STARTS: list[dict] = []
     on_prompt: Callable[[FakeBox], None] | None = None
     refuse_steer: Callable[[str], str | None] | None = None
+    late_steer: Callable[[str], bool] | None = None
 
     def __init__(self, cfg: BoxConfig, spec: BoxSpec, redactor: Any):
         self.cfg = cfg
@@ -313,6 +316,7 @@ class FakeBox:
         self.rpc: FakeRpc | None = None
         self.leaf: str | None = None
         self.steered: list[str] = []  # steers Pi accepted and has not taken yet
+        self.late: list[tuple[str, dict]] = []  # steers Pi is slow to take: (text, answer)
         self.inspected = {"network_none": True, "read_only_root": True, "cap_drop_all": True}
         self.launched: dict | None = None
         self.log: dict[str, Any] = {"session_id": spec.session_id, "prompts": 0,
@@ -401,6 +405,13 @@ class FakeBox:
         return not msgs or (msgs[-1].get("role") == "assistant" and msgs[-1].get("stopReason")
                             in ("stop", "error", "aborted", "length"))
 
+    def answer_late(self) -> list[dict]:
+        """Pi takes the steers it was slow to take (``late_steer``), in the order it got them:
+        each is queued for its steering point now, and its answer comes now."""
+        late, self.late = self.late, []
+        self.steered += [text for text, _ in late]
+        return [answer for _, answer in late]
+
     def take_steers(self) -> list[str]:
         """Pi's steering point (before its next model call): every steer it accepted becomes
         a user message of the turn, in the order it got them."""
@@ -451,6 +462,9 @@ class FakeBox:
             if why:
                 return [{"type": "response", "id": rid, "command": command, "success": False,
                          "error": why}]
+            if FakeBox.late_steer is not None and FakeBox.late_steer(text):
+                self.late.append((text, ok()))
+                return []
             self.steered.append(text)
             return [ok()]
         if command != "prompt":
@@ -555,6 +569,7 @@ def reset_fake() -> None:
     FakeBox.lie = None
     FakeBox.on_prompt = None
     FakeBox.refuse_steer = None
+    FakeBox.late_steer = None
     FakeBox.STARTS.clear()
 
 

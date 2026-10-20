@@ -150,7 +150,8 @@ class TeamFakeBox(FakeBox):
         """The turn as Pi runs it: each action happens only when the turn runner reads that
         far (``sup.later``). ``agent_start``: Pi's run begins (Temper hands messages in from
         here); ``later``: a callable run at that point (another member's turn settling,
-        say); ``tool``: a model call that reads a file with the read tool; ``say``: the final
+        say); ``answer_late``: Pi answers the steers it was slow to take (``late_steer``);
+        ``tool``: a model call that reads a file with the read tool; ``say``: the final
         answer. Before each model call -- each ``tool`` and the final answer -- Pi takes the
         steers it accepted (its steering point)."""
         text = next((a["say"] for a in reversed(actions) if "say" in a), "ok")
@@ -161,6 +162,8 @@ class TeamFakeBox(FakeBox):
             if "later" in action:
                 action["later"]()
                 return []
+            if "answer_late" in action:
+                return self.answer_late()
             if "tool" in action:
                 self.take_steers()
                 call_id = f"call_{uuid.uuid4().hex[:12]}"
@@ -333,7 +336,7 @@ def message(led: Ledger, run_id: str, message_id: str) -> dict:
     return found[0]
 
 
-# --- the invariants (tables.md I1-I8), after every scenario ------------------------------
+# --- the invariants (tables.md I1-I8, and I9), after every scenario ----------------------
 
 
 def team_keys(led: Ledger) -> set[tuple[str, str]]:
@@ -352,7 +355,7 @@ def team_keys(led: Ledger) -> set[tuple[str, str]]:
 
 def check_all_invariants(led: Ledger, before: set[tuple[str, str]] | frozenset = frozenset()
                          ) -> int:
-    """I1-I8 for every team that has rows now and had none in ``before``; the number checked.
+    """I1-I9 for every team that has rows now and had none in ``before``; the number checked.
     The autouse teardown runs it after every team scenario (#37's land check, binding 3)."""
     keys = sorted(team_keys(led) - set(before))
     for run_id, host in keys:
@@ -436,6 +439,14 @@ def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
     if parts and all(p["state"] == "ended" for p in parts.values()):
         assert not [m for m in msgs if m["state"] in ("held", "pending")], "I8 messages"
         assert not [t for t in turns.values() if t["state"] in UNSETTLED], "I8 turns"
+
+    # I9 a count counts real deliveries (#117; S1 of #116's land check): every consumed
+    # message was given at least once, and no count is below 0.
+    for m in msgs:
+        n = m["delivery_count"]
+        assert n is not None and n >= 0, ("I9 count below 0", m["seq"], n)
+        if m["state"] == "consumed":
+            assert n >= 1, ("I9 consumed count", m["seq"], n)
 
     # The leader loop's review-tool calls (#38; Architecture's answer 6e). A1 a call is
     # carried out only once its own turn settled completed or accepted: never for a turn still

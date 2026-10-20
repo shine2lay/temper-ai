@@ -246,6 +246,26 @@ def test_handed_messages_are_steered_one_at_a_time_and_none_after_a_refusal():
     assert report["problems"] == ["a handed message was never steered: not sent"]
 
 
+def test_nothing_is_polled_while_the_last_steer_awaits_its_answer():
+    """S2 of #116's land check: nothing is queued, but the last steer still awaits Pi's
+    answer. Neither a tool's end nor the poll interval polls the inbox then (what comes in
+    meanwhile stays pending in the ledger); the answer lets the deferred poll happen."""
+    from temper_ai.pi_agent.turn import INBOX_POLL_S
+
+    mid, polled = _running([{"seq": 5, "text": _handed(5)}], [{"seq": 8, "text": _handed(8)}])
+    now = [0.0]
+    mid.clock = lambda: now[0]
+    mid.tick()
+    assert polled == [1] and mid.rpc.steers == [_handed(5)]  # 5's steer awaits its answer
+    _tool_ended(mid, "c1")
+    now[0] += INBOX_POLL_S
+    mid.tick()
+    assert polled == [1] and mid.rpc.steers == [_handed(5)]
+    _answer(mid, "s1", True)
+    mid.tick()
+    assert polled == [1, 2] and mid.rpc.steers == [_handed(5), _handed(8)]
+
+
 def test_all_steers_accepted_the_inbox_is_polled_again():
     mid, polled = _running([{"seq": 5, "text": _handed(5)}], [{"seq": 8, "text": _handed(8)}])
     mid.tick()

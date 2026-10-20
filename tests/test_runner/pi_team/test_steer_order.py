@@ -10,7 +10,12 @@ steers one handed message at a time, the next only after Pi accepted the one bef
 nothing more after a refused one: what was taken but never steered goes back with it, and
 the next claim takes them in seq order. A message that goes back is pending as if it had
 never been handed in: the next claim delivers it once, and its frame never tells the member
-it is given again.
+it is given again. While a steer still awaits Pi's answer, the inbox isn't polled either:
+what comes in meanwhile stays pending (#117, S2 of #116's land check).
+
+The delivery counts are checked with the rest of the ledger (I9, #117): a consumed message
+was given at least once, and no count goes below 0, not even when a put-back's take-back
+meets a count gone wrong.
 
 Engine-driven: the checker (Z) runs its turn through the turn runner with the stand-in
 worker played live (``TeamFakeBox._live``), while the leader's (X) turns are claimed and
@@ -19,7 +24,12 @@ settled by hand around it. Each test ends with the invariants, I5 strict.
 
 from __future__ import annotations
 
+import re
+
+import pytest
+
 from temper_ai.pi_agent.inbox import render_batch
+from temper_ai.pi_agent.ledger import messages
 from tests.test_pi_agent.support import FakeBox
 from tests.test_runner.pi_team import leader_support as ls
 from tests.test_runner.pi_team import support as ts
@@ -48,6 +58,26 @@ def _refuse(led, run_id: str, seq: int) -> None:
     """Pi refuses the steer that hands message ``seq`` in (and accepts every other)."""
     [mid] = [m["message_id"] for m in led.snapshot(run_id)["messages"] if m["seq"] == seq]
     FakeBox.refuse_steer = lambda text: "the steer was refused" if mid in text else None
+
+
+def _late(led, run_id: str, seq: int) -> None:
+    """Pi is slow to take the steer that hands message ``seq`` in: its run goes on, and the
+    steer is answered only at the script's ``answer_late`` (every other one at once)."""
+    [mid] = [m["message_id"] for m in led.snapshot(run_id)["messages"] if m["seq"] == seq]
+    FakeBox.late_steer = lambda text: mid in text
+
+
+def _row(led, run_id: str, seq: int) -> tuple:
+    """Message ``seq``'s (state, turn, delivery count) in the ledger now."""
+    [m] = [m for m in led.snapshot(run_id)["messages"] if m["seq"] == seq]
+    return m["state"], m["turn_id"], m["delivery_count"]
+
+
+def _set_count(led, seq: int, count: int) -> None:
+    """A delivery count gone wrong, written by hand into this test's throwaway ledger."""
+    with led.engine.begin() as conn:
+        conn.execute(messages.update().where(messages.c.seq == seq).values(
+            delivery_count=count))
 
 
 def _steered(led, run_id: str) -> list[int]:
@@ -150,3 +180,67 @@ def test_a_message_put_back_comes_back_as_new(led, box, run_id):
 
     assert [(m["seq"], m["delivery_count"]) for m in after] == [(five, 1)]
     assert "given again" not in render_batch(after, team=True)
+
+
+def test_nothing_is_polled_while_a_steer_awaits_its_answer(led, box, run_id):
+    """(S2) X's 5 is handed into Z's turn and Pi is slow to answer its steer. X's 8 is
+    released meanwhile and a tool ends, but the inbox isn't polled while 5's steer awaits its
+    answer: 8 stays pending in the ledger. Once Pi accepted 5, 8 is polled and steered next,
+    and both reach Z in this turn, in order. (Polling there took 8 early: after a refusal of
+    5 it went back again, churn.)"""
+    team, z, batch = _working_checker(led, box, run_id)
+    [five] = _x_sends(led, run_id, 1)
+    eight: list[int] = []
+    seen: list[tuple] = []
+    _late(led, run_id, five)
+    ts.SCRIPTS[Z].append([
+        {"agent_start": True},
+        {"later": lambda: eight.extend(_x_sends(led, run_id, 2))},
+        {"tool": "checked"},  # a tool ends while 5's steer awaits its answer
+        {"later": lambda: seen.append((_row(led, run_id, eight[0])[0], _steered(led, run_id)))},
+        {"answer_late": True},
+        {"say": "done"}])
+
+    assert team._run(z, batch).kind == "completed"
+    ts.check_invariants(led, run_id)
+
+    assert seen == [("pending", [five])]  # not polled, not steered, while 5's steer awaited
+    assert _steered(led, run_id) == [five, *eight]
+    turn = led.turn(z["turn_id"])
+    assert turn["input_seqs"] == [*(m["seq"] for m in batch), five, *eight]
+    handed = turn["worker"]["handed_in"]
+    assert (handed["confirmed"], handed["unconfirmed"]) == ([five, *eight], [])
+    assert "refused" not in handed and "problems" not in handed
+
+
+def test_a_put_back_never_takes_a_count_below_0(led, box, run_id):
+    """(S1) unhand takes back its hand-in's delivery, never below 0: a handed message whose
+    count went wrong (0, written by hand) is pending with 0 after unhand, not -1. Here, not in
+    tests/test_pi_agent/test_ledger.py, so that it runs on the Postgres tier too."""
+    _, z, _ = _working_checker(led, box, run_id)
+    [five] = _x_sends(led, run_id, 1)
+    assert [m["seq"] for m in led.hand_in(z["turn_id"], z["epoch"])] == [five]
+    _set_count(led, five, 0)
+    assert led.unhand(z["turn_id"], [five]) == 1
+    ts.settle(led, z)
+    assert _row(led, run_id, five) == ("pending", None, 0)
+
+
+def test_a_count_gone_wrong_fails_its_check(led, box, run_id):
+    """(I9) Forged by hand on a real ledger, one defect at a time: a consumed message counted
+    0 (taken without being counted) fails with its label, a pending one counted -1 (taken
+    back twice) with its own, and the ledger put right passes again."""
+    _, z, batch = _working_checker(led, box, run_id)
+    [taken] = [m["seq"] for m in batch]
+    [five] = _x_sends(led, run_id, 1)
+    assert (_row(led, run_id, taken)[::2], _row(led, run_id, five)[::2]) == (
+        ("consumed", 1), ("pending", 0))
+    ts.check_invariants(led, run_id)
+    for seq, count, label in ((taken, 0, "I9 consumed count"), (five, -1, "I9 count below 0")):
+        was = _row(led, run_id, seq)[2]
+        _set_count(led, seq, count)
+        with pytest.raises(AssertionError, match=re.escape(label)):
+            ts.check_invariants(led, run_id)
+        _set_count(led, seq, was)
+        ts.check_invariants(led, run_id)
+    ts.settle(led, z)

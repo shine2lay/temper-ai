@@ -342,7 +342,7 @@ class LLMService:
                 if response.finish_reason == "error":
                     raise ProviderErrorResponse(response)
             except Exception as e:  # noqa: BLE001
-                self._record_llm_failed(event_id, iteration, e)
+                self._record_llm_failed(iteration, e)
                 if self._drop_extra_room(e):
                     continue  # the same call, at the agent's own output ceiling
                 if is_capacity_error(e) and self._fall_back(e):
@@ -480,7 +480,7 @@ class LLMService:
             self._record_llm_completed(event_id, response, cost, iteration)
             return event_id, response, cost
         except Exception as e:  # noqa: BLE001
-            self._record_llm_failed(event_id, iteration, e)
+            self._record_llm_failed(iteration, e)
             raise
 
     def _invoke_provider(self, llm_event_id: str | None = None) -> LLMResponse:
@@ -800,8 +800,7 @@ class LLMService:
         self._record(
             EventType.LLM_CALL_COMPLETED, parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id, status="completed",
-            data={"started_event_id": event_id,
-                  "model": response.model, "prompt_tokens": response.prompt_tokens,
+            data={"model": response.model, "prompt_tokens": response.prompt_tokens,
                   "completion_tokens": response.completion_tokens, "total_tokens": response.total_tokens,
                   # Recorded so a run's bill can be read back: without these a
                   # cached loop and an uncached one look identical in the log.
@@ -832,12 +831,11 @@ class LLMService:
             "hidden": sent.hidden, "wrapping_up": sent.wrapping_up,
         }
 
-    def _record_llm_failed(self, event_id: str, iteration: int, exc: Exception) -> None:
+    def _record_llm_failed(self, iteration: int, exc: Exception) -> None:
         self._record(
             EventType.LLM_CALL_FAILED, parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id, status="failed",
-            data={"started_event_id": event_id,
-                  "model": self._model_in_use(), "provider": self.provider.provider_name,
+            data={"model": self._model_in_use(), "provider": self.provider.provider_name,
                   "token": self._requested_token(),
                   "iteration": iteration, "error_type": type(exc).__name__,
                   "error": str(exc)[:500], "agent_name": self._ctx.agent_name,

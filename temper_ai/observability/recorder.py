@@ -13,12 +13,9 @@ from contextlib import nullcontext
 from typing import Any
 
 from sqlalchemy import update as sa_update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import col, not_, or_, select
 
 from temper_ai.database import get_session
-from temper_ai.observability import usage_rows
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.models import Event
 
@@ -57,24 +54,7 @@ def record(
         data=data or {},
     )
 
-    def _write(session):
-        if event.type not in usage_rows.CALL_TYPES:
-            session.add(event)
-            return
-        # Stable id across the existing retry loop, including an unknown commit.
-        # Keep the original event on replay; corrections go through update_event.
-        insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
-        inserted = session.execute(insert(Event).values(**event.model_dump()).on_conflict_do_nothing(
-            index_elements=["id"],
-        ).returning(Event.id)).scalar_one_or_none()
-        if inserted is not None:
-            row = usage_rows.extract(event.type, event.data, {
-                "event_id": eid, "execution_id": execution_id, "parent_id": parent_id,
-            }, event.timestamp)
-            if row is not None:
-                usage_rows.write_or_queue_row(session, row)
-
-    _db_write_with_retry(_write)
+    _db_write_with_retry(lambda s: s.add(event))
 
     return eid
 
@@ -92,27 +72,18 @@ def update_event(
         data: If provided, merges into existing data.
     """
     def _do_update(session):
-        # Serialize corrections to one event before choosing a revision. On
-        # SQLite the recorder's transaction lock covers its shared connection.
-        event = session.exec(select(Event).where(Event.id == event_id).with_for_update()).first()
+        event = session.get(Event, event_id)
         if event is None:
             logger.warning("Event %s not found for update", event_id)
             return
 
-        ids = {"event_id": event.id, "execution_id": event.execution_id, "parent_id": event.parent_id}
-        before = usage_rows.extract(event.type, event.data, ids, event.timestamp) if data is not None else None
         if status is not None:
             event.status = status
         if data is not None:
-            event.data = {**event.data, **data}
+            merged = {**event.data, **data}
+            event.data = merged
+
         session.add(event)
-        if before is not None:
-            after = usage_rows.extract(event.type, event.data, ids, event.timestamp)
-            if after is not None and usage_rows.projection_changed(before, after):
-                revision = usage_rows.next_revision(session, event_id)
-                if revision is not None:
-                    after.revision = revision
-                    usage_rows.write_or_queue_row(session, after)
 
     _db_write_with_retry(_do_update)
 
@@ -170,7 +141,7 @@ def _db_write_with_retry(fn, max_retries: int = 3, base_delay: float = 0.5) -> N
     """Execute a DB write with retry on transient failures."""
     for attempt in range(max_retries):
         try:
-            with usage_rows.sqlite_transaction_lock(), get_session() as session:
+            with get_session() as session:
                 fn(session)
             return
         except Exception:

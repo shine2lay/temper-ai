@@ -108,6 +108,11 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
         view = _lane_view_publisher()
     else:
         view = None
+    try:
+        from temper_ai.observability.usage_reconcile import mark_ready
+        mark_ready("pi-worker" if lane == PI_LANE else "worker")
+    except Exception as error:
+        logger.warning("Usage writer readiness failed: %s", type(error).__name__)
     requeued = _requeue_stuck_claims(spawner, lane)
     if requeued:
         logger.warning("Put %d run(s) a restart caught mid-claim back in the queue", requeued)

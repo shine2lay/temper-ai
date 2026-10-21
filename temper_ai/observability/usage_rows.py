@@ -64,7 +64,7 @@ _TOKEN_FAULTS = {
 FAULT_CODES = frozenset({
     *_TOKEN_FAULTS.values(), "provider-invalid", "provider-unproven", "model-invalid",
     "model-unproven", "kind-invalid", "id-invalid", "cost-invalid", "lost-invalid",
-    "link-unproven", "usage-missing", "ordering-deferred",
+    "link-unproven", "usage-missing", "ordering-deferred", "call-unended",
 })
 # In-memory SQLite tests share a connection. Keep its whole recorder transaction
 # together, not just the INSERT. File SQLite also serialises writers in the DB.

@@ -56,6 +56,9 @@ class DatabaseManager:
         from temper_ai.observability import (
             usage_feed_epochs as _usage_feed_epochs,  # noqa: F401
         )
+        from temper_ai.observability import (
+            usage_reconcile as _usage_reconcile,  # noqa: F401
+        )
         from temper_ai.observability.usage_rows import ensure_instance
         from temper_ai.runner import models as _runner_models  # noqa: F401
         from temper_ai.tools import mcp_models as _mcp_models  # noqa: F401

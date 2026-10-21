@@ -320,7 +320,11 @@ def test_integer_boundaries_missing_fields_and_legacy_amount():
         row = extract({"provider": bad, "model": bad})
         assert row.provider is row.model is None
         assert "provider-invalid" in row.fault_codes and "model-invalid" in row.fault_codes
-    assert usage._fault_text(set(usage.FAULT_CODES))  # even all closed faults fit
+    # #126 adds a START-only code; retain the old full-catalog test and the
+    # existing per-row bound rather than requiring all lifecycle codes at once.
+    assert usage._fault_text(set(usage.FAULT_CODES) - {"call-unended"})
+    with pytest.raises(ValueError, match="usage fault codes exceed bound"):
+        usage._fault_text(set(usage.FAULT_CODES))
     with pytest.raises(ValueError, match="usage fault code invalid"):
         usage._fault_text({"CONTENT CANARY"})
     assert extract(NUMBERS, event_type=ET.AGENT_COMPLETED) is None

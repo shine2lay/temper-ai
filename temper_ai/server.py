@@ -393,6 +393,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("The keeper of clean-up deadlines failed to start: %s", e)
 
+    usage_started = False
+    try:
+        from temper_ai.observability import usage_reconcile
+        usage_reconcile.mark_ready("server")
+        usage_started = usage_reconcile.start()
+    except Exception as error:
+        logger.warning("Usage recovery failed to start: %s", type(error).__name__)
+
     # The runs this stop cut off: the ones that can safely come back are picked
     # up where they stopped, one at a time, on a thread of their own, and the
     # owner gets one message about it. Last, so a resumed run finds the configs,
@@ -443,6 +451,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if holds_started:
         from temper_ai.runner import hold_sweeper
         hold_sweeper.stop()
+    if usage_started:
+        from temper_ai.observability import usage_reconcile
+        usage_reconcile.stop()
     if trigger_scheduler is not None:
         trigger_scheduler.stop()
     if reaper is not None:

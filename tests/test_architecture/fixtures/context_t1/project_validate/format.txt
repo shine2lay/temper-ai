@@ -1,0 +1,1 @@
+Synthetic format fixture: candidate-decisions/v2, exact rows and paths. The unsupported sentinel is literal none.

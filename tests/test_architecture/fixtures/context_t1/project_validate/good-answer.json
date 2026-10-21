@@ -1,0 +1,9 @@
+{
+  "schema": "candidate-decisions/v2",
+  "decisions": [
+    {"id": "toy-é", "path": "/facts/0", "label": "supported", "family": null, "source_span": "“café” uses 40 ms.", "rationale": "An invented exact-span format control, not semantic evidence."},
+    {"id": "toy-joint", "path": "/relation", "label": "contradicted", "family": "F11", "source_span": "the red and blue lamps cannot both be lit.", "rationale": "The relation names /constraints/0 and /goals/0; this is an invented format fixture."},
+    {"id": "toy-u", "path": "/facts/0", "label": "unsupported", "family": "F06", "source_span": "none", "rationale": "The unsupported sentinel has its exact C1 spelling."},
+    {"id": "toy-q", "path": "/unknowns/0", "label": "uncertain", "family": null, "source_span": "‘open’ may mean a door or a calendar slot", "rationale": "An invented ambiguity fixture; no source judgment is qualified by these tests."}
+  ]
+}

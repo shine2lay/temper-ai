@@ -525,6 +525,10 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/stages/context_profile/contract.v2.schema.json` | contract (JSON Schema) |
 | `architecture/bin/context_profile_check.py` | script (contract checker) |
 | `architecture/bin/context_profile_score.py` | script (scorer against a case key) |
+| `architecture/bin/context_t1_project.py` | script (T1 D1, pinned exact-byte input projection; synthetic-tested, no judging admission) |
+| `architecture/bin/context_t1_validate.py` | script (T1 D2, strict raw-answer format validation, no repair or semantic judgment) |
+| `architecture/stages/context_profile/t1/projection.v1.schema.json` | contract (D1 projection metadata; source pins, byte lengths and ordered id/path inventory) |
+| `architecture/stages/context_profile/t1/validation.v1.schema.json` | contract (D2 slot validation record; PASS-only decision IDs, terminal refusal codes) |
 | `architecture/fixtures/context_profile/known/` | known-case table (README.md) and 14 briefs with v2 answer keys |
 | `architecture/fixtures/context_profile/planted/` | planted bad profiles (expected failures) |
 | `epd/workflows/epd_pattern_audit.yaml` | workflow |

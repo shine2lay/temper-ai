@@ -1,0 +1,52 @@
+{
+  "schema": "label-free-controls/v2-candidate",
+  "controls": [
+    {
+      "id": "toy-é",
+      "brief": "Invented Élan service: “café” uses 40 ms. Keep  two spaces. Á is decomposed. 😀 opens locally.",
+      "profile": {
+        "product": {"name": "Élan"},
+        "maturity": ["An invented idea"],
+        "current_system": {"state": "unknown"},
+        "external_systems": [],
+        "workload": {"observed": [], "projected": [], "peaks": []},
+        "performance": {"targets": []},
+        "reliability": {"availability": "unknown"},
+        "privacy": {"retention": [], "sharing": []},
+        "security": {"requirements": []},
+        "team": {"size": "unknown"},
+        "budget": {"build": "unknown"},
+        "facts": ["“café” uses 40 ms."],
+        "constraints": ["Local opening only"],
+        "goals": ["Keep the café's quote marks"],
+        "unknowns": ["Who maintains the invented service?"],
+        "observed": ["Nothing measured"],
+        "materiality": ["Local opening is relevant"],
+        "relation": "The goal and constraint concern local opening"
+      },
+      "path": "/facts/0"
+    },
+    {
+      "id": "toy-joint",
+      "brief": "Invented Iris rule: the red and blue lamps cannot both be lit. The red lamp is lit; the blue lamp is lit.",
+      "profile": {
+        "constraints": ["The red lamp is lit"],
+        "goals": ["The blue lamp is lit"],
+        "relation": "The states in /constraints/0 and /goals/0 can coexist"
+      },
+      "path": "/relation"
+    },
+    {
+      "id": "toy-u",
+      "brief": "Invented Nacre note: Lúcia mentions only a green door.",
+      "profile": {"facts": ["The room has a window"]},
+      "path": "/facts/0"
+    },
+    {
+      "id": "toy-q",
+      "brief": "Invented Mica note: ‘open’ may mean a door or a calendar slot; no reading takes precedence.",
+      "profile": {"unknowns": ["Does ‘open’ mean the door?"]},
+      "path": "/unknowns/0"
+    }
+  ]
+}

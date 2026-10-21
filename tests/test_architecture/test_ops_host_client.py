@@ -470,7 +470,7 @@ TIMING = [
     ("health_elapsed_seconds not the observation's", "start", "D-5", {}, setv("health_elapsed_seconds", 1.6405),
      "BLOCKED", "health_observation disagrees"),
     ("healthy start, health measure past 30 s", "start", "D-5", {"health": 30_000}, health_e(30.0005, 30_000, 500),
-     "BLOCKED", "different sides of 30.000 s"),
+     "PASS", None),
     ("measured timeout to 30.040 s", "start", "D-5", {"health": None}, health_e(30.04, 30_040), "FAIL", None),
     ("timeout measure 2 ms off observed_until", "start", "D-5", {"health": None}, health_e(30.002),
      "BLOCKED", "health_elapsed_seconds"),

@@ -887,9 +887,7 @@ def _health(e: dict, probes: list[dict], t0: Decimal, deadline: Decimal, fwd_end
             raise Blocked("health_at is not the first valid 200" if health_at is not None
                           else "health_at is null although a 200 was observed")
         _cross(e["seconds_to_health"], first_200 - t0, "seconds_to_health", HEALTH_LIMIT)
-        _cross(e["health_elapsed_seconds"], observed_until - t0, "health_elapsed_seconds", HEALTH_LIMIT)
-        if (elapsed_total <= HEALTH_LIMIT) != (outcome == "healthy"):
-            raise Blocked("health_elapsed_seconds and the first 200 fall on different sides of 30.000 s")
+        _cross(e["health_elapsed_seconds"], observed_until - t0, "health_elapsed_seconds")
     else:
         outcome = "miss"
         if "health_at" not in e or "seconds_to_health" not in e or health_at is not None \

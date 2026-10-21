@@ -557,7 +557,10 @@ host actions. `HostClient.initialize()` drains the writer's pending requests,
 then reads `SEQ-<writer>.json`; `execute()` uses receipt counters thereafter.
 Callers serialize each `(window_id, writer)` and include lane-held time in
 `expires_at`, bounded by `window_expires_at`. `verdict()` is QA's pure verdict
-rule; `judge_receipt()` reads the bound receipt and evidence files and applies it;
+rule; `judge_receipt()` reads the bound receipt and evidence files and applies it,
+with QA's TD-1 timing checks (exact Decimal numbers from their JSON text, instants in
+whole microseconds, a 1 ms tolerance, a one-sided `seconds_to_exit` bounded by its
+stop leg, and measure and instants on the same side of each limit);
 `compare_engine(before, after, expected)` checks the full image pin
 and unchanged running container lifecycle. QA's `api_check` may pin the module's
 SHA-256 and use `writer="api-check"` for `API-D-1`/`API-D-5`. This module does not

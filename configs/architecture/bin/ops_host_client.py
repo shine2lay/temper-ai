@@ -10,12 +10,33 @@ H-OPS-HOST-CLIENT-1 (Architecture #126)
   first_app tests pass unchanged. Measure: one test run.
 - Disproved if: any fixture is misclassified.
 
+H-TD-1 (QA TD-1, rm-f6984d88, TIMING-DECISION-1.md 70dc7eea...)
+- Wrong (evidence): seconds_to_exit was cross-checked two-sided (+-1 ms), but
+  exited_at is the daemon's FinishedAt and the monotonic measure ends when the
+  controller sees the exit (polls every 0.1 s; CORRECTION-1's example ends about
+  0.110 s after the signal against exited_at +0.100), so honest receipts would
+  be BLOCKED; health_elapsed_seconds was checked against health_at, not
+  health_observation.observed_until, and not at all on a measured timeout;
+  receipt numbers were parsed as binary floats.
+- Change: TD-1 as written: one-sided exit window bounded by the leg's ended_at;
+  health_elapsed_seconds against observed_until - start_sent_at in every
+  outcome; same side of the limit for measure and instants; JSON numbers read
+  as Decimal from their text; instants as whole microseconds.
+- Expected: the TD-1 boundary fixtures get their verdicts (exit measure at the
+  observation PASS; below the instants by more than 1 ms, or past the leg end
+  by more than 1 ms, BLOCKED; FinishedAt by 10.000 but seen after it BLOCKED;
+  exactly 1 ms off from JSON text PASS); every other fixture keeps its verdict
+  except "seconds_to_exit 0.1 s after the instants", which TD-1 makes honest.
+- Disproved if: any fixture is misclassified.
+
 Contract (QA-HOME accepted 2026-10-20 15:37, QA #39; Ops binding rm via #126 unblock):
 - base OPS-SLICE-A-PLAN.md v3 sha256 a9244fd51a3188dbea5242b7b691d7e70ced7b56c2c386c76394292780be29b4
   (sections 3, 6.1-6.4, 6.6);
 - OPS-SLICE-A-CORRECTION-1.md 4507269b404e423b2fadae97301c75edd0b6c70275aedfe7aec507014237e540;
 - QA host-publication-v2 SHA256SUMS 213c6ac92ab79fa0bb1c77103c607fb5f6067140b61996d04066f5c9c8df6155;
-- Security W1 pin for engine-image (rm-935cee04).
+- Security W1 pin for engine-image (rm-935cee04);
+- QA TD-1 timing cross-checks, TIMING-DECISION-1.md
+  70dc7eeacb43b9b3b8f7e3bd726693132c02d5e87f08741e0dd63cbfcc7ac157.
 
 The client never runs a controller, subprocess, Docker command, HTTP request or
 model. Callers serialize one client per (window_id, writer); an expires_at must
@@ -49,8 +70,8 @@ AUDIT_ENTRIES_MAX = 1024
 STOP_LIMIT = Decimal("10.000")
 HEALTH_LIMIT = Decimal("30.000")
 CADENCE_GAP = Decimal("0.750")
-# Open with QA (rm-3dbefb0c): seconds_* are monotonic measures, the instants are
-# wall-clock milliseconds; a cross-check passes within one millisecond.
+# QA TD-1: |reported - recomputed| <= 1 ms inclusive (seconds_to_health,
+# health_elapsed_seconds); seconds_to_exit is one-sided with the same constant.
 CROSSCHECK_TOLERANCE = Decimal("0.001")
 ENGINE_PIN = "sha256:b01cb863d9b2ecbdc2b05751a67ee5263978892897557cc98108c48ac9f7a00f"
 
@@ -180,13 +201,15 @@ def _hex(value, name: str, null: bool = False):
 def _num(value, name: str, null: bool = False):
     if value is None and null:
         return None
-    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+    exact = type(value) is Decimal
+    if not (exact or type(value) in (int, float)) or not (value.is_finite() if exact else math.isfinite(value)) \
+            or value < 0:
         raise Blocked(f"{name}: expected a finite number >= 0 (not a boolean)")
-    return Decimal(str(value))
+    return value if exact else Decimal(str(value))
 
 
 def instant(value, name: str, *, ms: bool = False, null: bool = False):
-    """Offset-bearing ISO 8601 -> exact Decimal epoch seconds (nanoseconds kept)."""
+    """Offset-bearing ISO 8601 -> exact Decimal epoch seconds in whole microseconds (TD-1; extra digits cut)."""
     if value is None and null:
         return None
     match = INSTANT_RE.fullmatch(value) if isinstance(value, str) else None
@@ -197,7 +220,7 @@ def instant(value, name: str, *, ms: bool = False, null: bool = False):
     except ValueError as exc:
         raise Blocked(f"{name}: not a valid instant") from exc
     whole = parsed.replace(microsecond=0) - EPOCH
-    return Decimal(whole.days * 86400 + whole.seconds) + Decimal("0." + (match[1] or "0"))
+    return Decimal(whole.days * 86400 + whole.seconds) + Decimal("0." + (match[1] or "0")[:6])
 
 
 def _iso(value: datetime) -> str:
@@ -221,6 +244,18 @@ def _cross(reported, computed: Decimal, name: str, limit: Decimal | None = None)
     value = _num(reported, name)
     if abs(value - computed) > CROSSCHECK_TOLERANCE or (limit is not None and (value <= limit) != (computed <= limit)):
         raise Blocked(f"{name} {reported} disagrees with the instants ({computed} s)")
+
+
+def _exit_cross(reported, computed: Decimal, leg_span: Decimal) -> None:
+    """TD-1 point 3: the measure ends when the controller sees the exit, at or after FinishedAt."""
+    value = _num(reported, "seconds_to_exit")
+    if value < computed - CROSSCHECK_TOLERANCE:
+        raise Blocked(f"seconds_to_exit {reported} ends before the daemon's exit ({computed} s)")
+    if value > leg_span + CROSSCHECK_TOLERANCE:
+        raise Blocked(f"seconds_to_exit {reported} ends after its stop leg ({leg_span} s)")
+    if (value <= STOP_LIMIT) != (computed <= STOP_LIMIT):
+        raise Blocked(f"seconds_to_exit {reported} and the instants ({computed} s) fall on different sides "
+                      "of 10.000 s")
 
 
 def validate_binding(binding) -> dict:
@@ -257,9 +292,17 @@ def _constant(value):
     raise Blocked(f"non-finite JSON number {value}")
 
 
+def _exact_float(value):
+    """A Decimal read back from JSON text re-encodes only when a float writes the same number."""
+    if type(value) is Decimal and value.is_finite() and Decimal(repr(float(value))) == value:
+        return float(value)
+    raise TypeError(f"{value!r} is not an exactly encodable JSON number")
+
+
 def _encode(obj: dict) -> bytes:
     try:
-        return (json.dumps(obj, ensure_ascii=False, allow_nan=False, sort_keys=True) + "\n").encode("utf-8")
+        return (json.dumps(obj, ensure_ascii=False, allow_nan=False, sort_keys=True, default=_exact_float)
+                + "\n").encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise Blocked("request is not finite JSON") from exc
 
@@ -301,7 +344,8 @@ def read_bound(directory: Path, leaf: str, cap: int, *, uid: int | None = None,
     if sha256 is not None and hashlib.sha256(raw).hexdigest() != sha256:
         raise Blocked(f"{leaf}: sha256 differs from the recorded reference")
     try:
-        obj = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_constant)
+        obj = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_constant,
+                         parse_float=Decimal)
     except (ValueError, UnicodeError, RecursionError) as exc:
         if isinstance(exc, Blocked):
             raise
@@ -604,7 +648,7 @@ def _stop_facts(ev: Evidence, e: dict, row: str, exit_code, begin: Decimal, end:
     elapsed = exited - sent
     if elapsed < 0:
         raise Blocked("exited_at precedes signal_sent_at")
-    _cross(e["seconds_to_exit"], elapsed, "seconds_to_exit", STOP_LIMIT)
+    _exit_cross(e["seconds_to_exit"], elapsed, end - sent)
     if _bool(e["within_10s"], "within_10s") != (elapsed <= STOP_LIMIT):
         raise Blocked("within_10s disagrees with the instants")
     kill = instant(e["kill_sent_at"], "kill_sent_at", ms=True, null=True)
@@ -836,21 +880,24 @@ def _health(e: dict, probes: list[dict], t0: Decimal, deadline: Decimal, fwd_end
     o = _obj(e["health_observation"], "health_observation", OBSERVATION_KEYS)
     health_at = instant(e["health_at"], "health_at", ms=True, null=True)
     elapsed_total = _num(e["health_elapsed_seconds"], "health_elapsed_seconds")
+    observed_until = instant(o["observed_until"], "observed_until", ms=True)
     if first_200 is not None:
         outcome = "healthy" if first_200 - t0 <= HEALTH_LIMIT else "late"
         if health_at != first_200:
             raise Blocked("health_at is not the first valid 200" if health_at is not None
                           else "health_at is null although a 200 was observed")
         _cross(e["seconds_to_health"], first_200 - t0, "seconds_to_health", HEALTH_LIMIT)
-        _cross(e["health_elapsed_seconds"], first_200 - t0, "health_elapsed_seconds", HEALTH_LIMIT)
+        _cross(e["health_elapsed_seconds"], observed_until - t0, "health_elapsed_seconds", HEALTH_LIMIT)
+        if (elapsed_total <= HEALTH_LIMIT) != (outcome == "healthy"):
+            raise Blocked("health_elapsed_seconds and the first 200 fall on different sides of 30.000 s")
     else:
         outcome = "miss"
         if "health_at" not in e or "seconds_to_health" not in e or health_at is not None \
                 or e["seconds_to_health"] is not None:
             raise Blocked("no 200 observed: health_at and seconds_to_health must be present and null")
-        if elapsed_total < HEALTH_LIMIT or previous < deadline - CADENCE_GAP:
+        _cross(e["health_elapsed_seconds"], observed_until - t0, "health_elapsed_seconds")
+        if elapsed_total < HEALTH_LIMIT or observed_until - t0 < HEALTH_LIMIT or previous < deadline - CADENCE_GAP:
             raise Blocked("timeout not measured through the 30 s deadline")
-    observed_until = instant(o["observed_until"], "observed_until", ms=True)
     if (o["method"], o["path"], o["host"]) != ("GET", "/api/items", w["_host"]) or o["outcome"] != outcome \
             or o["probe_count"] != len(probes) or o["complete"] is not True \
             or o["elapsed_seconds"] != e["health_elapsed_seconds"] or o["last_http_status"] != last_status \

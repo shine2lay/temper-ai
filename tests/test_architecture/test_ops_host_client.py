@@ -14,6 +14,7 @@ import os
 import sys
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -349,7 +350,8 @@ STOP = [  # restart stop-leg fixtures: (id, knobs, mutation, expected)
     ("FAILED app stop agreeing", {"exit_code": 1}, None, "FAIL"),
     ("stop miss reported DONE", {"exit_code": 1}, fail_as_done, "BLOCKED"),
     ("good stop reported FAILED app", {}, failed("app"), "BLOCKED"),
-    ("seconds_to_exit disagrees", {}, lambda r: r["legs"][0]["evidence"].update(seconds_to_exit=0.5), "BLOCKED"),
+    ("seconds_to_exit before the daemon's exit", {}, lambda r: r["legs"][0]["evidence"].update(seconds_to_exit=0.3),
+     "BLOCKED"),
     ("seconds_to_exit across 10 s", {"exit_rel": 10_001},
      lambda r: r["legs"][0]["evidence"].update(seconds_to_exit=10.0), "BLOCKED"),
     ("within_10s disagrees", {}, lambda r: r["legs"][0]["evidence"].update(within_10s=False), "BLOCKED"),
@@ -416,6 +418,99 @@ def test_fixture_verdicts(tmp_path, op, row, writer, knobs, mutation, expected):
     assert result["status"] == expected, result["reasons"]
     if expected != "BLOCKED" or mutation in (failed("host"),):
         assert result["window_ttl_minutes"] == 90 and result["bytes_used"] == BYTES
+
+
+def later(value: str, ms: int, us: int = 0) -> str:
+    moved = datetime.fromisoformat(value) + timedelta(milliseconds=ms, microseconds=us)
+    return moved.isoformat(timespec="microseconds" if us else "milliseconds")
+
+
+def stop_e(**fields):
+    return lambda r: r["legs"][0]["evidence"].update(**fields)
+
+
+def health_e(seconds, ms=None, us=0, where=None):
+    """Set health_elapsed_seconds in both places; observed_until = start_sent_at + ms (+ us) when given."""
+    def apply(r):
+        e = where(r) if where else r
+        e["health_elapsed_seconds"] = seconds
+        e["health_observation"]["elapsed_seconds"] = seconds
+        if ms is not None:
+            e["health_observation"]["observed_until"] = later(e["start_sent_at"], ms, us)
+    return apply
+
+
+# QA TD-1 (TIMING-DECISION-1.md 70dc7eea...): (id, op, row, knobs, mutation, expected, reason substring).
+# Stop leg defaults: exited_at = signal_sent_at + 0.400 s, leg ends 0.200 s later (span 0.600 s).
+TIMING = [
+    ("exit measure ends at the observation (+0.110 s)", "restart", "R-1", {}, stop_e(seconds_to_exit=0.51),
+     "PASS", None),
+    ("exit measure at the observation (R-1i)", "restart", "R-1i", {}, stop_e(seconds_to_exit=0.51), "PASS", None),
+    ("exit measure exactly 1 ms before the daemon's exit", "restart", "R-1", {}, stop_e(seconds_to_exit=0.399),
+     "PASS", None),
+    ("exit measure 1.5 ms before the daemon's exit", "restart", "R-1", {}, stop_e(seconds_to_exit=0.3985),
+     "BLOCKED", "before the daemon's exit"),
+    ("exit measure at the leg end + 1 ms", "restart", "R-1", {}, stop_e(seconds_to_exit=0.601), "PASS", None),
+    ("exit measure past the leg end + 1 ms", "restart", "R-1", {}, stop_e(seconds_to_exit=0.602),
+     "BLOCKED", "after its stop leg"),
+    ("FinishedAt at 10.000 s, seen after 10.000 s", "restart", "R-1", {"exit_rel": 10_000},
+     stop_e(seconds_to_exit=10.05), "BLOCKED", "different sides of 10.000 s"),
+    ("FinishedAt at 10.001 s, measure 10.000 s", "restart", "R-1", {"exit_rel": 10_001},
+     stop_e(seconds_to_exit=10.0), "BLOCKED", "different sides of 10.000 s"),
+    ("late exit, seen late", "restart", "R-1", {"exit_rel": 10_001}, stop_e(seconds_to_exit=10.1), "FAIL", None),
+    ("seconds_to_health exactly 1 ms over the instants (29.999 s)", "start", "D-5", {"health": 29_999},
+     setv("seconds_to_health", 30.0), "PASS", None),
+    ("seconds_to_health 1 ms under the instants", "start", "D-5", {}, setv("seconds_to_health", 1.639), "PASS", None),
+    ("seconds_to_health across 30 s", "start", "D-5", {"health": 30_000}, setv("seconds_to_health", 30.0005),
+     "BLOCKED", "seconds_to_health"),
+    ("health_elapsed_seconds 1 ms over observed_until", "start", "D-5", {"health": 29_999}, health_e(30.0),
+     "PASS", None),
+    ("health_elapsed_seconds 2 ms off observed_until", "start", "D-5", {}, health_e(1.642),
+     "BLOCKED", "health_elapsed_seconds"),
+    ("health_elapsed_seconds not the observation's", "start", "D-5", {}, setv("health_elapsed_seconds", 1.6405),
+     "BLOCKED", "health_observation disagrees"),
+    ("healthy start, health measure past 30 s", "start", "D-5", {"health": 30_000}, health_e(30.0005, 30_000, 500),
+     "BLOCKED", "different sides of 30.000 s"),
+    ("measured timeout to 30.040 s", "start", "D-5", {"health": None}, health_e(30.04, 30_040), "FAIL", None),
+    ("timeout measure 2 ms off observed_until", "start", "D-5", {"health": None}, health_e(30.002),
+     "BLOCKED", "health_elapsed_seconds"),
+    ("timeout measured 0.5 ms short of 30 s", "start", "D-5", {"health": None}, health_e(29.9995),
+     "BLOCKED", "not measured through"),
+    ("timeout observed_until 0.5 ms short of 30 s", "start", "D-5", {"health": None},
+     health_e(30.0, 29_999, 500), "BLOCKED", "not measured through"),
+    ("restart start leg: seconds_to_health 1 ms over", "restart", "R-1", {"health": 29_999},
+     lambda r: r["legs"][1]["evidence"].update(seconds_to_health=30.0), "PASS", None),
+]
+
+
+@pytest.mark.parametrize(("op", "row", "knobs", "mutation", "expected", "reason"),
+                         [pytest.param(*c[1:], id=c[0]) for c in TIMING])
+def test_td1_timing_cross_checks(tmp_path, op, row, knobs, mutation, expected, reason):
+    w, req, raw, receipt = build(tmp_path, op, row, "checker", knobs)
+    mutation(receipt)
+    result = judged(w, req, raw, receipt)
+    assert result["status"] == expected, result["reasons"]
+    if reason:
+        assert any(reason in r for r in result["reasons"]), result["reasons"]
+
+
+@pytest.mark.parametrize(("text", "expected"), [("30.000", "PASS"), ("30.0000000000000000001", "BLOCKED")])
+def test_td1_numbers_are_read_from_their_json_text(tmp_path, text, expected):
+    assert 30.0 - 29.999 > 0.001  # why TD-1 forbids binary floats: an honest 1 ms would BLOCK
+    w, req, raw, receipt = build(tmp_path, "start", "D-5", "checker", {"health": 29_999})
+    body = json.dumps(receipt)
+    assert body.count('"seconds_to_health": 29.999') == 1
+    write_file(w.dir / "D-5.json", (body.replace('"seconds_to_health": 29.999', f'"seconds_to_health": {text}')
+                                    + "\n").encode())
+    parsed, _, _ = host.read_bound(w.dir, "D-5.json", host.RECEIPT_MAX)
+    assert parsed["seconds_to_health"] == Decimal(text) and type(parsed["seconds_to_health"]) is Decimal
+    result = judged(w, req, raw, parsed)
+    assert result["status"] == expected, result["reasons"]
+
+
+def test_td1_instants_are_whole_microseconds():
+    assert host.instant("2026-10-20T18:00:06.100999999+00:00", "x") == \
+        host.instant("2026-10-20T18:00:06.100999+00:00", "x") == Decimal("1792519206.100999")
 
 
 def test_echo_mismatch_leaves_the_sequence_unknown(tmp_path):

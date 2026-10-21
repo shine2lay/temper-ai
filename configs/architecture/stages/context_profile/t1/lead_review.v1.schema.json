@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:architecture:context-t1-lead-review:v1",
+  "title": "Independent Architecture source/rationale receipt, one per raw answer",
+  "description": "Private write-once 0600 receipt bound to slot and raw SHA256. accepted_ids, rejected_ids and source_conflict_ids must be mutually disjoint subsets of the comparison's 37 IDs; unknown/duplicate IDs are refused. Missing IDs stay unreviewed: success requires all 37 independently accepted in all six receipts (222), not a sample or copied vote. Apply the frozen plan's source/rationale checklist (attribution, scope/population/unit/range, polarity, precedence, real ambiguity/unknown handling, joint-section necessity, literal quote relevance and rationale sufficiency). source_conflict_ids means an unjustifiable frozen expectation: stop/preserve; no majority repair, removal, relabel or threshold change. D3 does not compare span/rationale bytes.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "slot", "raw_sha256", "accepted_ids", "rejected_ids", "source_conflict_ids"],
+  "properties": {
+    "schema": {"const": "context-t1-lead-review/v1"},
+    "slot": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]},
+    "raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "accepted_ids": {"$ref": "#/$defs/ids"}, "rejected_ids": {"$ref": "#/$defs/ids"}, "source_conflict_ids": {"$ref": "#/$defs/ids"}
+  },
+  "$defs": {"ids": {"type": "array", "uniqueItems": true, "maxItems": 37, "items": {"type": "string", "minLength": 1}}}
+}

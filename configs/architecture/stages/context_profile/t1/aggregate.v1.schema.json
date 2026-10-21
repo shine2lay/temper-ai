@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:architecture:context-t1-aggregate:v1",
+  "title": "D4 fixed-denominator T1 evidence tables, no pooling or admission",
+  "description": "Reconciled deterministic result only. All six slots and both families individually pass; each family has three fresh accepted completed attempts and three exact unordered repeat pairs. Missing stays missing; known subtotal is not total cost; UNKNOWN total is null. Precedence SOURCE_CONFLICT > FAILED_OR_NOT_MEASURED > T1_REJECTED > T1_ACCEPTED. Independent caller pins bind freeze/packet/binding. aggregate.json uses exclusive 0600 create. No later-stage or judging admission follows, even on T1_ACCEPTED.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "binding_id", "freeze_sha256", "packet_sha256", "coverage", "runs", "classes", "families", "family_results", "totals", "repeatability", "cost", "status"],
+  "properties": {
+    "schema": {"const": "context-t1-aggregate/v1"}, "binding_id": {"type": "string", "minLength": 1},
+    "freeze_sha256": {"$ref": "#/$defs/digest"}, "packet_sha256": {"$ref": "#/$defs/digest"},
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempts", "comparisons", "reviews", "required_attempts", "completed", "accepted_attempts", "accepted_families", "missing_attempts", "missing_comparisons", "missing_reviews", "lead_accepted", "lead_denominator"],
+      "properties": {
+        "attempts": {"$ref": "#/$defs/slotsCount"}, "comparisons": {"$ref": "#/$defs/slotsCount"}, "reviews": {"$ref": "#/$defs/slotsCount"},
+        "required_attempts": {"const": 6}, "completed": {"$ref": "#/$defs/slotsCount"}, "accepted_attempts": {"$ref": "#/$defs/slotsCount"},
+        "accepted_families": {"type": "integer", "minimum": 0, "maximum": 2},
+        "missing_attempts": {"$ref": "#/$defs/slots"}, "missing_comparisons": {"$ref": "#/$defs/slots"}, "missing_reviews": {"$ref": "#/$defs/slots"},
+        "lead_accepted": {"type": "integer", "minimum": 0, "maximum": 222}, "lead_denominator": {"const": 222}
+      }
+    },
+    "runs": {"type": "array", "minItems": 6, "maxItems": 6, "items": {
+      "type": "object", "additionalProperties": false, "required": ["slot", "family", "terminal", "comparison", "lead_accepted", "accepted", "failure_reasons"],
+      "properties": {"slot": {"$ref": "#/$defs/slot"}, "family": {"enum": ["A", "B"]}, "terminal": {"enum": ["COMPLETED", "FAILED", "NOT_MEASURED", null]},
+        "comparison": {"enum": ["PASS", "FAIL", null]}, "lead_accepted": {"type": ["integer", "null"], "minimum": 0, "maximum": 37},
+        "accepted": {"type": "boolean"}, "failure_reasons": {"$ref": "#/$defs/reasons"}}
+    }},
+    "classes": {
+      "type": "object", "additionalProperties": false, "required": ["supported", "contradicted", "unsupported", "uncertain"],
+      "properties": {"supported": {"$ref": "#/$defs/count"}, "contradicted": {"$ref": "#/$defs/count"}, "unsupported": {"$ref": "#/$defs/count"}, "uncertain": {"$ref": "#/$defs/count"}}
+    },
+    "families": {
+      "type": "object", "additionalProperties": false, "required": ["F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12"],
+      "properties": {"F01": {"$ref": "#/$defs/count"}, "F02": {"$ref": "#/$defs/count"}, "F03": {"$ref": "#/$defs/count"}, "F04": {"$ref": "#/$defs/count"},
+        "F05": {"$ref": "#/$defs/count"}, "F06": {"$ref": "#/$defs/count"}, "F07": {"$ref": "#/$defs/count"}, "F08": {"$ref": "#/$defs/count"},
+        "F09": {"$ref": "#/$defs/count"}, "F10": {"$ref": "#/$defs/count"}, "F11": {"$ref": "#/$defs/count"}, "F12": {"$ref": "#/$defs/count"}}
+    },
+    "family_results": {"type": "object", "additionalProperties": false, "required": ["A", "B"], "properties": {"A": {"$ref": "#/$defs/familyResult"}, "B": {"$ref": "#/$defs/familyResult"}}},
+    "totals": {
+      "type": "object", "additionalProperties": false,
+      "required": ["class_matches", "applicable_bad_family_matches", "nonbad_null_families", "false_support", "known_bad_or_uncertain_cases", "class_denominator", "bad_family_denominator", "nonbad_null_denominator", "known_bad_or_uncertain_denominator"],
+      "properties": {"class_matches": {"type": "integer", "minimum": 0, "maximum": 222}, "applicable_bad_family_matches": {"type": "integer", "minimum": 0, "maximum": 114},
+        "nonbad_null_families": {"type": "integer", "minimum": 0, "maximum": 108}, "false_support": {"type": "integer", "minimum": 0, "maximum": 168},
+        "known_bad_or_uncertain_cases": {"type": "integer", "minimum": 0, "maximum": 168}, "class_denominator": {"const": 222}, "bad_family_denominator": {"const": 114},
+        "nonbad_null_denominator": {"const": 108}, "known_bad_or_uncertain_denominator": {"const": 168}}
+    },
+    "repeatability": {"type": "object", "additionalProperties": false, "required": ["A", "B"], "properties": {"A": {"$ref": "#/$defs/repeat"}, "B": {"$ref": "#/$defs/repeat"}}},
+    "cost": {
+      "type": "object", "additionalProperties": false,
+      "required": ["measured_usd", "known_measured_usd", "limit_usd", "attempt_limit_usd", "transmissions", "transmission_limit", "reserved_usd", "unknown_exposure_usd", "ledger_complete"],
+      "properties": {"measured_usd": {"$ref": "#/$defs/amount"}, "known_measured_usd": {"type": "number", "minimum": 0}, "limit_usd": {"const": 30}, "attempt_limit_usd": {"const": 5},
+        "transmissions": {"type": "integer", "minimum": 0}, "transmission_limit": {"const": 6}, "reserved_usd": {"$ref": "#/$defs/amount"}, "unknown_exposure_usd": {"$ref": "#/$defs/amount"}, "ledger_complete": {"type": "boolean"}}
+    },
+    "status": {
+      "type": "object", "additionalProperties": false,
+      "required": ["result", "failure_reasons", "semantic_rejections", "source_conflicts", "authorizes_later_stage", "interpretation"],
+      "properties": {"result": {"enum": ["T1_ACCEPTED", "T1_REJECTED", "FAILED_OR_NOT_MEASURED", "SOURCE_CONFLICT"]},
+        "failure_reasons": {"$ref": "#/$defs/reasons"}, "semantic_rejections": {"$ref": "#/$defs/reasons"}, "source_conflicts": {"$ref": "#/$defs/reasons"},
+        "authorizes_later_stage": {"const": false}, "interpretation": {"const": "known-control reproducibility only; not Stage 1 qualification or unseen error rates"}}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "slot": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]},
+    "slots": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/slot"}}, "slotsCount": {"type": "integer", "minimum": 0, "maximum": 6},
+    "amount": {"type": ["number", "null"], "minimum": 0}, "reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "count": {"type": "object", "additionalProperties": false, "required": ["matches", "required", "denominator"], "properties": {"matches": {"type": "integer", "minimum": 0}, "required": {"type": "integer", "minimum": 1}, "denominator": {"type": "integer", "minimum": 1}}},
+    "familyResult": {"type": "object", "additionalProperties": false, "required": ["fresh_completed_accepted_attempts", "required", "repeatability_passed", "accepted"], "properties": {"fresh_completed_accepted_attempts": {"type": "integer", "minimum": 0, "maximum": 3}, "required": {"const": 3}, "repeatability_passed": {"type": "boolean"}, "accepted": {"type": "boolean"}}},
+    "repeat": {"type": "object", "additionalProperties": false, "required": ["pairs", "pairs_required", "passed"], "properties": {"pairs_required": {"const": 3}, "passed": {"type": "boolean"}, "pairs": {"type": "array", "minItems": 3, "maxItems": 3, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["slots", "available", "class_matches", "class_denominator", "family_or_null_matches", "family_or_null_denominator", "applicable_family_matches", "applicable_family_denominator", "passed"],
+      "properties": {"slots": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/slot"}}, "available": {"type": "boolean"},
+        "class_matches": {"type": ["integer", "null"], "minimum": 0, "maximum": 37}, "class_denominator": {"const": 37},
+        "family_or_null_matches": {"type": ["integer", "null"], "minimum": 0, "maximum": 37}, "family_or_null_denominator": {"const": 37},
+        "applicable_family_matches": {"type": ["integer", "null"], "minimum": 0, "maximum": 19}, "applicable_family_denominator": {"const": 19}, "passed": {"type": "boolean"}}
+    }}}}
+  }
+}

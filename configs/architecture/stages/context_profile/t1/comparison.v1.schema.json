@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:architecture:context-t1-comparison:v1",
+  "title": "Private D3 comparison: hash-bound observations and recomputed counts",
+  "description": "D2 PASS, raw bytes/slot/IDs and pinned freeze/key binding are prerequisites. Only id/path/label/family equality is scored. D4 recomputes all flags/counts and exact per-case repeatability. No span/rationale byte equality. Fixed per-attempt denominators: classes 37, bad families 19, nonbad nulls 18, false-support opportunities 28. This is not an isolation/semantic-admission proof.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "slot", "raw_sha256", "packet_sha256", "key_sha256", "freeze_sha256", "per_case", "classes", "families", "class_matches", "applicable_bad_family_matches", "nonbad_null_families", "false_support", "known_bad_or_uncertain_cases", "verdict"],
+  "properties": {
+    "schema": {"const": "context-t1-comparison/v1"},
+    "slot": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]},
+    "raw_sha256": {"$ref": "#/$defs/digest"}, "packet_sha256": {"$ref": "#/$defs/digest"},
+    "key_sha256": {"$ref": "#/$defs/digest"}, "freeze_sha256": {"$ref": "#/$defs/digest"},
+    "per_case": {"type": "array", "minItems": 37, "maxItems": 37, "items": {"$ref": "#/$defs/case"}},
+    "classes": {
+      "type": "object", "additionalProperties": false, "required": ["supported", "contradicted", "unsupported", "uncertain"],
+      "properties": {"supported": {"$ref": "#/$defs/count"}, "contradicted": {"$ref": "#/$defs/count"}, "unsupported": {"$ref": "#/$defs/count"}, "uncertain": {"$ref": "#/$defs/count"}}
+    },
+    "families": {
+      "type": "object", "additionalProperties": false, "required": ["F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12"],
+      "properties": {
+        "F01": {"$ref": "#/$defs/count"}, "F02": {"$ref": "#/$defs/count"}, "F03": {"$ref": "#/$defs/count"}, "F04": {"$ref": "#/$defs/count"},
+        "F05": {"$ref": "#/$defs/count"}, "F06": {"$ref": "#/$defs/count"}, "F07": {"$ref": "#/$defs/count"}, "F08": {"$ref": "#/$defs/count"},
+        "F09": {"$ref": "#/$defs/count"}, "F10": {"$ref": "#/$defs/count"}, "F11": {"$ref": "#/$defs/count"}, "F12": {"$ref": "#/$defs/count"}
+      }
+    },
+    "class_matches": {"type": "integer", "minimum": 0, "maximum": 37},
+    "applicable_bad_family_matches": {"type": "integer", "minimum": 0, "maximum": 19},
+    "nonbad_null_families": {"type": "integer", "minimum": 0, "maximum": 18},
+    "false_support": {"type": "integer", "minimum": 0, "maximum": 28},
+    "known_bad_or_uncertain_cases": {"const": 28}, "verdict": {"enum": ["PASS", "FAIL"]}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "label": {"enum": ["supported", "contradicted", "unsupported", "uncertain"]},
+    "family": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^F(0[1-9]|1[0-2])$"}]},
+    "count": {"type": "object", "additionalProperties": false, "required": ["matches", "total"], "properties": {"matches": {"type": "integer", "minimum": 0}, "total": {"type": "integer", "minimum": 1}}},
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "path", "expected_label", "actual_label", "expected_family", "actual_family", "class_match", "family_match", "nonbad_null_ok", "false_support"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}, "path": {"type": "string", "pattern": "^/"},
+        "expected_label": {"$ref": "#/$defs/label"}, "actual_label": {"$ref": "#/$defs/label"},
+        "expected_family": {"$ref": "#/$defs/family"}, "actual_family": {"$ref": "#/$defs/family"},
+        "class_match": {"type": "boolean"}, "family_match": {"type": ["boolean", "null"]},
+        "nonbad_null_ok": {"type": "boolean"}, "false_support": {"type": "boolean"}
+      }
+    }
+  }
+}

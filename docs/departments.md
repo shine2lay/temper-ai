@@ -531,6 +531,12 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/stages/context_profile/t1/validation.v1.schema.json` | contract (D2 slot validation record; PASS-only decision IDs, terminal refusal codes) |
 | `architecture/fixtures/context_profile/known/` | known-case table (README.md) and 14 briefs with v2 answer keys |
 | `architecture/fixtures/context_profile/planted/` | planted bad profiles (expected failures) |
+| `architecture/bin/context_t1_compare.py` | T1 D3 private frozen-key equality script (synthetic-tested; no judge admission) |
+| `architecture/bin/context_t1_aggregate.py` | T1 D4 six-slot fixed-denominator aggregator and future attempt/ledger contract (no dispatch) |
+| `architecture/stages/context_profile/t1/comparison.v1.schema.json` | T1 D3 per-case comparison contract |
+| `architecture/stages/context_profile/t1/attempt.v1.schema.json` | T1 future judge's write-once attempt-record contract |
+| `architecture/stages/context_profile/t1/lead_review.v1.schema.json` | T1 independent source/rationale review receipt |
+| `architecture/stages/context_profile/t1/aggregate.v1.schema.json` | T1 coverage/run/class/family/repeatability/cost/status tables |
 | `epd/workflows/epd_pattern_audit.yaml` | workflow |
 | `epd/workflows/epd_plan.yaml` | workflow |
 | `epd/workflows/epd_plan_grade.yaml` | workflow |

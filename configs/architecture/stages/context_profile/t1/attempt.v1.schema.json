@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:architecture:context-t1-attempt:v1",
+  "title": "Future J write-once attempt-record contract",
+  "description": "One 0600 record per unused slot, under a 0700 private root, exclusive create. Never overwrite/resume/replace a slot. Fresh nonzero canonical UUID session AND run; no shared prior outputs. Preserve actual admitted route/provider/model/auth and experiment/binding IDs plus source/config/pricing/input/packet/raw digests. Null identity/time/digest means missing and forbids success; do not reconstruct. Every actual provider call appears once in transmission_ids; retries invalidate a slot. KNOWN list_price_usd is measured finite nonnegative spend including every transmission; UNKNOWN is null, never zero. reservation_usd is pre-dispatch worst-case exposure, not spend; unknown_exposure_usd is separate and may remain null. UTC times must have zero UTC offset; all monotonic times share one experiment clock. deadline_s=900, monotonic deadline-dispatch=900, confirmed cleanup within both monotonic and UTC bounds. D4 checks clock agreement, actual 1 transmission/successful slot, total <=6, <=$5/attempt and <=$30 total, concurrency <=2 and <=1/family, unchanged per-family route metadata, no fallback/resume, all six terminal and independently reviewed. Record attestations do NOT establish runtime enforcement, isolation or judging admission. See aggregate script docstring for ledger reconciliation and failure precedence.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "slot", "family", "experiment_id", "binding_id", "session_id", "run_id", "route", "provider", "model", "auth_mode", "source_sha256", "config_sha256", "pricing_sha256", "input_sha256", "packet_sha256", "raw_sha256", "terminal", "transmissions", "transmission_ids", "usage_state", "list_price_usd", "cost_state", "reservation_usd", "unknown_exposure_usd", "cleanup", "started_utc", "ended_utc", "cleanup_utc", "dispatch_monotonic_s", "deadline_monotonic_s", "cleanup_monotonic_s", "deadline_s", "resumed", "fallback", "failure_reasons"],
+  "properties": {
+    "schema": {"const": "context-t1-attempt/v1"}, "slot": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]}, "family": {"enum": ["A", "B"]},
+    "experiment_id": {"$ref": "#/$defs/identity"}, "binding_id": {"$ref": "#/$defs/identity"},
+    "session_id": {"$ref": "#/$defs/uuid"}, "run_id": {"$ref": "#/$defs/uuid"},
+    "route": {"$ref": "#/$defs/identity"}, "provider": {"$ref": "#/$defs/identity"}, "model": {"$ref": "#/$defs/identity"}, "auth_mode": {"$ref": "#/$defs/identity"},
+    "source_sha256": {"$ref": "#/$defs/digest"}, "config_sha256": {"$ref": "#/$defs/digest"}, "pricing_sha256": {"$ref": "#/$defs/digest"},
+    "input_sha256": {"$ref": "#/$defs/digest"}, "packet_sha256": {"$ref": "#/$defs/digest"}, "raw_sha256": {"$ref": "#/$defs/digest"},
+    "terminal": {"enum": ["COMPLETED", "FAILED", "NOT_MEASURED"]},
+    "transmissions": {"type": "integer", "minimum": 0}, "transmission_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "usage_state": {"enum": ["KNOWN", "UNKNOWN"]}, "cost_state": {"enum": ["KNOWN", "UNKNOWN"]},
+    "list_price_usd": {"$ref": "#/$defs/amount"}, "reservation_usd": {"$ref": "#/$defs/amount"}, "unknown_exposure_usd": {"$ref": "#/$defs/amount"},
+    "cleanup": {"enum": ["CONFIRMED", "UNCERTAIN"]},
+    "started_utc": {"$ref": "#/$defs/utc"}, "ended_utc": {"$ref": "#/$defs/utc"}, "cleanup_utc": {"$ref": "#/$defs/utc"},
+    "dispatch_monotonic_s": {"$ref": "#/$defs/amount"}, "deadline_monotonic_s": {"$ref": "#/$defs/amount"}, "cleanup_monotonic_s": {"$ref": "#/$defs/amount"},
+    "deadline_s": {"const": 900}, "resumed": {"type": "boolean"}, "fallback": {"type": "boolean"},
+    "failure_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["strict_parser", "transport", "auth", "quota", "timeout", "fallback", "cancel", "crash", "partial", "truncation", "retry"]}}
+  },
+  "allOf": [
+    {"if": {"properties": {"cost_state": {"const": "UNKNOWN"}}}, "then": {"properties": {"list_price_usd": {"type": "null"}}}, "else": {"properties": {"list_price_usd": {"type": "number", "minimum": 0}}}},
+    {"if": {"properties": {"family": {"const": "A"}}}, "then": {"properties": {"slot": {"enum": ["A1", "A2", "A3"]}}}, "else": {"properties": {"slot": {"enum": ["B1", "B2", "B3"]}}}}
+  ],
+  "$defs": {
+    "identity": {"type": ["string", "null"], "minLength": 1},
+    "uuid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "amount": {"type": ["number", "null"], "minimum": 0},
+    "utc": {"type": ["string", "null"], "format": "date-time", "pattern": "T.*(Z|\\+00:00)$"}
+  }
+}

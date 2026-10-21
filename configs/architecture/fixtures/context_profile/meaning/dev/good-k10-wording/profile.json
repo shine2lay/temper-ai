@@ -1,0 +1,385 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "6d889f5e5590d930bb24db3fcfb15690a040fa54ec06775146ceb1de25a0f4a5",
+  "product": {
+    "summary": "Delivery-route planning for courier businesses",
+    "source": {
+      "kind": "quote",
+      "quote": "RouteWise plans delivery routes for courier companies."
+    }
+  },
+  "maturity": {
+    "stage": "growing",
+    "evidence": [
+      {
+        "value": "38 courier companies as customers",
+        "source": {
+          "kind": "quote",
+          "quote": "We have 38 courier companies as customers"
+        }
+      },
+      {
+        "value": "up from 12 a year ago",
+        "source": {
+          "kind": "quote",
+          "quote": "up from 12 a year ago"
+        }
+      },
+      {
+        "value": "contractual uptime with service credits",
+        "source": {
+          "kind": "quote",
+          "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it."
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "RouteWise builds the routes"
+    },
+    "items": [
+      {
+        "kind": "client",
+        "text": "driver app re-plans after failed stops or traffic changes",
+        "source": {
+          "kind": "quote",
+          "quote": "our driver app, which re-plans when a stop fails or traffic changes"
+        }
+      },
+      {
+        "kind": "component",
+        "text": "route builder",
+        "source": {
+          "kind": "quote",
+          "quote": "RouteWise builds the routes"
+        }
+      }
+    ]
+  },
+  "external_systems": [],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [
+      {
+        "what": "drivers on shift on a weekday",
+        "value": 9000,
+        "unit": "drivers",
+        "source": {
+          "kind": "quote",
+          "quote": "On a weekday about 9,000 drivers are on shift on RouteWise"
+        }
+      },
+      {
+        "what": "stops handled",
+        "value": 1500000,
+        "unit": "stops per month",
+        "source": {
+          "kind": "quote",
+          "quote": "we handle roughly 1.5 million stops a month"
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "morning route building, every depot at once",
+        "value": "5am-7am",
+        "unit": "daily window",
+        "source": {
+          "kind": "quote",
+          "quote": "Most route building happens between 5am and 7am, when every depot loads its parcels at once."
+        }
+      },
+      {
+        "what": "week before Christmas",
+        "value": "roughly double",
+        "unit": "stops versus a normal week",
+        "source": {
+          "kind": "quote",
+          "quote": "In the week before Christmas the number of stops roughly doubles."
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": {
+      "value": "99.5% monthly uptime during customers' operating hours, with service credits",
+      "source": {
+        "kind": "quote",
+        "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours"
+      }
+    },
+    "data_loss_tolerance": "unknown",
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "recipients' names, delivery addresses, phone numbers and notes such as door codes",
+        "source": {
+          "kind": "quote",
+          "quote": "Each stop holds the recipient's name, delivery address and phone number, and sometimes a note such as \"door code 4471\"."
+        }
+      },
+      {
+        "value": "drivers' GPS position every 10 seconds during a shift",
+        "source": {
+          "kind": "quote",
+          "quote": "The driver app records each driver's GPS position every 10 seconds during a shift"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "assumption",
+        "why": "Precise, continuous location tracking of named drivers kept for years, plus home addresses and door codes of recipients."
+      }
+    },
+    "retention": [
+      {
+        "value": "GPS traces kept 2 years to settle delivery disputes",
+        "source": {
+          "kind": "quote",
+          "quote": "we keep the traces for 2 years to settle delivery disputes"
+        }
+      }
+    ],
+    "sharing": [],
+    "jurisdictions_or_rules": [
+      {
+        "value": "EU customers' data must stay in the EU (contract)",
+        "source": {
+          "kind": "quote",
+          "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."
+        }
+      },
+      {
+        "value": "about a third of customers in the EU, the rest in the UK",
+        "source": {
+          "kind": "quote",
+          "quote": "About a third of our customers are in the EU; the rest are in the UK."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "EU data residency written into customer contracts",
+        "source": {
+          "kind": "quote",
+          "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "14 people, 9 of them engineers",
+      "source": {
+        "kind": "quote",
+        "quote": "we are now 14 people, 9 of them engineers"
+      }
+    },
+    "skills": [
+      {
+        "value": "TypeScript, Node and PostgreSQL",
+        "source": {
+          "kind": "quote",
+          "quote": "Our engineers know TypeScript, Node and PostgreSQL well"
+        }
+      },
+      {
+        "value": "one engineer has run Kubernetes",
+        "source": {
+          "kind": "quote",
+          "quote": "one of them has run Kubernetes before"
+        }
+      }
+    ],
+    "operating_capacity": []
+  },
+  "budget": {
+    "build": {
+      "value": "For this work, $150,000 is set aside",
+      "source": {
+        "kind": "quote",
+        "quote": "We have set aside $150,000 for this work."
+      }
+    },
+    "run_monthly": {
+      "value": "hosting $28,000 a month",
+      "source": {
+        "kind": "quote",
+        "quote": "Hosting costs $28,000 a month."
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "99.5% monthly uptime during customers' operating hours (contract, service credits)",
+      "source": {
+        "kind": "quote",
+        "quote": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it."
+      }
+    },
+    {
+      "id": "C2",
+      "text": "EU customers' data stays in the EU (contract)",
+      "source": {
+        "kind": "quote",
+        "quote": "Our EU customers require that their data stays in the EU, and it is written into their contracts."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "reliability",
+      "rank": 1,
+      "note": "Fewer incidents during morning dispatch",
+      "source": {
+        "kind": "quote",
+        "quote": "First, fewer incidents during morning dispatch."
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Second, reduce hosting expenditure",
+      "source": {
+        "kind": "quote",
+        "quote": "Second, bring the hosting bill down."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "change_cost",
+      "rank": 3,
+      "note": "New customers' depot rules without code changes",
+      "source": {
+        "kind": "quote",
+        "quote": "Third, make it easier to add a new customer's depot rules without code changes."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "How much route or trace data can be lost?",
+      "why_it_matters": "Losing dispatch data disrupts deliveries; losing traces removes dispute evidence. Backup durability depends on the answer.",
+      "decisions_affected": [
+        "backup design"
+      ],
+      "material": true,
+      "field": "reliability.data_loss_tolerance"
+    },
+    {
+      "question": "How quickly must morning dispatch recover from an outage?",
+      "why_it_matters": "The monthly SLA does not bound a single morning outage; recovery changes failover design.",
+      "decisions_affected": [
+        "failover"
+      ],
+      "material": true,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Who supports incidents and on-call during dispatch?",
+      "why_it_matters": "The first goal is fewer incidents, but the team's operating coverage is unstated.",
+      "decisions_affected": [
+        "operating model"
+      ],
+      "material": true,
+      "field": "team.operating_capacity"
+    },
+    {
+      "question": "Are any outside systems required?",
+      "why_it_matters": "No feed or fixed integration is named.",
+      "decisions_affected": [
+        "integrations"
+      ],
+      "material": false,
+      "field": "external_systems"
+    },
+    {
+      "question": "What growth is forecast?",
+      "why_it_matters": "Observed customer growth and the Christmas peak already bound the load discussion.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "Incidents, rather than speed, are the stated problem.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "Is data shared externally?",
+      "why_it_matters": "No outside recipient or processor is named.",
+      "decisions_affected": [
+        "sharing controls"
+      ],
+      "material": false,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Are specific security controls required?",
+      "why_it_matters": "No particular control is specified; binding privacy duties are already constraints.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.requirements"
+    },
+    {
+      "question": "Is any attack named?",
+      "why_it_matters": "Door codes are sensitive data, not an attack or incident.",
+      "decisions_affected": [
+        "threat controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Were drivers told about the GPS tracking in their employment contracts, and on what legal basis is it done?",
+      "why_it_matters": "Without a lawful basis and notice the traces may have to be cut back or stopped, which changes what is collected and stored.",
+      "decisions_affected": [
+        "location collection",
+        "data model"
+      ],
+      "material": true,
+      "field": "privacy.jurisdictions_or_rules"
+    },
+    {
+      "question": "Can keeping GPS traces for 2 years be defended, or must retention be shorter?",
+      "why_it_matters": "Retention decides storage size, deletion jobs and the legal risk of the largest dataset.",
+      "decisions_affected": [
+        "retention and deletion",
+        "storage"
+      ],
+      "material": true,
+      "field": "privacy.retention"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "The 'no personal data' description is wrong and is not used for any decision.",
+      "why": "The brief itself lists names, addresses, phone numbers and GPS traces."
+    }
+  ]
+}

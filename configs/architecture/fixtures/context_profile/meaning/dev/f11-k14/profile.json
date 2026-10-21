@@ -1,0 +1,398 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "482c29eff29117fbe503971902d121ecdce864ee614478a6045bdcd210055aea",
+  "product": {
+    "summary": "Facilities register for specimen-cabinet keys, not an organisation-wide platform",
+    "source": {
+      "kind": "quote",
+      "quote": "it is the facilities team's internal register for the keys to locked specimen cabinets"
+    }
+  },
+  "maturity": {
+    "stage": "established",
+    "evidence": [
+      {
+        "value": "proven demand and flat staff and request volume for three years",
+        "source": {
+          "kind": "quote",
+          "quote": "need is proven, and both staff numbers and request volume have stayed flat for three years"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "A small Django application and SQLite database run on one internal virtual machine"
+    },
+    "items": [
+      {
+        "kind": "stack",
+        "text": "Django, SQLite and one internal virtual machine",
+        "source": {
+          "kind": "quote",
+          "quote": "Django application and SQLite database run on one internal virtual machine"
+        }
+      },
+      {
+        "kind": "client",
+        "text": "staff browser",
+        "source": {
+          "kind": "quote",
+          "quote": "Facilities staff use a browser"
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "Entra ID",
+      "role": "organisation's identity provider supplies staff identities",
+      "source": {
+        "kind": "quote",
+        "quote": "reads staff identities from the organisation's Entra ID tenant"
+      }
+    }
+  ],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [
+      {
+        "what": "facilities users",
+        "value": 40,
+        "unit": "staff",
+        "source": {
+          "kind": "quote",
+          "quote": "Forty facilities staff use it"
+        }
+      },
+      {
+        "what": "transactions",
+        "value": 90,
+        "unit": "per working day",
+        "source": {
+          "kind": "quote",
+          "quote": "about 90 transactions per working day"
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "concurrent users",
+        "value": 4,
+        "unit": "people at most",
+        "source": {
+          "kind": "quote",
+          "quote": "no more than four people using the tool at once"
+        }
+      },
+      {
+        "what": "most activity",
+        "value": "morning shift start",
+        "unit": "busy window",
+        "source": {
+          "kind": "quote",
+          "quote": "Most activity is at the start of the morning shift"
+        }
+      },
+      {
+        "what": "qualitative speed complaint",
+        "value": "slow key check-in",
+        "unit": "unmeasured delay",
+        "source": {
+          "kind": "quote",
+          "quote": "page sometimes feels slow when a clerk checks a key back in"
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": {
+      "value": "paper ledger fallback during outages",
+      "source": {
+        "kind": "quote",
+        "quote": "Facilities can use its paper key ledger during an outage"
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "entered records must not be lost",
+      "source": {
+        "kind": "quote",
+        "quote": "records entered before an outage must not be lost"
+      }
+    },
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "employee identifiers and cabinet identifiers; no samples or patient records",
+        "source": {
+          "kind": "quote",
+          "quote": "The register contains employee identifiers and cabinet identifiers; it contains no research samples or patient records"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "moderate",
+      "source": {
+        "kind": "assumption",
+        "why": "Identifiable employee access records can reveal staff movements."
+      }
+    },
+    "retention": [
+      {
+        "value": "access log retained seven years",
+        "source": {
+          "kind": "quote",
+          "quote": "access log retained for seven years"
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "facilities group only",
+        "source": {
+          "kind": "quote",
+          "quote": "access limited to the facilities group"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "staff records remain in organisation's UK data centre",
+        "source": {
+          "kind": "quote",
+          "quote": "staff records must stay in the organisation's UK data centre"
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "Entra ID sign-in",
+        "source": {
+          "kind": "quote",
+          "quote": "sign-in through Entra ID"
+        }
+      },
+      {
+        "value": "multifactor authentication",
+        "source": {
+          "kind": "quote",
+          "quote": "multifactor authentication"
+        }
+      },
+      {
+        "value": "facilities group access only",
+        "source": {
+          "kind": "quote",
+          "quote": "access limited to the facilities group"
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "append-only audit log retained seven years",
+        "source": {
+          "kind": "quote",
+          "quote": "Company audit policy requires an append-only access log retained for seven years"
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "one internal developer",
+      "source": {
+        "kind": "quote",
+        "quote": "One internal developer"
+      }
+    },
+    "skills": [
+      {
+        "value": "Python and Django",
+        "source": {
+          "kind": "quote",
+          "quote": "knows Python and Django"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "developer one day each week",
+        "source": {
+          "kind": "quote",
+          "quote": "one day each week"
+        }
+      },
+      {
+        "value": "office-hours IT support, no pager",
+        "source": {
+          "kind": "quote",
+          "quote": "IT supports the virtual machine during office hours; there is no overnight pager"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "$8,000 change budget",
+      "source": {
+        "kind": "quote",
+        "quote": "approved change budget is $8,000"
+      }
+    },
+    "run_monthly": "unknown"
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "sign in through Entra ID",
+      "source": {
+        "kind": "quote",
+        "quote": "sign-in through Entra ID"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "multifactor authentication",
+      "source": {
+        "kind": "quote",
+        "quote": "multifactor authentication"
+      }
+    },
+    {
+      "id": "C3",
+      "text": "facilities-only access",
+      "source": {
+        "kind": "quote",
+        "quote": "access limited to the facilities group"
+      }
+    },
+    {
+      "id": "C4",
+      "text": "append-only access log retained seven years",
+      "source": {
+        "kind": "quote",
+        "quote": "append-only access log retained for seven years"
+      }
+    },
+    {
+      "id": "C5",
+      "text": "staff records in organisation's UK data centre",
+      "source": {
+        "kind": "quote",
+        "quote": "staff records must stay in the organisation's UK data centre"
+      }
+    },
+    {
+      "id": "C6",
+      "text": "never lose entered records",
+      "source": {
+        "kind": "quote",
+        "quote": "records entered before an outage must not be lost"
+      }
+    },
+    {
+      "id": "C7",
+      "text": "change within $8,000",
+      "source": {
+        "kind": "quote",
+        "quote": "approved change budget is $8,000"
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "operability",
+      "rank": 1,
+      "note": "simpler upkeep",
+      "source": {
+        "kind": "quote",
+        "quote": "simpler upkeep first"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "performance",
+      "rank": 2,
+      "note": "better response speed, not an invented target",
+      "source": {
+        "kind": "quote",
+        "quote": "better response speed second"
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "cost",
+      "rank": 3,
+      "note": "lower running cost",
+      "source": {
+        "kind": "quote",
+        "quote": "lower running cost third"
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "How fast must check-in respond, and how will delay be measured?",
+      "why_it_matters": "The queue delays lab access; a measured target changes capacity and response-path choices.",
+      "decisions_affected": [
+        "response path",
+        "capacity"
+      ],
+      "material": true,
+      "field": "performance.targets"
+    },
+    {
+      "question": "What monthly budget allowance is available?",
+      "why_it_matters": "A funded virtual machine is not a numeric allowance for comparing costs of options.",
+      "decisions_affected": [
+        "hosting cost"
+      ],
+      "material": true,
+      "field": "budget.run_monthly"
+    },
+    {
+      "question": "Is workload growth planned?",
+      "why_it_matters": "No expansion is planned; the unapproved wider rollout is not a forecast.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is a restoration deadline agreed?",
+      "why_it_matters": "Paper fallback covers outages; durability is mandatory but an exact recovery time does not change the office-hours options.",
+      "decisions_affected": [
+        "recovery"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Is an attack named?",
+      "why_it_matters": "No attack is named; mandatory controls remain binding.",
+      "decisions_affected": [
+        "threat controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "Records entered before an outage may be lost.",
+      "why": "Assume this simplifies the implementation."
+    }
+  ]
+}

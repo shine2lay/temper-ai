@@ -1,0 +1,406 @@
+{
+  "variant_id": "good-k06-wording",
+  "case_id": "k06-large-simple-transit",
+  "set": "development",
+  "group": "authored",
+  "description": "Reordered product description retains the functions and audience stated in the quote.; Paraphrase retains the stated priority and its meaning.; Rewording preserves the exact scope, number and qualification of the source.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "f53dd2064f72d7f7f737647c5be268806dea80df503945e6eded436150a689b0",
+  "profile_sha256": "94448aeea1a24189316802edea49160949102fee4d6b6dfc163113e5cd09010f",
+  "changed_paths": [
+    "/goals/2",
+    "/product",
+    "/team/skills/0"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "NextStop is a phone app that shows bus and tram departures for three cities",
+      "rationale": "Reordered product description retains the functions and audience stated in the quote.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have run NextStop for six years.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have run NextStop for six years.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "It has 1.1 million monthly users and about 180,000 daily users, and these numbers have been flat for two years.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Ads bring in about $9,000 a month.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "the backend is two small services and a cache, and it is boring on purpose",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "the backend is two small services and a cache",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Ines writes the Swift and Kotlin apps",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Rafael writes the Go backend",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "Favourite stops are stored on the phone, not on our servers.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "departure times and delays come from the transit agencies' open data feeds",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our ad network receives the device's advertising identifier.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "It has 1.1 million monthly users",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "about 180,000 daily users",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Almost everything is reading: departure times and delays come from the transit agencies' open data feeds, which our backend polls every 30 seconds and caches.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/projected/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Ashford's transit agency has invited us to add their city next year, which they say would bring about 400,000 more monthly users.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "On weekdays between 7am and 9am, and again between 4pm and 7pm, requests run at about 5 times the daily average.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "On snow days we have seen 10 times the average for a whole morning.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/performance/targets/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "requires us to show its service alerts within 2 minutes of publication",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "During rush hour the app has to work: an outage at 8am means thousands of one-star reviews and angry emails to the agencies. At 2am nobody notices.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "There is no user data to lose; everything we show can be fetched again from the feeds.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are not on call; if something breaks at night, it waits until morning.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We collect no names, emails or accounts.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "The app uses the phone's location to find nearby stops, and the location never leaves the phone",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "We keep anonymous usage counts for 90 days.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our ad network receives the device's advertising identifier.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We keep anonymous usage counts for 90 days.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sharing/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our ad network receives the device's advertising identifier.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "we say so in our privacy policy and we intend to keep that promise",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "NextStop is run by the two of us, Ines and Rafael.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Ines writes the Swift and Kotlin apps",
+      "rationale": "Rewording preserves the exact scope, number and qualification of the source.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/team/skills/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Rafael writes the Go backend and looks after the servers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We also run a consulting business, so NextStop gets about one day a week from each of us.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are not on call",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "We can put $30,000 into this rework, and not more this year.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "Hosting costs $2,300 a month",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our agreement with the Riverton transit agency requires us to show its service alerts within 2 minutes of publication.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "the location never leaves the phone; we say so in our privacy policy",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "We can put $30,000 into this rework, and not more this year.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "First, rush hour must hold up.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Second, lower hosting costs.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Third, less of our scarce time spent on maintenance.",
+      "rationale": "Paraphrase retains the stated priority and its meaning.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/assumptions/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    }
+  ],
+  "omissions": []
+}

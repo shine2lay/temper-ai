@@ -1,0 +1,415 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "cb2f48597ddb6f1b73a6c30ee1aa3c091a3f91a668fa090ffc068b44c110b1aa",
+  "product": {
+    "summary": "A reading app for primary schools: children read aloud into a tablet, the app highlights struggles and reports weekly to teachers.",
+    "source": {
+      "kind": "quote",
+      "quote": "ReadAlong is a reading app for primary schools in England."
+    }
+  },
+  "maturity": {
+    "stage": "unknown",
+    "evidence": [
+      {
+        "value": "1,200 schools and about 140,000 pupils",
+        "source": {
+          "kind": "quote",
+          "quote": "ReadAlong is used by 1,200 schools and about 140,000 pupils."
+        }
+      },
+      {
+        "value": "four years running, with a support desk and on-call rota",
+        "source": {
+          "kind": "quote",
+          "quote": "We have run for four years and have a support desk and an on-call rota of three engineers."
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "the app listens, highlights words they struggle with"
+    },
+    "items": [
+      {
+        "kind": "stack",
+        "text": "Python backend on one cloud provider",
+        "source": {
+          "kind": "quote",
+          "quote": "Our backend is Python on a single cloud provider"
+        }
+      },
+      {
+        "kind": "client",
+        "text": "tablet app listens and highlights words",
+        "source": {
+          "kind": "quote",
+          "quote": "the app listens, highlights words they struggle with"
+        }
+      },
+      {
+        "kind": "component",
+        "text": "weekly teacher report",
+        "source": {
+          "kind": "quote",
+          "quote": "gives their teacher a weekly report"
+        }
+      }
+    ]
+  },
+  "external_systems": [],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [
+      {
+        "what": "schools using the app",
+        "value": 1200,
+        "unit": "schools",
+        "source": {
+          "kind": "quote",
+          "quote": "ReadAlong is used by 1,200 schools"
+        }
+      },
+      {
+        "what": "pupils",
+        "value": 140000,
+        "unit": "pupils",
+        "source": {
+          "kind": "quote",
+          "quote": "about 140,000 pupils"
+        }
+      },
+      {
+        "what": "new audio recordings",
+        "value": 2,
+        "unit": "TB per month",
+        "source": {
+          "kind": "quote",
+          "quote": "Recordings add about 2 TB of new audio a month."
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "school-day reading, concentrated in the morning",
+        "value": "9am-11am",
+        "unit": "daily window",
+        "source": {
+          "kind": "quote",
+          "quote": "Reading happens between 9am and 3pm on school days, and most sessions fall between 9am and 11am."
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": {
+      "value": "Needed during lessons: an outage loses the session",
+      "source": {
+        "kind": "quote",
+        "quote": "If the app is down during a lesson, teachers lose the session"
+      }
+    },
+    "data_loss_tolerance": "unknown",
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "children aged 6 to 11",
+        "source": {
+          "kind": "quote",
+          "quote": "Children aged 6 to 11 read a short book aloud into a tablet"
+        }
+      },
+      {
+        "value": "voice recordings of children reading aloud",
+        "source": {
+          "kind": "quote",
+          "quote": "read a short book aloud into a tablet; the app listens"
+        }
+      },
+      {
+        "value": "pupil's first name, class and reading level only",
+        "source": {
+          "kind": "quote",
+          "quote": "We collect only each pupil's first name, class and reading level, and nothing else about them."
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "assumption",
+        "why": "Children's data in volume, including voice recordings of each child."
+      }
+    },
+    "retention": [
+      {
+        "value": "a leaver's data, recordings included, deleted within 30 days of notice",
+        "source": {
+          "kind": "quote",
+          "quote": "A pupil's data, recordings included, is deleted within 30 days of the school telling us the pupil has left."
+        }
+      },
+      {
+        "value": "recordings deleted after 90 days",
+        "source": {
+          "kind": "quote",
+          "quote": "Recordings are deleted after 90 days."
+        }
+      },
+      {
+        "value": "Parents' existing consent covers speech-model training on recordings",
+        "source": {
+          "kind": "quote",
+          "quote": "Whether parents' consent, given through the schools, would cover using recordings to train a speech model at all."
+        }
+      }
+    ],
+    "sharing": [],
+    "jurisdictions_or_rules": [
+      {
+        "value": "school contracts follow the ICO's Children's Code",
+        "source": {
+          "kind": "quote",
+          "quote": "Our contracts with schools, which follow the ICO's Children's Code"
+        }
+      },
+      {
+        "value": "all pupil data in UK data centres",
+        "source": {
+          "kind": "quote",
+          "quote": "All pupil data stays in UK data centres."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "ICO Children's Code terms checked by schools every year",
+        "source": {
+          "kind": "quote",
+          "quote": "These terms are not up for negotiation; schools check them every year."
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "nine people, three of them engineers",
+      "source": {
+        "kind": "quote",
+        "quote": "We are nine people, three of them engineers."
+      }
+    },
+    "skills": [
+      {
+        "value": "never run a second region",
+        "source": {
+          "kind": "quote",
+          "quote": "we have never run a second region"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "support desk and on-call rota of three engineers",
+        "source": {
+          "kind": "quote",
+          "quote": "a support desk and an on-call rota of three engineers"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "$60,000 approved for the review and resulting changes",
+      "source": {
+        "kind": "quote",
+        "quote": "The board has approved $60,000 for this review and any changes that follow."
+      }
+    },
+    "run_monthly": {
+      "value": "hosting $19,000 a month",
+      "source": {
+        "kind": "quote",
+        "quote": "Hosting costs $19,000 a month"
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Collect only each pupil's first name, class and reading level",
+      "source": {
+        "kind": "quote",
+        "quote": "We collect only each pupil's first name, class and reading level, and nothing else about them."
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Delete a leaver's data, recordings included, within 30 days of notice",
+      "source": {
+        "kind": "quote",
+        "quote": "A pupil's data, recordings included, is deleted within 30 days of the school telling us the pupil has left."
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Delete recordings after 90 days",
+      "source": {
+        "kind": "quote",
+        "quote": "Recordings are deleted after 90 days."
+      }
+    },
+    {
+      "id": "C4",
+      "text": "All pupil data stays in UK data centres",
+      "source": {
+        "kind": "quote",
+        "quote": "All pupil data stays in UK data centres."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "privacy",
+      "rank": 1,
+      "note": "Collect even less than the contracts require",
+      "source": {
+        "kind": "quote",
+        "quote": "first, collect even less about children than the contracts require, wherever we can"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Lower hosting costs",
+      "source": {
+        "kind": "quote",
+        "quote": "second, lower hosting costs"
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "reliability",
+      "rank": 3,
+      "note": "Work through the morning reading peak",
+      "source": {
+        "kind": "quote",
+        "quote": "third, keep the app working through the morning reading peak"
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Is demand steady or rising fast?",
+      "why_it_matters": "Use and age do not establish lifecycle; measured workload and contractual stakes are independently known.",
+      "decisions_affected": [
+        "lifecycle classification"
+      ],
+      "material": false,
+      "field": "maturity.stage"
+    },
+    {
+      "question": "Which external systems are used?",
+      "why_it_matters": "The brief does not identify an existing provider or boundary.",
+      "decisions_affected": [
+        "integrations"
+      ],
+      "material": false,
+      "field": "external_systems"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "The stated concern is availability through lessons, not a response-time target.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "Is growth forecast?",
+      "why_it_matters": "Known recording volume and lesson peaks bound current capacity.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "How much data loss is tolerable?",
+      "why_it_matters": "No durability promise is stated; this review is about retention, residency and availability.",
+      "decisions_affected": [
+        "durability"
+      ],
+      "material": false,
+      "field": "reliability.data_loss_tolerance"
+    },
+    {
+      "question": "Is data shared externally?",
+      "why_it_matters": "No outside processor is identified; model-training consent is already a material question.",
+      "decisions_affected": [
+        "sharing controls"
+      ],
+      "material": false,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Are particular security controls required?",
+      "why_it_matters": "No particular control is named; binding data duties are already constraints.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.requirements"
+    },
+    {
+      "question": "Is an attack named?",
+      "why_it_matters": "No attack, abuse or incident is named.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Would parents' consent, given through schools, cover training a speech model on recordings?",
+      "why_it_matters": "Without it the recordings cannot be kept or used for training, so the CFO's licence saving is not available.",
+      "decisions_affected": [
+        "recording retention",
+        "speech model plan"
+      ],
+      "material": true,
+      "field": "privacy.retention"
+    },
+    {
+      "question": "What recovery time after an outage do schools need?",
+      "why_it_matters": "No recovery target has been agreed; it decides failover and backup design within one UK region.",
+      "decisions_affected": [
+        "failover",
+        "backup and restore"
+      ],
+      "material": true,
+      "field": "reliability.recovery_time"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "The CFO's US-region and keep-recordings proposals are not agreed and conflict with the school contracts.",
+      "why": "The brief says neither has been agreed, and the contracts require UK storage and 90-day deletion."
+    }
+  ]
+}

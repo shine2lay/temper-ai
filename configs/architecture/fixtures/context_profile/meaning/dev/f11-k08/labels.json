@@ -1,0 +1,329 @@
+{
+  "variant_id": "f11-k08",
+  "case_id": "k08-missing-volunteers",
+  "set": "development",
+  "group": "authored",
+  "description": "The assumption contradicts unchanged /security/requirements/0 as well as the explicit source; an assumption label is not permission to override a rule.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "e61abef814f97cba0e1ac81f8beb075e24b98100341a2927a7b25f81735cf653",
+  "profile_sha256": "1877e1c022bbf6340dfa128efc25952477a36b69c67b3c9e0780eb1033fb51d9",
+  "changed_paths": [
+    "/assumptions/1"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "We want a small app where volunteers can see open shifts, sign up for them and see the deliveries they have accepted.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "Today we coordinate them with a shared spreadsheet, a WhatsApp group and a lot of phone calls",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Today we coordinate them with a shared spreadsheet, a WhatsApp group and a lot of phone calls",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Nothing has been built yet; this note is the start.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "Nothing has been built yet; this note is the start.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "must sign them in with their Google Workspace accounts, not new passwords",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "December is our busiest month, but nobody has measured by how much.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "If the app is down for a day, Maureen goes back to the phone and the spreadsheet; that is annoying, but nobody goes hungry.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "Losing the record of who accepted which delivery on the day would be worse, because parcels could go undelivered.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "The app would hold volunteers' names, phone numbers and availability",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "clients' names, addresses and delivery notes such as \"leave with the neighbour\" or \"use the side door, client is in a wheelchair\"",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "mostly older and housebound clients",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "must disappear from the volunteer's view once the delivery is done",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sharing/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "a client's address may only be shown to the volunteer who has accepted that delivery",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are registered with the Information Commissioner's Office.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/requirements/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our IT is one volunteer, Dev, a retired network engineer",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "He knows Linux and networks",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "he has not built a web app before",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "who gives us about five hours a week",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our data protection policy says a client's address may only be shown to the volunteer who has accepted that delivery, and must disappear from the volunteer's view once the delivery is done.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Above all, something in volunteers' hands before the winter appeal starts in November, if we can manage it.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "After that, it should cost as little as possible to run.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "And Dev should not have to babysit it.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/6",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/7",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/assumptions/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/assumptions/1",
+      "label": "contradicted",
+      "family": "F11",
+      "source_span": "must sign them in with their Google Workspace accounts, not new passwords",
+      "rationale": "The assumption contradicts unchanged /security/requirements/0 as well as the explicit source; an assumption label is not permission to override a rule.",
+      "origin": "hand"
+    }
+  ],
+  "omissions": []
+}

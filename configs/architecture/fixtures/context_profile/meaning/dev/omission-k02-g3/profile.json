@@ -1,0 +1,368 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "3ccb28c2e6853ace973fe46f5427c106eb32c44aa2d492f1c59443174c73850c",
+  "product": {
+    "summary": "Invoicing for freelancers: send invoices, chase late payments, see who owes money.",
+    "source": {
+      "kind": "quote",
+      "quote": "Ledgerly lets freelancers send invoices, chase late payments and see who owes them money."
+    }
+  },
+  "maturity": {
+    "stage": "established",
+    "evidence": [
+      {
+        "value": "Launched fourteen months ago",
+        "source": {
+          "kind": "quote",
+          "quote": "We launched fourteen months ago."
+        }
+      },
+      {
+        "value": "Revenue around $2,700 a month, growing slowly but steadily",
+        "source": {
+          "kind": "quote",
+          "quote": "Revenue is around $2,700 a month, growing slowly but steadily."
+        }
+      },
+      {
+        "value": "140 paying customers on the $19-a-month plan",
+        "source": {
+          "kind": "quote",
+          "quote": "Today we have 140 paying customers on our $19-a-month plan"
+        }
+      },
+      {
+        "value": "about 600 more on the free tier",
+        "source": {
+          "kind": "quote",
+          "quote": "about 600 more on the free tier"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "The current app is a single Rails app on one rented server that I set up myself."
+    },
+    "items": [
+      {
+        "kind": "component",
+        "text": "a single Rails app",
+        "source": {
+          "kind": "quote",
+          "quote": "The current app is a single Rails app"
+        }
+      },
+      {
+        "kind": "hosting",
+        "text": "one rented server, set up by Dana",
+        "source": {
+          "kind": "quote",
+          "quote": "on one rented server that I set up myself"
+        }
+      },
+      {
+        "kind": "other",
+        "text": "went down twice this year, once for most of a day; two customers cancelled",
+        "source": {
+          "kind": "quote",
+          "quote": "It has gone down twice this year, once for most of a day, and two customers cancelled because of it."
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "Stripe Checkout",
+      "role": "takes clients' card payments for invoices; holds all card data",
+      "source": {
+        "kind": "quote",
+        "quote": "clients pay invoices by card through Stripe Checkout"
+      }
+    }
+  ],
+  "workload": {
+    "observed": [
+      {
+        "what": "paying customers",
+        "value": 140,
+        "unit": "customers",
+        "source": {
+          "kind": "quote",
+          "quote": "Today we have 140 paying customers"
+        }
+      },
+      {
+        "what": "free-tier users",
+        "value": 600,
+        "unit": "users",
+        "source": {
+          "kind": "quote",
+          "quote": "about 600 more on the free tier"
+        }
+      },
+      {
+        "what": "invoices sent",
+        "value": 9000,
+        "unit": "invoices per month",
+        "source": {
+          "kind": "quote",
+          "quote": "Customers send about 9,000 invoices a month in total."
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "share of a month's invoices sent in its last three working days",
+        "value": 40,
+        "unit": "percent",
+        "source": {
+          "kind": "quote",
+          "quote": "the last three working days of the month carry roughly 40% of the month's invoices"
+        }
+      }
+    ]
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": {
+      "value": "No written uptime promise; customers expect it up when they bill, at month end",
+      "source": {
+        "kind": "quote",
+        "quote": "Customers do not have a written uptime promise, but they expect the app to be up when they bill"
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "A sent invoice must not be lost; a day of draft edits may be",
+      "source": {
+        "kind": "quote",
+        "quote": "I would rather lose a day of draft edits than a single sent invoice."
+      }
+    },
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "customers' names, emails and business addresses; their clients' names and emails; invoice amounts",
+        "source": {
+          "kind": "quote",
+          "quote": "We store our customers' names, emails, business addresses, their clients' names and emails, and the invoice amounts."
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "moderate",
+      "source": {
+        "kind": "assumption",
+        "why": "Contact details of freelancers and their clients plus what each is paid: personal and financial, but no card data, which stays with Stripe."
+      }
+    },
+    "retention": [
+      {
+        "value": "invoices kept for six years for tax reasons",
+        "source": {
+          "kind": "quote",
+          "quote": "we have to keep invoices for six years for tax reasons"
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "card payments go through Stripe Checkout",
+        "source": {
+          "kind": "quote",
+          "quote": "clients pay invoices by card through Stripe Checkout"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "customers mostly in the UK and Ireland, a few in the US",
+        "source": {
+          "kind": "quote",
+          "quote": "Most of our customers are in the UK and Ireland, with a few in the US."
+        }
+      },
+      {
+        "value": "tax rules: keep invoices six years",
+        "source": {
+          "kind": "quote",
+          "quote": "Our accountant says we have to keep invoices for six years for tax reasons."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "never see or store card numbers; card data stays with Stripe",
+        "source": {
+          "kind": "quote",
+          "quote": "We never see or store card numbers and we want to keep it that way; card data must stay with Stripe."
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": []
+  },
+  "team": {
+    "size": {
+      "value": "Dana, CEO and the only full-time developer, plus contractor Sam about two days a week",
+      "source": {
+        "kind": "quote",
+        "quote": "me (Dana, CEO and the only full-time developer) and a contractor, Sam, who gives us about two days a week"
+      }
+    },
+    "skills": [
+      {
+        "value": "Sam: React; Dana: Rails and Postgres",
+        "source": {
+          "kind": "quote",
+          "quote": "Sam knows React well; I know Rails and Postgres."
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "contractor about two days a week",
+        "source": {
+          "kind": "quote",
+          "quote": "a contractor, Sam, who gives us about two days a week"
+        }
+      },
+      {
+        "value": "nobody wants to manage servers by hand any more",
+        "source": {
+          "kind": "quote",
+          "quote": "Neither of us wants to manage servers by hand any more."
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "up to $25,000 for the rebuild",
+      "source": {
+        "kind": "quote",
+        "quote": "we can spend up to $25,000 on the rebuild"
+      }
+    },
+    "run_monthly": {
+      "value": "now $400 a month; should come down if possible",
+      "source": {
+        "kind": "quote",
+        "quote": "the running cost should come down from the current $400 a month if possible"
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Card data stays with Stripe; the app never sees or stores card numbers",
+      "source": {
+        "kind": "quote",
+        "quote": "card data must stay with Stripe"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Keep invoices for six years (tax rules)",
+      "source": {
+        "kind": "quote",
+        "quote": "we have to keep invoices for six years for tax reasons"
+      }
+    },
+    {
+      "id": "C3",
+      "text": "The rebuild budget is fixed by the investor: no more than agreed",
+      "source": {
+        "kind": "quote",
+        "quote": "The rebuild budget is fixed: our investor agreed to that amount and no more."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "reliability",
+      "rank": 1,
+      "note": "Nothing sent gets lost and the app stays up at month end",
+      "source": {
+        "kind": "quote",
+        "quote": "first, nothing sent gets lost and the app stays up at month end"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Lower running costs; margins are thin",
+      "source": {
+        "kind": "quote",
+        "quote": "second, lower running costs"
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Will the accounting firm put 300 of its clients on Ledgerly next year?",
+      "why_it_matters": "Nothing is signed; if it happens, customers and the month-end peak grow several times over.",
+      "decisions_affected": [
+        "capacity and peak sizing",
+        "tenant model for a firm with many clients"
+      ],
+      "material": true,
+      "field": "workload.projected"
+    },
+    {
+      "question": "How much downtime is acceptable at month end, and how fast must the app recover?",
+      "why_it_matters": "There is no written uptime promise, yet staying up at month end is the top priority; the target sets how much redundancy to pay for.",
+      "decisions_affected": [
+        "hosting and redundancy",
+        "backup and restore design"
+      ],
+      "material": true,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Does the app need any speed target?",
+      "why_it_matters": "None is named; the month-end worry is staying up, so no option turns on speed.",
+      "decisions_affected": [
+        "hosting size"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "Has the app faced any named threat or incident?",
+      "why_it_matters": "None is named, and card data never reaches the app.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Does any certification or audit apply?",
+      "why_it_matters": "None is asked for; card rules stay with Stripe.",
+      "decisions_affected": [
+        "compliance work"
+      ],
+      "material": false,
+      "field": "security.compliance"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "Card data stays out of scope by keeping Stripe Checkout as the only card path.",
+      "why": "The brief says card numbers are never seen or stored and must stay with Stripe."
+    }
+  ]
+}

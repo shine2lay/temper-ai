@@ -1,0 +1,441 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "0fd4fcbd8990faef10d10b3167a5e5f511ff3b3f24d4ce3a85e9772f6b4a286c",
+  "product": {
+    "summary": "An in-house expense claims tool: employees submit claims with receipts, managers approve, finance checks, payment goes out with payroll.",
+    "source": {
+      "kind": "quote",
+      "quote": "employees submit a claim with receipt photos, their manager approves it, finance checks it and the payment goes out with the next payroll"
+    }
+  },
+  "maturity": {
+    "stage": "startup",
+    "evidence": [
+      {
+        "value": "600 employees across four offices",
+        "source": {
+          "kind": "quote",
+          "quote": "Kestrel Engineering has 600 employees across four offices."
+        }
+      },
+      {
+        "value": "the current tool has been in use for nine years",
+        "source": {
+          "kind": "quote",
+          "quote": "a hosted tool we have used for nine years"
+        }
+      },
+      {
+        "value": "IT policy and a finance ledger already govern internal tools",
+        "source": {
+          "kind": "quote",
+          "quote": "IT policy requires every internal tool to sign people in through Okta"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "Staff claim travel and other expenses through ClaimPro"
+    },
+    "items": [
+      {
+        "kind": "hosting",
+        "text": "existing Azure subscription must host replacement",
+        "source": {
+          "kind": "quote",
+          "quote": "run on our existing Azure subscription"
+        }
+      },
+      {
+        "kind": "component",
+        "text": "hosted ClaimPro tool is the current baseline to replace",
+        "source": {
+          "kind": "quote",
+          "quote": "Staff claim travel and other expenses through ClaimPro"
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "ClaimPro",
+      "role": "vendor's current hosted expense tool to replace",
+      "source": {
+        "kind": "quote",
+        "quote": "Staff claim travel and other expenses through ClaimPro"
+      }
+    },
+    {
+      "name": "SAP",
+      "role": "finance ledger receives approved claims",
+      "source": {
+        "kind": "quote",
+        "quote": "Approved claims must post to our SAP finance ledger"
+      }
+    },
+    {
+      "name": "Okta",
+      "role": "identity provider for internal-tool sign-in",
+      "source": {
+        "kind": "quote",
+        "quote": "sign people in through Okta"
+      }
+    },
+    {
+      "name": "payroll",
+      "role": "pays approved claims",
+      "source": {
+        "kind": "quote",
+        "quote": "the payment goes out with the next payroll"
+      }
+    }
+  ],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [
+      {
+        "what": "employees who may claim",
+        "value": 600,
+        "unit": "employees",
+        "source": {
+          "kind": "quote",
+          "quote": "Kestrel Engineering has 600 employees"
+        }
+      },
+      {
+        "what": "claims submitted",
+        "value": 2400,
+        "unit": "claims per month",
+        "source": {
+          "kind": "quote",
+          "quote": "Staff submit about 2,400 claims a month."
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "month-end batch in the last three days",
+        "value": 40,
+        "unit": "% of the month's claims",
+        "source": {
+          "kind": "quote",
+          "quote": "Around 40% of them arrive in the last three days of the month"
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": "unknown",
+    "data_loss_tolerance": "unknown",
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "employee name, staff number, cost centre and receipts",
+        "source": {
+          "kind": "quote",
+          "quote": "A claim holds the employee's name, staff number, cost centre, the receipts, and the bank account details we pay into."
+        }
+      },
+      {
+        "value": "employee bank account details",
+        "source": {
+          "kind": "quote",
+          "quote": "the bank account details we pay into"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "assumption",
+        "why": "Bank account details of every claimant, with employee records and receipts."
+      }
+    },
+    "retention": [
+      {
+        "value": "receipts and claim records kept 7 years (tax rules)",
+        "source": {
+          "kind": "quote",
+          "quote": "Tax rules require us to keep receipts and claim records for 7 years."
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "a claim is visible only to the employee, their manager and finance",
+        "source": {
+          "kind": "quote",
+          "quote": "Only the employee, their manager and the finance team may see a claim."
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "tax record-keeping rules",
+        "source": {
+          "kind": "quote",
+          "quote": "Tax rules require us to keep receipts and claim records for 7 years."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "sign-in through Okta, no separate passwords",
+        "source": {
+          "kind": "quote",
+          "quote": "IT policy requires every internal tool to sign people in through Okta; no separate passwords."
+        }
+      },
+      {
+        "value": "claims visible only to the employee, their manager and finance",
+        "source": {
+          "kind": "quote",
+          "quote": "Only the employee, their manager and the finance team may see a claim."
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "7-year retention of receipts and claims",
+        "source": {
+          "kind": "quote",
+          "quote": "keep receipts and claim records for 7 years"
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "two developers from internal IT",
+      "source": {
+        "kind": "quote",
+        "quote": "Two developers from internal IT will build it"
+      }
+    },
+    "skills": [
+      {
+        "value": "C# and .NET",
+        "source": {
+          "kind": "quote",
+          "quote": "both work in C# and .NET"
+        }
+      },
+      {
+        "value": "no experience posting to SAP",
+        "source": {
+          "kind": "quote",
+          "quote": "neither has built anything that posts to SAP"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "product owner from finance two days a week",
+        "source": {
+          "kind": "quote",
+          "quote": "A product owner from finance gives it two days a week."
+        }
+      },
+      {
+        "value": "IT support in office hours only",
+        "source": {
+          "kind": "quote",
+          "quote": "IT supports it during office hours only"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "$120,000 to build",
+      "source": {
+        "kind": "quote",
+        "quote": "The budget is $120,000 to build it."
+      }
+    },
+    "run_monthly": "unknown"
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Live before the ClaimPro licence ends on 31 March; no extension",
+      "source": {
+        "kind": "quote",
+        "quote": "our licence ends on 31 March and the vendor has refused to extend it. If there is no replacement by then, nobody can be reimbursed"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Approved claims post to the SAP finance ledger; SAP is not changed",
+      "source": {
+        "kind": "quote",
+        "quote": "Approved claims must post to our SAP finance ledger. Finance will not change SAP for this project."
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Sign-in through Okta (IT policy)",
+      "source": {
+        "kind": "quote",
+        "quote": "IT policy requires every internal tool to sign people in through Okta; no separate passwords."
+      }
+    },
+    {
+      "id": "C4",
+      "text": "Keep receipts and claim records 7 years (tax rules)",
+      "source": {
+        "kind": "quote",
+        "quote": "Tax rules require us to keep receipts and claim records for 7 years."
+      }
+    },
+    {
+      "id": "C5",
+      "text": "Only the employee, their manager and finance may see a claim",
+      "source": {
+        "kind": "quote",
+        "quote": "Only the employee, their manager and the finance team may see a claim."
+      }
+    },
+    {
+      "id": "C6",
+      "text": "Runs on the existing Azure subscription",
+      "source": {
+        "kind": "quote",
+        "quote": "After launch it has to run on our existing Azure subscription"
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "change_cost",
+      "rank": 1,
+      "note": "Finance changes approval rules without developers",
+      "source": {
+        "kind": "quote",
+        "quote": "First, finance wants to change approval rules themselves, without asking developers."
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Low monthly running cost",
+      "source": {
+        "kind": "quote",
+        "quote": "Second, keep the monthly running cost low."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "operability",
+      "rank": 3,
+      "note": "No out-of-hours care from IT",
+      "source": {
+        "kind": "quote",
+        "quote": "Third, IT should not need to look after it outside office hours."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Is this a continuing expense service or a new product, and is demand stable?",
+      "why_it_matters": "The lifecycle boundary and trend are ambiguous; measured workload and mandatory policies remain usable without the label.",
+      "decisions_affected": [
+        "lifecycle classification"
+      ],
+      "material": false,
+      "field": "maturity.stage"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "No speed concern or response target is stated.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "Is growth forecast?",
+      "why_it_matters": "Current claim volume and peak are known.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there an uptime target?",
+      "why_it_matters": "Office-hours support is known but no uptime promise is stated.",
+      "decisions_affected": [
+        "availability design"
+      ],
+      "material": false,
+      "field": "reliability.availability"
+    },
+    {
+      "question": "How much claim data loss is tolerable?",
+      "why_it_matters": "Lost claims affect reimbursement and the tax record; the answer sets backup durability.",
+      "decisions_affected": [
+        "backup design"
+      ],
+      "material": true,
+      "field": "reliability.data_loss_tolerance"
+    },
+    {
+      "question": "Is a single-outage recovery deadline required?",
+      "why_it_matters": "The launch deadline is not a recovery-time promise.",
+      "decisions_affected": [
+        "recovery design"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Is any attack named?",
+      "why_it_matters": "None is stated.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "What monthly budget cap or allowance is available?",
+      "why_it_matters": "An existing Azure subscription is a hosting constraint, not money; the answer determines affordable operating options for the cost goal.",
+      "decisions_affected": [
+        "hosting cost"
+      ],
+      "material": true,
+      "field": "budget.run_monthly"
+    },
+    {
+      "question": "Which interface does SAP offer for posting claims: an API we may call, or only a file import run by hand?",
+      "why_it_matters": "It decides the integration design, how quickly payments post, and whether the 31 March deadline is reachable by a team new to SAP.",
+      "decisions_affected": [
+        "SAP integration",
+        "delivery plan"
+      ],
+      "material": true,
+      "field": "constraints"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "Travel booking is out of scope and does not shape this design.",
+      "why": "The brief says it might come later but is not part of this project."
+    }
+  ]
+}

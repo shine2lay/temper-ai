@@ -1,0 +1,410 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "402e38c93733e94d97dbf1a32fa0004d75f8fbd7effbd29cfd91d7081081973f",
+  "product": {
+    "summary": "A note-taking and scheduling app for therapists in private practice, with signed progress notes and insurance export.",
+    "source": {
+      "kind": "quote",
+      "quote": "Quietnote is a note-taking and scheduling app for therapists in private practice."
+    }
+  },
+  "maturity": {
+    "stage": "startup",
+    "evidence": [
+      {
+        "value": "Paid pilot launched six months ago",
+        "source": {
+          "kind": "quote",
+          "quote": "We launched a paid pilot six months ago."
+        }
+      },
+      {
+        "value": "60 therapists paying $45 a month each",
+        "source": {
+          "kind": "quote",
+          "quote": "Today 60 therapists pay us $45 a month each"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "We launched a paid pilot six months ago."
+    },
+    "items": [
+      {
+        "kind": "stack",
+        "text": "TypeScript and Postgres",
+        "source": {
+          "kind": "quote",
+          "quote": "Tomás, who writes most of the code (TypeScript and Postgres)"
+        }
+      }
+    ]
+  },
+  "external_systems": [],
+  "workload": {
+    "observed": [
+      {
+        "what": "paying therapists, all in the United States",
+        "value": 60,
+        "unit": "therapists",
+        "source": {
+          "kind": "quote",
+          "quote": "Today 60 therapists pay us $45 a month each, all in the United States"
+        }
+      },
+      {
+        "what": "session notes written",
+        "value": 2400,
+        "unit": "notes per month",
+        "source": {
+          "kind": "quote",
+          "quote": "together they write about 2,400 session notes a month"
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "most notes are written on weekday evenings, after the last session",
+        "value": "5pm to 8pm",
+        "unit": "time of day, weekdays",
+        "source": {
+          "kind": "quote",
+          "quote": "Most notes are written between 5pm and 8pm on weekdays"
+        }
+      }
+    ]
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": {
+      "value": "An hour down during the day is tolerable; a full day is not",
+      "source": {
+        "kind": "quote",
+        "quote": "If the app is down for an hour during the day, that is unpleasant but therapists can wait; a full day would not be."
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "No signed note may ever be lost",
+      "source": {
+        "kind": "quote",
+        "quote": "A therapist must never lose a signed note."
+      }
+    },
+    "recovery_time": {
+      "value": "Back well within a day; about an hour is acceptable",
+      "source": {
+        "kind": "quote",
+        "quote": "If the app is down for an hour during the day, that is unpleasant but therapists can wait; a full day would not be."
+      }
+    }
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "therapy session notes: protected health information",
+        "source": {
+          "kind": "quote",
+          "quote": "Session notes are protected health information."
+        }
+      },
+      {
+        "value": "session bookings and insurance claim data",
+        "source": {
+          "kind": "quote",
+          "quote": "A therapist books sessions, writes a progress note after each one, signs it, and later exports notes for insurance claims."
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "quote",
+        "quote": "Session notes are protected health information."
+      }
+    },
+    "retention": [
+      {
+        "value": "signed notes kept at least seven years (state rules)",
+        "source": {
+          "kind": "quote",
+          "quote": "State rules require that signed notes are kept for at least seven years"
+        }
+      },
+      {
+        "value": "signed notes are never edited, only amended",
+        "source": {
+          "kind": "quote",
+          "quote": "a signed note may never be edited, only amended"
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "every vendor storing or processing notes signs a business associate agreement",
+        "source": {
+          "kind": "quote",
+          "quote": "every vendor that stores or processes notes must sign a business associate agreement with us"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "HIPAA",
+        "source": {
+          "kind": "quote",
+          "quote": "We must comply with HIPAA"
+        }
+      },
+      {
+        "value": "US state rules on note retention; all therapists in the United States",
+        "source": {
+          "kind": "quote",
+          "quote": "all in the United States"
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "multi-factor authentication for every therapist (promised in the pilot contract)",
+        "source": {
+          "kind": "quote",
+          "quote": "Therapists must use multi-factor authentication to sign in; our pilot contract already promises it."
+        }
+      },
+      {
+        "value": "signed notes immutable; changes only as amendments",
+        "source": {
+          "kind": "quote",
+          "quote": "a signed note may never be edited, only amended"
+        }
+      }
+    ],
+    "threats": [
+      {
+        "value": "a breach of notes would end the company and could cost therapists their licences",
+        "source": {
+          "kind": "quote",
+          "quote": "a breach would end the company and could cost our therapists their licences"
+        }
+      }
+    ],
+    "compliance": [
+      {
+        "value": "HIPAA, with business associate agreements from every vendor holding notes",
+        "source": {
+          "kind": "quote",
+          "quote": "We must comply with HIPAA, and every vendor that stores or processes notes must sign a business associate agreement with us."
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "three people, one of them part-time",
+      "source": {
+        "kind": "quote",
+        "quote": "We are three people"
+      }
+    },
+    "skills": [
+      {
+        "value": "TypeScript and Postgres (Tomás writes most of the code)",
+        "source": {
+          "kind": "quote",
+          "quote": "Tomás, who writes most of the code (TypeScript and Postgres)"
+        }
+      },
+      {
+        "value": "no security audit experience",
+        "source": {
+          "kind": "quote",
+          "quote": "Nobody on the team has been through a security audit before"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "one developer only two days a week",
+        "source": {
+          "kind": "quote",
+          "quote": "Ana, a part-time developer who works two days a week"
+        }
+      },
+      {
+        "value": "no one carries a pager at night",
+        "source": {
+          "kind": "quote",
+          "quote": "nobody wants to carry a pager at night"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "$600,000 raised, to last at least 18 months",
+      "source": {
+        "kind": "quote",
+        "quote": "We raised $600,000 last spring and want it to last at least 18 months."
+      }
+    },
+    "run_monthly": {
+      "value": "hosting and tools $1,100 a month today",
+      "source": {
+        "kind": "quote",
+        "quote": "Hosting and tools cost $1,100 a month today."
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Comply with HIPAA: session notes are protected health information",
+      "source": {
+        "kind": "quote",
+        "quote": "We must comply with HIPAA"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Every vendor that stores or processes notes signs a business associate agreement; non-negotiable",
+      "source": {
+        "kind": "quote",
+        "quote": "every vendor that stores or processes notes must sign a business associate agreement with us. This is not negotiable"
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Multi-factor authentication for every therapist",
+      "source": {
+        "kind": "quote",
+        "quote": "Therapists must use multi-factor authentication to sign in"
+      }
+    },
+    {
+      "id": "C4",
+      "text": "Keep signed notes at least seven years",
+      "source": {
+        "kind": "quote",
+        "quote": "signed notes are kept for at least seven years"
+      }
+    },
+    {
+      "id": "C5",
+      "text": "A signed note is never edited, only amended",
+      "source": {
+        "kind": "quote",
+        "quote": "a signed note may never be edited, only amended"
+      }
+    },
+    {
+      "id": "C6",
+      "text": "Never lose a signed note",
+      "source": {
+        "kind": "quote",
+        "quote": "A therapist must never lose a signed note."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "privacy",
+      "rank": 1,
+      "note": "Protect clients' notes first; go beyond the HIPAA minimum where cheap, e.g. a key per practice",
+      "source": {
+        "kind": "quote",
+        "quote": "Protecting clients' notes comes first. We would like to go beyond the HIPAA minimum where it is cheap to do so"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Keep burn low",
+      "source": {
+        "kind": "quote",
+        "quote": "Then keeping our burn low."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "delivery_speed",
+      "rank": 3,
+      "note": "Ship insurance claim export before the end of March",
+      "source": {
+        "kind": "quote",
+        "quote": "Then shipping insurance claim export before the end of March"
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Will Quietnote record therapy sessions as audio and draft notes from them?",
+      "why_it_matters": "Storing recordings of therapy sessions adds far more sensitive data, much larger storage, transcription vendors who would need business associate agreements, and new retention rules.",
+      "decisions_affected": [
+        "data storage",
+        "vendor choice",
+        "security controls",
+        "running cost"
+      ],
+      "material": true,
+      "field": "privacy.data_categories"
+    },
+    {
+      "question": "Does taking on the two California group practices bring state rules beyond HIPAA?",
+      "why_it_matters": "Extra state privacy rules could change consent, retention and breach-notice duties, and group practices change the access model.",
+      "decisions_affected": [
+        "privacy compliance",
+        "access control model"
+      ],
+      "material": true,
+      "field": "privacy.jurisdictions_or_rules"
+    },
+    {
+      "question": "Does the app connect to any outside system, such as an insurer or clearinghouse for claims?",
+      "why_it_matters": "None is named; claim export is described as exporting notes.",
+      "decisions_affected": [
+        "claim export design"
+      ],
+      "material": false,
+      "field": "external_systems"
+    },
+    {
+      "question": "How fast will the number of therapists grow?",
+      "why_it_matters": "No forecast is given; the California practices are the only growth named, asked separately.",
+      "decisions_affected": [
+        "capacity planning"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "None is named; the load is light.",
+      "decisions_affected": [
+        "hosting size"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "Moving to a host that will not sign a business associate agreement is ruled out, whatever it saves.",
+      "why": "The brief makes business associate agreements non-negotiable and says the team is not making that move."
+    },
+    {
+      "text": "Signed notes may be edited in place after signing.",
+      "why": "Assume this simplifies the implementation."
+    }
+  ]
+}

@@ -1,0 +1,417 @@
+{
+  "variant_id": "f02-k04",
+  "case_id": "k04-large-photos",
+  "set": "development",
+  "group": "authored",
+  "description": "The media-view total is daily, not per minute.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "1c944b31a650660ddfc278ce9d3c49658de18652a21d9d102c9c5e4cfb0e74d9",
+  "profile_sha256": "72805a43894cc3117658162a64175827c1080ee5cc9be2aa4fcfabc430472445",
+  "changed_paths": [
+    "/workload/observed/4"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "Glimmer is a photo and short-video sharing app.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "It is ten years old and is one of the larger consumer apps in its category: 31 million monthly active users, 9 million of them daily",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "It is ten years old and is one of the larger consumer apps in its category: 31 million monthly active users, 9 million of them daily",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "runs the infrastructure across three cloud regions (Frankfurt, Virginia and São Paulo)",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "31 million monthly active users",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "9 million of them daily",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Users upload about 40 million photos and 6 million short videos a day",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "Users upload about 40 million photos and 6 million short videos a day",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/4",
+      "label": "contradicted",
+      "family": "F02",
+      "source_span": "the app serves roughly 1.5 billion media views a day",
+      "rationale": "The media-view total is daily, not per minute.",
+      "origin": "hand"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "On New Year's Eve and during big football finals, uploads run at about 4 times the normal rate for several hours.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "our public status page commits to 99.95% availability for viewing and 99.9% for uploading",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "A photo a user has uploaded and seen confirmed must never be lost.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "After a regional outage, viewing must be back within 15 minutes; uploads may take up to an hour.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "we hold users' photos, videos, profile data, contacts they choose to sync, and coarse location tags",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "we must delete an account's media within 30 days of a deletion request",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Users must be 16 or older; we do not knowingly serve children",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "EU users' data is processed under GDPR, and Brazilian users' data under LGPD",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "the Brazilian data protection authority has asked us to keep Brazilian users' media in Brazil, and our legal team has agreed to do so by the end of next year",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are also in scope of the EU Digital Services Act for content moderation.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/threats/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "account takeovers are our most common serious incident, about 1,200 confirmed cases last year, mostly through reused passwords",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/compliance/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have a bug bounty and a yearly external penetration test.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "Engineering has 420 people in 38 teams.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "A central platform group of 60 runs the infrastructure across three cloud regions (Frankfurt, Virginia and São Paulo)",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "with a 24/7 on-call rotation and a mature incident process",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "There is no fixed limit on the redesign project itself, but it competes with other work for engineers.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "the media pipeline costs about $4.2M a month to run, mostly storage and delivery",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "A photo a user has uploaded and seen confirmed must never be lost.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "After a regional outage, viewing must be back within 15 minutes; uploads may take up to an hour.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "our public status page commits to 99.95% availability for viewing and 99.9% for uploading",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "Users must be 16 or older; we do not knowingly serve children",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "we must delete an account's media within 30 days of a deletion request",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "EU users' data is processed under GDPR, and Brazilian users' data under LGPD",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/6",
+      "label": "supported",
+      "family": null,
+      "source_span": "keep Brazilian users' media in Brazil, and our legal team has agreed to do so by the end of next year",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/7",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are also in scope of the EU Digital Services Act for content moderation.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "protect reliability and user trust first",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Finance has asked for a 20% cut within the next year.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "then make it cheaper for teams to add new media formats",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "Speed of delivery matters less than doing this safely.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/6",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/7",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    }
+  ],
+  "omissions": []
+}

@@ -1,0 +1,385 @@
+{
+  "variant_id": "f02-k09",
+  "case_id": "k09-projected-fitness",
+  "set": "development",
+  "group": "authored",
+  "description": "The observed workout count is per month, not per year.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "f3b571ce631c5db39823464a6eb9f806a88b21088a38338cf6238da288436fb3",
+  "profile_sha256": "18c5d7312136a3caff2848ae1444adafd97b86fd515cfafd328c96b0fcea42c1",
+  "changed_paths": [
+    "/workload/observed/1"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "Members connect their watches, log every session and get a weekly plan from our coaching engine.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "Today we have about 3,800 paying members",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Today we have about 3,800 paying members",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "We launched eighteen months ago",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "members pay $12 a month",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "Members log workouts offline and the app syncs later",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Members log workouts offline and the app syncs later",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "two on the Python backend",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "get a weekly plan from our coaching engine",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "We use Apple HealthKit",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Today we have about 3,800 paying members",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/1",
+      "label": "contradicted",
+      "family": "F02",
+      "source_span": "who log about 41,000 workouts a month",
+      "rationale": "The observed workout count is per month, not per year.",
+      "origin": "hand"
+    },
+    {
+      "path": "/workload/projected/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "FitLoop serves 250,000 active members and processes 2 million workout logs a month.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/projected/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "FitLoop serves 250,000 active members and processes 2 million workout logs a month.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Sign-ups in January run at about three times a normal month",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "Members log workouts offline and the app syncs later, so a short outage of our servers is tolerable",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "losing workouts a member has already logged is not",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We keep workout history for as long as the account is open.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "they can export and delete all of their data at any time",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sharing/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "its rules forbid using health data for advertising",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Members are in the US, Canada and the UK.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "We use Apple HealthKit, and its rules forbid using health data for advertising",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/compliance/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "its rules forbid using health data for advertising; we have agreed to them",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "We are seven engineers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "four on the mobile apps, two on the Python backend, and one on data",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Nobody is on call at night yet.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "The board has capped this rebuild at $80,000.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our cloud bill is $6,500 a month.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We use Apple HealthKit, and its rules forbid using health data for advertising; we have agreed to them and will not break them.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our terms promise members that they can export and delete all of their data at any time, and that promise stays.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "The board has capped this rebuild at $80,000.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our first priority is cutting the cloud bill.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Second, shipping the coach-chat feature by spring.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Third, being ready for the growth in the deck when it comes.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/assumptions/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    }
+  ],
+  "omissions": []
+}

@@ -1,0 +1,365 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "2eb86853a726e5c1fa8381138162bf1355e1165299fb1526e33fe1106c73afce",
+  "product": {
+    "summary": "An online marketplace where construction companies rent heavy equipment from rental firms and pay through the platform.",
+    "source": {
+      "kind": "quote",
+      "quote": "Rigshare is an online marketplace where construction companies rent heavy equipment (excavators, cranes, loaders) from rental firms."
+    }
+  },
+  "maturity": {
+    "stage": "growing",
+    "evidence": [
+      {
+        "value": "Three years old",
+        "source": {
+          "kind": "quote",
+          "quote": "We are three years old."
+        }
+      },
+      {
+        "value": "Revenue $1.4M a year, roughly doubled last year",
+        "source": {
+          "kind": "quote",
+          "quote": "Annual revenue reached $1.4M and roughly doubled last year."
+        }
+      },
+      {
+        "value": "220 rental firms listing about 1,900 machines",
+        "source": {
+          "kind": "quote",
+          "quote": "220 rental firms list about 1,900 machines"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "Rental firms list machines; contractors book them by the day or week and pay through the platform."
+    },
+    "items": [
+      {
+        "kind": "stack",
+        "text": "Python and Postgres backend",
+        "source": {
+          "kind": "quote",
+          "quote": "six backend developers (Python and Postgres)"
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "escrow service",
+      "role": "a licensed payment provider holds and pays out customers' money; bank details stay with it",
+      "source": {
+        "kind": "quote",
+        "quote": "Payments run through an escrow service from a licensed payment provider."
+      }
+    }
+  ],
+  "workload": {
+    "observed": [
+      {
+        "what": "rental firms listing",
+        "value": 220,
+        "unit": "firms",
+        "source": {
+          "kind": "quote",
+          "quote": "220 rental firms list about 1,900 machines"
+        }
+      },
+      {
+        "what": "bookings, almost all in the Netherlands and Belgium",
+        "value": 3100,
+        "unit": "bookings per month",
+        "source": {
+          "kind": "quote",
+          "quote": "about 3,100 bookings are made each month, almost all in the Netherlands and Belgium"
+        }
+      }
+    ],
+    "projected": [
+      {
+        "what": "expected German bookings in the first year",
+        "value": "less than 1,000",
+        "unit": "bookings per month",
+        "source": {
+          "kind": "quote",
+          "quote": "We also do not know how much German traffic to expect; the CEO's plan says 1,000 bookings a month in the first year, the CTO thinks less."
+        }
+      }
+    ],
+    "peaks": [
+      {
+        "what": "share of the week's bookings made before noon on Monday",
+        "value": "a quarter",
+        "unit": "share of weekly bookings",
+        "source": {
+          "kind": "quote",
+          "quote": "about a quarter of the week's bookings come in before noon on Monday"
+        }
+      }
+    ]
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": {
+      "value": "Must stay up, especially Monday mornings; slowdowns there lost two large rental firms this year",
+      "source": {
+        "kind": "quote",
+        "quote": "Monday-morning slowdowns have cost us two large rental firms this year"
+      }
+    },
+    "data_loss_tolerance": "unknown",
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "company names, contact people, phone numbers, booking histories",
+        "source": {
+          "kind": "quote",
+          "quote": "We store company names, contact people, phone numbers and booking histories"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "low",
+      "source": {
+        "kind": "assumption",
+        "why": "Business contact details and booking histories; bank details stay with the payment provider."
+      }
+    },
+    "retention": [],
+    "sharing": [
+      {
+        "value": "payments through a licensed provider's escrow service; bank details stay with that provider",
+        "source": {
+          "kind": "quote",
+          "quote": "bank details stay with the payment provider"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "customers almost all in the Netherlands and Belgium",
+        "source": {
+          "kind": "quote",
+          "quote": "almost all in the Netherlands and Belgium"
+        }
+      },
+      {
+        "value": "GDPR for EU customers; Germany adds no new rule as far as known",
+        "source": {
+          "kind": "quote",
+          "quote": "Customers in the EU are covered by GDPR, and the German launch adds no new rule beyond that as far as our lawyers know."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "never hold customers' money; payments only through the licensed provider's escrow",
+        "source": {
+          "kind": "quote",
+          "quote": "we must not hold customers' money ourselves, because that would require a payment licence we do not have"
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "escrow by a licensed payment provider in place of a payment licence",
+        "source": {
+          "kind": "quote",
+          "quote": "Payments run through an escrow service from a licensed payment provider."
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "nine engineers",
+      "source": {
+        "kind": "quote",
+        "quote": "Engineering is nine people"
+      }
+    },
+    "skills": [
+      {
+        "value": "six backend developers in Python and Postgres, two frontend developers, one infrastructure engineer",
+        "source": {
+          "kind": "quote",
+          "quote": "six backend developers (Python and Postgres), two frontend developers and one engineer who handles infrastructure and on-call"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "on-call is one person",
+        "source": {
+          "kind": "quote",
+          "quote": "On-call is a single person, which has become a worry."
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "engineering budget $1.2M this year, people included",
+      "source": {
+        "kind": "quote",
+        "quote": "The engineering budget for this year is $1.2M, people included."
+      }
+    },
+    "run_monthly": {
+      "value": "hosting about $14,000 a month",
+      "source": {
+        "kind": "quote",
+        "quote": "Hosting costs about $14,000 a month."
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Never hold customers' money: no payment licence",
+      "source": {
+        "kind": "quote",
+        "quote": "we must not hold customers' money ourselves"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "GDPR applies to EU customers",
+      "source": {
+        "kind": "quote",
+        "quote": "Customers in the EU are covered by GDPR"
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "delivery_speed",
+      "rank": 1,
+      "note": "Launch in Germany before the June trade fair (CEO's ranking, which the board says counts)",
+      "source": {
+        "kind": "quote",
+        "quote": "Launch in Germany before the June trade fair"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "reliability",
+      "rank": 2,
+      "note": "Keep the platform up, especially Monday mornings",
+      "source": {
+        "kind": "quote",
+        "quote": "Keep the platform up, especially on Monday mornings."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "cost",
+      "rank": 3,
+      "note": "Hosting costs grow no faster than revenue",
+      "source": {
+        "kind": "quote",
+        "quote": "Keep hosting costs from growing faster than revenue."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Will the board keep the CEO's ranking, or put reliability first as the CTO asks?",
+      "why_it_matters": "The CTO wants three months of technical-debt work before any launch; the answer reorders the goals and the plan.",
+      "decisions_affected": [
+        "goal ranking",
+        "launch timing",
+        "technical debt work"
+      ],
+      "material": true,
+      "field": "goals"
+    },
+    {
+      "question": "Will Baumann Group sign, and when?",
+      "why_it_matters": "Baumann would need single sign-on and an API for its fleet system this year, and would add a large fleet.",
+      "decisions_affected": [
+        "single sign-on",
+        "public API",
+        "capacity"
+      ],
+      "material": true,
+      "field": "security.requirements"
+    },
+    {
+      "question": "How many German bookings to expect in the first year?",
+      "why_it_matters": "The CEO's plan says 1,000 a month and the CTO expects fewer; it sizes capacity and cost.",
+      "decisions_affected": [
+        "capacity",
+        "hosting cost"
+      ],
+      "material": true,
+      "field": "workload.projected"
+    },
+    {
+      "question": "How fast must booking be on Monday mornings: is there a speed target the slowdowns broke?",
+      "why_it_matters": "Slowdowns at the Monday peak lost two large rental firms, but no target says how fast is fast enough; it sizes the peak capacity work.",
+      "decisions_affected": [
+        "peak capacity",
+        "hosting cost"
+      ],
+      "material": true,
+      "field": "performance.targets"
+    },
+    {
+      "question": "How quickly must the platform come back after an outage, above all on a Monday morning?",
+      "why_it_matters": "Keeping the platform up ranks second and one person is on call; the answer decides failover and on-call design.",
+      "decisions_affected": [
+        "failover",
+        "on-call"
+      ],
+      "material": true,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "How much booking data could be lost in a failure?",
+      "why_it_matters": "The provider holds money, not booking records. Lost bookings can invalidate rentals and payments; the answer changes backup durability.",
+      "decisions_affected": [
+        "backups"
+      ],
+      "material": true,
+      "field": "reliability.data_loss_tolerance"
+    },
+    {
+      "question": "How long should personal contact and booking data be retained, and what deletion or archive policy should apply to live data and backups?",
+      "why_it_matters": "No retention period or deletion policy is supplied. Plausible answers could change live-data deletion/archive, backup expiry and restore/re-deletion handling, plus storage cost; these are possible architecture effects, not stated rules or a chosen design.",
+      "decisions_affected": [
+        "live-data deletion or archive",
+        "backup expiry",
+        "restore and re-deletion handling",
+        "storage cost"
+      ],
+      "material": true,
+      "field": "privacy.retention"
+    },
+    {
+      "question": "Has the platform faced any named attack or incident?",
+      "why_it_matters": "None is named; the slowdowns are a load problem.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    }
+  ],
+  "assumptions": []
+}

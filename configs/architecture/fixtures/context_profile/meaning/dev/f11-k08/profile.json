@@ -1,0 +1,330 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "2ef23d4295a29931023a40b6ed78c5c2250ba50cc08f2724b1b2e5f608e5436c",
+  "product": {
+    "summary": "A volunteer rota app for a food-bank charity: volunteers see and take shifts and deliveries; coordinators post shifts and match deliveries to drivers.",
+    "source": {
+      "kind": "quote",
+      "quote": "We want a small app where volunteers can see open shifts, sign up for them and see the deliveries they have accepted."
+    }
+  },
+  "maturity": {
+    "stage": "idea",
+    "evidence": [
+      {
+        "value": "Coordination runs on a spreadsheet, WhatsApp and phone calls today",
+        "source": {
+          "kind": "quote",
+          "quote": "Today we coordinate them with a shared spreadsheet, a WhatsApp group and a lot of phone calls"
+        }
+      },
+      {
+        "value": "Nothing built yet",
+        "source": {
+          "kind": "quote",
+          "quote": "Nothing has been built yet; this note is the start."
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "none",
+    "source": {
+      "kind": "quote",
+      "quote": "Nothing has been built yet; this note is the start."
+    },
+    "items": []
+  },
+  "external_systems": [
+    {
+      "name": "Google Workspace",
+      "role": "coordinator identity provider; already used for email and documents",
+      "source": {
+        "kind": "quote",
+        "quote": "must sign them in with their Google Workspace accounts, not new passwords"
+      }
+    }
+  ],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "December is the busiest month; size of the peak never measured",
+        "value": "unmeasured",
+        "unit": "relative to a normal month",
+        "source": {
+          "kind": "quote",
+          "quote": "December is our busiest month, but nobody has measured by how much."
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": {
+      "value": "A day's outage is tolerable: coordinators fall back to phone and spreadsheet",
+      "source": {
+        "kind": "quote",
+        "quote": "If the app is down for a day, Maureen goes back to the phone and the spreadsheet; that is annoying, but nobody goes hungry."
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "Losing the day's record of who accepted which delivery is not acceptable",
+      "source": {
+        "kind": "quote",
+        "quote": "Losing the record of who accepted which delivery on the day would be worse, because parcels could go undelivered."
+      }
+    },
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "volunteers' names, phone numbers and availability",
+        "source": {
+          "kind": "quote",
+          "quote": "The app would hold volunteers' names, phone numbers and availability"
+        }
+      },
+      {
+        "value": "clients' names, home addresses and delivery notes, which can mention health or disability",
+        "source": {
+          "kind": "quote",
+          "quote": "clients' names, addresses and delivery notes such as \"leave with the neighbour\" or \"use the side door, client is in a wheelchair\""
+        }
+      },
+      {
+        "value": "clients are mostly older and housebound people",
+        "source": {
+          "kind": "quote",
+          "quote": "mostly older and housebound clients"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "assumption",
+        "why": "Home addresses of vulnerable housebound people together with free-text notes that can reveal disability or health."
+      }
+    },
+    "retention": [
+      {
+        "value": "client address removed from the volunteer's view once the delivery is done",
+        "source": {
+          "kind": "quote",
+          "quote": "must disappear from the volunteer's view once the delivery is done"
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "client address shown only to the volunteer who accepted that delivery",
+        "source": {
+          "kind": "quote",
+          "quote": "a client's address may only be shown to the volunteer who has accepted that delivery"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "registered with the UK Information Commissioner's Office; own data protection policy",
+        "source": {
+          "kind": "quote",
+          "quote": "We are registered with the Information Commissioner's Office."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "coordinators sign in with their Google Workspace accounts, no new passwords",
+        "source": {
+          "kind": "quote",
+          "quote": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords"
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": []
+  },
+  "team": {
+    "size": {
+      "value": "one volunteer IT person, Dev",
+      "source": {
+        "kind": "quote",
+        "quote": "Our IT is one volunteer, Dev, a retired network engineer"
+      }
+    },
+    "skills": [
+      {
+        "value": "Linux and networks",
+        "source": {
+          "kind": "quote",
+          "quote": "He knows Linux and networks"
+        }
+      },
+      {
+        "value": "has not built a web app before",
+        "source": {
+          "kind": "quote",
+          "quote": "he has not built a web app before"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "about five hours a week from Dev",
+        "source": {
+          "kind": "quote",
+          "quote": "who gives us about five hours a week"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": "unknown",
+    "run_monthly": "unknown"
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "A client's address is shown only to the volunteer who accepted that delivery, and disappears once it is done (data protection policy)",
+      "source": {
+        "kind": "quote",
+        "quote": "Our data protection policy says a client's address may only be shown to the volunteer who has accepted that delivery, and must disappear from the volunteer's view once the delivery is done."
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Coordinators sign in with their Google Workspace accounts (trustees' ruling)",
+      "source": {
+        "kind": "quote",
+        "quote": "the trustees have ruled that any tool coordinators use must sign them in with their Google Workspace accounts, not new passwords"
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "delivery_speed",
+      "rank": 1,
+      "note": "In volunteers' hands before the November winter appeal, if possible",
+      "source": {
+        "kind": "quote",
+        "quote": "Above all, something in volunteers' hands before the winter appeal starts in November, if we can manage it."
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Cheapest possible to run",
+      "source": {
+        "kind": "quote",
+        "quote": "After that, it should cost as little as possible to run."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "operability",
+      "rank": 3,
+      "note": "Little looking after by Dev",
+      "source": {
+        "kind": "quote",
+        "quote": "And Dev should not have to babysit it."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "How much will usage grow?",
+      "why_it_matters": "Counting today's users and deliveries matters first; no forecast is given.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "No speed problem is named for this small rota.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "How quickly must it recover?",
+      "why_it_matters": "A day on the phone and spreadsheet is explicitly tolerable.",
+      "decisions_affected": [
+        "recovery"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Is any attack named?",
+      "why_it_matters": "None is named; the address policy sets access controls.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Is any certification or audit required?",
+      "why_it_matters": "ICO registration is already keyed as a privacy duty; no separate audit is requested.",
+      "decisions_affected": [
+        "audit scope"
+      ],
+      "material": false,
+      "field": "security.compliance"
+    },
+    {
+      "question": "What budget, if any, will the trustees set for building it?",
+      "why_it_matters": "Whether anything can be bought or paid for decides between a free off-the-shelf tool, a hosted product and a small custom build.",
+      "decisions_affected": [
+        "build or buy",
+        "hosting choice"
+      ],
+      "material": true,
+      "field": "budget.build"
+    },
+    {
+      "question": "What monthly running cost can the charity afford, and who pays it?",
+      "why_it_matters": "A charity with no running budget needs a free tier or donated hosting; this narrows every option.",
+      "decisions_affected": [
+        "hosting choice",
+        "build or buy"
+      ],
+      "material": true,
+      "field": "budget.run_monthly"
+    },
+    {
+      "question": "How many volunteers and how many deliveries a week are there?",
+      "why_it_matters": "The number of users and deliveries decides whether a spreadsheet-backed tool is enough or a database-backed app is needed, and how big the December peak is.",
+      "decisions_affected": [
+        "data store",
+        "tool choice"
+      ],
+      "material": true,
+      "field": "workload.observed"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "Volunteers themselves do not have Google Workspace accounts; only coordinators must use them.",
+      "why": "The brief's sign-in ruling names coordinators only."
+    },
+    {
+      "text": "Coordinators may use local accounts instead of Google Workspace.",
+      "why": "Assume this simplifies the implementation."
+    }
+  ]
+}

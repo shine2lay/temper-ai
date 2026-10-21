@@ -1,0 +1,374 @@
+{
+  "variant_id": "good-k10-wording",
+  "case_id": "k10-misleading-logistics",
+  "set": "development",
+  "group": "authored",
+  "description": "Reordered product description retains the functions and audience stated in the quote.; Paraphrase retains the stated priority and its meaning.; Rewording preserves the exact scope, number and qualification of the source.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "c00ac9bf1c2798ae52e156145bc6538c0c91919955454d778cfc410dad9dab91",
+  "profile_sha256": "433a90be1f8a1c961c329f4c6d93055f12bbc67ab5a82563daa00db7fd7ff9de",
+  "changed_paths": [
+    "/budget/build",
+    "/goals/1",
+    "/product"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "RouteWise plans delivery routes for courier companies.",
+      "rationale": "Reordered product description retains the functions and audience stated in the quote.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have 38 courier companies as customers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have 38 courier companies as customers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "up from 12 a year ago",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "RouteWise builds the routes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "our driver app, which re-plans when a stop fails or traffic changes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "RouteWise builds the routes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "On a weekday about 9,000 drivers are on shift on RouteWise",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "we handle roughly 1.5 million stops a month",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Most route building happens between 5am and 7am, when every depot loads its parcels at once.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "In the week before Christmas the number of stops roughly doubles.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our contracts promise customers 99.5% monthly uptime during their operating hours",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Each stop holds the recipient's name, delivery address and phone number, and sometimes a note such as \"door code 4471\".",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "The driver app records each driver's GPS position every 10 seconds during a shift",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "we keep the traces for 2 years to settle delivery disputes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our EU customers require that their data stays in the EU, and it is written into their contracts.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/jurisdictions_or_rules/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "About a third of our customers are in the EU; the rest are in the UK.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/compliance/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our EU customers require that their data stays in the EU, and it is written into their contracts.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "we are now 14 people, 9 of them engineers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our engineers know TypeScript, Node and PostgreSQL well",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "one of them has run Kubernetes before",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "We have set aside $150,000 for this work.",
+      "rationale": "Rewording preserves the exact scope, number and qualification of the source.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "Hosting costs $28,000 a month.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our contracts promise customers 99.5% monthly uptime during their operating hours, with service credits when we miss it.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Our EU customers require that their data stays in the EU, and it is written into their contracts.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "First, fewer incidents during morning dispatch.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "Second, bring the hosting bill down.",
+      "rationale": "Paraphrase retains the stated priority and its meaning.",
+      "trap": "reordering",
+      "origin": "hand"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "Third, make it easier to add a new customer's depot rules without code changes.",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/6",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/7",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/8",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/9",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/10",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/assumptions/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    }
+  ],
+  "omissions": []
+}

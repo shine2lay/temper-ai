@@ -1,0 +1,369 @@
+{
+  "variant_id": "f09-k13",
+  "case_id": "k13-performance-docks",
+  "set": "development",
+  "group": "authored",
+  "description": "Marking this unknown immaterial is wrong: Retry ordering is explicitly unresolved and changes buffering and deduplication.",
+  "format": "context_profile_meaning_labels/dev-v1",
+  "reference_sha256": "2a2cdfc87d7aec667d696c24b211b25297bbf6e0124ac85368fdd701d4baf986",
+  "profile_sha256": "0c0e93de7fe934f96343aaf5d94847e54fab578b86bab902377128b5de7961c5",
+  "changed_paths": [
+    "/unknowns/0"
+  ],
+  "removed_paths": [],
+  "claims": [
+    {
+      "path": "/product",
+      "label": "supported",
+      "family": null,
+      "source_span": "DockPulse shows warehouse dispatchers which trailers have reached a loading door",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/stage",
+      "label": "supported",
+      "family": null,
+      "source_span": "Twelve warehouses use it daily and pay for it",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Twelve warehouses use it daily and pay for it",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/maturity/evidence/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "The number of paying warehouses has tripled in the last year",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/state",
+      "label": "supported",
+      "family": null,
+      "source_span": "The current system is a Go worker",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Go worker with PostgreSQL on a single virtual machine",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/current_system/items/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "A browser board polls the worker",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "gate events from the CourierMesh partner API",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/external_systems/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "weight readings from vendor-owned DockSense scales",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/performance/targets/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "p95 response time to stay below 250 milliseconds",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/performance/targets/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "displayed gate status to be at most 3 seconds behind receipt of an event",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/performance/targets/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "sustained ingestion of 400 events per second during that burst",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/observed/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Normal traffic is 120 events per second",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/projected/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "another six are contracted to start next quarter",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/workload/peaks/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "peaks at 400 events per second for ten minutes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/availability",
+      "label": "supported",
+      "family": null,
+      "source_span": "99.9% monthly availability",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/data_loss_tolerance",
+      "label": "supported",
+      "family": null,
+      "source_span": "An event we have acknowledged must never be lost",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/reliability/recovery_time",
+      "label": "supported",
+      "family": null,
+      "source_span": "service must recover within 30 minutes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/data_categories/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "driver badge identifiers and carrier references",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sensitivity",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/retention/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "retain gate records for 30 days, then delete them",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/privacy/sharing/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "No records leave the dispatch operation",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/security/requirements/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "keep the existing scanner certificates valid through the migration",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/size",
+      "label": "supported",
+      "family": null,
+      "source_span": "Six engineers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/skills/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Six engineers know Go and PostgreSQL",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/team/operating_capacity/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "Two rotate on the overnight pager",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/build",
+      "label": "supported",
+      "family": null,
+      "source_span": "$80,000 to change the system",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/budget/run_monthly",
+      "label": "supported",
+      "family": null,
+      "source_span": "$2,200 monthly hosting cap",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "p95 response time to stay below 250 milliseconds",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "displayed gate status to be at most 3 seconds behind receipt of an event",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "sustained ingestion of 400 events per second during that burst",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "99.9% monthly availability",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/4",
+      "label": "supported",
+      "family": null,
+      "source_span": "An event we have acknowledged must never be lost",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/5",
+      "label": "supported",
+      "family": null,
+      "source_span": "service must recover within 30 minutes",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/6",
+      "label": "supported",
+      "family": null,
+      "source_span": "$80,000 to change the system",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/7",
+      "label": "supported",
+      "family": null,
+      "source_span": "$2,200 monthly hosting cap",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/constraints/8",
+      "label": "supported",
+      "family": null,
+      "source_span": "keep the existing scanner certificates valid through the migration",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/0",
+      "label": "supported",
+      "family": null,
+      "source_span": "make the board fast enough for dispatchers",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "use less compute per event",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/goals/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "make adding a partner less work",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/0",
+      "label": "contradicted",
+      "family": "F09",
+      "source_span": "We have not established whether CourierMesh retries can arrive out of order.",
+      "rationale": "Marking this unknown immaterial is wrong: Retry ordering is explicitly unresolved and changes buffering and deduplication.",
+      "origin": "hand"
+    },
+    {
+      "path": "/unknowns/1",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/2",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    },
+    {
+      "path": "/unknowns/3",
+      "label": "supported",
+      "family": null,
+      "source_span": "none",
+      "rationale": "Identical to the known key's reference claim.",
+      "origin": "reference"
+    }
+  ],
+  "omissions": []
+}

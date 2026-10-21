@@ -1,0 +1,416 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "c6c1b6c0a91fc39783485ffb5197f0f46bdb4be8b025f3e95ed20e1a6c5128f0",
+  "product": {
+    "summary": "A paid fitness coaching app that syncs watch data, logs workouts and gives members a weekly plan.",
+    "source": {
+      "kind": "quote",
+      "quote": "Members connect their watches, log every session and get a weekly plan from our coaching engine."
+    }
+  },
+  "maturity": {
+    "stage": "startup",
+    "evidence": [
+      {
+        "value": "about 3,800 paying members today",
+        "source": {
+          "kind": "quote",
+          "quote": "Today we have about 3,800 paying members"
+        }
+      },
+      {
+        "value": "launched eighteen months ago",
+        "source": {
+          "kind": "quote",
+          "quote": "We launched eighteen months ago"
+        }
+      },
+      {
+        "value": "members pay $12 a month",
+        "source": {
+          "kind": "quote",
+          "quote": "members pay $12 a month"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "Members log workouts offline and the app syncs later"
+    },
+    "items": [
+      {
+        "kind": "client",
+        "text": "mobile app logs offline and syncs later",
+        "source": {
+          "kind": "quote",
+          "quote": "Members log workouts offline and the app syncs later"
+        }
+      },
+      {
+        "kind": "stack",
+        "text": "Python backend",
+        "source": {
+          "kind": "quote",
+          "quote": "two on the Python backend"
+        }
+      },
+      {
+        "kind": "component",
+        "text": "coaching engine gives weekly plans",
+        "source": {
+          "kind": "quote",
+          "quote": "get a weekly plan from our coaching engine"
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "Apple Watch",
+      "role": "source of health and workout data",
+      "source": {
+        "kind": "quote",
+        "quote": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices."
+      }
+    },
+    {
+      "name": "Garmin devices",
+      "role": "source of health and workout data",
+      "source": {
+        "kind": "quote",
+        "quote": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices."
+      }
+    },
+    {
+      "name": "Apple HealthKit",
+      "role": "health-data integration under agreed terms",
+      "source": {
+        "kind": "quote",
+        "quote": "We use Apple HealthKit"
+      }
+    }
+  ],
+  "performance": {
+    "targets": []
+  },
+  "workload": {
+    "observed": [
+      {
+        "what": "paying members",
+        "value": 3800,
+        "unit": "members",
+        "source": {
+          "kind": "quote",
+          "quote": "Today we have about 3,800 paying members"
+        }
+      },
+      {
+        "what": "workouts logged",
+        "value": 41000,
+        "unit": "workouts per month",
+        "source": {
+          "kind": "quote",
+          "quote": "who log about 41,000 workouts a month"
+        }
+      },
+      {
+        "what": "active members (deck target for the end of next year)",
+        "value": 250000,
+        "unit": "members",
+        "source": {
+          "kind": "quote",
+          "quote": "FitLoop serves 250,000 active members and processes 2 million workout logs a month."
+        }
+      }
+    ],
+    "projected": [
+      {
+        "what": "active members (deck target for the end of next year)",
+        "value": 250000,
+        "unit": "members",
+        "source": {
+          "kind": "quote",
+          "quote": "FitLoop serves 250,000 active members and processes 2 million workout logs a month."
+        }
+      },
+      {
+        "what": "workout logs (deck target for the end of next year)",
+        "value": 2000000,
+        "unit": "workout logs per month",
+        "source": {
+          "kind": "quote",
+          "quote": "FitLoop serves 250,000 active members and processes 2 million workout logs a month."
+        }
+      }
+    ],
+    "peaks": [
+      {
+        "what": "January sign-ups",
+        "value": 3,
+        "unit": "times a normal month",
+        "source": {
+          "kind": "quote",
+          "quote": "Sign-ups in January run at about three times a normal month"
+        }
+      }
+    ]
+  },
+  "reliability": {
+    "availability": {
+      "value": "Short server outages are tolerable: the app logs offline and syncs later",
+      "source": {
+        "kind": "quote",
+        "quote": "Members log workouts offline and the app syncs later, so a short outage of our servers is tolerable"
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "Workouts a member has already logged must not be lost",
+      "source": {
+        "kind": "quote",
+        "quote": "losing workouts a member has already logged is not"
+      }
+    },
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "heart rate, sleep and workout data from Apple Watch and Garmin devices",
+        "source": {
+          "kind": "quote",
+          "quote": "The app syncs heart rate, sleep and workout data from Apple Watch and Garmin devices."
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "high",
+      "source": {
+        "kind": "assumption",
+        "why": "Heart rate and sleep data are health data, and HealthKit treats them as such."
+      }
+    },
+    "retention": [
+      {
+        "value": "workout history kept while the account is open",
+        "source": {
+          "kind": "quote",
+          "quote": "We keep workout history for as long as the account is open."
+        }
+      },
+      {
+        "value": "members can export and delete all their data at any time",
+        "source": {
+          "kind": "quote",
+          "quote": "they can export and delete all of their data at any time"
+        }
+      }
+    ],
+    "sharing": [
+      {
+        "value": "health data never used for advertising (HealthKit rules)",
+        "source": {
+          "kind": "quote",
+          "quote": "its rules forbid using health data for advertising"
+        }
+      }
+    ],
+    "jurisdictions_or_rules": [
+      {
+        "value": "members in the US, Canada and the UK",
+        "source": {
+          "kind": "quote",
+          "quote": "Members are in the US, Canada and the UK."
+        }
+      },
+      {
+        "value": "Apple HealthKit rules",
+        "source": {
+          "kind": "quote",
+          "quote": "We use Apple HealthKit, and its rules forbid using health data for advertising"
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "Apple HealthKit terms agreed",
+        "source": {
+          "kind": "quote",
+          "quote": "its rules forbid using health data for advertising; we have agreed to them"
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "seven engineers",
+      "source": {
+        "kind": "quote",
+        "quote": "We are seven engineers"
+      }
+    },
+    "skills": [
+      {
+        "value": "four mobile, two Python backend, one data",
+        "source": {
+          "kind": "quote",
+          "quote": "four on the mobile apps, two on the Python backend, and one on data"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "no night on-call yet",
+        "source": {
+          "kind": "quote",
+          "quote": "Nobody is on call at night yet."
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "rebuild capped at $80,000 by the board",
+      "source": {
+        "kind": "quote",
+        "quote": "The board has capped this rebuild at $80,000."
+      }
+    },
+    "run_monthly": {
+      "value": "cloud bill $6,500 a month",
+      "source": {
+        "kind": "quote",
+        "quote": "Our cloud bill is $6,500 a month."
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Health data is never used for advertising (HealthKit rules, agreed)",
+      "source": {
+        "kind": "quote",
+        "quote": "We use Apple HealthKit, and its rules forbid using health data for advertising; we have agreed to them and will not break them."
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Members can export and delete all their data at any time (terms promise)",
+      "source": {
+        "kind": "quote",
+        "quote": "Our terms promise members that they can export and delete all of their data at any time, and that promise stays."
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Rebuild capped at $80,000",
+      "source": {
+        "kind": "quote",
+        "quote": "The board has capped this rebuild at $80,000."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "cost",
+      "rank": 1,
+      "note": "Cut the cloud bill",
+      "source": {
+        "kind": "quote",
+        "quote": "Our first priority is cutting the cloud bill."
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "delivery_speed",
+      "rank": 2,
+      "note": "Ship coach chat by spring",
+      "source": {
+        "kind": "quote",
+        "quote": "Second, shipping the coach-chat feature by spring."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "scalability",
+      "rank": 3,
+      "note": "Be ready for the deck's growth when it comes",
+      "source": {
+        "kind": "quote",
+        "quote": "Third, being ready for the growth in the deck when it comes."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "No speed problem is stated; growth targets are keyed separately.",
+      "decisions_affected": [
+        "capacity"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "How quickly must the server recover?",
+      "why_it_matters": "Offline logging makes short outages tolerable.",
+      "decisions_affected": [
+        "recovery design"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Are specific security controls required?",
+      "why_it_matters": "None is stated; the binding privacy duties are already kept as constraints.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.requirements"
+    },
+    {
+      "question": "Is any attack or incident named?",
+      "why_it_matters": "None is stated.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Will coaches be employees or contractors, and in which countries will they work?",
+      "why_it_matters": "Coaches would read members' health-related messages; who they are and where they work decides access control, data transfers and the rules that apply.",
+      "decisions_affected": [
+        "access control",
+        "data residency",
+        "coach-chat design"
+      ],
+      "material": true,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Whether and when the deck's growth targets will arrive",
+      "why_it_matters": "The targets are about 65 times today's members; designing for them now costs money the first goal wants to save.",
+      "decisions_affected": [
+        "capacity planning",
+        "scaling approach"
+      ],
+      "material": true,
+      "field": "workload.projected"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "The deck figures are targets, not current load.",
+      "why": "The brief says they are targets for the end of next year."
+    }
+  ]
+}

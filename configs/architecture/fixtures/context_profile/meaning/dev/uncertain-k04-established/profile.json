@@ -1,0 +1,450 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "9296e309519b43c7502f13b4be3e04a4c0d80d38a5acd1eee34c2fe5d5b5faa2",
+  "product": {
+    "summary": "A photo and short-video sharing app.",
+    "source": {
+      "kind": "quote",
+      "quote": "Glimmer is a photo and short-video sharing app."
+    }
+  },
+  "maturity": {
+    "stage": "established",
+    "evidence": [
+      {
+        "value": "Ten years old; 31 million monthly active users, 9 million daily",
+        "source": {
+          "kind": "quote",
+          "quote": "It is ten years old and is one of the larger consumer apps in its category: 31 million monthly active users, 9 million of them daily"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams."
+    },
+    "items": [
+      {
+        "kind": "component",
+        "text": "media pipeline: upload, transcoding, storage, delivery",
+        "source": {
+          "kind": "quote",
+          "quote": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams."
+        }
+      },
+      {
+        "kind": "hosting",
+        "text": "three cloud regions: Frankfurt, Virginia, São Paulo",
+        "source": {
+          "kind": "quote",
+          "quote": "runs the infrastructure across three cloud regions (Frankfurt, Virginia and São Paulo)"
+        }
+      }
+    ]
+  },
+  "external_systems": [],
+  "workload": {
+    "observed": [
+      {
+        "what": "monthly active users",
+        "value": 31000000,
+        "unit": "users per month",
+        "source": {
+          "kind": "quote",
+          "quote": "31 million monthly active users"
+        }
+      },
+      {
+        "what": "daily active users",
+        "value": 9000000,
+        "unit": "users per day",
+        "source": {
+          "kind": "quote",
+          "quote": "9 million of them daily"
+        }
+      },
+      {
+        "what": "photos uploaded",
+        "value": 40000000,
+        "unit": "photos per day",
+        "source": {
+          "kind": "quote",
+          "quote": "Users upload about 40 million photos and 6 million short videos a day"
+        }
+      },
+      {
+        "what": "short videos uploaded",
+        "value": 6000000,
+        "unit": "videos per day",
+        "source": {
+          "kind": "quote",
+          "quote": "Users upload about 40 million photos and 6 million short videos a day"
+        }
+      },
+      {
+        "what": "media views",
+        "value": 1500000000,
+        "unit": "views per day",
+        "source": {
+          "kind": "quote",
+          "quote": "the app serves roughly 1.5 billion media views a day"
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "uploads on New Year's Eve and during big football finals, for several hours",
+        "value": 4,
+        "unit": "times the normal rate",
+        "source": {
+          "kind": "quote",
+          "quote": "On New Year's Eve and during big football finals, uploads run at about 4 times the normal rate for several hours."
+        }
+      }
+    ]
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": {
+      "value": "99.95% for viewing and 99.9% for uploading, committed on the public status page",
+      "source": {
+        "kind": "quote",
+        "quote": "our public status page commits to 99.95% availability for viewing and 99.9% for uploading"
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "A confirmed uploaded photo must never be lost",
+      "source": {
+        "kind": "quote",
+        "quote": "A photo a user has uploaded and seen confirmed must never be lost."
+      }
+    },
+    "recovery_time": {
+      "value": "After a regional outage: viewing back within 15 minutes, uploads within an hour",
+      "source": {
+        "kind": "quote",
+        "quote": "After a regional outage, viewing must be back within 15 minutes; uploads may take up to an hour."
+      }
+    }
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "photos, videos, profile data, synced contacts and coarse location tags",
+        "source": {
+          "kind": "quote",
+          "quote": "we hold users' photos, videos, profile data, contacts they choose to sync, and coarse location tags"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "moderate",
+      "source": {
+        "kind": "assumption",
+        "why": "Private photos and videos, synced contacts and coarse location at very large scale; no health, financial or precise-tracking data is named and children are excluded."
+      }
+    },
+    "retention": [
+      {
+        "value": "an account's media deleted within 30 days of a deletion request",
+        "source": {
+          "kind": "quote",
+          "quote": "we must delete an account's media within 30 days of a deletion request"
+        }
+      }
+    ],
+    "sharing": [],
+    "jurisdictions_or_rules": [
+      {
+        "value": "users must be 16 or older; children not knowingly served",
+        "source": {
+          "kind": "quote",
+          "quote": "Users must be 16 or older; we do not knowingly serve children"
+        }
+      },
+      {
+        "value": "GDPR for EU users, LGPD for Brazilian users",
+        "source": {
+          "kind": "quote",
+          "quote": "EU users' data is processed under GDPR, and Brazilian users' data under LGPD"
+        }
+      },
+      {
+        "value": "Brazilian users' media kept in Brazil by the end of next year, as agreed with the authority",
+        "source": {
+          "kind": "quote",
+          "quote": "the Brazilian data protection authority has asked us to keep Brazilian users' media in Brazil, and our legal team has agreed to do so by the end of next year"
+        }
+      },
+      {
+        "value": "in scope of the EU Digital Services Act for content moderation",
+        "source": {
+          "kind": "quote",
+          "quote": "We are also in scope of the EU Digital Services Act for content moderation."
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [],
+    "threats": [
+      {
+        "value": "account takeovers, about 1,200 confirmed last year, mostly through reused passwords",
+        "source": {
+          "kind": "quote",
+          "quote": "account takeovers are our most common serious incident, about 1,200 confirmed cases last year, mostly through reused passwords"
+        }
+      }
+    ],
+    "compliance": [
+      {
+        "value": "bug bounty and a yearly external penetration test",
+        "source": {
+          "kind": "quote",
+          "quote": "We have a bug bounty and a yearly external penetration test."
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "420 engineers in 38 teams",
+      "source": {
+        "kind": "quote",
+        "quote": "Engineering has 420 people in 38 teams."
+      }
+    },
+    "skills": [
+      {
+        "value": "a central platform group of 60 runs the infrastructure in three cloud regions",
+        "source": {
+          "kind": "quote",
+          "quote": "A central platform group of 60 runs the infrastructure across three cloud regions (Frankfurt, Virginia and São Paulo)"
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "24/7 on-call rotation and a mature incident process",
+        "source": {
+          "kind": "quote",
+          "quote": "with a 24/7 on-call rotation and a mature incident process"
+        }
+      },
+      {
+        "value": "two teams own the media pipeline",
+        "source": {
+          "kind": "quote",
+          "quote": "The media pipeline (upload, transcoding, storage, delivery) is owned by two of those teams."
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "No fixed limit on the redesign; it competes with other work for engineers",
+      "source": {
+        "kind": "quote",
+        "quote": "There is no fixed limit on the redesign project itself, but it competes with other work for engineers."
+      }
+    },
+    "run_monthly": {
+      "value": "the media pipeline costs about $4.2M a month, mostly storage and delivery",
+      "source": {
+        "kind": "quote",
+        "quote": "the media pipeline costs about $4.2M a month to run, mostly storage and delivery"
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "A confirmed uploaded photo is never lost",
+      "source": {
+        "kind": "quote",
+        "quote": "A photo a user has uploaded and seen confirmed must never be lost."
+      }
+    },
+    {
+      "id": "C2",
+      "text": "After a regional outage, viewing is back within 15 minutes and uploads within an hour",
+      "source": {
+        "kind": "quote",
+        "quote": "After a regional outage, viewing must be back within 15 minutes; uploads may take up to an hour."
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Public commitment: 99.95% availability for viewing, 99.9% for uploading",
+      "source": {
+        "kind": "quote",
+        "quote": "our public status page commits to 99.95% availability for viewing and 99.9% for uploading"
+      }
+    },
+    {
+      "id": "C4",
+      "text": "Users are 16 or older; children are not knowingly served",
+      "source": {
+        "kind": "quote",
+        "quote": "Users must be 16 or older; we do not knowingly serve children"
+      }
+    },
+    {
+      "id": "C5",
+      "text": "Delete an account's media within 30 days of a deletion request",
+      "source": {
+        "kind": "quote",
+        "quote": "we must delete an account's media within 30 days of a deletion request"
+      }
+    },
+    {
+      "id": "C6",
+      "text": "GDPR governs EU users' data and LGPD Brazilian users' data",
+      "source": {
+        "kind": "quote",
+        "quote": "EU users' data is processed under GDPR, and Brazilian users' data under LGPD"
+      }
+    },
+    {
+      "id": "C7",
+      "text": "Keep Brazilian users' media in Brazil by the end of next year, as agreed with the authority",
+      "source": {
+        "kind": "quote",
+        "quote": "keep Brazilian users' media in Brazil, and our legal team has agreed to do so by the end of next year"
+      }
+    },
+    {
+      "id": "C8",
+      "text": "Content moderation meets the EU Digital Services Act",
+      "source": {
+        "kind": "quote",
+        "quote": "We are also in scope of the EU Digital Services Act for content moderation."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "reliability",
+      "rank": 1,
+      "note": "Protect reliability and user trust first",
+      "source": {
+        "kind": "quote",
+        "quote": "protect reliability and user trust first"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Cut the pipeline's running cost by 20% within the next year",
+      "source": {
+        "kind": "quote",
+        "quote": "Finance has asked for a 20% cut within the next year."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "change_cost",
+      "rank": 3,
+      "note": "Make it cheaper for teams to add new media formats",
+      "source": {
+        "kind": "quote",
+        "quote": "then make it cheaper for teams to add new media formats"
+      }
+    },
+    {
+      "id": "G4",
+      "criterion": "delivery_speed",
+      "rank": 4,
+      "note": "Speed of delivery matters less than doing this safely",
+      "source": {
+        "kind": "quote",
+        "quote": "Speed of delivery matters less than doing this safely."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Is demand steady or rising fast?",
+      "why_it_matters": "Age and size cannot establish lifecycle; known workload and reliability promises independently drive the redesign.",
+      "decisions_affected": [
+        "lifecycle classification"
+      ],
+      "material": false,
+      "field": "maturity.stage"
+    },
+    {
+      "question": "How much stored media is viewed again after its first year?",
+      "why_it_matters": "It decides how much can move to colder, cheaper storage, the main lever for the cost cut.",
+      "decisions_affected": [
+        "storage tiering",
+        "cost plan"
+      ],
+      "material": true,
+      "field": "workload.observed"
+    },
+    {
+      "question": "Will the Brazilian residency rule extend to backups?",
+      "why_it_matters": "If it does, backups of Brazilian media must stay in Brazil too, which changes backup and regional recovery.",
+      "decisions_affected": [
+        "backup placement",
+        "regional recovery design"
+      ],
+      "material": true,
+      "field": "privacy.jurisdictions_or_rules"
+    },
+    {
+      "question": "Does the pipeline depend on any outside service?",
+      "why_it_matters": "None is named; it runs in the company's own cloud regions.",
+      "decisions_affected": [
+        "integration design"
+      ],
+      "material": false,
+      "field": "external_systems"
+    },
+    {
+      "question": "How fast will users and uploads grow?",
+      "why_it_matters": "No forecast is given; the daily upload volume already gives storage growth.",
+      "decisions_affected": [
+        "capacity planning"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there a speed target for viewing or uploading?",
+      "why_it_matters": "None is named; how often old media is read is already an open question.",
+      "decisions_affected": [
+        "storage tiering"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "Is media or profile data shared with outside parties?",
+      "why_it_matters": "None is named.",
+      "decisions_affected": [
+        "data sharing controls"
+      ],
+      "material": false,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Does the pipeline need new security controls?",
+      "why_it_matters": "None is asked for; the account-takeover threat sits in login, outside this redesign.",
+      "decisions_affected": [
+        "access control"
+      ],
+      "material": false,
+      "field": "security.requirements"
+    }
+  ],
+  "assumptions": []
+}

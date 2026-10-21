@@ -1,0 +1,434 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "4a9f0a3a71dd3e394ac64a3c807f948932381cd2732a90d936b498a7a5468efc",
+  "product": {
+    "summary": "Shift scheduling and time tracking for restaurants and cafés.",
+    "source": {
+      "kind": "quote",
+      "quote": "Shiftwise sells shift scheduling and time tracking to restaurants and cafés."
+    }
+  },
+  "maturity": {
+    "stage": "growing",
+    "evidence": [
+      {
+        "value": "Four years old; 380 business customers; about 45,000 staff use it each month",
+        "source": {
+          "kind": "quote",
+          "quote": "We are four years old, with 380 business customers and about 45,000 staff who use the app each month."
+        }
+      },
+      {
+        "value": "ARR passed $3.1M, growing about 60% a year for two years",
+        "source": {
+          "kind": "quote",
+          "quote": "Annual recurring revenue passed $3.1M last quarter and has grown about 60% a year for two years."
+        }
+      },
+      {
+        "value": "14 engineers in three teams",
+        "source": {
+          "kind": "quote",
+          "quote": "Engineering is 14 people in three teams"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "exists",
+    "source": {
+      "kind": "quote",
+      "quote": "The main Postgres database is 900 GB and grows about 25 GB a month."
+    },
+    "items": [
+      {
+        "kind": "data_store",
+        "text": "main Postgres database, 900 GB",
+        "source": {
+          "kind": "quote",
+          "quote": "The main Postgres database is 900 GB"
+        }
+      },
+      {
+        "kind": "client",
+        "text": "phone app where staff swap shifts and clock in",
+        "source": {
+          "kind": "quote",
+          "quote": "staff swap shifts and clock in on their phones"
+        }
+      }
+    ]
+  },
+  "external_systems": [
+    {
+      "name": "identity providers",
+      "role": "single sign-on that several chains want",
+      "source": {
+        "kind": "quote",
+        "quote": "Several chains want single sign-on through their own identity providers."
+      }
+    },
+    {
+      "name": "payroll",
+      "role": "receives clock-in records",
+      "source": {
+        "kind": "quote",
+        "quote": "Clock-in records feed payroll"
+      }
+    }
+  ],
+  "workload": {
+    "observed": [
+      {
+        "what": "business customers",
+        "value": 380,
+        "unit": "customers",
+        "source": {
+          "kind": "quote",
+          "quote": "380 business customers"
+        }
+      },
+      {
+        "what": "staff using the app",
+        "value": 45000,
+        "unit": "users per month",
+        "source": {
+          "kind": "quote",
+          "quote": "about 45,000 staff who use the app each month"
+        }
+      },
+      {
+        "what": "API requests on a normal weekday",
+        "value": 2500000,
+        "unit": "requests per day",
+        "source": {
+          "kind": "quote",
+          "quote": "Around 2.5 million API requests on a normal weekday."
+        }
+      },
+      {
+        "what": "main Postgres database size",
+        "value": 900,
+        "unit": "GB",
+        "source": {
+          "kind": "quote",
+          "quote": "The main Postgres database is 900 GB"
+        }
+      },
+      {
+        "what": "database growth",
+        "value": 25,
+        "unit": "GB per month",
+        "source": {
+          "kind": "quote",
+          "quote": "grows about 25 GB a month"
+        }
+      }
+    ],
+    "projected": [],
+    "peaks": [
+      {
+        "what": "request rate while managers publish rotas, Sunday 6pm to 9pm",
+        "value": 8,
+        "unit": "times the weekday average",
+        "source": {
+          "kind": "quote",
+          "quote": "managers publish next week's rota between 6pm and 9pm, and request rates reach about 8 times the weekday average for those three hours"
+        }
+      },
+      {
+        "what": "clock-ins at shift starts",
+        "value": "6-7am and 4-5pm local time",
+        "unit": "time of day",
+        "source": {
+          "kind": "quote",
+          "quote": "Clock-ins cluster at the start of shifts, especially 6-7am and 4-5pm local time."
+        }
+      }
+    ]
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": {
+      "value": "99.9% monthly uptime for clock-in, promised in the largest customers' contracts, with service credits",
+      "source": {
+        "kind": "quote",
+        "quote": "Their contracts promise 99.9% monthly uptime for clock-in and give them service credits when we miss it."
+      }
+    },
+    "data_loss_tolerance": {
+      "value": "No confirmed clock-in may be lost; the rota can be rebuilt from its last published version and an hour of draft edits may be lost",
+      "source": {
+        "kind": "quote",
+        "quote": "losing a confirmed clock-in is not acceptable: it means someone may be paid wrongly. The rota itself can be rebuilt from the last published version if we must, and an hour of lost draft edits would be annoying but tolerable"
+      }
+    },
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "staff names, phone numbers, emails, availability, hours worked and pay rates",
+        "source": {
+          "kind": "quote",
+          "quote": "We hold staff names, phone numbers, emails, availability, hours worked and pay rates."
+        }
+      },
+      {
+        "value": "location at clock-in only",
+        "source": {
+          "kind": "quote",
+          "quote": "Location is recorded at clock-in only, to show the employee is on site"
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "moderate",
+      "source": {
+        "kind": "assumption",
+        "why": "Employee records with pay rates and a location at clock-in: harmful if leaked, but no health, card or government-id data and no continuous tracking."
+      }
+    },
+    "retention": [],
+    "sharing": [],
+    "jurisdictions_or_rules": [
+      {
+        "value": "EU customers' data must stay in the EU under data processing agreements",
+        "source": {
+          "kind": "quote",
+          "quote": "About a third of our customers are in Germany, France and the Netherlands, and their data must stay in the EU under our data processing agreements with them."
+        }
+      },
+      {
+        "value": "no tracking between clock-ins, promised to works councils",
+        "source": {
+          "kind": "quote",
+          "quote": "we do not track people between clock-ins and we promised customers' works councils that we never will"
+        }
+      }
+    ]
+  },
+  "security": {
+    "requirements": [
+      {
+        "value": "single sign-on through customers' own identity providers",
+        "source": {
+          "kind": "quote",
+          "quote": "Several chains want single sign-on through their own identity providers."
+        }
+      }
+    ],
+    "threats": [],
+    "compliance": [
+      {
+        "value": "SOC 2 Type II report needed before two large customers renew next spring",
+        "source": {
+          "kind": "quote",
+          "quote": "Two of them have asked for a SOC 2 Type II report before they renew next spring"
+        }
+      }
+    ]
+  },
+  "team": {
+    "size": {
+      "value": "14 engineers in three teams",
+      "source": {
+        "kind": "quote",
+        "quote": "Engineering is 14 people in three teams"
+      }
+    },
+    "skills": [],
+    "operating_capacity": [
+      {
+        "value": "one person looks after infrastructure part-time",
+        "source": {
+          "kind": "quote",
+          "quote": "plus one person who looks after infrastructure part of the time"
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": "unknown",
+    "run_monthly": {
+      "value": "cloud costs $38,000 a month, rising faster than revenue",
+      "source": {
+        "kind": "quote",
+        "quote": "which are now $38,000 a month and rising faster than revenue"
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "99.9% monthly uptime for clock-in, owed under customer contracts with service credits",
+      "source": {
+        "kind": "quote",
+        "quote": "Their contracts promise 99.9% monthly uptime for clock-in"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "EU customers' data stays in the EU (data processing agreements)",
+      "source": {
+        "kind": "quote",
+        "quote": "their data must stay in the EU under our data processing agreements with them"
+      }
+    },
+    {
+      "id": "C3",
+      "text": "Never track staff between clock-ins (promise to works councils)",
+      "source": {
+        "kind": "quote",
+        "quote": "we do not track people between clock-ins and we promised customers' works councils that we never will"
+      }
+    },
+    {
+      "id": "C4",
+      "text": "A SOC 2 Type II report before next spring's renewals, or two of the largest customers leave",
+      "source": {
+        "kind": "quote",
+        "quote": "Two of them have asked for a SOC 2 Type II report before they renew next spring; without it, they will not renew."
+      }
+    },
+    {
+      "id": "C5",
+      "text": "No confirmed clock-in may be lost (it feeds payroll)",
+      "source": {
+        "kind": "quote",
+        "quote": "Clock-in records feed payroll, so losing a confirmed clock-in is not acceptable"
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "reliability",
+      "rank": 1,
+      "note": "Reliability of clock-in first",
+      "source": {
+        "kind": "quote",
+        "quote": "reliability of clock-in first"
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "change_cost",
+      "rank": 2,
+      "note": "Three teams can ship independently without stepping on each other",
+      "source": {
+        "kind": "quote",
+        "quote": "the ability for three teams to ship independently without stepping on each other"
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "cost",
+      "rank": 3,
+      "note": "Keep cloud costs in check",
+      "source": {
+        "kind": "quote",
+        "quote": "then keeping cloud costs in check"
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Which display font should the settings screen use?",
+      "why_it_matters": "It decides how much capacity and operations the EU region needs.",
+      "decisions_affected": [
+        "EU region sizing",
+        "data residency design"
+      ],
+      "material": true,
+      "field": "privacy.jurisdictions_or_rules"
+    },
+    {
+      "question": "What will the SOC 2 auditors ask us to change?",
+      "why_it_matters": "The audit may require controls that change access, logging and deployment; the renewals depend on it.",
+      "decisions_affected": [
+        "access control",
+        "audit logging",
+        "change management"
+      ],
+      "material": true,
+      "field": "security.compliance"
+    },
+    {
+      "question": "What budget is there for the platform work?",
+      "why_it_matters": "The brief gives running costs but no money for building; it bounds how much can change in 18 months.",
+      "decisions_affected": [
+        "scope of the platform changes",
+        "build versus buy"
+      ],
+      "material": true,
+      "field": "budget.build"
+    },
+    {
+      "question": "How much will load grow?",
+      "why_it_matters": "No forecast is given; the observed growth rates are enough to plan with.",
+      "decisions_affected": [
+        "capacity planning"
+      ],
+      "material": false,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Is there a speed target?",
+      "why_it_matters": "None is named; the clock-in worry is uptime.",
+      "decisions_affected": [
+        "hosting size"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "How fast must clock-in recover after a failure?",
+      "why_it_matters": "The 99.9% monthly promise already bounds downtime at about 43 minutes a month.",
+      "decisions_affected": [
+        "failover design"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "How long is staff data kept?",
+      "why_it_matters": "It sets deletion jobs, not the shape of the options.",
+      "decisions_affected": [
+        "data deletion"
+      ],
+      "material": false,
+      "field": "privacy.retention"
+    },
+    {
+      "question": "Is staff data shared with anyone beyond the customers' own systems?",
+      "why_it_matters": "None is named.",
+      "decisions_affected": [
+        "data sharing controls"
+      ],
+      "material": false,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Has the product faced any named threat or incident?",
+      "why_it_matters": "None is named; SOC 2 and single sign-on carry the security work.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "What technologies do the teams know?",
+      "why_it_matters": "Teams are named by area; with 14 engineers, skills do not narrow the options much.",
+      "decisions_affected": [
+        "technology choice"
+      ],
+      "material": false,
+      "field": "team.skills"
+    }
+  ],
+  "assumptions": []
+}

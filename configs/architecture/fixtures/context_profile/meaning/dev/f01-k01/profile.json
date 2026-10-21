@@ -1,0 +1,368 @@
+{
+  "contract": "context_profile/v2",
+  "brief_sha256": "4f62ed718bc6c610a69a663f3da2ae22afa659e3dac585ea94877e220fa912c6",
+  "product": {
+    "summary": "A phone app that tracks kitchen food from scanned grocery receipts and suggests meals that use it before it spoils.",
+    "source": {
+      "kind": "quote",
+      "quote": "A phone app that keeps track of what is in your kitchen and suggests meals that use up food before it spoils."
+    }
+  },
+  "maturity": {
+    "stage": "idea",
+    "evidence": [
+      {
+        "value": "Still an idea; nothing built yet",
+        "source": {
+          "kind": "quote",
+          "quote": "Pantry Pal is still an idea. Nothing is built yet."
+        }
+      },
+      {
+        "value": "Landing page and a waitlist of 340 email sign-ups",
+        "source": {
+          "kind": "quote",
+          "quote": "We have a landing page and a waitlist with 340 email sign-ups"
+        }
+      }
+    ]
+  },
+  "current_system": {
+    "state": "none",
+    "source": {
+      "kind": "quote",
+      "quote": "Nothing is built yet."
+    },
+    "items": []
+  },
+  "external_systems": [],
+  "workload": {
+    "observed": [],
+    "projected": [
+      {
+        "what": "beta users (founders' guess)",
+        "value": 2000,
+        "unit": "users",
+        "source": {
+          "kind": "quote",
+          "quote": "Our hope is 2,000 people in the beta"
+        }
+      },
+      {
+        "what": "users by the end of next year (founders' guess)",
+        "value": 10000,
+        "unit": "users",
+        "source": {
+          "kind": "quote",
+          "quote": "10,000 users by the end of next year, but these are guesses"
+        }
+      }
+    ],
+    "peaks": []
+  },
+  "performance": {
+    "targets": []
+  },
+  "reliability": {
+    "availability": "unknown",
+    "data_loss_tolerance": "unknown",
+    "recovery_time": "unknown"
+  },
+  "privacy": {
+    "data_categories": [
+      {
+        "value": "email address, for sign-in",
+        "source": {
+          "kind": "quote",
+          "quote": "Users sign in with email."
+        }
+      },
+      {
+        "value": "food bought and meals cooked",
+        "source": {
+          "kind": "quote",
+          "quote": "We store the food they buy and the meals they cook."
+        }
+      }
+    ],
+    "sensitivity": {
+      "level": "moderate",
+      "source": {
+        "kind": "assumption",
+        "why": "Purchase and meal history is personal data whose leak can embarrass people; allergy data, if stored later, would be health data and make it high."
+      }
+    },
+    "retention": [
+      {
+        "value": "receipt photos deleted once the items are read (promised publicly)",
+        "source": {
+          "kind": "quote",
+          "quote": "Receipt photos should be deleted once the items are read; we promised this on the landing page."
+        }
+      }
+    ],
+    "sharing": [],
+    "jurisdictions_or_rules": []
+  },
+  "security": {
+    "requirements": [],
+    "threats": [],
+    "compliance": []
+  },
+  "team": {
+    "size": {
+      "value": "two founders",
+      "source": {
+        "kind": "quote",
+        "quote": "We are two founders, Maya Okafor and Luis Brandt"
+      }
+    },
+    "skills": [
+      {
+        "value": "product design (Maya)",
+        "source": {
+          "kind": "quote",
+          "quote": "Maya is a product designer"
+        }
+      },
+      {
+        "value": "backend development; has built two small Django apps (Luis)",
+        "source": {
+          "kind": "quote",
+          "quote": "Luis is a backend developer who has built two small Django apps."
+        }
+      },
+      {
+        "value": "no experience running production systems with real users",
+        "source": {
+          "kind": "quote",
+          "quote": "Neither of us has run anything in production with real users at night."
+        }
+      }
+    ],
+    "operating_capacity": [
+      {
+        "value": "part-time, about 15 hours a week each, next to day jobs",
+        "source": {
+          "kind": "quote",
+          "quote": "We both work on this part-time, about 15 hours a week each, next to our day jobs."
+        }
+      }
+    ]
+  },
+  "budget": {
+    "build": {
+      "value": "$12,000 in total for the first year, from savings, everything included",
+      "source": {
+        "kind": "quote",
+        "quote": "We are paying for everything from our savings: $12,000 in total for the first year, everything included."
+      }
+    },
+    "run_monthly": {
+      "value": "hosting should stay over $150 per month",
+      "source": {
+        "kind": "quote",
+        "quote": "We would like hosting to stay under $150 a month until we know people want this."
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "Total spend in the first year stays within the founders' $12,000 savings",
+      "source": {
+        "kind": "quote",
+        "quote": "$12,000 in total for the first year, everything included"
+      }
+    },
+    {
+      "id": "C2",
+      "text": "Delete receipt photos once their items are read, as promised on the landing page",
+      "source": {
+        "kind": "quote",
+        "quote": "Receipt photos should be deleted once the items are read; we promised this on the landing page."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "criterion": "delivery_speed",
+      "rank": 1,
+      "note": "Get a beta out fast to learn whether people use it",
+      "source": {
+        "kind": "quote",
+        "quote": "Above all, we need to learn quickly whether people use it, so getting a beta out fast is the first thing."
+      }
+    },
+    {
+      "id": "G2",
+      "criterion": "cost",
+      "rank": 2,
+      "note": "Keep costs low",
+      "source": {
+        "kind": "quote",
+        "quote": "Keeping costs low comes right after that."
+      }
+    },
+    {
+      "id": "G3",
+      "criterion": "operability",
+      "rank": 3,
+      "note": "Simple to operate; no nights fixing servers",
+      "source": {
+        "kind": "quote",
+        "quote": "We do not want to spend nights fixing servers, so anything we run should be simple to operate."
+      }
+    },
+    {
+      "id": "G4",
+      "criterion": "change_cost",
+      "rank": 4,
+      "note": "Easy to change often after the beta",
+      "source": {
+        "kind": "quote",
+        "quote": "We will need to change things often after the beta, so the design should be easy to change."
+      }
+    }
+  ],
+  "unknowns": [
+    {
+      "question": "Will Pantry Pal store users' food allergies?",
+      "why_it_matters": "Allergy data is health data: it raises sensitivity to high and brings stricter rules on consent, storage and security.",
+      "decisions_affected": [
+        "data model",
+        "security controls",
+        "consent flow",
+        "hosting region"
+      ],
+      "material": true,
+      "field": "privacy.data_categories"
+    },
+    {
+      "question": "Which country will the beta launch in first?",
+      "why_it_matters": "Germany brings GDPR and Canada PIPEDA; the answer decides the hosting region and the privacy duties.",
+      "decisions_affected": [
+        "hosting region",
+        "privacy compliance"
+      ],
+      "material": true,
+      "field": "privacy.jurisdictions_or_rules"
+    },
+    {
+      "question": "How many receipts does a typical user scan per week?",
+      "why_it_matters": "Reading receipts is the main processing load and cost; it sizes the receipt-reading service.",
+      "decisions_affected": [
+        "receipt processing design",
+        "running cost"
+      ],
+      "material": true,
+      "field": "workload.projected"
+    },
+    {
+      "question": "Which outside services, if any, will the product use?",
+      "why_it_matters": "None is named; any receipt reader or mail service is a later design choice.",
+      "decisions_affected": [
+        "receipt processing design"
+      ],
+      "material": false,
+      "field": "external_systems"
+    },
+    {
+      "question": "What load is there now?",
+      "why_it_matters": "Nothing is in users' hands yet, so there is none to measure.",
+      "decisions_affected": [
+        "sizing"
+      ],
+      "material": false,
+      "field": "workload.observed"
+    },
+    {
+      "question": "When are the busiest moments?",
+      "why_it_matters": "No peak is named; at beta size a peak would not change the design.",
+      "decisions_affected": [
+        "sizing"
+      ],
+      "material": false,
+      "field": "workload.peaks"
+    },
+    {
+      "question": "How fast must the app answer?",
+      "why_it_matters": "No speed target is named; suggestions come once an evening.",
+      "decisions_affected": [
+        "suggestion pipeline"
+      ],
+      "material": false,
+      "field": "performance.targets"
+    },
+    {
+      "question": "What availability does the beta need?",
+      "why_it_matters": "With no one on call at night, the answer would only tune how much managed hosting to pay for.",
+      "decisions_affected": [
+        "hosting choice"
+      ],
+      "material": false,
+      "field": "reliability.availability"
+    },
+    {
+      "question": "How much data may the beta lose?",
+      "why_it_matters": "Nothing is stored yet; ordinary backups cover any plausible answer.",
+      "decisions_affected": [
+        "backups"
+      ],
+      "material": false,
+      "field": "reliability.data_loss_tolerance"
+    },
+    {
+      "question": "How fast must the beta come back after a failure?",
+      "why_it_matters": "No one is on call; any plausible answer leads to the same simple setup.",
+      "decisions_affected": [
+        "hosting choice"
+      ],
+      "material": false,
+      "field": "reliability.recovery_time"
+    },
+    {
+      "question": "Does anyone else receive users' data?",
+      "why_it_matters": "No one is named; processors are a later design choice.",
+      "decisions_affected": [
+        "processor choice"
+      ],
+      "material": false,
+      "field": "privacy.sharing"
+    },
+    {
+      "question": "Are security controls needed beyond email sign-in?",
+      "why_it_matters": "None is asked for; the allergy question is where this would change.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.requirements"
+    },
+    {
+      "question": "Are there named threats?",
+      "why_it_matters": "Nothing is built and none is named.",
+      "decisions_affected": [
+        "security controls"
+      ],
+      "material": false,
+      "field": "security.threats"
+    },
+    {
+      "question": "Does any certification or audit apply?",
+      "why_it_matters": "None is asked for; the legal doubt is about allergies and the launch country.",
+      "decisions_affected": [
+        "compliance work"
+      ],
+      "material": false,
+      "field": "security.compliance"
+    }
+  ],
+  "assumptions": [
+    {
+      "text": "The beta is one region and one small database.",
+      "why": "Two part-time founders, a few thousand projected users and no stated peaks."
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 import httpx
@@ -34,12 +35,33 @@ def _compute_backoff(attempt: int) -> float:
     return min(2**attempt + random.random(), 30)  # noqa: B311
 
 
+def _guard_unsupported_single_send(method: Callable[..., Any]) -> Callable[..., Any]:
+    """A subclass override must not silently ignore a send-once request."""
+    @wraps(method)
+    def guarded(self: "BaseLLM", *args: Any, single_send: bool = False, **kwargs: Any) -> Any:
+        if not single_send:
+            return method(self, *args, **kwargs)
+        from temper_ai.llm.single_send import SingleSendError
+        if not type(self).__dict__.get("SUPPORTS_SINGLE_SEND", False):
+            raise SingleSendError("auth")
+        return method(self, *args, single_send=True, **kwargs)
+    return guarded
+
+
 class BaseLLM(ABC):
     """Abstract base for LLM providers.
 
     Provides retry logic and httpx client management. Subclasses implement
     the four abstract methods for provider-specific behavior.
     """
+
+    SUPPORTS_SINGLE_SEND: bool = False
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for name in ("complete", "stream"):
+            if name in cls.__dict__:
+                setattr(cls, name, _guard_unsupported_single_send(cls.__dict__[name]))
 
     def __init__(  # noqa: params
         self,
@@ -122,8 +144,11 @@ class BaseLLM(ABC):
         """
         return str(kwargs.get("model") or self.model)
 
-    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+    def complete(self, messages: list[dict], *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
         """Send a completion request with retry on transient failures."""
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError
+            raise SingleSendError("auth")
         request = self._build_request(messages, **kwargs)
         return self._execute_with_retry(request, stream=False)
 
@@ -131,9 +156,13 @@ class BaseLLM(ABC):
         self,
         messages: list[dict],
         on_chunk: StreamCallback | None = None,
+        *, single_send: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
         """Send a streaming request with retry on transient failures."""
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError
+            raise SingleSendError("auth")
         request = self._build_request(messages, stream=True, **kwargs)
         return self._execute_with_retry(request, stream=True, on_chunk=on_chunk)
 

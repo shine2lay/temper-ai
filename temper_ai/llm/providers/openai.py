@@ -78,6 +78,7 @@ class OpenAILLM(BaseLLM):
     """
 
     PROVIDER_NAME = "openai"
+    SUPPORTS_SINGLE_SEND = True
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -97,13 +98,24 @@ class OpenAILLM(BaseLLM):
             )
         logger.info("OpenAI provider: auth mode %s", self.auth_mode)
 
-    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+    def complete(self, messages: list[dict], *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError, metadata_only_logs
+            with metadata_only_logs():
+                if self.auth_mode != "oauth" or self._codex is None or "token" in kwargs:
+                    raise SingleSendError("auth")
+                return self._codex.complete(messages, single_send=True, **kwargs)
         if self._codex is not None:
             return self._codex.complete(messages, **kwargs)
         return super().complete(messages, **kwargs)
 
     def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
-               **kwargs: Any) -> LLMResponse:
+               *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError
+            if on_chunk is not None:
+                raise SingleSendError("strict_parser")
+            return self.complete(messages, single_send=True, **kwargs)
         if self._codex is not None:
             return self._codex.stream(messages, on_chunk=on_chunk, **kwargs)
         return super().stream(messages, on_chunk=on_chunk, **kwargs)

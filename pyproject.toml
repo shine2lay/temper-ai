@@ -51,6 +51,9 @@ memory = [
     "mem0ai>=1.0.0",
 ]
 dev = [
+    # Exercise real SDK request/retry behavior with offline counting transports.
+    # Already locked by the optional runtime extra; normal installs stay optional.
+    "anthropic>=0.8",
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.1",

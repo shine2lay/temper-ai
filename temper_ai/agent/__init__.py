@@ -13,10 +13,12 @@ from temper_ai.agent.base import AgentABC
 from temper_ai.agent.jev_agent import JevAgent
 from temper_ai.agent.llm_agent import LLMAgent
 from temper_ai.agent.script_agent import ScriptAgent
+from temper_ai.agent.single_call_agent import SingleCallAgent
 
 AGENT_TYPES: dict[str, type[AgentABC]] = {
     "llm": LLMAgent,
     "script": ScriptAgent,
+    "single_call": SingleCallAgent,
     "jev": JevAgent,
 }
 
@@ -52,6 +54,7 @@ __all__ = [
     "JevAgent",
     "LLMAgent",
     "ScriptAgent",
+    "SingleCallAgent",
     "AGENT_TYPES",
     "create_agent",
     "register_agent_type",

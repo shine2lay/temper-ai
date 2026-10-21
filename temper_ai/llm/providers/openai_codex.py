@@ -222,11 +222,18 @@ class CodexTransport:
             body["tools"] = to_responses_tools(tools)
         return body
 
-    def complete(self, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResponse:
+    def complete(self, messages: list[dict[str, Any]], *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
+        if single_send:
+            return self._complete_single_send(messages, **kwargs)
         return self.stream(messages, on_chunk=None, **kwargs)
 
     def stream(self, messages: list[dict[str, Any]], on_chunk: StreamCallback | None = None,
-               **kwargs: Any) -> LLMResponse:
+               *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError
+            if on_chunk is not None:
+                raise SingleSendError("strict_parser")
+            return self._complete_single_send(messages, **kwargs)
         body = self.body(messages, **kwargs)
         t0 = time.monotonic()
         with self._client.stream("POST", self.url, headers=self.headers(), json=body) as resp:
@@ -238,6 +245,97 @@ class CodexTransport:
         if on_chunk:
             on_chunk(LLMStreamChunk(content="", done=True))
         return result
+
+    def _complete_single_send(self, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResponse:
+        from temper_ai.llm import single_send as ss
+        result = LLMResponse(content=None, model=str(kwargs.get("model", "")), provider="openai")
+        failure = None
+        with ss.metadata_only_logs():
+            control = ss.strict_control(kwargs)
+            try:
+                if "token" in kwargs:
+                    raise ss.SingleSendError("auth")
+                mode = kwargs.get("output_bound_mode")
+                body = self.body(messages, **kwargs)
+                if mode == "request_limit":
+                    if not kwargs.get("request_limit_evidence") or type(kwargs.get("max_tokens")) is not int:
+                        raise ss.SingleSendError("strict_parser")
+                    body["max_output_tokens"] = kwargs["max_tokens"]
+                elif mode != "documented_max":
+                    raise ss.SingleSendError("strict_parser")
+                if any(key in kwargs for key in ("temperature", "thinking", "thinking_budget", "effort", "tools")):
+                    raise ss.SingleSendError("strict_parser")
+                client = ss.new_http_client(control)
+                control.own(client.close)
+                manager = client.stream("POST", self.url, headers=self.headers(), json=body)
+                resp = manager.__enter__()
+                control.own(lambda: manager.__exit__(None, None, None))
+                resp.raise_for_status()
+                self._consume_single_send(resp, control, result)
+                control.check()
+            except Exception as exc:  # noqa: BLE001 - no provider error body retained
+                failure = ss.safe_failure(exc, result)
+            finally:
+                control.finish()
+            if control.failure_reason:
+                failure = ss.SingleSendError(control.failure_reason, response=result)
+            if control.cleanup_uncertain:
+                failure = ss.SingleSendError("timeout", response=result)
+            if failure is not None:
+                raise failure
+            return result
+
+    def _consume_single_send(self, resp: httpx.Response, control: Any, result: LLMResponse) -> None:
+        from temper_ai.llm import single_send as ss
+        text: list[str] = []
+        terminal = False
+        for line in resp.iter_lines():
+            control.check()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if not payload or payload == "[DONE]":
+                continue
+            try:
+                event = json.loads(payload)
+            except (ValueError, TypeError):
+                raise ss.SingleSendError("partial", response=result) from None
+            if not isinstance(event, dict) or terminal:
+                raise ss.SingleSendError("partial", response=result)
+            kind = event.get("type")
+            if kind == "response.output_text.delta":
+                delta = event.get("delta")
+                if not isinstance(delta, str):
+                    raise ss.SingleSendError("partial", response=result)
+                text.append(delta)
+                result.content = "".join(text)
+            elif kind in ("response.output_item.added", "response.output_item.done"):
+                if (event.get("item") or {}).get("type") not in ("message", "reasoning"):
+                    raise ss.SingleSendError("partial", response=result)
+            elif kind in ("response.function_call_arguments.delta", "response.function_call_arguments.done"):
+                raise ss.SingleSendError("partial", response=result)
+            elif kind in ("response.completed", "response.incomplete"):
+                value = event.get("response") or {}
+                if any(item.get("type") not in ("message", "reasoning") for item in value.get("output", [])):
+                    raise ss.SingleSendError("partial", response=result)
+                completed = kind == "response.completed" and value.get("status") == "completed"
+                result.raw_response = {"response_id": ss.safe_response_id(value.get("id")),
+                                       "terminal_complete": completed}
+                result.finish_reason = "incomplete" if kind == "response.incomplete" else "stop" if completed else None
+                usage = ss.reported_usage(value.get("usage"), codex=True)
+                result.prompt_tokens = usage["input_tokens"]
+                result.completion_tokens = usage["output_tokens"]
+                result.total_tokens = usage["total_tokens"]
+                result.raw_response["usage"] = usage
+                if not completed:
+                    raise ss.SingleSendError("truncation", response=result)
+                terminal = True
+            elif kind in ("response.failed", "error"):
+                raise ss.SingleSendError("transport", response=result)
+        control.check()
+        if not terminal:
+            raise ss.SingleSendError("partial", response=result)
+        result.content = "".join(text)
 
     def _consume(self, resp: httpx.Response, on_chunk: StreamCallback | None, model: str) -> LLMResponse:
         text_parts: list[str] = []

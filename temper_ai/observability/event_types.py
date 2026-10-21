@@ -24,6 +24,8 @@ class EventType(StrEnum):
     AGENT_STARTED = "agent.started"
     AGENT_COMPLETED = "agent.completed"
     AGENT_FAILED = "agent.failed"
+    # Dormant fixed-input primitive. Metadata only; raw text lives in private files.
+    SINGLE_CALL_ATTEMPT = "single_call.attempt"
 
     # LLM calls
     LLM_CALL_STARTED = "llm.call.started"

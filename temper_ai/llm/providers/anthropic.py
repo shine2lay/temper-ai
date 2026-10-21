@@ -387,6 +387,7 @@ class AnthropicLLM(BaseLLM):
     """Provider for Anthropic Claude models."""
 
     PROVIDER_NAME = "anthropic"
+    SUPPORTS_SINGLE_SEND = True
     # Every level lands: a model with an effort dial is sent it as it stands,
     # and one without is sent the matching thinking budget instead
     # (_apply_thinking_control). `xhigh` is the CLI's own step and has no API
@@ -514,7 +515,7 @@ class AnthropicLLM(BaseLLM):
             return None
         return self._pool.cooling_until(found.token, model)
 
-    def _call_pinned(self, name: str, run, model: str | None) -> Any:
+    def _call_pinned(self, name: str, run, model: str | None, *, single_send: bool = False) -> Any:
         """Run `run(client)` on the one token the call names, with no rotation.
 
         The call asked for this account, so a limit on it is not retried on
@@ -536,7 +537,8 @@ class AnthropicLLM(BaseLLM):
             reset = _reset_epoch(exc)
             if self._pool is not None:
                 reset = self._pool.cool(entry.token, until=reset, model=model)
-            raise TokenCooling(entry.label, model, reset, detail=str(exc)[:200]) from exc
+            detail = type(exc).__name__ if single_send else str(exc)[:200]
+            raise TokenCooling(entry.label, model, reset, detail=detail) from exc
 
     def _credential_for_call(self, kwargs: dict[str, Any], model: str | None = None) -> str | None:
         """Which subscription this call goes out on (see the module docstring)."""
@@ -658,8 +660,10 @@ class AnthropicLLM(BaseLLM):
         _apply_prompt_caching(create_kwargs, ttl=kwargs.get("cache_ttl") or self.cache_ttl)
         return create_kwargs
 
-    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
-        """Call Claude via the Anthropic SDK."""
+    def complete(self, messages: list[dict], *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
+        """Call Claude; opt-in single_send never reaches learned/retry paths."""
+        if single_send:
+            return self._complete_single_send(messages, **kwargs)
         create_kwargs = self._build_create_kwargs(messages, **kwargs)
         # Timed here rather than left at None: with thinking billed as output,
         # per-call latency is the visible half of what a thinking budget buys,
@@ -670,8 +674,13 @@ class AnthropicLLM(BaseLLM):
         return _parse_response(response, create_kwargs["model"], elapsed_ms)
 
     def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
-               **kwargs: Any) -> LLMResponse:
+               *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
         """Stream Claude response."""
+        if single_send:
+            from temper_ai.llm.single_send import SingleSendError
+            if on_chunk is not None:
+                raise SingleSendError("strict_parser")
+            return self._complete_single_send(messages, **kwargs)
         create_kwargs = self._build_create_kwargs(messages, **kwargs)
 
         content_parts: list[str] = []
@@ -715,6 +724,130 @@ class AnthropicLLM(BaseLLM):
             on_chunk(LLMStreamChunk(content="", done=True))
 
         return _parse_response(final, create_kwargs["model"], elapsed_ms)
+
+    def _build_single_send_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
+        """Fixed, uncached parameters; NEVER consult learned parameter sets/defaults."""
+        from temper_ai.llm.single_send import SingleSendError
+        system, converted = _extract_system(messages)
+        if not kwargs.get("model") or type(kwargs.get("max_tokens")) is not int:
+            raise SingleSendError("strict_parser")
+        body: dict[str, Any] = {"model": kwargs["model"], "max_tokens": kwargs["max_tokens"],
+                                "messages": converted}
+        if system:
+            body["system"] = system
+        if "temperature" in kwargs:
+            body["temperature"] = kwargs["temperature"]
+        if "thinking" in kwargs:
+            body["thinking"] = kwargs["thinking"]
+        if "thinking_budget" in kwargs:
+            body["thinking"] = {"type": "enabled", "budget_tokens": kwargs["thinking_budget"]}
+        if "effort" in kwargs:
+            body["output_config"] = {"effort": kwargs["effort"]}
+        shaper = get_oauth_shaper()
+        if shaper is not None:
+            body = shaper.shape(body)
+            body["extra_headers"] = {**shaper.client_headers(), **(body.get("extra_headers") or {})}
+        else:
+            _warn_unshaped_once()
+        # Cache writes would need separate pinned prices. Remove every breakpoint,
+        # including shaper-added ones, and NEVER add request-level caching.
+        def uncached(value: Any) -> None:
+            if isinstance(value, dict):
+                value.pop("cache_control", None)
+                for child in value.values():
+                    uncached(child)
+            elif isinstance(value, list):
+                for child in value:
+                    uncached(child)
+        uncached(body)
+        return body
+
+    def _complete_single_send(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+        from temper_ai.llm import single_send as ss
+        response = LLMResponse(content=None, model=str(kwargs.get("model", "")), provider="anthropic")
+        failure = None
+        with ss.metadata_only_logs():
+            control = ss.strict_control(kwargs)
+            try:
+                token = kwargs.get("token")
+                if self.auth_mode != "oauth" or not isinstance(token, str) or not token or token not in self._named:
+                    raise ss.SingleSendError("auth")
+                self.check_token(token)
+                body = self._build_single_send_kwargs(messages, **kwargs)
+                text: list[str] = []
+
+                def run(shared: Any) -> LLMResponse:
+                    nonlocal response
+                    owned = ss.new_http_client(control)
+                    control.own(owned.close)
+                    client = shared.with_options(max_retries=0, timeout=control.remaining(), http_client=owned)
+                    manager = client.messages.stream(**body)
+                    stream = manager.__enter__()
+                    # Explicit close belongs to the bounded, privacy-scoped worker,
+                    # not a potentially blocking context-manager exit on this thread.
+                    control.own(lambda: manager.__exit__(None, None, None))
+                    stopped = False
+                    for event in stream:
+                        control.check()  # SDK-visible events; watchdog covers filtered pings/silence.
+                        kind = getattr(event, "type", None)
+                        event_usage = (getattr(getattr(event, "message", None), "usage", None) if kind == "message_start"
+                                       else getattr(event, "usage", None) if kind == "message_delta" else None)
+                        if kind == "message_start":
+                            response.raw_response = {"response_id": ss.safe_response_id(getattr(event.message, "id", None))}
+                        if event_usage is not None and getattr(event_usage, "model_extra", None):
+                            raise ss.SingleSendError("strict_parser", response=response)
+                        if kind == "content_block_start":
+                            block = getattr(event, "content_block", None)
+                            if getattr(block, "type", None) not in ("text", "thinking", "redacted_thinking"):
+                                raise ss.SingleSendError("partial", response=response)
+                        if kind == "content_block_delta":
+                            delta = getattr(event, "delta", None)
+                            if delta is not None and getattr(delta, "type", None) == "text_delta":
+                                text.append(delta.text)
+                                response.content = "".join(text)
+                        if kind == "message_stop":
+                            stopped = True
+                    control.check()
+                    if not stopped:
+                        raise ss.SingleSendError("partial", response=response)
+                    final = stream.get_final_message()
+                    usage = final.usage
+                    stop = final.stop_reason if final.stop_reason in ("end_turn", "stop_sequence", "max_tokens", "tool_use", "pause_turn", "refusal") else None
+                    response.finish_reason = stop
+                    response.raw_response = {"response_id": ss.safe_response_id(final.id), "terminal_complete": stopped}
+                    if getattr(usage, "model_extra", None):
+                        raise ss.SingleSendError("strict_parser", response=response)
+                    reported = ss.reported_usage({"input_tokens": getattr(usage, "input_tokens", None),
+                                "output_tokens": getattr(usage, "output_tokens", None),
+                                "total_tokens": None,
+                                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
+                                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None)})
+                    response.prompt_tokens = reported["input_tokens"]
+                    response.completion_tokens = reported["output_tokens"]
+                    response.finish_reason = stop
+                    response.raw_response = {"response_id": ss.safe_response_id(final.id), "usage": reported,
+                                             "terminal_complete": stopped}
+                    if stop == "max_tokens":
+                        raise ss.SingleSendError("truncation", response=response)
+                    if stop not in ("end_turn", "stop_sequence"):
+                        raise ss.SingleSendError("partial", response=response)
+                    # A truly empty final answer is still one answer, never re-asked.
+                    response.content = "".join(text)
+                    return response
+
+                response = self._call_pinned(token, run, body["model"], single_send=True)
+            except Exception as exc:  # noqa: BLE001 - copy only safe facts, erase prose/chain
+                failure = ss.safe_failure(exc, response)
+            finally:
+                control.finish()
+            if control.failure_reason:
+                failure = ss.SingleSendError(control.failure_reason, response=response)
+            if control.cleanup_uncertain:
+                failure = ss.SingleSendError("timeout", response=response)
+            # Outside the except handler: no retained TokenCooling __context__.
+            if failure is not None:
+                raise failure
+            return response
 
     def _send_stream(self, create_kwargs: dict[str, Any], kwargs: dict[str, Any], run) -> Any:
         """`_send`, sent again whole when the stream broke after it began.

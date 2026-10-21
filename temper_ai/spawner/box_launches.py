@@ -115,7 +115,7 @@ RUN_TIME_TOOLS = {
     "AddNode": "adds steps at run time",
     "RemoveNode": "removes steps at run time",
 }
-AGENT_TYPES = {"llm", "script"}
+AGENT_TYPES = {"llm", "script", "single_call"}
 LEGACY_AGENT_TYPES = {"pi": "a Pi step: the Pi lane keeps its own box design (M4)"}
 #: Providers whose login a sealed box can use (keys in its environment: BS2, BS6).
 SEALED_PROVIDERS = frozenset({"claude", "claude_v2", "anthropic"})
@@ -485,6 +485,25 @@ class _Walk:
                                 "boxes")
         else:
             self.agent_types.add(kind)
+        if kind == "single_call":
+            from temper_ai.agent.single_call_agent import (
+                SINGLE_CALL_AGENT_SETTINGS,
+                SINGLE_CALL_REQUIRED,
+                SINGLE_CALL_SETTINGS,
+            )
+            self._settings(doc, SINGLE_CALL_AGENT_SETTINGS, via)
+            fixed = doc.get("single_call")
+            if not isinstance(fixed, dict):
+                self.refused.append(f"{via}'s single_call isn't a fixed mapping")
+            else:
+                self._settings(fixed, SINGLE_CALL_SETTINGS, f"{via}'s single_call")
+                if not SINGLE_CALL_REQUIRED <= fixed.keys():
+                    self.refused.append(f"{via}'s single_call has missing fixed inputs")
+            if doc.get("provider") is None:
+                self.refused.append(f"{via}'s single_call needs an explicit provider")
+            else:
+                self._provider(doc["provider"], via)
+            return
         self._settings(doc, AGENT_SETTINGS, via)
         if doc.get("provider") is not None:
             self._provider(doc["provider"], via)

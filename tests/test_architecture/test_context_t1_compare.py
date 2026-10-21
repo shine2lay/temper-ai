@@ -250,6 +250,20 @@ def test_comparison_schema_and_instance(corpus):
     assert set(schema["required"]) == d3.COMPARISON_FIELDS
 
 
+def test_cli_internal_error_is_refused_without_output(corpus, monkeypatch, capsys):
+    def crash(*args, **kwargs):
+        raise RuntimeError("secret-text")
+
+    monkeypatch.setattr(d3, "compare", crash)
+    argv = ["--root", str(corpus.root), "--slot", "A1", "--freeze-sha256", corpus.freeze_pin]
+    assert d3.main(argv) == 2
+    captured = capsys.readouterr()
+    assert "secret-text" not in captured.out
+    assert len(captured.out.splitlines()) == 1 and not captured.err
+    assert json.loads(captured.out) == {"slot": "A1", "verdict": "REFUSED"}
+    assert not (corpus.root / "A1.comparison.json").exists()
+
+
 def test_cli_pass_and_refusal_expose_only_status(corpus, capsys):
     argv = ["--root", str(corpus.root), "--slot", "A1", "--freeze-sha256", corpus.freeze_pin]
     assert d3.main(argv) == 0

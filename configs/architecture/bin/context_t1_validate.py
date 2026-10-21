@@ -20,7 +20,7 @@ not arbitrary answer order. Unsafe/unreadable bytes are never read for a hash;
 raw_sha256/raw_bytes or packet_sha256 remain null when unavailable. This is
 terminal REJECT evidence, never success or zero-length invented evidence.
 Stdout contains only this metadata, never raw answers, briefs or prompts.
-Exit 0 = PASS, 1 = recorded REJECT, 2 = no safe output/invalid invocation.
+Exit 0 = PASS, 1 = recorded REJECT, 2 = no safe output/invalid invocation/internal error.
 """
 from __future__ import annotations
 
@@ -186,6 +186,9 @@ def main(argv=None) -> int:
     except (Refusal, OSError) as error:
         code = error.code if isinstance(error, Refusal) else "filesystem"
         print(json.dumps({"ok": False, "reject_reasons": [code]}))
+        return 2
+    except Exception:
+        print(json.dumps({"ok": False, "reject_reasons": ["internal_error"]}))
         return 2
 
 

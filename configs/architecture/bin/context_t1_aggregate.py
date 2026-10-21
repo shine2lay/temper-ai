@@ -34,8 +34,8 @@ CLI requires --root, --binding-id, --freeze-sha256, --packet-sha256. These are
 independent caller pins, never inferred by voting. Reads the six fixed slot
 names (missing records remain missing), ledger, comparisons and lead receipts.
 Writes aggregate.json exclusively, 0600. Exit 0 only for T1_ACCEPTED, 1 for other
-measured dispositions, 2 for refused malformed/unbound/reused evidence. Status
-precedence: SOURCE_CONFLICT > FAILED_OR_NOT_MEASURED > T1_REJECTED > T1_ACCEPTED.
+measured dispositions, 2 for refused malformed/unbound/reused evidence or internal
+errors. Status precedence: SOURCE_CONFLICT > FAILED_OR_NOT_MEASURED > T1_REJECTED > T1_ACCEPTED.
 A valid mismatch is a result, not a parser refusal. Fixed denominators: 6 runs,
 2 families, 222 classes/reviews, 114 bad families, 108 nonbad nulls, 168 known
 bad/uncertain opportunities. Three exact unordered pairs per family, each
@@ -69,6 +69,10 @@ FAILURES = {"strict_parser", "transport", "auth", "quota", "timeout", "fallback"
 ENTRY_FIELDS = {"slot", "raw_sha256", "list_price_usd", "cost_state", "usage_state", "transmissions", "transmission_ids"}
 LEDGER_FIELDS = {"schema", "experiment_id", "binding_id", "cost_basis", "state", "measured_usd", "reserved_usd", "unknown_exposure_usd", "entries"}
 REVIEW_FIELDS = {"schema", "slot", "raw_sha256", "accepted_ids", "rejected_ids", "source_conflict_ids"}
+# Allow float-derived deadline rounding, never a cleanup past the deadline.
+MONO_DEADLINE_TOLERANCE_S = Decimal("0.000001")
+# Allow independent UTC sampling and clock slew; monotonic remains authoritative.
+CLOCK_AGREEMENT_TOLERANCE_S = Decimal("1.0")
 
 
 def money(value):
@@ -291,16 +295,17 @@ def evaluate(attempts, comparisons, reviews, ledger, *, binding_id, freeze_sha25
             failed(slot, "cleanup_uncertain")
         if all(record[name] is not None for name in MONOTONIC_FIELDS):
             start, deadline, cleanup = (money(record[name]) for name in MONOTONIC_FIELDS)
-            if deadline - start != 900 or not start <= cleanup <= deadline:
+            if abs((deadline - start) - 900) > MONO_DEADLINE_TOLERANCE_S or not start <= cleanup <= deadline:
                 failed(slot, "monotonic_deadline")
             else:
                 intervals.append((start, cleanup, record["family"]))
         if all(record[name] is not None for name in TIME_FIELDS):
             start_utc, end_utc, cleanup_utc = (utc(record[name]) for name in TIME_FIELDS)
-            if not start_utc <= end_utc <= cleanup_utc <= start_utc + timedelta(seconds=900):
+            utc_elapsed = Decimal(str((cleanup_utc - start_utc).total_seconds()))
+            if not start_utc <= end_utc <= cleanup_utc or utc_elapsed > 900 + CLOCK_AGREEMENT_TOLERANCE_S:
                 failed(slot, "utc_deadline")
             if record["dispatch_monotonic_s"] is not None and record["cleanup_monotonic_s"] is not None:
-                if Decimal(str((cleanup_utc - start_utc).total_seconds())) != money(record["cleanup_monotonic_s"]) - money(record["dispatch_monotonic_s"]):
+                if abs(utc_elapsed - (money(record["cleanup_monotonic_s"]) - money(record["dispatch_monotonic_s"]))) > CLOCK_AGREEMENT_TOLERANCE_S:
                     failed(slot, "clock_disagreement")
         parser_failed = "strict_parser" in record["failure_reasons"]
         if slot not in comparisons:
@@ -465,6 +470,9 @@ def main(argv=None):
         print(json.dumps({"result": result["status"]["result"], "authorizes_later_stage": False}))
         return 0 if result["status"]["result"] == "T1_ACCEPTED" else 1
     except (d3.Refusal, OSError):
+        print(json.dumps({"result": "REFUSED", "authorizes_later_stage": False}))
+        return 2
+    except Exception:
         print(json.dumps({"result": "REFUSED", "authorizes_later_stage": False}))
         return 2
 

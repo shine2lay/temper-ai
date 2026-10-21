@@ -231,6 +231,39 @@ def test_exact_money_and_900_second_boundaries_pass(complete):
     assert result["cost"]["measured_usd"] == 30
 
 
+@pytest.mark.parametrize("mode,monotonic_elapsed,utc_elapsed,expected_reasons", [
+    ("float_deadline", 50.0, 50.0003, []),
+    ("utc_slew", 899.9, 900.5, []),
+    ("late_cleanup", 900.000001, 900.0, ["monotonic_deadline"]),
+    ("disagreement", 50.0, 51.5, ["clock_disagreement"]),
+    ("utc_over_bound", 899.9, 901.2, ["clock_disagreement", "utc_deadline"]),
+    ("backwards_end", 50.0, 50.0, ["utc_deadline"]),
+], ids=["float_deadline", "utc_slew", "late_cleanup", "disagreement", "utc_over_bound", "backwards_end"])
+def test_realistic_clock_pairs_preserve_monotonic_authority(complete, mode, monotonic_elapsed, utc_elapsed, expected_reasons):
+    # Keep the longer boundary cases serialized within each family.
+    for record in complete.attempts.values():
+        offset = (int(record["slot"][1]) - 1) * 1000
+        record.update(dispatch_monotonic_s=1000 + offset, deadline_monotonic_s=1900 + offset,
+                      cleanup_monotonic_s=1050 + offset)
+        start = d4.utc("2026-01-01T00:00:00Z") + timedelta(seconds=offset)
+        record.update(started_utc=start.isoformat(), ended_utc=(start + timedelta(seconds=40)).isoformat(),
+                      cleanup_utc=(start + timedelta(seconds=50)).isoformat())
+    record = complete.attempts["A1"]
+    dispatch = 1000.1234567890123 if mode == "float_deadline" else 1000.0
+    record.update(dispatch_monotonic_s=dispatch, deadline_monotonic_s=dispatch + 900.0,
+                  cleanup_monotonic_s=dispatch + monotonic_elapsed)
+    if mode == "float_deadline":
+        assert d4.money(record["deadline_monotonic_s"]) - d4.money(dispatch) != 900
+    start = d4.utc(record["started_utc"])
+    record["cleanup_utc"] = (start + timedelta(seconds=utc_elapsed)).isoformat()
+    if mode == "backwards_end":
+        record["ended_utc"] = (start - timedelta(seconds=1)).isoformat()
+    result = complete.evaluate()
+    assert result["status"]["result"] == ("FAILED_OR_NOT_MEASURED" if expected_reasons else "T1_ACCEPTED")
+    assert result["status"]["failure_reasons"] == [f"A1:{reason}" for reason in expected_reasons]
+    assert result["coverage"]["accepted_attempts"] == (5 if expected_reasons else 6)
+
+
 @pytest.mark.parametrize("mode", ["monotonic", "utc", "deadline", "clock", "backwards"])
 def test_deadline_or_clock_evidence_failure(complete, mode):
     record = complete.attempts["A1"]
@@ -241,7 +274,8 @@ def test_deadline_or_clock_evidence_failure(complete, mode):
     elif mode == "deadline":
         record["deadline_monotonic_s"] += 1
     elif mode == "clock":
-        record["cleanup_monotonic_s"] += 0.1
+        # A 0.1 s drift is now within the approved 1.0 s cross-clock tolerance.
+        record["cleanup_monotonic_s"] += 1.5
     else:
         record["ended_utc"] = "2025-12-31T23:59:00Z"
     assert complete.evaluate()["status"]["result"] == "FAILED_OR_NOT_MEASURED"
@@ -461,6 +495,21 @@ def test_decimal_cost_ledger_reconciles_without_binary_sum_error(complete):
     result = complete.evaluate()
     assert result["status"]["result"] == "T1_ACCEPTED"
     assert result["cost"]["measured_usd"] == 0.6
+
+
+def test_aggregate_cli_internal_error_is_refused_without_output(corpus, monkeypatch, capsys):
+    def crash(*args, **kwargs):
+        raise RuntimeError("secret-text")
+
+    monkeypatch.setattr(d4, "aggregate", crash)
+    argv = ["--root", str(corpus.root), "--binding-id", F["BINDING"], "--freeze-sha256", corpus.freeze_pin,
+            "--packet-sha256", corpus.packet_pin]
+    assert d4.main(argv) == 2
+    captured = capsys.readouterr()
+    assert "secret-text" not in captured.out
+    assert len(captured.out.splitlines()) == 1 and not captured.err
+    assert json.loads(captured.out) == {"result": "REFUSED", "authorizes_later_stage": False}
+    assert not (corpus.root / "aggregate.json").exists()
 
 
 def test_aggregate_cli_status_only_and_exclusive(complete, capsys):

@@ -528,6 +528,21 @@ def test_validation_schema_and_reason_code_contract(stage):
     assert not validator.is_valid(invalid)  # decision_ids is forbidden on REJECT.
 
 
+def test_cli_internal_error_is_refused_without_output(stage, monkeypatch, capsys):
+    def crash(*args, **kwargs):
+        raise RuntimeError("secret-text")
+
+    monkeypatch.setattr(d2, "validate_slot", crash)
+    args = ["--input-root", str(stage["source"]), "--raw", "answer.json", "--packet", "packet.json",
+            "--projection", "projection.json", "--slot", "A1", "--output-root", str(stage["output"])]
+    assert d2.main(args) == 2
+    captured = capsys.readouterr()
+    assert "secret-text" not in captured.out
+    assert len(captured.out.splitlines()) == 1 and not captured.err
+    assert json.loads(captured.out) == {"ok": False, "reject_reasons": ["internal_error"]}
+    assert not tuple(stage["output"].iterdir())
+
+
 def test_cli_pass_and_reject_emit_only_validation_metadata(stage, capsys):
     args = ["--input-root", str(stage["source"]), "--raw", "answer.json", "--packet", "packet.json",
             "--projection", "projection.json", "--slot", "A1", "--output-root", str(stage["output"])]

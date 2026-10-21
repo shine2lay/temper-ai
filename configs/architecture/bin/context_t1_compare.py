@@ -9,7 +9,7 @@ valid span or rationale is not a mismatch. No repair, key inference or model.
 
 CLI: --root DIR --slot A1 --freeze-sha256 HEX [--raw REL --validation REL
      --key REL --freeze REL]. Writes <slot>.comparison.json exclusively, 0600.
-Exit 0: comparison PASS; 1: comparison FAIL; 2: refused (no replacement output).
+Exit 0: comparison PASS; 1: comparison FAIL; 2: refused or internal error (no replacement output).
 Per-case actual/expected values accompany equality flags so D4 can independently
 recompute counts and exact pair repeatability; all output remains private.
 Shared strict JSON/private-file primitives below are also used by D4, not D1/D2.
@@ -342,6 +342,9 @@ def main(argv=None):
         print(json.dumps({"slot": args.slot, "verdict": result["verdict"]}))
         return 0 if result["verdict"] == "PASS" else 1
     except (Refusal, OSError):
+        print(json.dumps({"slot": args.slot, "verdict": "REFUSED"}))
+        return 2
+    except Exception:
         print(json.dumps({"slot": args.slot, "verdict": "REFUSED"}))
         return 2
 

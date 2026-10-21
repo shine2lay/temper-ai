@@ -1533,6 +1533,165 @@ def _moved(deploy, monkeypatch, *, quiet: int = 120) -> tuple[list[float], list[
     return clock, deployed
 
 
+def _prepare_failed_look_without_api_answer(dep, monkeypatch, *, quiet: int = 120):
+    """Use the real deploy decision; stand in for the restart, failed look, API and revert."""
+    deploy, tmp_path = dep
+    real_deploy = deploy.deploy
+    clock, _ = _moved(deploy, monkeypatch, quiet=quiet)
+    monkeypatch.setattr(deploy, "deploy", real_deploy)
+    _looks_for_real(deploy, tmp_path, monkeypatch, lambda shots: {
+        "ok": False, "parts": [{"name": "hooks", "ok": False, "detail": "API down"}]})
+    monkeypatch.setattr(deploy, "runs_going", lambda: None)
+    reverted, said = _reverts(deploy, monkeypatch)
+    return clock, reverted, said
+
+
+def test_a_failed_live_check_reverts_after_two_minutes_without_an_api_answer(dep, monkeypatch):
+    """Failed look -> saved wait -> 120 silent seconds -> one revert, honest DM and cleanup."""
+    deploy, _ = dep
+    clock, reverted, said = _prepare_failed_look_without_api_answer(dep, monkeypatch)
+
+    out = deploy.deploy("2" * 40)
+
+    assert out["rolled_back"] is False and "waits" in out["reason"]
+    assert reverted == []
+    data = deploy.state()
+    assert data["revert_waits"]["bad"] == "2" * 40
+    assert data["revert_waits"]["good"] == data["last_good"] == "1" * 40
+    assert data["hold"]["quiet_since"] == 0.0, "the failed-look call must count silence as quiet"
+    assert "the live API does not answer; for a revert this counts as quiet" in data["hold"]["why"]
+    assert "runs go on in their own boxes" in data["hold"]["why"]
+    assert "a temper that cannot answer serves none" in data["hold"]["why"]
+    assert len(said) == 1 and data["hold"]["why"] in said[0]
+    first_yield = _yield_said(deploy)
+    assert first_yield == {"sha": "2" * 40, "for": "the revert of 222222222222",
+                           "since": _at(0), "until": _at(120 + 600)}
+
+    for seconds in (0.0, 119.0):
+        clock[0] = seconds
+        assert deploy.watch_master() is None
+        assert deploy.state()["hold"]["quiet_since"] == 0.0
+        assert reverted == [] and len(said) == 1
+        assert _yield_said(deploy) == first_yield
+
+    clock[0] = 120.0
+    out = deploy.watch_master()
+
+    assert out["rollback"]["ok"] is True
+    assert out["revert_without_api_answer"] is True
+    assert reverted == [("1" * 40, "2" * 40)]
+    data = deploy.state()
+    assert data["deployed"] == "9" * 40 and data["last_good"] == "1" * 40
+    assert data["last_deploy"]["revert_without_api_answer"] is True
+    assert not {"revert_waits", "hold", "revert_without_api_answer"} & data.keys()
+    assert _yield_said(deploy) is None
+    assert len(said) == 2 and "what failed: hooks" in said[-1]
+    assert "the revert went ahead without an answer from the live API; its silence counted as quiet" in said[-1]
+    assert "without an answer from the live API" in deploy.paths.LOG.read_text(encoding="utf-8")
+    assert deploy.watch_master() is None
+    assert reverted == [("1" * 40, "2" * 40)] and len(said) == 2
+
+
+@pytest.mark.parametrize("after_run", [None, []], ids=["silent-again", "answers-no-run"])
+def test_a_run_observed_during_a_silent_revert_starts_quiet_over(dep, monkeypatch, after_run):
+    deploy, _ = dep
+    clock, reverted, said = _prepare_failed_look_without_api_answer(dep, monkeypatch)
+    deploy.deploy("2" * 40)
+    answer = [[dict(_RUN)]]
+    monkeypatch.setattr(deploy, "runs_going", lambda: answer[0])
+
+    clock[0] = 60.0
+    assert deploy.watch_master() is None
+    assert deploy.state()["hold"]["quiet_since"] is None
+    assert "team-trial" in deploy.state()["hold"]["why"]
+    assert "revert_without_api_answer" not in deploy.state()
+    clock[0] = 180.0
+    assert deploy.watch_master() is None and reverted == []
+
+    answer[0] = after_run
+    clock[0] = 200.0
+    assert deploy.watch_master() is None
+    assert deploy.state()["hold"]["quiet_since"] == 200.0
+    assert _yield_said(deploy)["since"] == _at(200)
+    clock[0] = 319.0
+    assert deploy.watch_master() is None and reverted == []
+    clock[0] = 320.0
+    out = deploy.watch_master()
+
+    assert out["rollback"]["ok"] is True and reverted == [("1" * 40, "2" * 40)]
+    assert ("without an answer from the live API" in said[-1]) is (after_run is None)
+    assert _yield_said(deploy) is None
+
+
+def test_a_silent_revert_keeps_its_quiet_window_when_the_api_answers_no_run(dep, monkeypatch):
+    deploy, _ = dep
+    clock, reverted, said = _prepare_failed_look_without_api_answer(dep, monkeypatch)
+    deploy.deploy("2" * 40)
+    first_yield = _yield_said(deploy)
+
+    clock[0] = 60.0
+    monkeypatch.setattr(deploy, "runs_going", lambda: [])
+    assert deploy.watch_master() is None
+    hold = deploy.state()["hold"]
+    assert hold["quiet_since"] == 0.0
+    assert hold["why"] == "no run going; it goes once that has lasted 120 seconds"
+    assert "revert_without_api_answer" not in deploy.state()
+    assert _yield_said(deploy) == first_yield
+    clock[0] = 119.0
+    assert deploy.watch_master() is None and reverted == []
+    clock[0] = 120.0
+    out = deploy.watch_master()
+
+    assert out["rollback"]["ok"] is True and reverted == [("1" * 40, "2" * 40)]
+    assert not out.get("revert_without_api_answer")
+    assert "without an answer" not in said[-1], "the API recovered and did answer before the revert"
+    assert _yield_said(deploy) is None
+
+
+def test_a_silent_revert_records_its_reason_even_with_no_quiet_window(dep, monkeypatch):
+    deploy, _ = dep
+    _, reverted, said = _prepare_failed_look_without_api_answer(dep, monkeypatch, quiet=0)
+
+    out = deploy.deploy("2" * 40)
+
+    assert out["rollback"]["ok"] is True and reverted == [("1" * 40, "2" * 40)]
+    assert out["revert_without_api_answer"] is True
+    assert len(said) == 1 and "without an answer from the live API" in said[0]
+    assert "revert_without_api_answer" not in deploy.state()
+
+
+def test_a_reverts_silence_marker_cannot_claim_another_revert_had_no_answer(dep, monkeypatch):
+    deploy, _ = dep
+    deploy.save({"last_good": "1" * 40, "revert_without_api_answer": "3" * 40})
+    reverted, said = _reverts(deploy, monkeypatch)
+
+    out = deploy._go_back("2" * 40, "1" * 40, "hooks", {"sha": "2" * 40})
+
+    assert reverted == [("1" * 40, "2" * 40)]
+    assert not out.get("revert_without_api_answer")
+    assert "revert_without_api_answer" not in deploy.state()
+    assert "without an answer" not in said[0]
+
+
+def test_an_owed_look_still_holds_when_the_live_api_is_silent(dep, monkeypatch):
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True})
+    monkeypatch.setattr(deploy, "OWED_QUIET_SECONDS", 300)
+    monkeypatch.setattr(deploy, "runs_going", lambda: None)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
+
+    for seconds in (0.0, 300.0, 3600.0):
+        clock[0] = seconds
+        assert deploy.watch_master() is None
+        assert deploy.state()["hold"]["quiet_since"] is None
+
+    assert tried == []
+    assert "could not say" in deploy.state()["hold"]["why"]
+    assert "revert_without_api_answer" not in deploy.state()
+    assert _yield_said(deploy) is None
+
+
 def test_a_deploy_waits_while_a_run_is_going(dep, monkeypatch):
     """The owner's word: nothing restarts the live temper under a run that is going, however
     long it takes."""
@@ -1712,12 +1871,14 @@ def test_a_waiting_revert_is_dropped_once_master_moves_on(dep, monkeypatch):
     _, deployed = _moved(deploy, monkeypatch, quiet=0)
     data = deploy.state()
     data["revert_waits"] = {"good": "1" * 40, "bad": "5" * 40, "parts": "hooks", "since": "earlier"}
+    data["revert_without_api_answer"] = "5" * 40
     deploy.save(data)
     monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it reverted a commit master moved past"))
 
     deploy.watch_master()
 
     assert "revert_waits" not in deploy.state()
+    assert "revert_without_api_answer" not in deploy.state()
     assert deployed == ["2" * 40]
 
 

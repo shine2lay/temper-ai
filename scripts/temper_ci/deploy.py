@@ -31,7 +31,9 @@ does not move backwards — a revert commit goes on top, through the same
 gate as everything else. That revert's files are exactly those of the last
 commit that was live and well. Then temper restarts onto it, and the owner
 gets a DM saying what failed and what was taken back out. If runs are going
-by then, the revert waits for them like any deploy, and the DM says so.
+by then, the revert waits for them like any deploy, and the DM says so. Only for a
+revert, a silent API counts towards the same quiet window: runs go on in their
+own boxes, and a temper that cannot answer serves none.
 
 Whichever way a failure goes, it is said once. The commit is written down as
 handled, and the watcher leaves it alone until master moves on; only a person
@@ -214,12 +216,15 @@ def remove_runs_yield() -> None:
         "nothing waits for quiet now")
 
 
-def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None, *, sha: str) -> bool:
+def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None, *, sha: str,
+                  silence_counts_as_quiet: bool = False) -> bool:
     """Should the deploy (or revert) of ``what`` wait? Keeps ``data["hold"]`` up to date.
 
     It waits while any run is going, and while the live temper cannot say; then it goes once
     the temper has been quiet for ``quiet_seconds`` in a row (QUIET_SECONDS by default).
     Owed retries use OWED_QUIET_SECONDS. A run that starts meanwhile starts the quiet over.
+    Only revert waits set ``silence_counts_as_quiet``: None counts as quiet, not a run going.
+    Their SHA-scoped silence marker lets _go_back say when it went ahead without an answer.
     A person running ``temper-ci deploy`` is not held: that is their call.
 
     At the start of each quiet window, and when the commit waited for (``sha``) changes during
@@ -230,7 +235,12 @@ def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None, *, sh
         quiet_seconds = QUIET_SECONDS
     going = runs_going()
     hold = data.get("hold") or {}
-    if going is None or going:
+    if silence_counts_as_quiet:
+        if going is None:
+            data["revert_without_api_answer"] = sha
+        else:
+            data.pop("revert_without_api_answer", None)
+    if going or (going is None and not silence_counts_as_quiet):
         why = _said(going)
         if not hold or hold.get("quiet_since") is not None:
             log(f"{what}: held — {why}")
@@ -241,17 +251,22 @@ def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None, *, sh
         save(data)
         return True
     if quiet_seconds <= 0:
-        if hold:
+        if hold or silence_counts_as_quiet:
             data.pop("hold", None)
             save(data)
         return False
     quiet_why = f"no run going; it goes once that has lasted {quiet_seconds} seconds"
+    if going is None:
+        quiet_why = ("the live API does not answer; for a revert this counts as quiet "
+                     "(runs go on in their own boxes, and a temper that cannot answer serves none); "
+                     f"it goes once that has lasted {quiet_seconds} seconds")
     if hold.get("quiet_since") is None:
         quiet_since = _now()
         data["hold"] = {"for": what, "since": hold.get("since") or stamp(),
                         "why": quiet_why, "quiet_since": quiet_since}
         save(data)
-        log(f"{what}: no run is going; it goes once that has lasted {quiet_seconds} seconds")
+        log(f"{what}: {quiet_why}" if going is None else
+            f"{what}: no run is going; it goes once that has lasted {quiet_seconds} seconds")
         write_runs_yield(sha, what, quiet_since, quiet_seconds)
         return True
     if _now() - float(hold["quiet_since"]) < quiet_seconds:
@@ -911,10 +926,10 @@ def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
         out["reason"] = "a revert was already outstanding"
         return out
 
-    # A revert restarts temper too, so it waits for the runs like any deploy: watch_master
-    # makes it once they are over, unless master has moved on by then.
+    # A revert waits for runs too, but a silent API must not block its own repair.
+    # watch_master makes it after the quiet window, unless master has moved on by then.
     data = state()
-    if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha):
+    if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha, silence_counts_as_quiet=True):
         data["revert_waits"] = {"good": good, "bad": sha, "parts": bad_parts, "since": stamp()}
         save(data)
         dm(f"temper: the live check failed after {sha[:12]} ({bad_parts}). Going back to "
@@ -935,6 +950,8 @@ def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
         back = {"ok": False, "detail": f"{type(exc).__name__}: {exc}"[:600]}
     out["rollback"] = back
     data = state()
+    if data.pop("revert_without_api_answer", None) == sha:
+        out["revert_without_api_answer"] = True
     data["last_deploy"] = out
     data["deployed"] = back.get("revert") or sha
     data["handled"] = sha
@@ -950,13 +967,17 @@ def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
     github = ("GitHub: pushed" if back.get("pushed") else
               f"GitHub: NOT pushed ({push_error}). Push by hand: git -C ~/temper-ai push origin master")
     log(github)
+    silence = ("• the revert went ahead without an answer from the live API; its silence counted as quiet\n"
+               if out.get("revert_without_api_answer") else "")
+    if silence:
+        log(f"{sha[:12]}: {silence.strip()}")
     dm("temper: the live check failed after the last land, so master has been put back.\n"
        f"• what failed: {bad_parts}\n"
        f"• taken back out:\n{subjects or f'  {sha[:12]}'}\n"
        f"• master is now the files of {good[:12]}"
        f"{' (revert ' + back['revert'][:12] + ')' if back.get('revert') else ''}\n"
        f"• temper is restarting onto it{'' if back.get('ok') else ' — THE REVERT ITSELF DID NOT GO THROUGH: ' + str(back.get('detail'))}\n"
-       f"{github}\n"
+       f"{silence}{github}\n"
        f"• report: {report.url(sha)}")
     return out
 
@@ -1006,10 +1027,11 @@ def _watch_master() -> dict | None:
         log(f"the revert of {str(waits.get('bad'))[:12]} is not needed any more: master moved on "
             f"to {sha[:12]}, whose own deploy and live check decide now")
         data.pop("revert_waits", None)
+        data.pop("revert_without_api_answer", None)
         save(data)
         waits = None
     if waits:
-        if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha):
+        if held_for_runs(data, f"the revert of {sha[:12]}", sha=sha, silence_counts_as_quiet=True):
             return None
         return _go_back(sha, waits.get("good") or "", waits.get("parts") or "",
                         dict(data.get("last_deploy") or {"sha": sha}))

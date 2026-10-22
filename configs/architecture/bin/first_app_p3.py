@@ -1484,7 +1484,7 @@ class P3Handler(fs.Handler):
 
 
 class RaceStore(fs.Store):
-    """The plant P-SIM-RACE: add() reads, waits, then writes, without the lock: two adds at once lose one."""
+    """The plant P-SIM-RACE: unlocked stale reads lose one add; only final publication is locked."""
 
     def add(self, text: str, added_by: str) -> dict:
         d = self._load()
@@ -1492,7 +1492,9 @@ class RaceStore(fs.Store):
         item = {"id": d["next_id"], "text": text, "added_by": added_by, "done": False}
         d["next_id"] += 1
         d["items"].append(item)
-        self._save(d)
+        # Protect the shared temporary pathname, not the deliberately stale read.
+        with self.lock:
+            self._save(d)
         return item
 
 

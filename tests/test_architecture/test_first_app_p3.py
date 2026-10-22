@@ -18,6 +18,8 @@ import sys
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from http.client import RemoteDisconnected
 from pathlib import Path
 
 import pytest
@@ -464,6 +466,27 @@ def _req(port, method, path, body=None):
         return r.status, r.read()
 
 
+def _post_pair(port):
+    responses, failures = {}, []
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        # Submit both before consuming either; even a failed first result must not hide the second.
+        futures = [pool.submit(_req, port, "POST", "/api/items", {"text": text, "added_by": "x"})
+                   for text in ("a", "b")]
+        for text, future in zip(("a", "b"), futures, strict=True):
+            try:
+                response = future.result()
+                responses[text] = response
+                assert response[0] == 201, f"POST {text!r}: status {response[0]}, expected 201"
+            except Exception as exc:
+                exc.add_note(f"concurrent POST {text!r}")
+                failures.append(exc)
+    if failures:
+        error = ExceptionGroup("concurrent POSTs failed", failures)
+        error.add_note(f"POST response statuses: { {text: r[0] for text, r in responses.items()} }")
+        raise error
+    return list(responses.values())
+
+
 def test_server_answers_utf8_keeps_items_across_a_kill_and_reports_exit_codes(tmp_path):
     site = p3.materialize("clean", tmp_path / "c")
     data = tmp_path / "data"
@@ -486,6 +509,62 @@ def test_server_answers_utf8_keeps_items_across_a_kill_and_reports_exit_codes(tm
         srv.stop()
 
 
+def test_post_pair_starts_both_before_waiting_and_returns_both(monkeypatch):
+    entered = threading.Barrier(2, timeout=3)
+    seen = {}
+
+    def request(port, method, path, body):
+        assert (port, method, path) == (0, "POST", "/api/items")
+        entered.wait()  # Serial submit/result would break this barrier, not pass by sleeping.
+        text = body["text"]
+        seen[text] = (201, text.encode())
+        return seen[text]
+
+    monkeypatch.setattr(sys.modules[__name__], "_req", request)
+    assert _post_pair(0) == [(201, b"a"), (201, b"b")]
+    assert set(seen) == {"a", "b"} and not entered.broken
+
+
+@pytest.mark.parametrize("outcomes", [
+    pytest.param(("disconnect", 201), id="first-disconnect"),
+    pytest.param((201, "disconnect"), id="second-disconnect"),
+    pytest.param(("disconnect", "disconnect"), id="both-disconnect"),
+    pytest.param((503, 201), id="first-non-201"),
+    pytest.param((201, 503), id="second-non-201"),
+    pytest.param((400, 503), id="both-non-201"),
+    pytest.param(("disconnect", 503), id="disconnect-and-non-201"),
+])
+def test_post_pair_surfaces_every_failure_on_the_calling_thread(monkeypatch, outcomes):
+    entered = threading.Barrier(2, timeout=3)
+    expected = {text: RemoteDisconnected(f"disconnected {text}") if value == "disconnect" else value
+                for text, value in zip(("a", "b"), outcomes, strict=True)}
+    seen = {}
+
+    def request(port, method, path, body):
+        entered.wait()
+        text = body["text"]
+        seen[text] = expected[text]
+        if isinstance(seen[text], Exception):
+            raise seen[text]
+        return seen[text], text.encode()
+
+    monkeypatch.setattr(sys.modules[__name__], "_req", request)
+    with pytest.raises(ExceptionGroup, match="concurrent POSTs failed") as caught:
+        _post_pair(0)
+    assert seen == expected and not entered.broken
+    failures = [(text, value) for text, value in expected.items() if value != 201]
+    assert len(caught.value.exceptions) == len(failures)
+    for exc, (text, value) in zip(caught.value.exceptions, failures, strict=True):
+        if isinstance(value, Exception):
+            assert exc is value  # Preserve each original exception and its traceback, not just its string.
+        else:
+            assert isinstance(exc, AssertionError)
+            assert str(exc).startswith(f"POST {text!r}: status {value}, expected 201")
+        assert exc.__notes__ == [f"concurrent POST {text!r}"]
+    statuses = {text: value for text, value in expected.items() if isinstance(value, int)}
+    assert caught.value.__notes__ == [f"POST response statuses: {statuses}"]
+
+
 def test_race_server_loses_one_of_two_adds_at_once(tmp_path):
     site = p3.materialize("clean", tmp_path / "c")
     for variant, want in (("file", 2), ("race_add", 1)):
@@ -494,12 +573,7 @@ def test_race_server_loses_one_of_two_adds_at_once(tmp_path):
         srv = p3.P3Server(site, data, variant, bind_address="127.0.0.1")
         srv.start()
         try:
-            threads = [threading.Thread(target=_req, args=(srv.port, "POST", "/api/items",
-                                                           {"text": t, "added_by": "x"})) for t in ("a", "b")]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+            _post_pair(srv.port)  # Both responses must be 201 before the item count can mean anything.
             _, raw = _req(srv.port, "GET", "/api/items")
             assert len(json.loads(raw)["items"]) == want, variant
         finally:

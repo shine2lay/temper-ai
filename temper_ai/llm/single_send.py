@@ -91,6 +91,18 @@ class SingleSendError(Exception):
         self.response = response
 
 
+class NamedRefusal(SingleSendError):
+    """A fixed-input refusal: the send's own reason plus the preflight's named one.
+
+    The send keeps only ``reason`` (safe_failure copies it into a plain
+    SingleSendError), so its receipts are unchanged; the preflight reports ``named``.
+    """
+
+    def __init__(self, reason: str, named: str) -> None:
+        super().__init__(reason)
+        self.named = named
+
+
 def reported_usage(value: Any, *, codex: bool = False) -> dict[str, Any]:
     """Closed numeric usage only: null is unreported, never an inferred zero.
 

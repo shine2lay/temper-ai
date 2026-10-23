@@ -161,6 +161,59 @@ def to_responses_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def codex_request_body(messages: list[dict[str, Any]], model: str,
+                       tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """The Responses body every Codex call sends (shared with the single_send preflight)."""
+    instructions, items = to_responses_input(messages)
+    body: dict[str, Any] = {
+        "model": model,
+        "store": False,
+        "stream": True,
+        "instructions": instructions or "You are a helpful assistant.",
+        "input": items,
+        "text": {"verbosity": "low"},
+        "tool_choice": "auto",
+        "parallel_tool_calls": True,
+    }
+    # No temperature. The Codex endpoint answers 400 "Unsupported
+    # parameter: temperature" for its models; sending a configured value
+    # failed an entire run over a knob the endpoint will not accept.
+    # Said once at construction (see CodexTransport.__init__), not silently.
+    if tools:
+        body["tools"] = to_responses_tools(tools)
+    return body
+
+
+def codex_single_send_body(messages: list[dict[str, Any]], default_model: str | None = None,
+                           **kwargs: Any) -> dict[str, Any]:
+    """single_send's Responses body and its bound/parameter refusals.
+
+    Shared by the send and its preflight. No credential, client or network.
+    """
+    from temper_ai.llm import single_send as ss
+    mode = kwargs.get("output_bound_mode")
+    body = codex_request_body(messages, str(kwargs.get("model") or default_model), kwargs.get("tools"))
+    if mode == "request_limit":
+        if not kwargs.get("request_limit_evidence") or type(kwargs.get("max_tokens")) is not int:
+            raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+        body["max_output_tokens"] = kwargs["max_tokens"]
+    elif mode != "documented_max":
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    if any(key in kwargs for key in ("temperature", "thinking", "thinking_budget", "effort", "tools")):
+        raise ss.NamedRefusal("strict_parser", "unsupported_parameter")
+    return body
+
+
+def codex_credential_free_headers() -> dict[str, str]:
+    """The Codex request headers that carry no credential (shared with the preflight)."""
+    return {
+        "originator": ORIGINATOR,
+        "OpenAI-Beta": "responses=experimental",
+        "accept": "text/event-stream",
+        "content-type": "application/json",
+    }
+
+
 # --------------------------------------------------------------------------
 # The transport
 # --------------------------------------------------------------------------
@@ -195,32 +248,11 @@ class CodexTransport:
         return {
             "Authorization": f"Bearer {self.token}",
             "chatgpt-account-id": self.account_id,
-            "originator": ORIGINATOR,
-            "OpenAI-Beta": "responses=experimental",
-            "accept": "text/event-stream",
-            "content-type": "application/json",
+            **codex_credential_free_headers(),
         }
 
     def body(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
-        instructions, items = to_responses_input(messages)
-        body: dict[str, Any] = {
-            "model": str(kwargs.get("model") or self.model),
-            "store": False,
-            "stream": True,
-            "instructions": instructions or "You are a helpful assistant.",
-            "input": items,
-            "text": {"verbosity": "low"},
-            "tool_choice": "auto",
-            "parallel_tool_calls": True,
-        }
-        # No temperature. The Codex endpoint answers 400 "Unsupported
-        # parameter: temperature" for its models; sending a configured value
-        # failed an entire run over a knob the endpoint will not accept.
-        # Said once at construction (see __init__), not silently.
-        tools = kwargs.get("tools")
-        if tools:
-            body["tools"] = to_responses_tools(tools)
-        return body
+        return codex_request_body(messages, str(kwargs.get("model") or self.model), kwargs.get("tools"))
 
     def complete(self, messages: list[dict[str, Any]], *, single_send: bool = False, **kwargs: Any) -> LLMResponse:
         if single_send:
@@ -255,16 +287,7 @@ class CodexTransport:
             try:
                 if "token" in kwargs:
                     raise ss.SingleSendError("auth")
-                mode = kwargs.get("output_bound_mode")
-                body = self.body(messages, **kwargs)
-                if mode == "request_limit":
-                    if not kwargs.get("request_limit_evidence") or type(kwargs.get("max_tokens")) is not int:
-                        raise ss.SingleSendError("strict_parser")
-                    body["max_output_tokens"] = kwargs["max_tokens"]
-                elif mode != "documented_max":
-                    raise ss.SingleSendError("strict_parser")
-                if any(key in kwargs for key in ("temperature", "thinking", "thinking_budget", "effort", "tools")):
-                    raise ss.SingleSendError("strict_parser")
+                body = codex_single_send_body(messages, self.model, **kwargs)
                 client = ss.new_http_client(control)
                 control.own(client.close)
                 manager = client.stream("POST", self.url, headers=self.headers(), json=body)

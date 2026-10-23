@@ -143,6 +143,16 @@ def anthropic_events(answer=ANSWER, stop="end_turn", *, reasoning=None):
     return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
 
 
+class IdentityShaper:
+    """Test shaper: an A single_send refuses with none registered; this one changes nothing."""
+
+    def shape(self, body):
+        return body
+
+    def client_headers(self):
+        return {}
+
+
 def fake_anthropic(monkeypatch, handler):
     from temper_ai.llm import single_send
     from temper_ai.llm.providers.anthropic import AnthropicLLM
@@ -166,7 +176,7 @@ def fake_anthropic(monkeypatch, handler):
     provider._client_for = lambda credential: sdk
     provider._test_sdk = sdk
     import temper_ai.llm.providers.anthropic as module
-    monkeypatch.setattr(module, "get_oauth_shaper", lambda: None)
+    monkeypatch.setattr(module, "get_oauth_shaper", IdentityShaper)
     provider._test_request_starts = 0
     def client(control):
         def start(request):

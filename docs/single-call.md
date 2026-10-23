@@ -212,3 +212,95 @@ secret/bootstrap policy and worker/environment scoping. T2 held-out isolation an
 digest placement are separate pre-persistence decisions. SEALED_PROVIDERS is
 unchanged: Anthropic can be gate-classified, OpenAI/Codex still cannot. No workflow,
 provider call, probe, secret isolation claim or admission is granted by this type.
+
+## Preflight
+
+`preflight(config)` in `temper_ai/llm/single_send_preflight.py`, or
+`python -m temper_ai.llm.single_send_preflight CONFIG.json`, reports the exact
+request one A or B send would transmit, **without sending it**, so a reservation can
+rest on real body bytes and enforced bounds. `CONFIG.json` is the agent's own
+`{provider, model, single_call: {...}}`, the whole key set the agent accepts
+(`name`, `type` and `description` too), so the exact workflow block can be checked.
+The CLI prints the JSON and exits 0 (`PREFLIGHT_OK`) or 3 (`REFUSED`); 2 is a usage
+error (no argument, unreadable or not JSON) and 1 an unexpected failure, which
+prints no JSON and keeps no detail.
+
+It reads the pinned prompt and pricing files (same bounded, no-symlink reads as the
+send) and nothing else: no credential, named-token store, provider object, claim,
+output root, write or event. Send-only fields (`output_root`, `deadline_s`,
+`cost_cap_usd`, `experiment_id`, `binding_id`, the digests) are optional; when
+present they get the send's format checks, and `output_root` is never opened. A's
+`token` is checked as a name only and never echoed. Unknown keys are refused.
+
+The bytes are the send's because the code is. The preflight runs the same
+credential-free checks the agent runs, in the send's order (`check_claim_fields`,
+`check_fixed_fields`, `check_fixed_call`, `read_fixed_prompt`, `read_fixed_pricing`,
+`parse_fixed_pricing`, `fixed_bound_evidence`, `fixed_output_bound`,
+`fixed_optional_parameters`, then `check_final_body` on the built body), the same
+body builders (`anthropic_single_send_body`, `codex_single_send_body`) and the same
+serialization. A calls the SDK's `messages.stream(**body)` on a client with the
+SDK's default base URL passed explicitly, a fixed public placeholder for both
+credentials (so the SDK reads no key from the environment), `max_retries=0`, and a
+request hook that keeps the built request and stops before any transport (a
+transport that refuses backs it up). B builds the Codex request for the default
+Codex base URL with credential-free headers and never sends it. Neither HTTP client
+trusts the environment (proxies, certificates). Both digest the captured bytes with
+`request_metadata`, the function the send's pre-send hook runs, all inside
+`metadata_only_logs()`.
+
+A's body includes the registered OAuth shaper's output. A single_send is OAuth-only,
+so the shared builder refuses before any request when no shaper is registered: the
+preflight reports `shaper_missing` and the send records `auth`. This is the one
+change to the send's behaviour (it used to warn and send an unshaped body, which is
+never a valid request and would burn a slot). The CLI imports the provider factory,
+which registers the shaper as the server and boxes do. The shaper's output depends
+on its configuration, so run the preflight in the same image and environment as the
+send.
+
+Output `single-call-preflight/v1` is a closed object. On a refusal every field but
+`schema`, `terminal`, `refusal`, `send_refusal`, `authorizes_send`, `not_checked`
+and a known `slot` is null.
+
+| Field | Holds |
+|---|---|
+| `terminal`, `refusal` | `PREFLIGHT_OK` with null, or `REFUSED` with one reason below |
+| `send_refusal` | the reason the send records for the same config (`null` when the send would transmit) |
+| `authorizes_send` | always `false` |
+| `not_checked` | always `credential`, `loaded_route`, `quota_policy`, `cost_cap`, `claim_slot`, `deadline`: the send still checks these |
+| `slot`, `family`, `provider_class`, `route`, `endpoint`, `model` | where the send would go |
+| `endpoint_basis` | `default_not_loaded`: the default base URL, not the loaded provider's |
+| `pins` | the checked `prompt_sha256`, `prompt_bytes` and `pricing_sha256` |
+| `versions` | httpx; A: SDK, shaper class, `anthropic-version`, `anthropic-beta`, `user-agent`; B: `originator`, `openai-beta` |
+| `request` | exactly `request_metadata`'s dict: `serialized_body_bytes`, `serialized_body_sha256`, `input_parts` (kind, bytes, sha256), `parameters`, `model` |
+| `prompt_part` | `{bytes, sha256}` of the one prompt part; must equal the pins |
+| `parameters_sent` | every top-level body key and value except the text keys |
+| `output_bound` | `mode`, `tokens`, `sent_as` (`max_tokens` or `none`), `includes_reasoning`, `evidence_sha256` |
+| `overhead` | `system_or_instructions_bytes`; `framing_bytes` = body bytes minus all text-part bytes (JSON escaping included) |
+| `body_facts` | `cache_control_markers`, `max_output_tokens_present` |
+| `reservation_usd` | the send's own exact reservation on these bytes, as a string (a cross-check) |
+
+`includes_reasoning` is `INCLUDED` or `NOT_INCLUDED` only from an optional key on
+the model's pricing entry, `output_bound_includes_reasoning` (JSON true or false),
+with an HTTPS `output_bound_includes_reasoning_source`. Absent, not boolean, or
+without an HTTPS source: `UNKNOWN`, never a boolean or null. Cache answers are not
+read from pricing: `body_facts` gives the measured markers (the builder removes
+every `cache_control`, so A always shows 0). B sends no output-limit field; its
+bound is the pinned `max_output_tokens`.
+
+Refusals: `prompt_mismatch` (prompt file, length, hash, UTF-8, or the body's prompt
+part differs from the pins), `pricing_mismatch` (file, hash, shape, or a price the
+reservation can't use exactly), `unknown_slot`, `route_mismatch` (provider, model,
+route, auth mode or token field), `unsupported_parameter`, `bound_unestablished`,
+`shaper_missing`, `strict_parser` (malformed config or a body outside the strict
+shape). Each is the same refusal the send makes on that config, by the same code;
+`send_refusal` holds the send's own reason. A refusal sends, writes and records
+nothing.
+
+The preflight proves which bytes this code and these pinned files would send. It
+doesn't prove the provider accepts them, that a price or bound is true, or that
+the send is allowed: D0 still verifies its sources each run window, and the
+`not_checked` items stay with the send. `endpoint` uses the default base URLs
+(`api.anthropic.com`, the default Codex URL), never their environment overrides;
+anything that depends on the loaded provider (its base URL, default headers,
+credential) is checked at admission. Headers are reported as versions; the digest
+covers the body only.

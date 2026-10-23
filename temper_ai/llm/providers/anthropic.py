@@ -383,6 +383,50 @@ def _ensure_anthropic():
         ) from exc
 
 
+def anthropic_single_send_body(messages: list[dict], **kwargs: Any) -> dict[str, Any]:
+    """single_send's create kwargs: shared by the send and its preflight.
+
+    Fixed, uncached parameters; NEVER consults learned parameter sets or
+    defaults. Applies the OAuth shaper registered at call time. A single_send
+    is OAuth-only, so with no shaper registered it refuses before any request
+    (an unshaped body is never a valid one). No credential, client or network:
+    the caller serializes it.
+    """
+    from temper_ai.llm.single_send import NamedRefusal, SingleSendError
+    shaper = get_oauth_shaper()
+    if shaper is None:
+        raise NamedRefusal("auth", "shaper_missing")
+    system, converted = _extract_system(messages)
+    if not kwargs.get("model") or type(kwargs.get("max_tokens")) is not int:
+        raise SingleSendError("strict_parser")
+    body: dict[str, Any] = {"model": kwargs["model"], "max_tokens": kwargs["max_tokens"],
+                            "messages": converted}
+    if system:
+        body["system"] = system
+    if "temperature" in kwargs:
+        body["temperature"] = kwargs["temperature"]
+    if "thinking" in kwargs:
+        body["thinking"] = kwargs["thinking"]
+    if "thinking_budget" in kwargs:
+        body["thinking"] = {"type": "enabled", "budget_tokens": kwargs["thinking_budget"]}
+    if "effort" in kwargs:
+        body["output_config"] = {"effort": kwargs["effort"]}
+    body = shaper.shape(body)
+    body["extra_headers"] = {**shaper.client_headers(), **(body.get("extra_headers") or {})}
+    # Cache writes would need separate pinned prices. Remove every breakpoint,
+    # including shaper-added ones, and NEVER add request-level caching.
+    def uncached(value: Any) -> None:
+        if isinstance(value, dict):
+            value.pop("cache_control", None)
+            for child in value.values():
+                uncached(child)
+        elif isinstance(value, list):
+            for child in value:
+                uncached(child)
+    uncached(body)
+    return body
+
+
 class AnthropicLLM(BaseLLM):
     """Provider for Anthropic Claude models."""
 
@@ -727,40 +771,7 @@ class AnthropicLLM(BaseLLM):
 
     def _build_single_send_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         """Fixed, uncached parameters; NEVER consult learned parameter sets/defaults."""
-        from temper_ai.llm.single_send import SingleSendError
-        system, converted = _extract_system(messages)
-        if not kwargs.get("model") or type(kwargs.get("max_tokens")) is not int:
-            raise SingleSendError("strict_parser")
-        body: dict[str, Any] = {"model": kwargs["model"], "max_tokens": kwargs["max_tokens"],
-                                "messages": converted}
-        if system:
-            body["system"] = system
-        if "temperature" in kwargs:
-            body["temperature"] = kwargs["temperature"]
-        if "thinking" in kwargs:
-            body["thinking"] = kwargs["thinking"]
-        if "thinking_budget" in kwargs:
-            body["thinking"] = {"type": "enabled", "budget_tokens": kwargs["thinking_budget"]}
-        if "effort" in kwargs:
-            body["output_config"] = {"effort": kwargs["effort"]}
-        shaper = get_oauth_shaper()
-        if shaper is not None:
-            body = shaper.shape(body)
-            body["extra_headers"] = {**shaper.client_headers(), **(body.get("extra_headers") or {})}
-        else:
-            _warn_unshaped_once()
-        # Cache writes would need separate pinned prices. Remove every breakpoint,
-        # including shaper-added ones, and NEVER add request-level caching.
-        def uncached(value: Any) -> None:
-            if isinstance(value, dict):
-                value.pop("cache_control", None)
-                for child in value.values():
-                    uncached(child)
-            elif isinstance(value, list):
-                for child in value:
-                    uncached(child)
-        uncached(body)
-        return body
+        return anthropic_single_send_body(messages, **kwargs)
 
     def _complete_single_send(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
         from temper_ai.llm import single_send as ss

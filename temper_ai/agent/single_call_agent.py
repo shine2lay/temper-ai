@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal, Inexact, InvalidOperation, localcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.llm import single_send as ss
@@ -88,9 +88,14 @@ def parse_pinned_pricing(pricing_bytes: bytes) -> dict:
     return value
 
 
+def safe_absolute_path(path: object) -> TypeGuard[str]:
+    """A path _open_directory may walk: an absolute string with no '..' part."""
+    return isinstance(path, str) and path.startswith("/") and ".." not in path.split("/")
+
+
 def _open_directory(path: object) -> int:
     """Walk retained directory fds: no parent or final symlinks, no '..'."""
-    if not isinstance(path, str) or not path.startswith("/") or ".." in path.split("/"):
+    if not safe_absolute_path(path):
         raise ss.SingleSendError("strict_parser")
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -158,6 +163,174 @@ def _write_once(root: int, name: str, data: bytes) -> None:
         _write_fd_once(fd, data)
     finally:
         os.close(fd)
+
+
+# Credential-free fixed-input checks, shared by the agent and the preflight
+# (temper_ai/llm/single_send_preflight.py). Each refusal is a NamedRefusal: the
+# agent keeps its old reason (strict_parser or auth), the preflight reports the
+# named one. Order inside each function is the agent's order.
+
+_DIGEST_NAMED = {"prompt_sha256": "prompt_mismatch", "pricing_sha256": "pricing_mismatch"}
+
+
+def check_claim_fields(fixed: dict) -> None:
+    """claim_slot's format checks, before anything is opened: the slot, then output_root's path.
+
+    output_root is checked only when present; the send opens it, the preflight never does.
+    """
+    slot = fixed.get("slot")
+    if not isinstance(slot, str) or slot not in _SLOTS:
+        raise ss.NamedRefusal("strict_parser", "unknown_slot")
+    if "output_root" in fixed and not safe_absolute_path(fixed["output_root"]):
+        raise ss.NamedRefusal("strict_parser", "strict_parser")
+
+
+def check_fixed_fields(config: dict, fixed: dict, required: frozenset[str]) -> None:
+    """Closed keys, then provider/model and field formats.
+
+    The send requires SINGLE_CALL_REQUIRED; the preflight a subset, with the
+    send-only fields format-checked when present.
+    """
+    c, f = config, fixed
+    if set(c) - SINGLE_CALL_AGENT_SETTINGS or set(f) - SINGLE_CALL_SETTINGS:
+        raise ss.NamedRefusal("strict_parser", "unsupported_parameter")
+    if not required <= f.keys():
+        raise ss.NamedRefusal("strict_parser", "strict_parser")
+    if not isinstance(c.get("provider"), str) or not c["provider"] or not isinstance(c.get("model"), str):
+        raise ss.NamedRefusal("auth", "route_mismatch")
+    for key in _DIGEST_FIELDS:
+        if key in f and (not isinstance(f[key], str) or not re.fullmatch(r"[0-9a-f]{64}", f[key])):
+            raise ss.NamedRefusal("strict_parser", _DIGEST_NAMED.get(key, "strict_parser"))
+    for key in ("experiment_id", "binding_id"):
+        if key in f and (not isinstance(f[key], str) or not 1 <= len(f[key]) <= 256):
+            raise ss.NamedRefusal("strict_parser", "strict_parser")
+    if "deadline_s" in f and (type(f["deadline_s"]) is not int or f["deadline_s"] != 900):
+        raise ss.NamedRefusal("strict_parser", "strict_parser")
+    if "cost_cap_usd" in f:
+        try:
+            _decimal(f["cost_cap_usd"])
+        except ss.SingleSendError:
+            raise ss.NamedRefusal("strict_parser", "strict_parser") from None
+
+
+def check_fixed_call(config: dict, fixed: dict, slot: str) -> bool:
+    """Prompt length, output bound, slot/family, route and auth. True for family A."""
+    c, f = config, fixed
+    if type(f["prompt_bytes"]) is not int or f["prompt_bytes"] < 0:
+        raise ss.NamedRefusal("strict_parser", "prompt_mismatch")
+    if type(f["max_tokens"]) is not int or f["max_tokens"] <= 0:
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    family = f["family"]
+    a = family == "A" and slot.startswith("A")
+    b = family == "B" and slot.startswith("B")
+    if not (a or b):
+        raise ss.NamedRefusal("auth", "unknown_slot")
+    if f["auth_mode"] != "oauth":
+        raise ss.NamedRefusal("auth", "route_mismatch")
+    if a and (c["provider"] != "anthropic" or c["model"] != "claude-opus-5-5" or f["route"] != "anthropic-oauth-named-token" or not isinstance(f.get("token"), str) or not f["token"]):
+        raise ss.NamedRefusal("auth", "route_mismatch")
+    if b and (c["provider"] != "openai" or c["model"] != "gpt-6.1-sol" or f["route"] != "openai-codex-oauth" or "token" in f):
+        raise ss.NamedRefusal("auth", "route_mismatch")
+    if f["output_bound_mode"] != ("request_limit" if a else "documented_max"):
+        raise ss.NamedRefusal("auth", "bound_unestablished")
+    return a
+
+
+def read_fixed_prompt(fixed: dict) -> bytes:
+    """The prompt file, bounded by prompt_bytes, matching its pinned length and hash."""
+    try:
+        prompt = _read_bound(fixed["prompt_path"], fixed["prompt_bytes"])
+    except ss.SingleSendError as exc:
+        raise ss.NamedRefusal(exc.reason, "prompt_mismatch") from None
+    if len(prompt) != fixed["prompt_bytes"] or ss.sha256(prompt) != fixed["prompt_sha256"]:
+        raise ss.NamedRefusal("strict_parser", "prompt_mismatch")
+    return prompt
+
+
+def read_fixed_pricing(fixed: dict) -> bytes:
+    """The pinned pricing file (64 KiB at most), matching its pinned hash."""
+    try:
+        pricing_bytes = _read_bound(fixed["pricing_path"], 65536)
+    except ss.SingleSendError as exc:
+        raise ss.NamedRefusal(exc.reason, "pricing_mismatch") from None
+    if ss.sha256(pricing_bytes) != fixed["pricing_sha256"]:
+        raise ss.NamedRefusal("strict_parser", "pricing_mismatch")
+    return pricing_bytes
+
+
+def parse_fixed_pricing(config: dict, pricing_bytes: bytes) -> dict:
+    """Exact prices, USD, with literal input and output rates for the model."""
+    try:
+        pricing = parse_pinned_pricing(pricing_bytes)
+        if pricing.get("currency") != "USD":
+            raise ss.SingleSendError("strict_parser")
+        price = pricing["models"][config["model"]]
+        for key in ("input_usd_per_million", "output_usd_per_million"):
+            _decimal(price[key])
+    except ss.SingleSendError as exc:
+        raise ss.NamedRefusal(exc.reason, "pricing_mismatch") from None
+    return pricing
+
+
+def https_source(source: Any) -> bool:
+    """A pinned fact's source: an https URL of at most 2048 characters."""
+    return isinstance(source, str) and source.startswith("https://") and len(source) <= 2048
+
+
+def fixed_bound_evidence(config: dict, pricing: dict, a: bool) -> str:
+    """sha256 of the https source the output bound rests on."""
+    price = pricing["models"][config["model"]]
+    source = price.get("request_limit_evidence" if a else "public_source")
+    if not https_source(source):
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    return ss.sha256(source.encode("utf-8"))
+
+
+def fixed_output_bound(config: dict, fixed: dict, pricing: dict, a: bool) -> int:
+    """A: the sent max_tokens. B: the pinned documented max_output_tokens."""
+    price = pricing["models"][config["model"]]
+    output_bound = fixed["max_tokens"] if a else price.get("max_output_tokens")
+    if type(output_bound) is not int or output_bound <= 0:
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    return output_bound
+
+
+def fixed_optional_parameters(fixed: dict) -> dict:
+    """The optional send kwargs, with the thinking rules."""
+    f = fixed
+    kwargs = {k: f[k] for k in ("token", "temperature", "thinking", "thinking_budget", "effort") if k in f}
+    if "thinking_budget" in f and (type(f["thinking_budget"]) is not int or not 0 < f["thinking_budget"] < f["max_tokens"]):
+        raise ss.NamedRefusal("strict_parser", "unsupported_parameter")
+    if "thinking" in f and "thinking_budget" in f:
+        raise ss.NamedRefusal("strict_parser", "unsupported_parameter")
+    return kwargs
+
+
+def check_final_body(config: dict, fixed: dict, request: dict, pricing: dict, output_bound: int) -> Decimal:
+    """The final body against the fixed inputs; returns the exact reservation.
+
+    request is single_send.request_metadata's dict for the serialized body.
+    """
+    f = fixed
+    params = request["parameters"]
+    if request["model"] != config["model"]:
+        raise ss.NamedRefusal("strict_parser", "route_mismatch")
+    if f["family"] == "A" and params.get("max_tokens") != f["max_tokens"]:
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    if f["family"] == "B" and "max_output_tokens" in params:
+        raise ss.NamedRefusal("strict_parser", "bound_unestablished")
+    budget = (params.get("thinking") or {}).get("budget_tokens")
+    if budget is not None and budget >= f["max_tokens"]:
+        raise ss.NamedRefusal("strict_parser", "unsupported_parameter")
+    price = pricing["models"][config["model"]]
+    try:
+        reservation = _exact_usd(request["serialized_body_bytes"], price["input_usd_per_million"],
+                                 output_bound, price["output_usd_per_million"])
+    except ss.SingleSendError as exc:
+        raise ss.NamedRefusal(exc.reason, "pricing_mismatch") from None
+    if not _json_number_is_exact(reservation):
+        raise ss.NamedRefusal("strict_parser", "pricing_mismatch")
+    return reservation
 
 
 def recompute_list_price_usd(call_record: dict, pinned_pricing: dict) -> Decimal | None:
@@ -228,8 +401,7 @@ class _Attempt:
         self.terminal = "FAILED" if self.control and self.control.transmission_ids else "NOT_MEASURED"
 
     def claim_slot(self) -> None:
-        if not isinstance(self.slot, str) or self.slot not in _SLOTS:
-            raise ss.SingleSendError("strict_parser")
+        check_claim_fields(self.fixed)
         self.root = _open_directory(self.fixed.get("output_root"))
         _private_root(self.root)
         self.start, self.started = ss.paired_sample()
@@ -246,34 +418,10 @@ class _Attempt:
     def validate(self) -> tuple[Any, str, dict]:
         self.call_identity = dict.fromkeys(_CALL_IDENTITY_FIELDS)
         c, f = self.config, self.fixed
-        if set(c) - SINGLE_CALL_AGENT_SETTINGS or set(f) - SINGLE_CALL_SETTINGS or not SINGLE_CALL_REQUIRED <= f.keys():
-            raise ss.SingleSendError("strict_parser")
-        if not isinstance(c.get("provider"), str) or not c["provider"] or not isinstance(c.get("model"), str):
-            raise ss.SingleSendError("auth")
-        for key in _DIGEST_FIELDS:
-            if not isinstance(f[key], str) or not re.fullmatch(r"[0-9a-f]{64}", f[key]):
-                raise ss.SingleSendError("strict_parser")
-        for key in ("experiment_id", "binding_id"):
-            if not isinstance(f[key], str) or not 1 <= len(f[key]) <= 256:
-                raise ss.SingleSendError("strict_parser")
-        if type(f["deadline_s"]) is not int or f["deadline_s"] != 900:
-            raise ss.SingleSendError("strict_parser")
-        if type(f["prompt_bytes"]) is not int or f["prompt_bytes"] < 0:
-            raise ss.SingleSendError("strict_parser")
-        if type(f["max_tokens"]) is not int or f["max_tokens"] <= 0:
-            raise ss.SingleSendError("strict_parser")
-        _decimal(f["cost_cap_usd"])
-        family = f["family"]
+        check_fixed_fields(c, f, SINGLE_CALL_REQUIRED)
         from temper_ai.llm.providers.anthropic import AnthropicLLM
         from temper_ai.llm.providers.openai import OpenAILLM
-        a = family == "A" and self.slot.startswith("A")
-        b = family == "B" and self.slot.startswith("B")
-        if not (a or b) or f["auth_mode"] != "oauth":
-            raise ss.SingleSendError("auth")
-        if a and (c["provider"] != "anthropic" or c["model"] != "claude-opus-5-5" or f["route"] != "anthropic-oauth-named-token" or f["output_bound_mode"] != "request_limit" or not isinstance(f.get("token"), str) or not f["token"]):
-            raise ss.SingleSendError("auth")
-        if b and (c["provider"] != "openai" or c["model"] != "gpt-6.1-sol" or f["route"] != "openai-codex-oauth" or f["output_bound_mode"] != "documented_max" or "token" in f):
-            raise ss.SingleSendError("auth")
+        a = check_fixed_call(c, f, self.slot)
         provider = self.context.get_llm(c["provider"])
         if a:
             if type(provider) is not AnthropicLLM or provider.auth_mode != "oauth":
@@ -286,33 +434,13 @@ class _Attempt:
             raise ss.SingleSendError("auth")
         self.call_identity.update({k: c[k] for k in ("provider", "model")})
         self.call_identity.update({k: f[k] for k in ("route", "auth_mode", "output_bound_mode")})
-        prompt = _read_bound(f["prompt_path"], f["prompt_bytes"])
-        if len(prompt) != f["prompt_bytes"] or ss.sha256(prompt) != f["prompt_sha256"]:
-            raise ss.SingleSendError("strict_parser")
-        pricing_bytes = _read_bound(f["pricing_path"], 65536)
-        if ss.sha256(pricing_bytes) != f["pricing_sha256"]:
-            raise ss.SingleSendError("strict_parser")
+        prompt = read_fixed_prompt(f)
+        pricing_bytes = read_fixed_pricing(f)
         self.call_identity["pricing_sha256"] = f["pricing_sha256"]
-        self.pricing = parse_pinned_pricing(pricing_bytes)
-        if self.pricing.get("currency") != "USD":
-            raise ss.SingleSendError("strict_parser")
-        price = self.pricing["models"][c["model"]]
-        for key in ("input_usd_per_million", "output_usd_per_million"):
-            _decimal(price[key])
-        evidence_key = "request_limit_evidence" if a else "public_source"
-        source = price.get(evidence_key)
-        if not isinstance(source, str) or not source.startswith("https://") or len(source) > 2048:
-            raise ss.SingleSendError("strict_parser")
-        self.evidence = ss.sha256(source.encode("utf-8"))
-        output_bound = f["max_tokens"] if a else price.get("max_output_tokens")
-        if type(output_bound) is not int or output_bound <= 0:
-            raise ss.SingleSendError("strict_parser")
-        self.output_bound = output_bound
-        kwargs = {k: f[k] for k in ("token", "temperature", "thinking", "thinking_budget", "effort") if k in f}
-        if "thinking_budget" in f and (type(f["thinking_budget"]) is not int or not 0 < f["thinking_budget"] < f["max_tokens"]):
-            raise ss.SingleSendError("strict_parser")
-        if "thinking" in f and "thinking_budget" in f:
-            raise ss.SingleSendError("strict_parser")
+        self.pricing = parse_fixed_pricing(c, pricing_bytes)
+        self.evidence = fixed_bound_evidence(c, self.pricing, a)
+        self.output_bound = fixed_output_bound(c, f, self.pricing, a)
+        kwargs = fixed_optional_parameters(f)
         return provider, prompt.decode("utf-8"), kwargs
 
     def prepare_and_make_durable(self, request: dict) -> None:
@@ -323,22 +451,7 @@ class _Attempt:
         if root is None or claim_fd is None or output_bound is None:
             raise ss.SingleSendError("strict_parser")
         f = self.fixed
-        params = request["parameters"]
-        if request["model"] != self.config["model"]:
-            raise ss.SingleSendError("strict_parser")
-        if f["family"] == "A" and params.get("max_tokens") != f["max_tokens"]:
-            raise ss.SingleSendError("strict_parser")
-        if f["family"] == "B" and "max_output_tokens" in params:
-            raise ss.SingleSendError("strict_parser")
-        budget = (params.get("thinking") or {}).get("budget_tokens")
-        if budget is not None and budget >= f["max_tokens"]:
-            raise ss.SingleSendError("strict_parser")
-        price = self.pricing["models"][self.config["model"]]
-        reservation = _exact_usd(request["serialized_body_bytes"], price["input_usd_per_million"],
-                                 output_bound, price["output_usd_per_million"])
-        if not _json_number_is_exact(reservation):
-            raise ss.SingleSendError("strict_parser")
-        self.reservation = reservation
+        self.reservation = check_final_body(self.config, f, request, self.pricing, output_bound)
         if self.reservation > _decimal(f["cost_cap_usd"]):
             raise ss.SingleSendError("quota")
         te = self.context.tool_executor

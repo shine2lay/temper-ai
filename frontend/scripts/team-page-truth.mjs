@@ -4,10 +4,11 @@
  *
  * Opens the Team list and every Project's run view in headless Chromium and reads what a
  * person sees there, by role, label and text (never the Team API, never CSS classes). Then
- * it fetches Temper's own records for each Project and compares five fields: members, state,
- * waits, cost so far and result (with the words given with a stop), plus whether the Team
- * list shows the Project at all. Each field is judged by the one record Temper names as its
- * truth (the cost: the recorded model calls; the stop words: the team's stop record); where
+ * it fetches Temper's own records for each Project and compares six fields: members, state,
+ * waits, cost so far, result (with the words given with a stop) and whether each member card
+ * says its member is at work, plus whether the Team list shows the Project at all. Each field is
+ * judged by the one record Temper names as its truth (the cost: the recorded model calls; the
+ * stop words: the team's stop record; a member at work: a running turn in the turns record); where
  * Temper's other records of it hold something else, the report lists them under "Temper's
  * records disagree", for the temper role. Every Project is every team-trial-* run in the run
  * list, paged to its total. The comparing is scripts/teamPageTruth.ts (tests:
@@ -163,10 +164,17 @@ async function readTeamApi(base, ids) {
     const t = listed.get(id) ?? null;
     const r = await getJson(`${base}/api/team/runs/${encodeURIComponent(id)}`);
     const run = r.ok ? r.body : null;
+    // A member's state: flow members carry state, rounds members activity.
     const members = run?.members
-      ? run.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: Boolean(m.leader), costUsd: numberOf(m.cost_usd) }))
+      ? run.members.map((m) => ({
+          name: m.name,
+          role: m.role ?? null,
+          leader: Boolean(m.leader),
+          costUsd: numberOf(m.cost_usd),
+          state: m.state ?? m.activity ?? null,
+        }))
       : t?.members
-        ? t.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: m.name === t.leader, costUsd: null }))
+        ? t.members.map((m) => ({ name: m.name, role: m.role ?? null, leader: m.name === t.leader, costUsd: null, state: null }))
         : null;
     out[id] = {
       listed: listed.has(id),
@@ -302,12 +310,18 @@ function readCardsInPage(sec) {
     if (!li || !sec.contains(li)) continue;
     const head = h.innerText.split('\n').map((s) => s.trim()).filter(Boolean);
     const turns = [...li.querySelectorAll('p')].map((p) => p.innerText.replace(/\s+/g, ' ').trim()).find((t) => /\b\d+ turns?\b/.test(t)) ?? null;
-    out.push({ head, turns });
+    // The state chip: the line right after the name, role and leader tag.
+    const next = h.nextElementSibling;
+    const chip = next && next.tagName === 'P' ? next.innerText.replace(/\s+/g, ' ').trim() || null : null;
+    out.push({ head, turns, chip });
   }
   return out;
 }
 
 const money = (s) => (s ? (/\$\d+(?:\.\d+)?/.exec(s)?.[0] ?? null) : null);
+
+/** A chip's state, without its live duration ("Working \u00b7 2m" -> "Working"), which ticks every second. */
+const chipWord = (s) => (s ? s.split(' \u00b7 ')[0].trim() || null : null);
 
 /**
  * The stop-words quotes a person sees in a part of the page: figures named by their caption
@@ -343,10 +357,10 @@ async function readFlowOnce(page, id) {
     problem: null,
     stateWord: word,
     members: cards
-      ? cards.map(({ head, turns }) => {
+      ? cards.map(({ head, turns, chip }) => {
           const rest = head.slice(1);
           const leader = rest[rest.length - 1] === 'leader';
-          return { name: head[0], role: (leader ? rest.slice(0, -1) : rest).join(' ') || null, leader, cost: money(turns) };
+          return { name: head[0], role: (leader ? rest.slice(0, -1) : rest).join(' ') || null, leader, cost: money(turns), stateWord: chipWord(chip) };
         })
       : null,
     costs: amount ? [{ place: 'Spend', value: amount }] : [],
@@ -418,6 +432,8 @@ async function readRoundsOnce(page, id) {
         role: middle.filter((x) => x !== 'leader').join(' ') || null,
         leader: middle.includes('leader'),
         cost: money(line),
+        // The activity chip closes the name line ("Working", "Idle", "Waiting on you", "Ended").
+        stateWord: top.length > 1 ? top[top.length - 1] : null,
       };
     }),
     costs,

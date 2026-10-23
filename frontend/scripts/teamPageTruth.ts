@@ -16,19 +16,26 @@
  *   - result: the decision (workflow_output.decision, else the run list's status), the team's
  *     outcome reason (workflow_output.reason), and the words given with a stop: the team's stop
  *     record, the last owner_actions entry of kind "stop" in GET /api/team/runs/{id}
- *     (detail.reason and by), which is where Temper records them.
+ *     (detail.reason and by), which is where Temper records them;
+ *   - memberWork: whether each member card says its member is at work (its chip: "Working",
+ *     "Working on a retry", "Finishing its turn") against the turns record: a row of that
+ *     agent_name with status "running" in GET /api/workflows/{id}/agents, read before and after
+ *     the page (a member whose turn started or ended between the reads may match either read). An
+ *     ended Project has no member at work. Idle, ready and held can't be told apart from any
+ *     record but the Team API, which builds the page, so they stay a manual check.
  * Temper's other records of the same things (the run list's and the run's total_cost_usd, the
  * nodes' cost_usd, the run's stopped.reason and error_message) are compared with that record,
  * not with the page: where they hold something else, the report lists them under "Temper's
  * records disagree" for the temper role, and they are not page mismatches. Apart from the stop
  * record, the Team API (/api/team/*), which builds the page, is read only to say where a gap
- * most likely comes from.
+ * most likely comes from. A turn the turns record still holds as running in an ended run is listed
+ * the same way (memberWork), not held against the page.
  *
- * Five fields per Project (members, state, waits, cost, result), plus whether the Team list
- * shows the Project at all ("listed"). No model calls: every check here is a rule.
+ * Six fields per Project (members, state, waits, cost, result, memberWork), plus whether the Team
+ * list shows the Project at all ("listed"). No model calls: every check here is a rule.
  */
 
-export const FIELDS = ['listed', 'members', 'state', 'waits', 'cost', 'result'] as const;
+export const FIELDS = ['listed', 'members', 'state', 'waits', 'cost', 'result', 'memberWork'] as const;
 export type Field = (typeof FIELDS)[number];
 export type Verdict = 'match' | 'mismatch' | 'no record';
 export type Cause = 'page bug' | 'Team API bug' | 'engine record bug' | 'no record' | 'not known';
@@ -41,6 +48,9 @@ export interface PageMember {
   leader: boolean;
   /** Its cost as shown ("$5.04"); null where the page shows none (the Team list). */
   cost: string | null;
+  /** Its state chip as shown, without the live duration ("Working", "Idle", "Ended"); null when the
+   * card shows none; left out where the page has no chip (the Team list). */
+  stateWord?: string | null;
 }
 
 /** One row of the Team list. */
@@ -133,8 +143,9 @@ export interface ProjectRecords {
   costUsd: number | null;
   /** GET /api/workflows/{id}; null when it couldn't be read. */
   detail: RunDetail | null;
-  /** GET /api/workflows/{id}/agents, per agent_name: turns and their summed estimated_cost_usd (the recorded model calls). */
-  turns: Record<string, { turns: number; costUsd: number }> | null;
+  /** GET /api/workflows/{id}/agents, per agent_name: turns and their summed estimated_cost_usd (the recorded model calls),
+   * and how many of its turns are still "running" (left out: none). */
+  turns: Record<string, { turns: number; costUsd: number; running?: number }> | null;
   /** The workflow config's agents, each agent config's role, and the strategy's leader. */
   members: RecordMember[] | null;
   /** GET /api/runs/{id}/gates: each open wait and the member that asked it ("qa asks"). */
@@ -150,7 +161,9 @@ export interface ProjectRecords {
 /** The Team API's view of a Project: read only to say where a gap comes from. */
 export interface TeamApiProject {
   listed: boolean;
-  members: Array<{ name: string; role: string | null; leader: boolean; costUsd: number | null }> | null;
+  /** state: the member's state as the Team API serves it (flow: working, idle, ready, held, failed, ended;
+   * rounds: its activity, working, idle, waiting_on_owner, ended, failed); null or left out when not read. */
+  members: Array<{ name: string; role: string | null; leader: boolean; costUsd: number | null; state?: string | null }> | null;
   state: string | null;
   runStatus: string | null;
   costUsd: number | null;
@@ -230,6 +243,8 @@ export interface RunBody {
 export interface TurnRow {
   agent_name?: string | null;
   estimated_cost_usd?: number | string | null;
+  /** "running" while the turn is under way; "completed", "failed", "interrupted" ... after. */
+  status?: string | null;
 }
 
 /** One entry of GET /api/team/runs/{id}'s owner_actions (a stop's words are its detail.reason). */
@@ -285,15 +300,17 @@ export function runDetail(d: RunBody): RunDetail {
   };
 }
 
-/** GET /api/workflows/{id}/agents (one row per turn) -> per member: how many turns and their summed cost. */
-export function turnsRecord(rows: ReadonlyArray<TurnRow | null>): Record<string, { turns: number; costUsd: number }> {
-  const out: Record<string, { turns: number; costUsd: number }> = {};
+/** GET /api/workflows/{id}/agents (one row per turn) -> per member: how many turns, their summed cost,
+ * and how many are still running. */
+export function turnsRecord(rows: ReadonlyArray<TurnRow | null>): Record<string, { turns: number; costUsd: number; running: number }> {
+  const out: Record<string, { turns: number; costUsd: number; running: number }> = {};
   for (const a of rows) {
     const name = textOf(a?.agent_name);
     if (!name) continue;
-    out[name] ??= { turns: 0, costUsd: 0 };
+    out[name] ??= { turns: 0, costUsd: 0, running: 0 };
     out[name].turns += 1;
     out[name].costUsd += numberOf(a?.estimated_cost_usd) ?? 0;
+    if (a?.status === 'running') out[name].running += 1;
   }
   return out;
 }
@@ -474,6 +491,13 @@ export function captionWho(label: string): string | null {
 /** Whether a caption names the one the record says gave the words (case aside). */
 export function captionMatches(label: string, by: string | null | undefined): boolean {
   return (captionWho(label) ?? '').toLowerCase() === recordWho(by).toLowerCase();
+}
+
+/** Whether a member card's chip says its member is at work: "Working", "Working on a retry" or
+ * "Finishing its turn" (the glance chips of a member whose turn runs). Idle, ready, held, failed,
+ * ended and not known aren't. */
+export function pageWorking(word: string | null | undefined): boolean {
+  return /^(working|finishing its turn)\b/i.test((word ?? '').trim());
 }
 
 function cut(s: string | null | undefined, n = 140): string {
@@ -934,9 +958,96 @@ function resultDisagreement(rec: ProjectRecords): Omit<Disagreement, 'project' |
   return { field: 'result', judgedBy, differ, agree, owner: 'temper' };
 }
 
+/** The members whose turns record holds a turn still running. */
+function runningIn(r: ProjectRecords | undefined): string[] {
+  return r?.turns ? Object.keys(r.turns).filter((n) => (r.turns![n].running ?? 0) > 0) : [];
+}
+
+/**
+ * Whether each member card says its member is at work when the turns record says so. A running
+ * Project: a running row of that agent_name in the record read before the page or the one read
+ * after it, or a new turn between them, lets the card say Working; no running row in one of them,
+ * or a new turn between them, lets it say anything else. An ended Project: no card says Working.
+ */
+function memberWork(rec: ProjectRecords, after: ProjectRecords | undefined, view: PageRunView | undefined, api: TeamApiProject | undefined): FieldResult {
+  const cards = view && !view.problem ? view.members : null;
+  const page = cards
+    ? cards.map((m) => `${m.name} ${m.stateWord ?? 'no chip'}`).join(', ') || 'no member cards'
+    : `run view: ${view?.problem ? `not read (${view.problem})` : view ? 'no member cards' : 'not read'}`;
+  const ended = ENDED.has(recordStateClass(rec.status, rec.detail?.decision ?? null));
+  const running = runningIn(rec);
+  const later = after?.turns ? runningIn(after) : null;
+  const record = ended
+    ? `ended (run list: ${rec.status}): no member at work`
+    : `turns running (turns record): ${running.join(', ') || 'none'}${later ? `; second read: ${later.join(', ') || 'none'}` : ''}`;
+  if (!rec.turns) return noRecord(page, record, 'the turns record (GET /api/workflows/{id}/agents) could not be read');
+
+  const gaps: string[] = [];
+  if (!view || view.problem) gaps.push(`the run view wasn't read${view?.problem ? `: ${view.problem}` : ''}`);
+  else if (!view.members) gaps.push('the run view shows no member cards');
+  const wrong: Array<{ name: string; shownWorking: boolean }> = [];
+  for (const m of cards ?? []) {
+    if (m.stateWord === null || m.stateWord === undefined) {
+      gaps.push(`the run view's card for ${m.name} shows no state`);
+      continue;
+    }
+    const shownWorking = pageWorking(m.stateWord);
+    let canWork: boolean;
+    let canRest: boolean;
+    if (ended) [canWork, canRest] = [false, true];
+    else {
+      const before = rec.turns[m.name];
+      const then = after?.turns ? after.turns[m.name] : undefined;
+      const runBefore = (before?.running ?? 0) > 0;
+      const runAfter = after?.turns ? (then?.running ?? 0) > 0 : runBefore;
+      // A new turn between the reads: it started and maybe ended while the page was read.
+      const moved = after?.turns ? (then?.turns ?? 0) > (before?.turns ?? 0) : false;
+      canWork = runBefore || runAfter || moved;
+      canRest = !runBefore || !runAfter || moved;
+    }
+    if (shownWorking ? canWork : canRest) continue;
+    wrong.push({ name: m.name, shownWorking });
+    const reads = after?.turns ? ' in either read' : '';
+    gaps.push(
+      shownWorking
+        ? ended
+          ? `the run view says ${m.name} is ${m.stateWord}; the run has ended (run list: ${rec.status})`
+          : `the run view says ${m.name} is ${m.stateWord}; the turns record has no turn of ${m.name} running${reads}`
+        : `the run view says ${m.name} is ${m.stateWord}; the turns record has a turn of ${m.name} running${reads}`,
+    );
+  }
+  if (gaps.length === 0) return result(page, record, [], null, null);
+  if (wrong.length === 0) return result(page, record, gaps, 'not known', 'no card was compared');
+  if (!api?.members) return result(page, record, gaps, 'not known', 'the Team API was not read');
+  // The Team API's member state builds the chip: it agrees with the page (Team API bug) or the record (page bug).
+  const apiStates = wrong.map(({ name, shownWorking }) => {
+    const s = api.members?.find((x) => x.name === name)?.state ?? null;
+    return { name, s, sameAsPage: s === null ? null : (s === 'working') === shownWorking };
+  });
+  const said = apiStates.map((a) => `${a.name} ${a.s ?? 'no state'}`).join(', ');
+  if (apiStates.some((a) => a.sameAsPage === null)) return result(page, record, gaps, 'not known', `the Team API's member states: ${said}`);
+  return apiStates.every((a) => a.sameAsPage)
+    ? result(page, record, gaps, 'Team API bug', `the Team API's member states agree with the page: ${said}`)
+    : result(page, record, gaps, 'page bug', `the Team API's member states agree with the turns record: ${said}`);
+}
+
+/** Where an ended run's turns record still holds a turn as running. */
+function memberWorkDisagreement(rec: ProjectRecords): Omit<Disagreement, 'project' | 'workflow'> | null {
+  if (!ENDED.has(recordStateClass(rec.status, rec.detail?.decision ?? null))) return null;
+  const running = runningIn(rec);
+  if (running.length === 0) return null;
+  return {
+    field: 'memberWork',
+    judgedBy: [{ record: 'run list status', value: rec.status }],
+    differ: [{ record: 'turns record (GET /api/workflows/{id}/agents)', value: `turns still running: ${running.join(', ')}` }],
+    agree: [],
+    owner: 'temper',
+  };
+}
+
 // ---------------------------------------------------------------- the report
 
-/** Compare every Project's five fields (and whether it is listed), and list where Temper's own records disagree. */
+/** Compare every Project's six fields (and whether it is listed), and list where Temper's own records disagree. */
 export function compareAll(input: CheckInput): Report {
   const only = input.only && input.only.length > 0 ? new Set(input.only) : null;
   const ids = Object.keys(input.records).filter((id) => !only || only.has(id));
@@ -955,7 +1066,8 @@ export function compareAll(input: CheckInput): Report {
     push(id, rec.workflow, 'waits', waits(rec, after, row, view, api));
     push(id, rec.workflow, 'cost', cost(rec, after, row, view, api));
     push(id, rec.workflow, 'result', resultField(rec, view, api));
-    for (const d of [costDisagreement(rec, after), resultDisagreement(rec)]) {
+    push(id, rec.workflow, 'memberWork', memberWork(rec, after, view, api));
+    for (const d of [costDisagreement(rec, after), resultDisagreement(rec), memberWorkDisagreement(rec)]) {
       if (d) disagreements.push({ project: id, workflow: rec.workflow, ...d });
     }
   }
@@ -1031,6 +1143,12 @@ export const FIELD_TABLE: ReadonlyArray<readonly [string, string, string, string
     'outcome_view(): the pi_team_outcomes row (decision, reason, owner_words, by)',
     'the decision: workflow_output.decision, else the run list status; the stop words and who gave them: the team\'s stop record, the last owner_actions entry of kind "stop" in GET /api/team/runs/{id} (detail.reason, by; a stop answer\'s words: the team\'s outcome record); the reason: workflow_output.reason, else (no stop recorded, not completed) stopped.reason, else error_message. Record against record (listed, not a page mismatch): stopped.reason and error_message against the stop words and the reason',
   ],
+  [
+    'memberWork',
+    'run view: each member card\'s state chip (flow: "Working", "Working on a retry", "Finishing its turn" are at work; "Idle", "Ready", "Paused", "Needs you", "Ended" ... are not; rounds: the activity chip, "Working" or not)',
+    'members_view state (flow: a running ledger participant is "working"; rounds: activity)',
+    'the turns record (GET /api/workflows/{id}/agents): a row of that agent_name with status "running", read before and after the page (a turn that started or ended between the reads may match either read); an ended run: no member at work. Record against record (listed, not a page mismatch): a turn still running in an ended run. Idle, ready and held are not checked: only the Team API tells them apart',
+  ],
 ];
 
 function cell(s: string | null | undefined): string {
@@ -1087,6 +1205,7 @@ export function toMarkdown(report: Report): string {
     '',
     "Costs are compared to the cent: the page's amount must be the recorded model calls' sum rounded to the cent. " +
       "Stop words are compared verbatim, each run of whitespace as one space, and who gave them by the quote's caption. " +
+      "A member card is at work when its chip says Working, Working on a retry or Finishing its turn; whether an idle member is idle, ready or held is left to a person, since only the Team API tells them apart. " +
       "The Team API is read for the team's stop record (owner_actions) and otherwise only to name a gap's likely cause: page bug (the Team API agrees with the records), " +
       "Team API bug (it agrees with the page), engine record bug (two of Temper's records disagree), no record. " +
       "For the result, the Team API's outcome is the team's own outcome record (pi_team_outcomes) as it is, " +

@@ -2,10 +2,11 @@
  * The comparing half of the Team page truth check (scripts/teamPageTruth.ts, run by
  * scripts/team-page-truth.mjs).
  *
- * The check reads the Team page as a person sees it and compares five fields per Project
- * (members, state, waits, cost so far, result) with Temper's records, each field judged by the
- * one record Temper names as its truth (cost: the recorded model calls; the words given with a
- * stop: the team's stop record). Where Temper's other records disagree with that one, they are
+ * The check reads the Team page as a person sees it and compares six fields per Project
+ * (members, state, waits, cost so far, result, whether each member card says its member is at
+ * work) with Temper's records, each field judged by the one record Temper names as its truth
+ * (cost: the recorded model calls; the words given with a stop: the team's stop record; a member
+ * at work: a running turn in the turns record). Where Temper's other records disagree with that one, they are
  * listed apart for the temper role and don't count against the page. These tests feed it made-up
  * Projects whose right answers are known: a clean one must match everywhere, each planted break
  * must be caught at its own field with both values in the report, and records that disagree must
@@ -21,6 +22,7 @@ import {
   exitCode,
   genuineReason,
   pageStateClass,
+  pageWorking,
   parseMoney,
   recordStateClass,
   runDetail,
@@ -86,8 +88,8 @@ function runView(over: Partial<PageRunView> = {}): PageRunView {
     problem: null,
     stateWord: 'Done',
     members: [
-      { name: 'lead', role: 'product', leader: true, cost: '$1.23' },
-      { name: 'tester', role: 'qa', leader: false, cost: '$2.22' },
+      { name: 'lead', role: 'product', leader: true, cost: '$1.23', stateWord: 'Ended' },
+      { name: 'tester', role: 'qa', leader: false, cost: '$2.22', stateWord: 'Ended' },
     ],
     costs: [{ place: 'Spend', value: '$3.46' }],
     waits: { any: false, count: 0, from: [] },
@@ -103,8 +105,8 @@ function teamApi(over: Partial<TeamApiProject> = {}): TeamApiProject {
   return {
     listed: true,
     members: [
-      { name: 'lead', role: 'product', leader: true, costUsd: 1.234567 },
-      { name: 'tester', role: 'qa', leader: false, costUsd: 2.222222 },
+      { name: 'lead', role: 'product', leader: true, costUsd: 1.234567, state: 'ended' },
+      { name: 'tester', role: 'qa', leader: false, costUsd: 2.222222, state: 'ended' },
     ],
     state: 'done',
     runStatus: 'completed',
@@ -277,7 +279,7 @@ describe("reading Temper's records as its API sends them", () => {
     expect(stopRecord(null)).toBeNull();
   });
 
-  it("reads the run's own record and sums the recorded model calls per member", () => {
+  it("reads the run's own record, sums the recorded model calls per member and counts the turns still running", () => {
     const run = {
       id: ID,
       workflow_name: 'team-trial-aaaa',
@@ -319,7 +321,15 @@ describe("reading Temper's records as its API sends them", () => {
     expect(Object.keys(turns)).toEqual(['lead', 'tester']);
     expect(turns.lead.turns).toBe(2);
     expect(turns.lead.costUsd).toBeCloseTo(1.234567, 9);
-    expect(turns.tester).toEqual({ turns: 1, costUsd: 0 });
+    expect(turns.tester).toEqual({ turns: 1, costUsd: 0, running: 0 });
+    expect(turns.lead.running).toBe(0);
+    const live = turnsRecord([
+      { agent_name: 'lead', status: 'completed', estimated_cost_usd: 1 },
+      { agent_name: 'lead', status: 'running', estimated_cost_usd: null },
+      { agent_name: 'tester', status: 'interrupted', estimated_cost_usd: 0.5 },
+    ]);
+    expect(live.lead).toEqual({ turns: 2, costUsd: 1, running: 1 });
+    expect(live.tester).toEqual({ turns: 1, costUsd: 0.5, running: 0 });
   });
 });
 
@@ -327,8 +337,8 @@ describe('a Project whose page shows what its records hold', () => {
   it('matches every field, lists no disagreement and exits 0', () => {
     const r = check();
     expect(mismatches(r)).toEqual([]);
-    expect(r.totals).toEqual({ match: 7, mismatch: 0, 'no record': 0 });
-    expect(r.rows.map((x) => x.field)).toEqual(['listed', 'members', 'state', 'waits', 'cost', 'result', 'listed']);
+    expect(r.totals).toEqual({ match: 8, mismatch: 0, 'no record': 0 });
+    expect(r.rows.map((x) => x.field)).toEqual(['listed', 'members', 'state', 'waits', 'cost', 'result', 'memberWork', 'listed']);
     expect(r.disagreements).toEqual([]);
     expect(exitCode(r)).toBe(0);
   });
@@ -372,9 +382,9 @@ describe('a Project whose page shows what its records hold', () => {
       ],
     });
     const rows = [listRow({ members: [{ name: 'lead', role: null, leader: true, cost: null }, listRow().members[1]] })];
-    const view = runView({ members: [{ name: 'lead', role: null, leader: true, cost: '$1.23' }, runView().members![1]] });
+    const view = runView({ members: [{ name: 'lead', role: null, leader: true, cost: '$1.23', stateWord: 'Ended' }, runView().members![1]] });
     expect(mismatches(check({ rec, rows, view }))).toEqual([]);
-    const wrongRole = runView({ members: [{ name: 'lead', role: 'product', leader: true, cost: '$1.23' }, runView().members![1]] });
+    const wrongRole = runView({ members: [{ name: 'lead', role: 'product', leader: true, cost: '$1.23', stateWord: 'Ended' }, runView().members![1]] });
     expect(row(check({ rec, rows, view: wrongRole }), 'members').gaps).toEqual(["the run view shows lead's role as product; record: lead"]);
   });
 
@@ -458,7 +468,7 @@ describe('each planted break is caught at its own field', () => {
   });
 
   it("a member's cost one cent off", () => {
-    const view = runView({ members: [{ name: 'lead', role: 'product', leader: true, cost: '$1.24' }, runView().members![1]] });
+    const view = runView({ members: [{ name: 'lead', role: 'product', leader: true, cost: '$1.24', stateWord: 'Ended' }, runView().members![1]] });
     const r = check({ view });
     expect(mismatches(r)).toEqual([`${ID}:cost`]);
     expect(row(r, 'cost').gaps).toEqual(['the run view shows lead $1.24; its recorded model calls (turns record) sum to $1.234567']);
@@ -610,7 +620,142 @@ describe('each planted break is caught at its own field', () => {
   it("a run view that didn't load is a mismatch, never a quiet pass", () => {
     const view = runView({ problem: 'the run view showed neither a Status band nor a Members card in 45 s', members: null, waits: null, costs: [], stateWord: null, outcomeWord: null, outcomeText: null });
     const r = check({ view });
-    expect(mismatches(r)).toEqual([`${ID}:members`, `${ID}:state`, `${ID}:result`]);
+    expect(mismatches(r)).toEqual([`${ID}:members`, `${ID}:state`, `${ID}:result`, `${ID}:memberWork`]);
+  });
+});
+
+/** A running Project: lead's turn under way, tester waiting; the records read before and after the page. */
+function running(over: { rec?: Partial<ProjectRecords>; after?: Partial<ProjectRecords> | null; lead?: string; tester?: string; api?: Partial<TeamApiProject> } = {}): Parts {
+  const live = { status: 'running', detail: { ...records().detail!, status: 'running', decision: null } };
+  const turns = { lead: { turns: 2, costUsd: 1.234567, running: 1 }, tester: { turns: 1, costUsd: 2.222222, running: 0 } };
+  return {
+    rec: records({ ...live, turns, ...over.rec }),
+    after: over.after === null ? undefined : records({ ...live, turns, ...over.after }),
+    rows: [listRow({ stateWord: 'Running' })],
+    view: runView({
+      stateWord: 'Running',
+      outcomeWord: null,
+      outcomeText: null,
+      members: [
+        { name: 'lead', role: 'product', leader: true, cost: '$1.23', stateWord: over.lead ?? 'Working' },
+        { name: 'tester', role: 'qa', leader: false, cost: '$2.22', stateWord: over.tester ?? 'Idle' },
+      ],
+    }),
+    api: teamApi({
+      state: 'running',
+      runStatus: 'running',
+      decision: null,
+      members: [
+        { name: 'lead', role: 'product', leader: true, costUsd: 1.234567, state: 'working' },
+        { name: 'tester', role: 'qa', leader: false, costUsd: 2.222222, state: 'idle' },
+      ],
+      ...over.api,
+    }),
+  };
+}
+
+describe('whether each member card says Working when its turn runs (memberWork)', () => {
+  it('reads the chips that mean at work', () => {
+    expect(pageWorking('Working')).toBe(true);
+    expect(pageWorking('Working on a retry')).toBe(true);
+    expect(pageWorking('Finishing its turn')).toBe(true);
+    for (const w of ['Idle', 'Ready', 'Paused: your answer', 'Needs you', 'Turn failed', 'Waiting for the leader', 'Has the goal', 'Ended', 'Waiting on you', 'State not known', '', null]) {
+      expect(pageWorking(w)).toBe(false);
+    }
+  });
+
+  it('a working member whose turn runs, and an idle one whose turn does not: match', () => {
+    const r = check(running());
+    expect(mismatches(r)).toEqual([]);
+    expect(row(r, 'memberWork').verdict).toBe('match');
+    expect(row(r, 'memberWork').page).toBe('lead Working, tester Idle');
+    expect(row(r, 'memberWork').record).toBe('turns running (turns record): lead; second read: lead');
+    expect(row(check(running({ lead: 'Finishing its turn', tester: 'Ready' })), 'memberWork').verdict).toBe('match');
+  });
+
+  it('a stale Working with no running turn: page bug when the Team API agrees with the record', () => {
+    const stale = { lead: { turns: 2, costUsd: 1.234567, running: 0 }, tester: { turns: 1, costUsd: 2.222222, running: 0 } };
+    const api = { members: [{ name: 'lead', role: 'product', leader: true, costUsd: 1.234567, state: 'idle' }, teamApi().members![1]] };
+    const r = check(running({ rec: { turns: stale }, after: { turns: stale }, api }));
+    expect(mismatches(r)).toEqual([`${ID}:memberWork`]);
+    expect(row(r, 'memberWork').gaps).toEqual(['the run view says lead is Working; the turns record has no turn of lead running in either read']);
+    expect(row(r, 'memberWork').cause).toBe('page bug');
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it("a stale Working the Team API serves too: Team API bug", () => {
+    const stale = { lead: { turns: 2, costUsd: 1.234567, running: 0 }, tester: { turns: 1, costUsd: 2.222222, running: 0 } };
+    const r = check(running({ rec: { turns: stale }, after: { turns: stale } }));
+    expect(mismatches(r)).toEqual([`${ID}:memberWork`]);
+    expect(row(r, 'memberWork').cause).toBe('Team API bug');
+    expect(row(r, 'memberWork').why).toBe("the Team API's member states agree with the page: lead working");
+  });
+
+  it('a running turn whose card does not say Working: page bug', () => {
+    const r = check(running({ lead: 'Idle' }));
+    expect(mismatches(r)).toEqual([`${ID}:memberWork`]);
+    expect(row(r, 'memberWork').gaps).toEqual(['the run view says lead is Idle; the turns record has a turn of lead running in either read']);
+    expect(row(r, 'memberWork').cause).toBe('page bug');
+  });
+
+  it('a turn that started or ended between the reads may show either way', () => {
+    const idle = { lead: { turns: 2, costUsd: 1.234567, running: 0 }, tester: { turns: 1, costUsd: 2.222222, running: 0 } };
+    const startedTester = { ...idle, tester: { turns: 2, costUsd: 2.222222, running: 1 } };
+    // tester's turn started between the reads: Working and Idle both match.
+    expect(mismatches(check(running({ rec: { turns: idle }, after: { turns: startedTester }, lead: 'Idle', tester: 'Working' })))).toEqual([]);
+    expect(mismatches(check(running({ rec: { turns: idle }, after: { turns: startedTester }, lead: 'Idle', tester: 'Idle' })))).toEqual([]);
+    // lead's turn ended between the reads: Working and Idle both match.
+    expect(mismatches(check(running({ after: { turns: idle }, lead: 'Working' })))).toEqual([]);
+    expect(mismatches(check(running({ after: { turns: idle }, lead: 'Idle' })))).toEqual([]);
+    // A whole turn of tester between the reads (started and ended): either way.
+    const oneMore = { ...idle, tester: { turns: 2, costUsd: 2.3, running: 0 } };
+    expect(mismatches(check(running({ rec: { turns: idle }, after: { turns: oneMore }, lead: 'Idle', tester: 'Working' })))).toEqual([]);
+    // Without a second read, the one read decides.
+    const one = check(running({ after: null, lead: 'Idle' }));
+    expect(row(one, 'memberWork').gaps).toEqual(['the run view says lead is Idle; the turns record has a turn of lead running']);
+  });
+
+  it("agents that couldn't be read: no record", () => {
+    const r = check(running({ rec: { turns: null }, after: { turns: null } }));
+    expect(row(r, 'memberWork').verdict).toBe('no record');
+    expect(row(r, 'memberWork').why).toContain('GET /api/workflows/{id}/agents');
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it('an ended Project: every card not at work; a Working card is a mismatch', () => {
+    const r = check();
+    expect(row(r, 'memberWork').verdict).toBe('match');
+    expect(row(r, 'memberWork').record).toBe('ended (run list: completed): no member at work');
+    const view = runView({ members: [{ ...runView().members![0], stateWord: 'Working' }, runView().members![1]] });
+    const bad = check({ view });
+    expect(mismatches(bad)).toEqual([`${ID}:memberWork`]);
+    expect(row(bad, 'memberWork').gaps).toEqual(['the run view says lead is Working; the run has ended (run list: completed)']);
+    expect(row(bad, 'memberWork').cause).toBe('page bug');
+  });
+
+  it("an ended run's turns record that still holds a turn as running: listed for temper, the page still right", () => {
+    const rec = records({ turns: { lead: { turns: 2, costUsd: 1.234567, running: 1 }, tester: { turns: 1, costUsd: 2.222222 } } });
+    const r = check({ rec });
+    expect(mismatches(r)).toEqual([]);
+    expect(r.disagreements).toEqual([
+      {
+        project: ID,
+        workflow: 'team-trial-aaaa',
+        field: 'memberWork',
+        judgedBy: [{ record: 'run list status', value: 'completed' }],
+        differ: [{ record: 'turns record (GET /api/workflows/{id}/agents)', value: 'turns still running: lead' }],
+        agree: [],
+        owner: 'temper',
+      },
+    ]);
+    expect(exitCode(r)).toBe(0);
+  });
+
+  it('a card without a state chip is a mismatch, never a quiet pass', () => {
+    const view = runView({ members: [{ ...runView().members![0], stateWord: null }, runView().members![1]] });
+    const r = check({ view });
+    expect(mismatches(r)).toEqual([`${ID}:memberWork`]);
+    expect(row(r, 'memberWork').gaps).toEqual(["the run view's card for lead shows no state"]);
   });
 });
 
@@ -621,7 +766,8 @@ describe('missing records', () => {
     expect(row(r, 'members').verdict).toBe('no record');
     expect(row(r, 'waits').verdict).toBe('no record');
     expect(row(r, 'cost').verdict).toBe('no record');
-    expect(r.totals['no record']).toBe(3);
+    expect(row(r, 'memberWork').verdict).toBe('no record');
+    expect(r.totals['no record']).toBe(4);
     expect(r.disagreements).toEqual([]);
     expect(exitCode(r)).toBe(1);
   });

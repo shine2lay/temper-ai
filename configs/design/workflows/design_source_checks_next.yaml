@@ -1,7 +1,9 @@
-# TEST-ONLY source checks (Design, queue #139, hypothesis H15 in
+# TEST-ONLY source checks (Design, queue #139, hypothesis H15; widened by queue #143 after H16, both in
 # ~/design-lab/homepage-workflow/HYPOTHESES.md). The four accepted homepage source checks run as one
 # ordinary, model-free script step on their frozen fixtures, and every answer is compared exactly with
-# the frozen key (configs/design/testpages/source-checks-v1, copied unchanged from the accepted packets):
+# the frozen keys: configs/design/testpages/source-checks-v1 (copied unchanged from the accepted
+# packets), configs/design/testpages/source-checks-v2 (A2-01 and A1-02 on public pages in the build
+# dialect) and, where it was copied, the git-ignored real-page key configs/design/local/source-checks-real-v1:
 #
 #   check (script: design_source_checks_next)
 #
@@ -9,19 +11,20 @@
 # meter and BAR are unchanged. Wiring the step into design_homepage_v2_next is a separate task.
 workflow:
   name: design_source_checks_next
-  version: 1
+  version: 2
   description: |
     TEST-ONLY: runs the four accepted homepage source checks (A3 input guard, A2 one h1, A1 headline
     words, A2 type-scale steps) on their frozen fixtures as one model-free script step and compares
-    every answer exactly with the frozen key. Reports per check the records, exact matches,
-    mismatches and missing records, with the Python version and platform; every record is in
-    source-checks/results.json.
+    every answer exactly with the frozen keys (v1; v2; the real-page key where present). Reports per
+    key and per check the records, exact matches, mismatches and missing records, with the Python
+    version and platform; every record is in source-checks/results.json.
   outputs:
     verdict: check.structured.verdict
     records: check.structured.records
     exact: check.structured.exact
     mismatch: check.structured.mismatch
     missing: check.structured.missing
+    keys: check.structured.keys
     checks: check.structured.checks
     python: check.structured.python
     platform: check.structured.platform

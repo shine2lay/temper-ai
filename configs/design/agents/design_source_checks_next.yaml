@@ -1,13 +1,15 @@
-# @description SOURCE CHECKS on their frozen key (design role, queue #139, hypothesis H15). No model.
+# @description SOURCE CHECKS on their frozen keys (design role, queue #139 H15, widened by #143 after H16). No model.
 # TEST-ONLY. Runs design_source_checks.py: the four accepted homepage source checks (A3 input guard
 # #133, A2 one h1 #134, A1 headline words #136, A2 type-scale steps #137) on their frozen fixtures,
-# each answer compared exactly with the frozen key in testpages/source-checks-v1. Writes every record
-# to source-checks/results.json in the workspace and prints the counts per check with the Python
+# each answer compared exactly with the frozen keys: testpages/source-checks-v1 (all four),
+# testpages/source-checks-v2 (A2-01 and A1-02 on public pages in the build dialect) and, where it was
+# copied, the git-ignored real-page key local/source-checks-real-v1. Writes every record to
+# source-checks/results.json in the workspace and prints the counts per key and check with the Python
 # version and platform. Part of workflows/design_source_checks_next.yaml only; no live workflow runs it.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
 agent:
   name: design_source_checks_next
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 120
   script_template: |

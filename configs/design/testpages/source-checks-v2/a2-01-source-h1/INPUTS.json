@@ -1,0 +1,508 @@
+{
+ "schema": "source-h1-inputs/1",
+ "key": "source-checks-v2 (Design #143): 4 public converter fixtures x (normalized as is + 5 plants), frozen before the widened kernels were copied in; expected records are truth by construction from the checks' rules",
+ "environments": [
+  [
+   1440,
+   900,
+   1,
+   1,
+   "static-loaded"
+  ]
+ ],
+ "environments_are": "input membership only, not observed viewports",
+ "identity_format": "case@WIDTHxHEIGHT; case-major order; harness only",
+ "normalize": {
+  "comments": "every HTML comment removed (the reader refuses comments)",
+  "img-hr": "every img and hr element removed (void elements outside the reader's tag set)",
+  "svg-line": "every svg line and polyline removed (outside the reader's svg set g, path, circle, rect, polygon)",
+  "blockquote": "blockquote renamed figure, attributes and text kept (outside the reader's tag set)",
+  "cite": "cite renamed figcaption, text kept (outside the reader's tag set)",
+  "entity": "the entity &amp; written as the word and (the reader refuses entities)",
+  "inline-style": "every inline style attribute removed (margin is outside the reader's inline properties)"
+ },
+ "body_mark_rule": "Running text = every p element whose start tag has no attributes (<p>); each gets data-typography=\"Body\", the homepage build stage's own type-role mark. Styled paragraphs (a class or another data-typography role: lede, kicker, fine print, prices) are not body copy and stay unmarked.",
+ "identity_rule": "Body-copy declarations are the elements whose data-typography attribute is exactly \"Body\", in document order. Identity = the element's id attribute when it has one; otherwise its document-order path: \"body\", then for each element from body's child down to the element, \">\" + tag name + \"[\" + n + \"]\", where n is the element's 1-based position among its parent's element children with the same tag name, counted in source order (void elements and self-closed svg children count). The inventory for a page = all its Body-marked identities, in document order. Same rule as H16's real-page key.",
+ "plants": {
+  "P0": "the normalized, Body-marked page as is",
+  "P1": "a second visible h1, <h1>Planted second heading</h1>, inserted just before the page's last </section> (after the original h1)",
+  "P2": "the page's one h1 demoted to h2: its <h1 and </h1> renamed <h2 and </h2>, attributes and content unchanged",
+  "P3": "a second h1 inside an element with the hidden attribute, <div hidden><h1>Planted hidden heading</h1></div>, inserted just before the page's last </section>",
+  "P4": "the headline lengthened to 15 words (the A1-02 limit + 3) by inserting plain words from [\"and\", \"these\", \"extra\", \"planted\", \"words\", \"push\", \"the\", \"headline\", \"well\", \"past\", \"twelve\"] just before </h1>",
+  "P5": "the first word of the h1's first text run replaced by \"Planted\" (one word changed, count unchanged)"
+ },
+ "pages": [
+  {
+   "page": "configs/design/testpages/html-fixtures/harbor.html",
+   "sha256": "bd1192d6a1c853cb1b86c71cfd84a59aeef18a5654d9f255b6ea28a41aae0589",
+   "normalized": {
+    "comments": 1,
+    "img-hr": 1,
+    "svg-line": 0,
+    "blockquote": 0,
+    "cite": 0,
+    "entity": 0,
+    "inline-style": 0,
+    "body-marks": 5
+   },
+   "headline": "Roasted where the boats come in.",
+   "headline_words": 6
+  },
+  {
+   "page": "configs/design/testpages/html-fixtures/pulse.html",
+   "sha256": "1ec481659043179b8c09cbd7acb192b5731e80213959b642b9ccf68e9fa4ad53",
+   "normalized": {
+    "comments": 1,
+    "img-hr": 1,
+    "svg-line": 4,
+    "blockquote": 0,
+    "cite": 0,
+    "entity": 0,
+    "inline-style": 0,
+    "body-marks": 4
+   },
+   "headline": "Know it broke before they do.",
+   "headline_words": 6
+  },
+  {
+   "page": "configs/design/testpages/html-fixtures/rich.html",
+   "sha256": "17a841446c294759df0857ffd2ca0e2ebf0f53e2df7f7ba47f96e844752e0976",
+   "normalized": {
+    "comments": 1,
+    "img-hr": 1,
+    "svg-line": 0,
+    "blockquote": 0,
+    "cite": 0,
+    "entity": 0,
+    "inline-style": 1,
+    "body-marks": 5
+   },
+   "headline": "Three islands, one ticket.",
+   "headline_words": 4
+  },
+  {
+   "page": "configs/design/testpages/html-fixtures/atlas.html",
+   "sha256": "a2a0ae64dfebde690daa771fce90ea1d220ffbb47b8b405e5fb9322da756bca1",
+   "normalized": {
+    "comments": 1,
+    "img-hr": 2,
+    "svg-line": 2,
+    "blockquote": 2,
+    "cite": 2,
+    "entity": 1,
+    "inline-style": 0,
+    "body-marks": 3
+   },
+   "headline": "Maps drawn by people who walked them.",
+   "headline_words": 7
+  }
+ ],
+ "checker_arguments": [
+  "html bytes",
+  "declared_sha256",
+  "inventory",
+  "environment"
+ ],
+ "cases": [
+  {
+   "case": "harbor-P0",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P0.html",
+   "actual_sha256": "0452af605c4583cc2b3cf91ef4d69df625951ee0a945dd20a1d425121b6cd360",
+   "declared_sha256": "0452af605c4583cc2b3cf91ef4d69df625951ee0a945dd20a1d425121b6cd360",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "harbor-P1",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P1.html",
+   "actual_sha256": "507abd6dadf491473e0e530cf17e7c3178e2b6d11197ef382c53b0fa33465a38",
+   "declared_sha256": "507abd6dadf491473e0e530cf17e7c3178e2b6d11197ef382c53b0fa33465a38",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "harbor-P2",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P2.html",
+   "actual_sha256": "5b382a7a930c7f06a60bb6796a232175c288d916f833a81bb95473dcb8879c71",
+   "declared_sha256": "5b382a7a930c7f06a60bb6796a232175c288d916f833a81bb95473dcb8879c71",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "harbor-P3",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P3.html",
+   "actual_sha256": "4d99232c61891a5adddc7df09b8f6162a8ca31d02e72608a7dc0eda1a61acfea",
+   "declared_sha256": "4d99232c61891a5adddc7df09b8f6162a8ca31d02e72608a7dc0eda1a61acfea",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "harbor-P4",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P4.html",
+   "actual_sha256": "f6a894458b11f1c605553d6bf064267826c893d15311b1bd8d34075357540199",
+   "declared_sha256": "f6a894458b11f1c605553d6bf064267826c893d15311b1bd8d34075357540199",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "harbor-P5",
+   "source_page": "configs/design/testpages/html-fixtures/harbor.html",
+   "html": "../fixtures/harbor-P5.html",
+   "actual_sha256": "fafa12b67f6f6fcff7d8a181ed84277a4aee90dd26a82fad71da339b1d7987fb",
+   "declared_sha256": "fafa12b67f6f6fcff7d8a181ed84277a4aee90dd26a82fad71da339b1d7987fb",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[3]>div[1]>div[1]>p[1]",
+     "body>section[3]>div[1]>div[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[4]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P0",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P0.html",
+   "actual_sha256": "95d05ecd363556d7765f17fd99d2177c4a22e8b14a9cf0ad1d41d8687a04be69",
+   "declared_sha256": "95d05ecd363556d7765f17fd99d2177c4a22e8b14a9cf0ad1d41d8687a04be69",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P1",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P1.html",
+   "actual_sha256": "b577247f172d791ac4830321d26809d68d65ed488dca18c88ce9db18ff143555",
+   "declared_sha256": "b577247f172d791ac4830321d26809d68d65ed488dca18c88ce9db18ff143555",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P2",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P2.html",
+   "actual_sha256": "7ac8d13b780ddba2f005645ab7faf6af4ef959fc60182a0890b37d8ae08845e6",
+   "declared_sha256": "7ac8d13b780ddba2f005645ab7faf6af4ef959fc60182a0890b37d8ae08845e6",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P3",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P3.html",
+   "actual_sha256": "898f1e1550ce04d1715830a298814ce8802a4cd3d53a7dfc83a4acf32202cf4a",
+   "declared_sha256": "898f1e1550ce04d1715830a298814ce8802a4cd3d53a7dfc83a4acf32202cf4a",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P4",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P4.html",
+   "actual_sha256": "bad560c97bfc457fc9cc4a9aae56b3bf0ca3b8c12c7df079e38554e125ab1b6b",
+   "declared_sha256": "bad560c97bfc457fc9cc4a9aae56b3bf0ca3b8c12c7df079e38554e125ab1b6b",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "pulse-P5",
+   "source_page": "configs/design/testpages/html-fixtures/pulse.html",
+   "html": "../fixtures/pulse-P5.html",
+   "actual_sha256": "f60c625c4a6fe0957016a7c0df8d32431ae65dc58df1c16b9636de0a76219505",
+   "declared_sha256": "f60c625c4a6fe0957016a7c0df8d32431ae65dc58df1c16b9636de0a76219505",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[2]>div[1]>div[1]>div[1]>article[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[3]>p[1]",
+     "body>section[2]>div[1]>div[1]>div[1]>article[4]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P0",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P0.html",
+   "actual_sha256": "1c44af20b00ceabf25eb12cb82cbb62cdf50bc2fbd666863315e6be050c14a1d",
+   "declared_sha256": "1c44af20b00ceabf25eb12cb82cbb62cdf50bc2fbd666863315e6be050c14a1d",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P1",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P1.html",
+   "actual_sha256": "1b5e5936a99246cb10a330a782e620ef72a0b82bb1f49176f70d5279014e83db",
+   "declared_sha256": "1b5e5936a99246cb10a330a782e620ef72a0b82bb1f49176f70d5279014e83db",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P2",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P2.html",
+   "actual_sha256": "7c9a1849321c94ea2861ba8a4144ea13ad5136f6de67f2d4e67ff591754a5bf9",
+   "declared_sha256": "7c9a1849321c94ea2861ba8a4144ea13ad5136f6de67f2d4e67ff591754a5bf9",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P3",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P3.html",
+   "actual_sha256": "9ad970b67573b0d988fabe31cced87944db3d2f99052687baadfd3151c4b4cff",
+   "declared_sha256": "9ad970b67573b0d988fabe31cced87944db3d2f99052687baadfd3151c4b4cff",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P4",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P4.html",
+   "actual_sha256": "7583efe83a0ad4d2fd30bc882ecbc04911718573f68d261d47af4aa8ccf9fcfc",
+   "declared_sha256": "7583efe83a0ad4d2fd30bc882ecbc04911718573f68d261d47af4aa8ccf9fcfc",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "rich-P5",
+   "source_page": "configs/design/testpages/html-fixtures/rich.html",
+   "html": "../fixtures/rich-P5.html",
+   "actual_sha256": "c8c513b3630b31ed37dc6cd63623f6f7c26e23bf7db55c6f45225ecd0e1e130c",
+   "declared_sha256": "c8c513b3630b31ed37dc6cd63623f6f7c26e23bf7db55c6f45225ecd0e1e130c",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>section[1]>div[1]>div[2]>figure[1]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[1]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[2]>div[2]>p[1]",
+     "body>section[2]>div[1]>div[1]>ol[1]>li[3]>div[2]>p[1]",
+     "body>section[5]>div[1]>div[1]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P0",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P0.html",
+   "actual_sha256": "066ac4cb4555df5c74e10dc2fc7ddaa53d245e2471a2d423c6f0c0e04658a6ea",
+   "declared_sha256": "066ac4cb4555df5c74e10dc2fc7ddaa53d245e2471a2d423c6f0c0e04658a6ea",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P1",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P1.html",
+   "actual_sha256": "ac1b66713aa282c02afffd54467896ef67b9f676229cef9d93deabcd29928c8d",
+   "declared_sha256": "ac1b66713aa282c02afffd54467896ef67b9f676229cef9d93deabcd29928c8d",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P2",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P2.html",
+   "actual_sha256": "61db9b9b9dd961e75b724fcbe26080751010810c794a324d9405b0f2d5f9503c",
+   "declared_sha256": "61db9b9b9dd961e75b724fcbe26080751010810c794a324d9405b0f2d5f9503c",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P3",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P3.html",
+   "actual_sha256": "855224944e3367439fa37cd6b9a8bef502aae303680ae970aa4c1d6ba1e3ce95",
+   "declared_sha256": "855224944e3367439fa37cd6b9a8bef502aae303680ae970aa4c1d6ba1e3ce95",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P4",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P4.html",
+   "actual_sha256": "265276203b59098590caa245437eadaec3ef3d8282be504b4f7b0c8fed760244",
+   "declared_sha256": "265276203b59098590caa245437eadaec3ef3d8282be504b4f7b0c8fed760244",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  },
+  {
+   "case": "atlas-P5",
+   "source_page": "configs/design/testpages/html-fixtures/atlas.html",
+   "html": "../fixtures/atlas-P5.html",
+   "actual_sha256": "f89e25fcf1395bac042386476aad41d8a5ba77ff62f8c42b9d64f836ca4b5a69",
+   "declared_sha256": "f89e25fcf1395bac042386476aad41d8a5ba77ff62f8c42b9d64f836ca4b5a69",
+   "inventory": {
+    "schema": "body-roots/1",
+    "roots": [
+     "body>main[1]>section[2]>div[1]>div[1]>article[1]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[2]>p[1]",
+     "body>main[1]>section[2]>div[1]>div[1]>article[3]>p[1]"
+    ]
+   }
+  }
+ ],
+ "repetitions": 1,
+ "slots_per_repetition": 24,
+ "per_repetition_expected": {
+  "source_true": 12,
+  "source_false": 12,
+  "input_refuse": 0
+ },
+ "actual_environment": null,
+ "rendered_hierarchy": "UNMEASURED",
+ "page_verdict": "UNQUALIFIED"
+}

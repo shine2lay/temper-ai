@@ -16,6 +16,19 @@ CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-acti
 ID = r"[a-z][a-z0-9-]*"
 NUMBER = r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?"
 BASE_CSS = "body{margin:8px;font-family:sans-serif}p{margin:0}"
+# H16 (Design #140): the homepage build stage's dialect, as seen on the 48 real pages of
+# probe-2026-10-23.json, read beside the fixture dialect above. An element without an id is
+# identified by its document-order path; svg is a non-text subtree; stylesheets are not read.
+PATH = r"body(?:>[a-z][a-z0-9]*\[[1-9][0-9]*\])+"
+SVG_TAGS = {"g", "path", "circle", "rect", "polygon"}
+FLOW_TAGS = {
+    "main", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "small", "span", "section", "nav", "header",
+    "footer", "article", "figure", "figcaption", "a", "ul", "ol", "li", "dl", "dt", "dd", "strong", "em",
+    "b", "code", "del", "dfn", "sup", "br", "svg",
+}
+VOID_TAGS = {"meta", "link", "br"}
+REFUSED_TAGS = {"script": "script", "iframe": "iframe", "template": "template", "object": "object/embed",
+                "embed": "object/embed", "base": "base"}
 
 
 class Unsupported(ValueError):
@@ -51,6 +64,7 @@ class StaticDocument(HTMLParser):
         self.css = ""
         self.metas = []
         self.doctypes = 0
+        self.children = []
 
     def handle_decl(self, decl):
         if decl.lower() != "doctype html" or self.stack or self.counts or self.doctypes:
@@ -62,17 +76,26 @@ class StaticDocument(HTMLParser):
             raise Unsupported("duplicate attribute")
         at = dict(attrs)
         parent = self.stack[-1][0] if self.stack else None
+        if tag in REFUSED_TAGS:
+            raise Unsupported(REFUSED_TAGS[tag] + " element")
         allowed_parents = {
             "html": {None}, "head": {"html"}, "body": {"html"},
-            "meta": {"head"}, "title": {"head"}, "style": {"head"},
-            "main": {"body", "div", "main"}, "div": {"body", "div", "main"},
-            "p": {"body", "div", "main"}, "h1": {"body", "div", "main"},
-            "small": {"body", "div", "main", "p", "span"},
-            "span": {"body", "div", "main", "p", "span", "small", "h1"},
+            "meta": {"head"}, "title": {"head"}, "style": {"head"}, "link": {"head"},
+            **{x: {"svg", "g"} for x in SVG_TAGS},
+            **{x: {"body"} | FLOW_TAGS - VOID_TAGS - {"svg"} for x in FLOW_TAGS},
         }
-        if tag not in allowed_parents or parent not in allowed_parents[tag]:
+        if tag not in allowed_parents:
+            raise Unsupported("unsupported element: " + tag)
+        if parent not in allowed_parents[tag]:
             raise Unsupported("unsupported element/structure")
+        path = "body" if tag == "body" else None
+        if self.stack:
+            siblings = self.children[-1]
+            siblings[tag] = siblings.get(tag, 0) + 1
+            if self.stack[-1][2] is not None:
+                path = self.stack[-1][2] + ">" + tag + "[" + str(siblings[tag]) + "]"
         self.counts[tag] = self.counts.get(tag, 0) + 1
+        identity = at.get("id")
         if tag == "html":
             if at != {"lang": "en"}:
                 raise Unsupported("html attributes")
@@ -80,41 +103,55 @@ class StaticDocument(HTMLParser):
             if at:
                 raise Unsupported("head/body attributes")
         elif tag == "meta":
-            if at not in ({"charset": "utf-8"}, {"http-equiv": "Content-Security-Policy", "content": CSP}):
+            if (at not in ({"charset": "utf-8"}, {"http-equiv": "Content-Security-Policy", "content": CSP})
+                    and (set(at) != {"name", "content"} or not all(isinstance(x, str) for x in at.values()))):
                 raise Unsupported("meta attributes/CSP")
             self.metas.append(at)
+        elif tag == "link":
+            if set(at) != {"rel", "href"} or at["rel"] != "stylesheet" or not isinstance(at["href"], str):
+                raise Unsupported("link attributes")
         else:
-            if not set(at) <= {"id", "style", "data-body-role"}:
-                raise Unsupported("body attribute")
-            identity = at.get("id", "")
-            if not re.fullmatch(ID, identity) or identity in self.ids:
+            if "id" not in at:
+                identity = path
+            elif not isinstance(identity, str) or not re.fullmatch(ID, identity) or identity in self.ids:
                 raise Unsupported("missing/duplicate/invalid ID")
             self.ids.add(identity)
-            if "style" in at:
-                validate_inline(at["style"])
+            in_svg = tag == "svg" or tag in SVG_TAGS
+            if "style" in at and not in_svg:
+                validate_inline(at["style"] or "")
+            marked = at.get("data-typography") == "Body"
             if "data-body-role" in at:
                 if at["data-body-role"] != "body":
                     raise Unsupported("body-role marker")
+                marked = True
+            if marked:
+                if in_svg:
+                    raise Unsupported("body-role marker")
                 self.markers.append(identity)
                 self.marker_paths[identity] = [x[1] for x in self.stack]
-        if tag != "meta":
-            self.stack.append((tag, at.get("id")))
+        if tag not in VOID_TAGS:
+            self.stack.append((tag, identity, path))
+            self.children.append({})
 
     def handle_endtag(self, tag):
         if not self.stack or self.stack[-1][0] != tag:
             raise Unsupported("unbalanced element")
         self.stack.pop()
+        self.children.pop()
 
     def handle_startendtag(self, tag, attrs):
-        raise Unsupported("self-closing syntax")
+        if tag not in SVG_TAGS:
+            raise Unsupported("self-closing syntax")
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
 
     def handle_data(self, data):
-        if not data.isascii():
-            raise Unsupported("non-ASCII text")
         if self.stack and self.stack[-1][0] == "style":
             self.css += data
         elif data.strip() and (not self.stack or self.stack[-1][0] in {"html", "head", "body"}):
             raise Unsupported("uncontained text")
+        elif data.strip() and (self.stack[-1][0] == "svg" or self.stack[-1][0] in SVG_TAGS):
+            raise Unsupported("text in svg")
 
     def handle_entityref(self, name):
         raise Unsupported("entity")
@@ -135,19 +172,10 @@ class StaticDocument(HTMLParser):
         self.close()
         if self.stack or self.doctypes != 1:
             raise Unsupported("incomplete document")
-        if any(self.counts.get(x) != 1 for x in ("html", "head", "body", "style", "title")):
+        if any(self.counts.get(x) != 1 for x in ("html", "head", "body", "title")) or self.counts.get("style", 0) > 1:
             raise Unsupported("document cardinality")
-        if (len(self.metas) != 2 or {"charset": "utf-8"} not in self.metas
-                or {"http-equiv": "Content-Security-Policy", "content": CSP} not in self.metas):
+        if [x for x in self.metas if "charset" in x] != [{"charset": "utf-8"}]:
             raise Unsupported("required metadata")
-        if self.css == BASE_CSS:
-            return
-        responsive = re.fullmatch(
-            re.escape(BASE_CSS) + r"#(" + ID + r"){font-size:(" + NUMBER
-            + r")px}@media \(max-width:767px\){#\1{font-size:(" + NUMBER + r")px}}", self.css
-        )
-        if not responsive or responsive[1] not in self.ids or min(float(responsive[2]), float(responsive[3])) <= 0:
-            raise Unsupported("unsupported stylesheet")
 
 
 def refusal(environment, roots, reason, source=None, roles=None, observed=None):
@@ -170,7 +198,7 @@ def preflight(html: bytes, declared_sha256: str, inventory: dict, environment: l
         return refusal(environment, roots, "UNSUPPORTED_ENVIRONMENT", True), {}
     if (not isinstance(inventory, dict) or set(inventory) != {"schema", "roots"}
             or inventory["schema"] != "body-roots/1" or not isinstance(roots, list)
-            or any(not isinstance(x, str) or not re.fullmatch(ID, x) for x in roots)
+            or any(not isinstance(x, str) or not (re.fullmatch(ID, x) or re.fullmatch(PATH, x)) for x in roots)
             or len(roots) != len(set(roots))):
         return refusal(environment, roots, "INVALID_INVENTORY", True, False), {}
     try:
@@ -233,7 +261,7 @@ async def check(context, html, declared_sha256, inventory, environment, extracti
         await page.close()
 
 
-# New standalone source-fact component. The preceding 10462 bytes are immutable.
+# New standalone source-fact component. The preceding 11983 bytes are immutable (shared reader/guard prefix, SHA5cdf2c23...; H16 widened it from 10462).
 def source_h1(html: bytes, declared_sha256: str, inventory: dict, environment: list):
     decision, metadata = preflight(html, declared_sha256, inventory, environment)
     count = None

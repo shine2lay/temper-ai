@@ -124,11 +124,75 @@ Server, normal watch-queue worker and Pi watch-queue worker each upsert a fixed
 The existing worker lane selects worker versus pi-worker. Missing readiness
 blocks cutover. T is the latest of those three ready times.
 
-Every execution whose first native event predates T must be terminal:
-completed, failed, cancelled or interrupted. Parked, waiting, queued, running,
-unknown and orphaned are not terminal evidence; old run-box code mounts are
-therefore covered, even outside the backfill window. Both WorkflowRun and
-workflow.started state are checked; no terminal evidence also blocks.
+Every execution whose first native event predates T must have ended, judged
+by its latest state (H-126-CUTOVER-2). It still holds the barrier when:
+
+1. its WorkflowRun row is open. The row has ended when it is
+   completed, failed, cancelled, interrupted or orphaned (`BARRIER_ENDED`).
+   Waiting, queued, running, pending, cancelling, parked, NULL and any unknown
+   status hold it;
+2. whatever its row says, one of its LATEST workflow.started events has not
+   ended, subject to the CARRIED_ON exemption below. Boxed and Pi-lane resumes
+   re-queue the row before the new attempt (runner/queue.py); an in-process
+   Resume (TEMPER_EXECUTION_MODE=inprocess, api/routes.py) starts an attempt
+   under the row as it stands. An ended row therefore cannot exempt a running
+   or NULL-status latest start. Ties at the latest time all count, never broken
+   by id. An older parked start is an attempt a later one carried on
+   (runner/parked.py), so it no longer counts.
+
+   **CARRIED_ON exemption:** a latest start still marked `parked` counts as
+   ended only when its row is in BARRIER_ENDED. A claim marks the parked attempt
+   CARRIED_ON and immediately re-queues the row, or restores the attempt if the
+   re-queue fails. While the claim is live, rule 1 holds that open row. If the box
+   dies before its first start and the reaper orphans the row, the parked start
+   never settles: settle_run_event only settles running/queued/waiting starts.
+   Without this exemption, that dead history would hold forever. An open or
+   missing row is not exempt. If a box outlives orphaning, rule 2 holds it again
+   once it writes its running start, and rule 3 holds its activity;
+3. whatever its row or start events say, it has an event at or after
+   max(T, now - `QUIET_WINDOW`), with now the database clock. A row that looks
+   ended does not prove the box is dead: a failed SIGTERM, a spawn that crashed
+   before its handle was saved, or a SIGKILL that failed all leave an orphaned or
+   cancelled row over a box that may still run old code. Rule 3 holds such a box
+   by its activity. Its activity hold clears after the quiet window.
+
+Rules 1 and 2 hold **by state**: quiet alone never clears an open row or a
+nonexempt open latest start. Completion, cancel, reaper or startup reconciliation
+must settle their state. Rule 3 holds **by activity** and clears by quiet. The
+CARRIED_ON exemption clears a dead claim whose row has ended; it does not waive
+state checks for a live in-process Resume.
+
+`QUIET_WINDOW` is 240 minutes. On live, across 15 days and 64,269 gaps between
+events of one execution, the longest silence was 183 minutes, so 240 leaves a
+margin. A window that is too short only means a later call from such a box shows
+up as a visible post-cutover fault. New-code bookkeeping events on an old
+execution (a caller action, say) only delay the activity hold by the window; any
+state hold still applies. Both the lap start and the cutover itself re-check the barrier, so a box that wakes in
+between forces another lap. An execution that more than one rule holds is
+reported under the lowest.
+
+A start event with no execution id keeps its own unchanged check. Old run-box
+code mounts are still covered, even outside the backfill window. Only this
+barrier reads `BARRIER_ENDED`; `TERMINAL`, which the unended-start checks use,
+is unchanged.
+
+The first barrier counted any non-terminal start event, and treated orphaned as
+open. On live, 14 dead executions from 2026-09-16 to 10-14 held it forever: 8
+orphaned rows, 5 ended rows whose earlier parked segments' start events stay
+parked, and 1 with events but no row and no start event. None had an event after
+T. The latest-state rule clears them, and a live parked or running run still
+holds it. Remaining risk: an old box that stays quiet longer than the window and
+then writes. Its calls fault as post-cutover missing rows; they are not lost
+silently.
+
+While the barrier holds, each change in what holds it is logged once as
+`Usage cutover held: earlier_executions=N anonymous_open_start=... first=<id>:rule<n>[/<row status>] ...`.
+The line gives at most five execution ids, oldest first, with rule numbers and
+row status codes, never event content. Each rule starts from a small set (run
+rows, open start events, events inside the window) and reaches events only
+through the execution indexes. On live it took about 0.5 s across 2.5 million
+events, against 0.6-0.7 s for the first barrier; grouping every event took 7 s,
+past the 5 s statement bound.
 
 After that barrier, start one full bounded recovery lap, bound to the exact
 ready times and window. Persist its DB-clock start, typed keyset and dirty/
@@ -153,6 +217,24 @@ not distinct omitted events. Repeat encounters may increment it again; it is
 not a fabricated unique-event count. Fault codes and diagnostic phases are
 closed. Fault counts, phase, history lower bound, cutover and checked-at are
 returned by `coverage_state`; status remains UNKNOWN in every phase.
+
+### Changes from the cutover ruling
+
+The first proposed latest-state implementation narrowed rule 2 to executions
+without a row. That was a departure, not merely an implementation detail; it was
+withdrawn. Rule 2 applies to every pre-T execution, including an in-process
+Resume under an ended row.
+
+Architecture's 2026-10-23 H4 refinement (P2) changes the original must-block
+"carried-on claim, latest parked": it blocks while the row is open, but an ended
+row exempts that CARRIED_ON start. The reason is the code-derived claim ->
+re-queue -> box dies before first start -> reaper sequence above. This is not a
+shape observed on live. The exemption, rather than a weaker rule for all ended
+rows, is the only H4 runtime change. The local CARRIED_ON constant is pinned by a
+test to runner/parked.py, with no new runtime import. Rule 3 still applies
+whatever the row/start says, using the unchanged 240-minute window and T floor.
+No other departure is intended; review requests must list any new departure and
+its reason explicitly.
 
 ### Exactly linked unended-start diagnostic
 
@@ -215,8 +297,16 @@ Opening combined happy path then fixed clean/catch tests run on SQLite and the
 isolated Postgres5455 schema tier; the same locked versions run the full gate.
 Tests cover anti-join guards/races, fork/history/content boundaries, typed busy
 rotation, completed empty/busy/fault/OFF attempts, normal-arrival age, readiness,
-parked old executions, a full clean post-ready lap (not cursor exhaustion),
-immutable cutover, live producer/terminal/link evidence, pending-aware unended
+parked old executions, the latest-state barrier (live's dead shapes, must-block
+shapes, writing shapes inside and past the quiet window, each status, timestamp
+ties, the bounded blocker report, and each guard's bite). H4 adds the dead
+CARRIED_ON pass for every ended row status; the queued-row claim catch under
+rule 1; the unchanged in-process Resume catch under rule 2 at INSIDE and QUIET;
+NULL-status and missing-row nonexempt catches; and an isolated rule-2 check that
+the exemption requires an ended row. Each exemption guard has its own behavioural
+mutation bite. A pre-T event inside W passes at INSIDE, and removing the T floor
+makes it block (S1/B1), instead of relying only on a source anchor. Tests also cover
+a full clean post-ready lap (not cursor exhaustion), immutable cutover, live producer/terminal/link evidence, pending-aware unended
 and late-end supersession, fault cap and always UNKNOWN coverage.
 The initial stage proof covered92 cases per database tier; after repairing a
 lexical test-audit false positive (SQLite `json_type` takes raw data as an
@@ -235,6 +325,22 @@ The four-writer Postgres timing proof sampled100 batch grants: p95=3.011ms,
 max=4.996ms. Writer sample counts were428/418/412/421; all1779 grants together
 had p95=3.242ms, max=13.397ms. These are fixed-workload stage results, not a
 latency or completeness promise. The required head gate still enforces50ms.
+
+### H-126-CUTOVER-2 (latest-state barrier)
+
+What was wrong: on live the cutover could never be recorded. 14 dead executions
+held the barrier, and their state never changes. Change: judge each earlier
+execution by its latest state and its recent activity (rules 1-3 above), in the
+barrier only. Expected: after deploy, the barrier clears, one full final lap
+runs, and `cutover_at` is recorded once at exactly T, with `cutover_seq` set and
+phase `cutover`. Reconciled rows with event time at or after T are counted by
+execution. One whose first event is before T is an old-code call; one that began
+after T would be a live-writer gap, a bug. `post-cutover-missing-row` stays at 0
+over 24 hours while live rows grow. It is wrong if the barrier still holds with
+these dead shapes, if a quiet ended execution with no nonexempt open latest
+start still blocks, if a live in-process Resume under an ended row passes, or if
+post-cutover faults appear for an execution that was active inside the window
+before the cutover. The live result is recorded in the task's notes, not here.
 
 Every new guard needs its own mutation bite. Exact-head Architecture LAND TRUE,
 exact-byte Security no-open-findings, all eight checks and deployed live checks

@@ -1,0 +1,34 @@
+# TEST-ONLY source checks (Design, queue #139, hypothesis H15 in
+# ~/design-lab/homepage-workflow/HYPOTHESES.md). The four accepted homepage source checks run as one
+# ordinary, model-free script step on their frozen fixtures, and every answer is compared exactly with
+# the frozen key (configs/design/testpages/source-checks-v1, copied unchanged from the accepted packets):
+#
+#   check (script: design_source_checks_next)
+#
+# No model, no browser, no input, no cost. Nothing live runs it: design_homepage_v2, its twins, the
+# meter and BAR are unchanged. Wiring the step into design_homepage_v2_next is a separate task.
+workflow:
+  name: design_source_checks_next
+  version: 1
+  description: |
+    TEST-ONLY: runs the four accepted homepage source checks (A3 input guard, A2 one h1, A1 headline
+    words, A2 type-scale steps) on their frozen fixtures as one model-free script step and compares
+    every answer exactly with the frozen key. Reports per check the records, exact matches,
+    mismatches and missing records, with the Python version and platform; every record is in
+    source-checks/results.json.
+  outputs:
+    verdict: check.structured.verdict
+    records: check.structured.records
+    exact: check.structured.exact
+    mismatch: check.structured.mismatch
+    missing: check.structured.missing
+    checks: check.structured.checks
+    python: check.structured.python
+    platform: check.structured.platform
+    results_path: check.structured.results_path
+    results_sha256: check.structured.results_sha256
+
+  nodes:
+    - name: check
+      type: agent
+      agent: design_source_checks_next

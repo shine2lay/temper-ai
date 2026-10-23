@@ -1,0 +1,21 @@
+{
+"schema":"source-h1-inputs/1",
+"environments":[[1440,900,1,1,"static-loaded"],[1024,768,1,1,"static-loaded"],[768,1024,1,1,"static-loaded"],[390,844,1,1,"static-loaded"],[320,844,1,1,"static-loaded"]],
+"environments_are":"input membership only, not observed viewports",
+"checker_arguments":["html bytes (base64 transport)","declared_sha256","inventory","environment"],
+"identity_format":"case@WIDTHxHEIGHT; case-major/environment-minor order; harness only",
+"cases":[
+{"case":"H01","html":"fixtures/H01.html","actual_sha256":"46cb6de8d2a35de6694285bc27b09c159371dcafdf53a3d4f7e86660b1867768","declared_sha256":"46cb6de8d2a35de6694285bc27b09c159371dcafdf53a3d4f7e86660b1867768","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H02","html":"fixtures/H02.html","actual_sha256":"4848cb2d3c5cd9eb049581a97fdede0537fb1e13cda3b95f1e3feef3f18b0efd","declared_sha256":"4848cb2d3c5cd9eb049581a97fdede0537fb1e13cda3b95f1e3feef3f18b0efd","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H03","html":"fixtures/H03.html","actual_sha256":"08a96c4552794446663c983f69d554ef38899aba0bbe91cd856264df3b330a78","declared_sha256":"08a96c4552794446663c983f69d554ef38899aba0bbe91cd856264df3b330a78","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H04","html":"fixtures/H04.html","actual_sha256":"bd11f79a515480505fdc2af2b5e87be10416a67a7bdfdf5bca77676ca8c68d20","declared_sha256":"bd11f79a515480505fdc2af2b5e87be10416a67a7bdfdf5bca77676ca8c68d20","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H05","html":"fixtures/H05.html","actual_sha256":"0dbffbc4529dc3ce7525ba43dc5c19c49838bdeb38c725645683c4cd145edcf5","declared_sha256":"0dbffbc4529dc3ce7525ba43dc5c19c49838bdeb38c725645683c4cd145edcf5","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H06","html":"fixtures/H06.html","actual_sha256":"4fd9e2651e0d2dd9449da2d9e944c5d303689bcd0d1c904627a8de67839c9b21","declared_sha256":"4fd9e2651e0d2dd9449da2d9e944c5d303689bcd0d1c904627a8de67839c9b21","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H07","html":"fixtures/H07.html","actual_sha256":"f0410736dfc7ecd9e3816369578e68990594995e5a9f9da5063e26375333d964","declared_sha256":"f0410736dfc7ecd9e3816369578e68990594995e5a9f9da5063e26375333d964","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H08","html":"fixtures/H08.html","actual_sha256":"b1cf275f6fbe4367ad1fcadc317b72abb9ef99621b1ffd8dea9130c3d2f4e2f6","declared_sha256":"b1cf275f6fbe4367ad1fcadc317b72abb9ef99621b1ffd8dea9130c3d2f4e2f6","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H09","html":"fixtures/H09.html","actual_sha256":"884f0d451933f413f9d5bd28e39063ab449a7611810335e6d29425a4d4da7bbc","declared_sha256":"884f0d451933f413f9d5bd28e39063ab449a7611810335e6d29425a4d4da7bbc","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+{"case":"H10","html":"fixtures/H10.html","actual_sha256":"46cb6de8d2a35de6694285bc27b09c159371dcafdf53a3d4f7e86660b1867768","declared_sha256":"0000000000000000000000000000000000000000000000000000000000000000","inventory":{"schema":"body-roots/1","roots":["copy"]}}
+],
+"repetitions":2,"slots_per_repetition":50,"per_repetition_expected":{"source_true":25,"source_false":15,"input_refuse":10},
+"actual_environment":null,"rendered_hierarchy":"UNMEASURED","page_verdict":"UNQUALIFIED"
+}

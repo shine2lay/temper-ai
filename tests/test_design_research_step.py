@@ -497,11 +497,14 @@ W4E_WORKFLOWS = {"design_homepage_v2_next.yaml", "design_homepage_review_next.ya
                  "design_homepage_copy_review_next.yaml", "design_homepage_content_next.yaml"}
 W4E_AGENTS = {"design_critic_next.yaml", "design_merge_next.yaml", "design_homepage_craft_critic_v2_next.yaml",
               "design_homepage_content_critic_v2_next.yaml", "design_homepage_stage_next.yaml"}
+# H15 (#139, 2026-10-23): the accepted source checks as one test-only, model-free script step
+# (tests/test_design_source_checks.py); no live workflow runs it.
+H15_NEXT = {"design_source_checks_next.yaml"}
 
 
 def test_candidates_promoted_and_benchmark_twins_keep_the_pre_research_agents():
-    assert {p.name for p in WF.glob("*_next*.yaml")} <= W4E_WORKFLOWS
-    assert {p.name for p in AGENTS.glob("design_*_next.yaml")} <= W4E_AGENTS
+    assert {p.name for p in WF.glob("*_next*.yaml")} <= W4E_WORKFLOWS | H15_NEXT
+    assert {p.name for p in AGENTS.glob("design_*_next.yaml")} <= W4E_AGENTS | H15_NEXT
     for name in ("design_homepage_v2", "design_logo_v1"):
         _, n = nodes(name)
         assert "research" in n and "save_files" in n

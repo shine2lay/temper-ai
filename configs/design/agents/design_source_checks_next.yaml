@@ -1,0 +1,17 @@
+# @description SOURCE CHECKS on their frozen key (design role, queue #139, hypothesis H15). No model.
+# TEST-ONLY. Runs design_source_checks.py: the four accepted homepage source checks (A3 input guard
+# #133, A2 one h1 #134, A1 headline words #136, A2 type-scale steps #137) on their frozen fixtures,
+# each answer compared exactly with the frozen key in testpages/source-checks-v1. Writes every record
+# to source-checks/results.json in the workspace and prints the counts per check with the Python
+# version and platform. Part of workflows/design_source_checks_next.yaml only; no live workflow runs it.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: design_source_checks_next
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -e
+    cd {{ workspace_path }}
+    "$TEMPER_PYTHON" /app/configs/design/bin/design_source_checks.py --out source-checks/results.json

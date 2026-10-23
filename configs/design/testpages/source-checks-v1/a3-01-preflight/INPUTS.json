@@ -1,0 +1,18 @@
+{
+  "schema":"a3-01-preflight-inputs/1",
+  "environments":[[1440,900,1,1,"static-loaded"],[1024,768,1,1,"static-loaded"],[768,1024,1,1,"static-loaded"],[390,844,1,1,"static-loaded"],[320,844,1,1,"static-loaded"]],
+  "cases":[
+    {"id":"F01","html":"fixtures/F01.html","declared_sha256":"35cb3cd0080ef87ae9d38b83f31bb6f470594445314df05712c417d924fccd93","inventory":{"schema":"body-roots/1","roots":["copy","tail"]}},
+    {"id":"F02","html":"fixtures/F02.html","declared_sha256":"d9fcad69c583f901c4ddfa8427c1e4ac1088a1fdbc110ef588543c56d6bf9361","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F03","html":"fixtures/F03.html","declared_sha256":"e7a911adfa7288eae427954ee84f8749787c833537990f61c6f4098fbd545b40","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F04","html":"fixtures/F04.html","declared_sha256":"adfa0eccb4c6994ac7dfcc1221fdb8b428623bab9c2d1a2df20cb5191dc0d49c","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F05","html":"fixtures/F05.html","declared_sha256":"3990adcb48e42143b50d6aa67ed07f7da84a82c139bce8f6f6bcbb61863971dc","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F06","html":"fixtures/F06.html","declared_sha256":"47fe1fa22033b15c3ece979df2658329bc60e0dc708d56225e1aafeb0c476596","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F07","html":"fixtures/F07.html","declared_sha256":"580b5d47315a9e4315f3a9625d4bf28c04f9784476bb8423d9cb9da39f0a2891","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F08","html":"fixtures/F08.html","declared_sha256":"f818341198eac9922e4e69fce45248e19aea7ac6e1ec897615deb13f93d74beb","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F09","html":"fixtures/F09.html","declared_sha256":"ef37b079a651e1d96589dd92d78c6ff8767102072181121d68f75af0bc3849d3","inventory":{"schema":"body-roots/1","roots":[]}},
+    {"id":"F10","html":"fixtures/F10.html","declared_sha256":"00055379d6d9ca1d87560f1ebe57fc248c7810e78456ea5d462a3b36b755f28b","inventory":{"schema":"body-roots/1","roots":["missing"]}},
+    {"id":"F11","html":"fixtures/F11.html","declared_sha256":"0774b412837fb8876b2ebab3fea4179a7f070ec60e65c483253fc2805c802ede","inventory":{"schema":"body-roots/1","roots":["copy"]}},
+    {"id":"F12","html":"fixtures/F12.html","declared_sha256":"0000000000000000000000000000000000000000000000000000000000000000","inventory":{"schema":"body-roots/1","roots":["copy"]}}
+  ]
+}

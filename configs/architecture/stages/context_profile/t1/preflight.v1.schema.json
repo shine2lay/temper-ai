@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:architecture:context-t1-preflight:v1",
+  "title": "Synthetic-only D0 metadata candidate, never dispatch authorization",
+  "description": "New candidate format, NOT adapter pricing, authenticated evidence or completed D0. Syntax, exact types, numeric decoding and relational invariants additionally require the pure checker. All positive outcomes remain non-operational. See frozen PREFLIGHT.md.",
+  "oneOf": [
+    {"$ref": "#/$defs/plan"},
+    {"$ref": "#/$defs/expected"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "identity": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "not": {"const": "00000000-0000-0000-0000-000000000000"}},
+    "utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", "format": "date-time"},
+    "positive_integer": {"type": "integer", "minimum": 1, "maximum": 1000000000},
+    "rate": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,24})?$"},
+    "amount": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,30})?$"},
+    "pins": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_sha256", "config_sha256", "pricing_sha256", "input_sha256", "packet_sha256", "projection_sha256", "freeze_sha256", "plan_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/digest"}, "config_sha256": {"$ref": "#/$defs/digest"},
+        "pricing_sha256": {"$ref": "#/$defs/digest"}, "input_sha256": {"$ref": "#/$defs/digest"},
+        "packet_sha256": {"$ref": "#/$defs/digest"}, "projection_sha256": {"$ref": "#/$defs/digest"},
+        "freeze_sha256": {"$ref": "#/$defs/digest"}, "plan_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "window": {
+      "type": "object", "additionalProperties": false,
+      "required": ["not_before_utc", "expires_utc"],
+      "properties": {"not_before_utc": {"$ref": "#/$defs/utc"}, "expires_utc": {"$ref": "#/$defs/utc"}}
+    },
+    "evidence_record": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "sha256", "not_before_utc", "expires_utc"],
+      "properties": {
+        "state": {"const": "COMPLETE"}, "sha256": {"$ref": "#/$defs/digest"},
+        "not_before_utc": {"$ref": "#/$defs/utc"}, "expires_utc": {"$ref": "#/$defs/utc"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["admission", "loaded_route", "request_shape", "projection_provenance", "pricing", "cache", "output_bound", "containment", "observer", "budget", "quota", "custody"],
+      "properties": {
+        "admission": {"$ref": "#/$defs/evidence_record"}, "loaded_route": {"$ref": "#/$defs/evidence_record"},
+        "request_shape": {"$ref": "#/$defs/evidence_record"}, "projection_provenance": {"$ref": "#/$defs/evidence_record"},
+        "pricing": {"$ref": "#/$defs/evidence_record"}, "cache": {"$ref": "#/$defs/evidence_record"},
+        "output_bound": {"$ref": "#/$defs/evidence_record"}, "containment": {"$ref": "#/$defs/evidence_record"},
+        "observer": {"$ref": "#/$defs/evidence_record"}, "budget": {"$ref": "#/$defs/evidence_record"},
+        "quota": {"$ref": "#/$defs/evidence_record"}, "custody": {"$ref": "#/$defs/evidence_record"}
+      }
+    },
+    "settings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "model", "route", "auth_mode", "credential_policy", "output_bound_mode", "config_sha256", "body_sha256", "body_bytes", "input_length_basis", "output_bound", "output_bound_enforced", "reasoning_included", "cache_policy", "input_category", "output_category", "currency", "input_rate_usd_per_million", "output_rate_usd_per_million"],
+      "properties": {
+        "provider": {"enum": ["anthropic", "openai"]}, "model": {"enum": ["claude-opus-5-5", "gpt-6.1-sol"]},
+        "route": {"enum": ["anthropic-oauth-named-token", "openai-codex-oauth"]}, "auth_mode": {"const": "oauth"},
+        "credential_policy": {"enum": ["named-token", "Codex"]}, "output_bound_mode": {"enum": ["request_limit", "documented_max"]},
+        "config_sha256": {"$ref": "#/$defs/digest"}, "body_sha256": {"$ref": "#/$defs/digest"},
+        "body_bytes": {"$ref": "#/$defs/positive_integer"}, "input_length_basis": {"const": "final_serialized_input_utf8"},
+        "output_bound": {"$ref": "#/$defs/positive_integer"}, "output_bound_enforced": {"const": true},
+        "reasoning_included": {"const": true}, "cache_policy": {"enum": ["no_cache", "cached_input_at_most_base"]},
+        "input_category": {"const": "base"}, "output_category": {"const": "all_output_including_reasoning"},
+        "currency": {"const": "USD"}, "input_rate_usd_per_million": {"$ref": "#/$defs/rate"},
+        "output_rate_usd_per_million": {"$ref": "#/$defs/rate"}
+      },
+      "allOf": [
+        {"if": {"properties": {"provider": {"const": "anthropic"}}}, "then": {"properties": {
+          "model": {"const": "claude-opus-5-5"}, "route": {"const": "anthropic-oauth-named-token"},
+          "credential_policy": {"const": "named-token"}, "output_bound_mode": {"const": "request_limit"}, "cache_policy": {"const": "no_cache"}
+        }}, "else": {"properties": {
+          "model": {"const": "gpt-6.1-sol"}, "route": {"const": "openai-codex-oauth"},
+          "credential_policy": {"const": "Codex"}, "output_bound_mode": {"const": "documented_max"}, "cache_policy": {"const": "cached_input_at_most_base"}
+        }}}
+      ]
+    },
+    "families": {
+      "type": "object", "additionalProperties": false, "required": ["A", "B"],
+      "properties": {"A": {"allOf": [{"$ref": "#/$defs/settings"}, {"properties": {"provider": {"const": "anthropic"}}} ]},
+        "B": {"allOf": [{"$ref": "#/$defs/settings"}, {"properties": {"provider": {"const": "openai"}}} ]}}
+    },
+    "slot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["slot", "family", "session_id", "run_id", "settings", "root_state", "claim_state", "output_state", "reservation_usd"],
+      "properties": {
+        "slot": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]}, "family": {"enum": ["A", "B"]},
+        "session_id": {"$ref": "#/$defs/uuid"}, "run_id": {"$ref": "#/$defs/uuid"}, "settings": {"$ref": "#/$defs/settings"},
+        "root_state": {"const": "IDLE"}, "claim_state": {"const": "ABSENT"}, "output_state": {"const": "ABSENT"},
+        "reservation_usd": {"$ref": "#/$defs/amount"}
+      },
+      "allOf": [
+        {"if": {"properties": {"family": {"const": "A"}}}, "then": {"properties": {
+          "slot": {"enum": ["A1", "A2", "A3"]}, "settings": {"properties": {"provider": {"const": "anthropic"}}}
+        }}, "else": {"properties": {
+          "slot": {"enum": ["B1", "B2", "B3"]}, "settings": {"properties": {"provider": {"const": "openai"}}}
+        }}}
+      ]
+    },
+    "frontier": {
+      "type": "object", "additionalProperties": false,
+      "required": ["active_slots", "reservation_usd"],
+      "properties": {
+        "active_slots": {"type": "array", "minItems": 0, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["A1", "A2", "A3", "B1", "B2", "B3"]}},
+        "reservation_usd": {"$ref": "#/$defs/amount"}
+      }
+    },
+    "plan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "scope", "experiment_id", "binding_id", "pins", "window", "evidence", "slots", "total_reservation_usd", "frontier"],
+      "properties": {
+        "schema": {"const": "context-t1-preflight-plan/v1"}, "scope": {"const": "SYNTHETIC_ONLY"},
+        "experiment_id": {"$ref": "#/$defs/identity"}, "binding_id": {"$ref": "#/$defs/identity"},
+        "pins": {"$ref": "#/$defs/pins"}, "window": {"$ref": "#/$defs/window"}, "evidence": {"$ref": "#/$defs/evidence"},
+        "slots": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/slot"}},
+        "total_reservation_usd": {"$ref": "#/$defs/amount"}, "frontier": {"$ref": "#/$defs/frontier"}
+      }
+    },
+    "expected": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "scope", "experiment_id", "binding_id", "pins", "window", "evidence", "families"],
+      "properties": {
+        "schema": {"const": "context-t1-preflight-expected/v1"}, "scope": {"const": "SYNTHETIC_ONLY"},
+        "experiment_id": {"$ref": "#/$defs/identity"}, "binding_id": {"$ref": "#/$defs/identity"},
+        "pins": {"$ref": "#/$defs/pins"}, "window": {"$ref": "#/$defs/window"}, "evidence": {"$ref": "#/$defs/evidence"},
+        "families": {"$ref": "#/$defs/families"}
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "status", "error_codes", "metadata_only", "authorizes_dispatch", "authorizes_later_stage"],
+      "properties": {
+        "schema": {"const": "context-t1-preflight/v1"}, "status": {"enum": ["METADATA_PASS", "REJECT"]},
+        "error_codes": {"type": "array", "maxItems": 1, "items": {"enum": ["INPUT_TYPE", "INPUT_SIZE", "UTF8", "JSON_SYNTAX", "DUPLICATE_KEY", "NONFINITE", "JSON_NUMBER", "NUMBER_BOUND", "JSON_LIMIT", "FIELDS", "SCHEMA", "IDENTITY", "TYPE", "UTC", "WINDOW", "EVIDENCE", "ROUTE", "SETTINGS", "PRICE", "BINDING", "SLOTS", "UUID", "UUID_REUSE", "USED_SLOT", "DRIFT", "TOTAL_CAP", "SLOT_CAP", "FRONTIER", "ACTIVE_CAP", "RESERVATION"]}},
+        "metadata_only": {"const": true}, "authorizes_dispatch": {"const": false}, "authorizes_later_stage": {"const": false}
+      },
+      "allOf": [{"if": {"properties": {"status": {"const": "METADATA_PASS"}}}, "then": {"properties": {"error_codes": {"maxItems": 0}}}, "else": {"properties": {"error_codes": {"minItems": 1}}}}]
+    }
+  }
+}

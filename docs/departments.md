@@ -525,6 +525,10 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/stages/context_profile/contract.v2.schema.json` | contract (JSON Schema) |
 | `architecture/bin/context_profile_check.py` | script (contract checker) |
 | `architecture/bin/context_profile_score.py` | script (scorer against a case key) |
+| `architecture/bin/context_t1_preflight.py` | candidate (on master once landed; not accepted; pure synthetic D0 metadata checks only; gives no dispatch, registration or later-stage authority) |
+| `architecture/stages/context_profile/t1/preflight.v1.schema.json` | candidate contract (closed synthetic plan/expected/result metadata; not adapter pricing) |
+| `architecture/stages/context_profile/t1/PREFLIGHT.md` | candidate scope, frozen H-D0-META-1 and synthetic known-answer table (not D0/Stage1 acceptance) |
+| `../tests/test_architecture/test_context_t1_preflight.py` | focused synthetic candidate tests (repository-root tests/; no workflow/provider/real evidence) |
 | `architecture/bin/context_t1_project.py` | script (T1 D1, pinned exact-byte input projection; synthetic-tested, no judging admission) |
 | `architecture/bin/context_t1_validate.py` | script (T1 D2, strict raw-answer format validation, no repair or semantic judgment) |
 | `architecture/stages/context_profile/t1/projection.v1.schema.json` | contract (D1 projection metadata; source pins, byte lengths and ordered id/path inventory) |

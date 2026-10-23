@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import logging
 import math
 import threading
 import time
@@ -11,8 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import String, cast, func, text
+from sqlalchemy import String, cast, func, literal, text, update
 from sqlalchemy import event as sa_event
+from sqlalchemy import select as sql_select
 from sqlmodel import col, select
 
 from temper_ai.database import get_database, get_session
@@ -32,6 +34,7 @@ def bounded_fixture(monkeypatch, _test_db):
     monkeypatch.setenv("TEMPER_USAGE_RECONCILER", "1")
     reconcile._stop.clear()
     monkeypatch.setattr(reconcile, "BATCH_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(reconcile, "_last_blocker_report", None)
     if get_database().engine.dialect.name == "postgresql":
         with get_session() as session:
             schema = session.execute(text("SELECT current_schema()")).scalar_one()
@@ -1091,3 +1094,281 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
         assert all_p95 <= 50, f"Architecture all-acquisition HOLD miss: {all_p95:.3f}ms"
     finally:
         measured.dispose()
+
+
+# H-126-CUTOVER-2: the cutover barrier judges each earlier execution by its latest state.
+# Fixed shapes only (the dead history seen on live, rebuilt by hand); T is NOW. Each shape is
+# judged at two fixed database clocks: INSIDE (its after-T event is in the quiet window) and
+# QUIET (that event is older than the window).
+
+BEFORE, AFTER = NOW - timedelta(days=20), NOW + timedelta(minutes=5)
+HOUR = timedelta(hours=1)
+INSIDE = NOW + timedelta(minutes=30)
+QUIET = AFTER + reconcile.QUIET_WINDOW + timedelta(minutes=1)
+
+
+def execution(execution_id, *, row=None, starts=(), events=()):
+    """One fixed execution: its run row status (None: no row), start events (time, status), other events."""
+    for at, status in starts:
+        start = old({}, at=at, kind="workflow.started", execution_id=execution_id)
+        with get_session() as session:
+            session.get(Event, start.id).status = status
+    for at in events:
+        old({}, at=at, kind="stage.completed", execution_id=execution_id)
+    if row is not None:
+        with get_session() as session:
+            session.add(WorkflowRun(execution_id=execution_id, workflow_name="fixed-fixture",
+                                    workspace_path="/fixture", status=row))
+
+
+DEAD_ON_LIVE = {  # the shapes that held the live barrier forever; none may block
+    "orphaned-interrupted": {"row": "orphaned", "starts": [(BEFORE, "interrupted")], "events": [BEFORE]},
+    "orphaned-failed": {"row": "orphaned", "starts": [(BEFORE, "failed")]},
+    "failed-old-parked": {"row": "failed", "starts": [(BEFORE, "parked"), (BEFORE + HOUR, "failed")]},
+    "cancelled-old-parked": {"row": "cancelled", "starts": [(BEFORE, "parked"), (BEFORE + HOUR, "cancelled")]},
+    "completed-old-parked": {"row": "completed", "starts": [(BEFORE, "parked"), (BEFORE + HOUR, "parked"),
+                                                              (BEFORE + 2 * HOUR, "completed")]},
+    "no-row-no-start-quiet": {"events": [BEFORE]},
+}
+MUST_PASS = {  # at either clock
+    **DEAD_ON_LIVE,
+    # Code-derived, not seen on live: claim -> queue -> box dies before its first start -> reaper.
+    "ended-row-latest-parked": {"row": "orphaned", "starts": [(BEFORE, "parked")]},
+    "pre-T-event-inside-W": {"row": "completed", "starts": [(BEFORE, "completed")],
+                             "events": [NOW - timedelta(minutes=10)]},
+    "no-row-carried-on": {"starts": [(BEFORE, "parked"), (BEFORE + HOUR, "completed")]},
+    "post-cutover-running-row": {"row": "running", "starts": [(AFTER, "running")]},
+    "post-cutover-open-start": {"starts": [(AFTER, "running")]},
+    "post-cutover-no-start": {"events": [AFTER]},
+}
+MUST_BLOCK = {  # at either clock: shape, the rule that holds it
+    "parked-row": ({"row": "parked", "starts": [(BEFORE, "parked")]}, 1),
+    "running-row": ({"row": "running", "starts": [(BEFORE, "running")]}, 1),
+    "orphaned-resumed-running": ({"row": "running", "starts": [(BEFORE, "interrupted"), (AFTER, "running")]}, 1),
+    "failed-requeued-by-resume": ({"row": "queued", "starts": [(BEFORE, "failed")]}, 1),
+    "claim-under-open-row": ({"row": "queued", "starts": [(BEFORE, "parked")]}, 1),
+    "no-row-latest-parked": ({"starts": [(BEFORE, "completed"), (BEFORE + HOUR, "parked")]}, 2),
+    "no-row-latest-open": ({"starts": [(BEFORE, "running")]}, 2),
+    # The ended-row CARRIED_ON exemption must not exempt a NULL or actively resumed start.
+    "ended-row-null-start": ({"row": "orphaned", "starts": [(BEFORE, None)]}, 2),
+    # An in-process resume starts its running attempt without touching the ended row.
+    "ended-row-resumed-in-process": ({"row": "failed", "starts": [(BEFORE, "failed"), (BEFORE + HOUR, "running")]},
+                                     2),
+}
+WRITING = {  # rule 3 holds these at INSIDE; quiet past the window they clear
+    "no-row-no-start-active": {"events": [BEFORE, AFTER]},
+    "orphaned-active": {"row": "orphaned", "starts": [(BEFORE, "interrupted")], "events": [AFTER]},
+    "cancelled-active": {"row": "cancelled", "starts": [(BEFORE, "cancelled")], "events": [AFTER]},
+    "no-row-ended-start-active": {"starts": [(BEFORE, "completed")], "events": [AFTER]},
+    "ended-row-no-start-active": {"row": "completed", "events": [BEFORE, AFTER]},
+}
+SHAPES = {**MUST_PASS, **{name: shape for name, (shape, _) in MUST_BLOCK.items()}, **WRITING}
+
+
+def expected_rules(now, names=SHAPES):
+    held = {name: rule for name, (_, rule) in MUST_BLOCK.items()}
+    if now < AFTER + reconcile.QUIET_WINDOW:
+        held |= dict.fromkeys(WRITING, 3)
+    return {name: rule for name, rule in held.items() if name in names}
+
+
+def blocking_rules(now, limit=100):
+    with get_session() as session:
+        report = reconcile._cutover_blockers(session, NOW, now, limit=limit)
+    assert report["anonymous_open_start"] is False
+    assert report["executions"] == len(report["first"])
+    return {execution_id: rule for execution_id, rule, _ in report["first"]}
+
+
+def test_dead_history_no_longer_holds_cutover_and_live_or_writing_runs_still_do(monkeypatch, caplog):
+    """Opening path for the fix: live's dead shapes present; cutover waits for the live parked
+    run, then for an orphaned box still writing until it has been quiet for the window."""
+    caplog.set_level(logging.INFO, logger=reconcile.logger.name)
+    fixed_clock(monkeypatch)
+    for name, shape in DEAD_ON_LIVE.items():
+        execution(name, **shape)
+    execution("live-parked", row="parked", starts=[(BEFORE, "parked")])
+    execution("survivor", row="orphaned", starts=[(BEFORE, "interrupted")], events=[AFTER])
+    for kind in reconcile.WRITER_KINDS:
+        reconcile.mark_ready(kind)
+    with get_session() as session:
+        assert reconcile.reconcile_batch(session) == 0
+        assert not reconcile.try_cutover(session)
+        assert ("earlier_executions=2 anonymous_open_start=False "
+                "first=live-parked:rule1/parked survivor:rule3/orphaned") in caplog.text
+        session.execute(update(WorkflowRun).where(col(WorkflowRun.execution_id) == "live-parked")
+                        .values(status="queued"))
+        session.commit()
+        assert not reconcile.try_cutover(session)  # a carried-on claim still has an open row
+        assert "first=live-parked:rule1/queued survivor:rule3/orphaned" in caplog.text
+        session.execute(update(WorkflowRun).where(col(WorkflowRun.execution_id) == "live-parked")
+                        .values(status="orphaned"))
+        session.commit()  # box died before its own start; the latest start stays CARRIED_ON
+    fixed_clock(monkeypatch, INSIDE)
+    with get_session() as session:
+        assert reconcile.reconcile_batch(session) == 0
+        assert not reconcile.try_cutover(session)
+        assert "earlier_executions=1 anonymous_open_start=False first=survivor:rule3/orphaned" in caplog.text
+        assert reconcile.coverage_state(session)["cutover_at"] is None
+    fixed_clock(monkeypatch, QUIET)
+    with get_session() as session:
+        assert not reconcile.try_cutover(session)  # the open barrier needs its own full final lap
+        assert reconcile.reconcile_batch(session) == 0
+        assert reconcile.try_cutover(session)
+        state = reconcile.coverage_state(session)
+    assert state["cutover_at"] == NOW and state["phase"] == "cutover" and state["status"] == "UNKNOWN"
+    assert "Usage cutover barrier: no earlier execution open" in caplog.text
+
+
+@pytest.mark.parametrize("now", [INSIDE, QUIET], ids=["inside-window", "quiet-past-window"])
+def test_barrier_query_known_answers_for_every_shape(now):
+    """The query alone, model-free: each shape's execution is judged on its own rows only."""
+    for name, shape in SHAPES.items():
+        execution(name, **shape)
+    assert blocking_rules(now) == expected_rules(now)
+
+
+@pytest.mark.parametrize("status", ["waiting", "queued", "running", "pending", "cancelling", "parked", "unknown-status"])
+def test_every_open_row_status_blocks_even_with_an_ended_start(status):
+    execution("open-row", row=status, starts=[(BEFORE, "completed")])
+    with get_session() as session:
+        assert reconcile._cutover_blockers(session, NOW, QUIET)["first"] == [("open-row", 1, status)]
+
+
+@pytest.mark.parametrize(("status", "blocks"), [
+    *[(status, False) for status in ("completed", "failed", "cancelled", "interrupted", "orphaned")],
+    *[(status, True) for status in ("waiting", "queued", "running", "pending", "cancelling", "parked",
+                                    "unknown-status", None)],
+])
+def test_row_open_pins_the_ended_set_and_null(status, blocks):
+    with get_session() as session:
+        value = session.execute(sql_select(reconcile._row_open(literal(status, String)))).scalar()
+    assert value is not None and bool(value) is blocks
+    assert reconcile.BARRIER_ENDED == ("completed", "failed", "cancelled", "interrupted", "orphaned")
+    assert reconcile.TERMINAL == ("completed", "failed", "cancelled", "interrupted")
+
+
+def test_carried_on_constant_matches_parked_claim_without_a_runtime_import():
+    from temper_ai.runner.parked import CARRIED_ON
+    assert reconcile.CARRIED_ON == CARRIED_ON == "parked"
+
+
+@pytest.mark.parametrize("status", reconcile.BARRIER_ENDED)
+def test_dead_carried_on_exemption_for_every_ended_row_status(status):
+    execution("dead-claim", row=status, starts=[(BEFORE, "parked")])
+    assert blocking_rules(INSIDE) == blocking_rules(QUIET) == {}
+
+
+def test_rule_two_carried_on_exemption_needs_ended_status_even_without_rule_one(monkeypatch):
+    """Isolate rule 2: otherwise rule 1 hides an over-broad 'any row' exemption."""
+    execution("open-claim", row="queued", starts=[(BEFORE, "parked")])
+    original = reconcile._cutover_blockers
+    source = inspect.getsource(original)
+    row_rule = "union_all(by_row, by_start, by_activity)"
+    ended_guard = "col(WorkflowRun.status).in_(BARRIER_ENDED)"
+    assert source.count(row_rule) == source.count(ended_guard) == 1
+    source = source.replace(row_rule, "union_all(by_start, by_activity)")
+    for ended_only, expected in ((True, {"open-claim": 2}), (False, {})):
+        isolated = source if ended_only else source.replace(ended_guard, "True")
+        namespace = dict(vars(reconcile))
+        exec(compile(isolated, original.__code__.co_filename, "exec"), namespace)
+        monkeypatch.setattr(reconcile, original.__name__, namespace[original.__name__])
+        assert blocking_rules(QUIET) == expected
+
+
+def test_quiet_window_is_pinned_and_counts_from_the_latest_event():
+    assert reconcile.QUIET_WINDOW == timedelta(minutes=240)
+    execution("writing", row="orphaned", events=[BEFORE, AFTER, AFTER + HOUR])
+    assert blocking_rules(AFTER + reconcile.QUIET_WINDOW + timedelta(minutes=1)) == {"writing": 3}
+    assert blocking_rules(AFTER + HOUR + reconcile.QUIET_WINDOW - timedelta(seconds=1)) == {"writing": 3}
+    assert blocking_rules(AFTER + HOUR + reconcile.QUIET_WINDOW + timedelta(seconds=1)) == {}
+
+
+@pytest.mark.parametrize("open_id", ["tie-a", "tie-b"])
+def test_latest_start_tie_blocks_when_any_is_open_never_broken_by_id(open_id):
+    execution("tie", starts=[(BEFORE, "completed")])
+    for event_id in ("tie-a", "tie-b"):
+        start = old({}, at=BEFORE + HOUR, kind="workflow.started", execution_id="tie", event_id=event_id)
+        with get_session() as session:
+            session.get(Event, start.id).status = "running" if event_id == open_id else "completed"
+    assert blocking_rules(QUIET) == {"tie": 2}
+
+
+def test_start_without_execution_keeps_its_own_unchanged_check():
+    start = old({}, at=BEFORE, kind="workflow.started")
+    with get_session() as session:
+        session.get(Event, start.id).status = "running"
+    with get_session() as session:
+        assert reconcile._cutover_blockers(session, NOW, INSIDE) == {"executions": 0, "anonymous_open_start": True,
+                                                                     "first": []}
+        assert reconcile._earlier_execution_open(session, NOW, INSIDE)
+        session.get(Event, start.id).status = "completed"
+        session.commit()
+        assert not reconcile._earlier_execution_open(session, NOW, INSIDE)
+
+
+def test_blocker_report_counts_all_and_names_the_first_five_once(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger=reconcile.logger.name)
+    for index in range(7):
+        execution(f"open-{index}", row="running", starts=[(BEFORE + index * HOUR, "running")])
+    execution("open-0", events=[AFTER])  # held by rules 1 and 3: counted once, under rule 1
+    with get_session() as session:
+        report = reconcile._cutover_blockers(session, NOW, INSIDE)
+    assert report["executions"] == 7
+    assert report["first"] == [(f"open-{index}", 1, "running") for index in range(5)]
+    for _ in range(2):
+        reconcile._report_blockers(report)
+    assert caplog.text.count("Usage cutover held: earlier_executions=7") == 1
+    assert "open-4:rule1/running" in caplog.text and "open-5" not in caplog.text
+    mutate_function(monkeypatch, reconcile._report_blockers, "if report == _last_blocker_report:", "if False:")
+    reconcile._report_blockers(report)
+    reconcile._report_blockers(report)
+    assert caplog.text.count("Usage cutover held: earlier_executions=7") == 3
+
+
+BARRIER_GUARDS = {  # guard: function, its text, the text with the guard taken out, the shape that shows it, clock
+    "orphaned-ended": (reconcile._row_open, "status.not_in(BARRIER_ENDED)", "status.not_in(TERMINAL)",
+                       "orphaned-interrupted", QUIET),
+    "row-begun-before": (reconcile._cutover_blockers, "began_before(run.execution_id)", "True",
+                         "post-cutover-running-row", QUIET),
+    "start-whatever-row": (reconcile._cutover_blockers, "began_before(opened.c.execution_id), latest_open",
+                           "began_before(opened.c.execution_id), latest_open, ~exists(sql_select(1).where("
+                           "col(WorkflowRun.execution_id) == opened.c.execution_id))",
+                           "ended-row-resumed-in-process", QUIET),
+    "start-begun-before": (reconcile._cutover_blockers, "began_before(opened.c.execution_id), latest_open",
+                           "True, latest_open", "post-cutover-open-start", QUIET),
+    "start-latest": (reconcile._cutover_blockers, "~exists(sql_select(1).where(col(later.execution_id)",
+                     "~exists(sql_select(1).where(False, col(later.execution_id)", "no-row-carried-on", QUIET),
+    "start-latest-open": (reconcile._cutover_blockers, '"workflow.started", start_open(start),',
+                          '"workflow.started", True,', "no-row-carried-on", QUIET),
+    "dead-carry-on-exemption": (reconcile._cutover_blockers, "~dead_carry_on(start),", "True,",
+                                 "ended-row-latest-parked", QUIET),
+    "dead-carry-on-needs-row": (reconcile._cutover_blockers,
+                                "col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended",
+                                "col(event.status).is_not_distinct_from(CARRIED_ON)",
+                                "no-row-latest-parked", QUIET),
+    "dead-carry-on-null-safe": (reconcile._cutover_blockers,
+                                "col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended",
+                                "(col(event.status) == CARRIED_ON) & row_ended",
+                                "ended-row-null-start", QUIET),
+    "writing-rule": (reconcile._cutover_blockers, "union_all(by_row, by_start, by_activity)",
+                     "union_all(by_row, by_start)", "orphaned-active", INSIDE),
+    "writing-window": (reconcile._cutover_blockers, "lease = max(cutoff, now - QUIET_WINDOW)", "lease = cutoff",
+                       "cancelled-active", QUIET),
+    "writing-T-floor": (reconcile._cutover_blockers, "lease = max(cutoff, now - QUIET_WINDOW)",
+                         "lease = now - QUIET_WINDOW", "pre-T-event-inside-W", INSIDE),
+    "writing-begun-before": (reconcile._cutover_blockers, ".where(began_before(since.c.execution_id))", "",
+                             "post-cutover-no-start", INSIDE),
+    "lowest-rule": (reconcile._cutover_blockers, "func.min(held.c.rule)", "func.max(held.c.rule)",
+                    "orphaned-resumed-running", INSIDE),
+}
+
+
+@pytest.mark.parametrize("guard", sorted(BARRIER_GUARDS))
+def test_barrier_guards_have_individual_bites(monkeypatch, guard):
+    function, before, after, name, now = BARRIER_GUARDS[guard]
+    execution(name, **SHAPES[name])
+    expected = expected_rules(now, names={name})
+    assert blocking_rules(now) == expected
+    mutate_function(monkeypatch, function, before, after)
+    assert blocking_rules(now) != expected

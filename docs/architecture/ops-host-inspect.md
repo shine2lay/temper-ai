@@ -71,7 +71,8 @@ State seven:
 - A timestamp is `YYYY-MM-DDTHH:MM:SS`, then an optional `.` with 1 to 9 fraction digits, then `Z` or `±HH:MM`. T and Z are uppercase; digits are ASCII only. Dates must be real calendar dates, leap years included, and seconds run 00–59. `-00:00` (an unknown offset) is refused.
 - `observed_at` needs at least 3 fraction digits (milliseconds) and is never the zero instant.
 - The zero sentinel: a `started_at` or `finished_at` at Docker's zero time `0001-01-01T00:00:00Z`, in any spelling of that instant, means "no event". It is not compared.
-- Only actual events are compared, as integer nanoseconds across offsets: `started_at ≤ observed_at`, `finished_at ≤ observed_at`, and `started_at ≤ finished_at` when both are events.
+- Only actual events are compared, as integer nanoseconds across offsets, and only against `observed_at`: `started_at ≤ observed_at` and `finished_at ≤ observed_at`.
+- No start/finish order judgment (r5): Docker keeps the previous exit's `finished_at` when a container starts again, so a running container may show `finished_at` before `started_at`, while one that its restart policy is restarting shows the reverse. Either order is accepted. P5 judges start/finish order per leg, with the operation context (A6).
 - Nothing else: no current time, TTL, deadline, operation order, health or stop judgment. Those stay with P5.
 
 ## Target and bind (A4.2)
@@ -102,9 +103,9 @@ Clean /2 cases are synthetic future-contract data only. Ops #429 found that the 
 - The zero sentinel is matched by instant, not by spelling.
 - Timestamps follow RFC 3339 with the limits above; `observed_at` needs milliseconds (amendment §6).
 
-## Open finding (handed to the lead, not changed here)
+## Start/finish order (resolved by r5 and R3')
 
-A4.2 applies `started_at ≤ finished_at` whenever both are events. Docker keeps the previous `FinishedAt` when a stopped container is started again, so a restarted running container normally shows `StartedAt` after `FinishedAt`. This decoder refuses that data with EVIDENCE_INVALID, as A4.2 says, and a restart's start leg (ABI A6.1) would hit it. The proposed fix is a contract delta (apply the order only when `running` is false, or drop it), then its Ops receiving, then a one-rule revision here with its own test twin.
+R3 (#218) also refused data whose `finished_at` came before its `started_at`, as r3's A4.2 said, and handed that to the lead as an open finding: Docker keeps the previous `FinishedAt` when a stopped container is started again, so a restart's start leg (ABI A6.1) could never pass. The r5 packet (`p3-d3-abi-source-plan-r5`, SHA256SUMS `7ae4d553c62d29d361321bf193ddbcec8204126c9b953288e74b0592c48be9f0`, row R5-A42, accepted in Ops' receiving) dropped that comparison from A4.2 rather than keep it for stopped containers only. Architecture task #234 (R3') removed it here. In the tests, the two old finish-before-start negatives are now clean twins, joined by the running restart shape and the restart-policy shape; the sentinel mutant is caught through `observed_at`; and a bite that puts the comparison back is caught by the restart-shape twin.
 
 ## Tests
 

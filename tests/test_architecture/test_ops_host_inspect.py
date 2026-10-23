@@ -539,16 +539,12 @@ def test_f3_time_struct_n_bad_observed_at_refused(label, value):
         (app_doc, {"started_at": "2026-10-23T18:00:05.250000001Z"}),
         (app_doc, {"started_at": "2026-10-23T11:00:06-07:00"}),
         (stopped_doc, {"finished_at": "2026-10-23T18:00:06Z"}),
-        (stopped_doc, {"started_at": "2026-10-23T18:00:04Z", "finished_at": "2026-10-23T18:00:03Z"}),
-        (stopped_doc, {"started_at": "2026-10-24T03:00:03.5+09:00", "finished_at": "2026-10-23T18:00:03Z"}),
     ],
     ids=[
         "start_after_observed",
         "start_one_nanosecond_after_observed",
         "start_after_observed_across_offsets",
         "finish_after_observed",
-        "finish_before_start",
-        "finish_before_start_across_offsets",
     ],
 )
 def test_f3_time_struct_n_actual_event_order_refused(base, changes):
@@ -577,13 +573,69 @@ def test_f3_time_struct_c_valid_structural_times_accepted(base, changes, observe
     accepted(doc)
 
 
+# r5 (A4.2): P3 makes no start/finish order judgment. Docker keeps the previous exit's
+# finished_at when a container starts again; P5 judges start/finish order per leg.
+
+
+def restart_doc() -> dict:
+    """Running again after a stop: Docker kept the previous exit's finished_at."""
+    return with_state("finished_at", "2026-10-23T17:59:58.5Z")
+
+
+def policy_restart_doc() -> dict:
+    """Restarted by its restart policy: running, with finished_at after started_at."""
+    doc = with_runtime("restart_policy", {"name": "on-failure", "maximum_retry_count": 3})
+    doc["state"].update(status="restarting", finished_at="2026-10-23T18:00:03Z", exit_code=1, restart_count=1)
+    return doc
+
+
+@pytest.mark.parametrize(
+    "base,changes",
+    [
+        (stopped_doc, {"started_at": "2026-10-23T18:00:04Z", "finished_at": "2026-10-23T18:00:03Z"}),
+        (stopped_doc, {"started_at": "2026-10-24T03:00:03.5+09:00", "finished_at": "2026-10-23T18:00:03Z"}),
+        (restart_doc, {}),
+        (policy_restart_doc, {}),
+    ],
+    ids=["finish_before_start", "finish_before_start_across_offsets", "running_restart", "restart_policy"],
+)
+def test_f3_time_struct_c_either_start_finish_order_accepted(base, changes):
+    doc = base()
+    doc["state"].update(changes)
+    accepted(doc)
+
+
+def test_f3_time_struct_n_bite_restoring_order_check_is_caught(monkeypatch):
+    accepted(restart_doc())
+    real_guard = inspect2._guard_time_order
+
+    def with_r3_order(state, observed_at):
+        real_guard(state, observed_at)
+        started, finished = inspect2._event(state["started_at"]), inspect2._event(state["finished_at"])
+        if started is not None and finished is not None and started > finished:  # R3's rule, dropped by r5
+            raise inspect2.TargetRefused(EI)
+
+    monkeypatch.setattr(inspect2, "_guard_time_order", with_r3_order)
+    refused(restart_doc(), EI)  # the restart-shape C catches a restored order check
+    accepted(app_doc())  # only the order comparison bites: other clean data still passes
+    accepted(policy_restart_doc())
+
+
 # ─── F3-TIME-SENTINEL ───────────────────────────────────────────────────────
 
 
 def test_f3_time_sentinel_n_mutant_reading_sentinel_as_event_is_caught(monkeypatch):
-    accepted(app_doc())
+    # r5: with no start/finish order in P3, this mutant shows only through observed_at. A never-started
+    # container (both sentinels) has no actual event to refuse a year-1 observed_at, and the .000Z
+    # spelling passes observed_at's syntax, so only the sentinel check refuses it.
+    def zero_observed_at() -> dict:
+        doc = created_doc()
+        doc["observed_at"] = "0001-01-01T00:00:00.000Z"
+        return doc
+
+    refused(zero_observed_at(), EI)  # observed_at is never the zero instant
     monkeypatch.setattr(inspect2, "_is_zero_sentinel", lambda value: False)
-    refused(app_doc(), EI)  # running app: finished_at sentinel would precede started_at
+    accepted(zero_observed_at())  # the mutant reads the sentinel as an ordinary instant
 
 
 def test_f3_time_sentinel_n_mutant_refusing_sentinel_is_caught(monkeypatch):

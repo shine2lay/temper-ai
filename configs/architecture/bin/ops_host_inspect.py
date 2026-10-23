@@ -560,8 +560,11 @@ def _event(value: Any) -> int | None:
 
 
 def _guard_time_order(state: dict[str, Any], observed_at: str) -> None:
-    """Compare only actual events: started/finished <= observed, started <= finished.
+    """Compare only actual events, and only against observed: started/finished <= observed.
 
+    No start/finish order judgment (r5): Docker keeps the previous exit's
+    finished_at when a container starts again, so either order is normal data.
+    P5 judges start/finish order per leg, with the operation context.
     No clock, TTL, deadline, operation or health judgment: those stay with P5.
     """
     observed = _instant(observed_at, min_fraction=3)
@@ -572,8 +575,6 @@ def _guard_time_order(state: dict[str, Any], observed_at: str) -> None:
     if started is not None and started > observed:
         raise _invalid()
     if finished is not None and finished > observed:
-        raise _invalid()
-    if started is not None and finished is not None and started > finished:
         raise _invalid()
 
 

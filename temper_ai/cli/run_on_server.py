@@ -20,7 +20,7 @@ The server is ``--server``, else ``TEMPER_SERVER_URL``, else http://127.0.0.1:84
 host and inside the server container), with the key ``client_key()`` finds (TEMPER_API_KEY_FILE,
 TEMPER_RUN_TOKEN or TEMPER_API_TOKEN, api/api_keys.py; inside the server container none is needed,
 it is the caller "server"). Dashboard links use
-``TEMPER_UI_URL``, else https://temper.wai2shine.com.
+``TEMPER_UI_URL``, else the server's own address, which serves the dashboard at /app/.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ from typing import IO, Any
 import httpx
 
 DEFAULT_SERVER = "http://127.0.0.1:8420"
-DEFAULT_UI = "https://temper.wai2shine.com"
 
 # Exit codes. The first three are the run's own outcome, as configs/product/bin/server_run.py has them.
 COMPLETED, FAILED, CANCELLED = 0, 1, 2
@@ -130,7 +129,7 @@ def run(workflow: str, inputs: dict, *, workspace: str | None = None, server: st
     out = out or sys.stdout
     err = sys.stderr
     url = (server or os.environ.get("TEMPER_SERVER_URL") or DEFAULT_SERVER).strip().rstrip("/")
-    ui = (ui or os.environ.get("TEMPER_UI_URL") or DEFAULT_UI).strip().rstrip("/")
+    ui = (ui or os.environ.get("TEMPER_UI_URL") or url).strip().rstrip("/")
     body = {
         "workflow": workflow,
         "inputs": inputs,

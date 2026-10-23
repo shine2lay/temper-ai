@@ -33,7 +33,7 @@ workflow:
       depends_on: [code]
 ```
 
-That's a complete workflow. Three agents, parallel coding, sequential review. No Python classes, no framework boilerplate, no engine to wire up.
+That's a complete workflow. Four agents, parallel coding, sequential review. No Python classes, no framework boilerplate, no engine to wire up.
 
 **Why Temper:**
 - **YAML-first** — define agents, wiring, safety, and strategies in config. Zero code to get started.
@@ -59,7 +59,7 @@ Watch your workflow execute as a live DAG. Click any node to inspect its inputs,
 ```
 $ temper run code_review --input task="Build a REST API"
 Started code_review on the temper server: run 6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
-  https://temper.wai2shine.com/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
+  http://127.0.0.1:8420/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
 Following it here; Ctrl+C stops following, the run keeps going.
   started  plan
   done     plan (10s)
@@ -67,7 +67,7 @@ Following it here; Ctrl+C stops following, the run keeps going.
   done     code (12s)
   started  review
   done     review (8s)
-Run completed in 31s, $0.02: https://temper.wai2shine.com/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
+Run completed in 31s, $0.02: http://127.0.0.1:8420/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
 ```
 
 `temper run` starts the run on the server, the same way the dashboard does, so
@@ -301,10 +301,10 @@ server runs the workflow with its own configs (its `configs/` folder; here the
 records it in its own database, so every run shows on the dashboard.
 
 `temper run` posts the workflow and inputs to `POST /api/runs`, prints the run
-id and its link (`$TEMPER_UI_URL/app/workflow/<id>`, default
-`https://temper.wai2shine.com`), then follows the run: a line as each stage
-starts or ends, and one line for each wait on you, which you answer on the
-dashboard or in Slack/Telegram. It exits 0 when the run completed, 1 when it
+id and its link (`$TEMPER_UI_URL/app/workflow/<id>`; without `TEMPER_UI_URL`,
+the server's own address, where it serves the dashboard), then follows the run:
+a line as each stage starts or ends, and one line for each wait on you, which
+you answer on the dashboard or in Slack/Telegram. It exits 0 when the run completed, 1 when it
 failed, 2 when it was cancelled, 3 when nothing was started (the server isn't
 answering, or refused the start), 4 when it stopped following before the end,
 and 130 on Ctrl+C; after 4 and 130 the run keeps going on the server. Nothing
@@ -470,7 +470,7 @@ Docs auto-regenerate on commit when source files change. See [CONTRIBUTING.md](C
 Temper AI v0.1.0 is designed for **local development and self-hosted use only**. It is not production-ready.
 
 **Current limitations:**
-- **No API authentication** — all endpoints are open. Anyone with network access can start workflows and consume your LLM API credits.
+- **API authentication is opt-in** — out of the box every endpoint is open: anyone with network access can start workflows and consume your LLM API credits. Turn on the write guard (`TEMPER_API_GUARD=enforce`) so that starting runs, answering waits, writing configs and other changes need a named key, while reads stay open; or set `TEMPER_API_TOKEN` to require one shared token on every API route, reads too. See [docs/api-access.md](docs/api-access.md).
 - **No rate limiting** — the API can be called without restriction.
 - **LLM agents execute real commands** — agents use Bash, file operations, and HTTP requests. Always use `safety:` policies in your workflow configs to set budget limits and restrict file access.
 

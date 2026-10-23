@@ -188,9 +188,9 @@ class TestStart:
         assert f"https://dash.example.test/app/workflow/{RUN_ID}" in capsys.readouterr().out
         assert fake.seen("POST") == ["POST /api/runs"]
 
-    def test_the_default_link_is_the_temper_dashboard(self, fake, capsys):
-        start(fake, ui=None)
-        assert f"https://temper.wai2shine.com/app/workflow/{RUN_ID}" in capsys.readouterr().out
+    def test_the_default_link_is_the_servers_own_dashboard(self, fake, capsys):
+        start(fake, server=fake.url + "/", ui=None)
+        assert f"{fake.url}/app/workflow/{RUN_ID}" in capsys.readouterr().out
 
     def test_the_api_token_goes_along_when_set(self, fake, monkeypatch):
         monkeypatch.setenv("TEMPER_API_TOKEN", "sekrit")

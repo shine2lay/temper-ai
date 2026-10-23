@@ -66,7 +66,7 @@ def main() -> None:
             "Exit codes: 0 completed, 1 failed, 2 cancelled, 3 nothing was started (the server "
             "isn't answering or refused it), 4 stopped following before the end, 130 Ctrl+C; after "
             "4 and 130 the run keeps going on the server. Server: --server, else $TEMPER_SERVER_URL, "
-            "else http://127.0.0.1:8420. Links: $TEMPER_UI_URL, else https://temper.wai2shine.com."
+            "else http://127.0.0.1:8420. Links: $TEMPER_UI_URL, else the server's address."
         ),
     )
     run_parser.add_argument("workflow", help="Workflow config name, as the server has it (e.g. ci_slow)")

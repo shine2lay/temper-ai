@@ -25,7 +25,9 @@ from sqlalchemy import (
     cast,
     exists,
     func,
+    literal,
     or_,
+    union_all,
 )
 from sqlalchemy import select as sql_select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -44,6 +46,18 @@ logger = logging.getLogger(__name__)
 PACIFIC = ZoneInfo("America/Los_Angeles")
 WRITER_KINDS = frozenset({"server", "worker", "pi-worker"})
 TERMINAL = ("completed", "failed", "cancelled", "interrupted")
+# The cutover barrier's own ended run rows. TERMINAL stays as it is: the call-unended
+# checks (_start_snapshot) read it too. A box still writing after its row looks ended
+# holds the barrier through QUIET_WINDOW instead (rule 3, _cutover_blockers).
+BARRIER_ENDED = (*TERMINAL, "orphaned")
+# A parked attempt a later one carried on (runner/parked.py CARRIED_ON; a test pins the two).
+# parked.claim sets it and re-queues the run row at once, or puts the attempt back, so under an
+# ended row it is a dead carry-on: its box died before writing its own start (rule 2's exemption).
+CARRIED_ON = "parked"
+# How long an earlier execution must be quiet before the barrier lets it go. On live (15 days,
+# 64,269 gaps between one execution's events) the longest silence was 183 min; 240 adds margin.
+QUIET_WINDOW = timedelta(minutes=240)
+BLOCKER_REPORT_LIMIT = 5
 FAULT_CODES = frozenset({"post-cutover-missing-row", "drain-fault"})
 EVERY_SECONDS = 60.0
 MAX_BATCH = 200
@@ -57,6 +71,7 @@ LEAVES = ("model", "provider", *usage.TOKEN_FIELDS.values(), "cost_usd", "llm_ca
           "call_kind", "started_event_id", "executed_by", "restored_from_fork")
 _thread: threading.Thread | None = None
 _stop = threading.Event()
+_last_blocker_report: tuple[Any, ...] | None = None
 
 
 def _require_time(value: datetime | None) -> datetime:
@@ -423,7 +438,7 @@ def _begin_lap(session: Session) -> dict[str, Any] | None:
         return None
     now = _db_now(session)
     boundary = _ready_boundary(session)
-    if boundary is not None and _earlier_execution_open(session, boundary):
+    if boundary is not None and _earlier_execution_open(session, boundary, now):
         boundary = None
     lower = _history_start(now)
     if (coverage.lap_started_at is None or coverage.lap_complete
@@ -539,24 +554,113 @@ def reconcile_batch(session: Session, limit: int = MAX_BATCH) -> int:
     return written
 
 
-def _earlier_execution_open(session: Session, cutoff: datetime) -> bool:
-    first = (sql_select(col(Event.execution_id).label("execution_id"), func.min(Event.timestamp).label("first_at"))
-             .where(col(Event.execution_id).is_not(None)).group_by(Event.execution_id).subquery())
-    bad_event = exists(sql_select(1).where(col(Event.execution_id) == first.c.execution_id,
-                       col(Event.type) == "workflow.started",
-                       (col(Event.status).is_(None) | col(Event.status).not_in(TERMINAL))))
-    bad_run = exists(sql_select(1).where(col(WorkflowRun.execution_id) == first.c.execution_id,
-                                      col(WorkflowRun.status).not_in(TERMINAL)))
-    terminal_event = exists(sql_select(1).where(col(Event.execution_id) == first.c.execution_id,
-                            col(Event.type) == "workflow.started", col(Event.status).in_(TERMINAL)))
-    terminal_run = exists(sql_select(1).where(col(WorkflowRun.execution_id) == first.c.execution_id,
-                                           col(WorkflowRun.status).in_(TERMINAL)))
-    blocked = session.execute(sql_select(first.c.execution_id).where(first.c.first_at < cutoff,
-                              bad_event | bad_run | (~terminal_event & ~terminal_run)).limit(1)).first()
+def _row_open(status):
+    """A run row that still holds the barrier. 'orphaned' ends it like the terminal
+    states; a box that outlived its row is held by its activity (rule 3), and a new
+    attempt the row never heard of by its latest start (rule 2)."""
+    return or_(status.is_(None), status.not_in(BARRIER_ENDED))
+
+
+def _cutover_blockers(session: Session, cutoff: datetime, now: datetime,
+                      limit: int = BLOCKER_REPORT_LIMIT) -> dict[str, Any]:
+    """Executions begun before the cutoff that still hold the barrier, by rule:
+
+    1. its run row is open (_row_open);
+    2. whatever its row says, one of its LATEST workflow.started events is not ended:
+       the row and the latest attempt must both have ended (an in-process resume
+       starts an attempt without touching the row). Ties at the latest time all
+       count, never broken by id; an older 'parked' start is an attempt a later one
+       carried on (runner/parked.py CARRIED_ON). A LATEST start still 'parked' counts
+       as ended once its row is in BARRIER_ENDED: a live claim keeps its row open
+       (rule 1), and only the reaper or a cancel ends the row over a dead one;
+    3. whatever its row or starts say, it has an event at or after max(cutoff,
+       now - QUIET_WINDOW): it is still writing, or wrote lately. Orphaned does not
+       prove the box is dead, and a failed kill still leaves 'cancelled'. Quiet for
+       QUIET_WINDOW, it clears by itself.
+
+    An execution that more than one rule holds is reported under the lowest. Returns
+    the count and the first few (execution id, rule, row status): ids and codes only,
+    never event content. Start events without an execution id keep their own
+    unchanged check. `now` is the database clock the caller read.
+
+    Each rule starts from a small set (run rows, start events, recent events) and
+    reaches events only through the execution indexes: grouping every event took 7 s
+    on live, past the 5 s statement bound.
+    """
+    lease = max(cutoff, now - QUIET_WINDOW)
+
+    def began_before(execution_id):
+        return exists(sql_select(1).where(col(Event.execution_id) == execution_id, col(Event.timestamp) < cutoff))
+
+    run = aliased(WorkflowRun)
+    by_row: Select[Any] = (sql_select(col(run.execution_id).label("execution_id"), literal(1).label("rule"),
+                         col(run.status).label("row_status"))
+              .where(_row_open(col(run.status)), began_before(run.execution_id)))
+    def start_open(event):
+        return col(event.status).is_(None) | col(event.status).not_in(TERMINAL)
+
+    def dead_carry_on(event):
+        row_ended = exists(sql_select(1).where(col(WorkflowRun.execution_id) == event.execution_id,
+                                               col(WorkflowRun.status).in_(BARRIER_ENDED)))
+        return col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended
+
+    # Only an execution with some open start can have an open latest one.
+    opened = (sql_select(col(Event.execution_id).label("execution_id"))
+              .where(col(Event.execution_id).is_not(None), col(Event.type) == "workflow.started", start_open(Event))
+              .distinct().subquery())
+    start, later = aliased(Event), aliased(Event)
+    # An open start with no later start of its execution: ties at the latest time all count.
+    latest_open = exists(sql_select(1).where(
+        col(start.execution_id) == opened.c.execution_id, col(start.type) == "workflow.started", start_open(start),
+        ~dead_carry_on(start),
+        ~exists(sql_select(1).where(col(later.execution_id) == start.execution_id,
+                                    col(later.type) == "workflow.started", col(later.timestamp) > start.timestamp))))
+    by_start = (sql_select(opened.c.execution_id, literal(2).label("rule"), literal(None, String).label("row_status"))
+                .where(began_before(opened.c.execution_id), latest_open))
+    since = (sql_select(col(Event.execution_id).label("execution_id"))
+             .where(col(Event.execution_id).is_not(None), col(Event.timestamp) >= lease).distinct().subquery())
+    row_status = (sql_select(col(WorkflowRun.status)).where(col(WorkflowRun.execution_id) == since.c.execution_id)
+                  .scalar_subquery())
+    by_activity = (sql_select(since.c.execution_id, literal(3).label("rule"), row_status.label("row_status"))
+                   .where(began_before(since.c.execution_id)))
+    held = union_all(by_row, by_start, by_activity).subquery()
+    blockers = (sql_select(held.c.execution_id, func.min(held.c.rule).label("rule"),
+                           func.max(held.c.row_status).label("row_status"))
+                .group_by(held.c.execution_id).subquery())
+    first_at = (sql_select(func.min(Event.timestamp)).where(col(Event.execution_id) == blockers.c.execution_id)
+                .scalar_subquery())
+    rows = session.execute(
+        sql_select(blockers.c.execution_id, blockers.c.rule, blockers.c.row_status,
+                   func.count().over().label("total"))
+        .order_by(first_at, blockers.c.execution_id).limit(limit)).all()
     anonymous = session.exec(select(Event.id).where(Event.type == "workflow.started", Event.timestamp < cutoff,
                    col(Event.execution_id).is_(None), col(Event.status).is_(None) | col(Event.status).not_in(TERMINAL))
                    .limit(1)).first()
-    return blocked is not None or anonymous is not None
+    return {"executions": int(rows[0].total) if rows else 0, "anonymous_open_start": anonymous is not None,
+            "first": [(row.execution_id, int(row.rule), row.row_status) for row in rows]}
+
+
+def _report_blockers(blockers: dict[str, Any]) -> None:
+    """Say why the barrier holds, once per change: ids, rule numbers and row codes only."""
+    global _last_blocker_report
+    report = (blockers["executions"], blockers["anonymous_open_start"], tuple(blockers["first"]))
+    if report == _last_blocker_report:
+        return
+    _last_blocker_report = report
+    if not blockers["executions"] and not blockers["anonymous_open_start"]:
+        logger.info("Usage cutover barrier: no earlier execution open")
+        return
+    first = " ".join(f"{execution_id}:rule{rule}" + (f"/{status}" if status else "")
+                     for execution_id, rule, status in blockers["first"])
+    logger.info("Usage cutover held: earlier_executions=%d anonymous_open_start=%s first=%s",
+                blockers["executions"], blockers["anonymous_open_start"], first or "-")
+
+
+def _earlier_execution_open(session: Session, cutoff: datetime, now: datetime, *, report: bool = False) -> bool:
+    blockers = _cutover_blockers(session, cutoff, now)
+    if report:
+        _report_blockers(blockers)
+    return bool(blockers["executions"] or blockers["anonymous_open_start"])
 
 
 def _start_captures():
@@ -726,7 +830,7 @@ def try_cutover(session: Session) -> bool:
             session.commit()
             return False
         boundary = max(_require_time(as_utc(row.ready_at)) for row in ready)
-        if (_earlier_execution_open(session, boundary)
+        if (_earlier_execution_open(session, boundary, _db_now(session), report=True)
                 or as_utc(coverage.lap_ready_at) != boundary
                 or coverage.lap_started_at is None or _require_time(as_utc(coverage.lap_started_at)) < boundary
                 or not coverage.lap_clean or not coverage.lap_complete

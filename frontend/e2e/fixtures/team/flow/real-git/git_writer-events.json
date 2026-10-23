@@ -1,0 +1,167 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-23T17:18:26.518759+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "91169c918fcf4efbb7993885724d7f34",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-23T17:18:26.545451+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-23T17:18:26.637567+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-23T17:18:27.079257+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Write part.md, then share it.",
+      "message_id": "100c4dfef30a47338ea8f060ded3ab8a",
+      "mid_turn": false
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-23T17:18:27.080278+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-23T17:18:27.082277+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 0.0,
+      "tool_calls": 2
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-23T17:18:27.082908+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "waiting for part.md",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-23T17:18:27.139790+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-23T17:18:27.206195+00:00",
+      "kind": "sync_refused",
+      "member": "builder",
+      "cause": "writer",
+      "reason": "Temper won't run git over your folder while a box of yours is still live: temper-pi-x (running)."
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-23T17:18:27.234651+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "failed",
+      "ended_by": null,
+      "cost_usd": null,
+      "tool_calls": null
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-23T17:18:27.283849+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 2,
+      "retry_of": 1
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-23T17:18:27.844436+00:00",
+      "kind": "message",
+      "member": "builder",
+      "from": "builder",
+      "from_kind": "member",
+      "to": "lead",
+      "message_kind": "info",
+      "text": "part.md is shared",
+      "message_id": "3aa19db8e78747778eeebe5dd7a7b087",
+      "mid_turn": false
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-23T17:18:27.845070+00:00",
+      "kind": "wake",
+      "member": "lead",
+      "by": "builder"
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-23T17:18:27.846037+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 0.0,
+      "tool_calls": 3
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-23T17:18:27.846347+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": "part.md shared",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-23T17:18:28.163354+00:00",
+      "kind": "share",
+      "member": "builder",
+      "version_no": 1,
+      "commit_short": "308b0075765c",
+      "note": "part.md",
+      "files_changed": 1
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-23T17:18:28.282152+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 2,
+      "retry_of": null
+    }
+  ],
+  "cursor": 18,
+  "more": false,
+  "as_of": "2026-10-23T17:18:28.541339+00:00"
+}

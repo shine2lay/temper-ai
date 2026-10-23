@@ -111,7 +111,7 @@ export interface GlanceCounts {
 }
 
 export type GlanceMemberState = 'working' | 'ready' | 'idle' | 'held' | 'failed' | 'ended' | 'unknown';
-export type GlanceIdleReason = 'start' | 'idle_call' | 'no_tool_call' | null;
+export type GlanceIdleReason = 'start' | 'idle_call' | 'no_tool_call' | 'git_refused' | null;
 
 export interface GlanceOn {
   kind: 'work_request' | 'share' | 'idle' | 'goal' | 'message' | string;
@@ -279,7 +279,8 @@ export type GlanceEvent =
       note: string | null;
       filesChanged: number | null;
     })
-  | (EventBase & { kind: 'share_refused'; why: string | null; reason?: string | null; paths?: string[] })
+  | (EventBase & { kind: 'share_refused'; why: string | null; reason?: string | null; paths?: string[]; cause?: string | null })
+  | (EventBase & { kind: 'sync_refused'; cause: string | null; reason: string | null })
   | (EventBase & { kind: 'conflict'; paths: number; atStep: string | null })
   | (EventBase & { kind: 'idle'; note: string | null; reason: GlanceIdleReason })
   | (EventBase & { kind: 'wake'; by: string | null })
@@ -1130,6 +1131,8 @@ export function memberChip(m: GlanceMember, cardPhase: CardPhase, now: number | 
       if (waitsForLeader(m)) return { text: 'Waiting for the leader', icon: 'clock', ring: 'dotted-grey', tone: 'grey', busy: false };
       // The leader before its first turn starts (team phase "starting").
       if (m.leader && m.turns === 0 && !m.idleNote) return { text: 'Has the goal', icon: 'flag', ring: 'dotted-grey', tone: 'grey', busy: false };
+      // Temper #115: Temper put it to rest after refusing to run git over its folder; it chose no rest itself.
+      if (isGitRest(m.idleReason, m.idleNote)) return { text: `Resting${how}`, icon: 'moon', ring: 'dotted-grey', tone: 'grey', busy: false };
       return { text: `Idle${how}`, icon: 'moon', ring: 'dotted-grey', tone: 'grey', busy: false };
     case 'held':
       return { text: 'Needs you', icon: 'alert', ring: 'dashed-yellow', tone: 'yellow', busy: false };
@@ -1156,6 +1159,34 @@ export interface MemberLine {
   messages?: string;
 }
 
+/**
+ * Temper #115: the note Temper gives a member it rests after refusing to run git over its folder in turns in
+ * a row (team_flow.py refused_rest_note): "Temper refused to run git over its folder in 2 turns in a row
+ * (planted); a message wakes it." They are Temper's words, never the member's own note.
+ */
+const GIT_REST_NOTE = /^Temper refused to run git over its folder in (\d+) turns? in a row \(([a-z_]+)\)/;
+
+/** Why Temper refused, for the causes that rest a member (the turn still started; Temper told the member). */
+const GIT_REST_CAUSES: Readonly<Record<string, string>> = {
+  planted: 'its folder holds a .git of its own',
+  entries: 'its folder holds too many files to check',
+  depth: 'its folder nests too deep to check',
+  unreadable: 'Temper can\u2019t read a folder in it',
+};
+
+function isGitRest(reason: GlanceIdleReason, note: string | null | undefined): boolean {
+  return reason === 'git_refused' || GIT_REST_NOTE.test((note ?? '').trim());
+}
+
+/** Temper's rest in plain words with Temper as the actor: "Temper couldn't share its work twice in a row (...)". */
+export function gitRestWords(note: string | null | undefined): string {
+  const hit = GIT_REST_NOTE.exec((note ?? '').trim());
+  const n = hit ? Number(hit[1]) : null;
+  const times = n === 2 ? ' twice in a row' : n !== null && n > 2 ? ` in ${n} turns in a row` : '';
+  const cause = hit ? GIT_REST_CAUSES[hit[2]] : undefined;
+  return `Temper couldn\u2019t share its work${times}${cause ? ` (${cause})` : ''}`;
+}
+
 function onText(m: GlanceMember): string | null {
   if (m.on?.text) return m.on.text;
   if (m.lastShareNote) return m.lastShareNote;
@@ -1179,6 +1210,8 @@ export function memberLine(m: GlanceMember, cardPhase?: CardPhase): MemberLine |
     const noTurns = m.turns === 0 && m.turnsSupplied !== false && !m.hasTurnHistory && !m.lastTurnAt;
     const on = phase === 'didnt_start' && noTurns && m.on?.kind === 'goal' ? null : m.on?.text;
     const text = sent?.text || on || m.lastShareNote || m.idleNote;
+    // Temper #115: Temper's rest note is no work of the member's to quote.
+    if (text && GIT_REST_NOTE.test(text.trim())) return { label: 'Last:', text: `${gitRestWords(text)}.`, quoted: false };
     if (text) return { label: 'Last:', text, quoted: true };
     return { label: 'Last:', text: phase === 'didnt_start' && noTurns ? 'No work started.' : 'No last work recorded.', quoted: false };
   }
@@ -1198,6 +1231,7 @@ function liveMemberLine(m: GlanceMember): MemberLine | null {
   if (waitsForLeader(m)) return null;
   if (m.state === 'idle') {
     if (m.idleReason === 'no_tool_call') return { label: null, text: 'Ended its turn without a note', quoted: false };
+    if (isGitRest(m.idleReason, m.idleNote)) return { label: null, text: `${gitRestWords(m.idleNote)}. A message wakes it.`, quoted: false };
     return m.idleNote ? { label: 'Idle:', text: m.idleNote, quoted: true } : null;
   }
   // D13: its own wait's words; the generic line only when Temper sent none.
@@ -1239,14 +1273,21 @@ export function conflictLine(m: GlanceMember): string | null {
  * (SPEC 5, D12, D18): a running turn counts as "finishing" where its card
  * says "Finishing its turn"; a ready member counts as "paused" where its
  * card says "Paused: …" (while the team waits, in draining, and every one
- * but the leader while closing); an ended run reads "3 members · all ended",
- * whatever states Temper left its members in.
+ * but the leader while closing); a member Temper rested after refusing to
+ * run git over its folder counts as "resting" where its card says "Resting"
+ * (Temper #115); an ended run reads "3 members · all ended", whatever states
+ * Temper left its members in.
  */
 export function teamCountWords(run: GlanceRun): string {
   const c = run.counts;
   const phase = run.phase.name;
   if (phaseEnded(phase)) return `${plural(run.members.length, 'member', 'members')} \u00b7 all ended`;
   const waiting = waitingForLeader(run).length;
+  // Temper #115: a member Temper rested after refusing to run git over its folder; its card says "Resting".
+  const resting = Math.max(
+    0,
+    Math.min(c.idle - waiting, run.members.filter((m) => m.state === 'idle' && !waitsForLeader(m) && isGitRest(m.idleReason, m.idleNote)).length),
+  );
   const paused = Math.min(c.ready, run.members.filter((m) => m.state === 'ready' && readyPause(m, phase) !== null).length);
   const ready = c.ready - paused;
   const parts: string[] = [];
@@ -1254,7 +1295,8 @@ export function teamCountWords(run: GlanceRun): string {
   if (ready) parts.push(`${ready} ready`);
   if (paused) parts.push(`${paused} paused`);
   if (waiting) parts.push(`${waiting} waiting for the leader`);
-  if (c.idle - waiting > 0) parts.push(`${c.idle - waiting} idle`);
+  if (c.idle - waiting - resting > 0) parts.push(`${c.idle - waiting - resting} idle`);
+  if (resting) parts.push(`${resting} resting`);
   if (c.held) parts.push(`${c.held} ${c.held === 1 ? 'needs' : 'need'} you`);
   if (c.failed) parts.push(`${c.failed} awaiting retry`);
   if (c.ended) parts.push(`${c.ended} ended`);
@@ -2087,6 +2129,10 @@ export function refusalWhy(why: string | null | undefined): string | null {
   return !bare || REFUSAL_VERBS.has(bare) ? null : s;
 }
 
+/** Temper #115 sync_refused causes: the turn went ahead (the member was told), or the turn didn't start. */
+const SYNC_STARTED: ReadonlySet<string> = new Set(['planted', 'entries', 'depth', 'unreadable']);
+const SYNC_NO_TURN: ReadonlySet<string> = new Set(['writer', 'stall', 'setup', 'gitlink']);
+
 /** D106: a turn Temper ended at a cap; it gives no limit number (tool_calls counts the calls made, not the cap). */
 const TURN_CAPS: Record<string, string> = {
   call_cap: 'its tool-call limit',
@@ -2167,17 +2213,30 @@ export function activityRow(e: GlanceEvent, run: RowRun, liveLimit = false, extr
         parts: [{ text: who, strong: true }, ...fileNameParts(reason ? `\u2019s version wasn\u2019t shared: ${reason}` : '\u2019s version wasn\u2019t shared. Temper gave no reason.', paths)],
       };
     }
+    case 'sync_refused': {
+      // Temper #115: the turn still started (Temper told the member why) or it didn't start at all.
+      const reason = refusalWhy(e.reason);
+      const said = reason ? `Temper\u2019s reason: ${q(reason)}` : 'Temper gave no reason.';
+      const words =
+        e.cause !== null && SYNC_STARTED.has(e.cause)
+          ? ` didn\u2019t get the team\u2019s latest shared work before this turn; the turn went ahead, and Temper told it why. ${said}`
+          : e.cause !== null && SYNC_NO_TURN.has(e.cause)
+            ? ` didn\u2019t get the team\u2019s latest shared work, so this turn didn\u2019t start. ${said}`
+            : ` didn\u2019t get the team\u2019s latest shared work before this turn. ${said}`;
+      return { key, at: e.at, icon: 'conflict', parts: [{ text: who, strong: true }, { text: words }] };
+    }
     case 'idle':
       // D66, D77: waiting for the leader has the cards' clock; went idle the moon.
-      return e.reason === 'start'
-        ? { key, at: e.at, icon: 'clock', parts: [{ text: who, strong: true }, { text: ' waits for the leader' }] }
-        : {
-            key,
-            at: e.at,
-            icon: 'moon',
-            parts: [{ text: who, strong: true }, { text: e.note ? ` went idle: ${q(firstLineOf(e.note))}` : ' went idle without a note' }],
-            ...(hasMoreThanFirstLine(e.note) ? { more: { whole: [{ text: who, strong: true }, { text: ` went idle: ${q(e.note.trim())}` }] } } : {}),
-          };
+      if (e.reason === 'start') return { key, at: e.at, icon: 'clock', parts: [{ text: who, strong: true }, { text: ' waits for the leader' }] };
+      // Temper #115: Temper rested it; its note is Temper's, not words the member went idle with.
+      if (isGitRest(e.reason, e.note)) return { key, at: e.at, icon: 'moon', parts: [{ text: who, strong: true }, { text: ` is resting: ${gitRestWords(e.note)}.` }] };
+      return {
+        key,
+        at: e.at,
+        icon: 'moon',
+        parts: [{ text: who, strong: true }, { text: e.note ? ` went idle: ${q(firstLineOf(e.note))}` : ' went idle without a note' }],
+        ...(hasMoreThanFirstLine(e.note) ? { more: { whole: [{ text: who, strong: true }, { text: ` went idle: ${q(e.note.trim())}` }] } } : {}),
+      };
     case 'wake':
       return { key, at: e.at, icon: 'play', parts: [{ text: who, strong: true }, { text: ' woke up: a message from ' }, { text: e.by === 'owner' ? 'you' : whoName(e.by), strong: true }] };
     case 'turn_start': {

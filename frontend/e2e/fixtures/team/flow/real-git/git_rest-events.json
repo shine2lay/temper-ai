@@ -1,0 +1,195 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-23T17:18:23.830001+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "3f85b48b73fb483586b288d5673d8593",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-23T17:18:23.865529+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-23T17:18:23.957601+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-23T17:18:24.419994+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Write part.md, then share it.",
+      "message_id": "656c0de9f3404e1daf93f4eeacc93862",
+      "mid_turn": false
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-23T17:18:24.420597+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-23T17:18:24.421858+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 0.0,
+      "tool_calls": 2
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-23T17:18:24.422175+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "waiting for part.md",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-23T17:18:24.493532+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-23T17:18:24.923920+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 0.0,
+      "tool_calls": 2
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-23T17:18:24.924562+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": "part.md written",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-23T17:18:24.969857+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "builder",
+      "message_kind": "notice",
+      "text": "Not shared: Temper won't run git over your folder while it holds a .git of its own: \"sub/.git\". Remove them and try aga…",
+      "message_id": "590d277ffd7a42ca8dd54b73a3f87508",
+      "mid_turn": false
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-23T17:18:24.970932+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "temper"
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-23T17:18:24.971236+00:00",
+      "kind": "share_refused",
+      "member": "builder",
+      "why": "refused",
+      "paths": [],
+      "reason": "Not shared: Temper won't run git over your folder while it holds a .git of its own: \"sub/.git\"",
+      "cause": "planted"
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-23T17:18:25.052251+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 2,
+      "retry_of": null
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-23T17:18:25.124733+00:00",
+      "kind": "sync_refused",
+      "member": "builder",
+      "cause": "planted",
+      "reason": "Temper won't run git over your folder while it holds a .git of its own: \"sub/.git\""
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-23T17:18:25.297431+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 2,
+      "ended": "completed",
+      "ended_by": "no_tool_call",
+      "cost_usd": 0.0,
+      "tool_calls": 0
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-23T17:18:25.297973+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": "Temper refused to run git over its folder in 2 turns in a row (planted); a message wakes it.",
+      "reason": "git_refused"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-23T17:18:25.300341+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "notice",
+      "text": "builder is resting: Temper refused to run git over its folder in 2 turns in a row, so its work can't reach the team's s…",
+      "message_id": "15794014daa441a3a68f16ddef070a17",
+      "mid_turn": false
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-23T17:18:25.301038+00:00",
+      "kind": "wake",
+      "member": "lead",
+      "by": "temper"
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-23T17:18:25.350515+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 2,
+      "retry_of": null
+    }
+  ],
+  "cursor": 21,
+  "more": false,
+  "as_of": "2026-10-23T17:18:25.578041+00:00"
+}

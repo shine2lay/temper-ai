@@ -1,0 +1,449 @@
+{
+  "execution_id": "fixture-flow-git_writer",
+  "kind": "flow",
+  "trial_id": "fixture-git_writer",
+  "workflow": "team_test",
+  "run_status": "running",
+  "state": "running",
+  "cost_usd": 0.0,
+  "account": null,
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": null,
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": null,
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100.0,
+    "max_parallel": 1,
+    "communication": "all",
+    "project": {
+      "source": "/srv/example/projects/notes-app",
+      "start_commit": null
+    },
+    "started_at": "2026-10-23T17:18:26.255657+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-git_writer"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "working",
+      "turns": 2,
+      "cost_usd": 0.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "gpt-6.1-sol",
+        "thinking": "medium"
+      },
+      "last_turn": {
+        "turn_no": 2,
+        "state": "running",
+        "started_at": "2026-10-23T17:18:28.277149+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-23T17:18:28.277149+00:00",
+      "turn_no": 2,
+      "on": {
+        "kind": "message",
+        "text": "Write part.md, then share it.",
+        "to": "builder",
+        "from": "lead",
+        "at": "2026-10-23T17:18:26.822097+00:00",
+        "message_id": "100c4dfef30a47338ea8f060ded3ab8a"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "builder",
+        "kind": "work_request",
+        "text": "Write part.md, then share it.",
+        "at": "2026-10-23T17:18:26.822097+00:00",
+        "message_id": "100c4dfef30a47338ea8f060ded3ab8a"
+      },
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-23T17:18:28.282152+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 2,
+      "cost_usd": 0.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "gpt-6.1-sol",
+        "thinking": "medium"
+      },
+      "last_turn": {
+        "turn_no": 2,
+        "state": "completed",
+        "started_at": "2026-10-23T17:18:27.279889+00:00",
+        "ended_at": "2026-10-23T17:18:27.842572+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": 1,
+        "ended_by": null
+      },
+      "state": "idle",
+      "since": "2026-10-23T17:18:27.846234+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Write part.md, then share it.",
+        "from": "lead",
+        "at": "2026-10-23T17:18:26.822097+00:00",
+        "message_id": "100c4dfef30a47338ea8f060ded3ab8a"
+      },
+      "idle_note": "part.md shared",
+      "idle_reason": "idle_call",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "lead",
+        "kind": "info",
+        "text": "part.md is shared",
+        "at": "2026-10-23T17:18:27.496084+00:00",
+        "message_id": "3aa19db8e78747778eeebe5dd7a7b087"
+      },
+      "last_share": {
+        "version_no": 1,
+        "commit_short": "308b0075765c",
+        "note": "part.md",
+        "at": "2026-10-23T17:18:28.163354+00:00"
+      },
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-23T17:18:28.163354+00:00"
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-23T17:18:26.516825+00:00",
+        "data": {
+          "message_id": "91169c918fcf4efbb7993885724d7f34",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:26.545451+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-23T17:18:26.545451+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-23T17:18:26.545451+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:26.631103+00:00",
+        "data": {
+          "turn_id": "be7942d0f4384ab78c0590116cf49fef",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-23T17:18:27.075046+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "builder",
+        "timestamp": "2026-10-23T17:18:26.822097+00:00",
+        "data": {
+          "message_id": "100c4dfef30a47338ea8f060ded3ab8a",
+          "state": "consumed",
+          "deliveries": 2,
+          "preview": "Write part.md, then share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:27.080278+00:00",
+        "data": {
+          "seq": 6,
+          "at": "2026-10-23T17:18:27.080278+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 6,
+        "at": "2026-10-23T17:18:27.080278+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "lead"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:27.082908+00:00",
+        "data": {
+          "seq": 8,
+          "at": "2026-10-23T17:18:27.082908+00:00",
+          "kind": "idle",
+          "member": "lead",
+          "note": "waiting for part.md",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 8,
+        "at": "2026-10-23T17:18:27.082908+00:00",
+        "kind": "idle",
+        "member": "lead",
+        "note": "waiting for part.md",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "turn 1: superseded",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:27.138233+00:00",
+        "data": {
+          "turn_id": "abe0a644da9242d896303c680895d6c5",
+          "turn_no": 1,
+          "state": "superseded",
+          "ended_at": "2026-10-23T17:18:27.231874+00:00",
+          "account_slot": null,
+          "error": "builder turn 1: builder (scout) turn 1 could not start: Temper won't run git over your folder while a box of yours is still live: temper-pi-x (running)."
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "turn 2: completed",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:27.279889+00:00",
+        "data": {
+          "turn_id": "0a632bcb013b41839788c3e88e35f51f",
+          "turn_no": 2,
+          "state": "completed",
+          "ended_at": "2026-10-23T17:18:27.842572+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: info",
+        "from_agent": "builder",
+        "to_agent": "lead",
+        "timestamp": "2026-10-23T17:18:27.496084+00:00",
+        "data": {
+          "message_id": "3aa19db8e78747778eeebe5dd7a7b087",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "part.md is shared"
+        },
+        "entry": "message",
+        "message_kind": "info"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:27.845070+00:00",
+        "data": {
+          "seq": 14,
+          "at": "2026-10-23T17:18:27.845070+00:00",
+          "kind": "wake",
+          "member": "lead",
+          "by": "builder"
+        },
+        "entry": "wake",
+        "seq": 14,
+        "at": "2026-10-23T17:18:27.845070+00:00",
+        "kind": "wake",
+        "member": "lead",
+        "by": "builder"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:27.846347+00:00",
+        "data": {
+          "seq": 16,
+          "at": "2026-10-23T17:18:27.846347+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": "part.md shared",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 16,
+        "at": "2026-10-23T17:18:27.846347+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": "part.md shared",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "share",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:28.163354+00:00",
+        "data": {
+          "seq": 17,
+          "at": "2026-10-23T17:18:28.163354+00:00",
+          "kind": "share",
+          "member": "builder",
+          "version_no": 1,
+          "commit_short": "308b0075765c",
+          "note": "part.md",
+          "files_changed": 1
+        },
+        "entry": "share",
+        "seq": 17,
+        "at": "2026-10-23T17:18:28.163354+00:00",
+        "kind": "share",
+        "member": "builder",
+        "version_no": 1,
+        "commit_short": "308b0075765c",
+        "note": "part.md",
+        "files_changed": 1
+      },
+      {
+        "event_type": "turn 2: running",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:28.277149+00:00",
+        "data": {
+          "turn_id": "cd150c738e5744559c918c8fd2c46297",
+          "turn_no": 2,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "working",
+    "words": "1 of 2 members are working",
+    "since": null,
+    "running": 1,
+    "asked": false,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-23T17:18:28.510827+00:00",
+  "started_at": "2026-10-23T17:18:26.255657+00:00",
+  "elapsed_s": 2,
+  "last_activity_at": "2026-10-23T17:18:28.282152+00:00",
+  "spend": {
+    "cost_usd": 0.0,
+    "pause_every_usd": 100.0,
+    "last_check_in_usd": 0.0,
+    "next_check_in_usd": 100.0,
+    "since_check_in_usd": 0.0,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 2,
+    "working": 1,
+    "ready": 0,
+    "idle": 1,
+    "held": 0,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "count": 1,
+      "last_at": "2026-10-23T17:18:26.822097+00:00"
+    },
+    {
+      "from": "builder",
+      "to": "lead",
+      "count": 1,
+      "last_at": "2026-10-23T17:18:27.496084+00:00"
+    }
+  ],
+  "work": {
+    "latest": {
+      "version_no": 1,
+      "commit": "308b0075765c3f41f774f5fb700e08279f4308c1",
+      "commit_short": "308b0075765c",
+      "by": "builder",
+      "at": "2026-10-23T17:18:28.163354+00:00",
+      "note": "part.md",
+      "files_changed": 1,
+      "files_total": 2
+    },
+    "shares": [
+      {
+        "version_no": 1,
+        "commit": "308b0075765c3f41f774f5fb700e08279f4308c1",
+        "commit_short": "308b0075765c",
+        "by": "builder",
+        "at": "2026-10-23T17:18:28.163354+00:00",
+        "note": "part.md",
+        "files_changed": 1,
+        "files_total": 2
+      }
+    ],
+    "shares_total": 1,
+    "summary": null,
+    "kept_work": []
+  },
+  "events_cursor": 18,
+  "events_total": 17
+}

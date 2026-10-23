@@ -79,7 +79,8 @@ const PHASES: ReadonlySet<string> = new Set([
 ]);
 
 const MEMBER_STATES: ReadonlySet<string> = new Set(['working', 'ready', 'idle', 'held', 'failed', 'ended']);
-const IDLE_REASONS: ReadonlySet<string> = new Set(['start', 'idle_call', 'no_tool_call']);
+// Temper #115: git_refused is a rest Temper put the member in after refusing to run git over its folder.
+const IDLE_REASONS: ReadonlySet<string> = new Set(['start', 'idle_call', 'no_tool_call', 'git_refused']);
 
 function idleReason(v: unknown): GlanceIdleReason {
   const s = str(v);
@@ -435,7 +436,18 @@ export function toGlanceEvent(raw: unknown): GlanceEvent | null {
         filesChanged: num(e.files_changed),
       };
     case 'share_refused':
-      return { ...base, kind, why: firstLine(str(e.why)), reason: Object.hasOwn(e, 'reason') ? firstLine(str(e.reason)) : undefined, paths: arr(e.paths).filter((p): p is string => typeof p === 'string') };
+      return {
+        ...base,
+        kind,
+        why: firstLine(str(e.why)),
+        reason: Object.hasOwn(e, 'reason') ? firstLine(str(e.reason)) : undefined,
+        paths: arr(e.paths).filter((p): p is string => typeof p === 'string'),
+        // Temper #115: why Temper refused to run git (planted, entries, ...); the reason's words already say it.
+        cause: str(e.cause),
+      };
+    case 'sync_refused':
+      // Temper #115: Temper refused to bring the team's latest work into the member's folder before a turn.
+      return { ...base, kind, cause: str(e.cause), reason: firstLine(str(e.reason)) };
     case 'conflict':
       return { ...base, kind, paths: arr(e.paths).length, atStep: str(e.at_step) };
     case 'idle':

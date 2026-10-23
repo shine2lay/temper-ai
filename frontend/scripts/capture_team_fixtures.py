@@ -23,6 +23,13 @@ One group can be captured again on its own, leaving every other file as it is:
     uv run python frontend/scripts/capture_team_fixtures.py --only journey
 
 runs only ``test_journey`` and rewrites only ``journey-*.json`` (the Team page journey's).
+
+    uv run python frontend/scripts/capture_team_fixtures.py --only git
+
+runs only the free-flowing runs of Temper refusing git over a member's folder (Temper #115)
+and rewrites only ``flow/real-git/``: Temper's real engine with scripted members (no model),
+read through the real run and feed routes while the run goes on, raw as the glance page
+reads them (``<run>.json`` and ``<run>-events.json``).
 """
 
 from __future__ import annotations
@@ -38,6 +45,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "frontend" / "e2e" / "fixtures" / "team"
+#: The free-flowing git-refusal runs (``--only git``): raw replies, no route wrapper.
+GIT_OUT = OUT / "flow" / "real-git"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -411,14 +420,14 @@ def derive_part_c() -> None:
 
 
 def check_clean() -> None:
-    for path in sorted(OUT.glob("*.json")):
+    for path in sorted([*OUT.glob("*.json"), *GIT_OUT.glob("*.json")]):
         text = path.read_text(encoding="utf-8")
         found = FORBIDDEN.search(text)
         assert found is None, f"{path.name}: {found.group(0)!r} must not be in a fixture"
 
 
 #: Groups that ``--only`` can capture again on their own: the test that makes them.
-ONLY = {"journey": "test_journey"}
+ONLY = {"journey": "test_journey", "git": "test_git_"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -430,7 +439,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"usage: capture_team_fixtures.py [--only {'|'.join(ONLY)}]", file=sys.stderr)
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    for old in OUT.glob(f"{only}-*.json" if only else "*.json"):
+    if only == "git":
+        stale = [*GIT_OUT.glob("*.json")]
+    elif only:
+        stale = [*OUT.glob(f"{only}-*.json")]
+    else:
+        stale = [*OUT.glob("*.json"), *GIT_OUT.glob("*.json")]
+    for old in stale:
         old.unlink()
     code = pytest.main([str(Path(__file__).resolve()), "-q", "-x", "-p", "no:cacheprovider",
                         "-p", "tests.conftest", "-p", "tests.test_runner.pi_parking.conftest",
@@ -1205,3 +1220,180 @@ def test_journey(team):
     assert done["state"] == "done", done["state"]
     trials = s.save("journey-trials", TRIALS, team.client.get("/api/team/trials"))
     assert [i["execution_id"] for i in trials["trials"]] == [eid], trials
+
+
+# --- free-flowing: Temper refusing git over a member's folder (Temper #115, --only git) -------
+
+import subprocess  # noqa: E402
+
+from fastapi.encoders import jsonable_encoder  # noqa: E402
+
+from temper_ai.api import team_routes  # noqa: E402
+from temper_ai.pi_agent.ledger import Ledger  # noqa: E402
+from temper_ai.pi_agent.team_leader import FolderWriter  # noqa: E402
+from temper_ai.pi_agent.team_runtime import Team  # noqa: E402
+from temper_ai.shared.clock import utcnow  # noqa: E402
+
+GIT_NAMES = ("lead", "builder")
+GIT_SETTINGS = {**ls.FLOW_SETTINGS, "max_parallel": 1}
+#: A writer Temper can't yet rule out in a member's folder (Temper's own test words).
+GIT_WRITER = FolderWriter("box_live", " while a box of yours is still live: temper-pi-x (running)")
+
+
+def write_flow(name: str, reply: dict, feed: dict, subs: list[tuple[str, str]]) -> None:
+    """One run's two replies, raw (no route wrapper), with every temporary path made up."""
+    GIT_OUT.mkdir(parents=True, exist_ok=True)
+    for path, body in ((GIT_OUT / f"{name}.json", reply),
+                       (GIT_OUT / f"{name}-events.json", feed)):
+        text = json.dumps(body, indent=2, ensure_ascii=False)
+        for old, new in subs:
+            text = text.replace(old, new)
+        path.write_text(text + "\n", encoding="utf-8")
+
+
+class FlowRun:
+    """A free-flowing team on Temper's real engine, its members scripted (no model), read
+    through the Team page's two real routes (``team_run`` and ``team_events``) as FastAPI
+    would send them. Only the routes' lookups are stood in for, as Temper's own flow tests do
+    (tests/test_runner/pi_team/test_flow_team.py)."""
+
+    def __init__(self, monkeypatch, tmp_path: Path, name: str) -> None:
+        from temper_ai.database.engine import create_test_engine
+
+        self.name, self.tmp, self.rid = name, tmp_path, f"fixture-flow-{name}"
+        self.led = led = Ledger(create_test_engine(f"sqlite:///{tmp_path / 'team.db'}"))
+        led.ensure()
+        self.got: tuple[dict, dict] | None = None
+        members = [{"name": n, "role": ts.member(n).config["role"], "leader": n == "lead"}
+                   for n in GIT_NAMES]
+        self.run = team_routes.TeamRun(self.rid, {
+            "trial_id": f"fixture-{name}", "execution_id": self.rid, "workflow": "team_test",
+            "goal": ls.GOAL, "created_at": utcnow(), "created_by": "owner",
+            "request_id": f"fixture-{name}", "trial": {
+                "kind": "flow", "leader": "lead", "communication": "all",
+                "pause_every_usd": 100.0, "max_parallel": 1,
+                "project_path": "/srv/example/projects/notes-app", "members": members}},
+            None, ts.HOST, "running")
+
+        def asked(_rid: str) -> list[dict]:
+            return [{"id": f"fixture-gate-{i}", "data": {"name": w["gate_name"]}}
+                    for i, w in enumerate(led.open_waits(self.rid, ts.HOST))
+                    if w["kind"] != "closing"]
+
+        monkeypatch.setattr(team_routes, "_ledger", lambda: led)
+        monkeypatch.setattr(team_routes, "_team_run", lambda _led, _id: self.run)
+        monkeypatch.setattr(team_routes, "_owners", lambda: ("owner",))
+        monkeypatch.setattr(team_routes, "_caller_actions", lambda _id: [])
+        monkeypatch.setattr(team_routes, "_account_view", lambda _id: None)
+        monkeypatch.setattr("temper_ai.api.routes._waiting_gate_events", asked)
+        self.team = ls.open_flow(led, sup.box_config(tmp_path / "box"), run_id=self.rid,
+                                 source=ls.project(tmp_path / "proj"), names=GIT_NAMES,
+                                 settings=GIT_SETTINGS)
+
+    def capture(self) -> dict:
+        """A member's action: save both replies as the routes answer at this moment."""
+        def call(_box, _message: str) -> None:
+            reply = jsonable_encoder(team_routes.team_run(self.rid))
+            feed = jsonable_encoder(team_routes.team_events(self.rid, 0, 200))
+            write_flow(self.name, reply, feed, [(str(self.tmp), "/srv/example/scratch")])
+            self.got = (reply, feed)
+        return {"call": call}
+
+
+@pytest.fixture
+def flow_run(monkeypatch, tmp_path):
+    """Makes a :class:`FlowRun` with the pi_team harness's scripted members and box stopper."""
+    ts.reset()
+    monkeypatch.setattr(Team, "turn_runner", ts.fake_runner)
+    monkeypatch.setattr(Team, "stop_box", ts.Stopper())
+    made: list[FlowRun] = []
+
+    def make(name: str) -> FlowRun:
+        made.append(FlowRun(monkeypatch, tmp_path, name))
+        return made[-1]
+
+    yield make
+    ts.reset()
+    for run in made:
+        run.led.engine.dispose()
+
+
+def _plant_git(ws: Path) -> None:
+    """A .git of the member's own in its folder, the way git init or a scaffolder makes one."""
+    (ws / "sub").mkdir(exist_ok=True)
+    (ws / "sub" / "index.js").write_text("console.log('scaffolded')\n")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(ws / "sub")], check=True,
+                   capture_output=True, env={**os.environ, **ls.GIT_ENV})
+
+
+def _lead(capture: dict, *, when: str) -> ls.Turns:
+    """The leader asks the builder for part.md; at its turn after ``when`` (the builder
+    "rests", or "wrote" back) the page is read, then the leader says done."""
+    def play() -> list[dict]:
+        prompts = ts.PROMPTS["lead"]
+        if len(prompts) == 1:
+            return [ts.send("builder", "Write part.md, then share it.", "work_request"),
+                    ls.op("idle", note="waiting for part.md")]
+        if when == "rests" and "builder is resting" in prompts[-1]:
+            return [capture, ls.op("done", summary="Carrying on without the builder's part.")]
+        if when == "wrote" and any(h["from"] == 'member "builder"'
+                                   for h in ts.headers(prompts[-1])):
+            return [capture, ls.op("done", summary="part.md is in the shared version.")]
+        return [ls.op("idle", note="waiting for part.md")]
+    return ls.Turns(play)
+
+
+def _builder_events(feed: dict, *kinds: str) -> list[tuple[str, object]]:
+    return [(e["kind"], e.get("cause")) for e in feed["events"]
+            if e["member"] == "builder" and e["kind"] in kinds]
+
+
+def test_git_rest(flow_run):
+    """git_rest: the builder makes a .git of its own. Its share is refused (cause planted), its
+    next turn starts without the team's latest work (sync refused, planted: told why), and
+    after refusals in two turns in a row it rests with Temper's note as its idle note (idle
+    reason refused, served as git_refused). Read while the leader, told so, is at work."""
+    run = flow_run("git_rest")
+    plant = {"call": lambda box, _message: _plant_git(Path(box.pdir) / "workspace")}
+    ts.SCRIPTS["lead"] = _lead(run.capture(), when="rests")
+    ts.SCRIPTS["builder"] = [
+        [ls.write("part.md", "# Part\n"), plant, ls.op("share", note="part.md"),
+         ls.op("idle", note="part.md written")],
+        [{"say": "I'll leave my folder as it is."}],
+        [{"say": "Still as it is."}],
+    ]
+
+    outcome = run.team.drive(ls.Context())
+
+    assert outcome.status == "done", outcome.text
+    assert run.got is not None, "the leader's turn after the rest never came"
+    reply, feed = run.got
+    builder = next(m for m in reply["members"] if m["name"] == "builder")
+    assert (builder["state"], builder["idle_reason"]) == ("idle", "git_refused"), builder
+    assert builder["idle_note"].startswith("Temper refused to run git over its folder")
+    assert _builder_events(feed, "share_refused", "sync_refused") == [
+        ("share_refused", "planted"), ("sync_refused", "planted")]
+
+
+def test_git_writer(flow_run, monkeypatch):
+    """git_writer: at the builder's first turn Temper can't yet rule out a writer in its
+    folder, so the sync is refused (cause writer) and that turn doesn't start; the next one
+    does, and the builder shares. Read while the leader, told the part is shared, is at
+    work."""
+    run = flow_run("git_writer")
+    ts.SCRIPTS["lead"] = _lead(run.capture(), when="wrote")
+    ts.SCRIPTS["builder"] = [[ls.write("part.md", "# Part\n"), ls.op("share", note="part.md"),
+                              ts.send("lead", "part.md is shared", "info"),
+                              ls.op("idle", note="part.md shared")]]
+    ws = ls.workspace(run.team, "builder")
+    live, once = run.team.project.writer_check, [GIT_WRITER]
+    monkeypatch.setattr(run.team.project, "writer_check",
+                        lambda folder: once.pop() if Path(folder) == ws and once
+                        else live(folder))
+
+    outcome = run.team.drive(ls.Context())
+
+    assert outcome.status == "done", outcome.text
+    assert run.got is not None, "the leader never heard back from the builder"
+    _reply, feed = run.got
+    assert _builder_events(feed, "sync_refused") == [("sync_refused", "writer")]

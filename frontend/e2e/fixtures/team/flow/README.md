@@ -38,6 +38,25 @@ again), `invalid` (an answer that matched no choice; Temper asked again).
 Ids, times and sequence numbers change each time Temper remakes them, so no
 test depends on them.
 
+## `real-git/`: Temper refusing git over a member's folder (Temper #115)
+
+Two runs captured by `frontend/scripts/capture_team_fixtures.py --only git`
+(from the repo root: `uv run --extra dev python frontend/scripts/capture_team_fixtures.py --only git`).
+Each is a real free-flowing team on Temper's engine (lead and builder, members
+scripted, no model), read mid-run through the Team page's own routes
+(`team_routes.team_run` and `team_routes.team_events`) as FastAPI sends them.
+Each has the run reply (`<run>.json`) and its feed (`<run>-events.json`); the
+script replaces the scratch folder with `/srv/example/scratch`. Never edit
+them by hand: rerun the script.
+
+`git_rest` (the builder makes a `.git` of its own: its share is refused with
+cause `planted`, its next turn starts after a `sync_refused` with cause
+`planted`, and after refusals in two turns in a row Temper rests it: idle
+reason `git_refused` with Temper's own note as `idle_note`), `git_writer`
+(Temper can't yet rule out a writer in the builder's folder: `sync_refused`
+with cause `writer`, that turn doesn't start, the retry does). All three of
+#115's fields are captured here; none is derived.
+
 ## `derived/`: the states Temper did not send
 
 Made by `node scripts/make_flow_fixtures.mjs` (run from `frontend/`) from one

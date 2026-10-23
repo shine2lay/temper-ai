@@ -1,0 +1,439 @@
+{
+  "execution_id": "fixture-flow-git_rest",
+  "kind": "flow",
+  "trial_id": "fixture-git_rest",
+  "workflow": "team_test",
+  "run_status": "running",
+  "state": "running",
+  "cost_usd": 0.0,
+  "account": null,
+  "trial": {
+    "goal": "This tiny project has no README. Write a short one.",
+    "leader": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "role": "scout",
+        "tools": null,
+        "leader": true
+      },
+      {
+        "name": "builder",
+        "role": "scout",
+        "tools": null,
+        "leader": false
+      }
+    ],
+    "pause_every_usd": 100.0,
+    "max_parallel": 1,
+    "communication": "all",
+    "project": {
+      "source": "/srv/example/projects/notes-app",
+      "start_commit": null
+    },
+    "started_at": "2026-10-23T17:18:23.302154+00:00",
+    "started_by": "owner",
+    "request_id": "fixture-git_rest"
+  },
+  "members": [
+    {
+      "name": "lead",
+      "role": "scout",
+      "leader": true,
+      "activity": "working",
+      "turns": 2,
+      "cost_usd": 0.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "gpt-6.1-sol",
+        "thinking": "medium"
+      },
+      "last_turn": {
+        "turn_no": 2,
+        "state": "running",
+        "started_at": "2026-10-23T17:18:25.348042+00:00",
+        "ended_at": null,
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": null
+      },
+      "state": "working",
+      "since": "2026-10-23T17:18:25.348042+00:00",
+      "turn_no": 2,
+      "on": {
+        "kind": "message",
+        "text": "Write part.md, then share it.",
+        "to": "builder",
+        "from": "lead",
+        "at": "2026-10-23T17:18:24.168397+00:00",
+        "message_id": "656c0de9f3404e1daf93f4eeacc93862"
+      },
+      "idle_note": null,
+      "idle_reason": null,
+      "tools_now": [],
+      "ready_messages": 0,
+      "last_sent": {
+        "to": "builder",
+        "kind": "work_request",
+        "text": "Write part.md, then share it.",
+        "at": "2026-10-23T17:18:24.168397+00:00",
+        "message_id": "656c0de9f3404e1daf93f4eeacc93862"
+      },
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-23T17:18:25.350515+00:00"
+    },
+    {
+      "name": "builder",
+      "role": "scout",
+      "leader": false,
+      "activity": "idle",
+      "turns": 2,
+      "cost_usd": 0.0,
+      "model": "gpt-6.1-sol",
+      "thinking": "medium",
+      "effective": {
+        "model": "gpt-6.1-sol",
+        "thinking": "medium"
+      },
+      "last_turn": {
+        "turn_no": 2,
+        "state": "completed",
+        "started_at": "2026-10-23T17:18:25.050622+00:00",
+        "ended_at": "2026-10-23T17:18:25.295490+00:00",
+        "error": null,
+        "account_slot": null,
+        "retry_of": null,
+        "ended_by": "no_tool_call"
+      },
+      "state": "idle",
+      "since": "2026-10-23T17:18:25.297766+00:00",
+      "turn_no": null,
+      "on": {
+        "kind": "work_request",
+        "text": "Write part.md, then share it.",
+        "from": "lead",
+        "at": "2026-10-23T17:18:24.168397+00:00",
+        "message_id": "656c0de9f3404e1daf93f4eeacc93862"
+      },
+      "idle_note": "Temper refused to run git over its folder in 2 turns in a row (planted); a message wakes it.",
+      "idle_reason": "git_refused",
+      "tools_now": null,
+      "ready_messages": 0,
+      "last_sent": null,
+      "last_share": null,
+      "conflicts": [],
+      "wait_id": null,
+      "last_activity_at": "2026-10-23T17:18:25.297973+00:00"
+    }
+  ],
+  "open_waits": [],
+  "timeline": {
+    "entries": [
+      {
+        "event_type": "message: goal",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-23T17:18:23.828073+00:00",
+        "data": {
+          "message_id": "3f85b48b73fb483586b288d5673d8593",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "This tiny project has no README. Write a short one."
+        },
+        "entry": "message",
+        "message_kind": "goal"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:23.865529+00:00",
+        "data": {
+          "seq": 2,
+          "at": "2026-10-23T17:18:23.865529+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": null,
+          "reason": "start"
+        },
+        "entry": "idle",
+        "seq": 2,
+        "at": "2026-10-23T17:18:23.865529+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": null,
+        "reason": "start"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:23.949537+00:00",
+        "data": {
+          "turn_id": "4d78f66b4ef8458894a1cdc0a61802d5",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-23T17:18:24.417189+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "message: work_request",
+        "from_agent": "lead",
+        "to_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.168397+00:00",
+        "data": {
+          "message_id": "656c0de9f3404e1daf93f4eeacc93862",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Write part.md, then share it."
+        },
+        "entry": "message",
+        "message_kind": "work_request"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.420597+00:00",
+        "data": {
+          "seq": 6,
+          "at": "2026-10-23T17:18:24.420597+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "lead"
+        },
+        "entry": "wake",
+        "seq": 6,
+        "at": "2026-10-23T17:18:24.420597+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "lead"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:24.422175+00:00",
+        "data": {
+          "seq": 8,
+          "at": "2026-10-23T17:18:24.422175+00:00",
+          "kind": "idle",
+          "member": "lead",
+          "note": "waiting for part.md",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 8,
+        "at": "2026-10-23T17:18:24.422175+00:00",
+        "kind": "idle",
+        "member": "lead",
+        "note": "waiting for part.md",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "turn 1: completed",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.491875+00:00",
+        "data": {
+          "turn_id": "4aae2058f52c490cb5799a77ed3ee8c1",
+          "turn_no": 1,
+          "state": "completed",
+          "ended_at": "2026-10-23T17:18:24.921785+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.924562+00:00",
+        "data": {
+          "seq": 11,
+          "at": "2026-10-23T17:18:24.924562+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": "part.md written",
+          "reason": "idle_call"
+        },
+        "entry": "idle",
+        "seq": 11,
+        "at": "2026-10-23T17:18:24.924562+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": "part.md written",
+        "reason": "idle_call"
+      },
+      {
+        "event_type": "message: notice",
+        "from_agent": "temper",
+        "to_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.968886+00:00",
+        "data": {
+          "message_id": "590d277ffd7a42ca8dd54b73a3f87508",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "Not shared: Temper won't run git over your folder while it holds a .git of its own: \"sub/.git\". Remove them and try again. Don't create a new one: no git init o..."
+        },
+        "entry": "message",
+        "message_kind": "notice"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:24.970932+00:00",
+        "data": {
+          "seq": 13,
+          "at": "2026-10-23T17:18:24.970932+00:00",
+          "kind": "wake",
+          "member": "builder",
+          "by": "temper"
+        },
+        "entry": "wake",
+        "seq": 13,
+        "at": "2026-10-23T17:18:24.970932+00:00",
+        "kind": "wake",
+        "member": "builder",
+        "by": "temper"
+      },
+      {
+        "event_type": "turn 2: completed",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:25.050622+00:00",
+        "data": {
+          "turn_id": "944b65c15fa64affa69dcf19ac1146db",
+          "turn_no": 2,
+          "state": "completed",
+          "ended_at": "2026-10-23T17:18:25.295490+00:00",
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      },
+      {
+        "event_type": "idle",
+        "from_agent": "builder",
+        "timestamp": "2026-10-23T17:18:25.297973+00:00",
+        "data": {
+          "seq": 18,
+          "at": "2026-10-23T17:18:25.297973+00:00",
+          "kind": "idle",
+          "member": "builder",
+          "note": "Temper refused to run git over its folder in 2 turns in a row (planted); a message wakes it.",
+          "reason": "git_refused"
+        },
+        "entry": "idle",
+        "seq": 18,
+        "at": "2026-10-23T17:18:25.297973+00:00",
+        "kind": "idle",
+        "member": "builder",
+        "note": "Temper refused to run git over its folder in 2 turns in a row (planted); a message wakes it.",
+        "reason": "git_refused"
+      },
+      {
+        "event_type": "message: notice",
+        "from_agent": "temper",
+        "to_agent": "lead",
+        "timestamp": "2026-10-23T17:18:25.299677+00:00",
+        "data": {
+          "message_id": "15794014daa441a3a68f16ddef070a17",
+          "state": "consumed",
+          "deliveries": 1,
+          "preview": "builder is resting: Temper refused to run git over its folder in 2 turns in a row, so its work can't reach the team's shared version. What Temper told builder: ..."
+        },
+        "entry": "message",
+        "message_kind": "notice"
+      },
+      {
+        "event_type": "wake",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:25.301038+00:00",
+        "data": {
+          "seq": 20,
+          "at": "2026-10-23T17:18:25.301038+00:00",
+          "kind": "wake",
+          "member": "lead",
+          "by": "temper"
+        },
+        "entry": "wake",
+        "seq": 20,
+        "at": "2026-10-23T17:18:25.301038+00:00",
+        "kind": "wake",
+        "member": "lead",
+        "by": "temper"
+      },
+      {
+        "event_type": "turn 2: running",
+        "from_agent": "lead",
+        "timestamp": "2026-10-23T17:18:25.348042+00:00",
+        "data": {
+          "turn_id": "31c1e264f9684a8f997418277bb613c1",
+          "turn_no": 2,
+          "state": "running",
+          "ended_at": null,
+          "account_slot": null
+        },
+        "entry": "member_turn"
+      }
+    ],
+    "not_shown": 0
+  },
+  "owner_actions": [],
+  "outcome": null,
+  "phase": {
+    "name": "working",
+    "words": "1 of 2 members are working",
+    "since": null,
+    "running": 1,
+    "asked": false,
+    "reason": null,
+    "resumes_at": null,
+    "resets_known": null,
+    "usage": null,
+    "usage_checked_at": null,
+    "resume_verified": false,
+    "blocked_windows": []
+  },
+  "as_of": "2026-10-23T17:18:25.539607+00:00",
+  "started_at": "2026-10-23T17:18:23.302154+00:00",
+  "elapsed_s": 2,
+  "last_activity_at": "2026-10-23T17:18:25.350515+00:00",
+  "spend": {
+    "cost_usd": 0.0,
+    "pause_every_usd": 100.0,
+    "last_check_in_usd": 0.0,
+    "next_check_in_usd": 100.0,
+    "since_check_in_usd": 0.0,
+    "check_ins": 0
+  },
+  "you": {
+    "count": 0,
+    "first": null
+  },
+  "counts": {
+    "members": 2,
+    "working": 1,
+    "ready": 0,
+    "idle": 1,
+    "held": 0,
+    "failed": 0,
+    "ended": 0
+  },
+  "links": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "count": 1,
+      "last_at": "2026-10-23T17:18:24.168397+00:00"
+    }
+  ],
+  "work": {
+    "latest": null,
+    "shares": [],
+    "shares_total": 0,
+    "summary": null,
+    "kept_work": []
+  },
+  "events_cursor": 21,
+  "events_total": 20
+}

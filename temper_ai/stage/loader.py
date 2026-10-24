@@ -88,6 +88,15 @@ _NODE_FIELDS = {
     "inputs", "outputs",
 }
 
+# single_call has a closed agent config. Node policies (including their defaults)
+# and NodeConfig's metadata stay on the node, never become agent overrides.
+# Keep the legacy extraction for other agents: some consume timeout_seconds too.
+_SINGLE_CALL_NODE_FIELDS = _NODE_FIELDS | {
+    "loop_condition", "on_max_loops", "run_after_failure", "undoes", "on_failure",
+    "required_files", "renamed_from", "timeout_seconds", "gate", "skip_policies",
+    "_KNOWN_FIELDS",
+}
+
 # Keys under workflow.defaults that are workflow-scoped — must NOT cascade
 # into agent configs. `dispatch` at workflow level holds safety caps (a dict);
 # `dispatch` at agent level holds ops (a list). Same key, different meanings —
@@ -417,10 +426,11 @@ class GraphLoader:
         else:
             base = {}
 
-        # Extract node-level overrides (everything that's not a node-structural field)
+        # Extract node-level overrides, keeping single_call's node policies separate.
+        node_fields = _SINGLE_CALL_NODE_FIELDS if base.get("type") == "single_call" else _NODE_FIELDS
         overrides = {}
         for field_name, value in vars(nc).items():
-            if value is not None and field_name not in _NODE_FIELDS:
+            if value is not None and field_name not in node_fields:
                 overrides[field_name] = value
 
         # Merge: workflow defaults (lowest) → agent config → node overrides (highest).
@@ -583,8 +593,16 @@ class GraphLoader:
                             f"Available nodes: {sorted(node_names)}"
                         )
 
-            # Validate dispatch block (if this is an agent node with one)
+            # Only single_call opts into closed config validation here. Its
+            # constructor/validator are config-only: no run, provider or file I/O.
+            # Validate the merged mapping; do not discard unknown agent keys.
             if isinstance(node, AgentNode):
+                if node.agent_config.get("type") == "single_call":
+                    errors.extend(
+                        f"Node '{node.name}': {error}"
+                        for error in AGENT_TYPES["single_call"](node.agent_config).validate_config()
+                    )
+                # Validate dispatch block (if this agent node has one).
                 dispatch_errors = _validate_dispatch_on_node(
                     node, node_names, self.config_store,
                 )

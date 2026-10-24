@@ -22,15 +22,19 @@ Skipped when docker can't be used here, unless TEMPER_TEST_BOX_REQUIRED=1.
 
 from __future__ import annotations
 
+import ast
+import io
 import json
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -389,6 +393,22 @@ def _report(workspace: Path, name: str, wait: float = 60) -> dict:
     return json.loads(path.read_text())
 
 
+def _release(workspace: Path, text: str) -> None:
+    """Let the box's runner go on: ``text`` ("restart" or "done") published as its release.
+
+    The runner reads ``release`` once, as soon as it is there (RUNNER), so the file has to
+    appear with all of its text: written in full to a file of its own in the same folder
+    (so on the same file system), then renamed over ``release`` in one step (os.replace),
+    as the runner publishes its own report. Path.write_text made ``release`` first and
+    wrote it after: a runner that looked in between read "" and ended 0 instead of
+    restarting (CI run 40040167303; test_g02_the_release_reaches_the_runner_whole).
+    """
+    part = workspace / ".release.part"
+    with open(part, "x", encoding="ascii") as fh:  # "x": never into a file or link already there
+        fh.write(text)
+    os.replace(part, workspace / "release")
+
+
 # -- fixtures --------------------------------------------------------------------------------------
 
 
@@ -522,7 +542,7 @@ def test_g02_a_oneshot_box_starts_clean_and_its_runner_refuses_reads(install):
 
         # Restart: a replacement interpreter (exec resets the protection) has to take a
         # delivery of its own, and a box gives one only once.
-        (install.run_a / "release").write_text("restart")
+        _release(install.run_a, "restart")
         assert _exit_code(name) == box_bootstrap.REFUSED_EXIT
         logs = _docker("logs", name)
         assert "box refused: the delivery folder is not empty" in logs.stderr
@@ -548,10 +568,83 @@ def test_g02_positive_control_an_unprotected_runner_keeps_what_it_read(install):
         assert outside["runner_environ"] == {"mark": False, "delivered": []}
         assert isinstance(outside["runner_fds"], int)
         assert store.record(eid)["delivery"]["state"] == "consumed"
-        (install.run_a / "release").write_text("done")
+        _release(install.run_a, "done")
         assert _exit_code(name) == 0
     finally:
         docker.cleanup()
+
+
+# -- G02: the release the runner waits for --------------------------------------------------------
+
+
+def _runners_release_test() -> Callable[[Path], bool]:
+    """The runner's test of its release, the ``if`` before its restart in RUNNER, compiled
+    from RUNNER's own text: what is checked below is the condition the box runs, not a
+    copy. True: it restarts; False: it ends 0. (Its ``open`` reads the file and closes it.)
+    """
+    (test,) = [node.test for node in ast.walk(ast.parse(RUNNER))
+               if isinstance(node, ast.If) and "os.execv" in ast.unparse(node)]
+    code = compile(ast.Expression(test), "RUNNER", "eval")
+
+    def read(path: str) -> io.StringIO:
+        with open(path) as fh:
+            return io.StringIO(fh.read())
+
+    return lambda release: eval(code, {"os": os, "open": read}, {"release": str(release)})
+
+
+def _seen_by_the_runner(publish: Callable[[], None],
+                        release: Path) -> list[tuple[str | None, str]]:
+    """What a runner waiting for ``release`` would find, and do, looking before ``publish``,
+    after every builtin call it makes (each open, write, close and rename: sys.setprofile)
+    and after it: (None, "waits") while there is no release, else (its text, "restarts" or
+    "ends 0" by RUNNER's own test), repeats dropped. One look after every step, so a
+    moment when the file is there but not yet written can't be missed, and no thread,
+    sleep or chance decides what is seen.
+    """
+    restarts = _runners_release_test()
+
+    def look() -> tuple[str | None, str]:
+        if not os.path.exists(release):  # RUNNER's wait: no release yet
+            return None, "waits"
+        return release.read_text(), "restarts" if restarts(release) else "ends 0"
+
+    seen = [look()]
+
+    def after(frame, event, arg) -> None:
+        if event == "c_return":  # a builtin call made by publish has just returned
+            seen.append(look())
+
+    previous = sys.getprofile()
+    sys.setprofile(after)
+    try:
+        publish()
+    finally:
+        sys.setprofile(previous)
+    seen.append(look())
+    return [s for i, s in enumerate(seen) if i == 0 or s != seen[i - 1]]
+
+
+def test_g02_the_release_reaches_the_runner_whole(tmp_path):
+    """What the runner would find and do, looking at its release before, during and after
+    its publication (fixed inputs; no box, thread, sleep or chance: _seen_by_the_runner).
+
+    Written in place, as Path.write_text("restart") did, the release is there and empty
+    before its text is written: a runner that looks then ends 0 instead of restarting,
+    the G02 failure of CI run 40040167303 (exit code 0, not 4). Published by _release, it
+    is absent, then whole: "restart" restarts the runner, "done" ends it normally.
+    """
+    in_place = tmp_path / "in place"
+    in_place.mkdir()
+    assert _seen_by_the_runner(partial((in_place / "release").write_text, "restart"),
+                               in_place / "release") == [
+        (None, "waits"), ("", "ends 0"), ("restart", "restarts")]
+    for text, then in (("restart", "restarts"), ("done", "ends 0")):
+        folder = tmp_path / text
+        folder.mkdir()
+        assert _seen_by_the_runner(partial(_release, folder, text), folder / "release") == [
+            (None, "waits"), (text, then)]
+        assert os.listdir(folder) == ["release"]  # nothing else left behind
 
 
 # -- G02: what goes wrong ---------------------------------------------------------------------------

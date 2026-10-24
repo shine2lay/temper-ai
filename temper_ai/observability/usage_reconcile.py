@@ -23,6 +23,7 @@ from sqlalchemy import (
     and_,
     case,
     cast,
+    delete,
     exists,
     func,
     literal,
@@ -92,6 +93,25 @@ class UsageWriterReady(SQLModel, table=True):
     )
     kind: str = Field(primary_key=True, max_length=16)
     writer_version: int = Field(default=1)
+    ready_at: datetime = Field(sa_column=_clock_column())
+
+
+READY_VERSION = 2
+
+
+class UsageWriterReadyV2(SQLModel, table=True):
+    """Readiness of current code (W-B3). Legacy code never writes this table.
+
+    The legacy usage_writer_ready table above keeps its schema: legacy starts still
+    upsert their row there, and a current start deletes only its own kind's row.
+    """
+    __tablename__ = "usage_writer_ready_v2"
+    __table_args__ = (
+        CheckConstraint("kind IN ('server','worker','pi-worker')", name="usage_ready_v2_kind"),
+        CheckConstraint("writer_version >= 2", name="usage_ready_v2_version"),
+    )
+    kind: str = Field(primary_key=True, max_length=16)
+    writer_version: int = Field(default=READY_VERSION)
     ready_at: datetime = Field(sa_column=_clock_column())
 
 
@@ -198,13 +218,21 @@ def _history_start(now: datetime) -> datetime:
 
 
 def mark_ready(kind: str) -> None:
-    """Persist this startup's actual DB-clock readiness; kinds/versions are closed."""
+    """Persist this startup's DB-clock readiness, deleting ONLY this kind's legacy marker.
+
+    One transaction: this kind's legacy usage_writer_ready row is deleted first, then
+    its v2 row is upserted with one bound DB-clock value (legacy table, then v2 table:
+    the order try_cutover locks them in). A later legacy start of this kind re-creates
+    its legacy row, which makes the kind not ready again. Kinds/versions are closed.
+    """
     if kind not in WRITER_KINDS:
         raise ValueError("usage writer kind invalid")
     with usage.sqlite_transaction_lock(), get_database().session() as session:
         _bounded_statement(session)
-        values = {"kind": kind, "writer_version": 1, "ready_at": _db_now(session)}
-        session.execute(_insert(session, UsageWriterReady).values(**values).on_conflict_do_update(
+        session.execute(delete(UsageWriterReady).where(col(UsageWriterReady.kind) == kind)
+                        .execution_options(synchronize_session=False))
+        values = {"kind": kind, "writer_version": READY_VERSION, "ready_at": _db_now(session)}
+        session.execute(_insert(session, UsageWriterReadyV2).values(**values).on_conflict_do_update(
             index_elements=["kind"], set_=values,
         ))
 
@@ -423,11 +451,24 @@ def _project(leaves) -> usage.UsageCallRow | None:
     return row
 
 
-def _ready_boundary(session: Session) -> datetime | None:
-    rows = session.exec(select(UsageWriterReady).where(UsageWriterReady.writer_version == 1)).all()
-    if {row.kind for row in rows} != WRITER_KINDS:
+def _ready_boundary(session: Session, *, lock: bool = False) -> datetime | None:
+    """Latest v2 ready time, or None unless EVERY kind's latest start was current code.
+
+    A kind counts only with a supported v2 row AND no legacy usage_writer_ready row.
+    Legacy code re-creates its row on every successful start, so a legacy row present
+    means that kind's latest start was legacy code, whatever its clock value. DB clocks
+    repeat and step back, so no timestamp is used as identity. Legacy rows are read (and
+    with lock, locked) before v2 rows, mark_ready's order. Unsupported versions fail closed.
+    """
+    legacy = select(UsageWriterReady.kind)
+    current = select(UsageWriterReadyV2).where(UsageWriterReadyV2.writer_version == READY_VERSION)
+    if lock:
+        legacy, current = legacy.with_for_update(), current.with_for_update()
+    stale = set(session.exec(legacy).all())
+    ready = [row for row in session.exec(current).all() if row.kind not in stale]
+    if {row.kind for row in ready} != WRITER_KINDS:
         return None
-    return max(_require_time(as_utc(row.ready_at)) for row in rows)
+    return max(_require_time(as_utc(row.ready_at)) for row in ready)
 
 
 def _begin_lap(session: Session) -> dict[str, Any] | None:
@@ -824,12 +865,10 @@ def try_cutover(session: Session) -> bool:
         if coverage.cutover_at is not None:
             session.commit()
             return True
-        ready = session.exec(select(UsageWriterReady).where(UsageWriterReady.writer_version == 1)
-                             .with_for_update()).all()
-        if {row.kind for row in ready} != WRITER_KINDS:
+        boundary = _ready_boundary(session, lock=True)
+        if boundary is None:
             session.commit()
             return False
-        boundary = max(_require_time(as_utc(row.ready_at)) for row in ready)
         if (_earlier_execution_open(session, boundary, _db_now(session), report=True)
                 or as_utc(coverage.lap_ready_at) != boundary
                 or coverage.lap_started_at is None or _require_time(as_utc(coverage.lap_started_at)) < boundary

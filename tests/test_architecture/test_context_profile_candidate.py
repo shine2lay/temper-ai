@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import ast
 import copy
-import hashlib
 import importlib.util
 import json
 import os
 import socket
 import uuid
+from collections.abc import MutableMapping
 from decimal import Decimal
 from pathlib import Path
 
@@ -70,6 +70,66 @@ def profile(brief):
     }
 
 
+def intercept_environment_writes(monkeypatch, mapping_type, direct_api):
+    """Intercept writes, retaining operation labels only; never read environment values."""
+    attempts = []
+
+    def replace(target, name, key_position):
+        original = getattr(target, name)
+
+        def guarded(*args, **kwargs):
+            key = args[key_position] if len(args) > key_position else kwargs.get("key")
+            # Pytest labels its phases with this one key. Forward, do not inspect, its value.
+            if type(key) in (str, bytes) and key in ("PYTEST_CURRENT_TEST", b"PYTEST_CURRENT_TEST"):
+                return original(*args, **kwargs)
+            attempts.append(name)
+            raise AssertionError("environment_write_forbidden")
+
+        monkeypatch.setattr(target, name, guarded)
+
+    for name in ("__setitem__", "__delitem__"):
+        replace(mapping_type, name, 1)
+    for name in ("putenv", "unsetenv"):
+        replace(direct_api, name, 0)
+    return attempts
+
+
+def environment_source_violations(source):
+    """A source convention, not a sandbox: only the write-interception type reference is allowed."""
+    tree = ast.parse(source)
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+
+    def guard_call(node):
+        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "intercept_environment_writes" and len(node.args) == 3 and not node.keywords)
+
+    def type_reference(node):
+        parent = parents.get(node)
+        outer = parents.get(parent)
+        return (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id == "os" and node.attr == "environ"
+                and isinstance(parent, ast.Call) and isinstance(parent.func, ast.Name)
+                and parent.func.id == "type" and parent.args == [node] and not parent.keywords
+                and guard_call(outer) and outer.args[1] is parent)
+
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(item.name.split(".")[0] in ("os", "posix", "nt")
+                   and (item.name != "os" or item.asname is not None) for item in node.names):
+                violations.append("environment_import_alias")
+        elif isinstance(node, ast.ImportFrom) and node.module and node.module.split(".")[0] in ("os", "posix", "nt"):
+            violations.append("environment_from_import")
+        elif isinstance(node, ast.Attribute) and node.attr in ("environ", "environb", "getenv", "getenvb"):
+            if not type_reference(node):
+                violations.append("environment_value_access")
+        elif isinstance(node, ast.Name) and node.id == "os":
+            parent = parents.get(node)
+            if not (type_reference(parent) or (guard_call(parent) and parent.args[2] is node)):
+                violations.append("environment_module_use")
+    return violations
+
+
 @pytest.fixture(autouse=True)
 def no_network_or_environment_change(monkeypatch):
     calls = []
@@ -78,16 +138,13 @@ def no_network_or_environment_change(monkeypatch):
         calls.append(1)
         raise AssertionError("network_forbidden")
 
-    def env_hash():
-        selected = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
-        return hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
-
-    before = env_hash()
+    # The type reference does not enumerate or retrieve any environment value.
+    environment_writes = intercept_environment_writes(monkeypatch, type(os.environ), os)
     monkeypatch.setattr(socket, "socket", blocked)
     monkeypatch.setattr(socket, "create_connection", blocked)
     yield calls
     assert len(calls) == 0
-    assert before == env_hash()
+    assert environment_writes == []
 
 
 @pytest.fixture
@@ -599,3 +656,163 @@ def test_helpers_have_no_provider_network_or_settings_imports():
         assert not any(isinstance(node, ast.Attribute) and node.attr in ("environ", "getenv") for node in ast.walk(tree))
         assert not any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                        and node.func.attr in ("unlink", "rmdir", "rmtree") for node in ast.walk(tree))
+
+
+class SyntheticEnvironment(MutableMapping):
+    """Only fabricated data; inherited mutators dispatch like Python's environment mapping."""
+
+    def __init__(self, key="SYNTHETIC"):
+        self.data = {key: "fabricated"}
+        self.mutations = []
+        self.reads = []
+
+    def __getitem__(self, key):
+        self.reads.append(key)
+        return self.data[key]
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __setitem__(self, key, value):
+        self.mutations.append("set")
+        self.data[key] = value
+
+    def __delitem__(self, key):
+        self.mutations.append("delete")
+        del self.data[key]
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+
+class SyntheticEnvironmentAPI:
+    def __init__(self):
+        self.calls = []
+
+    def putenv(self, key, value):
+        self.calls.append(("putenv", key, value))
+
+    def unsetenv(self, key):
+        self.calls.append(("unsetenv", key))
+
+
+@pytest.mark.parametrize("key", ["SYNTHETIC", b"SYNTHETIC"])
+@pytest.mark.parametrize("operation", ["set", "delete", "update", "setdefault", "pop", "popitem", "clear", "ior"])
+def test_environment_guard_blocks_mapping_writes(monkeypatch, key, operation):
+    mapping, api = SyntheticEnvironment(key), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    with pytest.raises(AssertionError, match="^environment_write_forbidden$"):
+        if operation == "set":
+            mapping[key] = "fabricated replacement"
+        elif operation == "delete":
+            del mapping[key]
+        elif operation == "update":
+            mapping.update({key: "fabricated replacement"})
+        elif operation == "setdefault":
+            mapping.setdefault(key + key, "fabricated replacement")
+        elif operation == "pop":
+            mapping.pop(key)
+        elif operation == "popitem":
+            mapping.popitem()
+        elif operation == "clear":
+            mapping.clear()
+        else:
+            mapping |= {key: "fabricated replacement"}
+    expected = "__delitem__" if operation in ("delete", "pop", "popitem", "clear") else "__setitem__"
+    assert attempts == [expected]
+    assert mapping.data == {key: "fabricated"}
+    assert mapping.mutations == [] and api.calls == []
+
+
+@pytest.mark.parametrize("key", ["SYNTHETIC", b"SYNTHETIC"])
+@pytest.mark.parametrize("operation", ["putenv", "unsetenv"])
+def test_environment_guard_blocks_direct_writes(monkeypatch, key, operation):
+    mapping, api = SyntheticEnvironment(key), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    with pytest.raises(AssertionError, match="^environment_write_forbidden$"):
+        if operation == "putenv":
+            api.putenv(key, "fabricated replacement")
+        else:
+            api.unsetenv(key)
+    assert attempts == [operation]
+    assert mapping.data == {key: "fabricated"}
+    assert mapping.mutations == [] and api.calls == []
+
+
+def test_environment_guard_allows_no_write(monkeypatch):
+    mapping, api = SyntheticEnvironment(), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    mapping.update({})
+    assert mapping.setdefault("SYNTHETIC", "unused fabricated default") == "fabricated"
+    assert dict(mapping) == {"SYNTHETIC": "fabricated"}
+    assert attempts == [] and mapping.mutations == [] and api.calls == []
+
+
+@pytest.mark.parametrize("key", ["PYTEST_CURRENT_TEST", b"PYTEST_CURRENT_TEST"])
+def test_environment_guard_bookkeeping_is_key_only(monkeypatch, key):
+    class OpaqueValue:
+        def unreadable(self, *args, **kwargs):
+            raise AssertionError("synthetic_value_was_inspected")
+
+        __repr__ = __str__ = __eq__ = __iter__ = encode = unreadable
+
+    value = OpaqueValue()
+    mapping, api = SyntheticEnvironment(), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    mapping[key] = value
+    api.putenv(key, value)
+    assert mapping.data[key] is value and api.calls[0][2] is value
+    del mapping[key]
+    api.unsetenv(key)
+    assert mapping.reads == []
+    assert mapping.mutations == ["set", "delete"]
+    assert [call[0] for call in api.calls] == ["putenv", "unsetenv"]
+    assert attempts == []
+
+
+@pytest.mark.parametrize("key", ["PYTEST_OTHER_SYNTHETIC", b"PYTEST_OTHER_SYNTHETIC"])
+def test_environment_guard_has_no_pytest_prefix_exemption(monkeypatch, key):
+    mapping, api = SyntheticEnvironment(), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    with pytest.raises(AssertionError, match="^environment_write_forbidden$"):
+        mapping[key] = "fabricated"
+    with pytest.raises(AssertionError, match="^environment_write_forbidden$"):
+        api.putenv(key, "fabricated")
+    assert attempts == ["__setitem__", "putenv"]
+    assert mapping.mutations == [] and api.calls == []
+
+
+def test_environment_guard_retains_swallowed_attempt(monkeypatch):
+    mapping, api = SyntheticEnvironment(), SyntheticEnvironmentAPI()
+    attempts = intercept_environment_writes(monkeypatch, SyntheticEnvironment, api)
+    try:
+        api.unsetenv("SYNTHETIC")
+    except AssertionError:
+        pass
+    assert attempts == ["unsetenv"]  # The fixture can still refuse a swallowed write.
+    assert mapping.mutations == [] and api.calls == []
+
+
+@pytest.mark.parametrize("source", [
+    "os.environ.items()", "os.environ.values()", "os.environ.keys()",
+    "os.environ.get('SYNTHETIC')", "os.environ['SYNTHETIC']", "list(os.environ)", "dict(os.environ)",
+    "json.dumps(dict(os.environ))",
+    "hashlib.sha256(json.dumps(dict(os.environ)).encode()).hexdigest()",
+    "os.getenv('SYNTHETIC')", "os.getenvb(b'SYNTHETIC')", "os.environb[b'SYNTHETIC']",
+    "from os import environ as values\nvalues['SYNTHETIC']",
+    "import os as other\nother.environ.items()", "getattr(os, 'environ')", "alias = os",
+    "type(os.environ).get('SYNTHETIC')", "import posix\nposix.environ",
+])
+def test_environment_source_guard_rejects_value_access_and_hashing(source):
+    # These snippets are parsed only: no environment read, import or bad callable is executed.
+    assert environment_source_violations(source)
+
+
+def test_environment_source_guard_clean_and_current_source():
+    assert environment_source_violations("mapping = {'SYNTHETIC': 'fabricated'}\nlist(mapping.items())") == []
+    assert environment_source_violations("intercept_environment_writes(monkeypatch, type(os.environ), os)") == []
+    assert environment_source_violations(Path(__file__).read_text()) == []

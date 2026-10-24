@@ -39,6 +39,7 @@ from temper_ai.runner.lanes import KEEP_LANE
 from temper_ai.runner.models import WorkflowRun
 from temper_ai.runner.parked import CANCELLED, CARRIED_ON, WAITING, AlreadyCarriedOn
 from temper_ai.runner.row_generation import RowGeneration
+from temper_ai.spawner import reaper as reaper_module
 from tests.test_runner.test_parked_claim_atomic import (
     _attempt,
     _backend_pid,
@@ -402,6 +403,161 @@ def test_a_newer_start_after_the_initial_read_rolls_the_old_cas_back(monkeypatch
     assert get_event(f"B1-{run}")["status"] == WAITING
 
 
+# ── T16e / F-A: the real reaper's let-go cancel, never a fresh stop ──────────
+
+
+_REAPER_CASES = {
+    "CURRENT": ("running", 1),
+    "ABA1R-SAMEGEN": (WAITING, 1),
+    "ABA1R-SAMEGEN-ORPH": ("orphaned", 1),
+    "SAMEGEN-COMPLETED": ("completed", 1),
+    "SAMEGEN-CANCELLED": (CANCELLED, 1),
+    "ABA1R": ("running", 2),
+    "ABA1R-WAITING": (WAITING, 2),
+    "ABA1R-ENDED": ("orphaned", 2),
+    "NEWLY-QUEUED": ("queued", 1),
+    "NEWER-QUEUED": ("queued", 2),
+}
+_CANCEL_PARKED = parked.cancel_parked
+
+
+def _reaper_cancel(module: ModuleType, case: str, monkeypatch, *, fresh_tick: bool = False) -> list[dict]:
+    """A real tick's single judgment, then a committed interleaving at is_gone.
+
+    F-A waiting is a second real reaper's pre-stop judgment. Other transitions
+    commit on a separate connection before cancel begins, on both DB tiers.
+    No reaper/cancel/row-fence body is copied or replaced with a success stub.
+    """
+    from temper_ai.api import caller
+    from temper_ai.runner.lanes import PI_LANE
+
+    run = f"letgo-{case}"
+    gate_id = f"gate-{run}"
+    _attempt(run, note={"path": "talk", "event_id": gate_id, "on_cancel": {
+        "mode": "hold", "held": [{"path": "close", "name": "close"}]}})
+    _row(run, "running", handle="pid-101")
+    with get_session() as session:
+        session.exec(sa_update(WorkflowRun).where(col(WorkflowRun.execution_id) == run)
+                     .values(spawner_kind="subprocess", cancel_requested=True)
+                     .execution_options(synchronize_session=False))
+        session.add(Event(id=gate_id, type=EventType.STAGE_STARTED, execution_id=run,
+                          status=WAITING, data={"gate": True}, timestamp=at("10:01:00")))
+    monkeypatch.setattr(parked, "utcnow", lambda: at("12:44:59"))
+    monkeypatch.setattr(row_generation, "utcnow", lambda: at("12:44:59"))
+    monkeypatch.setattr(caller, "recorded_cancel_words", lambda eid: "stop while letting go")
+    status, attempts = _REAPER_CASES[case]
+    attempt_id = f"{'B1' if attempts == 2 else 'A1'}-{run}"
+    observations: list[dict] = []
+    post: list[dict] = []
+    monkeypatch.setattr(parked, "_end_pi_teams", lambda eid: post.append(_state(eid, attempt_id)))
+    monkeypatch.setattr(parked, "_hold", lambda eid, *args: post.append(_state(eid, attempt_id)))
+    snapshots: list[dict] = []
+    moved = False
+
+    class Gone:
+        def is_alive(self, handle):
+            return False
+
+        def is_gone(self, handle):
+            nonlocal moved
+            if moved:
+                return True
+            moved = True
+            if case == "ABA1R-SAMEGEN":
+                # B read before the flag; A read after it. B frees this same
+                # generation to waiting while A is still judging running.
+                early = module.Reaper(Gone(), lane=PI_LANE)
+                early._process_row({**snapshots[0], "cancel_requested": False})
+            elif case != "CURRENT":
+                with get_session() as session:
+                    session.exec(sa_update(WorkflowRun).where(col(WorkflowRun.execution_id) == run)
+                                 .values(status=status, attempts=attempts, spawner_handle="pid-202",
+                                         completed_at=(at("10:31:00") if status not in {
+                                             "running", WAITING, "queued"} else None))
+                                 .execution_options(synchronize_session=False))
+                if attempts == 2:
+                    _attempt(run, name="B1", started=at("10:05:00"), note={
+                        "path": "talk", "event_id": gate_id, "on_cancel": {
+                            "mode": "hold", "held": [{"path": "close", "name": "close"}]}})
+            return True
+
+    reaper = module.Reaper(Gone(), lane=PI_LANE)
+    load = reaper._load_live_rows
+
+    def snapshot():
+        rows = load()
+        snapshots.extend(rows)
+        return rows
+
+    reaper._load_live_rows = snapshot
+
+    def cancel(execution_id, reason=None, *, by="cancel", judged=None):
+        before = _state(run, attempt_id)
+        before_post = len(post)
+        split: list[dict] = []
+        end = parked._end_row_in
+
+        def end_observed(session, eid, status, *, judged):
+            split.append(_state(run, attempt_id))
+            return end(session, eid, status, judged=judged)
+
+        with monkeypatch.context() as inner:
+            inner.setattr(parked, "_end_row_in", end_observed)
+            with _writes_and_commits() as writes:
+                result = _CANCEL_PARKED(execution_id, reason, by=by, judged=judged)
+        after = _state(run, attempt_id)
+        observations.append({
+            "result": result, "event": after["event"]["status"], "row": after["row"]["status"],
+            "attempts": after["row"]["attempts"], "row_unchanged": after["row"] == before["row"],
+            "all_unchanged": after == before, "row_writes": writes.count("UPDATE workflow_runs"),
+            "snapshot": judged == RowGeneration.from_snapshot(snapshots[-1]),
+            "reads": len(snapshots), "split_uncommitted": split == [before],
+            "effects": len(post) - before_post,
+            "effects_committed": all(state == after for state in post[before_post:]),
+            "reason": after["event"]["data"].get("cancelled_reason"),
+            "gate": get_event(gate_id)["status"],
+        })
+        return result
+
+    monkeypatch.setattr(parked, "cancel_parked", cancel)
+    reaper.tick()
+    if fresh_tick:
+        reaper.tick()  # genuinely fresh judgment of the newer dead parked box
+    return observations
+
+
+def _reaper_expected(case: str) -> dict:
+    status, attempts = _REAPER_CASES[case]
+    refused = attempts == 2 or status == "queued"
+    ended = not refused and status not in {"running", WAITING}
+    return {"result": not refused, "event": WAITING if refused else CANCELLED,
+            "row": status if refused or ended else CANCELLED, "attempts": attempts,
+            "row_unchanged": refused or ended, "all_unchanged": refused,
+            "row_writes": 0 if refused or ended else 1, "snapshot": True, "reads": 1,
+            "split_uncommitted": True, "effects": 0 if refused else 2, "effects_committed": True,
+            "reason": None if refused else "stop while letting go", "gate": WAITING if refused else "rejected"}
+
+
+def test_t16e_combined_owner_stop_survives_plain_letgo_and_preserves_ended_rows(monkeypatch):
+    """Combined happy path first: real tick/cancel, owner words, gate, teams, hold."""
+    for case in ("CURRENT", "ABA1R-SAMEGEN", "ABA1R-SAMEGEN-ORPH"):
+        with monkeypatch.context() as patch:
+            assert _reaper_cancel(reaper_module, case, patch) == [_reaper_expected(case)]
+
+
+@pytest.mark.parametrize("round_", [1, 2])
+@pytest.mark.parametrize("case", list(_REAPER_CASES))
+def test_t16e_immutable_judgment_refuses_stale_or_queued_but_keeps_same_generation(case, round_, monkeypatch):
+    assert _reaper_cancel(reaper_module, case, monkeypatch) == [_reaper_expected(case)]
+
+
+@pytest.mark.parametrize("round_", [1, 2])
+def test_t16e_next_fresh_tick_can_cancel_the_newer_dead_parked_generation(round_, monkeypatch):
+    first, second = _reaper_cancel(reaper_module, "ABA1R", monkeypatch, fresh_tick=True)
+    assert first == _reaper_expected("ABA1R")
+    assert second == {**_reaper_expected("CURRENT"), "attempts": 2, "reads": 2}
+
+
 # ── Actual API and own-box CLI, no real execution ────────────────────────────
 
 
@@ -658,6 +814,40 @@ def test_b_box_own_nojudged_breaks_the_actual_cli_stale_case(monkeypatch):
     got = _own_box(mutant, "stale", monkeypatch)
     assert got != _own_expected("stale")
     assert got["event"] == got["row"] == CANCELLED
+
+
+@pytest.mark.parametrize("case", ["ABA1R", "ABA1R-WAITING", "ABA1R-ENDED"])
+def test_t16e_b_aba_1r_the_final_reaper_call_cannot_drop_its_judged_generation(case, monkeypatch):
+    mutant = _mutant(reaper_module, [(
+        'by="reaper", judged=judged)', 'by="reaper", judged=None)',
+    )], monkeypatch)
+    [got] = _reaper_cancel(mutant, case, monkeypatch)
+    assert got != _reaper_expected(case)
+    assert got["result"] is True and got["event"] == CANCELLED and got["effects"] == 2
+    assert got["snapshot"] is False
+
+
+@pytest.mark.parametrize("case", ["ABA1R-SAMEGEN", "ABA1R-SAMEGEN-ORPH"])
+def test_t16e_b_status_equality_loses_a_real_same_generation_owner_stop(case, monkeypatch):
+    mutant = _mutant(parked, [(
+        'if row.attempts != attempts or row.status == "queued":',
+        'if row.attempts != attempts or row.status == "queued" or (judged is not None and row.status != judged.status):',
+    )], monkeypatch)
+    monkeypatch.setattr(parked, "_end_row_in", mutant._end_row_in)
+    [got] = _reaper_cancel(reaper_module, case, monkeypatch)
+    assert got != _reaper_expected(case)
+    assert got["result"] is False and got["event"] == WAITING and got["all_unchanged"] is True
+    assert got["effects"] == 0
+
+
+@pytest.mark.parametrize("case", ["CURRENT", "ABA1R-SAMEGEN"])
+def test_t16e_b_never_end_loses_the_real_current_twins(case, monkeypatch):
+    mutant = _mutant(row_generation, [('    return result.rowcount == 1', '    return False')], monkeypatch)
+    monkeypatch.setattr(row_generation, "end_row_if_same_generation", mutant.end_row_if_same_generation)
+    [got] = _reaper_cancel(reaper_module, case, monkeypatch)
+    assert got != _reaper_expected(case)
+    assert got["result"] is False and got["event"] == WAITING and got["all_unchanged"] is True
+    assert got["effects"] == 0
 
 
 def test_helper_outcomes_are_explicit_and_do_not_commit(monkeypatch):

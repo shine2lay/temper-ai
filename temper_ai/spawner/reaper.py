@@ -277,8 +277,9 @@ class Reaper:
         (runner/parked.py): an answer that came while the box was letting go, or while this
         worker was down, is applied here.
 
-        The ``waiting`` write lands only on the ``judged`` generation. The cancel branch
-        doesn't take ``judged`` yet: ``cancel_parked`` fences its own read.
+        The ``waiting`` write lands only on the ``judged`` generation. Cancellation keeps
+        that same immutable judgment: a fresh read must not cancel a resumed generation.
+        The same generation now waiting still honours the stop; an ended row stays ended.
         """
         from temper_ai.runner import parked
 
@@ -294,7 +295,8 @@ class Reaper:
             # The row's flag carries no words: the stop's own come from its record (#111).
             from temper_ai.api.caller import recorded_cancel_words
 
-            parked.cancel_parked(execution_id, recorded_cancel_words(execution_id), by="reaper")
+            parked.cancel_parked(
+                execution_id, recorded_cancel_words(execution_id), by="reaper", judged=judged)
             return
         if self._mark_status(execution_id, parked.WAITING, judged=judged, keep_open=True):
             logger.info("Reaper: %s waits on you with no box", execution_id)

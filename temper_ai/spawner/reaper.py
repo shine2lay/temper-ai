@@ -41,6 +41,7 @@ from temper_ai.observability.reconcile import INTERRUPTED, settle_run_event
 from temper_ai.runner.models import WorkflowRun
 from temper_ai.runner.row_generation import RowGeneration, end_row_if_same_generation
 from temper_ai.spawner.base import Spawner, SpawnerError
+from temper_ai.spawner.docker_spawner import JUDGED_CONTAINER_ID
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,8 @@ class Reaper:
         self._kill_grace = kill_grace_seconds
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        # When we sent SIGTERM but the worker hasn't exited yet
-        self._termed_at: dict[str, datetime] = {}
+        # When this generation received SIGTERM. A resumed attempt gets its own grace.
+        self._termed_at: dict[tuple[str, int, str | None], datetime] = {}
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -108,6 +109,11 @@ class Reaper:
         """One reap pass. Public so tests can drive it deterministically."""
         self._wake_due_timers()
         rows = self._load_live_rows()
+        live_generations = {
+            self._grace_key(row["execution_id"], RowGeneration.from_snapshot(row)) for row in rows
+        }
+        self._termed_at = {key: at for key, at in self._termed_at.items()
+                           if key in live_generations}
         for row in rows:
             try:
                 self._process_row(row)
@@ -177,12 +183,24 @@ class Reaper:
                 for r in rows
             ]
 
+    @staticmethod
+    def _grace_key(execution_id: str, judged: RowGeneration) -> tuple[str, int, str | None]:
+        return execution_id, judged.attempts, judged.container_id
+
     def _process_row(self, row: dict) -> None:
         execution_id = row["execution_id"]
         # The generation this tick judges: every write below lands only on it.
         judged = RowGeneration.from_snapshot(row)
         spawner_kind_str = row["spawner_kind"]
         handle_str = row["spawner_handle"]
+        if judged.spawner_kind == SpawnerKind.docker.value and judged.container_id is None:
+            # Never ask by shared name: it could already belong to the next dispatch.
+            logger.warning("Reaper: %s has no judged Docker container_id; no liveness check, "
+                           "signal or row write this tick", execution_id)
+            return
+        metadata: dict = {"execution_id": execution_id}
+        if judged.spawner_kind == SpawnerKind.docker.value:
+            metadata[JUDGED_CONTAINER_ID] = judged.container_id
         if not handle_str:
             # Spawn was attempted but never returned a handle — server
             # restart between row insert and spawner.spawn(). Mark orphaned
@@ -194,7 +212,7 @@ class Reaper:
             handle = ProcessHandle(
                 kind=SpawnerKind(spawner_kind_str),
                 handle=handle_str,
-                metadata={"execution_id": execution_id},
+                metadata=metadata,
             )
         except (ValueError, TypeError) as exc:
             logger.warning(
@@ -236,7 +254,7 @@ class Reaper:
 
         if not alive:
             self._mark_orphaned(execution_id, judged=judged, reason="worker process gone")
-            self._termed_at.pop(execution_id, None)
+            self._termed_at.pop(self._grace_key(execution_id, judged), None)
 
     @staticmethod
     def _parked(execution_id: str) -> bool:
@@ -271,7 +289,7 @@ class Reaper:
         except SpawnerError as exc:
             logger.warning("Reaper: can't tell whether %s's box is gone: %s", execution_id, exc)
             return
-        self._termed_at.pop(execution_id, None)
+        self._termed_at.pop(self._grace_key(execution_id, judged), None)
         if cancel:
             # The row's flag carries no words: the stop's own come from its record (#111).
             from temper_ai.api.caller import recorded_cancel_words
@@ -291,13 +309,16 @@ class Reaper:
 
         Its row writes land only on the ``judged`` generation, and only a running one:
         a box that started during the grace of a queued judgement is left to the next
-        tick. The signals still go to ``handle``."""
-        sent_at = self._termed_at.get(execution_id)
+        tick. Docker signals go only to the judged container id carried by ``handle``.
+        Pi cleanup snapshots member names after the kill, before the fenced write, and
+        removes only that saved set, only when the write returns True."""
+        grace_key = self._grace_key(execution_id, judged)
+        sent_at = self._termed_at.get(grace_key)
         now = datetime.now(UTC)
         if sent_at is None:
             try:
                 self._spawner.kill(handle, force=False)
-                self._termed_at[execution_id] = now
+                self._termed_at[grace_key] = now
                 logger.info(
                     "Cancel: SIGTERM sent to worker for %s", execution_id,
                 )
@@ -320,24 +341,40 @@ class Reaper:
                 logger.warning(
                     "Cancel: SIGKILL failed for %s (%s)", execution_id, exc,
                 )
-            # Whether the kill succeeded or not, mark cancelled so the
-            # UI doesn't keep waiting on a process we've given up on.
+            from temper_ai.runner.lanes import PI_LANE
+
+            # Snapshot after kill, before write: a post-write lookup could see a resumed
+            # attempt's new boxes. Empty is a real snapshot, never a request to look again.
+            member_names: tuple[str, ...] = ()
+            if self._lane == PI_LANE:
+                from temper_ai.runner.pi_lane import (
+                    snapshot_member_box_names_of_killed_run,
+                )
+
+                member_names = snapshot_member_box_names_of_killed_run(execution_id)
+            # Keep the existing best-effort end even when kill failed, but never remove
+            # member boxes or settle a run whose generation fence refused the write.
             if self._mark_status(execution_id, "cancelled", judged=judged):
                 settle_run_event(execution_id, "cancelled", "Cancelled: stopped by force.")
-            self._termed_at.pop(execution_id, None)
-            self._remove_pi_member_boxes_after_force(execution_id)
+                self._remove_pi_member_boxes_after_force(execution_id, member_names)
+            elif self._lane == PI_LANE:
+                logger.warning("Reaper: %s changed generation; no member boxes removed. "
+                               "Leftovers may still be running until the next Pi start-up "
+                               "sweep", execution_id)
+            self._termed_at.pop(grace_key, None)
 
-    def _remove_pi_member_boxes_after_force(self, execution_id: str) -> None:
-        """Pi lane only (its reaper runs where the Pi lane runs Docker): remove the member boxes
-        of a run whose process was just killed, since only that process removes them on a
-        normal end. After the run is marked cancelled, so a Docker error never keeps it open."""
+    def _remove_pi_member_boxes_after_force(
+        self, execution_id: str, member_names: tuple[str, ...],
+    ) -> None:
+        """Pi lane only: remove the saved pre-write names after a successful fenced end.
+        Never read the ledger here, even when the saved set is empty."""
         from temper_ai.runner.lanes import PI_LANE
 
         if self._lane != PI_LANE:
             return
-        from temper_ai.runner.pi_lane import remove_member_boxes_of_killed_run
+        from temper_ai.runner.pi_lane import remove_saved_member_boxes_of_killed_run
 
-        remove_member_boxes_of_killed_run(execution_id)
+        remove_saved_member_boxes_of_killed_run(execution_id, member_names)
 
     def _mark_orphaned(self, execution_id: str, *, judged: RowGeneration, reason: str) -> None:
         """Best-effort terminal write on the ``judged`` generation. Idempotent: if the
@@ -372,7 +409,7 @@ class Reaper:
                 execution_id, "failed", judged=judged, from_status="queued",
                 error={"message": "The run's box stopped before the run started.", "kind": "spawn"},
             )
-        self._termed_at.pop(execution_id, None)
+        self._termed_at.pop(self._grace_key(execution_id, judged), None)
         if ended:
             logger.warning("Reaper: %s's box stopped before the run started", execution_id)
 

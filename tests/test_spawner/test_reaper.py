@@ -9,6 +9,7 @@ re-test SubprocessSpawner.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,8 +40,11 @@ def _insert_run(
     cancel_requested: bool = False,
     container_id: str | None = None,
 ) -> None:
-    """``container_id``: the container a Docker dispatch is stamped with (the reaper ends a
-    queued Docker row only on the dispatch its snapshot named)."""
+    """Stamp ordinary Docker fixtures with a unique exact id so these tests reach their
+    intended liveness/write branch. Missing-id refusal is tested in the generation suites.
+    ``container_id`` can name a particular judged dispatch."""
+    if spawner_kind == "docker" and container_id is None:
+        container_id = sha256(execution_id.encode()).hexdigest()
     with get_session() as session:
         session.add(WorkflowRun(
             execution_id=execution_id,
@@ -161,7 +165,7 @@ def test_cancel_grace_elapsed_escalates_to_sigkill(isolated_db, fake_spawner):
     # First tick: SIGTERM
     reaper.tick()
     # Force grace to be 'long expired'
-    reaper._termed_at["cancel-2"] = datetime.now(UTC) - timedelta(seconds=60)
+    reaper._termed_at[("cancel-2", 0, None)] = datetime.now(UTC) - timedelta(seconds=60)
     # Second tick: SIGKILL + mark cancelled
     reaper.tick()
 
@@ -249,7 +253,8 @@ def test_a_stop_that_needed_force_ends_the_event_as_cancelled(isolated_db, fake_
 
     reaper = Reaper(fake_spawner, interval_seconds=0.01, kill_grace_seconds=0)
     reaper.tick()
-    reaper._termed_at["box-stuck"] = datetime.now(UTC) - timedelta(seconds=60)
+    reaper._termed_at[("box-stuck", 0, sha256(b"box-stuck").hexdigest())] = (
+        datetime.now(UTC) - timedelta(seconds=60))
     reaper.tick()
 
     assert _read_status("box-stuck") == "cancelled"
@@ -258,7 +263,7 @@ def test_a_stop_that_needed_force_ends_the_event_as_cancelled(isolated_db, fake_
 
 def test_a_box_that_died_before_starting_its_run_fails_it(isolated_db, fake_spawner):
     _insert_run("box-early", status="queued", spawner_kind="docker",
-                spawner_handle="temper-run-box-early", container_id="ctr-box-early")
+                spawner_handle="temper-run-box-early", container_id="e" * 64)
     fake_spawner.is_alive.return_value = False
 
     Reaper(fake_spawner, interval_seconds=0.01).tick()
@@ -270,7 +275,7 @@ def test_a_box_that_died_before_starting_its_run_fails_it(isolated_db, fake_spaw
 def test_a_run_stopped_before_its_box_started_it_is_cancelled(isolated_db, fake_spawner):
     _insert_run("box-stop", status="queued", spawner_kind="docker",
                 spawner_handle="temper-run-box-stop", cancel_requested=True,
-                container_id="ctr-box-stop")
+                container_id="f" * 64)
     fake_spawner.is_alive.return_value = False
 
     Reaper(fake_spawner, interval_seconds=0.01).tick()
@@ -286,6 +291,7 @@ def test_a_box_still_starting_is_left_to_start(isolated_db, fake_spawner):
     Reaper(fake_spawner, interval_seconds=0.01).tick()
 
     assert _read_status("box-starting") == "queued"
+    fake_spawner.is_alive.assert_called_once()
     fake_spawner.kill.assert_not_called()
 
 
@@ -307,6 +313,7 @@ def test_a_docker_that_does_not_answer_buries_nothing(isolated_db, fake_spawner)
 
     assert _read_status("box-unsure") == "running"
     assert _event(event_id)[0] == "running"
+    fake_spawner.is_alive.assert_called_once()
 
 
 def test_one_bad_row_does_not_stop_the_rest(isolated_db, fake_spawner):

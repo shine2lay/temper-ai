@@ -19,11 +19,11 @@ and show exactly which cases it was keeping right, while every genuine end, and 
 twin's, still lands. The stale cases are then run on: once the newer generation's box is
 gone too, the next tick ends that generation.
 
-Not fenced here yet: the reaper's effects. A stale SIGKILL still goes by the box's name,
-which a new dispatch of a Docker run reuses (ABA1-C847F-B records it as it is today), and
-a forced stop still clears a Pi run's member boxes and its grace whatever its write did.
-Those are fenced on the same judged generation in a change of their own, which changes
-ABA1-C847F-B's signal and row.
+F9 effects now use the judged Docker id and generation-keyed grace. The same races and
+row-fence bites remain: ABA1-C847F-B signals A, not the newer B holding its name, and B
+stays running until a genuinely dead-B tick. ABAQ-NOID-ADV isolates the queued row-end
+helper's missing-id guard, since the full reaper now refuses earlier, before liveness;
+the separate missing-id tick test proves that stronger early no-call contract.
 
 On a SQLite file, or on Postgres in the database tier (tests/pgtier.py): never the default
 in-memory SQLite, whose one connection threads can't share.
@@ -72,7 +72,7 @@ def _shared_database(request, tmp_path):
 
 DOCKER, SUBPROC = "docker", "subprocess"
 H = "temper-run-gen"               # a Docker run's box: the same name for every dispatch
-C1, C2 = "ctr-gen-1", "ctr-gen-2"  # the container each Docker dispatch was stamped with
+C1, C2 = "a1" * 32, "b2" * 32    # exact Docker ids stamped on the judged/new dispatch
 P1, P2 = "48101", "48202"          # a subprocess dispatch's pid
 IDENTITIES = (H, C1, C2, P1, P2)
 ENDED = ("completed", "failed", "cancelled", "orphaned")
@@ -161,6 +161,7 @@ class Case:
     kill_fails: bool = False        # the measured reaper's signal fails
     next_tick: bool = False         # one more tick of the measured reaper
     direct: bool = False            # the orphan end on the judged snapshot, no spawner call
+    direct_queued_end: bool = False  # isolate the queued row-helper guard behind early refusal
 
 
 def ended(status: str, attempts: int, handle: str | None, container_id: str | None = None,
@@ -181,7 +182,7 @@ STOPPING_DOCKER = Put("running", 1, H, C1, cancel=True)
 REQUEUED = Put("queued", 1)                   # a resume: back in the queue, no box
 D2_DOCKER = Put("queued", 1, H, C2)           # a new Docker dispatch: same name, new container
 D2_PID = Put("queued", 1, P2)
-B_DOCKER = (Put("running", 2, H, C2), Started("b1"), Box(H, True))  # the new box starts the run
+B_DOCKER = (Put("running", 2, H, C2), Started("b1"), Box(C2, True))  # the new box starts the run
 B_PID = (Put("running", 2, P2), Started("b1"), Box(P2, True))
 CANCELLED_AT_GATE = (Moved("a1", "cancelled"), Put("cancelled", 1, P1))
 B_DOCKER_ROW = live("running", 2, H, C2)
@@ -204,19 +205,18 @@ CASES = [
     Case("G-ABA1-LETGO", SUBPROC, RUN_PID, Expect(1, (True,), (), live("waiting", 1, P1)),
          parked=True, lane=PI_LANE),
     Case("ABA1-C847F-A", DOCKER, STOPPING_DOCKER,
-         Expect(1, (True, False), ("cancelled",), B_DOCKER_ROW, signals=((H, True),)),
+         Expect(1, (True, False), ("cancelled",), B_DOCKER_ROW, signals=((C1, True),)),
          alive=True, termed=True, early_reaper=True, hook="is_alive",
          cycle=(REQUEUED, D2_DOCKER, *B_DOCKER)),
-    # The stale SIGKILL still reaches the new box by name: the signal side's open part.
+    # The stale SIGKILL reaches only A by judged id; the next tick leaves live B alone.
     Case("ABA1-C847F-B", DOCKER, STOPPING_DOCKER,
-         Expect(1, (False, True), (INTERRUPTED,), ended("orphaned", 2, H, C2, "orphaned"),
-                signals=((H, True),)),
+         Expect(0, (False,), (), B_DOCKER_ROW, signals=((C1, True),)),
          alive=True, termed=True, hook="is_alive", next_tick=True,
          cycle=(Put("cancelled", 1, H, C1, cancel=True), Moved("a1", "cancelled"), REQUEUED,
                 D2_DOCKER, *B_DOCKER)),
     Case("G-ABA1-C847F", DOCKER, STOPPING_DOCKER,
          Expect(1, (True,), ("cancelled",), ended("cancelled", 1, H, C1),
-                signals=((H, True),)),
+                signals=((C1, True),)),
          alive=True, termed=True),
     Case("ABA1-RPR-WAIT", SUBPROC, RUN_PID, STALE_PID, parked=True, lane=PI_LANE,
          early_steps=(Put("waiting", 1, P1), Moved("a1", CARRIED_ON), REQUEUED),
@@ -224,12 +224,12 @@ CASES = [
     Case("ABA1-RPR-ORPH", DOCKER, RUN_DOCKER,
          Expect(1, (True, False), (INTERRUPTED,), B_DOCKER_ROW),
          early_reaper=True, hook="is_alive", cycle=(REQUEUED, D2_DOCKER, *B_DOCKER)),
-    Case("ABA1-NOH", DOCKER, Put("running", 1), STALE, hook="write",
+    Case("ABA1-NOH", DOCKER, Put("running", 1, container_id=C1), STALE, hook="write",
          cycle=(Put("failed", 1), Moved("a1", "failed"), REQUEUED, D2_DOCKER, *B_DOCKER)),
-    Case("G-ABA1-NOH", DOCKER, Put("running", 1),
-         Expect(1, (True,), (INTERRUPTED,), ended("orphaned", 1, None, None, "orphaned"))),
+    Case("G-ABA1-NOH", DOCKER, Put("running", 1, container_id=C1),
+         Expect(1, (True,), (INTERRUPTED,), ended("orphaned", 1, None, C1, "orphaned"))),
     Case("ABA1-SIG", DOCKER, STOPPING_DOCKER,
-         Expect(0, (False,), (), B_DOCKER_ROW, signals=((H, False),)),
+         Expect(0, (False,), (), B_DOCKER_ROW, signals=((C1, False),)),
          alive=True, hook="kill", kill_fails=True,
          cycle=(Put("cancelled", 1, H, C1, cancel=True), Moved("a1", "cancelled"), REQUEUED,
                 D2_DOCKER, *B_DOCKER)),
@@ -251,9 +251,11 @@ CASES = [
          Expect(1, (True,), (), ended("failed", 1, P2, None, "spawn"))),
     Case("ABAQ-PILANE", SUBPROC, QUEUED_PID, Expect(0, (False,), (), live("queued", 1, P2)),
          lane=PI_LANE, hook="is_alive", cycle=(Put("queued", 1, kind=None), D2_PID)),
+    # Real queued row-end helper, not a full tick: keep its own missing-id bite even
+    # though F9's earlier no-call guard now protects full reaper ticks independently.
     Case("ABAQ-NOID-ADV", DOCKER, Put("queued", 1, H),
          Expect(0, (False,), (), live("queued", 1, H), warned=True),
-         hook="is_alive", cycle=(REQUEUED, Put("queued", 1, H))),
+         direct_queued_end=True, early_steps=(REQUEUED, Put("queued", 1, H))),
     # Two reapers on one gone run: the second finds it ended, and settles nothing.
     Case("I5-TWO-REAPERS", DOCKER, RUN_DOCKER,
          Expect(1, (True, False), (INTERRUPTED,), ended("orphaned", 1, H, C1, "orphaned")),
@@ -261,7 +263,7 @@ CASES = [
     # A box that started its run during a queued judgement's grace: left to the next tick.
     Case("G-DEAD-HONOR-CANCEL-QUEUED", DOCKER, Put("queued", 1, H, C1, cancel=True),
          Expect(1, (False, True), (INTERRUPTED,), ended("orphaned", 2, H, C1, "orphaned"),
-                signals=((H, True),)),
+                signals=((C1, True),)),
          alive=True, termed=True, hook="kill", next_tick=True,
          cycle=(Put("running", 2, H, C1, cancel=True), Started("d1"))),
     Case("CLEAN-ALIVE", DOCKER, RUN_DOCKER, Expect(0, (), (), live("running", 1, H, C1)),
@@ -343,6 +345,7 @@ class _World:
         self.case, self.eid = case, execution_id
         self.alive: dict[str, bool] = {}
         self.signals: list[tuple[str, bool]] = []
+        self.calls: list[tuple[str, str]] = []
         self.returns: list[bool] = []
         self.settles: list[str] = []
         self.rowcounts: list[int] = []   # rows each reaper UPDATE of the run rows changed
@@ -384,7 +387,9 @@ def _insert(world: _World) -> None:
         else:
             _event(world.eid, "a1", "running")
     if case.judged.handle:
-        world.alive[case.judged.handle] = case.alive
+        target = case.judged.container_id if case.kind == DOCKER else case.judged.handle
+        if target:
+            world.alive[target] = case.alive
 
 
 @contextmanager
@@ -417,36 +422,41 @@ def _watching(world: _World) -> Iterator[None]:
 
 
 class _Spawner:
-    """Boxes that are ``alive`` (handle -> bool). ``hook`` runs once, at the ``at`` call,
-    after the call's answer is fixed: the box changed while the reaper waited on it."""
+    """Boxes by judged id for Docker liveness/signals, by pid for subprocess; is_gone
+    keeps its name behavior. ``hook`` runs once after the call's answer is fixed."""
 
     def __init__(self, alive: dict[str, bool], signals: list, *, hook: Callable | None = None,
-                 at: str | None = None, kill_fails: bool = False) -> None:
-        self.alive, self.signals = alive, signals
+                 at: str | None = None, kill_fails: bool = False,
+                 calls: list[tuple[str, str]] | None = None) -> None:
+        self.alive, self.signals, self.calls = alive, signals, calls
         self._hook, self._at, self._kill_fails = hook, at, kill_fails
 
-    def _call(self, name: str) -> None:
+    def _call(self, name: str, target: str) -> None:
+        if self.calls is not None:
+            self.calls.append((name, target))
         if self._hook is not None and self._at == name:
             hook, self._hook = self._hook, None
             hook()
 
     def is_alive(self, handle) -> bool:
-        answer = self.alive.get(handle.handle, False)
-        self._call("is_alive")
+        target = handle.metadata.get("judged_container_id", handle.handle)
+        answer = self.alive.get(target, False)
+        self._call("is_alive", target)
         return answer
 
     def is_gone(self, handle) -> bool:
         answer = not self.alive.get(handle.handle, False)
-        self._call("is_gone")
+        self._call("is_gone", handle.handle)
         return answer
 
     def kill(self, handle, *, force: bool = False) -> None:
-        self.signals.append((handle.handle, force))
-        self._call("kill")
+        target = handle.metadata.get("judged_container_id", handle.handle)
+        self.signals.append((target, force))
+        self._call("kill", target)
         if self._kill_fails:
             raise SpawnerError("the box would not take the signal")
         if force:
-            self.alive[handle.handle] = False
+            self.alive[target] = False
 
 
 def _reaper(module: ModuleType, world: _World, *, hooked: bool,
@@ -460,7 +470,7 @@ def _reaper(module: ModuleType, world: _World, *, hooked: bool,
 
         spawner = _Spawner(world.alive, world.signals,
                            hook=move_on if hooked and case.hook in SPAWNER_CALLS else None,
-                           at=case.hook, kill_fails=hooked and case.kill_fails)
+                           at=case.hook, kill_fails=hooked and case.kill_fails, calls=world.calls)
     reaper = module.Reaper(spawner, interval_seconds=0, kill_grace_seconds=0, lane=case.lane)
     mark_status = reaper._mark_status
 
@@ -471,7 +481,8 @@ def _reaper(module: ModuleType, world: _World, *, hooked: bool,
 
     reaper._mark_status = recorded
     if case.termed:
-        reaper._termed_at[world.eid] = datetime.now(UTC) - timedelta(minutes=1)
+        key = (world.eid, case.judged.attempts, case.judged.container_id)
+        reaper._termed_at[key] = datetime.now(UTC) - timedelta(minutes=1)
     return reaper
 
 
@@ -485,13 +496,17 @@ def _run_case(case: Case, module: ModuleType, execution_id: str, caplog,
     first = len(caplog.records)
     with _watching(world):
         reaper = _reaper(module, world, hooked=True)
-        if case.direct or case.early_reaper or case.early_steps or case.hook in STATEMENTS:
+        if (case.direct or case.direct_queued_end or case.early_reaper or case.early_steps
+                or case.hook in STATEMENTS):
             [row] = [r for r in reaper._load_live_rows() if r["execution_id"] == execution_id]
             if case.early_reaper:
                 _reaper(module, world, hooked=False).tick()
             world.move(case.early_steps)
             world.armed = case.hook if case.hook in STATEMENTS else None
-            if case.direct:
+            if case.direct_queued_end:
+                reaper._end_unstarted(
+                    execution_id, judged=module.RowGeneration.from_snapshot(row), cancelled=False)
+            elif case.direct:
                 reaper._mark_orphaned(
                     execution_id, judged=module.RowGeneration.from_snapshot(row),
                     reason="worker process gone")
@@ -516,21 +531,22 @@ def test_one_tick_ends_each_gone_run_once_and_leaves_the_others():
     runs failed or cancelled, the stopped run killed and cancelled, the parked Pi run
     waiting with no box, the live run untouched; each row changed by one UPDATE."""
     world = _World(None, "")
-    world.alive.update({"temper-run-alive": True, "temper-run-stopped": True})
-    _put("gone", Put("running", 1, "temper-run-gone", "ctr-gone"), kind=DOCKER, lane=None)
+    gone_id, unstarted_id, stopped_id, alive_id = (letter * 64 for letter in "cdef")
+    world.alive.update({alive_id: True, stopped_id: True})
+    _put("gone", Put("running", 1, "temper-run-gone", gone_id), kind=DOCKER, lane=None)
     _event("gone", "a1", "running")
-    _put("unstarted", Put("queued", 1, "temper-run-unstarted", "ctr-unstarted"),
+    _put("unstarted", Put("queued", 1, "temper-run-unstarted", unstarted_id),
          kind=DOCKER, lane=None)
     _put("unstarted-stop", Put("queued", 1, "48303", cancel=True), kind=SUBPROC, lane=None)
-    _put("stopped", Put("running", 1, "temper-run-stopped", "ctr-stopped", cancel=True),
+    _put("stopped", Put("running", 1, "temper-run-stopped", stopped_id, cancel=True),
          kind=DOCKER, lane=None)
     _event("stopped", "a1", "running")
-    _put("alive", Put("running", 1, "temper-run-alive", "ctr-alive"), kind=DOCKER, lane=None)
+    _put("alive", Put("running", 1, "temper-run-alive", alive_id), kind=DOCKER, lane=None)
     _event("alive", "a1", "running")
     _put("parked", Put("running", 1, "48404"), kind=SUBPROC, lane=PI_LANE)
     _event("parked", "a1", WAITING, {"parked": {"path": "the gate"}})
     main = Reaper(_Spawner(world.alive, world.signals), interval_seconds=0, kill_grace_seconds=0)
-    main._termed_at["stopped"] = datetime.now(UTC) - timedelta(minutes=1)
+    main._termed_at[("stopped", 1, stopped_id)] = datetime.now(UTC) - timedelta(minutes=1)
     pi = Reaper(_Spawner(world.alive, world.signals), interval_seconds=0, kill_grace_seconds=0,
                 lane=PI_LANE)
 
@@ -539,14 +555,13 @@ def test_one_tick_ends_each_gone_run_once_and_leaves_the_others():
         pi.tick()
 
     assert world.rowcounts == [1, 1, 1, 1, 1]
-    assert _row("gone") == ended("orphaned", 1, "temper-run-gone", "ctr-gone", "orphaned")
-    assert _row("unstarted") == ended("failed", 1, "temper-run-unstarted", "ctr-unstarted",
-                                      "spawn")
+    assert _row("gone") == ended("orphaned", 1, "temper-run-gone", gone_id, "orphaned")
+    assert _row("unstarted") == ended("failed", 1, "temper-run-unstarted", unstarted_id, "spawn")
     assert _row("unstarted-stop") == ended("cancelled", 1, "48303")
-    assert _row("stopped") == ended("cancelled", 1, "temper-run-stopped", "ctr-stopped")
-    assert _row("alive") == live("running", 1, "temper-run-alive", "ctr-alive")
+    assert _row("stopped") == ended("cancelled", 1, "temper-run-stopped", stopped_id)
+    assert _row("alive") == live("running", 1, "temper-run-alive", alive_id)
     assert _row("parked") == live("waiting", 1, "48404")
-    assert world.signals == [("temper-run-stopped", True)]
+    assert world.signals == [(stopped_id, True)]
     assert [_event_status(run, "a1") for run in ("gone", "stopped", "alive", "parked")] == [
         INTERRUPTED, "cancelled", "running", WAITING]
 
@@ -718,6 +733,7 @@ NEXT_TICK = {
     "ABA1-C829": ended("orphaned", 2, P2, None, "orphaned"),
     "ABA1-C829-LETGO": ended("orphaned", 2, P2, None, "orphaned"),
     "ABA1-C847F-A": ended("orphaned", 2, H, C2, "orphaned"),
+    "ABA1-C847F-B": ended("orphaned", 2, H, C2, "orphaned"),
     "ABA1-RPR-WAIT": ended("orphaned", 2, P2, None, "orphaned"),
     "ABA1-RPR-ORPH": ended("orphaned", 2, H, C2, "orphaned"),
     "ABA1-NOH": ended("orphaned", 2, H, C2, "orphaned"),
@@ -760,10 +776,12 @@ def test_a_docker_dispatch_without_its_container_is_never_ended_and_warns_each_t
         for _tick in range(3):
             reaper.tick()
     assert world.rowcounts == []  # no UPDATE was even sent
-    assert world.returns == [False, False, False]
+    assert world.returns == []  # early refusal: no row-end helper was called
+    assert world.calls == []
+    assert world.signals == []
     assert _row(run) == live("queued", 1, H)
     warned = [r.getMessage() for r in caplog.records
-              if r.name == row_generation.__name__ and r.levelno == logging.WARNING]
+              if r.name == reaper_module.__name__ and r.levelno == logging.WARNING]
     assert len(warned) == 3
     assert all(run in w and "container_id" in w and H not in w for w in warned)
 

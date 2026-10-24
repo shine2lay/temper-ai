@@ -19,6 +19,12 @@ The reaper is the *only* server-side code that mutates WorkflowRun rows
 for running workers — the worker itself owns the terminal write. This
 keeps the contract clean: worker writes its own success/failure,
 reaper writes orphaned/cancellation outcomes.
+
+Every row write is fenced on the generation the tick's one snapshot judged
+(runner/row_generation.py): status and attempts, plus the dispatch for a
+queued row. Between the snapshot and the write the run can be re-queued and
+started by a newer box; the write then changes nothing, settles nothing, and
+the next tick judges the newer generation from a fresh snapshot.
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ from sqlmodel import select
 from temper_ai.database import get_session
 from temper_ai.observability.reconcile import INTERRUPTED, settle_run_event
 from temper_ai.runner.models import WorkflowRun
+from temper_ai.runner.row_generation import RowGeneration, end_row_if_same_generation
 from temper_ai.spawner.base import Spawner, SpawnerError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
@@ -130,7 +137,11 @@ class Reaper:
 
     def _load_live_rows(self) -> list[dict]:
         """Read just the columns we need, snapshot to dicts, release the
-        session before doing slow ops (signal calls, OS polls)."""
+        session before doing slow ops (signal calls, OS polls).
+
+        The snapshot is the read every write of this tick is fenced on: its status,
+        attempts and dispatch (handle, and the container a Docker dispatch was stamped
+        with) are never read again before the write."""
         from sqlalchemy import and_, or_
         from sqlmodel import col
 
@@ -160,19 +171,23 @@ class Reaper:
                     "spawner_handle": r.spawner_handle,
                     "cancel_requested": r.cancel_requested,
                     "started_at": r.started_at,
+                    "attempts": r.attempts,
+                    "container_id": (r.spawner_metadata or {}).get("container_id"),
                 }
                 for r in rows
             ]
 
     def _process_row(self, row: dict) -> None:
         execution_id = row["execution_id"]
+        # The generation this tick judges: every write below lands only on it.
+        judged = RowGeneration.from_snapshot(row)
         spawner_kind_str = row["spawner_kind"]
         handle_str = row["spawner_handle"]
         if not handle_str:
             # Spawn was attempted but never returned a handle — server
             # restart between row insert and spawner.spawn(). Mark orphaned
             # so the UI moves on.
-            self._mark_orphaned(execution_id, reason="no spawner handle")
+            self._mark_orphaned(execution_id, judged=judged, reason="no spawner handle")
             return
 
         try:
@@ -186,7 +201,7 @@ class Reaper:
                 "Reaper: bad handle for %s (%s) — orphaning",
                 execution_id, exc,
             )
-            self._mark_orphaned(execution_id, reason=f"bad handle: {exc}")
+            self._mark_orphaned(execution_id, judged=judged, reason=f"bad handle: {exc}")
             return
 
         try:
@@ -202,23 +217,25 @@ class Reaper:
             # running within seconds. A box that is gone without doing that
             # died on the way up, and never will.
             if row["cancel_requested"] and alive:
-                self._honor_cancel(execution_id, handle)
+                self._honor_cancel(execution_id, handle, judged=judged)
             elif not alive:
-                self._end_unstarted(execution_id, cancelled=bool(row["cancel_requested"]))
+                self._end_unstarted(
+                    execution_id, judged=judged, cancelled=bool(row["cancel_requested"]))
             return
 
         # Cancellation flow first — even if alive, we may need to signal
         if row["cancel_requested"] and alive:
-            self._honor_cancel(execution_id, handle)
+            self._honor_cancel(execution_id, handle, judged=judged)
             return
 
         if not alive and self._parked(execution_id):
             # A Pi run's box let go at a gate: not lost, waiting on the owner.
-            self._let_go_parked(execution_id, handle, cancel=bool(row["cancel_requested"]))
+            self._let_go_parked(
+                execution_id, handle, judged=judged, cancel=bool(row["cancel_requested"]))
             return
 
         if not alive:
-            self._mark_orphaned(execution_id, reason="worker process gone")
+            self._mark_orphaned(execution_id, judged=judged, reason="worker process gone")
             self._termed_at.pop(execution_id, None)
 
     @staticmethod
@@ -231,7 +248,9 @@ class Reaper:
             logger.warning("Reaper: can't tell whether %s is parked: %s", execution_id, exc)
             return False
 
-    def _let_go_parked(self, execution_id: str, handle: ProcessHandle, *, cancel: bool) -> None:
+    def _let_go_parked(
+        self, execution_id: str, handle: ProcessHandle, *, judged: RowGeneration, cancel: bool,
+    ) -> None:
         """Free a parked Pi run whose box has gone, then cancel it or carry it on.
 
         Waits until the box is gone, not just stopped, so the box that carries the run on
@@ -239,6 +258,9 @@ class Reaper:
         and the run is cancelled if someone asked, or carried on if the owner has answered
         (runner/parked.py): an answer that came while the box was letting go, or while this
         worker was down, is applied here.
+
+        The ``waiting`` write lands only on the ``judged`` generation. The cancel branch
+        doesn't take ``judged`` yet: ``cancel_parked`` fences its own read.
         """
         from temper_ai.runner import parked
 
@@ -256,16 +278,20 @@ class Reaper:
 
             parked.cancel_parked(execution_id, recorded_cancel_words(execution_id), by="reaper")
             return
-        if self._mark_status(execution_id, parked.WAITING, keep_open=True):
+        if self._mark_status(execution_id, parked.WAITING, judged=judged, keep_open=True):
             logger.info("Reaper: %s waits on you with no box", execution_id)
         parked.carry_on(execution_id, start=parked.queue_resume, by="reaper")
 
     def _honor_cancel(
-        self, execution_id: str, handle: ProcessHandle,
+        self, execution_id: str, handle: ProcessHandle, *, judged: RowGeneration,
     ) -> None:
         """Send SIGTERM the first time we see cancel_requested, then escalate
         to SIGKILL after the grace period. Worker is responsible for the
-        clean-exit DB write; the reaper only signals."""
+        clean-exit DB write; the reaper only signals.
+
+        Its row writes land only on the ``judged`` generation, and only a running one:
+        a box that started during the grace of a queued judgement is left to the next
+        tick. The signals still go to ``handle``."""
         sent_at = self._termed_at.get(execution_id)
         now = datetime.now(UTC)
         if sent_at is None:
@@ -280,7 +306,7 @@ class Reaper:
                     "Cancel: SIGTERM failed for %s (%s) — orphaning",
                     execution_id, exc,
                 )
-                self._mark_orphaned(execution_id, reason=f"signal failed: {exc}")
+                self._mark_orphaned(execution_id, judged=judged, reason=f"signal failed: {exc}")
             return
 
         if now - sent_at > timedelta(seconds=self._kill_grace):
@@ -296,7 +322,7 @@ class Reaper:
                 )
             # Whether the kill succeeded or not, mark cancelled so the
             # UI doesn't keep waiting on a process we've given up on.
-            if self._mark_status(execution_id, "cancelled"):
+            if self._mark_status(execution_id, "cancelled", judged=judged):
                 settle_run_event(execution_id, "cancelled", "Cancelled: stopped by force.")
             self._termed_at.pop(execution_id, None)
             self._remove_pi_member_boxes_after_force(execution_id)
@@ -313,12 +339,14 @@ class Reaper:
 
         remove_member_boxes_of_killed_run(execution_id)
 
-    def _mark_orphaned(self, execution_id: str, *, reason: str) -> None:
-        """Best-effort terminal write. Idempotent — if the row is already
-        terminal, the WHERE clause matches nothing."""
+    def _mark_orphaned(self, execution_id: str, *, judged: RowGeneration, reason: str) -> None:
+        """Best-effort terminal write on the ``judged`` generation. Idempotent: if the
+        row is already terminal, or another generation by now, it matches nothing and
+        nothing is settled."""
         if self._mark_status(
             execution_id,
             "orphaned",
+            judged=judged,
             error={"message": f"reaped: {reason}", "kind": "orphaned"},
         ):
             # The dashboard and the notify loop read the run's event, not its row.
@@ -326,15 +354,22 @@ class Reaper:
                 execution_id, INTERRUPTED,
                 f"Interrupted: the run's worker stopped before it finished ({reason}).",
             )
-        logger.warning("Reaped %s as orphaned: %s", execution_id, reason)
+            logger.warning("Reaped %s as orphaned: %s", execution_id, reason)
+        else:
+            logger.info("Reaper: %s was not orphaned (%s): its row is no longer the one "
+                        "this tick judged", execution_id, reason)
 
-    def _end_unstarted(self, execution_id: str, *, cancelled: bool) -> None:
-        """A handed-over run whose box is gone before the run started."""
+    def _end_unstarted(
+        self, execution_id: str, *, judged: RowGeneration, cancelled: bool,
+    ) -> None:
+        """A handed-over run whose box is gone before the run started: ended only while
+        the row is still the ``judged`` dispatch (runner/row_generation.py)."""
         if cancelled:
-            ended = self._mark_status(execution_id, "cancelled", from_status="queued")
+            ended = self._mark_status(
+                execution_id, "cancelled", judged=judged, from_status="queued")
         else:
             ended = self._mark_status(
-                execution_id, "failed", from_status="queued",
+                execution_id, "failed", judged=judged, from_status="queued",
                 error={"message": "The run's box stopped before the run started.", "kind": "spawn"},
             )
         self._termed_at.pop(execution_id, None)
@@ -346,30 +381,23 @@ class Reaper:
         execution_id: str,
         status: str,
         *,
+        judged: RowGeneration,
         error: dict | None = None,
         from_status: str = "running",
         keep_open: bool = False,
     ) -> bool:
-        """End a row still in ``from_status``; False when the worker already ended it.
+        """End the row only while it is still the ``judged`` generation, judged in
+        ``from_status``. True only when this write changed the row; False when the
+        judgement wasn't in ``from_status`` (nothing is written), or the row moved on
+        (the worker ended it, or a newer generation holds it) or can't be named.
 
         ``keep_open``: the run is not over (a parked Pi run), so no end time is written.
         """
+        if judged.status != from_status:
+            return False
         with get_session() as session:
-            row = session.exec(
-                select(WorkflowRun).where(
-                    WorkflowRun.execution_id == execution_id,
-                ),
-            ).first()
-            if row is None or row.status != from_status:
-                # Race: worker beat us to the terminal write. Fine.
-                return False
-            row.status = status
-            if not keep_open:
-                row.completed_at = datetime.now(UTC)
-            if error is not None:
-                row.error = error
-            session.add(row)
-            return True
+            return end_row_if_same_generation(
+                session, execution_id, judged, status=status, keep_open=keep_open, error=error)
 
 
 def _sleep(seconds: float) -> None:

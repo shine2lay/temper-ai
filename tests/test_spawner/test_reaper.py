@@ -37,7 +37,10 @@ def _insert_run(
     spawner_kind: str | None = "subprocess",
     spawner_handle: str | None = "12345",
     cancel_requested: bool = False,
+    container_id: str | None = None,
 ) -> None:
+    """``container_id``: the container a Docker dispatch is stamped with (the reaper ends a
+    queued Docker row only on the dispatch its snapshot named)."""
     with get_session() as session:
         session.add(WorkflowRun(
             execution_id=execution_id,
@@ -46,6 +49,7 @@ def _insert_run(
             status=status,
             spawner_kind=spawner_kind,
             spawner_handle=spawner_handle,
+            spawner_metadata={"container_id": container_id} if container_id else {},
             cancel_requested=cancel_requested,
             started_at=datetime.now(UTC),
         ))
@@ -254,7 +258,7 @@ def test_a_stop_that_needed_force_ends_the_event_as_cancelled(isolated_db, fake_
 
 def test_a_box_that_died_before_starting_its_run_fails_it(isolated_db, fake_spawner):
     _insert_run("box-early", status="queued", spawner_kind="docker",
-                spawner_handle="temper-run-box-early")
+                spawner_handle="temper-run-box-early", container_id="ctr-box-early")
     fake_spawner.is_alive.return_value = False
 
     Reaper(fake_spawner, interval_seconds=0.01).tick()
@@ -265,7 +269,8 @@ def test_a_box_that_died_before_starting_its_run_fails_it(isolated_db, fake_spaw
 
 def test_a_run_stopped_before_its_box_started_it_is_cancelled(isolated_db, fake_spawner):
     _insert_run("box-stop", status="queued", spawner_kind="docker",
-                spawner_handle="temper-run-box-stop", cancel_requested=True)
+                spawner_handle="temper-run-box-stop", cancel_requested=True,
+                container_id="ctr-box-stop")
     fake_spawner.is_alive.return_value = False
 
     Reaper(fake_spawner, interval_seconds=0.01).tick()

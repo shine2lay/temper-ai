@@ -119,6 +119,15 @@ recheck at `before-count` of the window and every file the judgment read.
 - runtime23: the 22 immutable members of every edge must equal the window's creation record (drift is
   BLOCKED); `env` is compared through R4 against the creation record, which must itself be the bound Env
   (the image baseline plus the four APP overrides).
+- Every successful `docker-inspect` in an accepted audit, selected or not, is read through
+  `_Judge.snapshot(ref, target)`: P1 safe load, R3′ `/2` decode, and binding to the window, the
+  target's bound container ID and the target. `_Judge.edge` also requires runtime22 to equal creation.
+  Any failure in this additional audit check is BLOCKED/TARGET_EVIDENCE_INVALID. There is no limit
+  on the number of inspect runs beyond the existing audit limits. Within one leg and target, if
+  selected before/after Env booleans agree, every unselected snapshot must agree too; contradictory
+  Env is BLOCKED, never an app FAIL. If the selected booleans disagree, unselected Env is not judged.
+  Selected before/after semantics, receipt echoes and `env_ok` are unchanged; the additional check
+  follows the existing operation checks to retain their refusal precedence.
 
 ## HOME additions (A6.1 chronology; for QA's R5 receiving)
 
@@ -136,8 +145,13 @@ with R5.
   `started_at` is BLOCKED, TARGET_EVIDENCE_INVALID; a first start's sentinel `finished_at` reads as never
   exited.
 
-P5 supports host-driven operations only. The received specs fix `restart_policy`'s shape and its
-immutability, not its value; the leg-order rule assumes no restart by the engine.
+In every start leg (standalone D-5/API-D-5 and a restart's start leg), per target,
+`after_inspect.finished_at` must equal `before_inspect.finished_at`: a zero sentinel matches only
+another sentinel; otherwise the parsed instants must be equal at the contract's integer-microsecond
+resolution. Any difference is BLOCKED/TARGET_EVIDENCE_INVALID. A clean start retains the previous
+last-finished observation; a completed intervening engine restart cannot disappear into that leg.
+This is an offline evidence rule, not native authority or a restart-policy value assumption. The
+received specs fix `restart_policy`'s shape and immutability, not its value.
 
 ## Native versus data
 
@@ -153,6 +167,9 @@ bytes P5 read; it is never counted, adopted, a row PASS or a compatibility claim
 
 - Armed interval: read as `[window_started_at, window_expires_at)`; a start before it is NOT ARMED, a
   `docker start` at or after its end is past the TTL. No BINDINGS field states it; QA receives the reading.
+  The existing F5-RESTART-TTL N is refused by the earlier `_common` receipt-expiry check and retains
+  its row/precedence credit. The app-start TTL check is defense-in-depth with no separate guard
+  credit from that case; no additional TTL case is claimed.
 - `now`: a receipt whose `at` or `seen_at` is after `now` is BLOCKED.
 - LD-1 1.4 (bytecode-cache exclusion for app-copy comparisons) is not judged; a truncated
   `app_copy_changes` listing is BLOCKED. Optional listings other than `data` are checked for grammar,

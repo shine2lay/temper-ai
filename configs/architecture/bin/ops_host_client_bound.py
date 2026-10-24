@@ -1276,6 +1276,7 @@ def _start_leg(judge: _Judge, e: dict, request: dict, prior: dict, begin: int, e
             or identity["window_sha256"] != judge.cw.target.expected_window_sha256:
         _refuse(_EI)
     env_ok, after_app = True, None
+    selected: dict = {}
     for target in TARGETS:
         t = identity[target]
         if not _keys(t, IDENTITY_KEYS) or t["container_id"] != judge.ids[target] \
@@ -1294,6 +1295,7 @@ def _start_leg(judge: _Judge, e: dict, request: dict, prior: dict, begin: int, e
                 or type(t["after_matches_creation"]) is not bool or t["after_matches_creation"] != after_ok:
             _refuse(_EI)  # matches_creation must be the computed boolean, faithfully echoed
         _running_order(after, t0)
+        selected[target] = (before, after, before_ok, after_ok)
         env_ok = env_ok and before_ok and after_ok
         if target == "app":
             after_app = after
@@ -1308,7 +1310,28 @@ def _start_leg(judge: _Judge, e: dict, request: dict, prior: dict, begin: int, e
         _refuse(_EI)
     if not same_inode:
         _refuse(_EI)
+    # R5′ F-2/F-1 follow the existing checks, retaining their refusal precedence.
+    for before, after, _, _ in selected.values():
+        if _event(before["state"]["finished_at"]) != _event(after["state"]["finished_at"]):
+            _refuse(_EI)  # one clean start retains the previous exit (or no-exit sentinel)
+    _audit_inspects(judge, runs, selected)
     return outcome != "healthy" or not env_ok
+
+
+def _audit_inspects(judge: _Judge, runs: list, selected: dict) -> None:
+    """R5′ F-1: every successful audit inspect is a safe, decoded, target-bound edge."""
+    for run in runs:
+        if run["op"] != "docker-inspect":
+            continue
+        target = run["params"]["target"]
+        try:
+            snap = judge.snapshot(run["result"]["snapshot"], target)
+            env_matches = judge.edge(snap, target)
+        except _RECEIVED_REFUSALS:
+            _refuse(_EI)  # an invalid extra edge is evidence, never a selected-edge dispatch
+        _, _, before_ok, after_ok = selected[target]
+        if before_ok == after_ok and env_matches != before_ok:
+            _refuse(_EI)  # contradictory Env for one container is not an app FAIL
 
 
 def _running_order(snap: Any, t0: int) -> None:

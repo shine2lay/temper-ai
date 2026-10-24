@@ -1062,6 +1062,8 @@ N("F5-RESTART-DRIFT", "image-drift-before-start", B(), "R-1", stop_exit=1,
 C("F5-RESTART-NOT-ARMED", "still-armed", F, "R-1", stop_exit=1)
 N("F5-RESTART-NOT-ARMED", "start-before-window", B(), "R-1", stop_exit=1, window_start="3700")
 C("F5-RESTART-TTL", "before-ttl", F, "R-1", stop_exit=1)
+# This N has receipt-expiry/row/precedence credit (_common); app-start TTL is
+# defense-in-depth, with no separately isolated guard credit from this case.
 N("F5-RESTART-TTL", "start-after-ttl", B(), "R-1", stop_exit=1, window_start=str(3602 - 28800), req_expires="3602")
 C("F5-RESTART-REPAIR", "exactly-one-start", P, "R-1")
 N("F5-RESTART-REPAIR", "second-start-leg", B(), "R-1", h={"receipt": third_leg})
@@ -1742,7 +1744,7 @@ def test_bite_td_same_side(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_bite_leg_order_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """HOME addition: disabling the per-leg start order lets its N pass."""
-    n = worlds(tmp_path, "n", hooks={"after-app": finish_after_start})
+    n = worlds(tmp_path, "n", hooks={"after-forwarder": sv(("state", "started_at"), ZERO)})
     c = worlds(tmp_path, "c", fwd_first=True)
     assert run(n()) == B() and run(c()) == P
     monkeypatch.setattr(p5, "_running_order", lambda snap, t0: None)
@@ -1827,3 +1829,117 @@ def test_every_pair_has_named_n_and_c() -> None:
     assert all(kinds == {"N", "C"} for kinds in have.values())
     names = [f"{c.fid}:{c.kind}:{c.name}" for c in CASES]
     assert len(names) == len(set(names))
+
+
+# ---------------------------------------------------------------------------
+# R5′ repair controls (#259): a separate inventory, so the 465 original tests
+# and their expected verdicts/codes remain unchanged. All times are supplied.
+
+REPAIR_NOW = BASE + timedelta(seconds=3602)
+
+
+def repair_extra_inspect(target: str = "app", *, post: bool = False, fault: str = "valid",
+                         env_miss: bool = False) -> Any:
+    """One additional inspect; neither last-pre nor first-post selection changes."""
+    def fn(runs: list, world: World) -> None:
+        starts = [item for item in runs if item["op"] == "docker-start"]
+        t0 = back(starts[0]["started_at"])
+        selected = [item for item in runs if item["op"] == "docker-inspect"
+                    and item["params"]["target"] == target]
+        extra = copy.deepcopy(selected[1 if post else 0])
+        a, b = ((882_000, 888_000) if post else
+                ((-277_000, -275_000) if target == "app" else (-257_000, -255_000)))
+        extra["started_at"], extra["ended_at"] = iso(t0 + a), iso(t0 + b)
+        if fault == "scalar":
+            snapshot: Any = 42
+        elif fault == "wrong-container":
+            snapshot = copy.deepcopy(next(item["result"]["snapshot"] for item in runs
+                                           if item["op"] == "docker-inspect"
+                                           and item["params"]["target"] == "forwarder"))
+        elif fault == "missing-file":
+            snapshot = ref(str(world.ev / "r5r-missing.json"), b"missing evidence\n")
+        else:
+            assert fault == "valid"
+            original = Path(extra["result"]["snapshot"]["path"])
+            doc = json.loads(world.out[original][0])
+            doc["observed_at"] = iso(t0 + (a + b) // 2)
+            doc["runtime"] = world.runtime23(target)
+            if env_miss:
+                doc["runtime"]["env"][0] = "PATH=/opt/changed/bin"
+            snapshot = world.evidence("r5r-extra", doc)
+        extra["result"]["snapshot"] = snapshot
+        runs.append(extra)
+        runs.sort(key=lambda item: back(item["started_at"]))
+    return fn
+
+
+def repair_finished_change(doc: dict, world: World) -> None:
+    """A completed intervening restart: t0 < F1 < the already recorded S2."""
+    doc["state"]["finished_at"] = iso(back(doc["state"]["started_at"]) - 200_000)
+
+
+REPAIR_CASES = (
+    Case("R5R-F1", "N1", "extra-pre-app-scalar", B(), "D-5", "project",
+         {"runs": repair_extra_inspect(fault="scalar")}, {}),
+    Case("R5R-F1", "N2", "extra-pre-app-wrong-container", B(), "D-5", "project",
+         {"runs": repair_extra_inspect(fault="wrong-container")}, {}),
+    Case("R5R-F1", "N3", "extra-post-app-scalar", B(), "D-5", "project",
+         {"runs": repair_extra_inspect(post=True, fault="scalar")}, {}),
+    Case("R5R-F1", "N4", "extra-pre-app-missing-file", B(), "D-5", "project",
+         {"runs": repair_extra_inspect(fault="missing-file")}, {}),
+    Case("R5R-F1", "N5", "extra-pre-app-env-miss", B(), "D-5", "project",
+         {"runs": repair_extra_inspect(env_miss=True)}, {}),
+    Case("R5R-F1", "N6", "extra-pre-forwarder-scalar", B(), "D-5", "project",
+         {"runs": repair_extra_inspect("forwarder", fault="scalar")}, {}),
+    Case("R5R-F1", "N7", "restart-extra-pre-app-scalar", B(), "R-1", "project",
+         {"runs": repair_extra_inspect(fault="scalar")}, {}),
+    Case("R5R-F1", "N8", "truthful-miss-extra-env-match", B(), "D-5", "project",
+         {"runs": repair_extra_inspect()}, {"env_edges": ("before-app", "after-app")}),
+    Case("R5R-F1", "C1", "valid-extra-pre-app", P, "D-5", "project",
+         {"runs": repair_extra_inspect()}, {}),
+    Case("R5R-F1", "C2", "valid-extra-post-app", P, "D-5", "project",
+         {"runs": repair_extra_inspect(post=True)}, {}),
+    Case("R5R-F1", "C3", "valid-extra-pre-forwarder", P, "D-5", "project",
+         {"runs": repair_extra_inspect("forwarder")}, {}),
+    Case("R5R-F1", "C4", "restart-valid-extra", P, "R-1", "project",
+         {"runs": repair_extra_inspect()}, {}),
+    Case("R5R-F1", "C5", "truthful-miss-extra-env-miss", F, "D-5", "project",
+         {"runs": repair_extra_inspect(env_miss=True)}, {"env_edges": ("before-app", "after-app")}),
+    Case("R5R-F1", "C6", "no-extra-clean", P, "D-5", "project", {}, {}),
+    Case("R5R-F2", "N1", "app-finished-changed", B(), "D-5", "project",
+         {"after-app": repair_finished_change}, {}),
+    Case("R5R-F2", "N2", "app-sentinel-to-finished", B(), "D-5", "project",
+         {"before-app": sv(("state", "finished_at"), ZERO), "after-app": repair_finished_change}, {}),
+    Case("R5R-F2", "N3", "forwarder-finished-changed", B(), "D-5", "project",
+         {"after-forwarder": repair_finished_change}, {}),
+    Case("R5R-F2", "N4", "restart-finished-changed", B(), "R-1", "project",
+         {"after-app": repair_finished_change}, {}),
+    Case("R5R-F2", "C1", "first-start-sentinel", P, "D-5", "project", {}, {"fwd_first": True}),
+    Case("R5R-F2", "C2", "previous-exit-equal", P, "D-5", "project", {}, {}),
+    Case("R5R-F2", "C3", "restart-finished-equal", P, "R-1", "project", {}, {}),
+    Case("R5R-F2", "C4", "equivalent-offset-finished", P, "D-5", "project",
+         {"after-app": tv(("state", "finished_at"), to_utc)}, {}),
+    Case("R5R-GR2", "N1", "at-one-us-future", B(), "D-5", "project",
+         {"receipt": sv("at", iso(us("3602") + 1), "seen_at", iso(us("3602")))}, {}),
+    Case("R5R-GR2", "N2", "seen-one-us-future", B(), "D-5", "project",
+         {"receipt": sv("at", iso(us("3602")), "seen_at", iso(us("3602") + 1))}, {}),
+    Case("R5R-GR2", "C1", "both-equal-now", P, "D-5", "project",
+         {"receipt": sv("at", iso(us("3602")), "seen_at", iso(us("3602")))}, {}),
+    Case("R5R-GR4", "N1", "r1-listener-false", B(), "R-1", "project",
+         {"receipt": sv("listener_gone", False)}, {}),
+    Case("R5R-GR4", "C1", "r1-listener-true", P, "R-1", "project", {}, {}),
+    Case("R5R-GR4", "N2", "r1i-listener-false", B(), "R-1i", "project",
+         {"receipt": sv("listener_gone", False)}, {}),
+    Case("R5R-GR4", "C2", "r1i-listener-true", P, "R-1i", "project", {}, {}),
+)
+
+
+@pytest.mark.parametrize("case", REPAIR_CASES, ids=[f"{c.fid}:{c.kind}:{c.name}" for c in REPAIR_CASES])
+def test_repair_r5r(case: Case, tmp_path: Path, record_property: Any) -> None:
+    world = World(tmp_path, case.row, route=case.route, hooks=case.hooks, **case.knobs)
+    now = REPAIR_NOW if case.fid == "R5R-GR2" else NOW
+    actual = run(world, now=now)
+    record_property("case_id", f"{case.fid}:{case.kind}:{case.name}")
+    record_property("actual_verdict", actual[0])
+    record_property("actual_code", actual[1])
+    assert actual == case.expect

@@ -1304,7 +1304,7 @@ class DockerSpawner(Spawner):
         if JUDGED_CONTAINER_ID not in handle.metadata:
             return cls._name_for(handle)
         judged = handle.metadata[JUDGED_CONTAINER_ID]
-        if not isinstance(judged, str) or not _DOCKER_ID.match(judged):
+        if not isinstance(judged, str) or not _DOCKER_ID.fullmatch(judged):
             raise SpawnerError(
                 f"Judged container id {judged!r} is not a Docker container id; "
                 "not falling back to the run's name",

@@ -286,6 +286,7 @@ CASES = {c.id: c for c in [
     Case("BAD-UPPER", _bad(A.upper()), BAD),
     Case("BAD-SHORT", _bad(A[:12]), BAD),   # the short id `docker ps` shows: a prefix
     Case("BAD-LONG", _bad(A + "a"), BAD),
+    Case("BAD-TRAILING-LF", _bad(A + "\n"), BAD),
     Case("BAD-INT", _bad(12345678901234), BAD),
 ]}
 
@@ -329,7 +330,7 @@ def test_the_judged_handle_still_names_the_run_for_name_questions():
 JUDGED = {"HAPPY", "STALE-ALIVE", "STALE-TERM", "STALE-KILL", "STALE-LIVE-A",
           "NOT-RUNNING", "DAEMON-DOWN"}
 BAD_CASES = {"BAD-NONE", "BAD-EMPTY", "BAD-NAME", "BAD-UPPER", "BAD-SHORT", "BAD-LONG",
-             "BAD-INT"}
+             "BAD-TRAILING-LF", "BAD-INT"}
 
 BITES: dict[str, tuple[list[tuple[str, str]], set[str]]] = {
     # The id-to-name choice reverted: judged calls go to whoever holds the name.
@@ -345,8 +346,11 @@ BITES: dict[str, tuple[list[tuple[str, str]], set[str]]] = {
                            "                f\"Judged container id")],
                          BAD_CASES),
     # No id-shape check: an empty or name-shaped value is sent to Docker.
-    "M-NO-ID-SHAPE": ([(" or not _DOCKER_ID.match(judged)", "")],
+    "M-NO-ID-SHAPE": ([(" or not _DOCKER_ID.fullmatch(judged)", "")],
                       BAD_CASES - {"BAD-NONE", "BAD-INT"}),
+    # match with $ accepts the position before one final LF, not only the whole id.
+    "M-FULLMATCH-TO-MATCH": ([("_DOCKER_ID.fullmatch(judged)", "_DOCKER_ID.match(judged)")],
+                            {"BAD-TRAILING-LF"}),
     # Any id prefix accepted: a short prefix that a container's name could win.
     "M-PREFIX-OK": ([('r"^[0-9a-f]{64}$"', 'r"^[0-9a-f]{12,64}$"')], {"BAD-SHORT"}),
     # The spawn handle's own "container_id" taken as the judged key.

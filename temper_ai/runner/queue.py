@@ -11,7 +11,7 @@ claimed only by the Pi lane, whichever way it got here.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from temper_ai.runner.lanes import (
     KEEP_LANE,
@@ -20,6 +20,9 @@ from temper_ai.runner.lanes import (
     lane_of,
     mark_lane,
 )
+
+if TYPE_CHECKING:
+    from sqlmodel import Session
 
 #: What only the worker writes into a run's metadata, and a re-queue keeps: the box profile
 #: record (spawner/box_profile.py) and the Pi lane's record of the commits each attempt ran
@@ -62,10 +65,38 @@ def queue_run(
     re-queue whose caller didn't load the workflow passes nothing
     (:data:`~temper_ai.runner.lanes.KEEP_LANE`) and the row keeps its own mark;
     a new row then gets none.
+
+    A transaction of its own: :func:`queue_run_in` in a session that commits
+    when it returns.
+    """
+    from temper_ai.database import get_session
+
+    with get_session() as session:
+        queue_run_in(session, execution_id, workflow_name, workspace_path, inputs,
+                     start, extra, lane=lane)
+
+
+def queue_run_in(
+    session: Session,
+    execution_id: str,
+    workflow_name: str,
+    workspace_path: str | None,
+    inputs: dict | None,
+    start: str | None = None,
+    extra: dict | None = None,
+    *,
+    lane: Any = KEEP_LANE,
+) -> None:
+    """:func:`queue_run` inside the caller's transaction: same row, same fields,
+    same lane mark, same AlreadyQueued, but no commit.
+
+    The run's row is read ``FOR UPDATE`` (on Postgres a second re-queue waits
+    for this transaction, then finds the run queued and is refused), so a
+    decision and the re-queue it makes land together or not at all
+    (``recorder.deciding_events``; lock order: the event, then the run row).
     """
     from sqlmodel import select
 
-    from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
 
     metadata: dict = {"start": start} if start else {}
@@ -74,40 +105,41 @@ def queue_run(
     # Nor its lane: only ``lane`` sets the mark.
     metadata.update({k: v for k, v in (extra or {}).items()
                      if v and k not in (*_WORKER_KEPT, LANE_KEY)})
-    with get_session() as session:
-        row = session.exec(
-            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
-        ).first()
-        if row is None:
-            session.add(WorkflowRun(
-                execution_id=execution_id,
-                workflow_name=workflow_name,
-                workspace_path=workspace_path or "",
-                inputs=inputs or {},
-                status="queued",
-                spawner_metadata=mark_lane(metadata, None if lane is KEEP_LANE else lane),
-            ))
-            return
-        if row.status in ("queued", "running"):
-            raise AlreadyQueued(execution_id, row.status)
-        row.workflow_name = workflow_name
-        row.workspace_path = workspace_path or ""
-        row.inputs = inputs or {}
-        row.status = "queued"
-        row.spawner_kind = None
-        row.spawner_handle = None
-        # The run's box profile record stays: its generation and history (was it ever
-        # sealed?) decide what the next box may be (spawner/box_profile.py). So does the Pi
-        # lane's record of the commit each attempt ran on (SW-16).
-        old = row.spawner_metadata or {}
-        metadata = {**metadata, **{k: old[k] for k in _WORKER_KEPT if old.get(k) is not None}}
-        # The lane is set again on every re-queue: a resumed or forked Pi run that lost its
-        # mark here would be claimed by the main worker (which then refuses its Pi steps).
-        row.spawner_metadata = mark_lane(
-            metadata, lane_of(row.spawner_metadata) if lane is KEEP_LANE else lane)
-        row.cancel_requested = False
-        row.started_at = None
-        row.completed_at = None
-        row.result = None
-        row.error = None
-        session.add(row)
+    # Fresh values, even if the caller's session read this row before taking the lock.
+    row = session.exec(
+        select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)
+        .with_for_update().execution_options(populate_existing=True),
+    ).first()
+    if row is None:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name=workflow_name,
+            workspace_path=workspace_path or "",
+            inputs=inputs or {},
+            status="queued",
+            spawner_metadata=mark_lane(metadata, None if lane is KEEP_LANE else lane),
+        ))
+        return
+    if row.status in ("queued", "running"):
+        raise AlreadyQueued(execution_id, row.status)
+    row.workflow_name = workflow_name
+    row.workspace_path = workspace_path or ""
+    row.inputs = inputs or {}
+    row.status = "queued"
+    row.spawner_kind = None
+    row.spawner_handle = None
+    # The run's box profile record stays: its generation and history (was it ever
+    # sealed?) decide what the next box may be (spawner/box_profile.py). So does the Pi
+    # lane's record of the commit each attempt ran on (SW-16).
+    old = row.spawner_metadata or {}
+    metadata = {**metadata, **{k: old[k] for k in _WORKER_KEPT if old.get(k) is not None}}
+    # The lane is set again on every re-queue: a resumed or forked Pi run that lost its
+    # mark here would be claimed by the main worker (which then refuses its Pi steps).
+    row.spawner_metadata = mark_lane(
+        metadata, lane_of(row.spawner_metadata) if lane is KEEP_LANE else lane)
+    row.cancel_requested = False
+    row.started_at = None
+    row.completed_at = None
+    row.result = None
+    row.error = None
+    session.add(row)

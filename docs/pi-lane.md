@@ -331,13 +331,36 @@ is let go to wait, any other is interrupted); and picks up the Pi runs a stop cu
 last 12 h, from their ledger, through the same one-claim resume as Resume (SW-80). A turn that
 was cut off mid-way becomes a recovery wait when the run resumes (`Ledger.take_over`).
 
-**A stop that needs force**: a stopped run whose process ignores SIGTERM for the reaper's 30 s
-grace is killed (SIGKILL) and marked cancelled, and its process can no longer remove its member
-boxes. So the lane's reaper then stops and removes them itself
-(`pi_lane.remove_member_boxes_of_killed_run`): only that run's, the boxes its unsettled ledger
-turns name, each by its exact name (never a prune). The turns stay as they are. A box Docker
-can't confirm gone is logged, and the start-up sweep above tries it again. The main lane's
-reaper never does this. Test: `tests/test_runner/pi_lane/test_forced_stop.py`.
+**A stop that needs force**: a process that ignores SIGTERM can receive SIGKILL after the
+reaper's 30 s grace. Grace belongs to `(execution_id, attempts, container_id)`, not the run
+name alone; each tick discards keys outside its judged snapshot. A resumed generation gets
+its own grace. Docker liveness and signals address the judged container id, never a newer
+container with the same name. A missing Docker id warns and makes no liveness call, signal
+or row write that tick. Subprocess signals still use the judged pid; pid reuse remains a
+known limit.
+
+The row becomes cancelled only if its fenced end matches the generation judged by that
+tick (status, attempts, and queued dispatch identity). After killing and **before** that
+write, the Pi reaper snapshots the exact member-box names of unsettled ledger turns
+(`pi_lane.snapshot_member_box_names_of_killed_run`). Only a successful end removes that
+saved set (`pi_lane.remove_saved_member_boxes_of_killed_run`), even when the set is empty:
+there is no later lookup that could pick up a newer generation's boxes. The turns stay as
+they are; the main lane's reaper does no member cleanup.
+
+A refused end logs that the saved boxes are left for the start-up sweep. Such surviving
+boxes can still work or spend: this fence does not stop them, and no source test proves a
+live sweep happened. The operational watch must check that warning, surviving work/spend
+and the subsequent sweep's result. A box Docker cannot confirm gone is also logged for
+that sweep. Tests: `tests/test_runner/pi_lane/test_forced_stop.py` and
+`tests/test_runner/test_reaper_effect_generation.py`.
+
+**Identity-merge precondition**: `record_commit` merges the row's metadata before its box
+marks itself running. The source Pi watcher refuses any spawner other than `subprocess`
+(`worker_problem`), and `check_run` records the commit before the box start write.
+`test_writer_scan.py` pins these paths. That is a source condition, not proof that the live
+lane uses it; lane changes need a fresh operational check. Overlapping instances, a wrong
+liveness answer from another reaper, and in-process generations remain separate limits;
+see [the dispatch contracts](reference/architecture.md#spawner-abstraction).
 
 ## lane-status: for temper-deploy
 

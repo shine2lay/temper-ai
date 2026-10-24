@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
+
 from temper_ai.shared.clock import utcnow
 from tests.test_pi_agent import support as sup
 from tests.test_pi_agent.support import FakeBox
@@ -302,8 +304,9 @@ def test_a_second_resume_never_starts_a_second_copy(pw_run):
     eid = sup.start(c, "pw_before_pi", pw_run.ws)
     attempt = pw.wait_parked(pw_run.state, eid)
     # Someone else (the answer, start-up) has just claimed it and is starting it.
-    assert parked.claim(attempt) is True
-    assert parked.claim(attempt) is False
+    assert parked.claim_without_box_row(attempt) is True
+    with pytest.raises(parked.AlreadyCarriedOn):
+        parked.claim_without_box_row(attempt)
     r = c.post(f"/api/runs/{eid}/resume", json={})
     assert r.status_code == 409, r.text
     assert parked.carry_on_at_startup() == []
@@ -345,7 +348,7 @@ def test_the_reply_says_whether_someone_else_carries_it_on(pw_run):
     eid = sup.start(c, "pw_before_pi", pw_run.ws)
     attempt = pw.wait_parked(pw_run.state, eid)
     assert _carried_on_elsewhere(eid) is False  # parked, nothing letting it go: needs Resume
-    assert parked.claim(attempt) is True  # someone else is starting it
+    assert parked.claim_without_box_row(attempt) is True  # someone else is starting it
     assert _carried_on_elsewhere(eid) is True
     parked.release(attempt)
     assert parked.cancel_parked(eid, "no") is True

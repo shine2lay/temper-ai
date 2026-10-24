@@ -9,7 +9,9 @@ git runs over the folder, Temper looks without following anything and refuses wh
 there, or while the copy's index already holds a gitlink the Project didn't start with.
 
 Model-free: plain git in tmp folders. ``subprocess.run`` is spied on to show that no git process
-starts over the folder; Linux inotify shows that nothing opens the planted repository. The B1
+starts over the folder; Linux inotify shows that nothing opens the planted repository. The test's
+own git builds every repository a watch is set on with automatic maintenance off, so nothing of
+the fixture's is still reading it while the watch is on (#154). The B1
 tests at the end (nothing may still write in the folder) use the team's ledger in the test
 database and a stand-in for Docker.
 """
@@ -250,6 +252,33 @@ def test_m1_happy_path_clean_folders_run_the_same_git_and_make_the_same_commits(
 CASES = ["gitdir_file", "git_link", "commondir", "git_init", "index_gitlink"]
 STEPS = ["share", "sync", "unshared", "commit_review", "changes", "differs", "move_to", "ensure"]
 
+#: The fixture's own git, never Temper's: git 2.47 and later end ``git commit`` by starting
+#: ``git maintenance run --auto --detach`` in the background, which opens the new commit after
+#: ``commit`` has returned, inside the watch a test starts next (#154). Off, nothing is started.
+NO_MAINTENANCE = ("-c", "maintenance.auto=false")
+
+
+def _plant_git(cwd: Path, *args: str) -> str:
+    """git as the fixture plants with it: ``ls.git`` with automatic maintenance off."""
+    return ls.git(cwd, *NO_MAINTENANCE, *args)
+
+
+#: The other repository a planted .git leads to (cases a-c, B4), and its tree.
+OUTSIDE_FILES = {"secret.txt": "another repository's file\n"}
+OUTSIDE_TREE = "73a32604aee52d992b773afca986ac8d62a6aa28"
+
+
+def _outside(root: Path) -> Path:
+    """Another repository, made as ``ls.project`` makes one (``OUTSIDE_FILES``, one commit on
+    main), but with the fixture's git from the first call on: a watch is set on it next."""
+    root.mkdir(parents=True, exist_ok=True)
+    _plant_git(root, "init", "-q", "-b", "main")
+    for name, text in OUTSIDE_FILES.items():
+        (root / name).write_text(text)
+    _plant_git(root, "add", "-A")
+    _plant_git(root, "commit", "-q", "-m", "start")
+    return root
+
 
 def _plant(case: str, ws: Path, gd: Path, outside: Path, *, top: bool = False) -> Path | None:
     """Put the case's .git into the member's folder (``top``: at the folder's top, else in
@@ -270,18 +299,18 @@ def _plant(case: str, ws: Path, gd: Path, outside: Path, *, top: bool = False) -
     if case == "git_init":              # d: a repository made in the folder, as a scaffolder does
         if not top:
             (here / "index.js").write_text("console.log('scaffolded')\n")
-        ls.git(here, "init", "-q", "-b", "main")
-        ls.git(here, "add", "-A")
-        ls.git(here, "commit", "-q", "-m", "scaffold")
+        _plant_git(here, "init", "-q", "-b", "main")
+        _plant_git(here, "add", "-A")
+        _plant_git(here, "commit", "-q", "-m", "scaffold")
         return here / ".git"
     # e: the copy's own index (host-owned) already records the outside repository's commit
     vendored = ws / "vendored"
     vendored.mkdir(parents=True, exist_ok=True)
     if not (gd / "HEAD").exists():
-        ls.git(ws, f"--git-dir={gd}", "init", "-q")
-    oid = ls.git(outside, "rev-parse", "HEAD")
-    ls.git(ws, f"--git-dir={gd}", f"--work-tree={ws}", "update-index", "--add", "--cacheinfo",
-           f"160000,{oid},vendored")
+        _plant_git(ws, f"--git-dir={gd}", "init", "-q")
+    oid = _plant_git(outside, "rev-parse", "HEAD")
+    _plant_git(ws, f"--git-dir={gd}", f"--work-tree={ws}", "update-index", "--add",
+               "--cacheinfo", f"160000,{oid},vendored")
     return None
 
 
@@ -293,7 +322,7 @@ def test_m1_git_never_runs_over_a_member_folder_that_holds_a_git_of_its_own(
     the wrapper's own error before any git process starts over the folder, nothing opens the
     planted repository and no gitlink is recorded anywhere."""
     team = Team(tmp_path, ensure_mallory=step != "ensure")
-    outside = ls.project(tmp_path / "outside", {"secret.txt": "another repository's file\n"})
+    outside = _outside(tmp_path / "outside")
     (team.ws).mkdir(parents=True, exist_ok=True)
     (team.ws / "notes.md").write_text(WORK)
     target = _plant(case, team.ws, team.gd, outside)
@@ -340,7 +369,7 @@ def test_m1_a_git_at_the_top_of_the_folder_is_never_read_so_it_is_allowed(
     a repository it made) is neither opened nor recorded, and every step works as on a clean
     folder."""
     team = Team(tmp_path)
-    outside = ls.project(tmp_path / "outside", {"secret.txt": "another repository's file\n"})
+    outside = _outside(tmp_path / "outside")
     (team.ws / "notes.md").write_text(WORK)
     target = _plant(case, team.ws, team.gd, outside, top=True)
     assert target is not None
@@ -360,6 +389,65 @@ def test_m1_a_git_at_the_top_of_the_folder_is_never_read_so_it_is_allowed(
     assert _gitlinks(team.gd) == set() and _gitlinks(team.shared.path) == set()
     assert "add" in spy.over(team.ws), "git still runs over the folder"
     assert os.path.lexists(team.ws / ".git"), "Temper never removes a member's files"
+
+
+# --- the fixture's own git leaves nothing reading what it planted (#154) ----------------------
+
+
+def _trace(trace: Path) -> list[dict]:
+    """git's own trace2 event log (``GIT_TRACE2_EVENT``): one JSON event a line."""
+    return [json.loads(line) for line in trace.read_text().splitlines() if line.strip()]
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_m1_planting_starts_no_git_maintenance_the_watch_could_see(tmp_path, monkeypatch, case):
+    """A read of a watched repository must be Temper's to fail a test. git ends ``git commit``
+    by starting ``git maintenance run --auto`` (2.47 and later in the background), which opens
+    the new commit after the commit returned: CI saw it inside the watch as "git opened the
+    member's top .git" (#154). git's own trace of all the fixture builds before a watch (the
+    outside repository, then the case) shows it started no process, and every git it ran had
+    automatic maintenance off."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "notes.md").write_text(WORK)
+    trace = tmp_path / "trace2.json"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+    spy = GitSpy(monkeypatch)
+
+    outside = _outside(tmp_path / "outside")
+    _plant(case, ws, tmp_path / "copy.git", outside, top=True)
+
+    monkeypatch.delenv("GIT_TRACE2_EVENT")
+    planted = [cmd for cmd, _cwd in spy.calls]
+    assert planted, "the plant ran no git"
+    plain = [cmd for cmd in planted if cmd[1:3] != list(NO_MAINTENANCE)]
+    assert not plain, f"the plant ran git with automatic maintenance on: {plain}"
+    events = _trace(trace)
+    started = [e["argv"] for e in events if e.get("event") == "child_start"]
+    assert started == [], f"planting started processes of git's own: {started}"
+    assert sum(e.get("event") == "start" for e in events) == len(planted), \
+        "git's trace did not record every git the plant ran"
+    assert ls.git(outside, "rev-parse", "main^{tree}") == OUTSIDE_TREE
+    assert ls.git(outside, "log", "--format=%s", "main") == "start"
+
+
+def test_m1_the_watch_still_sees_git_read_a_planted_top_git(tmp_path):
+    """The control: with planting quiet, the watch the M1 tests use still sees a real read of
+    the member's top .git, as git makes it when it isn't told the git dir and looks for a
+    repository itself, which Temper must never do."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "notes.md").write_text(WORK)
+    target = _plant("git_init", ws, tmp_path / "copy.git", tmp_path / "unused", top=True)
+    assert target == ws / ".git"
+    opened = Opens(target)
+    try:
+        assert opened.seen() == [], "something was still reading the planted repository"
+        ls.git(ws, "status", "--porcelain")        # git finds ws/.git itself and reads it
+        seen = opened.seen()
+    finally:
+        opened.close()
+    assert {"HEAD", "index"} <= set(seen), f"the watch missed git reading the top .git: {seen}"
 
 
 # --- B4: only the top's exact ".git" is passed by; any other spelling there is refused -----
@@ -388,7 +476,7 @@ def test_m1_b4_a_git_spelled_otherwise_at_the_top_is_refused_before_git_runs(
     every step on both wrappers is refused before any git starts over the folder, nothing
     opens the planted repository and no gitlink is recorded."""
     team = Team(tmp_path, ensure_mallory=step != "ensure")
-    outside = ls.project(tmp_path / "outside", {"secret.txt": "another repository's file\n"})
+    outside = _outside(tmp_path / "outside")
     team.ws.mkdir(parents=True, exist_ok=True)
     (team.ws / "notes.md").write_text(WORK)
     opened = Opens(_plant_top_spelling(team.ws, outside))

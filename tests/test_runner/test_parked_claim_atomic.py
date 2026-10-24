@@ -1,4 +1,4 @@
-"""A parked run's claim and its row's re-queue in one commit (S1-C1).
+"""A parked run's claim and its row's re-queue in one commit (S1-C1/C2).
 
 ``runner.parked`` claims a parked attempt three ways, each one transaction
 (``recorder.deciding_events``): the attempt's compare-and-set (still waiting, still the
@@ -31,10 +31,11 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import event as sa_event
 from sqlalchemy import text
 from sqlalchemy.orm import aliased
@@ -655,3 +656,406 @@ def test_each_claim_guard_has_a_bite(bite, monkeypatch):
         "T5": lambda: _wrong_after_the_commit(bitten, monkeypatch),
     }[bitten_test]()
     assert wrong == expected
+
+
+# ── C2: the actual Resume route, with threads counted, never run ───────────────────────────
+
+
+@pytest.fixture
+def resume_rig(monkeypatch):
+    from temper_ai.api import routes
+    from temper_ai.stage.agent_node import AgentNode
+    from temper_ai.stage.models import NodeConfig, WorkflowConfig
+
+    nodes = [AgentNode(NodeConfig(name="talk"), {"name": "pi", "type": "pi"})]
+    config = WorkflowConfig(name="wf", inputs={"topic": {"default": "default-topic"}})
+    state = SimpleNamespace(
+        graph_loader=SimpleNamespace(load_workflow=lambda name: (nodes, config)),
+        running={}, gates={}, memory_service=None, llm_providers={})
+    rig = SimpleNamespace(routes=routes, state=state, nodes=nodes, config=config,
+                          starts=[], took=[], released=[], start_error=None,
+                          before_take=None, hold_error=None)
+    monkeypatch.setattr(routes, "_state", lambda: state)
+    monkeypatch.setattr(routes, "_build_notifier", lambda *args: None)
+    monkeypatch.setattr(parked, "pi_switched_off", lambda: False)
+    monkeypatch.setattr(parked, "utcnow", lambda: K9["K9a"])
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "external")
+    monkeypatch.setenv("TEMPER_LANE", PI_LANE)
+    monkeypatch.delenv("TEMPER_BOX_RUNTIME_BOUNDARY", raising=False)
+
+    class CountedThread:
+        def __init__(self, *, args, **kwargs):
+            self.run = args[4]
+
+        def start(self):
+            rig.starts.append((self.run, _seen(self.run)))
+            if rig.start_error is not None:
+                raise rig.start_error
+            # No target called: no workflow, box, provider or model.
+
+    monkeypatch.setattr(routes, "threading", SimpleNamespace(Thread=CountedThread))
+    real_take, real_release = holds.take_over, parked.release
+
+    def take_over(eid, by):
+        rig.took.append((eid, _seen(eid)))
+        if rig.before_take is not None:
+            rig.before_take(eid)
+        if rig.hold_error is not None:
+            raise rig.hold_error
+        return real_take(eid, by)
+
+    def release(attempt):
+        rig.released.append(attempt["id"])
+        real_release(attempt)
+
+    monkeypatch.setattr(holds, "take_over", take_over)
+    monkeypatch.setattr(parked, "release", release)
+    return rig
+
+
+def _resume_reply(module: ModuleType, run: str, **body) -> tuple[int, str]:
+    try:
+        response = module._resume_run(run, module.ResumeRequest(**body))
+    except HTTPException as exc:
+        return exc.status_code, exc.detail
+    return 200, response.status
+
+
+def _hold(run: str) -> None:
+    holds.record(run, workflow_name="wf", workspace_path="/ws", inputs={"topic": "t"},
+                 held=[{"path": "cleanup"}], deadline=at("11:00:00"))
+
+
+def _hold_state(run: str) -> dict:
+    with get_database().engine.connect() as conn:
+        return dict(conn.execute(text("select * from cleanup_holds where execution_id = :id"),
+                                 {"id": run}).mappings().one())
+
+
+def test_t8_resume_queues_atomically_then_takes_the_hold_and_keeps_its_api_reply(resume_rig):
+    """Opening combined happy path: the real route, real atomic claim, actual held cleanup,
+    loaded workflow inputs/lane, rerun and workspace, and the old second-Resume refusal."""
+    rig = resume_rig
+    run = "run-t8-happy"
+    _attempt(run)
+    _row(run, "orphaned", handle="old-box")
+    _hold(run)
+    assert _resume_reply(rig.routes, run, workspace_path="/resumed", rerun=["talk"]) == (200, "queued")
+    assert _seen(run) == _claimed(K9["K9a"])
+    assert rig.took == [(run, _claimed(K9["K9a"]))]
+    assert _hold_state(run)["status"] == "taken_over"
+    row = _state(run)["row"]
+    assert (row["workflow_name"], row["workspace_path"], row["inputs"]) == (
+        "wf", "/resumed", {"topic": "default-topic"})
+    assert row["spawner_metadata"] == {**KEPT, "start": "resume", "rerun": ["talk"], LANE_KEY: PI_LANE}
+    assert row["spawner_kind"] is None and row["spawner_handle"] is None
+    assert _resume_reply(rig.routes, run) == (409, f"Execution '{run}' is already running")
+    assert len(rig.took) == 1 and rig.released == rig.starts == []
+
+
+IN_PROCESS_ROWS = ("orphaned", WAITING, "queued", "running", "completed", "failed", "cancelled")
+
+
+def _in_process_row_answer(module: ModuleType, rig, status: str, suffix: str) -> dict:
+    run = f"run-t7-row-{status}-{suffix}"
+    _attempt(run)
+    _row(run, status)
+    _hold(run)
+    before, hold_before = _state(run), _hold_state(run)
+    counts = len(rig.took), len(rig.released), len(rig.starts)
+    reply = _resume_reply(module, run)
+    return {"reply": reply, "unwritten": _state(run) == before,
+            "hold_unchanged": _hold_state(run) == hold_before,
+            "counts_unchanged": counts == (len(rig.took), len(rig.released), len(rig.starts)),
+            "not_running_here": run not in rig.state.running}
+
+
+def _in_process_row_known(status: str, suffix: str) -> dict:
+    run = f"run-t7-row-{status}-{suffix}"
+    return {"reply": (409, f"Execution '{run}' is carried on in its box"), "unwritten": True,
+            "hold_unchanged": True, "counts_unchanged": True, "not_running_here": True}
+
+
+@pytest.mark.parametrize("status", IN_PROCESS_ROWS)
+def test_t7_in_process_resume_of_any_box_row_is_a_409_and_writes_nothing(status, resume_rig, monkeypatch):
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    assert _in_process_row_answer(resume_rig.routes, resume_rig, status, "real") == _in_process_row_known(status, "real")
+
+
+def test_t7_only_no_row_thread_start_failure_releases_and_the_retry_can_start(resume_rig, monkeypatch):
+    rig = resume_rig
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    run = "run-t7-no-row"
+    _attempt(run)
+    _hold(run)
+    rig.start_error = _Stalled("thread failed to start")
+    with pytest.raises(_Stalled, match="thread failed to start"):
+        rig.routes._resume_run(run)
+    assert rig.took == rig.starts == [(run, _claimed(K9["K9a"], row=None))]
+    assert rig.released == [f"A1-{run}"]
+    assert _seen(run) == {"attempt": WAITING, "carried_on_at": None, "row": None}
+    assert run not in rig.state.running
+    rig.start_error = None
+    assert _resume_reply(rig.routes, run) == (200, "resuming")
+    assert _seen(run) == _claimed(K9["K9a"], row=None)
+    assert rig.starts == rig.took == [(run, _claimed(K9["K9a"], row=None))] * 2
+    assert rig.released == [f"A1-{run}"]  # not released after the successful start
+
+
+@pytest.mark.parametrize("failure", ["holds", "thread-preparation"])
+def test_t7_a_no_row_failure_other_than_thread_start_never_releases(failure, resume_rig, monkeypatch):
+    rig = resume_rig
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    run = f"run-t7-{failure}"
+    _attempt(run)
+    if failure == "holds":
+        rig.hold_error = _Stalled("holds failed")
+    else:
+        def fail(*args, **kwargs):
+            raise _Stalled("preparation failed")
+        monkeypatch.setattr(rig.routes, "_register_run_tools", fail)
+    with pytest.raises(_Stalled):
+        rig.routes._resume_run(run)
+    assert _seen(run) == _claimed(K9["K9a"], row=None)
+    assert rig.released == rig.starts == []
+
+
+@pytest.mark.parametrize("mode", ["external", "inprocess"])
+def test_non_parked_resume_keeps_its_claim_hold_and_error_release(mode, resume_rig, monkeypatch):
+    """The separate resume_claim path stays separate, including its exception release."""
+    from temper_ai.runner import resume_claim
+
+    rig = resume_rig
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", mode)
+    run = f"run-non-parked-{mode}"
+    _attempt(run, status="interrupted", note={})
+    _hold(run)
+    rig.hold_error = _Stalled("hold failed")
+    with pytest.raises(_Stalled, match="hold failed"):
+        rig.routes._resume_run(run)
+    assert resume_claim._read(run) is None  # the non-parked exception path still gives it back
+    assert rig.released == rig.starts == []
+    assert _state(run)["event"]["status"] == "interrupted"
+    rig.hold_error = None
+    assert _resume_reply(rig.routes, run) == (200, "queued" if mode == "external" else "resuming")
+    assert resume_claim._read(run) is not None
+    assert _hold_state(run)["status"] == "taken_over"
+
+
+HOLD_CASES = ("winner", "cancel-first", "superseded", "busy", "queue-error", "post-commit-error", "sweep")
+
+
+def _holds_answer(module: ModuleType, rig, case: str, monkeypatch) -> dict:
+    """P10/P11 plus busy/failure twins, using Resume's observed attempt and its real claims.
+    Cancel-first is injected after the route's read, before entering the real atomic claim."""
+    run = f"run-t8-{case}-{module.__name__}"
+    _attempt(run)
+    status = "running" if case == "busy" else WAITING if case == "cancel-first" else "orphaned"
+    _row(run, status, handle="old-box")
+    _hold(run)
+    cleanup: list[tuple[int, str]] = []
+    if case in ("cancel-first", "superseded"):
+        real_claim = parked.claim_and_queue
+
+        def delayed(attempt, *args, **kwargs):
+            if case == "cancel-first":
+                assert parked.cancel_parked(run, "owner cancelled") is True
+                _hold(run)  # the cancel's fresh hold must not be ended by this stale asker
+            else:
+                _attempt(run, name="A2", status="failed", started=at("10:05:00"), note={})
+            return real_claim(attempt, *args, **kwargs)
+
+        monkeypatch.setattr(parked, "claim_and_queue", delayed)
+    elif case == "queue-error":
+        def fail_queue(*args, **kwargs):
+            raise _Stalled("queue failed")
+        monkeypatch.setattr(queue, "queue_run_in", fail_queue)
+    elif case == "post-commit-error":
+        rig.hold_error = _Stalled("hold failed")
+    elif case == "sweep":
+        def sweep(eid):
+            due = [h for h in holds.due(now=K9["K9a"]) if h["execution_id"] == eid]
+            assert len(due) == 1
+            ended = holds.end(eid, "released", by="deadline")
+            assert ended is not None
+            try:
+                module._queue_cleanup_pass(ended)
+            except HTTPException as exc:
+                cleanup.append((exc.status_code, exc.detail))
+        rig.before_take = sweep
+    try:
+        reply = _resume_reply(module, run)
+    except _Stalled as exc:
+        reply = (500, str(exc))
+    return {"reply": reply, "seen": _seen(run), "takeovers": list(rig.took),
+            "hold": _hold_state(run)["status"], "releases": list(rig.released),
+            "starts": list(rig.starts), "cleanup": cleanup}
+
+
+def _holds_known(module: ModuleType, case: str) -> dict:
+    run = f"run-t8-{case}-{module.__name__}"
+    claimed = _claimed(K9["K9a"])
+    seen = {"attempt": WAITING, "carried_on_at": None,
+            "row": "running" if case == "busy" else "orphaned"}
+    replies = {"cancel-first": (409, f"Execution '{run}' is already being carried on"),
+               "superseded": (409, f"Execution '{run}' is already being carried on"),
+               "busy": (409, f"Execution '{run}' is already running"),
+               "queue-error": (500, "queue failed"), "post-commit-error": (500, "hold failed")}
+    won = case in ("winner", "post-commit-error", "sweep")
+    if case == "cancel-first":
+        seen = {"attempt": CANCELLED, "carried_on_at": None, "row": "cancelled"}
+    return {"reply": replies.get(case, (200, "queued")), "seen": claimed if won else seen,
+            "takeovers": [(run, claimed)] if won else [],
+            "hold": "released" if case == "sweep" else "taken_over" if case == "winner" else "waiting",
+            "releases": [], "starts": [],
+            "cleanup": [(409, f"Execution '{run}' is already queued")] if case == "sweep" else []}
+
+
+@pytest.mark.parametrize("case", HOLD_CASES)
+def test_t8_only_a_winning_resume_takes_over_and_a_post_commit_sweep_cannot_queue(case, resume_rig, monkeypatch):
+    assert _holds_answer(resume_rig.routes, resume_rig, case, monkeypatch) == _holds_known(resume_rig.routes, case)
+
+
+@pytest.mark.parametrize("path", ["api", "worker"])
+@pytest.mark.parametrize("round_", [1, 2])
+def test_t12_a_busy_box_gets_409_then_the_actual_reaper_lets_go_and_resume_queues_once(
+        path, round_, resume_rig, monkeypatch):
+    from temper_ai.spawner.reaper import Reaper
+
+    rig = resume_rig
+    run = f"run-t12-{path}-{round_}"
+    note = {**PARKED_NOTE, "wake_at": at("12:00:00").isoformat()} if path == "worker" else None
+    _attempt(run, note=note)
+    _row(run, "running", handle="box-h")
+    _hold(run)
+    before = _state(run)
+    assert _resume_reply(rig.routes, run) == (409, f"Execution '{run}' is already running")
+    assert _state(run) == before and rig.took == rig.released == rig.starts == []
+    letting_go: list[dict] = []
+    real_carry = parked.carry_on
+
+    def carry(eid, **kwargs):
+        letting_go.append(_seen(eid))
+        return real_carry(eid, **kwargs)
+
+    monkeypatch.setattr(parked, "carry_on", carry)
+    spawner = SimpleNamespace(is_alive=lambda handle: False, is_gone=lambda handle: True)
+    reaper = Reaper(spawner, lane=PI_LANE)
+    reaper.tick()  # no background thread, no spawner call except the two stand-ins above
+    assert letting_go == [{"attempt": WAITING, "carried_on_at": None, "row": WAITING}]
+    if path == "api":
+        assert _seen(run) == letting_go[0]
+        assert _resume_reply(rig.routes, run) == (200, "queued")
+    assert _seen(run) == _claimed(K9["K9a"])
+    assert rig.took == [(run, _claimed(K9["K9a"]))]
+    assert rig.released == rig.starts == []
+    assert _state(run)["row"]["completed_at"] is None
+    before = _state(run)
+    reaper.tick()
+    assert _state(run) == before and len(rig.took) == 1
+
+
+@pytest.mark.parametrize("path", ["boxed", "inprocess"])
+@pytest.mark.parametrize("round_", [1, 2])
+def test_two_actual_resumes_at_once_have_one_claim_one_hold_takeover_and_one_start(
+        path, round_, resume_rig, decision_lock, monkeypatch):
+    rig = resume_rig
+    run = f"run-route-race-{path}-{round_}"
+    _attempt(run)
+    if path == "boxed":
+        _row(run, "orphaned", handle="box-h")
+    else:
+        monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    _hold(run)
+    paused, go = threading.Event(), threading.Event()
+    holder: dict[str, Any] = {}
+    real_locked = parked._locked_row
+
+    def locked(session, eid):
+        if threading.current_thread().name == "route-first":
+            holder["pid"] = _backend_pid(session)
+            paused.set()
+            assert go.wait(15)
+        return real_locked(session, eid)
+
+    if path == "boxed":
+        def split(session, eid, *args, **kwargs):
+            if threading.current_thread().name == "route-first":
+                holder["pid"] = _backend_pid(session)
+                paused.set()
+                assert go.wait(15)
+            return _QUEUE_RUN_IN(session, eid, *args, **kwargs)
+        monkeypatch.setattr(queue, "queue_run_in", split)
+    else:
+        monkeypatch.setattr(parked, "_locked_row", locked)
+    outcome: dict[str, Any] = {}
+
+    def ask():
+        try:
+            outcome[threading.current_thread().name] = _resume_reply(rig.routes, run)
+        except BaseException as exc:  # noqa: BLE001 - fail with the actual exception, no retry
+            outcome[threading.current_thread().name] = repr(exc)
+
+    first = threading.Thread(target=ask, name="route-first")
+    first.start()
+    assert paused.wait(15)
+    second = threading.Thread(target=ask, name="route-second")
+    second.start()
+    try:
+        _wait_until_waiting(decision_lock, holder["pid"])
+        assert second.is_alive()
+    finally:
+        go.set()
+        first.join(20)
+        second.join(20)
+    assert not first.is_alive() and not second.is_alive()
+    assert outcome == {"route-first": (200, "queued" if path == "boxed" else "resuming"),
+                       "route-second": (409, f"Execution '{run}' is already being carried on")}
+    claimed = _claimed(K9["K9a"], row="queued" if path == "boxed" else None)
+    assert _seen(run) == claimed and rig.took == [(run, claimed)]
+    assert rig.released == []
+    assert rig.starts == ([] if path == "boxed" else [(run, claimed)])
+
+
+# ── C2 bites: actual guarded source, the same named known-answer cases ─────────────────────
+
+
+def _routes_mutant(mutations: list[tuple[str, str]], monkeypatch) -> ModuleType:
+    from temper_ai.api import routes
+
+    source = inspect.getsource(routes._resume_run) + "\n" + inspect.getsource(routes._start_resume)
+    for find, replace in mutations:
+        assert source.count(find) == 1, f"Resume source doesn't hold this once: {find!r}"
+        source = source.replace(find, replace)
+    mutant = ModuleType(f"{routes.__name__}_bitten")
+    mutant.__dict__.update(vars(routes))
+    mutant.__name__ = f"{routes.__name__}_bitten"
+    monkeypatch.setitem(sys.modules, mutant.__name__, mutant)
+    exec(compile(source, str(routes.__file__), "exec"), mutant.__dict__)  # noqa: S102
+    return mutant
+
+
+def test_b3_allowing_an_in_process_claim_over_a_row_breaks_t7_all_row_cases(resume_rig, monkeypatch):
+    rig = resume_rig
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    bitten = _mutant([("            if _locked_row(session, execution_id) is not None:\n",
+                       "            if False:  # B3: claim a boxed run in process\n")], monkeypatch)
+    monkeypatch.setattr(bitten, "pi_switched_off", lambda: False)
+    monkeypatch.setattr(bitten, "utcnow", lambda: K9["K9a"])
+    monkeypatch.setattr(rig.routes, "pi_parked", bitten)
+    wrong = {status for status in IN_PROCESS_ROWS
+             if _in_process_row_answer(rig.routes, rig, status, "B3") != _in_process_row_known(status, "B3")}
+    assert wrong == set(IN_PROCESS_ROWS)
+
+
+@pytest.mark.parametrize("case", HOLD_CASES)
+def test_b7_taking_over_before_the_claim_breaks_t8_named_cases(case, resume_rig, monkeypatch):
+    rig = resume_rig
+    before = "        else:\n            try:\n                pi_parked.claim_and_queue("
+    after = "            holds.take_over(execution_id, by=execution_id)\n        return RunResponse(execution_id=execution_id, status=\"queued\")"
+    bitten = _routes_mutant([
+        (before, before.replace("            try:", "            holds.take_over(execution_id, by=execution_id)\n            try:")),
+        (after, after.replace("            holds.take_over(execution_id, by=execution_id)\n", "")),
+    ], monkeypatch)
+    got = _holds_answer(bitten, rig, case, monkeypatch)
+    assert got != _holds_known(bitten, case)

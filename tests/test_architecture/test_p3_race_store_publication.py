@@ -1,23 +1,18 @@
-"""Finite P3 fixture schedules: save-only exclusion, not a historical syscall replay.
+"""P3 fixture store: two concurrent HTTP adds both publish, one save at a time, under the store's own lock.
 
-The negative binds the original add body to its source digest and forces the common-temp
-collision. The HTTP cases use real Store._save, with both handlers entered and (for the
-plant) both stale snapshots taken before either publication. No browser/model/service.
+#124's SIM-5 RaceStore (variant race_add) and its frozen pre-lock counterexample were removed in #125:
+SIM-5 is not one of QA #32's rows, so the fixture server keeps only the common first_app_shared.Store.
+Real Store._save, both handlers entered before either publication. No browser/model/service.
 """
 
-import hashlib
 import importlib.util
-import inspect
 import json
 import sys
-import textwrap
 import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 BIN = Path(__file__).resolve().parents[2] / "configs/architecture/bin"
 if "first_app_p3" not in sys.modules:
@@ -28,11 +23,6 @@ if "first_app_p3" not in sys.modules:
 p3 = sys.modules["first_app_p3"]
 
 WAIT = 5
-OLD_ADD_SHA256 = "d9a5bcff2e2878b53b6b299da355b824f22ae28f323561dd0dbb2615ec0baddc"
-SAVE_SECTION = """    # Protect the shared temporary pathname, not the deliberately stale read.
-    with self.lock:
-        self._save(d)
-"""
 
 
 class PublicationLock:
@@ -80,12 +70,16 @@ def _pair(call):
     return outcomes
 
 
-@pytest.mark.parametrize(("variant", "want"), [("file", 2), ("race_add", 1)])
-def test_two_http_201s_with_serial_saves_and_preserved_plant(tmp_path, monkeypatch, variant, want):
+def test_no_race_store_is_left():
+    assert not hasattr(p3, "RaceStore")
+    assert "race_add" not in (p3.FIXTURE / "app.js").read_text(encoding="utf-8")
+
+
+def test_two_http_201s_with_serial_saves(tmp_path, monkeypatch):
     site = p3.materialize("clean", tmp_path / "fixture")
-    data = tmp_path / variant
+    data = tmp_path / "data"
     data.mkdir()
-    server = p3.P3Server(site, data, variant, bind_address="127.0.0.1")
+    server = p3.P3Server(site, data, "clean", bind_address="127.0.0.1")
     server.start()
     try:
         assert server.srv.server_address[0] == "127.0.0.1"
@@ -94,25 +88,21 @@ def test_two_http_201s_with_serial_saves_and_preserved_plant(tmp_path, monkeypat
         monkeypatch.setattr(store, "lock", lock)
         load, save, add = store._load, store._save, store.add
         entries = threading.Barrier(2, timeout=WAIT)
-        stale_reads = threading.Barrier(2, timeout=WAIT)
         entered, reads, snapshots, publications, waits = [], [], [], [], []
         state = threading.Lock()
         active = peak = 0
 
         def wait_only(delay):
-            assert delay == 0.4
             waits.append(delay)
 
         monkeypatch.setattr(p3, "time", SimpleNamespace(sleep=wait_only))
 
         def observed_load():
-            assert lock.owned_here() == (variant == "file"), "stale read moved under the lock"
+            assert lock.owned_here(), "read moved outside the store lock"
             d = load()
             with state:
                 reads.append(threading.get_ident())
                 snapshots.append((id(d), json.loads(json.dumps(d))))
-            if variant == "race_add":
-                stale_reads.wait()  # neither add may publish until both real snapshots exist
             return d
 
         def observed_save(d):
@@ -135,7 +125,7 @@ def test_two_http_201s_with_serial_saves_and_preserved_plant(tmp_path, monkeypat
         def observed_add(text, added_by):
             with state:
                 entered.append(text)
-            entries.wait()  # concurrent request entry, even for clean Store.add
+            entries.wait()  # concurrent request entry
             return add(text, added_by)
 
         monkeypatch.setattr(store, "_load", observed_load)
@@ -159,91 +149,20 @@ def test_two_http_201s_with_serial_saves_and_preserved_plant(tmp_path, monkeypat
         assert len(set(reads)) == 2
         assert lock.attempts == lock.entries == len(publications) == 2
         assert peak == 1 and active == 0 and lock.owner is None and not lock.lock.locked()
-        if variant == "race_add":
-            assert not stale_reads.broken
-            assert len({identity for identity, _ in snapshots}) == 2
-            assert [d for _, d in snapshots] == [{"next_id": 1, "items": []}] * 2
-            assert waits == [0.4, 0.4]
-            assert [len(d["items"]) for d in publications] == [1, 1]
-            assert [body["item"]["id"] for _, body in outcomes] == [1, 1]
-        else:
-            assert waits == []
-            assert [len(d["items"]) for _, d in snapshots] == [0, 1]
-            assert [len(d["items"]) for d in publications] == [1, 2]
-            assert sorted(body["item"]["id"] for _, body in outcomes) == [1, 2]
+        assert waits == []
+        assert [len(d["items"]) for _, d in snapshots] == [0, 1]
+        assert [len(d["items"]) for d in publications] == [1, 2]
+        assert sorted(body["item"]["id"] for _, body in outcomes) == [1, 2]
 
-        monkeypatch.setattr(store, "_load", load)  # GET is not a third add/snapshot barrier
+        monkeypatch.setattr(store, "_load", load)  # GET is not a third add/snapshot
         with opener.open(url, timeout=WAIT) as response:
             assert response.status == 200
             items = json.loads(response.read())["items"]
         disk = json.loads((data / "items.json").read_text())
-        assert disk == {"next_id": want + 1, "items": items}
-        assert len(items) == want
-        assert {item["text"] for item in items} <= {"a", "b"}
+        assert disk == {"next_id": 3, "items": items}
+        assert len(items) == 2
+        assert {item["text"] for item in items} == {"a", "b"}
         assert not (data / "items.tmp").exists()
         assert sum(hit == "POST /api/items 201" for hit in server.hits) == 2
     finally:
         server.shutdown()
-
-
-def test_frozen_old_add_has_a_forced_shared_tmp_collision(tmp_path, monkeypatch):
-    """Controlled counterexample; does NOT claim this was #179's syscall ordering."""
-    source = textwrap.dedent(inspect.getsource(p3.RaceStore.add))
-    assert source.count(SAVE_SECTION) == 1, "only the final save section may change"
-    old_source = source.replace(SAVE_SECTION, "    self._save(d)\n")
-    assert hashlib.sha256(old_source.encode()).hexdigest() == OLD_ADD_SHA256
-    waits = []
-
-    def wait_only(delay):
-        assert delay == 0.4
-        waits.append(delay)
-
-    namespace = {"time": SimpleNamespace(sleep=wait_only)}
-    exec(compile(old_source, "<frozen-pre-save-lock-RaceStore.add>", "exec"), namespace)
-    old_add = namespace["add"]
-    store = p3.RaceStore(tmp_path / "items.json")
-    load, save, replace = store._load, store._save, p3.fs.os.replace
-    snapshots = threading.Barrier(2, timeout=WAIT)
-    writes_closed = threading.Barrier(2, timeout=WAIT)
-    consumed = threading.Event()
-    writer = threading.local()
-    reads, publications = [], []
-    state = threading.Lock()
-
-    def stale_load():
-        assert not store.lock.locked()
-        d = load()
-        with state:
-            reads.append(json.loads(json.dumps(d)))
-        snapshots.wait()
-        return d
-
-    def unlocked_save(d):
-        assert not store.lock.locked()
-        writer.text = d["items"][-1]["text"]
-        with state:
-            publications.append(writer.text)
-        save(d)
-
-    def forced_replace(src, dst):
-        if (Path(src), Path(dst)) != (tmp_path / "items.tmp", store.path):
-            return replace(src, dst)
-        writes_closed.wait()  # both actual write_text calls closed before either replacement
-        if writer.text == "a":
-            replace(src, dst)
-            consumed.set()
-            return None
-        assert consumed.wait(WAIT)
-        return replace(src, dst)  # the common pathname was consumed by a: real FileNotFoundError
-
-    monkeypatch.setattr(store, "_load", stale_load)
-    monkeypatch.setattr(store, "_save", unlocked_save)
-    monkeypatch.setattr(p3.fs.os, "replace", forced_replace)
-    outcomes = _pair(lambda text: old_add(store, text, "x"))
-    assert outcomes[0] == {"id": 1, "text": "a", "added_by": "x", "done": False}
-    error = outcomes[1]
-    assert isinstance(error, FileNotFoundError)
-    assert error.filename == str(tmp_path / "items.tmp") and error.filename2 == str(store.path)
-    assert reads == [{"next_id": 1, "items": []}] * 2
-    assert sorted(publications) == ["a", "b"] and waits == [0.4, 0.4]
-    assert not snapshots.broken and not writes_closed.broken and consumed.is_set()

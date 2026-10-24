@@ -1,25 +1,21 @@
-"""first_app_check's Project 3 journey on canned data (System architecture, queue #124, 2026-10-20).
+"""first_app_check's Project 3 journey on canned data (System architecture, queue #125, 2026-10-24).
 
-configs/architecture/bin/first_app_p3.py (loaded only for mode=controls_p3 or a profile with "journey_p3") adds
-what the fixed checker could not check for Project 3's raised bar: WebKit at phone size with touch, typed text
-read back exactly, right-to-left items rendered rtl, the app killed and started again with exit codes in the host
-receipts, and two adds in the same tick. The browser part is proven by mode=controls_p3 on temper-dev (run twice);
-these tests pin the pure part: the engines' context options, the exact compare and its U+ lists, the direction
-rule, the receipt rules, the kill action, SIM-5's compare, the profile, the verdict, the controls' synthetic server
-and the agent's routing. The rows, ids and exit codes are provisional (PENDING-SPEC) until QA freezes its kit.
+configs/architecture/bin/first_app_p3.py (loaded only for mode=controls_p3 or a profile with "journey_p3") runs QA
+#32's rows on Product FINAL v3.1 in Chromium and in phone-sized WebKit. The rows and their judges are qualified in
+test_first_app_p3_rows.py; disposal, W4 and admission in test_first_app_p3_safety.py and
+test_first_app_p3_admission.py. These tests pin the rest of the pure part: the profile, the engines' contexts, the
+browser code's placeholders and abort route, the agent's routing, the verdict, live host rows (BLOCKED until QA's
+P5 receiving names #126's wire), the controls and their expectations, the gate plants' exact matching and G5
+result, and the controls' fixture server. The browser part is proven only by mode=controls_p3 on temper-dev.
 """
 
 import asyncio
-import hashlib
 import importlib.util
 import json
 import socket
 import sys
-import threading
-import time
+import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
-from http.client import RemoteDisconnected
 from pathlib import Path
 
 import pytest
@@ -36,10 +32,14 @@ spec = importlib.util.spec_from_file_location("first_app_p3", BIN / "first_app_p
 p3 = importlib.util.module_from_spec(spec)
 sys.modules["first_app_p3"] = p3
 spec.loader.exec_module(p3)
-fs = p3.fs
-
-W = p3.KIT_WORDING
+fs, g, kit = p3.fs, p3.guard, p3.kit
 ORIGIN = "http://100.110.162.4:8962"
+
+
+def profile(**changes) -> dict:
+    p = p3.default_p3_profile()
+    p.update(changes)
+    return p
 
 
 def target(**changes) -> dict:
@@ -49,309 +49,80 @@ def target(**changes) -> dict:
     return t
 
 
-def obs(rows=None, **over) -> dict:
-    """One context's observation as SETUP's observe returns it; rows as [text, by, ticked]."""
-    o = {"headings": [W["heading"]], "name_textbox": {"count": 0, "visible": False},
-         "name_button": {"count": 0, "visible": False},
-         "item_textbox": {"count": 1, "visible": True, "enabled": True, "value": ""},
-         "add_button": {"count": 1, "visible": True}, "try_again": {"count": 0, "visible": False},
-         "rows": [{"text": t, "desc": W["added_by"].replace("{name}", b), "checked": c,
-                   "dir": p3.strong_direction(t) or "ltr"} for t, b, c in (rows or [])],
-         "who": {"visible": True, "name": "Ana", "dir": "ltr"}, "name_msg_parts": [], "item_msg_parts": [],
-         "banner": "", "m9_visible": False, "empty_visible": not rows, "scroll": {"scroll_width": 390,
-                                                                                 "inner_width": 390},
-         "resource_refs": [], "body_text": ""}
-    o.update(over)
-    return o
+def problems(**changes) -> list:
+    return p3.parse_p3_profile(json.dumps(profile(**changes)))[1]
 
 
-# ---------------------------------------------------------------- the hypothesis and the strings
+# ---------------------------------------------------------------- the hypothesis, engines and browser code
 
 
 def test_hypothesis_is_written_in_the_module_docstring():
     doc = p3.__doc__
-    assert "H-P3-CHECK-1" in doc
-    for part in ("What is wrong", "The one change", "Expected result", "What proves it wrong", "rm-5df2e9bc",
-                 "PENDING-SPEC"):
+    for part in ("H-125-INTEGRATION-2", "What is wrong", "The one change", "Expected result", "What proves it wrong"):
         assert part in doc, part
 
 
-def test_test_strings_are_the_proposals_exact_code_points():
-    assert len(p3.S["technologist"]) == 4 and len(p3.S["flag_jp"]) == 2
-    assert p3.S["cafe_nfc"] != p3.S["cafe_nfd"] and len(p3.S["cafe_nfc"]) == 4 and len(p3.S["cafe_nfd"]) == 5
-    assert len(p3.L200_ZH) == 200 and len(p3.L201_ZH) == 201
-    assert len(p3.L200_EMOJI) == 200 and len(p3.L201_EMOJI) == 201
-    assert len(p3.L200_EMOJI.encode("utf-16-le")) // 2 == 203  # what an s.length page counts
-    assert len(p3.NAME_50) == 50 and len(p3.NAME_51) == 51
-    assert p3.S["chinese"][2] == "\uff0c"
-    proposal = Path(p3.PROPOSAL)
-    if not proposal.exists():
-        pytest.skip("QA's proposal is not on this machine")
-    data = proposal.read_bytes()
-    assert hashlib.sha256(data).hexdigest() == p3.PROPOSAL_SHA256
-    text = data.decode()
-    for key in ("cyrillic", "greek", "chinese", "japanese", "hindi", "arabic", "hebrew", "mixed"):
-        assert p3.S[key] in text, key
+def test_each_engine_has_its_own_fresh_contexts_and_options():
+    assert p3.ENGINES["chromium"]["contexts"] == kit.CONTEXTS["chromium"] == ("A", "B", "C", "L", "U", "V")
+    assert p3.ENGINES["webkit"]["contexts"] == kit.CONTEXTS["webkit"] == ("A", "B", "C", "U", "V")
+    w = p3.ENGINES["webkit"]["opts"]
+    assert w["viewport"] == {"width": 390, "height": 844} and w["deviceScaleFactor"] == 3
+    assert w["isMobile"] is True and w["hasTouch"] is True
+    assert "userAgent" not in w and "userAgent" not in p3.ENGINES["chromium"]["opts"]  # native UA, no shim
+    for e in p3.ENGINES:
+        specs = p3.context_specs(e)
+        assert set(specs) == set(p3.ENGINES[e]["contexts"])
+        assert all(s["opts"]["serviceWorkers"] == "block" and s["touch"] == (e == "webkit") for s in specs.values())
+    assert p3.EXPECTED_STEPS[-1] == ("webkit", "PH-1") and len(p3.EXPECTED_STEPS) == 37 + 23 + 1
 
 
-# ---------------------------------------------------------------- engines and the browser code
+def test_setup_and_probes_abort_off_origin_only_in_control_runs():
+    for e in p3.ENGINES:
+        build = p3.setup_js(target(), e)
+        control = p3.setup_js(target(abort_off_origin=True), e)
+        assert "const ABORT = false" in build.replace(" ", " ") or "ABORT = false" in build
+        assert "ABORT = true" in control
+        assert "__" + "ROWS_JS__" not in build and "__OBSERVERS__" not in build
+        for kind in ("pins", "engine"):
+            assert "ABORT = false" in p3.probe_js(target(), kind, e)
+            assert "ABORT = true" in p3.probe_js(target(abort_off_origin=True), kind, e)
+    with pytest.raises(ValueError):
+        p3.probe_js(target(), "down")
+    for banned in ("addInitScript", "routeWebSocket", "setExtraHTTPHeaders", "page.clock"):
+        assert banned not in p3.SETUP + p3.PROBE, banned
 
 
-def test_each_engine_has_its_own_context_options():
-    assert p3.context_specs("chromium") == {
-        c: {"opts": dict(fs.CONTEXT_OPTS, serviceWorkers="block"), "touch": False} for c in ("A", "B")}
-    assert fs.CONTEXT_OPTS == {"viewport": {"width": 1280, "height": 800}, "locale": "en-US", "timezoneId": "UTC"}
-    want = {"viewport": {"width": 390, "height": 844}, "deviceScaleFactor": 3, "isMobile": True, "hasTouch": True,
-            "locale": "en-US", "timezoneId": "UTC", "serviceWorkers": "block"}
-    assert p3.context_specs("webkit") == {c: {"opts": want, "touch": True} for c in ("P", "Q")}
-    js = p3.setup_js(target(), "webkit")
-    assert '"isMobile": true' in js and '"hasTouch": true' in js and '"deviceScaleFactor": 3' in js
-    assert '"P"' in js and '"A"' not in js.split("const CTXS =")[1].split(";")[0]
+def test_row_code_puts_typed_text_last_so_placeholders_in_data_stay_literal():
+    row = dict(kit.ROW["J-4"], acts=[{"do": "add", "ctx": "A", "text": "__CTX__ __OBSERVE__"}])
+    js = p3.row_js(row)
+    assert '"__CTX__ __OBSERVE__"' in js and "__ACTS__" not in js
 
 
-def test_browser_code_taps_on_touch_types_with_insert_text_and_adds_in_one_tick():
-    s = p3.SETUP
-    assert "if (u.touch) await loc.tap(" in s and "else await loc.click(" in s
-    assert "keyboard.insertText(text)" in s and "keyboard.type(" not in s
-    assert "await Promise.all(us.map((v, i) => p3.press(v, buttons[i])))" in s
-    assert "getComputedStyle(el).direction" in s
-    assert "text: el ? el.textContent : null" in s  # exact: the row text is not normalized or trimmed
-
-
-def test_row_code_puts_the_pinned_files_last():
-    row = next(r for r in p3.p3_rows(W, p3.USERS) if r["id"] == "D-3")
-    js = p3.row_js(row, {"/app.js": {"text": "x('__OBSERVE__')", "ctype": "text/javascript"}})
-    assert "__OBSERVE__" in js  # the page's own text is left alone
-    assert js.count('["B"]') >= 1
-
-
-def test_cached_files_come_from_the_pin_stage_bytes():
-    import base64
-    got = {"root": {"b64": base64.b64encode("<p>שלום</p>".encode()).decode()},
-           "files": {"app.js": {"b64": base64.b64encode(b"1;").decode()}, "favicon.svg": {"error": "x"}}}
-    c = p3.cached_files(got)
-    assert c["/"]["text"] == "<p>שלום</p>" and c["/"]["ctype"].startswith("text/html")
-    assert c["/app.js"]["text"] == "1;" and "/favicon.svg" not in c
-
-
-# ---------------------------------------------------------------- exact text and direction
-
-
-def test_text_diff_is_exact_and_lists_code_points():
-    assert p3.text_diff("caf\u00e9", "caf\u00e9", "x") is None
-    d = p3.text_diff("caf\u00e9", "cafe\u0301", "row 1 text")
-    assert "U+0063 U+0061 U+0066 U+00E9" in d and "U+0065 U+0301" in d
-    assert p3.text_diff(" a", "a", "x") is not None and p3.text_diff("a\n", "a", "x") is not None
-    assert p3.cp_list("\U0001F1EF\U0001F1F5") == "U+1F1EF U+1F1F5" and p3.cp_list("") == "(empty)"
-    long = p3.text_diff("\u4e2d" * 199 + "x", "\u4e2d" * 200, "row 9 text")
-    assert "first difference at code point 200" in long and "U+0078" in long
-    assert "nothing read" in p3.text_diff(None, "a", "x")
-
-
-def test_direction_comes_from_the_first_strong_character():
-    for k in ("arabic", "hebrew", "mixed"):
-        assert p3.strong_direction(p3.S[k]) == "rtl", k
-    for k in ("cyrillic", "greek", "chinese", "japanese", "hindi", "cafe_nfd", "markup", "lt_gt_amp"):
-        assert p3.strong_direction(p3.S[k]) == "ltr", k
-    assert p3.strong_direction(p3.S["technologist"]) is None and p3.strong_direction("123 !") is None
-    assert p3.strong_direction("123 \u05e9") == "rtl"
-
-
-def test_rows_compare_exactly_and_report_both_strings():
-    exp = [[p3.S["cafe_nfc"], "Ana", False]]
-    reasons, full = p3.rows_problems([[p3.S["cafe_nfd"], "Ana", False]], exp)
-    assert len(reasons) == 1 and "U+0301" in reasons[0] and full[0]["expected"] == "U+0063 U+0061 U+0066 U+00E9"
-    assert p3.rows_problems([["<b>hi</b>", "Ana", False]], [["<b>hi</b>", "Ana", False]]) == ([], [])
-    reasons, _ = p3.rows_problems([["hi", "Ana", False]], [["<b>hi</b>", "Ana", False]])
-    assert "U+003C U+0062" in reasons[0]
-    reasons, _ = p3.rows_problems([["a", "Ana", True]], [["a", "Ana", False]])
-    assert "ticked, expected not ticked" in reasons[0]
-    assert "1 seen, 2 expected" in p3.rows_problems([["a", "Ana", False]], [["a", "Ana", False]] * 2)[0][0]
-
-
-def test_sim5_tail_may_come_in_either_order_but_not_short():
-    base = [["x", "Ana", False]]
-    exp = base + [["A", "Ana", False], ["B", "Bo", False]]
-    assert p3.rows_problems(base + [["B", "Bo", False], ["A", "Ana", False]], exp, 2) == ([], [])
-    assert p3.rows_problems(base + [["B", "Bo", False], ["A", "Ana", False]], exp, 0)[0]
-    lost = p3.rows_problems(base + [["B", "Bo", False]], exp, 2)[0]
-    assert lost and "2 seen, 3 expected" in lost[0]
-    dup = p3.rows_problems(base + [["B", "Bo", False], ["B", "Bo", False]], exp, 2)[0]
-    assert dup and "in any order" in dup[0]
-
-
-# ---------------------------------------------------------------- the rows' comparator
-
-
-def test_compare_checks_direction_of_every_row():
-    rows = [[p3.S["arabic"], "Ana", False]]
-    o = obs(rows)
-    assert p3.compare_obs({"rows": rows}, o, W) == ([], [], [])
-    o["rows"][0]["dir"] = "ltr"  # no dir=auto
-    reasons, _, _ = p3.compare_obs({"rows": rows}, o, W)
-    assert len(reasons) == 1 and "computed direction ltr, expected rtl" in reasons[0]
-
-
-def test_compare_outage_states():
-    banner_ok = obs(banner=W["unreachable"], item_textbox={"count": 1, "visible": True, "value": "abc"})
-    exp = {"banner": W["unreachable"], "item_value": "abc", "rows": []}
-    assert p3.compare_obs(exp, banner_ok, W)[0] == []
-    assert "banner" in p3.compare_obs(exp, obs(item_textbox={"count": 1, "visible": True, "value": "abc"}), W)[0][0]
-    no_put_back = obs(banner=W["unreachable"])
-    assert "item box value" in p3.compare_obs(exp, no_put_back, W)[0][0]
-    m9 = obs(m9_visible=True, try_again={"count": 1, "visible": True}, empty_visible=False)
-    assert p3.compare_obs({"load_failed": True, "empty_text": False, "rows": []}, m9, W)[0] == []
-    false_empty = obs(m9_visible=False, empty_visible=True)
-    reasons = p3.compare_obs({"load_failed": True, "empty_text": False}, false_empty, W)[0]
-    assert any("load-failed state expected" in x for x in reasons) and any("false empty list" in x for x in reasons)
-    assert "banner still shown" in p3.compare_obs({"banner": False}, obs(banner="x"), W)[0][0]
-
-
-def test_compare_phone_width_messages_and_missing():
-    wide = obs(scroll={"scroll_width": 632, "inner_width": 390})
-    assert "scrollWidth 632 > innerWidth 390" in p3.compare_obs({"no_hscroll": True}, wide, W)[0][0]
-    msg = W["item_too_long"].replace("{n}", "201")
-    assert p3.compare_obs({"item_msg": msg}, obs(item_msg_parts=[msg]), W)[0] == []
-    assert p3.compare_obs({"item_msg": msg}, obs(item_msg_parts=["Too long: 203 characters. The limit is 200."]),
-                          W)[0]
-    assert p3.compare_obs({"item_msg": ""}, obs(item_msg_parts=[msg]), W)[0]
-    o = obs()
-    del o["scroll"]
-    assert p3.compare_obs({"no_hscroll": True}, o, W) == ([], ["no observation of no_hscroll"], [])
-    who = obs(who={"visible": True, "name": " Ana", "dir": "ltr"})
-    assert "U+0020 U+0041" in p3.compare_obs({"whoami": "Ana"}, who, W)[0][0]
-
-
-def test_judge_row_reads_every_observed_context_and_the_outage_rows():
-    rows = [["a", "Ana", False]]
-    row = {"id": "S-1", "ctx": "A", "observe": ["A", "B"], "expected": {"rows": rows, "same_rows": True}}
-    v = p3.judge_row(row, {"A": obs(rows), "B": obs(rows)}, None, {}, ORIGIN, W)
-    assert v["status"] == "PASS"
-    v = p3.judge_row(row, {"A": obs(rows), "B": obs([])}, None, {}, ORIGIN, W)
-    assert v["status"] == "FAIL" and any(x.startswith("B: ") for x in v["reasons"])
-    assert "different lists" in " ".join(v["reasons"])
-    failed = {"failed": [{"method": "POST", "url": ORIGIN + "/api/items", "error": "net::ERR_CONNECTION_REFUSED"}]}
-    d2 = {"id": "D-2", "ctx": "A", "expected": {"rows": []}}
-    v = p3.judge_row(d2, {"A": obs([])}, None, failed, ORIGIN, W)
-    assert v["status"] == "PASS" and v["notes"]
-    v = p3.judge_row(dict(d2, id="D-6"), {"A": obs([])}, None, failed, ORIGIN, W)
-    assert v["status"] == "FAIL" and "outside D-2, D-3" in v["reasons"][0]
-    v = p3.judge_row(d2, {"A": obs([])}, None, {"pageerrors": [{"message": "requestIdleCallback is not defined"}]},
-                     ORIGIN, W)
-    assert v["status"] == "FAIL" and "requestIdleCallback" in v["reasons"][0]
-    v = p3.judge_row(d2, {}, None, {}, ORIGIN, W)
-    assert v["status"] == "BLOCKED"
-
-
-def test_rows_are_unique_with_webkit_last_and_kill_its_own_host_action():
-    rows = p3.p3_rows(W, p3.USERS)
-    ids = [r["id"] for r in rows]
-    assert len(ids) == len(set(ids)) == len(p3.ROW_IDS)
-    engines = [p3.row_engine(r) for r in rows]
-    assert engines.index("webkit") == len(engines) - engines.count("webkit")
-    host = {r["id"]: r["host"] for r in rows if r.get("host")}
-    assert host == {"R-1": "restart", "D-1": "kill", "D-4": "start"}
-    assert all(r["ctx"] in ("A", "B") for r in rows if p3.row_engine(r) == "chromium")
-    s1 = next(r for r in rows if r["id"] == "S-1")
-    assert s1["acts"][0]["do"] == "sim_add" and s1["observe"] == ["A", "B"]
-
-
-# ---------------------------------------------------------------- host receipts
-
-
-def test_receipt_rules_require_exit_code_and_the_actions_value():
-    ok = {"row": "R-1", "done": True, "by": "ops", "at": "2026-10-20T10:00:00Z", "note": "", "exit_code": 0}
-    assert p3.receipt_problem(ok, "restart") is None
-    missing = dict(ok)
-    missing.pop("exit_code")
-    assert "no exit_code" in p3.receipt_problem(missing, "restart")
-    assert "a killed app cannot exit 0" in p3.receipt_problem(ok, "kill")
-    assert p3.receipt_problem(dict(ok, exit_code=137), "kill") is None
-    assert p3.receipt_problem(dict(ok, exit_code=-9), "kill") is None
-    assert "expected 0" in p3.receipt_problem(dict(ok, exit_code=1), "start")
-    assert "could not do it" in p3.receipt_problem(dict(ok, done=False, note="busy"), "stop")
-    # Project 2's parser still checks the shape (and still accepts a missing exit_code itself)
-    rec, problem = fs.parse_host_receipt(json.dumps(missing).encode(), "R-1")
-    assert problem is None and "exit_code" not in rec
-
-
-def test_waiting_file_names_the_kill_and_its_exit_codes():
-    row = next(r for r in p3.p3_rows(W, p3.USERS) if r["id"] == "D-1")
-    w = p3.waiting_record(row, ORIGIN, 120, "/x/D-1.json")
-    assert w["host_action"] == "kill" and w["exit_codes"] == [137, -9] and w["row"] == "D-1"
-    assert "REQUIRED" in w["receipt_format"]["exit_code"]
-
-
-class FakeSession:
-    async def call_tool(self, name, args):
-        raise AssertionError("no keepalive needed in this test")
-
-
-def _host_row(tmp_path, monkeypatch, row_id, receipt, probe):
-    async def fake_probe(url, code, **kwargs):
-        return probe
-
-    async def fake_drain(session, code):
-        assert code == p3.DRAIN
-        return {}
-
-    # P3 now owns its observed probe lifetime; keep the same fixed result and every assertion.
-    monkeypatch.setattr(p3, "probe_session", fake_probe)
-    monkeypatch.setattr(p3, "_call", fake_drain)
-    row = next(r for r in p3.p3_rows(W, p3.USERS) if r["id"] == row_id)
-    host = tmp_path / "host"
-    host.mkdir(parents=True)
-
-    async def go():
-        async def answer():
-            while not (host / f"WAITING-{row_id}.json").exists():
-                await asyncio.sleep(0.05)
-            await asyncio.sleep(1.1)  # after the request, so the mtime check passes
-            (host / f"{row_id}.json").write_text(json.dumps(receipt))
-
-        task = asyncio.create_task(answer())
-        r = {}
-        step = await p3.host_row(FakeSession(), r, row, target(host_wait_minutes=1), host, time.monotonic() + 900,
-                                 "t", "http://browser")
-        await task
-        return step, json.loads((host / f"WAITING-{row_id}.json").read_text())
-
-    return asyncio.run(go())
-
-
-def test_host_row_blocks_a_receipt_without_exit_code(tmp_path, monkeypatch):
-    rec = {"row": "D-1", "done": True, "by": "ops", "at": "2026-10-20T10:00:00Z", "note": ""}
-    step, waiting = _host_row(tmp_path, monkeypatch, "D-1", rec, {"down": True})
-    assert waiting["host_action"] == "kill"
-    assert step["status"] == "BLOCKED" and "no exit_code" in step["reasons"][0]
-
-
-def test_host_row_passes_a_kill_with_its_exit_code_when_the_origin_is_down(tmp_path, monkeypatch):
-    rec = {"row": "D-1", "done": True, "by": "ops", "at": "2026-10-20T10:00:00Z", "note": "", "exit_code": 137}
-    step, _ = _host_row(tmp_path, monkeypatch, "D-1", rec, {"down": True})
-    assert step["status"] == "PASS" and step["exit_codes"] == [137, -9]
-    step, _ = _host_row(tmp_path / "again", monkeypatch, "D-1", rec, {"down": False, "status": 200})
-    assert step["status"] == "BLOCKED" and "still answers" in step["reasons"][0]
-
-
-# ---------------------------------------------------------------- the profile and the routing
+# ---------------------------------------------------------------- the profile
 
 
 def test_profile_is_strict_and_separate_from_the_other_journeys():
     good = json.dumps(p3.default_p3_profile())
-    t, problems = p3.parse_p3_profile(good)
-    assert problems == [] and t["journey"] == "p3" and t["wording"]["unreachable"] == W["unreachable"]
+    t, bad = p3.parse_p3_profile(good)
+    assert bad == [] and t["journey"] == "p3" and t["origin_webkit"] != t["origin"]
+    assert t["kit_sha256"] == kit.SPEC["specs-rows.json"] and t["engine_image"] == p3.hc.ENGINE_PIN
+    assert "not allowed: extra" in " ".join(problems(extra=1))
+    assert problems(origin="http://10.0.0.5:8962")
+    assert any("journey_p3 must be" in x for x in problems(journey_p3="p3-provisional"))
+    assert any("origin_webkit must be" in x for x in problems(origin_webkit=ORIGIN))
+    assert any("kit_sha256 must be" in x for x in problems(kit_sha256="0" * 64))
+    assert any("kit_id must be" in x for x in problems(kit_id="qa-project3-critical-PENDING-SPEC"))
+    assert any("full image ID" in x for x in problems(engine_image="sha256:b01cb863"))
+    assert any("webkit_tree_sha256" in x for x in problems(webkit_tree_sha256="ABC"))
+    assert problems(webkit_tree_sha256="a" * 64) == []
+    assert any("host_window" in x for x in problems(host_window={"path": "relative", "sha256": "a" * 64}))
+    assert any("host_window" in x for x in problems(host_window={"path": "/x"}))
+    assert problems(host_window={"path": "/home/x/window.json", "sha256": "a" * 64}) == []
+    for gone in ("wording", "host_wait_minutes"):
+        assert any(f"not allowed: {gone}" in x for x in problems(**{gone: 1}))
     p = p3.default_p3_profile()
-    p["extra"] = 1
-    assert "not allowed: extra" in p3.parse_p3_profile(json.dumps(p))[1][0]
-    p = p3.default_p3_profile(origin="http://10.0.0.5:8962")
+    del p["engine_image"]
     assert p3.parse_p3_profile(json.dumps(p))[1]
-    p = p3.default_p3_profile()
-    p["journey_p3"] = "v2"
-    assert "journey_p3 must be" in p3.parse_p3_profile(json.dumps(p))[1][0]
-    p = p3.default_p3_profile()
-    p["wording"]["delete_button"] = "Delete"
-    assert "exactly once" in p3.parse_p3_profile(json.dumps(p))[1][0]
     assert p3.parse_p3_profile(None)[1] and p3.parse_p3_profile("[1]")[1]
     # the first app and Project 2 paths do not take it
     assert fac.wants_shared(good) is False
@@ -373,208 +144,261 @@ def test_agent_routes_controls_p3_and_journey_p3_to_the_new_script():
     assert "architecture/bin/first_app_p3.py" in docs and "architecture/fixtures/p3_app/" in docs
 
 
-# ---------------------------------------------------------------- verdict and control status
+# ---------------------------------------------------------------- verdict
 
 
-def _passing_receipt() -> dict:
-    steps = [{"id": i, "status": "PASS", "traffic": [], "reasons": []} for i in p3.ROW_IDS]
-    return {"steps": steps, "pins": {"ok": True}, "reach": {}, "profile": {},
-            "sessions": {"chromium": {"status": "RAN", "before_first_navigation": True},
-                         "webkit": {"status": "RAN", "before_first_navigation": True}},
-            "cleanup": {"chromium": {"confirmed": True}, "webkit": {"confirmed": True}},
-            "screenshots": [{"after": k} for k in p3.SHOTS]}
+def passing() -> dict:
+    r = p3.new_receipt("V", target())
+    r.update(pins={"ok": True}, pins_webkit={"ok": True}, reach={},
+             steps=[{"id": i, "engine": e, "status": "PASS", "traffic": [], "reasons": []}
+                    for e, i in p3.EXPECTED_STEPS],
+             sessions={e: {"status": "RAN", "before_first_navigation": True} for e in p3.ENGINES},
+             cleanup={e: {"confirmed": True} for e in p3.ENGINES},
+             engine_image={"compare": {"status": "PASS", "reasons": []}})
+    return r
 
 
-def test_verdict_pass_needs_every_row_both_cleanups_and_the_shots():
-    r = _passing_receipt()
-    assert p3.final_verdict(r)[0] == "PASS" and p3.traffic_gate(r)["status"] == "PASS"
-    r["cleanup"].pop("webkit")
+def test_verdict_pass_needs_every_row_in_both_engines_w1_and_both_cleanups():
+    assert p3.final_verdict(passing())[0] == "PASS"
+    r = passing()
+    r["steps"] = [s for s in r["steps"] if s["id"] != "UNI-UI" or s["engine"] != "webkit"]
+    assert p3.final_verdict(r)[0] != "PASS"
+    r = passing()
+    r["engine_image"]["compare"] = {"status": "BLOCKED", "reasons": ["engine container_id changed"]}
     assert p3.final_verdict(r)[0] == "BLOCKED"
-    r = _passing_receipt()
-    r["screenshots"] = r["screenshots"][:1]
-    assert p3.final_verdict(r)[0] == "BLOCKED"
+    r = passing()
+    r.pop("engine_image")
+    assert p3.final_verdict(r)[0] != "PASS"
+    r = passing()
+    del r["cleanup"]["webkit"]
+    assert p3.final_verdict(r)[0] != "PASS"
+    r = passing()
+    r["pins_webkit"] = {"ok": False, "bad": ["app.js"]}
+    assert p3.final_verdict(r)[0] == "REFUSED"
 
 
-def test_webkit_not_run_is_blocked_never_pass_and_fail_wins():
-    r = _passing_receipt()
+def test_unqualified_host_rows_and_unrun_webkit_are_never_pass_and_fail_wins():
+    r = passing()
     for s in r["steps"]:
-        if s["id"].startswith("W-"):
-            s.update(status="NOT RUN", reasons=["the WebKit browser service did not answer"])
-    r["sessions"]["webkit"] = {"status": "NOT RUN"}
-    verdict, why = p3.final_verdict(r)
-    assert verdict == "BLOCKED" and "WebKit rows NOT RUN" in why and "did not answer" in why
-    assert p3.traffic_gate(r)["status"] == "NOT CHECKED"
-    assert p3.traffic_gate(r)["engines"] == {"chromium": "PASS", "webkit": "NOT CHECKED"}
-    r["steps"][0]["traffic"] = ["GET http://evil.example/"]
-    assert p3.traffic_gate(r)["engines"]["chromium"] == "FAIL" and p3.traffic_gate(r)["status"] == "FAIL"
-    r["steps"][0]["traffic"] = []
-    r["steps"][2].update(status="FAIL", reasons=["x"])
+        if s["id"] in kit.HOST_ROWS:
+            s["status"] = "UNQUALIFIED"
+    assert p3.final_verdict(r)[0] == "BLOCKED"
+    r = passing()
+    for s in r["steps"]:
+        if s["engine"] == "webkit":
+            s["status"] = "NOT RUN"
+    assert p3.final_verdict(r)[0] == "BLOCKED"
+    r["steps"][0]["status"] = "FAIL"
     assert p3.final_verdict(r)[0] == "FAIL"
 
 
-def test_control_status_ok_wrong_and_not_run():
-    clean = {"case": "P3-CLEAN", "expect": ("PASS", None), "webkit": True}
-    r = _passing_receipt()
-    r["traffic_gate"] = p3.traffic_gate(r)
-    r["verdict"], r["why"] = p3.final_verdict(r)
-    assert p3.control_status(clean, r) == ("OK", ["PASS", None])
-    nr = _passing_receipt()
-    for s in nr["steps"]:
-        if s["id"].startswith("W-"):
-            s.update(status="NOT RUN", reasons=["down"])
-    nr["sessions"]["webkit"] = {"status": "NOT RUN"}
-    nr["traffic_gate"] = p3.traffic_gate(nr)
-    nr["verdict"], nr["why"] = p3.final_verdict(nr)
-    assert p3.control_status(clean, nr) == ("NOT RUN", ["BLOCKED", "W-1"])
-    late = dict(nr, sessions={"chromium": {"status": "RAN", "before_first_navigation": False},
-                              "webkit": {"status": "NOT RUN"}})
-    late["traffic_gate"] = p3.traffic_gate(late)
-    assert p3.control_status(clean, late)[0] == "WRONG"  # Chromium's traffic must be proven clean
-    assert p3.control_status({"case": "P3-NO-BANNER", "expect": ("FAIL", "D-2")}, nr)[0] == "WRONG"
-    nr["steps"][5].update(status="FAIL")
-    nr["verdict"], _ = p3.final_verdict(nr)
-    assert p3.control_status(clean, nr)[0] == "WRONG"  # a Chromium row failing is never NOT RUN
+def test_live_host_rows_write_nothing_and_are_blocked_until_qa_p5_receiving():
+    calls = []
+
+    async def call(s, code):
+        calls.append(code)
+        return {}
+
+    r, latch = p3.new_receipt("H", target()), g.StopLatch()
+    orig = p3._call
+    p3._call = call
+    try:
+        for rid in kit.HOST_ROWS:
+            step = asyncio.run(p3.host_step(object(), r, kit.ROW[rid], ORIGIN, {}, latch, "chromium"))
+            assert step["status"] == "BLOCKED" and step["reasons"] == [p3.HOST_WAIT]
+    finally:
+        p3._call = orig
+    assert calls == [p3.DRAIN] * len(kit.HOST_ROWS)  # only the drain before the row; no host request anywhere
+    assert "rm-9968c173" in p3.HOST_WAIT and "#126" in p3.HOST_WAIT
+
+
+# ---------------------------------------------------------------- controls
 
 
 def test_every_plant_has_a_control_and_materializes(tmp_path):
     src = (p3.FIXTURE / "app.js").read_text()
     assert src.count('const VARIANT = "clean";') == 1
     variants = {c["variant"] for c in p3.CONTROLS}
-    assert variants == {"clean", "inner_html", "utf16_length", "fixed_600", "no_dir_auto", "idle_callback",
-                        "no_banner", "no_put_back"}
-    for v in variants - {"clean"}:
+    plants = {"inner_html", "utf16_length", "no_dir_auto", "idle_callback", "no_banner", "no_live_busy",
+              "late_pending", "no_hints", "immediate_delete", "empty_on_failure"}
+    assert variants == {"clean"} | plants | set(p3.GATE_PLANTS)
+    for v in sorted(variants - {"clean"}):
         assert f'VARIANT === "{v}"' in src or f'VARIANT !== "{v}"' in src, v
         site = p3.materialize(v, tmp_path / v)
         assert f"const VARIANT = {json.dumps(v)};" in (site / "app.js").read_text()
         assert sorted(x.name for x in site.iterdir()) == ["app.js", "favicon.svg", "index.html", "style.css"]
-    cases = {c["case"]: c for c in p3.CONTROLS}
-    assert cases["P3-NO-EXIT-CODE"]["expect"] == ("BLOCKED", "R-1")
-    assert cases["P3-KILL-EXIT-0"]["expect"] == ("BLOCKED", "D-1")
-    assert cases["P3-SIM-RACE"]["server"] == "race_add"
     for c in p3.CONTROLS:
-        assert c["expect"][1] is None or c["expect"][1] in p3.ROW_IDS
+        if c.get("verdict") == "REFUSED":  # refused before any browser contact: no engine expectation
+            assert c["expect"] == {"chromium": None, "webkit": None}
+            continue
+        for e, (status, row) in c["expect"].items():
+            assert status in ("PASS", "FAIL") and (row is None or row in p3.ROW_IDS[e]), c
+    cases = {c["case"]: c for c in p3.CONTROLS}
+    assert cases["P3-IDLE-CALLBACK"]["expect"] == {"chromium": ("PASS", None), "webkit": ("FAIL", "J-1")}
+    assert cases["P3-BAD-PROFILE"]["verdict"] == "REFUSED"
+    assert "SIM" not in " ".join(cases) and "race" not in src.lower()  # SIM-5 is out
 
 
-# ---------------------------------------------------------------- the controls' synthetic server
+def test_gate_plants_are_literal_invalid_hosts_in_the_served_file():
+    src = (p3.FIXTURE / "app.js").read_text()
+    for variant, plant in p3.GATE_PLANTS.items():
+        for url in plant["urls"]:
+            assert url.split("/")[2].endswith(".invalid"), url
+            assert url in src or (variant == "plant_redirect" and url == p3.REDIRECT_LOCATION), url
+    assert p3.REDIRECT_ROUTE in src
+
+
+def _engine_status(r, e, ids):
+    r["sessions"][e] = {"status": "RAN", "engine_facts": {}}
+    r["steps"] += [{"id": i, "engine": e, "status": "PASS"} for i in ids]
+
+
+def test_control_status_ok_wrong_not_run_and_uncalibrated():
+    case = {c["case"]: c for c in p3.CONTROLS}
+
+    def receipt(webkit_ran=True, fail=None):
+        r = {"verdict": "FAIL", "steps": [], "sessions": {}, "browser_contact": True,
+             "traffic_gate": {"engines": {"chromium": "PASS", "webkit": "PASS"}}}
+        _engine_status(r, "chromium", p3.ROW_IDS["chromium"])
+        if webkit_ran:
+            _engine_status(r, "webkit", p3.ROW_IDS["webkit"])
+        else:
+            r["sessions"]["webkit"] = {"status": "NOT RUN", "why": p3.W1_MISSING}
+        if fail:
+            e, rid = fail
+            for s in r["steps"]:
+                if s["engine"] == e and s["id"] == rid:
+                    s["status"] = "FAIL"
+            r["traffic_gate"]["engines"][e] = "NOT CHECKED"
+        return r
+
+    assert p3.control_status(case["P3-CLEAN"], receipt())[0] == "OK"
+    assert p3.control_status(case["P3-CLEAN"], receipt(webkit_ran=False))[0] == "NOT RUN"
+    assert p3.control_status(case["P3-INNERHTML"], receipt(fail=("chromium", "E-5")))[0] == "WRONG"
+    assert p3.control_status(case["P3-INNERHTML"], receipt(fail=("chromium", "E-5")))[1]["webkit"] == ["PASS", None]
+    r = receipt(fail=("webkit", "J-1"))
+    assert p3.control_status(case["P3-IDLE-CALLBACK"], r)[0] == "OK"
+    r["sessions"]["webkit"]["engine_facts"] = {"idle_callback": "function"}
+    assert p3.control_status(case["P3-IDLE-CALLBACK"], r)[0] == "UNCALIBRATED"
+    r = receipt()
+    r["verdict"] = "W4 TRIPPED"
+    assert p3.control_status(case["P3-CLEAN"], r)[0] == "W4 TRIPPED"
+    r = receipt()
+    r["traffic_gate"]["engines"]["webkit"] = "NOT CHECKED"
+    assert p3.control_status(case["P3-CLEAN"], r)[0] == "WRONG"  # a clean PASS needs the engine's gate PASS
+
+
+# ---------------------------------------------------------------- gate plants: exact matching and G5
+
+
+def test_exact_key_fills_default_ports_and_keeps_path_and_query():
+    k = g.exact_key
+    assert k("https://beacon.invalid/b") == k("https://beacon.invalid:443/b") == k("HTTPS://beacon.invalid/b")
+    assert k("wss://websocket.invalid/s") == k("wss://websocket.invalid:443/s")
+    assert k("https://beacon.invalid/b") != k("https://beacon.invalid/b?x=1")
+    assert k("https://beacon.invalid/b") != k("https://beacon.invalid:8443/b")
+    assert k("https://beacon.invalid/b") != k("http://beacon.invalid/b")
+    assert k("https://beacon.invalid/b") != k("https://beacon.invalid/bb")
+    assert k("http://[::1") is None
+
+
+@pytest.mark.parametrize("url,catch", [("https://beacon.invalid/b", True), ("https://beacon.invalid:443/b", True),
+                                       ("https://beacon.invalid/b?n=1", False), ("https://beacon.invalid/c", False),
+                                       ("https://worker.invalid/w", False), ("https://outside.example/b", False)])
+def test_only_the_cases_own_plant_urls_are_caught_anything_else_off_origin_is_w4(url, catch):
+    r, latch = {}, g.StopLatch()
+    log = {"requests": [{"url": url, "ctx": "A"}]}
+    latch.observe(r, log, ORIGIN, "chromium:J-1", allowed=p3.GATE_PLANTS["plant_beacon"]["urls"])
+    assert latch.tripped is (not catch)
+    assert bool(r.get("gate_catches")) is catch
+    latch2 = g.StopLatch()
+    latch2.observe({}, log, ORIGIN, "chromium:J-1")  # builds pass no list: everything off-origin is W4
+    assert latch2.tripped
+
+
+def test_g5_reports_caught_miss_and_not_exercised_per_engine():
+    url = p3.GATE_PLANTS["plant_eventsource"]["urls"][0]
+    r = {"profile": {"gate_plant": "plant_eventsource"},
+         "sessions": {"chromium": {"status": "RAN"}, "webkit": {"status": "RAN"}},
+         "gate_catches": [{"phase": "chromium:J-3", "kind": "requests", "url": url}],
+         "engine_logs": {"webkit": {"aborted": [{"url": url}]}}, "plant_marks": {"chromium": "sent", "webkit": "sent"}}
+    out = p3.gate_plant_result(r)
+    assert out["engines"]["chromium"]["result"] == "caught"
+    assert out["engines"]["webkit"]["result"] == "MISS"  # the abort route saw it, the gate did not: never caught
+    r["engine_logs"] = {}
+    r["plant_marks"]["webkit"] = "unsupported"
+    assert p3.gate_plant_result(r)["engines"]["webkit"]["result"] == "not exercised"
+    r["sessions"]["webkit"] = {"status": "NOT RUN", "why": p3.W1_MISSING}
+    assert p3.gate_plant_result(r)["engines"]["webkit"]["result"] == "NOT RUN"
+    assert p3.gate_plant_result({"profile": {}}) is None
+
+
+# ---------------------------------------------------------------- the controls' fixture server
 
 
 def _req(port, method, path, body=None):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, method=method,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=5) as r:
-        return r.status, r.read()
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **kw):
+            return None
+
+    try:
+        with urllib.request.build_opener(NoRedirect).open(req, timeout=5) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
 
 
-def _post_pair(port):
-    responses, failures = {}, []
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        # Submit both before consuming either; even a failed first result must not hide the second.
-        futures = [pool.submit(_req, port, "POST", "/api/items", {"text": text, "added_by": "x"})
-                   for text in ("a", "b")]
-        for text, future in zip(("a", "b"), futures, strict=True):
-            try:
-                response = future.result()
-                responses[text] = response
-                assert response[0] == 201, f"POST {text!r}: status {response[0]}, expected 201"
-            except Exception as exc:
-                exc.add_note(f"concurrent POST {text!r}")
-                failures.append(exc)
-    if failures:
-        error = ExceptionGroup("concurrent POSTs failed", failures)
-        error.add_note(f"POST response statuses: { {text: r[0] for text, r in responses.items()} }")
-        raise error
-    return list(responses.values())
+@pytest.mark.parametrize("variant", ["clean", "plant_redirect"])
+def test_server_serves_only_its_allowlist_and_the_fixed_redirect_in_its_own_copy(tmp_path, variant):
+    site = p3.materialize(variant, tmp_path / "s")
+    data = tmp_path / "data"
+    data.mkdir()
+    srv = p3.P3Server(site, data, variant, bind_address="127.0.0.1")
+    srv.start()
+    try:
+        for path in ("/", "/index.html", "/style.css", "/app.js", "/favicon.svg"):
+            assert _req(srv.port, "GET", path)[0] == 200, path
+        for path in ("/etc/passwd", "/app.js/", "/./app.js", "/%61pp.js", "/fixtures/", "/app.js?x=1", "/../app.js"):
+            assert _req(srv.port, "GET", path)[0] == 404, path
+        code, headers, _ = _req(srv.port, "GET", p3.REDIRECT_ROUTE)
+        if variant == "plant_redirect":
+            assert code == 302 and headers["Location"] == p3.REDIRECT_LOCATION
+        else:
+            assert code == 404
+    finally:
+        srv.stop()
 
 
-def test_server_answers_utf8_keeps_items_across_a_kill_and_reports_exit_codes(tmp_path):
+def test_server_keeps_exact_utf8_across_a_crash_and_start(tmp_path):
     site = p3.materialize("clean", tmp_path / "c")
     data = tmp_path / "data"
     data.mkdir()
     srv = p3.P3Server(site, data, bind_address="127.0.0.1")
     srv.start()
     try:
-        code, raw = _req(srv.port, "POST", "/api/items", {"text": p3.S["hebrew"], "added_by": "Pat"})
-        assert code == 201 and p3.S["hebrew"].encode() in raw
-        kill = srv.host_action("kill")
-        assert kill["action"] == "kill" and kill["exit_code"] == 137 and kill["done"] and not srv.port_open()
+        text = kit.U["U10"]  # NFD: must come back as the same code points
+        code, _, raw = _req(srv.port, "POST", "/api/items", {"text": text, "added_by": kit.N2})
+        assert code == 201
+        crash = srv.host_action("crash")
+        assert crash["action"] == "crash" and crash["done"] and "never a real app" in crash["fake"]
         with pytest.raises(OSError):
             socket.create_connection(("127.0.0.1", srv.port), timeout=1).close()
-        start = srv.host_action("start")
-        assert start["exit_code"] == 0 and start["done"]
-        _, raw = _req(srv.port, "GET", "/api/items")
-        assert [x["text"] for x in json.loads(raw)["items"]] == [p3.S["hebrew"]]
-        assert srv.host_action("restart")["exit_code"] == 0
+        assert srv.host_action("start")["done"]
+        _, _, raw = _req(srv.port, "GET", "/api/items")
+        items = json.loads(raw)["items"]
+        assert [x["text"] for x in items] == [text] and [ord(c) for c in items[0]["text"]][-2:] == [0x65, 0x301]
+        assert srv.host_action("restart")["done"]
+        assert srv.host_action("kill")["done"] is False  # only restart, crash and start exist
     finally:
         srv.stop()
 
 
-def test_post_pair_starts_both_before_waiting_and_returns_both(monkeypatch):
-    entered = threading.Barrier(2, timeout=3)
-    seen = {}
-
-    def request(port, method, path, body):
-        assert (port, method, path) == (0, "POST", "/api/items")
-        entered.wait()  # Serial submit/result would break this barrier, not pass by sleeping.
-        text = body["text"]
-        seen[text] = (201, text.encode())
-        return seen[text]
-
-    monkeypatch.setattr(sys.modules[__name__], "_req", request)
-    assert _post_pair(0) == [(201, b"a"), (201, b"b")]
-    assert set(seen) == {"a", "b"} and not entered.broken
-
-
-@pytest.mark.parametrize("outcomes", [
-    pytest.param(("disconnect", 201), id="first-disconnect"),
-    pytest.param((201, "disconnect"), id="second-disconnect"),
-    pytest.param(("disconnect", "disconnect"), id="both-disconnect"),
-    pytest.param((503, 201), id="first-non-201"),
-    pytest.param((201, 503), id="second-non-201"),
-    pytest.param((400, 503), id="both-non-201"),
-    pytest.param(("disconnect", 503), id="disconnect-and-non-201"),
-])
-def test_post_pair_surfaces_every_failure_on_the_calling_thread(monkeypatch, outcomes):
-    entered = threading.Barrier(2, timeout=3)
-    expected = {text: RemoteDisconnected(f"disconnected {text}") if value == "disconnect" else value
-                for text, value in zip(("a", "b"), outcomes, strict=True)}
-    seen = {}
-
-    def request(port, method, path, body):
-        entered.wait()
-        text = body["text"]
-        seen[text] = expected[text]
-        if isinstance(seen[text], Exception):
-            raise seen[text]
-        return seen[text], text.encode()
-
-    monkeypatch.setattr(sys.modules[__name__], "_req", request)
-    with pytest.raises(ExceptionGroup, match="concurrent POSTs failed") as caught:
-        _post_pair(0)
-    assert seen == expected and not entered.broken
-    failures = [(text, value) for text, value in expected.items() if value != 201]
-    assert len(caught.value.exceptions) == len(failures)
-    for exc, (text, value) in zip(caught.value.exceptions, failures, strict=True):
-        if isinstance(value, Exception):
-            assert exc is value  # Preserve each original exception and its traceback, not just its string.
-        else:
-            assert isinstance(exc, AssertionError)
-            assert str(exc).startswith(f"POST {text!r}: status {value}, expected 201")
-        assert exc.__notes__ == [f"concurrent POST {text!r}"]
-    statuses = {text: value for text, value in expected.items() if isinstance(value, int)}
-    assert caught.value.__notes__ == [f"POST response statuses: {statuses}"]
-
-
-def test_race_server_loses_one_of_two_adds_at_once(tmp_path):
-    site = p3.materialize("clean", tmp_path / "c")
-    for variant, want in (("file", 2), ("race_add", 1)):
-        data = tmp_path / variant
-        data.mkdir()
-        srv = p3.P3Server(site, data, variant, bind_address="127.0.0.1")
-        srv.start()
-        try:
-            _post_pair(srv.port)  # Both responses must be 201 before the item count can mean anything.
-            _, raw = _req(srv.port, "GET", "/api/items")
-            assert len(json.loads(raw)["items"]) == want, variant
-        finally:
-            srv.stop()
+def test_tree_hash_is_stable_and_changes_with_any_byte(tmp_path):
+    a = g.snapshot(p3.materialize("clean", tmp_path / "a"), p3.CTYPES)
+    b = g.snapshot(p3.materialize("inner_html", tmp_path / "b"), p3.CTYPES)
+    assert p3.tree_sha256(a) == p3.tree_sha256(dict(a)) and len(p3.tree_sha256(a)) == 64
+    assert p3.tree_sha256(a) != p3.tree_sha256(b)

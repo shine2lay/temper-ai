@@ -1,14 +1,19 @@
-body { font-family: system-ui, sans-serif; font-size: 1rem; line-height: 1.45; margin: 0; }
+body { font-family: system-ui, sans-serif; font-size: 1rem; line-height: 1.45; margin: 0; background: #fff; color: #111; }
 main { max-width: 40rem; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
-h1 { font-size: 1.5rem; }
+h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+.subtitle { margin: 0 0 1rem; }
 input, button { font: inherit; min-height: 44px; }
-#banner { border: 2px solid #a00; padding: 0.5rem; }
-.msg:empty, .hint:empty { display: none; }
-.msg { color: #a00; font-size: 0.875rem; }
-.hint { font-size: 0.875rem; }
+button { color: #0b3d91; }
+#add-button { background: #0b3d91; color: #fff; border: 0; padding: 0 1rem; }
+:focus-visible { outline: 3px solid #0b3d91; outline-offset: 2px; }
+#banner { position: sticky; top: 0; background: #fff; border: 2px solid #a00; color: #a00; padding: 0.5rem; }
+#banner:empty, #notice:empty, #list-status:empty, .msg:empty, .item-status:empty { border: 0; padding: 0; margin: 0; }
+.msg { color: #a00; font-size: 0.875rem; margin: 0.25rem 0; }
+.hint { font-size: 0.875rem; margin: 0.25rem 0; }
+input[aria-invalid="true"] { border: 2px solid #a00; }
 #list { list-style: none; padding: 0; }
 #list li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.25rem 0; }
 .item-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; flex: 1 1 10rem; }
-.item-by { font-size: 0.875rem; }
-li.done .item-text { text-decoration: line-through; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.item-by, .item-status { font-size: 0.875rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+li.done .item-text { text-decoration: line-through; color: #555; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

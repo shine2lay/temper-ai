@@ -8,42 +8,48 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<!-- Architecture #124: a synthetic Project-3-style page for first_app_p3.py's controls, written from Product's
-     FINAL-13ccada4 page contract (S3/S4). Not a build: a reference the checker must PASS, and the base of its plants. -->
+<!-- Architecture #125: a synthetic page for first_app_p3.py's controls, written from Product's FINAL v3.1
+     (c2a5ddbd) S3/S4 and QA #32's rows. Not a build: a reference the checker must PASS, and the base of its plants. -->
 <main>
   <h1>To-do list</h1>
-  <div id="banner" role="alert" hidden></div>
-  <div id="notice" role="status" hidden></div>
+  <p class="subtitle">One shared list. Reload the page to see other people's changes.</p>
+  <div id="banner" role="alert"></div>
+  <div id="notice" role="status"></div>
 
-  <form id="name-form" hidden novalidate>
-    <label for="name-box">Your name</label>
-    <input id="name-box" type="text" autocomplete="off" aria-describedby="name-hint name-msg">
-    <p id="name-hint" class="hint">Shown next to the items you add. This browser remembers it.</p>
-    <p id="name-msg" class="msg"></p>
-    <button id="name-button" type="submit">Save name</button>
-  </form>
+  <div id="who-area">
+    <p id="whoami" hidden>You are <b id="whoami-name" dir="auto"></b> <span aria-hidden="true">·</span>
+      <button id="change-name" type="button">Change name</button></p>
+    <form id="name-form" hidden novalidate>
+      <label for="name-box">Your name</label>
+      <input id="name-box" type="text" autocomplete="nickname" aria-describedby="name-hint">
+      <p id="name-hint" class="hint">Shown next to the items you add. Up to 50 characters. This browser remembers it.</p>
+      <p id="name-msg" class="msg" aria-live="polite"></p>
+      <button id="name-button" type="submit">Save name</button>
+      <button id="name-cancel" type="button" hidden>Cancel</button>
+    </form>
+    <p id="storage-note" hidden>This browser won't remember your name after a reload.</p>
+  </div>
 
   <section id="app" hidden>
-    <p id="who">You are <b><bdi id="who-name" dir="auto"></bdi></b> <span aria-hidden="true">·</span>
-      <button id="change-name" type="button">Change name</button></p>
     <form id="add-form" novalidate>
       <label for="item-box">New item</label>
-      <input id="item-box" type="text" autocomplete="off" aria-describedby="item-msg">
+      <input id="item-box" type="text" autocomplete="off" aria-describedby="item-hint">
+      <p id="item-hint" class="hint">Up to 200 characters.</p>
       <button id="add-button" type="submit">Add</button>
-      <p id="item-msg" class="msg"></p>
+      <p id="item-msg" class="msg" aria-live="polite"></p>
     </form>
     <div id="list-area">
-      <p id="loading" hidden>Loading the list…</p>
+      <p id="list-status" role="status"></p>
       <div id="load-failed" role="alert" hidden>
-        <p id="load-failed-text">Can't reach the server. The list couldn't be loaded.</p>
+        <p id="load-failed-text"></p>
         <button id="try-again" type="button">Try again</button>
       </div>
-      <p id="empty" hidden>No items yet. Add the first one above.</p>
       <ul id="list" aria-label="To-do items"></ul>
     </div>
   </section>
   <div id="announcer" class="visually-hidden" role="status"></div>
 </main>
+<noscript>This page needs JavaScript.</noscript>
 <script src="/app.js"></script>
 </body>
 </html>

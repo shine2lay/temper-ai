@@ -518,7 +518,9 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/bin/first_app_check.py` | script |
 | `architecture/fixtures/first_app/` | checker controls (synthetic page) |
 | `architecture/fixtures/first_app_reworded/` | checker controls (the synthetic page reworded, with its profile) |
-| `architecture/bin/first_app_p3.py` | script (first_app_check's Project 3 journey: WebKit phone, exact text, kill and start) |
+| `architecture/bin/first_app_p3.py` | script (first_app_check's Project 3 journey: QA #32's rows in Chromium and phone WebKit, safely run) |
+| `architecture/bin/first_app_p3_rows.py` | library (Project 3's rows, texts and judges, from QA #32 on Product FINAL v3.1) |
+| `architecture/bin/first_app_p3_admission.py` | library (W1 admission: refuses a browser service an earlier receipt said needs recreation) |
 | `architecture/bin/ops_host_client.py` | library (stdlib-only, build-bound Ops request/receipt client; pure host verdicts) |
 | `architecture/fixtures/p3_app/` | checker controls (synthetic Project-3-style page, with its plants) |
 | `architecture/stages/context_profile/STANDARD.md` | stage standard (context profile v2: bars and contract; no case content) |

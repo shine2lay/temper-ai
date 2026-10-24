@@ -22,6 +22,18 @@ def _origin(url: str) -> tuple:
     return scheme, p.hostname, p.port if p.port is not None else (443 if scheme == "https" else 80)
 
 
+def exact_key(url: str) -> tuple:
+    """Security G3: a plant URL matches only exactly: scheme, host, port (defaults filled in), path and query
+    (a planted URL has none; an added query is not the plant). The fragment is never sent."""
+    try:
+        p = urllib.parse.urlsplit(url)
+        scheme = p.scheme.lower()
+        port = p.port if p.port is not None else {"http": 80, "ws": 80, "https": 443, "wss": 443}.get(scheme)
+    except (ValueError, TypeError, AttributeError):
+        return None  # never equal to a plant's key: an unreadable URL is never a catch
+    return scheme, p.hostname, port, p.path or "/", p.query
+
+
 @dataclass
 class StopLatch:
     """One sticky latch shared by every case, probe, section and cleanup of an invocation."""
@@ -34,7 +46,13 @@ class StopLatch:
     def stopped(self) -> bool:
         return self.tripped or self.blocked
 
-    def observe(self, receipt: dict, log: dict, origin: str, phase: str) -> None:
+    def observe(self, receipt: dict, log: dict, origin: str, phase: str, allowed=()) -> None:
+        """Every off-origin event trips W4, except, in a control run, the exact URLs of that case's own gate
+        plant (allowed; builds and plants without a list pass none): those are recorded in the receipt's
+        gate_catches, the gate's own event-based record that G2 counts."""
+        keys = set()
+        for x in allowed or ():
+            keys.add(exact_key(x))
         for kind in ("requests", "responses", "failed", "websockets", "serviceworkers", "popups"):
             for event in log.get(kind) or []:
                 url = event.get("url")
@@ -46,6 +64,10 @@ class StopLatch:
                 except ValueError:
                     # Invalid event URLs are retained, not treated as a grant or proof of a destination.
                     self.block("malformed event URL: " + url)
+                    continue
+                if outside and keys and exact_key(url) in keys:
+                    receipt.setdefault("gate_catches", []).append({"phase": phase, "kind": kind, "ctx": event.get("ctx"),
+                                                                   "url": url})
                     continue
                 if outside:
                     self.tripped = True

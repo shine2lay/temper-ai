@@ -69,11 +69,24 @@ def node_case(code, engine='chromium', **kw):
     return json.loads(proc.stdout)
 
 
+@pytest.fixture
+def chromium_ab(monkeypatch):
+    """The R1 disposal fakes (R1_NODE, clean_close) make contexts A and B; these tests are about disposal, not
+    the canonical six Chromium contexts, so Chromium expects A and B here."""
+    monkeypatch.setitem(p3.ENGINES['chromium'], 'contexts', ('A', 'B'))
+
+
 def clean_close(names, log=None):
     return {'contexts': {n: {'error': None, 'page_created': True, 'page_closed': True,
                             'context_still_in_browser': False} for n in names},
             'other_contexts_left': 0, 'guard_page_closed': True, 'guard_context_closed': True,
             'journal': {'status': 'complete', 'reasons': []}, 'log': log or {}}
+
+
+def empty_receipts_root(t, tmp_path):
+    """W1 admission (#125 4b) reads earlier receipts; these journeys start with none."""
+    (tmp_path / 'receipts').mkdir()
+    t['receipts_root'] = str(tmp_path / 'receipts')
 
 
 def event(url=EXACT):
@@ -82,32 +95,45 @@ def event(url=EXACT):
 
 
 def passing(r):
-    rows = p3.p3_rows(p3.KIT_WORDING, p3.USERS)
-    r.update(pins={'ok': True}, reach={},
-             steps=[dict(x, kind='host' if x.get('host') else 'browser', status='PASS', traffic=[], reasons=[], notes=[])
-                    for x in rows], steps_attempted=len(rows),
+    """A receipt that would pass: every expected step PASS, both copies pinned, W1 confirmed, cleanup confirmed."""
+    r.update(pins={'ok': True}, pins_webkit={'ok': True}, reach={},
+             steps=[{'id': i, 'engine': e, 'kind': 'browser', 'status': 'PASS', 'traffic': [], 'reasons': [],
+                     'notes': []} for e, i in p3.EXPECTED_STEPS], steps_attempted=len(p3.EXPECTED_STEPS),
              sessions={e: {'status': 'RAN', 'before_first_navigation': True} for e in p3.ENGINES},
              cleanup={e: {'confirmed': True} for e in p3.ENGINES},
-             screenshots=[{'after': k, 'file': 'fake.png'} for k in p3.SHOTS])
+             engine_image={'compare': {'status': 'PASS', 'reasons': [], 'image_id': p3.hc.ENGINE_PIN}})
     return r
+
+
+def reading(container='c' * 64, started='2026-10-20T19:51:36.763227153Z', image=None):
+    """A judged W1 engine-image reading in #126's shape (only Ops' W-IMG operation gives a real one)."""
+    return {'operation': 'engine-image', 'status': 'PASS', 'reasons': [],
+            'facts': {'image_id': image or p3.hc.ENGINE_PIN, 'container_id': container,
+                      'container_started_at': started, 'running': True}}
+
+
+def image_hooks(before=None, after=None):
+    async def read(phase):
+        return (before if phase == 'before' else after) or reading()
+    return {'engine_image': read}
 
 
 # Happy paths first, then the exact faults in the same event/lifetime boundaries.
 @pytest.mark.parametrize('engine', ['chromium', 'webkit'])
-@pytest.mark.parametrize('kind', ['setup', 'pins', 'down', 'engine'])
+@pytest.mark.parametrize('kind', ['setup', 'pins', 'engine'])
 def test_generated_contexts_block_sw_and_observe_before_navigation(engine, kind):
     js = p3.setup_js(target(), engine) if kind == 'setup' else p3.probe_js(target(), kind, engine)
     data = node_case(js, engine)
     assert not data['error'] and not data['close_error']
     assert all(o['serviceWorkers'] == 'block' for o in data['options'])
-    assert len(data['options']) == (2 if kind == 'setup' else 1)
+    assert len(data['options']) == (len(p3.ENGINES[engine]['contexts']) if kind == 'setup' else 1)
     assert data['contexts_left'] == 0
     if kind != 'setup':
         assert data['result']['closed'] and data['result']['observers_at']
         assert data['result']['log']['requests'] == []
 
 
-@pytest.mark.parametrize(('kind', 'phase'), [(kind, phase) for kind in ['pins', 'down', 'engine']
+@pytest.mark.parametrize(('kind', 'phase'), [(kind, phase) for kind in ['pins', 'engine']
                                             for phase in ['newPage', 'goto', 'close']
                                             if (kind, phase) != ('engine', 'goto')])
 def test_probe_event_witnesses_and_sw_failures_survive_terminal_paths(kind, phase):
@@ -309,6 +335,7 @@ class FakeTransport:
         return SimpleNamespace(content=[], isError=False)
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['clean', 'CLOSE', 'DRAIN', 'browser_close', 'partial_setup'])
 def test_independent_browser_fallback_even_after_close_or_partial_setup_fault(monkeypatch, fault):
     s = FakeTransport('chromium', fail_close=fault == 'browser_close')
@@ -333,8 +360,13 @@ def test_independent_browser_fallback_even_after_close_or_partial_setup_fault(mo
         assert r['log']['requests'][0]['url'] == EXACT and latch.tripped
 
 
+PIN_PHASE = 'chromium:pins-chromium-copy'  # the first MCP contact: the Chromium copy's pins probe
+
+
 def install_journey(monkeypatch, fault='clean'):
-    sessions, kinds = [], iter(['pins', 'chromium', 'engine', 'webkit'])
+    """Sessions in order: pins (Chromium copy), pins (WebKit copy), chromium rows, WebKit engine probe, webkit rows.
+    Returns the target, the sessions and hooks with a passing fake W1 reader."""
+    sessions, kinds = [], iter(['pins', 'pins', 'chromium', 'engine', 'webkit'])
     t = target()
     raw = g.snapshot(p3.FIXTURE, p3.CTYPES)
 
@@ -343,7 +375,7 @@ def install_journey(monkeypatch, fault='clean'):
         s = FakeTransport(next(kinds))
         sessions.append(s)
         yield s
-        if fault == 'transport_exit' and s.kind == 'pins':
+        if fault == 'transport_exit' and s.kind == 'pins' and len(sessions) == 1:
             raise RuntimeError('fixed transport exit after pin data')
 
     async def call(s, code):
@@ -360,20 +392,20 @@ def install_journey(monkeypatch, fault='clean'):
         assert s.kind in ('pins', 'engine')
         if s.kind == 'engine':
             return {'type': 'webkit', 'version': 'fake-1', 'log': {}}
-        files = {n: {'status': 200, 'content_type': p3.CTYPES[n], 'url': ORIGIN + '/' + n,
+        here = ORIGIN if sum(x.kind == 'pins' for x in sessions) == 1 else t['origin_webkit']  # copy a, then b
+        files = {n: {'status': 200, 'content_type': p3.CTYPES[n], 'url': here + '/' + n,
                      'b64': base64.b64encode(b).decode()} for n, b in raw.items()}
         if fault == 'bad_pin':
             files['app.js']['b64'] = base64.b64encode(b'not the reviewed file').decode()
-        return {'status': 200, 'closed': True, 'final_url': ORIGIN + '/', 'root': files['index.html'],
+        return {'status': 200, 'closed': True, 'final_url': here + '/', 'root': files['index.html'],
                 'files': files, 'log': event() if fault in ('stage_A', 'bad_pin', 'transport_exit') else {}}
 
-    async def rows(s, r, engine, rowlist, target, out, label, host_dir, deadline, hooks, browser_url, cached, latch):
+    async def rows(s, r, engine, origin, target, label, deadline, hooks, latch, served_html):
         assert not latch.stopped
         r['sessions'][engine].update(status='RAN', before_first_navigation=True)
-        r['steps'].extend(dict(x, kind='host' if x.get('host') else 'browser', status='PASS',
-                               traffic=[], reasons=[], notes=[]) for x in rowlist)
-        r.setdefault('screenshots', []).extend({'after': k, 'file': 'fake.png'} for k in p3.SHOTS
-                                               if (k.startswith('W-')) == (engine == 'webkit'))
+        r['steps'].extend({'id': i, 'engine': engine, 'kind': 'browser', 'status': 'PASS', 'traffic': [],
+                           'reasons': [], 'notes': []}
+                          for i in p3.ROW_IDS[engine] + (['PH-1'] if engine == 'webkit' else []))
         if fault == 'partial_setup':
             raise RuntimeError('newPage failed after context creation')
         return True  # regression: the pending True must not defeat a late final drain
@@ -381,9 +413,10 @@ def install_journey(monkeypatch, fault='clean'):
     monkeypatch.setattr(p3, 'open_session', open_fake)
     monkeypatch.setattr(p3, '_call', call)
     monkeypatch.setattr(p3, '_section_rows', rows)
-    return t, sessions
+    return t, sessions, image_hooks()
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['F5', 'carrier_context_error', 'carrier_context_alive'])
 def test_r1_followup_carrier_context(monkeypatch, tmp_path, fault):
     data = r1_close_case(fault)
@@ -415,6 +448,7 @@ def test_r1_followup_carrier_context(monkeypatch, tmp_path, fault):
         assert 'fixed carrier context close failure' in json.dumps(c['errors'])
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['error', 'error_result', 'timeout', 'cancel', 'unknown'])
 def test_r1_followup_fallback_recreation(monkeypatch, tmp_path, fault):
     s, r, latch = FakeTransport('chromium', fail_close=fault), passing(p3.new_receipt('R1', target())), g.StopLatch()
@@ -445,6 +479,7 @@ def test_r1_followup_fallback_recreation(monkeypatch, tmp_path, fault):
     assert all(x.startswith('terminal observation not established: ') for x in c['journal']['reasons'])
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['guard_event', 'guard_alive', 'guard_error', 'untracked', 'other_context', 'bad_close'])
 def test_r1_carrier_and_unknown_lifetimes(monkeypatch, tmp_path, fault):
     s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R1', target())), g.StopLatch()
@@ -474,9 +509,10 @@ def test_r1_carrier_and_unknown_lifetimes(monkeypatch, tmp_path, fault):
         assert c['contexts']['untracked']
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['F5', 'F1', 'F2', 'F3', 'F4'])
 def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
-    t, sessions = install_journey(monkeypatch)
+    t, sessions, hooks = install_journey(monkeypatch)
     original_call, original_rows = p3._call, p3._section_rows
     data = r1_close_case(fault)
     fallback_events, started = [], []
@@ -494,7 +530,7 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
             r.setdefault('probes', {})['R1-original'] = {'data': 'fixed probe data',
                                                        'error': 'fixed original probe error'}
             if fault == 'F3':
-                p3.collect(r, event(), ORIGIN, args[-1], 'R1:earlier-case-event')
+                p3.collect(r, event(), ORIGIN, args[-2], 'R1:earlier-case-event')
         return ok
 
     async def browser_close(s, name, args):
@@ -506,11 +542,11 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
     monkeypatch.setattr(p3, '_section_rows', rows)
     monkeypatch.setattr(FakeTransport, 'call_tool', browser_close)
     latch = g.StopLatch()
-    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'R1', tmp_path / 'host', 900,
-                                     latch=latch))
+    empty_receipts_root(t, tmp_path)
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'R1', 900, hooks, latch=latch))
     c = r['cleanup']['chromium']
     assert all(s.browser_closes == 1 for s in sessions)
-    assert r['probes']['stage-A']['files']['app.js']['b64']
+    assert r['pins']['ok'] and r['probes'][PIN_PHASE]['root']['b64']
     assert r['probes']['R1-original'] == {'data': 'fixed probe data', 'error': 'fixed original probe error'}
     if fault in ('F1', 'F3'):
         assert r['verdict'] == 'W4 TRIPPED' and r['exit_code'] == 4
@@ -526,7 +562,7 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
         assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and c['confirmed']
         assert c.get('journal', {}).get('status') == 'complete'
     if fault != 'F5':
-        assert len(sessions) == 2 and started == ['chromium']  # no later engine/probe
+        assert len(sessions) == 3 and started == ['chromium']  # no later engine/probe
         assert not c['confirmed']
         assert 'fixed original CLOSE failure' in json.dumps(c)
         attempted = []
@@ -538,7 +574,7 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
         monkeypatch.setattr(p3, 'run_control', forbidden_case)
         monkeypatch.setattr(p3, 'CONTROLS', [dict(case='LATER')])
         monkeypatch.setattr(g, 'StopLatch', lambda: latch)  # controls owns a fresh latch in real invocations
-        args = SimpleNamespace(only='', browser='fake:', serve_ip='100.110.162.4')
+        args = SimpleNamespace(only='', browser='fake:', browser_webkit='fake:webkit', serve_ip='100.110.162.4')
         assert asyncio.run(p3.controls(args, tmp_path / 'later')) == (4 if fault in ('F1', 'F3') else 1)
         assert not attempted
     if fault == 'F1':
@@ -553,24 +589,26 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
 @pytest.mark.parametrize('fault', ['clean', 'stage_A', 'bad_pin', 'transport_exit', 'late_drain', 'late_close',
                                    'CLOSE', 'partial_setup'])
 def test_journey_waits_for_terminal_traffic_and_disposal_before_next_engine(monkeypatch, tmp_path, fault):
-    t, sessions = install_journey(monkeypatch, fault)
+    t, sessions, hooks = install_journey(monkeypatch, fault)
     latch = g.StopLatch()
-    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'fake', tmp_path / 'host', 900,
-                                     latch=latch))
+    empty_receipts_root(t, tmp_path)
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'fake', 900, hooks, latch=latch))
     assert all(s.browser_closes == 1 for s in sessions)
     if fault == 'clean':
-        assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and len(sessions) == 4 and not latch.stopped
+        assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and len(sessions) == 5 and not latch.stopped
+        assert r['engine_image']['compare']['status'] == 'PASS'
+        assert all(s['engine_image']['compare'] == 'PASS' for s in r['steps'] if s['engine'] == 'webkit')
     elif fault in ('stage_A', 'bad_pin', 'transport_exit', 'late_drain', 'late_close'):
         assert r['verdict'] == 'W4 TRIPPED' and r['exit_code'] == 4 and latch.tripped
-        assert len(sessions) == (1 if fault in ('stage_A', 'bad_pin', 'transport_exit') else 2)
+        assert len(sessions) == (1 if fault in ('stage_A', 'bad_pin', 'transport_exit') else 3)
         assert EXACT in (tmp_path / 'observations.json').read_text()
-        assert r['probes']['stage-A']['files']['app.js']['b64']  # pin/error evidence survives too
+        assert r['probes'][PIN_PHASE]['root']['b64']  # pin/error evidence survives too
     else:
-        assert r['verdict'] == 'BLOCKED' and len(sessions) == 2 and latch.blocked
+        assert r['verdict'] == 'BLOCKED' and len(sessions) == 3 and latch.blocked
 
 
 @pytest.mark.parametrize('fault', ['clean', 'off_origin', 'error'])
-def test_down_probe_keeps_observations_through_transport_error(monkeypatch, fault):
+def test_probe_keeps_observations_through_navigation_and_transport_error(monkeypatch, fault):
     s, r, latch = FakeTransport('probe'), p3.new_receipt('fake', target()), g.StopLatch()
 
     @contextlib.asynccontextmanager
@@ -584,15 +622,14 @@ def test_down_probe_keeps_observations_through_transport_error(monkeypatch, faul
             return clean_close(['probe'])
         if code == p3.DRAIN:
             return {}
-        return {'down': True, 'error': 'net::ERR_CONNECTION_REFUSED',
-                'log': event(ORIGIN + '/' if fault == 'clean' else EXACT)}
+        return {'error': 'net::ERR_CONNECTION_REFUSED', 'log': event(ORIGIN + '/' if fault == 'clean' else EXACT)}
 
     monkeypatch.setattr(p3, 'open_session', transport)
     monkeypatch.setattr(p3, '_call', call)
-    got = asyncio.run(p3.probe_session('fake:', p3.probe_js(target(), 'down'), r=r, latch=latch, phase='down'))
-    assert got['down'] and r['probes']['down']['down'] and s.browser_closes == 1
+    got = asyncio.run(p3.probe_session('fake:', p3.probe_js(target(), 'pins'), r=r, latch=latch, phase=PIN_PHASE))
+    assert got['error'] and r['probes'][PIN_PHASE]['error'] and s.browser_closes == 1
     assert r['log']['requests'][0]['url'] == (ORIGIN + '/' if fault == 'clean' else EXACT)
-    assert latch.stopped == (fault != 'clean')
+    assert latch.tripped == (fault != 'clean') and latch.blocked  # a probe that did not complete blocks
 
 
 @pytest.mark.parametrize('fault', ['clean', 'W4', 'cleanup', 'NOT RUN', 'unmatched', 'empty', 'none', 'subset'])
@@ -733,21 +770,23 @@ def test_control_lifetime_always_stops_server_and_blocks_unresolved(monkeypatch,
             if fault == 'shutdown':
                 raise RuntimeError('fixed shutdown failure')
 
-    async def host(*a):
-        if fault == 'host':
-            raise RuntimeError('fixed host exception')
-        await asyncio.Future()
+        def host_action(self, kind):
+            seen.append('host:' + kind)
+            if fault == 'host':
+                raise RuntimeError('fixed host exception')
+            return {'action': kind, 'done': True}
 
     async def check(*a, **kw):
-        await asyncio.sleep(0)  # let the fake host fail before disposal, if selected
+        await asyncio.sleep(0)
         if fault == 'cancel':
             raise asyncio.CancelledError
+        a[6]['fake_host']('restart')  # the fake controller acts on copy a, never a real host
         return passing(kw['receipt'])
 
     monkeypatch.setattr(p3, 'P3Server', FakeServer)
-    monkeypatch.setattr(p3, 'control_host', host)
     monkeypatch.setattr(p3, 'check_target', check)
-    case = dict(case='FAKE', variant='clean', expect=('PASS', None))
+    case = dict(p3.CONTROLS[0], case='FAKE')
+    assert p3.CONTROLS[0]['case'] == 'P3-CLEAN'
     args = SimpleNamespace(browser='fake:', browser_webkit='fake:')
     latch = g.StopLatch()
     invocation = p3.run_control(args, case, tmp_path / 'out', tmp_path / 'tmp', '100.110.162.4', latch)
@@ -757,7 +796,8 @@ def test_control_lifetime_always_stops_server_and_blocks_unresolved(monkeypatch,
     else:
         result = asyncio.run(invocation)
         assert result['status'] == ('OK' if fault == 'clean' else 'BLOCKED')
-    assert seen.count('shutdown') == 1 and seen.index('retire') < seen.index('shutdown')
+    assert seen.count('shutdown') == (1 if fault == 'start' else 2)  # every created server, once
+    assert seen.index('retire') < seen.index('shutdown')
     assert latch.stopped == (fault != 'clean')
     receipt = json.loads((tmp_path / 'out/FAKE/receipt.json').read_text())
     assert receipt['verdict'] == ('PASS' if fault == 'clean' else 'BLOCKED')
@@ -840,29 +880,31 @@ def test_actual_section_rows_stops_immediately_on_observed_destination(monkeypat
     t, r, latch = target(), p3.new_receipt('fake', target()), g.StopLatch()
     r['sessions']['chromium'] = {}
     calls = []
-    row = {'id': 'FAKE-1', 'ctx': 'A', 'acts': [], 'action': 'fixed clean observation', 'expected': {}}
-    rows = [row, dict(row, id='FAKE-2')]
+    monkeypatch.setitem(p3.ROW_IDS, 'chromium', ['J-1', 'J-2'])
+    monkeypatch.setattr(p3.kit, 'judge', lambda row, res, engine, served=None: {'status': 'PASS', 'reasons': []})
 
     async def call(session, code):
         calls.append(code)
         if code == p3.DRAIN:
             return {}
         if 'const CTXS =' in code:
-            return {'contexts': {n: {'first_url': 'about:blank'} for n in ('A', 'B')},
-                    'browser_type': 'chromium', 'browser_version': 'fake-1', 'distinct_contexts': True,
+            return {'contexts': {n: {'first_url': 'about:blank'} for n in p3.ENGINES['chromium']['contexts']},
+                    'browser_type': 'chromium', 'browser_version': 'fake-1', 'distinct_contexts': 6,
                     'observers_at': 'fixed', 'requests_before_navigation': 0}
         return {'obs': {'A': {}}, 'log': {} if fault == 'clean' else event(
             EXACT if fault == 'off_origin' else ORIGIN + '/unexpected')}
 
     monkeypatch.setattr(p3, '_call', call)
-    ok = asyncio.run(p3.run_section(FakeTransport('chromium'), r, 'chromium', rows, t, tmp_path,
-                                   'fake', tmp_path, 900, {}, 'fake:', {}, latch))
+    ok = asyncio.run(p3.run_section(FakeTransport('chromium'), r, 'chromium', ORIGIN, t, tmp_path, 'fake',
+                                    p3.time.monotonic() + 900, {}, latch))
     assert ok == (fault == 'clean')
-    assert len(r['steps']) == (2 if fault == 'clean' else 1)
+    ran = [s for s in r['steps'] if s['status'] != 'NOT RUN']
+    assert len(ran) == (2 if fault == 'clean' else 1)
     assert latch.tripped == (fault == 'off_origin')
     assert calls[-1] == p3.DRAIN
 
 
+@pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['outer_cancel', 'CLOSE_cancel', 'bad_result'])
 def test_cancellation_or_malformed_probe_cannot_skip_fallback(monkeypatch, fault):
     s, r, latch = FakeTransport('probe'), p3.new_receipt('fake', target()), g.StopLatch()

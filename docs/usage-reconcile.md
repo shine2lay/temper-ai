@@ -120,9 +120,30 @@ retention, trim, or backup policy.
 ## Internal cutover and faults
 
 Server, normal watch-queue worker and Pi watch-queue worker each upsert a fixed
-`usage_writer_ready` kind with writer_version1 and DB-clock ready_at at startup.
-The existing worker lane selects worker versus pi-worker. Missing readiness
-blocks cutover. T is the latest of those three ready times.
+`usage_writer_ready_v2` kind with writer_version 2 and one DB-clock ready_at at
+startup. The existing worker lane selects worker versus pi-worker. In the same
+transaction, before that upsert, the start DELETES its own kind's row (and only
+that row) from the legacy `usage_writer_ready` table. Legacy code (writer_version
+1, before #126) still upserts its own row there on every start, re-creating it.
+So a kind is ready only with a supported (version 2) new row AND no legacy row:
+a legacy row present means that kind's latest successful start was legacy code,
+whatever its clock value. Timestamps are never an identity, because DB clocks
+repeat and step back. Start and cutover both take the legacy table before the
+new one. Missing readiness blocks cutover. T is the latest of those three new
+ready times. The legacy table keeps its schema and its other kinds' rows.
+
+Old readers fail closed: while a kind's latest start is #126 code, its legacy
+row is missing, so legacy code's readiness gives no boundary and its cutover
+refuses. A revert needs no operator step: legacy starts re-create their own
+rows, and the new table may stay. A re-land heals itself. The witness catches
+only a legacy marker committed before the cutover's read. It cannot see two
+live instances of one kind (go-live check GL2), a legacy start whose marker
+write failed (GL1), a legacy start committing at the moment of the cutover
+commit, or box images (GL1b). So GL1, GL1b, GL2 and GL8 stay required, and so
+does GL8b: when cutover_at commits, re-check from deploy and restart records
+that every process still runs #126's commit and nothing restarted since that
+record. The database witness narrows those checks; it does not replace them.
+GL6's record reads both tables.
 
 Every execution whose first native event predates T must have ended, judged
 by its latest state (H-126-CUTOVER-2). It still holds the barrier when:

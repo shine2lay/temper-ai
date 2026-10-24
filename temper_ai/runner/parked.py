@@ -35,7 +35,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlmodel import Session
+
+    from temper_ai.runner.row_generation import RowGeneration
 
 from temper_ai.shared.clock import as_utc, utcnow
 from temper_ai.stage.exceptions import CANCEL_MESSAGE as _CANCEL_MESSAGE
@@ -388,13 +393,25 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
     return True
 
 
-def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "cancel") -> bool:
-    """End a parked run cancelled, as a cancel during a held wait would. Returns whether it did.
+class _CancelRefused(Exception):  # noqa: N818 - rolls back the whole cancellation
+    pass
 
-    Rejects any wait still open (with the reason as its answer), ends the attempt and its row,
-    and holds the clean-ups the attempt said a cancel owes (worked out when it parked).
+
+def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "cancel",
+                  judged: RowGeneration | None = None) -> bool:
+    """Cancel the latest parked attempt and its permitted row outcome in one commit.
+
+    With ``judged`` (a reaper or the box letting go), only that generation may be cancelled:
+    its row now waiting still ends cancelled; its already-ended row stays untouched. Another
+    attempt count or a queued row refuses, rolling the attempt CAS back too. Without judged
+    (a fresh API stop), judge the row inside this transaction; no box row is allowed for an
+    in-process run. True means the attempt actually became cancelled with a permitted row
+    outcome, never merely that someone tried. Gate/team/hold effects follow that commit.
     """
-    from temper_ai.observability.recorder import decide_event
+    from sqlmodel import col, select
+
+    from temper_ai.observability.models import Event
+    from temper_ai.observability.recorder import decide_event_in, deciding_events
 
     attempt = parked_attempt(execution_id)
     if attempt is None:
@@ -405,18 +422,32 @@ def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "ca
     held = list(on_cancel.get("held") or [])
     stopped = {"path": "the run", "reason": message, "at": utcnow().isoformat(),
                "mode": on_cancel.get("mode"), "held": held}
-    won, _ = decide_event(
-        str(attempt["id"]), expect=(WAITING,), status=CANCELLED,
-        data={"error": message, "cancelled_reason": message, "stopped": stopped},
-    )
-    if not won:
+    try:
+        with deciding_events() as session:
+            attempt_id = str(attempt["id"])
+            won, _ = decide_event_in(
+                session, attempt_id, expect=(WAITING,), status=CANCELLED,
+                data={"error": message, "cancelled_reason": message, "stopped": stopped},
+            )
+            if not won:
+                return False
+            latest = session.exec(select(col(Event.id)).where(
+                col(Event.id) == attempt_id, latest_start_condition(Event.execution_id))).first()
+            if latest is None:
+                raise _CancelRefused
+            row_outcome = _end_row_in(session, execution_id, CANCELLED, judged=judged)
+            if row_outcome == "refused":
+                raise _CancelRefused
+    except _CancelRefused:
+        logger.info("Run %s: parked cancel refused; its attempt and row left alone (%s)",
+                    execution_id, by)
         return False
     _reject_open_waits(execution_id, reason)
-    _end_row(execution_id, CANCELLED)
     _end_pi_teams(execution_id)
     if held and on_cancel.get("mode") == "hold":
         _hold(execution_id, attempt, on_cancel, held, message)
-    logger.info("Run %s: cancelled while it waited on you (%s)", execution_id, by)
+    logger.info("Run %s: cancelled while it waited on you; row %s (%s)",
+                execution_id, row_outcome, by)
     return True
 
 
@@ -458,20 +489,47 @@ def _reject_open_waits(execution_id: str, reason: str | None) -> None:
             decide_event(str(event["id"]), expect=(WAITING,), status=REJECTED, data=rejected)
 
 
-def _end_row(execution_id: str, status: str) -> None:
-    """End the run's box row, if it has one, unless something else ended it already."""
+def _end_row_in(session: Session, execution_id: str, status: str, *,
+                judged: RowGeneration | None) -> str:
+    """The cancel's row disposition, inside its event CAS transaction; never commits.
+
+    ``ended`` means exactly one fenced row update; ``already ended`` and ``no box row``
+    permit the attempt cancel without a row write. ``refused`` must roll the CAS back.
+    Compare attempts to the supplied judgment, but use the row's observed status for the
+    write: freeing the same generation to waiting must not discard the owner's stop (F-A).
+    """
     from sqlmodel import select
 
-    from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
+    from temper_ai.runner.row_generation import (
+        RowGeneration,
+        end_row_if_same_generation,
+    )
 
-    with get_session() as session:
-        row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
-        if row is None or row.status not in (WAITING, "running"):
-            return
-        row.status = status
-        row.completed_at = utcnow()
-        session.add(row)
+    if judged is not None and judged.status not in (WAITING, "running"):
+        return "refused"
+    row = session.exec(select(WorkflowRun).where(
+        WorkflowRun.execution_id == execution_id).execution_options(populate_existing=True)).first()
+    if row is None:
+        return "no box row" if judged is None else "refused"
+    attempts = row.attempts if judged is None else judged.attempts
+    if row.attempts != attempts or row.status == "queued":
+        return "refused"
+    if row.status not in (WAITING, "running"):
+        # No update will take the row lock for this outcome. Take it explicitly, so a
+        # re-queue can't commit between checking the ended row and committing the CAS.
+        row = _locked_row(session, execution_id)
+        if row is None or row.attempts != attempts or row.status == "queued":
+            return "refused"
+        if row.status not in (WAITING, "running"):
+            return "already ended"
+    observed = RowGeneration.from_snapshot({
+        "status": row.status, "attempts": attempts, "spawner_kind": row.spawner_kind,
+        "spawner_handle": row.spawner_handle,
+        "container_id": (row.spawner_metadata or {}).get("container_id"),
+    })
+    changed = end_row_if_same_generation(session, execution_id, observed, status=status)
+    return "ended" if changed else "refused"
 
 
 def _hold(execution_id: str, attempt: dict, on_cancel: dict, held: list, message: str) -> None:

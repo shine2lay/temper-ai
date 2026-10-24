@@ -48,6 +48,7 @@ if fac is None:
 fs = fac.shared_module()
 import first_app_p3_admission as admission  # noqa: E402
 import first_app_p3_guard as guard  # noqa: E402
+import first_app_p3_host as host_wire  # noqa: E402
 import first_app_p3_rows as kit  # noqa: E402
 import ops_host_client as hc  # noqa: E402
 
@@ -66,12 +67,12 @@ NOT_CHECKED_HERE = [
     "DNS-only lookups (dns-prefetch, preconnect): no HTTP-level gate sees them; Security's file read covers them",
     "Playwright WebKit on Linux is not a real iPhone or iOS Safari",
 ]
-HOST_WAIT = ("host rows go only through #126's ops_host_client and its verdict; that wiring waits on QA's P5 "
-             "receiving (rm-9968c173): no host request was written")
+HOST_WAIT = ("host wire not opened for this run (host rows go only through #126's request side and P5's judge): "
+             "no host request was written")
 W1_MISSING = ("W1: no engine-image reading: the W-IMG engine-image operation (Ops) is not wired here yet, so the "
               "WebKit rows are NOT RUN and no WebKit MCP call is made")
 PROFILE_KEYS = ("journey_p3", "origin", "origin_webkit", "pins", "build", "kit_id", "kit_sha256", "kit_not_checked",
-                "engine_image", "webkit_tree_sha256", "host_window")
+                "engine_image", "webkit_tree_sha256", "host_binding")
 OPTIONAL_KEYS = ("w2_recreation",)  # Ops' W2 recreation receipts for W1 admission (#125 4b), only when needed
 IMAGE_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -117,20 +118,7 @@ def default_p3_profile(origin: str = "http://100.110.162.4:8962", pins: dict | N
     return {"journey_p3": JOURNEY, "origin": origin, "origin_webkit": origin_webkit, "pins": dict(pins),
             "build": {"commit": "0000000", "sha256sums_sha256": "0" * 64}, "kit_id": KIT_ID,
             "kit_sha256": KIT_SHA256, "kit_not_checked": list(KIT_NOT_CHECKED), "engine_image": hc.ENGINE_PIN,
-            "webkit_tree_sha256": None, "host_window": None}
-
-
-def _window_problems(w) -> list[str]:
-    if w is None:
-        return []
-    if not isinstance(w, dict) or set(w) != {"path", "sha256"}:
-        return ["host_window is not null or exactly {path, sha256} (the window #126's client loads)"]
-    out = []
-    if not (isinstance(w["path"], str) and w["path"].startswith("/") and "\x00" not in w["path"]):
-        out.append("host_window.path is not an absolute path")
-    if not (isinstance(w["sha256"], str) and fac.HEX64_RE.fullmatch(w["sha256"])):
-        out.append("host_window.sha256 is not 64 lowercase hex characters")
-    return out
+            "webkit_tree_sha256": None, "host_binding": None}
 
 
 def parse_p3_profile(text: str | None) -> tuple[dict | None, list[str]]:
@@ -170,15 +158,15 @@ def parse_p3_profile(text: str | None) -> tuple[dict | None, list[str]]:
     if "webkit_tree_sha256" in p and p["webkit_tree_sha256"] is not None and not (
             isinstance(p["webkit_tree_sha256"], str) and fac.HEX64_RE.fullmatch(p["webkit_tree_sha256"])):
         problems.append("webkit_tree_sha256 is not null or 64 lowercase hex characters")
-    if "host_window" in p:
-        problems += _window_problems(p["host_window"])
+    if "host_binding" in p:
+        problems += host_wire.binding_problems(p["host_binding"])
     if problems:
         return None, problems
     return {"source": "input", "journey": "p3", "profile_sha256": fac.sha256(text.encode()), "origin": p["origin"],
             "origin_webkit": p["origin_webkit"], "pins": {n: {"sha256": h} for n, h in p["pins"].items()},
             "build": dict(p["build"]), "kit_id": p["kit_id"], "kit_sha256": p["kit_sha256"],
             "kit_not_checked": list(p["kit_not_checked"]), "engine_image": p["engine_image"],
-            "webkit_tree_sha256": p["webkit_tree_sha256"], "host_window": p["host_window"],
+            "webkit_tree_sha256": p["webkit_tree_sha256"], "host_binding": p["host_binding"],
             **({"w2_recreation": p["w2_recreation"]} if "w2_recreation" in p else {})}, []
 
 
@@ -324,7 +312,7 @@ def new_receipt(label: str, target: dict | None) -> dict:
                "not_checked_here": list(NOT_CHECKED_HERE)}
     if target:
         r["profile"] = {"source": t["source"], "sha256": t["profile_sha256"], "engine_image": t["engine_image"],
-                        "webkit_tree_sha256": t["webkit_tree_sha256"], "host_window": t["host_window"]}
+                        "webkit_tree_sha256": t["webkit_tree_sha256"], "host_binding": t["host_binding"]}
         if t.get("w2_recreation") is not None:
             r["profile"]["w2_recreation"] = t["w2_recreation"]
         r["build"] = dict(t["build"], server_bytes="attested by the host's record, not checked: a browser cannot see "
@@ -692,6 +680,11 @@ async def _check_target(browser_url, webkit_url, target, out, label, budget_s, h
             r["reach"]["error"] = p["error"]
     if latch.stopped or not r["pins"].get("ok") or not r["pins_webkit"].get("ok"):
         return
+    if "fake_host" not in hooks:  # live: the run's host wire (P5 window, own pending requests settled first)
+        session = host_wire.open_host(target.get("host_binding"))
+        await host_wire.settle(session)
+        hooks["host_session"] = session
+        r["host"] = session.record
     served = r.pop("_served_html", {})
     for engine, url, origin in (("chromium", browser_url, target["origin"]),
                                 ("webkit", webkit_url, target["origin_webkit"])):
@@ -882,25 +875,36 @@ async def browser_step(s, r, row, origin, engine, served_html, allowed, latch, a
 
 
 async def host_step(s, r: dict, row: dict, origin: str, hooks: dict, latch: guard.StopLatch, engine: str) -> dict:
-    """A host row. Live: BLOCKED with no request written until QA's P5 receiving names the #126 wire. Controls:
-    hooks["fake_host"] acts on the fixture server (never a real host), and the host verdict stays UNQUALIFIED:
-    no Ops-format receipt is judged. R-1i's browser half (reload, then the expected list) is judged as usual."""
+    """A host row, never PASS. Live: first_app_p3_host writes the request (#126) and P5 judges the receipt:
+    UNQUALIFIED "P5 assessment: <verdict>, not counted", or BLOCKED without a receipt. Controls: hooks["fake_host"]
+    acts on the fixture server (never a real host), UNQUALIFIED with no receipt judged. R-1i's browser half
+    (reload, then the expected list) is judged as usual after either."""
     rid = row["id"]
     collect(r, await _call(s, DRAIN), origin, latch, f"{engine}:{rid}:before-host")
     step = {"id": rid, "kind": "host", "engine": engine, "ctx": row["ctx"], "host_action": row["host"],
             "signal": row.get("signal"), "plants": row.get("plants", []), "traffic": [], "notes": []}
     fake = hooks.get("fake_host")
     if fake is None:
-        step.update(status="BLOCKED", reasons=[HOST_WAIT])
-        return step
-    did = await asyncio.to_thread(fake, row["host"])
-    step["fake_host"] = did
-    collect(r, await _call(s, DRAIN), origin, latch, f"{engine}:{rid}:host-return")
-    if not (isinstance(did, dict) and did.get("done")):
-        step.update(status="BLOCKED", reasons=[f"control host could not {row['host']} the fixture server: {did!r}"[:300]])
-        return step
-    step.update(status="UNQUALIFIED", reasons=["control fake host acted on the fixture server; no Ops-format receipt "
-                                               "was judged (#126 wire waits on QA's P5 receiving)"])
+        session = hooks.get("host_session")
+        if session is None:
+            step.update(status="BLOCKED", reasons=[HOST_WAIT])
+            return step
+        wire = await host_wire.run_row(session, rid)
+        step["host"] = {k: v for k, v in wire.items() if k not in ("status", "reasons")}
+        collect(r, await _call(s, DRAIN), origin, latch, f"{engine}:{rid}:host-return")
+        step.update(status=wire["status"], reasons=list(wire["reasons"]))
+        if wire["status"] != "UNQUALIFIED":
+            return step
+    else:
+        did = await asyncio.to_thread(fake, row["host"])
+        step["fake_host"] = did
+        collect(r, await _call(s, DRAIN), origin, latch, f"{engine}:{rid}:host-return")
+        if not (isinstance(did, dict) and did.get("done")):
+            step.update(status="BLOCKED",
+                        reasons=[f"control host could not {row['host']} the fixture server: {did!r}"[:300]])
+            return step
+        step.update(status="UNQUALIFIED", reasons=["control fake host acted on the fixture server; no Ops-format "
+                                                   "receipt was judged"])
     if row.get("after"):
         part = await browser_step(s, r, row, origin, engine, None, allowed_urls(r, origin), latch, acts=row["after"])
         step["browser"] = part

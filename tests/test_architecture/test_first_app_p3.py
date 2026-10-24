@@ -115,9 +115,12 @@ def test_profile_is_strict_and_separate_from_the_other_journeys():
     assert any("full image ID" in x for x in problems(engine_image="sha256:b01cb863"))
     assert any("webkit_tree_sha256" in x for x in problems(webkit_tree_sha256="ABC"))
     assert problems(webkit_tree_sha256="a" * 64) == []
-    assert any("host_window" in x for x in problems(host_window={"path": "relative", "sha256": "a" * 64}))
-    assert any("host_window" in x for x in problems(host_window={"path": "/x"}))
-    assert problems(host_window={"path": "/home/x/window.json", "sha256": "a" * 64}) == []
+    hb = {"context_path": "/home/x/context.json", "context_sha256": "a" * 64, "uid": 1000}
+    assert any("host_binding" in x for x in problems(host_binding=dict(hb, context_path="relative")))
+    assert any("host_binding" in x for x in problems(host_binding={"context_path": "/x"}))
+    assert any("host_binding" in x for x in problems(host_binding=dict(hb, uid=True)))
+    assert any("host_binding" in x for x in problems(host_binding=dict(hb, context_sha256="A" * 64)))
+    assert problems(host_binding=hb) == []
     for gone in ("wording", "host_wait_minutes"):
         assert any(f"not allowed: {gone}" in x for x in problems(**{gone: 1}))
     p = p3.default_p3_profile()
@@ -192,7 +195,7 @@ def test_unqualified_host_rows_and_unrun_webkit_are_never_pass_and_fail_wins():
     assert p3.final_verdict(r)[0] == "FAIL"
 
 
-def test_live_host_rows_write_nothing_and_are_blocked_until_qa_p5_receiving():
+def test_live_host_rows_without_a_host_wire_write_nothing_and_are_blocked():
     calls = []
 
     async def call(s, code):
@@ -209,7 +212,7 @@ def test_live_host_rows_write_nothing_and_are_blocked_until_qa_p5_receiving():
     finally:
         p3._call = orig
     assert calls == [p3.DRAIN] * len(kit.HOST_ROWS)  # only the drain before the row; no host request anywhere
-    assert "rm-9968c173" in p3.HOST_WAIT and "#126" in p3.HOST_WAIT
+    assert "#126" in p3.HOST_WAIT and "P5" in p3.HOST_WAIT and "no host request" in p3.HOST_WAIT
 
 
 # ---------------------------------------------------------------- controls

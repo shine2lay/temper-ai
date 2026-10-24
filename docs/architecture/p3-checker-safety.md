@@ -148,8 +148,42 @@ recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 mat
   after the WebKit rows and compared with ops_host_client.compare_engine; every WebKit step carries both
   readings and the comparison. The checker reads them only through the W-IMG operation; until Ops'
   operation is wired, WebKit is NOT RUN with no WebKit MCP call (never PASS).
-- Host rows (R-1, R-1i, D-1, D-5) go only through #126's ops_host_client. Until QA's P5 receiving names
-  that wire (rm-9968c173), a live host row is BLOCKED and no host request is written. In controls the
+- Host rows (R-1, R-1i, D-1, D-5) go only through first_app_p3_host: #126's ops_host_client writes the
+  request (read_sequence, make_request, write_request, unchanged) and P5's ops_host_client_bound judges
+  the receipt. Live writes are off: WRITES_ADMITTED is False, so open_host and run_row read nothing, load
+  nothing and write nothing, and every live host row is BLOCKED. Only a reviewed code change turns it on,
+  after a real admitted run bundle loads through P5, every native, access and Owner requirement holds, and
+  #259's fresh R5' landing and QA's fresh receiving hold (lead DECISION-6 D6.4); no flag, file or profile
+  key does. The profile's host_binding {context_path, context_sha256, uid} names a private file
+  {window_path, window_sha256, data_context}; the wire reads it without following links, checks its hash,
+  and loads the window through P5 (load_bound_candidate_window); the run bundle itself is issued only in a
+  separately authorised launch (D6.3). Before the first row it settles its own pending WAITING requests
+  (Ops' plan 6.2, QA rm-568d6d6e duty a, lead DECISION-7 D7.4) with two checks: a pending request must
+  pass #126's validate_request and be this writer's and its file's row, else "WAITING-<row>.json is not
+  this writer's valid request"; a <row>.json carrying its request id settles it only if it echoes it in
+  full (the echo rule below), else "<row>.json does not match its pending request". It waits no longer
+  than the pending request's ORIGINAL expires_at; settled requests are recorded, and nothing is judged
+  with P5 or counted at settle. A receipt beside it with another id must be a validated earlier one;
+  anything else is BLOCKED before SEQ is read. The legacy client's own HostClient.initialize skips,
+  rather than refuses, an unmatched receipt at startup (c537bed9 lines 1218-1221; DECISION-7 D7.1);
+  #125 doesn't use it, only read_sequence, make_request and write_request. Per
+  row (duty b): the D6.1 action/expected texts and the D6.2 budget (R-1 and R-1i 120 s, D-1 and D-5 60 s);
+  since = not_before = now, wait_seconds = budget, expires_at = since + budget; less window time left than
+  the budget is BLOCKED with nothing written, never a shorter request. A prior <row>.json must be a
+  validated earlier receipt (schema, window, binding, row, writer, operation; lower sequence, or the same
+  sequence only for an unadmitted REFUSED receipt as #126's _prior allows; another request id; ended no
+  later than this request's since), else BLOCKED before writing, and so is a prior #126's read_bound
+  can't read (not JSON, not an object, a link, wrong mode, oversize), both "never ignored silently";
+  a validated prior's unchanged bytes are then ignored. New
+  bytes must echo the request in full: row, operation, host_action, writer, request_id, sequence,
+  window_id and binding in value and type, and request_sha256 of the exact request file. The exact request
+  and receipt bytes go to judge_candidate_receipt, and the row is UNQUALIFIED
+  "P5 assessment: <verdict>, not counted": P5's verdict is untrusted data and counted admission is not
+  settled (COUNTED_ADMISSION_AND_ROW_RESULT), so a host row is never PASS and the run is never PASS while
+  it has one. No binding, a refused load, a missing or unsafe receipt by the deadline, or a write failure:
+  BLOCKED (missing host evidence is never an app FAIL), and that engine's later rows are NOT RUN.
+  One checker process per window is how runs are started; the wire does not lock across processes. In
+  controls the
   fake controller acts on the check's own fixture server (restart, crash, start; never a real app or
   host) so the later browser rows are stage-tested; the host verdict is UNQUALIFIED, never PASS.
 - The traffic gate in controls (G1-G5): each gate-plant control lists its plant's exact URLs

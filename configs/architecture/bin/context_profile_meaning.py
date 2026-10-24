@@ -153,6 +153,122 @@ def numeric_findings(claim: str, quote: str) -> list[dict]:
     return []
 
 
+# Additive numeric guards (#263); the original parser and findings stay unchanged.
+_NUMERIC_APPROX = {"about", "roughly", "approximately", "around", "nearly", "almost"}
+_NUMBER_WORDS = dict(zip(("zero one two three four five six seven eight nine ten eleven twelve "
+                          "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty").split(),
+                         map(str, range(21)), strict=True))
+_NUMBER_WORD_TOKEN = re.compile(r"(?<![\w-])(?:" + "|".join(_NUMBER_WORDS) + r")(?![\w-])")
+_EXPLICIT_PERIOD = re.compile(r"\s*(?:\b(?:per|a|an)\s+|/\s*)(second|minute|hour|day|month|year)s?\b")
+
+
+def _numeric_center(token: str) -> Fraction:
+    # Use the original parser, not a second numeric grammar.
+    qs = quantities(token + " byte")
+    assert len(qs) == 1 and qs[0]["amount"] is not None
+    return qs[0]["amount"]
+
+
+def _period_after(value: str, match: re.Match) -> tuple | None:
+    tail = value[match.end():]
+    periods = list(_EXPLICIT_PERIOD.finditer(tail))
+    if len(periods) != 1:
+        return None
+    p = periods[0]
+    unit_text = tail[:p.start()].strip()
+    if unit_text and not re.fullmatch(r"[a-z]+(?: [a-z]+){0,2}", unit_text):
+        return None
+    return tuple(singular(w) for w in unit_text.split()), p[1]
+
+
+def _g1(claim: str, quote: str) -> bool:
+    """Equal approximate centers cannot hide explicit unit/period disagreement."""
+    a, z = text(claim), text(quote)
+    markers = [x[0] for v in (a, z) for x in AMBIGUOUS.finditer(v)]
+    if not markers or any(x not in _NUMERIC_APPROX for x in markers):
+        return False
+    left, right = list(NUMBER.finditer(a)), list(NUMBER.finditer(z))
+    if len(left) != 1 or len(right) != 1:
+        return False
+    x, y = left[0], right[0]
+    amount = _numeric_center(x[0])
+    if amount <= 0 or amount != _numeric_center(y[0]):
+        return False
+    px, py = _period_after(a, x), _period_after(z, y)
+    if px and py and px[0] == py[0] and px[1] != py[1]:
+        return True
+    qx, qy = quantities(a)[0], quantities(z)[0]
+    if qx["amount"] is None or qy["amount"] is None:
+        return False
+    if any(q["dimension"].startswith(("count:", "rate:")) for q in (qx, qy)):
+        return False
+    return qx["dimension"] != qy["dimension"] or qx["factor"] != qy["factor"]
+
+
+def _whitelist_numbers(value: str) -> str | None:
+    value = text(value)
+    # A refusal boundary, not a parser for larger/compound number words.
+    if re.search(r"\b(?:hundred|thousand|million|billion)\b", value):
+        return None
+    for hit in _NUMBER_WORD_TOKEN.finditer(value):
+        before, after = value[:hit.start()].split(), value[hit.end():].split()
+        if (before and before[-1] in _NUMBER_WORDS) or (after and after[0] in _NUMBER_WORDS):
+            return None
+    return _NUMBER_WORD_TOKEN.sub(lambda hit: _NUMBER_WORDS[hit[0]], value)
+
+
+def _operator_with_postfix(value: str, q: dict) -> str | None:
+    prefix = q["operator"]
+    tail = value[q["end"]:].strip().removesuffix(".").strip()
+    unit_tail = re.fullmatch(r"([a-z]+)\s+(.+)", tail)
+    suffix = None
+    if unit_tail:
+        expression = unit_tail[2]
+        aliases = "|".join("(?:" + pattern + ")" for pattern, _ in OPERATORS)
+        if re.fullmatch(aliases, expression):
+            suffix = comparator(expression)
+    if prefix and suffix and prefix != suffix:
+        return None
+    return prefix or suffix
+
+
+def _g2(claim: str, quote: str) -> bool:
+    """Compare explicit operators after the isolated zero–twenty whitelist."""
+    a, z = _whitelist_numbers(claim), _whitelist_numbers(quote)
+    if a is None or z is None or AMBIGUOUS.search(a) or AMBIGUOUS.search(z):
+        return False
+    left, right = quantities(a), quantities(z)
+    if len(left) != 1 or len(right) != 1:
+        return False
+    x, y = left[0], right[0]
+    if x["amount"] is None or y["amount"] is None or x["amount"] != y["amount"] or x["dimension"] != y["dimension"]:
+        return False
+    rx, ry = _operator_with_postfix(a, x), _operator_with_postfix(z, y)
+    return bool(rx and ry and rx != ry)
+
+
+def _g3(claim: str, quote: str) -> bool:
+    """Restore existing operators masked only by their currency symbol."""
+    a, z = text(claim), text(quote)
+    if AMBIGUOUS.search(a) or AMBIGUOUS.search(z):
+        return False
+    left, right = quantities(a), quantities(z)
+    if len(left) != 1 or len(right) != 1:
+        return False
+    x, y = left[0], right[0]
+    if (x["amount"] is None or y["amount"] is None or x["amount"] != y["amount"]
+            or x["dimension"] != y["dimension"] or not x["dimension"].startswith("currency:")):
+        return False
+    operators = []
+    for value, q in ((a, x), (z, y)):
+        prefix = value[:q["start"]]
+        symbol = re.search(r"([$£€])\s*$", prefix)
+        if not symbol or "currency:" + symbol[1] != q["dimension"]:
+            return False
+        operators.append(comparator(prefix[:symbol.start()]))
+    return bool(all(operators) and operators[0] != operators[1])
+
+
 POLARITY = re.compile(r"\b(?:must not|must never|may not|must|may|allowed|forbidden)\b")
 POLARITY_VALUES = {"must": "required", "must not": "prohibited", "must never": "prohibited",
                    "may": "permitted", "may not": "prohibited", "allowed": "permitted", "forbidden": "prohibited"}
@@ -191,6 +307,10 @@ SECTIONS = {"observed": "/workload/observed/", "projected": "/workload/projected
 def compare(claim: str, quote: str, path: str = "") -> list[dict]:
     """Return negative evidence only. An empty list is NOT evidence of entailment."""
     result = numeric_findings(claim, quote)
+    if not result:
+        result.extend(finding(rule, claim, quote) for rule, guard in
+                      (("unit_scale", _g1), ("comparator", _g2), ("comparator", _g3))
+                      if guard(claim, quote))
     for name, pattern, values in (("polarity", POLARITY, POLARITY_VALUES), ("time", TENSE, TENSE_VALUES)):
         a, b = marked(claim, pattern, values), marked(quote, pattern, values)
         if a and b and a["body"] == b["body"] and a["marker"] != b["marker"]:

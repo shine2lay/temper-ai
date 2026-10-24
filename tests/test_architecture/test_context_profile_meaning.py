@@ -376,3 +376,112 @@ def test_no_zero_cli_route(tmp_path):
 def test_malformed_duplicate_key_exits_two(tmp_path):
     (tmp_path / "key.json").write_text('{"key": "x", "key": "y"}')
     assert cli("--case", tmp_path, FIXTURES / "p01-comparator-clean.json").returncode == 2
+
+
+# #262 controls.json, frozen 0cd3cf04e9089180ff4dfb243528200787b21aa8acf5d65a95d592143f134bef.
+# Columns are unchanged findings + G1, + G2, + G3, and combined; no sealed data.
+NUMERIC_CATCH_CONTROLS = [
+    ("required-monthly-noun", "about 9,000 invoices a month", "9,000 invoices monthly", (False, False, False, False)),
+    ("required-converted-year-center", "about 9,000 a month", "108,000 a year", (False, False, False, False)),
+    ("required-same-word-bound", "at least seven years", "at least seven years", (False, False, False, False)),
+    ("required-opposite-word-bound", "at most seven years", "at least seven years", (False, True, False, True)),
+    ("required-same-center-period-change", "about 9,000 a month", "9,000 a year", (True, False, False, True)),
+    ("g1-multiword-scale-period", "1800000000 media views per minute", "roughly 1.8 billion media views a day", (True, False, False, True)),
+    ("g1-same-period-plural", "about 12,000 invoices a month", "12000 invoice per month", (False, False, False, False)),
+    ("g1-different-nouns-defer", "about 12000 customers a month", "12000 users per year", (False, False, False, False)),
+    ("g1-multiple-quantities-defer", "about 9,000 invoices a month and 3 teams", "9000 invoices a year and 3 teams", (False, False, False, False)),
+    ("g1-disjunction-defer", "about 9000 invoices a month or year", "9000 invoices a year", (False, False, False, False)),
+    ("g1-known-unit-factor", "about 10 MB", "10 MiB", (True, False, False, True)),
+    ("g1-known-unit-conversion", "about 1 GB", "1000 MB", (False, False, False, False)),
+    ("g1-unlisted-unit-defer", "about 10 Mbit", "10 MB", (False, False, False, False)),
+    ("g1-zero-period-defer", "about 0 invoices a month", "0 invoices a year", (False, False, False, False)),
+    ("g2-postfix-opposite", "6 people at least", "no more than six people using the tool", (False, True, False, True)),
+    ("g2-postfix-same", "6 people at least", "at least six people using the tool", (False, False, False, False)),
+    ("g2-conflicting-prefix-postfix", "at most six people at least", "at least six people", (False, False, False, False)),
+    ("g2-unscoped-postfix-defer", "six people using it at least", "at most six people", (False, False, False, False)),
+    ("g2-no-bare-equality", "below seven years", "seven years", (False, False, False, False)),
+    ("g2-different-subject", "at most seven engineers", "at least seven people", (False, False, False, False)),
+    ("g2-zero-whitelist", "at most zero people", "at least zero people", (False, True, False, True)),
+    ("g2-twenty-whitelist", "at most twenty years", "at least twenty years", (False, True, False, True)),
+    ("g2-hyphenated-outside-whitelist", "at most twenty-one years", "at least twenty-one years", (False, False, False, False)),
+    ("g2-compound-outside-whitelist", "at most twenty one years", "at least twenty one years", (False, False, False, False)),
+    ("g2-hundred-outside-whitelist", "at most one hundred years", "at least one hundred years", (False, False, False, False)),
+    ("g2-multiple-words-defer", "at most seven people and two teams", "at least seven people and two teams", (False, False, False, False)),
+    ("g3-dollar-opposite", "keep hosting over $180 per month", "keep hosting under $180 a month", (False, False, True, True)),
+    ("g3-dollar-same", "keep hosting under $180 per month", "keep hosting under $180 a month", (False, False, False, False)),
+    ("g3-pound-aliases", "keep hosting at most £180 per month", "keep hosting at least £180 a month", (False, False, True, True)),
+    ("g3-euro-aliases", "keep hosting above €180 per month", "keep hosting below €180 a month", (False, False, True, True)),
+    ("g3-bare-quote-defer", "keep hosting over $180 per month", "keep hosting $180 a month", (False, False, False, False)),
+    ("g3-detached-operator-defer", "over a hosting estimate of $180 per month", "under a hosting estimate of $180 per month", (False, False, False, False)),
+    ("g3-approximation-defer", "about over $180 per month", "under $180 a month", (False, False, False, False)),
+    ("old-number-kept", "12 bytes", "10 bytes", (True, True, True, True)),
+    ("old-comparator-kept", "at most 5 users", "at least 5 users", (True, True, True, True)),
+]
+
+
+@pytest.mark.parametrize("name,claim,quote,expected", NUMERIC_CATCH_CONTROLS, ids=[c[0] for c in NUMERIC_CATCH_CONTROLS])
+def test_numeric_catch_controls(name, claim, quote, expected):
+    old = bool(cpm.numeric_findings(claim, quote))
+    actual = tuple(bool(old or guard(claim, quote)) for guard in (cpm._g1, cpm._g2, cpm._g3))
+    assert actual + (bool(cpm.compare(claim, quote)),) == expected, name
+
+
+# Exact comparison bodies/quotes from #262 results.json (e987639c…); rule None stays deferred.
+NUMERIC_CATCH_PAIRS = [
+    ("G1", "f02-k02", "invoices sent 9000 invoices per year", "Customers send about 9,000 invoices a month in total.", "unit_scale"),
+    ("G1", "f02-k04", "media views 1500000000 media views per minute", "the app serves roughly 1.5 billion media views a day", "unit_scale"),
+    ("G1", "f02-k09", "workouts logged 41000 workouts per year", "who log about 41,000 workouts a month", "unit_scale"),
+    ("G2", "f01-k05", "signed notes kept for at most seven years", "State rules require that signed notes are kept for at least seven years", "comparator"),
+    ("G2", "f01-k14", "concurrent users 4 people at least", "no more than four people using the tool at once", "comparator"),
+    ("G3", "f01-k01", "hosting should stay over $150 per month", "We would like hosting to stay under $150 a month until we know people want this.", "comparator"),
+    (None, "f01-k03", "clock-in monthly uptime must be below 99.9%", "Their contracts promise 99.9% monthly uptime for clock-in and give them service credits when we miss it.", None),
+]
+
+
+@pytest.mark.parametrize("guard,variant,claim,quote,rule", NUMERIC_CATCH_PAIRS, ids=[c[1] for c in NUMERIC_CATCH_PAIRS])
+def test_numeric_catch_real_pairs(guard, variant, claim, quote, rule):
+    found = cpm.compare(claim, quote)
+    assert [f["rule"] for f in found] == ([] if rule is None else [rule]), variant
+    if rule is not None:
+        assert found == [{"rule": rule, "claim": claim, "quote": quote}]
+
+
+NUMERIC_DEV = ROOT / "configs/architecture/fixtures/context_profile/meaning/dev"
+NUMERIC_CATCH_OWNERS = [
+    ("f02-k02", "/workload/observed/2", "unit", "unit_scale"),
+    ("f02-k04", "/workload/observed/4", "unit", "unit_scale"),
+    ("f02-k09", "/workload/observed/1", "unit", "unit_scale"),
+    ("f01-k05", "/privacy/retention/0", "value", "comparator"),
+    ("f01-k14", "/workload/peaks/0", "what", "comparator"),
+    ("f01-k01", "/budget/run_monthly", "value", "comparator"),
+    ("f01-k13", "/constraints/0", "text", "comparator"),
+    ("f02-k03", "/workload/observed/3", "unit", "unit_scale"),
+    ("f02-k13", "/performance/targets/0", "unit", "unit_scale"),
+    ("p01-comparator-bad", "/constraints/0", "text", "comparator"),
+    ("p02-unit-bad", "/performance/targets/0", "unit", "unit_scale"),
+]
+
+
+@pytest.mark.parametrize("variant,group,leaf,rule", NUMERIC_CATCH_OWNERS, ids=[c[0] for c in NUMERIC_CATCH_OWNERS])
+def test_numeric_catch_responsible_leaf_and_group(variant, group, leaf, rule):
+    directory = NUMERIC_DEV / variant
+    profile = json.loads((directory / "profile.json").read_text())
+    case_id = json.loads((directory / "labels.json").read_text())["case_id"]
+    result = by_path(run_profile(profile, case_id))
+    responsible = group + "/" + leaf
+    assert {p for p, row in result.items() if row["outcome"] == "contradicted"} == {group, responsible}
+    assert [f["rule"] for f in result[responsible]["findings"]] == [rule]
+    assert all(f["path"] == responsible for f in result[responsible]["findings"])
+    assert result[group]["findings"] == result[responsible]["findings"]
+
+
+def test_numeric_catch_f01_k03_still_defers():
+    directory = NUMERIC_DEV / "f01-k03"
+    profile = json.loads((directory / "profile.json").read_text())
+    result = by_path(run_profile(profile, "k03-growing-scheduling"))
+    assert all(r["outcome"] == "needs_judgment" and r["findings"] == [] for r in result.values())
+
+
+@pytest.mark.parametrize("claim,quote", [("12 bytes", "10 bytes"), ("at most 5 users", "at least 5 users")])
+def test_numeric_catch_preserves_original_finding_without_duplicate(claim, quote):
+    assert cpm.compare(claim, quote) == cpm.numeric_findings(claim, quote)

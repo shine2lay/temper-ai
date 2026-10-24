@@ -127,3 +127,48 @@ deferrals. Known references are not an independently judged dev set: report thei
 proxy, not measured dev acceptance. The numeric/limit denominator includes recognizable digits or limit
 markers in ANY group assertion, even when its quote or extraction is ambiguous. Empty denominators are
 reported as null rates by analysis, never silently treated as zero.
+
+## Additive numeric negative checks (Architecture #263)
+
+The baseline extraction limits above remain unchanged. Three narrowly scoped guards add negative evidence
+only when the original numeric check has no finding; existing findings are not replaced or duplicated.
+This does not change contract v2, the schema, the output format, or the meaning of needs_judgment.
+
+- **G1 — approximate equal centers, explicit units/periods.** Require at least one of about, roughly,
+  approximately, around, nearly or almost, no other ambiguous marker, exactly one original NUMBER match
+  on each side, and equal positive exact number-token centers. A period must have an explicit per/a/an
+  or / connector followed by second/minute/hour/day/month/year (plural allowed); intervening counted
+  units must be the same zero-to-three alphabetic words after the existing singularization. Different
+  explicit periods yield unit_scale. Separately, original parsed non-count/non-rate units with different
+  dimensions or factors at equal token centers yield unit_scale. Unequal centers, zero, monthly without
+  a connector, different count nouns, unlisted units, disjunctions and multiple quantities defer. There
+  is no month/year arithmetic or general rate-identity inference.
+- **G2 — two explicit operators, isolated whitelist and tight postfix.** Only isolated zero–twenty words
+  are substituted with digit strings before calling the unchanged quantity parser. This whitelist is
+  not a number parser: hyphenated or adjacent compounded words are not interpreted; hundred, thousand,
+  million and billion refuse this guard. Require no ambiguous marker and exactly one parsed quantity
+  on each side with equal amounts and dimensions. A postfix is recognized only when the entire tail
+  is one unit word followed by an existing operator expression, optionally ending with a period.
+  Conflicting prefix/postfix operators defer. Both operators must be explicit and differ (including
+  endpoint strictness) to yield comparator. Different counted subjects, disconnected postfixes,
+  multiple quantities and bare values defer; absence of an operator never invents equality.
+- **G3 — currency-masked operator repair.** Require no ambiguous marker, exactly one original parsed
+  quantity per side, and equal amounts in the same currency dimension. Each numeric prefix must end
+  in its own recognized $, £ or € symbol. Remove only that trailing symbol/whitespace, then use the
+  existing comparator vocabulary. Two explicit different operators yield comparator; bare or detached
+  operators defer. No currency conversion, period arithmetic or new operator words are introduced.
+
+The guards receive only claim and quote strings, never case metadata. Existing quote eligibility and
+comparison order are retained: unit_scale belongs to a measure's /unit, comparator to /what, only the
+responsible leaf contributes, and its direct group aggregates the same findings. Other leaves stay
+needs_judgment. Empty findings still mean no positive determination, not support or acceptance.
+
+Source: configs/architecture/bin/context_profile_meaning.py, NUMBER :46, OPERATORS :54-56,
+AMBIGUOUS :58, currency recognition :67-69; guard helpers :157-271, G1 :184-205, G2 :235-247,
+G3 :250-271, additive wiring :310-314. Frozen specification: #262 size_catch.py :87-128 / :131-169 /
+:172-190, SHA-256 0b8a9479dcbd6ab4f4244a42cd65c7a8842eaca23986a90caf70119287b87ebe.
+The baseline line citations incorporate HOME's citation erratum. The known/dev comparison is in-sample:
+11/50 contradicted labels caught instead of 5/50, with zero newly rejected supported occurrences
+(0/5051; 0/695 distinct), all five original catches retained, and no new reference findings. The bare
+promised-availability case f01-k03 remains deferred. These are numeric-catch observations, not Stage 1
+acceptance or a held-out estimate.

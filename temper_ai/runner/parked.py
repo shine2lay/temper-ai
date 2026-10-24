@@ -142,6 +142,134 @@ def answered(execution_id: str, attempt: dict) -> dict | None:
     return None
 
 
+def latest_start_condition(execution_id: Any, start: Any = None) -> Any:
+    """SQL condition: ``start`` is its execution's latest start.
+
+    True when no ``workflow.started`` of ``execution_id`` has a strictly later timestamp than
+    ``start``'s, so starts tied at the latest time all count as latest. ``start`` is the
+    events table (the default) or an alias of it; ``execution_id`` a value or a column. The one
+    definition of "latest start" the claims below check, and the barrier can share.
+    """
+    from sqlalchemy import exists
+    from sqlalchemy.orm import aliased
+    from sqlmodel import col, select
+
+    from temper_ai.observability.event_types import EventType
+    from temper_ai.observability.models import Event
+
+    start = Event if start is None else start
+    later = aliased(Event)
+    return ~exists(select(col(later.id)).where(
+        col(later.execution_id) == execution_id,
+        col(later.type) == EventType.WORKFLOW_STARTED,
+        col(later.timestamp) > start.timestamp,
+    ))
+
+
+class _HasBoxRow(Exception):  # noqa: N818 - rolls back claim_without_box_row's transaction
+    pass
+
+
+def _claim_in(session: Any, attempt: dict) -> str:
+    """The claim's compare-and-set inside the caller's transaction (``deciding_events``):
+    the attempt goes ``waiting`` -> ``parked`` only while it is still waiting and still its
+    execution's latest start. Raises AlreadyCarriedOn otherwise, which rolls the whole
+    transaction back. Returns the execution id, read from the locked event."""
+    from sqlmodel import col, select
+
+    from temper_ai.observability.models import Event
+    from temper_ai.observability.recorder import decide_event_in
+
+    attempt_id = str(attempt["id"])
+    note = {**(_note(attempt) or {}), "carried_on_at": utcnow().isoformat()}
+    # Locks the event row (Postgres; on SQLite deciding_events' lock): lock order is the
+    # event, then the run row.
+    won, now = decide_event_in(session, attempt_id, expect=(WAITING,), status=CARRIED_ON,
+                               data={"parked": note})
+    execution_id = str((now or {}).get("execution_id") or attempt.get("execution_id") or "")
+    if not won:
+        raise AlreadyCarriedOn(execution_id)
+    # A superseded attempt is never carried on, even while it still says waiting (C02c).
+    latest = session.exec(select(col(Event.id)).where(
+        col(Event.id) == attempt_id, latest_start_condition(Event.execution_id))).first()
+    if latest is None:
+        raise AlreadyCarriedOn(execution_id)
+    return execution_id
+
+
+def _locked_row(session: Any, execution_id: str) -> Any:
+    from sqlmodel import select
+
+    from temper_ai.runner.models import WorkflowRun
+
+    return session.exec(
+        select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)
+        .with_for_update().execution_options(populate_existing=True),
+    ).first()
+
+
+def claim_and_queue(attempt: dict, workflow_name: str, workspace_path: str | None,
+                    inputs: dict | None, *, start: str | None, extra: dict | None,
+                    lane: Any) -> None:
+    """Claim a parked attempt and queue its run for the worker, in one commit (the API path).
+
+    One transaction: the attempt's compare-and-set (still waiting, still the latest start),
+    then the run's row, locked, re-queued as ``queue_run`` would, or inserted queued when
+    there is none. Nobody ever sees the attempt claimed under a row that isn't queued.
+    Refusals write nothing: AlreadyCarriedOn when someone else claimed or cancelled it or a
+    later start superseded it; AlreadyQueued when the row is queued or running (a box still
+    letting go included). ``lane`` as ``queue_run``'s: the run's lane from the loaded
+    workflow, or ``lanes.KEEP_LANE`` to keep the row's own mark.
+    """
+    from temper_ai.observability.recorder import deciding_events
+    from temper_ai.runner.queue import queue_run_in
+
+    with deciding_events() as session:
+        execution_id = _claim_in(session, attempt)
+        queue_run_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra,
+                     lane=lane)
+
+
+def claim_and_requeue_row(attempt: dict, *, start: str | None, extra: dict | None) -> None:
+    """Claim a parked attempt and re-queue its existing row, in one commit (the worker path).
+
+    As :func:`claim_and_queue`, with the workflow, workspace and inputs taken from the run's
+    locked row and its lane mark kept. A run with no row raises RuntimeError and nothing is
+    written: the worker never makes a row.
+    """
+    from temper_ai.observability.recorder import deciding_events
+    from temper_ai.runner.queue import queue_run_in
+
+    with deciding_events() as session:
+        execution_id = _claim_in(session, attempt)
+        row = _locked_row(session, execution_id)
+        if row is None:
+            raise RuntimeError("the run has no box row")
+        queue_run_in(session, execution_id, row.workflow_name, row.workspace_path,
+                     dict(row.inputs or {}), start, extra)
+
+
+def claim_without_box_row(attempt: dict) -> bool:
+    """Claim a parked attempt for an in-process carry-on, only when its run has no box row.
+
+    True: claimed (one commit). False: the run has a row, of any status, so it is carried on
+    in its box, not here; nothing written. Raises AlreadyCarriedOn as the other claims do.
+    Only this claim may be undone, by :func:`release`, when the thread fails to start.
+    """
+    from temper_ai.observability.recorder import deciding_events
+
+    try:
+        with deciding_events() as session:
+            execution_id = _claim_in(session, attempt)
+            if _locked_row(session, execution_id) is not None:
+                raise _HasBoxRow
+    except _HasBoxRow:
+        return False
+    return True
+
+
+# LEGACY until S1-W: its last callers move to the claims above in S1-C2, then S1-W deletes it.
+# Not a fourth claim: nothing new may call it (TECHNICAL-SEQUENCING.md, H-S1-BRANCH-GREEN-1).
 def claim(attempt: dict) -> bool:
     """Take the parked attempt for carrying on; False when someone else already has."""
     from temper_ai.observability.recorder import decide_event
@@ -153,7 +281,12 @@ def claim(attempt: dict) -> bool:
 
 
 def release(attempt: dict) -> None:
-    """Put a claimed attempt back to waiting: carrying it on did not start."""
+    """Put a claimed attempt back to waiting: carrying it on did not start.
+
+    Only for an in-process claim (:func:`claim_without_box_row`) whose thread failed to
+    start. A claim committed with its row's re-queue is never released: the queued row
+    carries it on, or the reaper ends it.
+    """
     from temper_ai.observability.recorder import decide_event
 
     note = {k: v for k, v in (_note(attempt) or {}).items() if k != "carried_on_at"}
@@ -365,30 +498,18 @@ def _hold(execution_id: str, attempt: dict, on_cancel: dict, held: list, message
 def queue_resume(execution_id: str) -> None:
     """Carry a parked run on in a new box: what Resume does for a run in a box.
 
-    For the worker's reaper, which has no API: claim the attempt, take over anything held,
-    and queue the run to start from its checkpoints, as the Resume button would.
+    For the worker's reaper, which has no API: claim the attempt and re-queue its row to
+    start from its checkpoints in one commit (:func:`claim_and_requeue_row`), then take over
+    anything held, as the Resume button would. Only the winner takes over, after its commit;
+    a failure after that commit leaves the run queued, never released.
     """
-    from sqlmodel import select
-
-    from temper_ai.database import get_session
     from temper_ai.runner import holds
-    from temper_ai.runner.models import WorkflowRun
-    from temper_ai.runner.queue import queue_run
 
     attempt = parked_attempt(execution_id)
-    if attempt is None or not claim(attempt):
+    if attempt is None:
         raise AlreadyCarriedOn(execution_id)
-    try:
-        with get_session() as session:
-            row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
-            if row is None:
-                raise RuntimeError("the run has no box row")
-            name, workspace, inputs = row.workflow_name, row.workspace_path, dict(row.inputs or {})
-        holds.take_over(execution_id, by=execution_id)
-        queue_run(execution_id, name, workspace, inputs, start="resume", extra={"rerun": []})
-    except Exception:
-        release(attempt)
-        raise
+    claim_and_requeue_row(attempt, start="resume", extra={"rerun": []})
+    holds.take_over(execution_id, by=execution_id)
 
 
 def parked_runs() -> list[str]:

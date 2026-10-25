@@ -158,24 +158,34 @@ def passing() -> dict:
                     for e, i in p3.EXPECTED_STEPS],
              sessions={e: {"status": "RAN", "before_first_navigation": True} for e in p3.ENGINES},
              cleanup={e: {"confirmed": True} for e in p3.ENGINES},
-             engine_image={"compare": {"status": "PASS", "reasons": []}})
+             w1={"service": p3.WEBKIT_URL, "status": "PROVISIONAL", "rule": None, "reason": None,
+                 "before": {"path": "/runs/w1-before.json", "sha256": "c" * 64, "image": p3.hc.ENGINE_PIN},
+                 "note": p3.w1.NOTE})
     return r
 
 
-def test_verdict_pass_needs_every_row_in_both_engines_w1_and_both_cleanups():
-    assert p3.final_verdict(passing())[0] == "PASS"
+def test_verdict_is_w1_pending_never_pass_and_needs_every_row_in_both_engines_and_both_cleanups():
+    """DECISION-11 rule 3: every row observed as expected is still BLOCKED (W1 pending) until finalize says COUNT."""
+    verdict, why = p3.final_verdict(passing())
+    assert verdict == "BLOCKED" and why.startswith(p3.w1.PENDING) and "PROVISIONAL" in why
+    r = passing()
+    p3.w1.mark_steps(r)  # PROVISIONAL rows are judged on their measured status
+    assert {s["status"] for s in r["steps"] if s["engine"] == "webkit"} == {"PROVISIONAL"}
+    assert p3.final_verdict(r) == (verdict, why)
     r = passing()
     r["steps"] = [s for s in r["steps"] if s["id"] != "UNI-UI" or s["engine"] != "webkit"]
-    assert p3.final_verdict(r)[0] != "PASS"
+    assert p3.final_verdict(r) == ("BLOCKED", "not every row was observed")
     r = passing()
-    r["engine_image"]["compare"] = {"status": "BLOCKED", "reasons": ["engine container_id changed"]}
-    assert p3.final_verdict(r)[0] == "BLOCKED"
+    r["w1"] = {"status": "REFUSED", "reason": "W1 before-reading refused: image-not-pin:before: another image"}
+    verdict, why = p3.final_verdict(r)
+    assert verdict == "BLOCKED" and "image-not-pin:before" in why and not why.startswith(p3.w1.PENDING)
     r = passing()
-    r.pop("engine_image")
-    assert p3.final_verdict(r)[0] != "PASS"
+    r.pop("w1")
+    verdict, why = p3.final_verdict(r)
+    assert verdict == "BLOCKED" and why.startswith("W1 before-reading not checked")
     r = passing()
     del r["cleanup"]["webkit"]
-    assert p3.final_verdict(r)[0] != "PASS"
+    assert p3.final_verdict(r)[1].startswith("cleanup not confirmed")
     r = passing()
     r["pins_webkit"] = {"ok": False, "bad": ["app.js"]}
     assert p3.final_verdict(r)[0] == "REFUSED"

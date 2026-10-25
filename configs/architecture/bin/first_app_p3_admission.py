@@ -26,6 +26,10 @@ Hypothesis H-279-A6 (rule 20, Security #105 A6), written before the marker code:
 - Wrong if: a marker without a receipt admits without W2, a marker with its receipt blocks, a malformed marker
   admits, or a unit's own marker blocks its own later admission.
 
+DECISION-11 (#280): WebKit's W1 reading is the checked webkit-reading/1 before-reading (first_app_p3_w1). An
+earlier receipt's container id is its w1.before.id, and after a recorded recreation the before-reading must be the
+new container (same id and StartedAt, running); the W-IMG engine-image reading is no longer used here.
+
 Pure and fail-closed: it reads only regular files (no symlink is followed, at any component), never touches
 the network or docker, keeps no store of its own and has no override. The receipts root is the parent of the
 run's workspace (<root>/<run>/check/receipt.json and <root>/<run>/check/<case>/receipt.json, the workflow's
@@ -261,31 +265,34 @@ def _needs_recreation(required: list, used: set, url: str) -> bool:
 
 
 def _w1_ids(d: dict, url: str, where: str) -> set:
-    """Container ids the earlier receipt's own W1 readings recorded for this service (WebKit only)."""
-    ei = d.get("engine_image")
-    if ei is None:
+    """The container id the earlier receipt's own W1 before-reading recorded for this service (WebKit only;
+    DECISION-11: the receipt's w1 entry)."""
+    w1 = d.get("w1")
+    if w1 is None:
         return set()
-    if not isinstance(ei, dict):
-        raise Refused(f"{where}: malformed engine_image")
-    if ei.get("service") != url:
+    if not isinstance(w1, dict):
+        raise Refused(f"{where}: malformed w1")
+    if w1.get("service") != url:
         return set()
-    ids = set()
-    for side in ("before", "after"):
-        facts = (ei.get(side) or {}).get("facts") if isinstance(ei.get(side) or {}, dict) else None
-        if isinstance(facts, dict) and isinstance(facts.get("container_id"), str):
-            ids.add(facts["container_id"])
-    return ids
+    before = w1.get("before")
+    if isinstance(before, dict) and isinstance(before.get("id"), str) and HEX64.fullmatch(before["id"]):
+        return {before["id"]}
+    return set()
 
 
-def _record(ref: dict, where: str) -> dict:
-    path = pathlib.Path(ref["path"])
+def read_regular(path: pathlib.Path, cap: int, where: str) -> bytes:
+    """One file read the admission way: no symlink in any component, a regular file, at most cap bytes."""
     try:
         with guard.directory_fd(path.parent) as fd:
-            data = _leaf(fd, path.name, W2_MAX, where)
+            return _leaf(fd, path.name, cap, where)
     except Refused:
         raise
     except (OSError, ValueError) as exc:
         raise Refused(f"{where}: unreadable ({exc.__class__.__name__}: {exc})") from exc
+
+
+def _record(ref: dict, where: str) -> dict:
+    data = read_regular(pathlib.Path(ref["path"]), W2_MAX, where)
     got = hashlib.sha256(data).hexdigest()
     if got != ref["sha256"]:
         raise Refused(f"{where}: sha256 {got} is not the named {ref['sha256']}")
@@ -351,18 +358,19 @@ def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> d
     if new["id"] in old:
         raise Refused(f"W2 recreation receipt: {svc} has the same container id {new['id']} (not recreated)")
     if need_w1:
-        facts = (w1_before or {}).get("facts") if isinstance(w1_before, dict) else None
-        if not isinstance(facts, dict) or (w1_before or {}).get("status") != "PASS":
-            raise Refused("WebKit: no judged fresh W1 before-reading to match the recreated container")
+        # DECISION-11 rule 4: the checked W1 before-reading (webkit-reading/1) must be the new container.
+        b = w1_before if isinstance(w1_before, dict) else {}
+        if not (isinstance(b.get("id"), str) and HEX64.fullmatch(b["id"])):
+            raise Refused("WebKit: no checked W1 before-reading to match the recreated container")
         try:
-            same_start = hc.instant(facts.get("container_started_at"), "W1 container_started_at") == new["started"]
+            same_start = hc.instant(b.get("started_at"), "W1 before-reading started_at") == new["started"]
         except hc.Blocked as exc:
             raise Refused(str(exc)) from exc
-        if facts.get("container_id") != new["id"] or not same_start or facts.get("running") is not True:
-            raise Refused("WebKit: the fresh W1 before-reading is not the recreated container "
-                          f"({facts.get('container_id')} {facts.get('container_started_at')})")
-        evidence["w1_before"] = {"container_id": facts["container_id"],
-                                 "container_started_at": facts["container_started_at"]}
+        if b["id"] != new["id"] or not same_start or b.get("running") is not True:
+            raise Refused("WebKit: the W1 before-reading is not the recreated container "
+                          f"({b.get('id')} {b.get('started_at')})")
+        evidence["w1_before"] = {"id": b["id"], "started_at": b["started_at"], "path": b.get("path"),
+                                 "sha256": b.get("sha256")}
     return evidence
 
 

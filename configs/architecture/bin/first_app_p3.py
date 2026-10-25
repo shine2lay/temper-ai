@@ -8,7 +8,7 @@ Hypothesis H-125-INTEGRATION-2 (rule 20), written before this rewrite:
   Security's gate plants (G1-G5) could not be told apart from a real escape.
 - The one change: the rows, texts and judges come from first_app_p3_rows.py (QA's rows word for word); this file
   keeps how they run safely: fresh contexts per engine on separate fresh data copies, the traffic gate and W4 latch
-  (now with each control plant's exact URL list, G3), W1 admission and image readings, terminal cleanup, receipts
+  (now with each control plant's exact URL list, G3), W1 admission and readings, terminal cleanup, receipts
   and the controls. Host rows go only through #126's ops_host_client: until QA's P5 receiving names that wire, a
   live host row is BLOCKED with no request written, and in controls a fake controller acts on the fixture server
   so the browser half is stage-tested while the host verdict stays UNQUALIFIED (never PASS).
@@ -18,7 +18,12 @@ Hypothesis H-125-INTEGRATION-2 (rule 20), written before this rewrite:
 - What proves it wrong: a plant passes, a clean row fails, the two runs differ, a gate plant trips W4, or a kind the
   page sent is neither caught nor reported as a MISS.
 
+W1 for WebKit (DECISION-11, #280) comes from two plain webkit-reading/1 container readings (first_app_p3_w1), not
+the W-IMG engine-image operation: a checked before-reading is needed before the first WebKit MCP call, and every
+WebKit result stays PROVISIONAL until `first_app_p3_w1.py finalize` judges the after-reading COUNT.
+
     first_app_p3.py --mode controls_p3 --out DIR [--browser URL] [--browser-webkit URL] [--serve-ip IP] [--only ...]
+                    [--w1-before '{"path": ..., "sha256": ...}']
     first_app_p3.py --mode live --out DIR --profile JSON [--browser URL] [--browser-webkit URL]
     first_app_p3.py --print-p3-profile
 """
@@ -50,6 +55,7 @@ import first_app_p3_admission as admission  # noqa: E402
 import first_app_p3_guard as guard  # noqa: E402
 import first_app_p3_host as host_wire  # noqa: E402
 import first_app_p3_rows as kit  # noqa: E402
+import first_app_p3_w1 as w1  # noqa: E402
 import ops_host_client as hc  # noqa: E402
 
 FIXTURE = HERE.parent / "fixtures" / "p3_app"
@@ -69,11 +75,12 @@ NOT_CHECKED_HERE = [
 ]
 HOST_WAIT = ("host wire not opened for this run (host rows go only through #126's request side and P5's judge): "
              "no host request was written")
-W1_MISSING = ("W1: no engine-image reading: the W-IMG engine-image operation (Ops) is not wired here yet, so the "
-              "WebKit rows are NOT RUN and no WebKit MCP call is made")
+W1_MISSING = w1.MISSING
 PROFILE_KEYS = ("journey_p3", "origin", "origin_webkit", "pins", "build", "kit_id", "kit_sha256", "kit_not_checked",
                 "engine_image", "webkit_tree_sha256", "host_binding")
-OPTIONAL_KEYS = ("w2_recreation",)  # Ops' W2 recreation receipts for W1 admission (#125 4b), only when needed
+# Ops' W2 recreation receipts for W1 admission (#125 4b), only when needed; the WebKit W1 before-reading
+# (DECISION-11), without which WebKit is NOT RUN.
+OPTIONAL_KEYS = ("w2_recreation", "w1_before")
 IMAGE_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 # Security G1/G3 (rm-4774fae1): one control plant per request kind, literal *.invalid URLs in the served files. In
@@ -139,6 +146,8 @@ def parse_p3_profile(text: str | None) -> tuple[dict | None, list[str]]:
     problems = fac._keys_problems({k: v for k, v in p.items() if k not in OPTIONAL_KEYS}, PROFILE_KEYS, "profile")
     if "w2_recreation" in p:
         problems += admission.w2_problems(p["w2_recreation"])
+    if "w1_before" in p:
+        problems += w1.ref_problems(p["w1_before"])
     if "journey_p3" in p and p["journey_p3"] != JOURNEY:
         problems.append(f"journey_p3 must be {JOURNEY!r} (QA #32 rows on Product FINAL v3.1)")
     for key in ("origin", "origin_webkit"):
@@ -170,7 +179,8 @@ def parse_p3_profile(text: str | None) -> tuple[dict | None, list[str]]:
             "build": dict(p["build"]), "kit_id": p["kit_id"], "kit_sha256": p["kit_sha256"],
             "kit_not_checked": list(p["kit_not_checked"]), "engine_image": p["engine_image"],
             "webkit_tree_sha256": p["webkit_tree_sha256"], "host_binding": p["host_binding"],
-            **({"w2_recreation": p["w2_recreation"]} if "w2_recreation" in p else {})}, []
+            **({"w2_recreation": p["w2_recreation"]} if "w2_recreation" in p else {}),
+            **({"w1_before": dict(p["w1_before"])} if "w1_before" in p else {})}, []
 
 
 # ---------------------------------------------------------------- browser code (playwright-mcp)
@@ -299,7 +309,7 @@ def module_pins() -> dict:
     return {"checker_sha256": _sha(fac.__file__), "shared_module_sha256": _sha(fs.__file__),
             "p3_module_sha256": _sha(__file__), "p3_guard_sha256": _sha(guard.__file__),
             "p3_rows_sha256": _sha(kit.__file__), "p3_admission_sha256": _sha(admission.__file__),
-            "ops_host_client_sha256": _sha(hc.__file__)}
+            "p3_w1_sha256": _sha(w1.__file__), "ops_host_client_sha256": _sha(hc.__file__)}
 
 
 def new_receipt(label: str, target: dict | None) -> dict:
@@ -318,6 +328,8 @@ def new_receipt(label: str, target: dict | None) -> dict:
                         "webkit_tree_sha256": t["webkit_tree_sha256"], "host_binding": t["host_binding"]}
         if t.get("w2_recreation") is not None:
             r["profile"]["w2_recreation"] = t["w2_recreation"]
+        if t.get("w1_before") is not None:
+            r["profile"]["w1_before"] = t["w1_before"]
         r["build"] = dict(t["build"], server_bytes="attested by the host's record, not checked: a browser cannot see "
                           "the server's code")
         for key in ("control_note", "gate_plant"):
@@ -354,7 +366,8 @@ async def check_profile(args, text: str | None, out: pathlib.Path, label: str, b
 
 def bind_admission(target: dict, args) -> None:
     """The invocation's receipts root (derived in main, never a flag) and, for controls, the W2 receipts the
-    --w2-recreation argument names (a live profile names them itself)."""
+    --w2-recreation argument names and the W1 before-reading --w1-before names (a live profile names them
+    itself), with the controls invocation's own start, which the before-reading must precede."""
     root = getattr(args, "receipts_root", None)
     if root is not None:
         target["receipts_root"] = str(root)
@@ -362,6 +375,12 @@ def bind_admission(target: dict, args) -> None:
     w2 = getattr(args, "w2_recreation", None)
     if w2 is not None and "w2_recreation" not in target:
         target["w2_recreation"] = w2
+    before = getattr(args, "w1_before", None)
+    if before is not None and "w1_before" not in target:
+        target["w1_before"] = before
+    start = getattr(args, "invocation_started_at", None)
+    if start is not None:
+        target["w1_start"] = start
 
 
 @contextlib.asynccontextmanager
@@ -600,8 +619,8 @@ async def check_target(browser_url: str, webkit_url: str, target: dict, out: pat
 def admitted(r: dict, latch: guard.StopLatch, target: dict, url: str, *, webkit: bool) -> bool:
     """W1 admission (#125 4b, Security #16 condition 4): before the first MCP call to a browser service, the
     newest earlier P3 receipt in the receipts root that used it must not hold mcp_service_recreation_required,
-    unless the named Ops W2 recreation receipt shows a new, later container (and, for WebKit, the fresh W1
-    before-reading is that container). Refusal -> BLOCKED, with no MCP call to the service."""
+    unless the named Ops W2 recreation receipt shows a new, later container (and, for WebKit, the checked W1
+    before-reading, DECISION-11 rule 4, is that container). Refusal -> BLOCKED, with no MCP call to the service."""
     seen = r.setdefault("admission", {})
     if url in seen:
         return seen[url]["status"] == "ADMITTED"
@@ -610,9 +629,10 @@ def admitted(r: dict, latch: guard.StopLatch, target: dict, url: str, *, webkit:
         result = {"service": url, "status": "BLOCKED", "reasons": ["no absolute receipts root: earlier receipts "
                                                                 "cannot be read, so the service is not admitted"]}
     else:
-        w1 = (r.get("engine_image") or {}).get("before") if webkit else None
+        gate = r.get("w1") or {}
+        before = gate.get("before") if webkit and gate.get("status") == "PROVISIONAL" else None
         result = admission.admit(pathlib.Path(root), url, out_name=target.get("receipts_out_name", "check"),
-                                 w2=target.get("w2_recreation"), w1_before=w1, need_w1=webkit,
+                                 w2=target.get("w2_recreation"), w1_before=before, need_w1=webkit,
                                  own_marker=(r.get("started_marker") or {}).get("path"))
     seen[url] = result
     if result["status"] != "ADMITTED":
@@ -658,29 +678,6 @@ def _skip(r: dict, engine: str, ids, why: str) -> None:
         r["steps"].append({"id": i, "kind": "meta" if i == "PH-1" else ("host" if row.get("host") else "browser"),
                            "engine": engine, "ctx": row.get("ctx"), "status": "NOT RUN", "reasons": [why],
                            "traffic": [], "notes": []})
-
-
-def compare_w1(before, after, expected: str) -> dict:
-    """#126's compare_engine on untrusted readings: a reading it cannot read (no facts, a missing key) is BLOCKED,
-    never an exception that skips the receipt."""
-    try:
-        return hc.compare_engine(before, after, expected=expected)
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "BLOCKED", "reasons": ["W1 reading unreadable: " + exc_text(exc)], "expected": expected}
-
-
-async def engine_reading(r: dict, hooks: dict, phase: str) -> dict | None:
-    """One judged W1 engine-image reading (#126's shape), or None. Only Ops' W-IMG operation gives a real one;
-    tests pass a fake through hooks."""
-    reader = hooks.get("engine_image")
-    reading = None
-    if reader is not None:
-        try:
-            reading = await reader(phase)
-        except Exception as exc:  # noqa: BLE001
-            reading = {"operation": "engine-image", "status": "BLOCKED", "reasons": [exc_text(exc)]}
-    r.setdefault("engine_image", {})[phase] = reading
-    return reading
 
 
 async def _check_target(browser_url, webkit_url, target, out, label, budget_s, hooks, r, latch):
@@ -746,21 +743,11 @@ async def _check_target(browser_url, webkit_url, target, out, label, budget_s, h
             r.setdefault("runner_error", f"{engine}: {exc_text(exc)}")
             sess["status"] = "ERROR"
             latch.block("unresolved " + engine + " session: " + exc_text(exc))
-        if engine == "webkit":
-            after = await engine_reading(r, hooks, "after")
-            cmp = compare_w1(r["engine_image"].get("before"), after, target["engine_image"])
-            r["engine_image"]["compare"] = cmp
-            if cmp["status"] != "PASS":
-                latch.block("W1: " + "; ".join(cmp["reasons"]))
-            for st in r["steps"]:
-                if st.get("engine") == "webkit":
-                    st["engine_image"] = {"before": r["engine_image"].get("before"), "after": after,
-                                          "compare": cmp["status"]}
 
 
 async def _webkit_gate(r, target, hooks, latch, url, sess, ids) -> bool:
-    """W1 before-reading, then admission, then the engine probe. False -> WebKit NOT RUN (no MCP call before the
-    reading and admission pass)."""
+    """W1 before-reading (DECISION-11 rule 2, first_app_p3_w1.gate), then admission, then the engine probe. False
+    -> WebKit NOT RUN with the first failing reason (no WebKit MCP call before the reading and admission pass)."""
     expected = target["engine_image"]
     if expected != hc.ENGINE_PIN:
         r["security_fyi"] = {"new_image_id": expected, "why": "W1: a new image ID is BLOCKED until Security reads it"}
@@ -769,16 +756,11 @@ async def _webkit_gate(r, target, hooks, latch, url, sess, ids) -> bool:
         sess.update(status="NOT RUN", why=why)
         _skip(r, "webkit", ids, why)
         return False
-    before = await engine_reading(r, hooks, "before")
-    if before is None:
-        sess.update(status="NOT RUN", why=W1_MISSING)
-        _skip(r, "webkit", ids, W1_MISSING)
-        return False
-    single = compare_w1(before, before, expected)
-    if single["status"] != "PASS":
-        why = "W1 before-reading: " + "; ".join(single["reasons"])
-        if "new image" in why:
-            r["security_fyi"] = {"new_image_id": (before.get("facts") or {}).get("image_id"), "why": why}
+    gate = r["w1"] = w1.gate(target.get("w1_before"), target.get("w1_start") or r["started_at"], url)
+    if gate["status"] != "PROVISIONAL":
+        why = gate["reason"]
+        if gate["rule"] == "image-not-pin:before":
+            r["security_fyi"] = {"new_image_id": gate.get("image"), "why": why}
             latch.block(why)
         sess.update(status="NOT RUN", why=why)
         _skip(r, "webkit", ids, why)
@@ -1138,8 +1120,12 @@ def ph1_step(r: dict, target_tree) -> dict:
     facts["viewport_meta"] = json.loads(metas.pop()) if len(metas) == 1 else ("differs between rows" if metas else None)
     facts["scroll_width"] = max(widths) if widths else None
     gate = {"status": traffic_gate(r)["engines"]["webkit"]}
-    image = (r.get("engine_image") or {}).get("compare")
-    v = kit.ph1(facts, [s for s in r["steps"] if s.get("engine") == "webkit"], gate, image, target_tree)
+    # W1's image (DECISION-11): the checked before-reading's image, which is the pin; the after-check is finalize's.
+    checked = r.get("w1") or {}
+    image = ({"status": "PASS", "image_id": checked["before"]["image"]} if checked.get("status") == "PROVISIONAL"
+             else None)
+    rows = [dict(s, status=w1.measured(s)) for s in r["steps"] if s.get("engine") == "webkit"]
+    v = kit.ph1(facts, rows, gate, image, target_tree)
     return {"id": "PH-1", "kind": "meta", "engine": "webkit", "ctx": None, "status": v["status"],
             "reasons": v["reasons"], "notes": v.get("notes", []), "traffic": [],
             "record": {**facts, "image_id": (image or {}).get("image_id"), "traffic_gate": gate["status"],
@@ -1186,22 +1172,28 @@ def final_verdict(r: dict) -> tuple[str, str]:
                                + "; ".join(hit[0]["reasons"]))
     if r.get("runner_error"):
         return "BLOCKED", f"runner stopped the journey: {r['runner_error']}"
-    if [(s.get("engine"), s["id"]) for s in steps] != EXPECTED_STEPS or any(s["status"] != "PASS" for s in steps):
+    if ([(s.get("engine"), s["id"]) for s in steps] != EXPECTED_STEPS
+            or any(w1.measured(s) != "PASS" for s in steps)):
         return "BLOCKED", "not every row was observed"
     if r.get("late_findings"):
         return "FAIL", "after the last row: " + "; ".join(r["late_findings"])
-    if ((r.get("engine_image") or {}).get("compare") or {}).get("status") != "PASS":
-        return "BLOCKED", "W1 engine image not confirmed before and after the WebKit rows"
+    checked = r.get("w1") or {}
+    if checked.get("status") != "PROVISIONAL":
+        return "BLOCKED", "W1 before-reading not checked: " + str(checked.get("reason") or "WebKit not reached")
     cl = r.get("cleanup") or {}
     if set(cl) != set(ENGINES) or not all(x.get("confirmed") for x in cl.values()):
         return "BLOCKED", "cleanup not confirmed: " + json.dumps(cl)[:600]
-    return "PASS", f"all {len(EXPECTED_STEPS)} rows observed as expected (Chromium, WebKit phone and PH-1)"
+    # DECISION-11 rule 3: never PASS before finalize judges the after-reading COUNT (r["w1"]["on_count"]).
+    return "BLOCKED", (f"{w1.PENDING}all {len(EXPECTED_STEPS)} rows observed as expected (Chromium, WebKit phone and "
+                       "PH-1); the WebKit rows are PROVISIONAL until first_app_p3_w1.py finalize judges the "
+                       "after-reading COUNT")
 
 
 def finish(r: dict, out: pathlib.Path, *, persist: bool = True) -> dict:
     sess = (r.get("sessions") or {}).get("webkit") or {}
     if sess.get("status") == "RAN" and not any(s["id"] == "PH-1" for s in r["steps"]):
         r["steps"].append(ph1_step(r, (r.get("profile") or {}).get("webkit_tree_sha256")))
+    w1.mark_steps(r)  # after PH-1, which is judged on measured statuses; idempotent (controls finish twice)
     r["finished_at"] = fac.now()
     done = {(s.get("engine"), s["id"]) for s in r["steps"]}
     r["not_checked"] = [f"{i} ({e})" for e, i in EXPECTED_STEPS if (e, i) not in done]
@@ -1219,6 +1211,9 @@ def finish(r: dict, out: pathlib.Path, *, persist: bool = True) -> dict:
     if plant:
         r["gate_plant_result"] = plant
     r["verdict"], r["why"] = final_verdict(r)
+    if (r.get("w1") or {}).get("status") == "PROVISIONAL":
+        # The verdict this run gets if finalize says COUNT; BLOCKED stands if it says BLOCKED.
+        r["w1"]["on_count"] = "PASS" if r["why"].startswith(w1.PENDING) else r["verdict"]
     r["exit_code"] = exit_status(r)
     r.pop("engine_logs", None)
     if persist:
@@ -1259,7 +1254,7 @@ def summary_md(r: dict) -> str:
     lines += [f"- {x}" for x in g["findings"][:50]]
     if r.get("gate_plant_result"):
         lines += ["", "## Gate plant (G5)", "", "```", json.dumps(r["gate_plant_result"], indent=1), "```"]
-    lines += ["", f"W1: {json.dumps((r.get('engine_image') or {}).get('compare'))}",
+    lines += ["", w1_line(r),
               f"Cleanup: {json.dumps({k: v.get('confirmed') for k, v in (r.get('cleanup') or {}).items()})}.",
               f"Service recreation required: {json.dumps(r.get('mcp_service_recreation_required') or [])}.",
               "", "## NOT CHECKED (the kit's list; not waived)", ""]
@@ -1268,6 +1263,19 @@ def summary_md(r: dict) -> str:
     if r.get("runner_error"):
         lines.append(f"Runner error: {r['runner_error']}")
     return "\n".join(lines) + "\n"
+
+
+def w1_line(r: dict) -> str:
+    checked = r.get("w1")
+    if not checked:
+        return "W1: no WebKit before-reading was checked (WebKit not reached)."
+    before = checked.get("before") or {}
+    text = f"W1: {checked['status']}, before-reading {before.get('path')} (sha256 {before.get('sha256')})"
+    if checked.get("reason"):
+        text += f": {checked['reason']}"
+    if checked.get("status") == "PROVISIONAL":
+        text += f". {w1.NOTE}; if finalize says COUNT, this run is {checked.get('on_count')}"
+    return text + "."
 
 
 def exit_status(r: dict) -> int:
@@ -1282,6 +1290,7 @@ async def live(args, out: pathlib.Path) -> int:
     print(json.dumps({"mode": "live", "journey": "p3", "verdict": r["verdict"], "why": r["why"],
                       "rows": {f"{s.get('engine')}:{s['id']}": s["status"] for s in r["steps"]},
                       "webkit": (r.get("sessions") or {}).get("webkit", {}).get("status"),
+                      "w1": (r.get("w1") or {}).get("status"), "w1_on_count": (r.get("w1") or {}).get("on_count"),
                       "traffic_gate": r["traffic_gate"]["status"], "browser_contact": r["browser_contact"],
                       "receipt": str(out / "receipt.json")}, ensure_ascii=False), flush=True)
     return exit_status(r)
@@ -1428,11 +1437,13 @@ CONTROLS = [
 
 
 def engine_got(r: dict, engine: str) -> tuple:
-    """(PASS, None) when every row of the engine passed (host rows UNQUALIFIED), else (status, first row)."""
+    """(PASS, None) when every row of the engine passed (host rows UNQUALIFIED), else (status, first row). Measured
+    statuses: a PROVISIONAL WebKit row (W1, DECISION-11) is compared as measured; the invocation stays provisional."""
     steps = [s for s in r["steps"] if s.get("engine") == engine and s["id"] != "PH-1"]
     for s in steps:
-        if s["status"] not in ("PASS", "UNQUALIFIED"):
-            return s["status"], s["id"]
+        status = w1.measured(s)
+        if status not in ("PASS", "UNQUALIFIED"):
+            return status, s["id"]
     if [s["id"] for s in steps] != ROW_IDS[engine]:
         return "NOT RUN", None
     return CLEAN
@@ -1607,10 +1618,12 @@ async def run_control(args, case: dict, out: pathlib.Path, tmp: pathlib.Path, ip
             "server_starts": [s.starts for s in servers if s is not None],
             "recreation_required": r.get("mcp_service_recreation_required") or [],
             "rows": {f"{s.get('engine')}:{s['id']}": s["status"] for s in r["steps"]},
-            "receipt": str(case_out / "receipt.json")}
+            "w1": (r.get("w1") or {}).get("status"), "receipt": str(case_out / "receipt.json")}
 
 
 async def controls(args, out: pathlib.Path) -> int:
+    # The W1 before-reading must precede this invocation's start (DECISION-11 rule 2); bind_admission copies it.
+    args.invocation_started_at = started_at = fac.now()
     latch = guard.StopLatch()
     only = [x.strip() for x in (args.only or "").split(",") if x.strip()]
     names = {x["case"] for x in CONTROLS}
@@ -1629,9 +1642,22 @@ async def controls(args, out: pathlib.Path) -> int:
               for k in ("OK", "WRONG", "NOT EXERCISED", "NOT RUN", "UNCALIBRATED", "BLOCKED", "W4 TRIPPED")}
     g5 = {x["case"]: (x.get("gate_plant") or {}).get("engines") for x in results if x.get("gate_plant")}
     g5_ok, g5_gaps = g5_qualification(results)
-    summary = {"mode": "controls_p3", "journey": "p3", "all_ok": all_ok and not latch.stopped,
-               "full_qualification": all_ok and not latch.stopped and {x["case"] for x in results} == names
-               and g5_ok, "g5_gaps": g5_gaps, "g5_blind_spots": dict(G5_BLIND_SPOTS),
+    measured_ok = all_ok and not latch.stopped
+    measured_full = measured_ok and {x["case"] for x in results} == names and g5_ok
+    # DECISION-11 rule 3: with WebKit rows measured on a checked before-reading, nothing counts before finalize.
+    reached = {x["case"]: x["w1"] for x in results if x.get("w1")}
+    if reached and all(v == "PROVISIONAL" for v in reached.values()):
+        w1_status = "PROVISIONAL"
+    else:
+        w1_status = next((v for v in reached.values() if v != "PROVISIONAL"), "NOT REACHED")
+    provisional = w1_status == "PROVISIONAL"
+    summary = {"mode": "controls_p3", "journey": "p3", "started_at": started_at,
+               "all_ok": measured_ok and not provisional, "full_qualification": measured_full and not provisional,
+               "w1": {"status": w1_status, "before": getattr(args, "w1_before", None), "cases": reached,
+                      "note": w1.NOTE, "finalize": w1.FINALIZE if provisional else None,
+                      "on_count": {"all_ok": measured_ok, "full_qualification": measured_full}
+                      if provisional else None},
+               "g5_gaps": g5_gaps, "g5_blind_spots": dict(G5_BLIND_SPOTS),
                "selection_error": "empty/unmatched selection" if invalid or not selected else None,
                "counts": counts, "g5": g5,
                "not_reached": [c["case"] for c in selected if c["case"] not in {x["case"] for x in results}],
@@ -1640,6 +1666,7 @@ async def controls(args, out: pathlib.Path) -> int:
                **module_pins()}
     latch.bind(summary)
     summary["exit_code"] = guard.W4_EXIT if latch.tripped else (0 if summary["all_ok"] else 1)
+    summary["finished_at"] = fac.now()  # the W1 after-reading must be later (finalize)
     guard.write_json(out / "controls.json", summary)
     print(json.dumps(summary, ensure_ascii=False), flush=True)
     return summary["exit_code"]
@@ -1658,6 +1685,9 @@ def main() -> int:
     ap.add_argument("--w2-recreation", default=None,
                     help="controls: Ops' W2 recreation receipts for a service an earlier receipt says needs "
                          "recreation, as JSON {service URL: {path, sha256[, before]}} (live: the profile's key)")
+    ap.add_argument("--w1-before", default=None,
+                    help="controls: the WebKit W1 before-reading (webkit-reading/1, DECISION-11) taken before this "
+                         "invocation, as JSON {path, sha256} (live: the profile's w1_before key)")
     a = ap.parse_args()
     if a.print_p3_profile:
         print(json.dumps(default_p3_profile(), indent=1, ensure_ascii=False))
@@ -1675,6 +1705,15 @@ def main() -> int:
             ap.error(f"--w2-recreation is not JSON: {exc.msg}")
         if admission.w2_problems(a.w2_recreation):
             ap.error("--w2-recreation: " + "; ".join(admission.w2_problems(a.w2_recreation)))
+    if a.w1_before is not None:
+        if a.mode == "live":
+            ap.error("--w1-before is for the controls; a live profile names its W1 before-reading itself (w1_before)")
+        try:
+            a.w1_before = json.loads(a.w1_before)
+        except json.JSONDecodeError as exc:
+            ap.error(f"--w1-before is not JSON: {exc.msg}")
+        if w1.ref_problems(a.w1_before):
+            ap.error("--w1-before: " + "; ".join(w1.ref_problems(a.w1_before)))
     out = pathlib.Path(os.path.abspath(a.out))  # preserve literal components; never resolve and follow a symlink
     # Earlier receipts of this workflow live beside this run: <root>/<run>/check[/<case>]/receipt.json.
     a.receipts_root, a.receipts_out_name = out.parent.parent, out.name

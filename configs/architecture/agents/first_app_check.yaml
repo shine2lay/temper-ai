@@ -22,8 +22,9 @@
 # Project 3 journey (Architecture queue #124, rows wired to QA #32's spec on Product FINAL v3.1 by #125): by
 # configs/architecture/bin/first_app_p3.py (loaded only for it, rows in first_app_p3_rows.py): Chromium 1280x800
 # contexts and WebKit phone contexts (390x844, touch; the second browser service, default
-# http://playwright-mcp-webkit:8931/mcp) on a second, fresh copy of the build. WebKit runs only with a W1
-# engine-image reading before and after and W1 admission; otherwise its rows are NOT RUN, never PASS. Host rows
+# http://playwright-mcp-webkit:8931/mcp) on a second, fresh copy of the build. WebKit runs only with a checked W1
+# before-reading (webkit-reading/1 from Ops' reading tool, DECISION-11) and W1 admission; otherwise its rows are
+# NOT RUN, never PASS. Its results stay PROVISIONAL until first_app_p3_w1.py finalize says COUNT. Host rows
 # go only through #126's ops_host_client (BLOCKED until that wire is received). W4: an off-origin request that isn't
 # a declared plant stops the batch (exit 4, nothing further runs in that invocation); the request list goes to
 # Security and work resumes once the cause is known. That cross-run hold is an operator rule (DECISION-9 (b)): the

@@ -72,8 +72,9 @@ def receipt(root, run, *, service=WK, finished=FAILED_AT, recreation=True, case=
          'cleanup': {'webkit' if service == WK else 'chromium': {'confirmed': not recreation}},
          'mcp_service_recreation_required': [{'service': service, 'phase': 'cleanup', 'reason': 'fixed'}]
          if recreation else []}
-    if service == WK and w1:
-        d['engine_image'] = {'service': WK, 'before': {'status': 'PASS', 'facts': {'container_id': w1}}}
+    if service == WK and w1:  # the earlier run's checked W1 before-reading (DECISION-11)
+        d['w1'] = {'service': WK, 'status': 'PROVISIONAL',
+                   'before': {'path': '/fixed/earlier-before.json', 'sha256': 'e' * 64, 'id': w1}}
     d.update(extra)
     folder = root / run / 'check' / (case or '')
     folder.mkdir(parents=True, exist_ok=True)
@@ -90,10 +91,11 @@ def w2_record(tmp_path, *, cid=NEW, started=NEW_START, mode='after', running=Tru
     return {'path': str(path), 'sha256': hashlib.sha256(data).hexdigest()}
 
 
-def w1(cid=NEW, started=NEW_START, status='PASS'):
-    return {'operation': 'engine-image', 'status': status, 'reasons': [],
-            'facts': {'image_id': 'sha256:' + 'c' * 64, 'container_id': cid, 'container_started_at': started,
-                      'running': True}}
+def w1(cid=NEW, started=NEW_START, running=True):
+    """The checked W1 before-reading as the receipt's w1.before holds it (DECISION-11, first_app_p3_w1.gate)."""
+    return {'path': '/fixed/w1-before.json', 'sha256': 'f' * 64, 'id': cid, 'image': p3.hc.ENGINE_PIN,
+            'started_at': started, 'restart_count': 0, 'running': running, 'paused': False, 'restarting': False,
+            'networks': ['temper-ai_default'], 'taken_at': '2026-10-24T09:00:30.000000Z'}
 
 
 def root_of(tmp_path):
@@ -179,9 +181,12 @@ def test_valid_w2_and_matching_w1_admits(tmp_path):
     ref = w2_record(tmp_path)
     got = adm.admit(root, WK, w2={WK: ref}, w1_before=w1(), need_w1=True)
     assert got['status'] == 'ADMITTED' and got['w2']['after']['container_id'] == NEW
-    assert got['w2']['w1_before']['container_id'] == NEW
-    # WebKit needs the fresh W1 reading to be that container: missing, other id, other start or not PASS -> no.
-    for bad in (None, w1(cid='d' * 64), w1(started='2026-10-24T09:00:00.123457Z'), w1(status='BLOCKED')):
+    assert got['w2']['w1_before'] == {'id': NEW, 'started_at': NEW_START, 'path': '/fixed/w1-before.json',
+                                      'sha256': 'f' * 64}
+    # DECISION-11 rule 4: the checked before-reading must be that container: missing, other id, other start, not
+    # running or no full id -> no.
+    for bad in (None, w1(cid='d' * 64), w1(started='2026-10-24T09:00:00.123457Z'), w1(running=False),
+                w1(cid='b' * 12)):
         assert adm.admit(root, WK, w2={WK: ref}, w1_before=bad, need_w1=True)['status'] == 'BLOCKED'
     # Chromium has no W1 reading: the W2 receipt alone admits it.
     croot = root_of(tmp_path / 'c')

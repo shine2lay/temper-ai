@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import contextlib
+import datetime
 import importlib.util
 import json
 import os
@@ -95,27 +96,46 @@ def event(url=EXACT):
 
 
 def passing(r):
-    """A receipt that would pass: every expected step PASS, both copies pinned, W1 confirmed, cleanup confirmed."""
+    """A receipt whose rows all pass: every expected step PASS, both copies pinned, the W1 before-reading checked
+    (PROVISIONAL, DECISION-11), cleanup confirmed. Its verdict is W1 pending, never PASS, until finalize."""
     r.update(pins={'ok': True}, pins_webkit={'ok': True}, reach={},
              steps=[{'id': i, 'engine': e, 'kind': 'browser', 'status': 'PASS', 'traffic': [], 'reasons': [],
                      'notes': []} for e, i in p3.EXPECTED_STEPS], steps_attempted=len(p3.EXPECTED_STEPS),
              sessions={e: {'status': 'RAN', 'before_first_navigation': True} for e in p3.ENGINES},
              cleanup={e: {'confirmed': True} for e in p3.ENGINES},
-             engine_image={'compare': {'status': 'PASS', 'reasons': [], 'image_id': p3.hc.ENGINE_PIN}})
+             w1={'service': p3.WEBKIT_URL, 'status': 'PROVISIONAL', 'rule': None, 'reason': None,
+                 'before': {'path': '/runs/w1-before.json', 'sha256': 'c' * 64, 'id': 'c' * 64,
+                            'image': p3.hc.ENGINE_PIN}, 'note': p3.w1.NOTE})
     return r
 
 
-def reading(container='c' * 64, started='2026-10-20T19:51:36.763227153Z', image=None):
-    """A judged W1 engine-image reading in #126's shape (only Ops' W-IMG operation gives a real one)."""
-    return {'operation': 'engine-image', 'status': 'PASS', 'reasons': [],
-            'facts': {'image_id': image or p3.hc.ENGINE_PIN, 'container_id': container,
-                      'container_started_at': started, 'running': True}}
+def w1_before(tmp_path):
+    """A webkit-reading/1 before-reading (DECISION-11) that passes the pre-check, taken before any run here."""
+    rec = {'schema': 'webkit-reading/1', 'status': 'OK', 'reason': None, 'taken_at': '2026-10-20T20:00:00.000000Z',
+           'id': 'c' * 64, 'image': p3.hc.ENGINE_PIN, 'started_at': '2026-10-20T19:51:36.763227153Z',
+           'restart_count': 0, 'running': True, 'paused': False, 'restarting': False,
+           'networks': ['temper-ai_default'], 'endpoint': {'alias': 'playwright-mcp-webkit', 'count': 1,
+                                                           'holders': ['c' * 64], 'network': 'temper-ai_default'},
+           'limits': p3.w1.LIMITS}
+    folder = tmp_path / 'w1-readings'
+    folder.mkdir(exist_ok=True)
+    data = json.dumps(rec).encode()
+    (folder / 'before.json').write_bytes(data)
+    return {'path': str(folder / 'before.json'), 'sha256': p3.fac.sha256(data)}
 
 
-def image_hooks(before=None, after=None):
-    async def read(phase):
-        return (before if phase == 'before' else after) or reading()
-    return {'engine_image': read}
+def assert_w1_pending(r):
+    """DECISION-11 rule 3: rows that all pass leave the run BLOCKED (W1 pending), never PASS, with every WebKit
+    step PROVISIONAL and naming the before-reading, until finalize says COUNT."""
+    assert r['verdict'] == 'BLOCKED' and r['why'].startswith(p3.w1.PENDING) and r['exit_code'] == 3, r['why']
+    assert r['w1']['status'] == 'PROVISIONAL' and r['w1']['on_count'] == 'PASS'
+    named = {'path': r['w1']['before']['path'], 'sha256': r['w1']['before']['sha256']}
+    webkit = [s for s in r['steps'] if s['engine'] == 'webkit']
+    assert len(webkit) == len(p3.ROW_IDS['webkit']) + 1  # the rows and PH-1
+    for s in webkit:
+        assert s['status'] == 'PROVISIONAL' and s['measured'] == 'PASS', s
+        assert s['w1'] == {'before': named, 'note': 'W1: provisional until the after-check'}
+    assert all(s['status'] == 'PASS' and 'w1' not in s for s in r['steps'] if s['engine'] == 'chromium')
 
 
 # Happy paths first, then the exact faults in the same event/lifetime boundaries.
@@ -363,11 +383,12 @@ def test_independent_browser_fallback_even_after_close_or_partial_setup_fault(mo
 PIN_PHASE = 'chromium:pins-chromium-copy'  # the first MCP contact: the Chromium copy's pins probe
 
 
-def install_journey(monkeypatch, fault='clean'):
+def install_journey(monkeypatch, tmp_path, fault='clean'):
     """Sessions in order: pins (Chromium copy), pins (WebKit copy), chromium rows, WebKit engine probe, webkit rows.
-    Returns the target, the sessions and hooks with a passing fake W1 reader."""
+    Returns the target (naming a W1 before-reading that passes the pre-check), the sessions and empty hooks."""
     sessions, kinds = [], iter(['pins', 'pins', 'chromium', 'engine', 'webkit'])
     t = target()
+    t['w1_before'] = w1_before(tmp_path)
     raw = g.snapshot(p3.FIXTURE, p3.CTYPES)
 
     @contextlib.asynccontextmanager
@@ -413,7 +434,7 @@ def install_journey(monkeypatch, fault='clean'):
     monkeypatch.setattr(p3, 'open_session', open_fake)
     monkeypatch.setattr(p3, '_call', call)
     monkeypatch.setattr(p3, '_section_rows', rows)
-    return t, sessions, image_hooks()
+    return t, sessions, {}
 
 
 @pytest.mark.usefixtures('chromium_ab')
@@ -435,7 +456,8 @@ def test_r1_followup_carrier_context(monkeypatch, tmp_path, fault):
     c = r['cleanup']['chromium']
     assert s.browser_closes == 1
     if fault == 'F5':
-        assert r['exit_code'] == 0 and data['contexts_left'] == 0
+        assert_w1_pending(r)
+        assert data['contexts_left'] == 0
         assert c['journal']['status'] == 'complete' and c['contexts']['guard_context_closed']
     else:
         assert r['exit_code'] == 3 and not c['confirmed']
@@ -512,7 +534,7 @@ def test_r1_carrier_and_unknown_lifetimes(monkeypatch, tmp_path, fault):
 @pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['F5', 'F1', 'F2', 'F3', 'F4'])
 def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
-    t, sessions, hooks = install_journey(monkeypatch)
+    t, sessions, hooks = install_journey(monkeypatch, tmp_path)
     original_call, original_rows = p3._call, p3._section_rows
     data = r1_close_case(fault)
     fallback_events, started = [], []
@@ -559,8 +581,8 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
         assert r['traffic_gate']['status'] != 'PASS'
         assert EXACT not in (tmp_path / 'observations.json').read_text()
     else:
-        assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and c['confirmed']
-        assert c.get('journal', {}).get('status') == 'complete'
+        assert_w1_pending(r)
+        assert c['confirmed'] and c.get('journal', {}).get('status') == 'complete'
     if fault != 'F5':
         assert len(sessions) == 3 and started == ['chromium']  # no later engine/probe
         assert not c['confirmed']
@@ -589,15 +611,29 @@ def test_r1_final_disposal_window(monkeypatch, tmp_path, fault):
 @pytest.mark.parametrize('fault', ['clean', 'stage_A', 'bad_pin', 'transport_exit', 'late_drain', 'late_close',
                                    'CLOSE', 'partial_setup'])
 def test_journey_waits_for_terminal_traffic_and_disposal_before_next_engine(monkeypatch, tmp_path, fault):
-    t, sessions, hooks = install_journey(monkeypatch, fault)
+    t, sessions, hooks = install_journey(monkeypatch, tmp_path, fault)
     latch = g.StopLatch()
     empty_receipts_root(t, tmp_path)
     r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'fake', 900, hooks, latch=latch))
     assert all(s.browser_closes == 1 for s in sessions)
     if fault == 'clean':
-        assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and len(sessions) == 5 and not latch.stopped
-        assert r['engine_image']['compare']['status'] == 'PASS'
-        assert all(s['engine_image']['compare'] == 'PASS' for s in r['steps'] if s['engine'] == 'webkit')
+        assert_w1_pending(r)
+        assert len(sessions) == 5 and not latch.stopped
+        assert r['w1']['before'] == dict(t['w1_before'], **{k: v for k, v in json.loads(
+            Path(t['w1_before']['path']).read_text()).items() if k in p3.w1.FACTS})
+        receipt = json.loads((tmp_path / 'receipt.json').read_text())
+        assert receipt['verdict'] == 'BLOCKED' and receipt['w1']['status'] == 'PROVISIONAL'
+        assert 'W1: PROVISIONAL' in (tmp_path / 'summary.md').read_text()
+        # The receipt this journey wrote is what finalize judges (DECISION-11 rule 5): an unchanged container read
+        # after the run gives COUNT.
+        later = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1)
+        after = dict(json.loads(Path(t['w1_before']['path']).read_text()),
+                     taken_at=later.strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+        data = json.dumps(after).encode()
+        (tmp_path / 'after.json').write_bytes(data)
+        code, record, _ = p3.w1.finalize(str(tmp_path / 'receipt.json'), str(tmp_path / 'after.json'),
+                                         p3.fac.sha256(data))
+        assert code == 0 and record['result'] == 'COUNT' and json.loads((tmp_path / 'w1.json').read_text()) == record
     elif fault in ('stage_A', 'bad_pin', 'transport_exit', 'late_drain', 'late_close'):
         assert r['verdict'] == 'W4 TRIPPED' and r['exit_code'] == 4 and latch.tripped
         assert len(sessions) == (1 if fault in ('stage_A', 'bad_pin', 'transport_exit') else 3)
@@ -607,16 +643,45 @@ def test_journey_waits_for_terminal_traffic_and_disposal_before_next_engine(monk
         assert r['verdict'] == 'BLOCKED' and len(sessions) == 3 and latch.blocked
 
 
+@pytest.mark.parametrize('fault', ['none', 'paused', 'late'])
+def test_journey_without_a_checked_before_reading_opens_no_webkit_session(monkeypatch, tmp_path, fault):
+    """DECISION-11 rule 2: no W1 before-reading, or one the pre-check refuses, leaves WebKit NOT RUN with the first
+    failing reason, and no WebKit MCP session (engine probe or rows) is ever opened."""
+    t, sessions, hooks = install_journey(monkeypatch, tmp_path)
+    if fault == 'none':
+        del t['w1_before']
+    else:
+        rec = json.loads(Path(t['w1_before']['path']).read_text())
+        change = {'paused': True} if fault == 'paused' else {'taken_at': '2099-01-01T00:00:00.000000Z'}
+        data = json.dumps(dict(rec, **change)).encode()
+        Path(t['w1_before']['path']).write_bytes(data)
+        t['w1_before']['sha256'] = p3.fac.sha256(data)
+    empty_receipts_root(t, tmp_path)
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'fake', 900, hooks,
+                                    latch=g.StopLatch()))
+    assert [s.kind for s in sessions] == ['pins', 'pins', 'chromium']  # both pin reads go through Chromium
+    why = {'none': p3.w1.MISSING, 'paused': 'W1 before-reading refused: paused:before: ',
+           'late': 'W1 before-reading refused: before-not-earlier: '}[fault]
+    assert r['sessions']['webkit']['status'] == 'NOT RUN' and r['sessions']['webkit']['why'].startswith(why)
+    webkit = [s for s in r['steps'] if s['engine'] == 'webkit']
+    assert len(webkit) == len(p3.ROW_IDS['webkit']) + 1
+    assert all(s['status'] == 'NOT RUN' and s['reasons'][0].startswith(why) and 'w1' not in s for s in webkit)
+    # The verdict names the first NOT RUN row and the first failing W1 reason.
+    assert r['verdict'] == 'BLOCKED' and r['why'].startswith(f"{len(webkit)} row(s) NOT RUN (J-1 webkit): {why}")
+    assert r['w1']['status'] == ('NOT GIVEN' if fault == 'none' else 'REFUSED')
+
+
 def test_a6_journey_writes_its_marker_and_its_own_marker_never_blocks_its_webkit(monkeypatch, tmp_path):
     """#279 (Security #105 A6): the run folder sits in the receipts root, so the WebKit admission (asked after the
     Chromium rows) sees this unit's own unfinished marker; it is not an earlier run and must not refuse it."""
-    t, sessions, hooks = install_journey(monkeypatch, 'clean')
+    t, sessions, hooks = install_journey(monkeypatch, tmp_path, 'clean')
     root = tmp_path / 'receipts'
     out = root / 'run1' / 'check'
     out.mkdir(parents=True)
     t['receipts_root'], t['receipts_out_name'] = str(root), 'check'
     r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, out, 'fake', 900, hooks, latch=g.StopLatch()))
-    assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and len(sessions) == 5
+    assert_w1_pending(r)
+    assert len(sessions) == 5
     assert r['admission']['fake:webkit']['status'] == 'ADMITTED'
     assert r['admission']['fake:webkit']['own_marker'] == str(out / 'started.json') == r['started_marker']['path']
     marker = json.loads((out / 'started.json').read_text())
@@ -814,11 +879,16 @@ def test_control_lifetime_always_stops_server_and_blocks_unresolved(monkeypatch,
     else:
         result = asyncio.run(invocation)
         assert result['status'] == ('OK' if fault == 'clean' else 'BLOCKED')
+        # The rows are measured, W1 stays provisional (the fake check sets it only when it gets that far).
+        assert result['w1'] == ('PROVISIONAL' if fault in ('clean', 'shutdown') else None)
     assert seen.count('shutdown') == (1 if fault == 'start' else 2)  # every created server, once
     assert seen.index('retire') < seen.index('shutdown')
     assert latch.stopped == (fault != 'clean')
     receipt = json.loads((tmp_path / 'out/FAKE/receipt.json').read_text())
-    assert receipt['verdict'] == ('PASS' if fault == 'clean' else 'BLOCKED')
+    assert receipt['verdict'] == 'BLOCKED'  # never PASS before finalize (DECISION-11 rule 3)
+    assert receipt['why'].startswith(p3.w1.PENDING) == (fault == 'clean')
+    if fault in ('clean', 'shutdown'):
+        assert receipt['w1']['on_count'] == ('PASS' if fault == 'clean' else 'BLOCKED')
 
 
 def test_threaded_host_action_cannot_restart_after_retirement(monkeypatch, tmp_path):

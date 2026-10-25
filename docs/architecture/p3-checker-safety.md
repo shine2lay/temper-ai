@@ -1,4 +1,4 @@
-# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125), Security #105 fixes (#279)
+# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125), Security #105 fixes (#279), W1 from readings (#280)
 
 Source work only. No browser, controller, host operation, network plant, qualification or run permission.
 Accountable lead: Architecture. Security's a217ee1c review remains CHANGES until its new exact-pin reply.
@@ -42,6 +42,10 @@ finally cleanup stay intact.
 
 P3 exit codes: 0 complete success; 1 FAIL/incomplete controls; 2 invalid live profile;
 3 BLOCKED; 4 **W4 TRIPPED** only. Ordinary P3 and legacy first_app/shared exit codes are unchanged.
+Since DECISION-11 (#280) the checker itself never says PASS for P3: a run whose rows all pass ends
+BLOCKED (3) with a why starting "W1 pending: " and w1.on_count PASS, and the controls end 1 with
+all_ok and full_qualification false while W1 is PROVISIONAL (the measured values are kept under
+w1.on_count). Only first_app_p3_w1.py finalize's COUNT (exit 0) lets that result count.
 Architecture's #129 amendment (rm-66681532) preserves BLOCKED=3 and assigns unused 4 to W4,
 superseding the original literal W4=3 rather than changing an existing failure code.
 An empty/unmatched selection and any NOT RUN are incomplete, never qualification success.
@@ -140,11 +144,12 @@ The one way in is Ops' W2 recreation evidence, named by path and sha256 (live: t
 w2_recreation key; controls: --w2-recreation, the same JSON {service URL: {path, sha256[, before]}}).
 The after record (#124 shape: mode "after", containers keyed by the compose service name, which is the
 URL's host) must hash to the named sha256, show the service running with a full container id that
-differs from the old one (from the failing receipt's own W1 readings or the optional before record,
-taken after that receipt finished) and a StartedAt later than the failing receipt's finished_at. For
-WebKit, the fresh judged W1 before-reading must also be that new container (same id and StartedAt,
-running). The reference is evidence checked byte for byte, not an override: there is no skip flag,
-no store of its own, and the checker gets no network or docker access for it.
+differs from the old one (from the failing receipt's own checked W1 before-reading, w1.before.id, or
+the optional before record, taken after that receipt finished) and a StartedAt later than the failing
+receipt's finished_at. For WebKit, this run's checked W1 before-reading (DECISION-11, below) must
+also be that new container (same full id and StartedAt, running). The reference is evidence checked
+byte for byte, not an override: there is no skip flag, no store of its own, and the checker gets no
+network or docker access for it.
 
 An unreadable, partial, non-JSON or malformed receipt, a symlink anywhere on the path, a missing
 receipts root or more than 5000 receipts -> BLOCKED. The result is recorded in the receipt under
@@ -160,8 +165,54 @@ be a regular file: the receipt decides. The unit's own marker (admission is aske
 WebKit probe) is not an earlier run and is skipped by its exact path. Markers without a receipt are
 listed under admission[service URL].unfinished_markers.
 
-Until the W1 engine-image reading is wired (the W-IMG operation, owed by Ops), WebKit after a
-recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 match cannot be shown.
+WebKit after a recorded recreation is admitted only when the W2 after record and this run's checked
+W1 before-reading name the same new container. Without a before-reading, or with one the pre-check
+refuses, WebKit is NOT RUN before admission is asked.
+
+### WebKit W1 from two plain container readings (DECISION-11, #280)
+
+W1 no longer comes from the W-IMG engine-image host operation (its armed window has never existed:
+Ops #299, owner cards #403 and #508). It comes from two closed webkit-reading/1 files that Ops'
+read-only reading tool writes (chromium-reading take --webkit, Ops #534; record shape in agent-tools
+docs/ops-host-chromium-reading.md, "WebKit readings"): one before the checker starts, one after the
+rows and teardown. Security agreed with conditions (rm-46a8c5a7). first_app_p3_w1.py reads only the
+files it is named; the checker has no Docker, network or subprocess access for them. Host rows (R-1,
+R-1i, D-1, D-5) are unchanged.
+
+- Input: live, the profile's optional key w1_before {path, sha256}; controls, --w1-before with the same
+  JSON (live mode refuses the flag). It follows the w2_recreation pattern.
+- Pre-check (rule 2), before the first WebKit MCP call (the engine probe), after the profile's
+  engine_image pin check and before W1 admission. In order, the first failure decides: input exactly
+  {path, sha256}; a regular file read without following a symlink anywhere on its path (missing:before);
+  sha256 = the named one (sha256:before); a closed webkit-reading/1 record, with no extra or missing
+  key, the right types, sorted networks and holders, count = number of holders, alias
+  playwright-mcp-webkit on network temper-ai_default, the fixed limits line and status OK
+  (bad-schema:before; an UNKNOWN record is unknown:before with the tool's reason); image =
+  ops_host_client.ENGINE_PIN (image-not-pin:before); running true, paused false, restarting false
+  (not-running/paused/restarting:before; a missing or non-boolean state is bad-schema); exactly one
+  holder (count-not-1:before) and it is the id (holder-not-id:before); taken_at earlier than the
+  checker's start, the receipt's started_at (live) or the controls invocation's start
+  (before-not-earlier). Any failure: WebKit NOT RUN, every WebKit row NOT RUN with "W1 before-reading
+  refused: <rule>: ..." (no before-reading: W1_MISSING), and no WebKit MCP call. image-not-pin also
+  blocks the invocation and names the image under security_fyi.
+- Provisional (rule 3): the receipt's w1 holds the before-reading's path, sha256 and facts. Every WebKit
+  step records w1 {before {path, sha256}, note "W1: provisional until the after-check"}; a measured PASS
+  becomes PROVISIONAL (kept as measured; PH-1 and the verdict read measured). WebKit is never PASS or
+  counted before finalize's COUNT.
+- Admission (rule 4): the WebKit W2 match uses the checked before-reading (full id, StartedAt, running);
+  the evidence names its path and sha256.
+- Finalize (rule 5): first_app_p3_w1.py finalize --receipt <receipt.json or controls.json> --after
+  <after-reading> --after-sha256 <its sha256>, after the run and its teardown. Files only: it re-reads the
+  receipt, the before-reading it names (sha256 again) and the after-reading, checks both ends as above,
+  then needs the same id, image, StartedAt, RestartCount and networks (a recreation is BLOCKED even with
+  the same image: field-differs:<field>), the before-reading earlier than the run's started_at and the
+  after-reading later than its finished_at (after-not-later). It writes one new closed record next to
+  the receipt, w1.json (schema p3-w1/1: after, before, finalized_at, limits, receipt {path, sha256},
+  result COUNT or BLOCKED, rule), 0600, created exclusively: an existing one is never overwritten (exit
+  2, nothing written). Exit 0 COUNT, 1 BLOCKED, 2 not written (bad input, an unreadable receipt).
+- Stated limit (Security, rm-46a8c5a7; the fixed limits line of every reading and of w1.json):
+  "same-UID actors and in-container changes are not detected; readings are endpoint samples, not
+  continuous monitoring".
 
 ## Canonical rows (#125): what the journey runs and how
 
@@ -173,10 +224,10 @@ recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 mat
   of the build (origin_webkit, fresh data), then PH-1. WebKit does not depend on Chromium's row results;
   it stops only when the invocation is stopped (W4, BLOCKED, unconfirmed disposal).
 - W1 in the run: the profile's engine_image must be Security's pin (ops_host_client.ENGINE_PIN); any
-  other ID is BLOCKED and recorded under security_fyi. A judged engine-image reading is taken before and
-  after the WebKit rows and compared with ops_host_client.compare_engine; every WebKit step carries both
-  readings and the comparison. The checker reads them only through the W-IMG operation; until Ops'
-  operation is wired, WebKit is NOT RUN with no WebKit MCP call (never PASS).
+  other ID is BLOCKED and recorded under security_fyi. The W1 before-reading is checked before the first
+  WebKit MCP call and every WebKit step names it; without a checked one WebKit is NOT RUN with no WebKit
+  MCP call. WebKit results stay PROVISIONAL until finalize judges the after-reading COUNT (DECISION-11,
+  above). W1 no longer uses the W-IMG engine-image operation.
 - Host rows (R-1, R-1i, D-1, D-5) go only through first_app_p3_host: #126's ops_host_client writes the
   request (read_sequence, make_request, write_request, unchanged) and P5's ops_host_client_bound judges
   the receipt. Live writes are off: WRITES_ADMITTED is False, so open_host and run_row read nothing, load
@@ -246,9 +297,11 @@ recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 mat
 
 ## Residual gates — not established by this change
 
-- W1: actual fixed-service image identity, exactly one running container, equal full container ID,
-  image and StartedAt before/after. No Docker authority is added to this checker. The admission
-  refusal above is in source; the before/after engine-image readings wait on Ops' W-IMG operation.
+- W1: the rules are in source (DECISION-11); the readings themselves are Ops' tool's. They are endpoint
+  samples at two moments, not continuous monitoring, and same-UID actors and in-container changes are
+  not detected (Security's stated limit). No Docker authority is added to this checker. Not yet shown:
+  a real WebKit control run with a before-reading whose image is the pin and a finalize COUNT
+  (H-125-W1-READING-1's measure).
 - W2: separate hardening source approval and actual recreation/configuration receipt.
 - W3: Security's NEW exact-pin review; actual hosting/confinement and disposal evidence.
 - W4: actual event observations; when tripped, the batch stops and the request list goes to Security
@@ -313,3 +366,19 @@ no existing test or assertion changed. Bites: the A6 fix disabled (no marker wri
 failed 17 of its 18 cases (the marker-beside-its-receipt clean case passes either way); G5-Q disabled
 failed both of its cases; G3-a and R-1 reverted to the base lines failed theirs (4 and 1). Each was
 restored byte for byte (sha256 checked). Served fixture bytes are unchanged.
+
+#280, W1 from two plain container readings (DECISION-11, hypothesis H-125-W1-READING-1; record
+/home/shinelay/architecture-dept/reviews/p3-w1-readings/): the record shape is Ops' landed
+webkit-reading/1 (agent-tools docs/ops-host-chromium-reading.md, "WebKit readings"), and a live reading
+from that tool passes the pre-check. New fixed cases in tests/test_architecture/test_first_app_p3_w1.py
+(79, fakes and files only): the pre-check catches 28 record faults and the file faults (wrong sha256,
+symlinks, not a regular file, too big, bad JSON); five failing readings leave WebKit NOT RUN with no MCP
+call; finalize catches 19 faults (each of id, image, started_at, restart_count and networks differing,
+a recreation with the same image, after not later than the finish, before not earlier than the start,
+the after-side state, holder and shape rules), a wrong after-hash, a before-reading changed since the
+run, and a receipt without a PROVISIONAL W1; it writes one new 0600 record and never overwrites one.
+Three new safety cases show the journey opens no WebKit session without a checked before-reading. The
+first run of the six P3 test files had 3 failures, all in that new safety test: the existing NOT RUN
+verdict answers before "not every row was observed", so the expectation was wrong, not the code; after
+the fix 444/444 passed. Bites, one at a time and restored byte for byte (sha256 checked): the pin check
+off failed 2 cases, the paused check 4, the holder = id check 3, the after-time check 2.

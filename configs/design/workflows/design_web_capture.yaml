@@ -1,0 +1,44 @@
+workflow:
+  name: design_web_capture
+  version: 2
+  description: Full-page evidence with untouched first screen, reject-only consent, positioned text, exact slices and honest completeness. No models.
+  inputs:
+    workspace_path: {type: string, required: true}
+    url: {type: string, required: true}
+    ready_selector: {type: string, default: body}
+    viewports:
+      type: array
+      default:
+        - {name: desktop, width: 1440, height: 900}
+        - {name: mobile, width: 390, height: 844}
+    timeout_ms: {type: integer, default: 30000}
+    browser_url: {type: string, default: 'http://playwright-mcp:8931/mcp'}
+  outputs:
+    verified: verify.structured.verified
+    receipt_path: verify.structured.receipt_path
+    captures: verify.structured.captures
+  nodes:
+    - name: preflight
+      type: agent
+      agent: design_web_capture_preflight
+      input_map:
+        workspace_path: input.workspace_path
+        url: input.url
+        ready_selector: input.ready_selector
+        viewports: input.viewports
+        timeout_ms: input.timeout_ms
+        browser_url: input.browser_url
+    - name: capture
+      type: agent
+      agent: design_web_capture_capture
+      depends_on: [preflight]
+      input_map:
+        workspace_path: input.workspace_path
+        preflight_receipt: preflight.structured.receipt_path
+    - name: verify
+      type: agent
+      agent: design_web_capture_verify
+      depends_on: [capture]
+      input_map:
+        workspace_path: input.workspace_path
+        capture_receipt: capture.structured.receipt_path

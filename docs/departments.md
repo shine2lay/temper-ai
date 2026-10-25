@@ -28,7 +28,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. Its focus workflow (see "One workflow at a time" below) is the market scan, `scan_market`, which also covers a single sector when its `frame` names one. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
-| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
+| `design` | Design | The personas, walks and report stage; model-free full-page web evidence (`design_web_capture`: untouched first screen, reject-only consent, exact slices, positioned text and honest completeness; [capture contract](design-web-capture.md)); measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader, and the no-model browser check of the Team's first app or a new build of it (`first_app_check`, its `profile` input). |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -453,11 +453,16 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_assets/positioning_tools.py` | script |
 | `marketing/bin/gather_evidence.py` | script |
 
-### design (40)
+### design (45)
 
 | Config | Kind |
 |---|---|
 | `epd/workflows/epd_report.yaml` | workflow |
+| `design/workflows/design_web_capture.yaml` | workflow (three scripts; full-page evidence, reject-only consent, positioned text, exact slices, independent verification) |
+| `design/workflows/design_web_capture_example.yaml` | workflow (nested-stage reuse example; no models) |
+| `design/agents/design_web_capture_preflight.yaml` | agent (script; input and existing-browser capability proof) |
+| `design/agents/design_web_capture_capture.yaml` | agent (script; isolated full-page acquisition, first screen, cookie action, text and slices) |
+| `design/agents/design_web_capture_verify.yaml` | agent (script; saved PNG/text binding, exact tiling, consent and completeness) |
 | `design/workflows/design_review.yaml` | workflow |
 | `design/workflows/design_review_grade.yaml` | workflow |
 | `design/workflows/design_homepage_v1.yaml` | workflow (real direction/final owner gates) |

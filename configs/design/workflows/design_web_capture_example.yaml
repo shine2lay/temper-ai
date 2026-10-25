@@ -1,0 +1,17 @@
+# The same complete capture workflow reused as one stage, not collapsed to one step.
+workflow:
+  name: design_web_capture_example
+  inputs:
+    workspace_path: {type: string, required: true}
+    url: {type: string, required: true}
+  outputs:
+    verified: page_evidence.structured.verified
+    captures: page_evidence.structured.captures
+    receipt_path: page_evidence.structured.receipt_path
+  nodes:
+    - name: page_evidence
+      type: stage
+      ref: design_web_capture
+      input_map:
+        workspace_path: input.workspace_path
+        url: input.url

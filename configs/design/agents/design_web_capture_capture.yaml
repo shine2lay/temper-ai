@@ -1,0 +1,12 @@
+# Owner: Design. New isolated context per view; no model calls.
+agent:
+  name: design_web_capture_capture
+  version: 2
+  type: script
+  strict_undefined: true
+  timeout_seconds: 3600
+  script_template: |
+    #!/bin/sh
+    set -eu
+    "$TEMPER_PYTHON" /app/configs/design/bin/design_web_capture.py capture \
+      --workspace {{ workspace_path }} --receipt {{ preflight_receipt }}

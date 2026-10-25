@@ -40,6 +40,7 @@ from sqlmodel import Column, Field, Session, SQLModel, col, select
 from temper_ai.database import get_database
 from temper_ai.observability import usage_rows as usage
 from temper_ai.observability.models import Event
+from temper_ai.runner import parked
 from temper_ai.runner.models import WorkflowRun
 from temper_ai.shared.clock import as_utc
 
@@ -52,8 +53,10 @@ TERMINAL = ("completed", "failed", "cancelled", "interrupted")
 # holds the barrier through QUIET_WINDOW instead (rule 3, _cutover_blockers).
 BARRIER_ENDED = (*TERMINAL, "orphaned")
 # A parked attempt a later one carried on (runner/parked.py CARRIED_ON; a test pins the two).
-# parked.claim sets it and re-queues the run row at once, or puts the attempt back, so under an
-# ended row it is a dead carry-on: its box died before writing its own start (rule 2's exemption).
+# parked.claim_and_queue and claim_and_requeue_row set it and re-queue the run row in ONE
+# transaction; claim_without_box_row sets it only for a run with no row (release puts it back
+# if its thread fails to start). So under an ended row it is a dead carry-on: its box died
+# before writing its own start (rule 2's exemption).
 CARRIED_ON = "parked"
 # How long an earlier execution must be quiet before the barrier lets it go. On live (15 days,
 # 64,269 gaps between one execution's events) the longest silence was 183 min; 240 adds margin.
@@ -185,6 +188,18 @@ class UsageDrainHeartbeat(SQLModel, table=True):
 
 def enabled() -> bool:
     return os.environ.get("TEMPER_USAGE_RECONCILER", "1").strip().lower() not in ("0", "false", "off", "no")
+
+
+def cutover_enabled() -> bool:
+    """TEMPER_USAGE_CUTOVER: ON only for the exact value "1" (and the reconciler on); unset,
+    empty, "0", "true", " 1 " or anything else is OFF. One read, fail-closed.
+
+    Off, the cutover barrier and the post-cutover missing-row check never run: no barrier
+    query, no cutover columns written, no post-cutover fault. Drain, fill, unended marks and
+    diagnostics do not read it. A cutover already recorded is kept, never moved, and fills
+    stay stopped.
+    """
+    return enabled() and os.environ.get("TEMPER_USAGE_CUTOVER") == "1"
 
 
 def _insert(session: Session, model):
@@ -478,7 +493,8 @@ def _begin_lap(session: Session) -> dict[str, Any] | None:
         session.commit()
         return None
     now = _db_now(session)
-    boundary = _ready_boundary(session)
+    # Cutover off: no final lap and no barrier query; laps stay ordinary backfill laps.
+    boundary = _ready_boundary(session) if cutover_enabled() else None
     if boundary is not None and _earlier_execution_open(session, boundary, now):
         boundary = None
     lower = _history_start(now)
@@ -610,15 +626,21 @@ def _cutover_blockers(session: Session, cutoff: datetime, now: datetime,
     2. whatever its row says, one of its LATEST workflow.started events is not ended:
        the row and the latest attempt must both have ended (an in-process resume
        starts an attempt without touching the row). Ties at the latest time all
-       count, never broken by id; an older 'parked' start is an attempt a later one
-       carried on (runner/parked.py CARRIED_ON). A LATEST start still 'parked' counts
-       as ended once its row is in BARRIER_ENDED: a live claim keeps its row open
-       (rule 1), and only the reaper or a cancel ends the row over a dead one;
+       count, never broken by id. "Latest" is S1's one definition,
+       parked.latest_start_condition, the same the claims check. An older 'parked'
+       start is an attempt a later one carried on (runner/parked.py CARRIED_ON). A
+       LATEST start still 'parked' counts as ended once its row is in BARRIER_ENDED:
+       a boxed claim commits the CARRIED_ON mark and the row's re-queue in one
+       transaction, so a live claim keeps its row open (rule 1); an in-process claim
+       has no row, so no exemption; only the reaper or a cancel ends the row over a
+       dead one;
     3. whatever its row or starts say, it has an event at or after max(cutoff,
        now - QUIET_WINDOW): it is still writing, or wrote lately. Orphaned does not
        prove the box is dead, and a failed kill still leaves 'cancelled'. Quiet for
        QUIET_WINDOW, it clears by itself.
 
+    Rules 1, 2 and 3 are read in ONE statement, so one snapshot judges the row and its
+    starts together (a split read could see a claim's row before its re-queue).
     An execution that more than one rule holds is reported under the lowest. Returns
     the count and the first few (execution id, rule, row status): ids and codes only,
     never event content. Start events without an execution id keep their own
@@ -649,13 +671,11 @@ def _cutover_blockers(session: Session, cutoff: datetime, now: datetime,
     opened = (sql_select(col(Event.execution_id).label("execution_id"))
               .where(col(Event.execution_id).is_not(None), col(Event.type) == "workflow.started", start_open(Event))
               .distinct().subquery())
-    start, later = aliased(Event), aliased(Event)
+    start = aliased(Event)
     # An open start with no later start of its execution: ties at the latest time all count.
     latest_open = exists(sql_select(1).where(
         col(start.execution_id) == opened.c.execution_id, col(start.type) == "workflow.started", start_open(start),
-        ~dead_carry_on(start),
-        ~exists(sql_select(1).where(col(later.execution_id) == start.execution_id,
-                                    col(later.type) == "workflow.started", col(later.timestamp) > start.timestamp))))
+        ~dead_carry_on(start), parked.latest_start_condition(start.execution_id, start)))
     by_start = (sql_select(opened.c.execution_id, literal(2).label("rule"), literal(None, String).label("row_status"))
                 .where(began_before(opened.c.execution_id), latest_open))
     since = (sql_select(col(Event.execution_id).label("execution_id"))
@@ -856,8 +876,11 @@ def mark_unended(session: Session) -> int:
 
 
 def try_cutover(session: Session) -> bool:
-    """Freeze the ready boundary once, only after older execution and final-pass checks."""
-    if not enabled():
+    """Freeze the ready boundary once, only after older execution and final-pass checks.
+
+    Cutover off (TEMPER_USAGE_CUTOVER): returns False before any SQL; nothing is read or written.
+    """
+    if not cutover_enabled():
         return False
     with usage.sqlite_transaction_lock():
         _bounded_statement(session)
@@ -885,7 +908,8 @@ def try_cutover(session: Session) -> bool:
 
 
 def check_post_cutover(session: Session) -> int:
-    if not enabled() or not _row_limit(session):
+    """Fault post-cutover events with neither capture; never fills. Cutover off: no SQL."""
+    if not cutover_enabled() or not _row_limit(session):
         return 0
     _bounded_statement(session)
     coverage = session.get(UsageCoverage, 1, populate_existing=True)
@@ -916,7 +940,12 @@ def check_post_cutover(session: Session) -> int:
 
 
 def coverage_state(session: Session) -> dict[str, Any]:
-    """Pure read. Internal readiness/cutover/faults never certify occurrence coverage."""
+    """Pure read. Internal readiness/cutover/faults never certify occurrence coverage.
+
+    With the cutover switch off the phase reads "cutover-off" whatever is stored; a cutover
+    already recorded still shows its cutover_at and cutover_seq.
+    """
+    switch = cutover_enabled()
     with session.no_autoflush:
         row = session.get(UsageCoverage, 1, populate_existing=True)
         counts = {code: 0 for code in sorted(FAULT_CODES)}
@@ -925,7 +954,8 @@ def coverage_state(session: Session) -> dict[str, Any]:
     return {"status": "UNKNOWN", "cutover_at": as_utc(row.cutover_at) if row and row.cutover_at else None,
             "cutover_seq": row.cutover_seq if row else None,
             "backfilled_from": as_utc(row.backfilled_from) if row and row.backfilled_from else None,
-            "phase": row.phase if row else "backfill", "reconciled_count": row.reconciled_count if row else 0,
+            "phase": (row.phase if row else "backfill") if switch else "cutover-off",
+            "cutover_switch": "on" if switch else "off", "reconciled_count": row.reconciled_count if row else 0,
             "fault_counts": counts, "fault_overflow": row.fault_overflow if row else 0,
             "reconcile_lap": {"generation": row.lap_generation if row else 0,
                               "started_at": as_utc(row.lap_started_at) if row else None,

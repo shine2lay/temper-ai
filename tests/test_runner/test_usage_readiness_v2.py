@@ -51,6 +51,7 @@ def readiness_database(request, monkeypatch, tmp_path, _test_db):
         init_database(f"sqlite:///{tmp_path / 'readiness.sqlite'}")
     assert postgres() or get_database().engine.url.database == str(tmp_path / "readiness.sqlite")
     monkeypatch.setenv("TEMPER_USAGE_RECONCILER", "1")
+    monkeypatch.setenv("TEMPER_USAGE_CUTOVER", "1")  # these cases judge the cutover's readiness read
     reconcile._stop.clear()
     monkeypatch.setattr(reconcile, "BATCH_PAUSE_SECONDS", 0)
     if postgres():

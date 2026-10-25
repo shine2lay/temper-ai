@@ -19,6 +19,11 @@ from typing import Any
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.agent.exceptions import ToolsNotRegisteredError
+from temper_ai.agent.image_input import (
+    ImageInputControl,
+    extract_image_input,
+    image_config_errors,
+)
 from temper_ai.llm import allowance
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
 from temper_ai.llm.fallback import parse_fallback, parse_token
@@ -46,13 +51,21 @@ logger = logging.getLogger(__name__)
 
 
 class LLMAgent(AgentABC):
-    """Agent that uses LLM with Jinja2 prompt templates, tools, and memory."""
+    """Agent that uses LLM with Jinja2 prompt templates, tools, and memory.
+
+    Optional image_input selects a separate native Anthropic named-OAuth,
+    one-inline-PNG, tool-free single-send path. See docs/image-inputs.md.
+    Absence retains the ordinary text/tool/memory pipeline below.
+    """
 
     def __init__(self, config: dict):
         super().__init__(config)
         # None means "whatever is configured" (resolved per run by the
         # execution context). Defaulting to openai here made every shipped
         # workflow fail on an install without an OpenAI key.
+        problems = image_config_errors(config)
+        if problems:
+            raise ValueError("; ".join(problems))
         self.provider = config.get("provider") or None
         self.model = config.get("model") or None
         # Where a call goes when this agent's model is out of capacity
@@ -77,6 +90,9 @@ class LLMAgent(AgentABC):
     def run(self, input_data: dict, context: ExecutionContext) -> AgentResult:
         """Execute the LLM agent pipeline.
 
+        With image_input, validate/extract before preparation, then send once
+        with metadata-only events. Without it, the legacy pipeline is:
+
         1. Recall memories (if memory enabled in config)
         2. Render prompt via PromptRenderer (Jinja2 template + variables)
         3. Get LLM provider from context
@@ -85,6 +101,8 @@ class LLMAgent(AgentABC):
         6. Store agent output to memory (mem0 extracts facts internally)
         7. Return AgentResult with all tracking data
         """
+        if "image_input" in self.config:
+            return self._run_image_input(input_data, context)
         start = time.monotonic()
         _record = context.event_recorder.record if context.event_recorder else _default_record
         agent_event_id = self._record_agent_started(_record, input_data, context)
@@ -115,6 +133,164 @@ class LLMAgent(AgentABC):
                 error=str(e),
                 duration_seconds=duration,
             )
+
+    def _run_image_input(self, input_data: dict, context: ExecutionContext) -> AgentResult:
+        """One native subscription send, no service loop/tools/memory/JSON repair.
+
+        This mode buffers native SSE; it does not forward response chunks or
+        input/output text into event projections. The ordinary agent is unchanged.
+        """
+        from temper_ai.llm.pricing import estimate_cost
+        from temper_ai.llm.providers.anthropic import AnthropicLLM
+        from temper_ai.llm.single_send import (
+            USAGE_COUNTERS,
+            SingleSendError,
+            metadata_only_logs,
+            safe_failure,
+        )
+
+        started = time.monotonic()
+        record = self._get_recorder(context)
+        agent_id = context.parent_event_id
+        call_id = None
+        control = None
+        response = None
+        image = None
+        failure = None
+        metadata: dict[str, Any] = {"mode": "inline_png_single_send", "transmissions": 0}
+        result = AgentResult(status=Status.FAILED, output="", metadata=metadata)
+        with metadata_only_logs():
+            try:
+                problems = image_config_errors(self.config)
+                if problems:
+                    raise SingleSendError("config")
+                control = ImageInputControl(started + float(self.config.get("total_timeout", DEFAULT_TOTAL_TIMEOUT)),
+                    lambda _: None, cancel_event=context.cancel_event)
+                try:
+                    image, render_input = extract_image_input(self.config, input_data, control.check)
+                except ValueError:
+                    raise SingleSendError("image_input") from None
+                metadata["attachment"] = image.metadata
+                messages = self.prompt_renderer.render(
+                    agent_config=image.redact(self.config), input_data=render_input,
+                    token_budget=self.token_budget,
+                )
+                if not messages[-1]["content"].strip():
+                    raise SingleSendError("text_input")
+                # Reproject AFTER rendering too: an alias or literal in a template
+                # must never silently turn the attachment into prompt text.
+                messages = image.redact(messages)
+                agent_id = record(EventType.AGENT_STARTED, execution_id=context.run_id,
+                    parent_id=context.parent_event_id, status="running", data={
+                        "agent_name": self.name, "node_path": context.node_path,
+                        "provider": "anthropic", "model": image.redact(self.model), **metadata})
+                if context.cancel_event is not None and context.cancel_event.is_set():
+                    raise SingleSendError("cancel")
+                te = context.tool_executor
+                if (te and getattr(te, "policy_engine", None) and "budget" not in set(context.skip_policies or [])):
+                    from temper_ai.safety.base import ActionType
+                    decision = te.policy_engine.evaluate(ActionType.LLM_CALL, {"agent_name": self.name},
+                        {"run_cost_usd": te.run_cost_usd, "run_tokens": te.run_tokens})
+                    if decision.action == "deny":
+                        raise SingleSendError("policy")
+                # Resolve only after input validation and policy veto. No fallback,
+                # plugin/CLI provider, paid credential or implicit default provider.
+                provider = context.get_llm("anthropic")
+                if type(provider) is not AnthropicLLM or provider.auth_mode != "oauth" or self.token is None:
+                    raise SingleSendError("auth")
+                try:
+                    provider.check_token(self.token)
+                except ValueError:
+                    raise SingleSendError("auth") from None
+                kwargs = {**{k: self.config[k] for k in ("max_tokens", "temperature") if k in self.config},
+                          **self.config.get("provider_config", {})}
+                kwargs.setdefault("max_tokens", provider.max_tokens)
+                kwargs.setdefault("temperature", provider.temperature)
+                model = self.model or provider.model
+                if (type(model) is not str or not model.strip() or type(kwargs["max_tokens"]) is not int
+                        or kwargs["max_tokens"] <= 0):
+                    raise SingleSendError("config")
+                control.check()
+                messages[-1]["content"] = [image.block(), {"type": "text", "text": messages[-1]["content"]}]
+                metadata.update(provider="anthropic", model=image.redact(model))
+                call_id = record(EventType.LLM_CALL_STARTED, parent_id=agent_id, execution_id=context.run_id,
+                    status="running", data={"agent_name": self.name, "node_path": context.node_path,
+                        "model": image.redact(model), "provider": "anthropic", "tools_available": 0,
+                        "streaming": False, "iteration": 1, **metadata})
+                response = provider.complete(messages, single_send=True, single_send_control=control,
+                    token=self.token, model=model, **kwargs)
+                control.check()
+                # Defensive terminal check also protects this caller if transport
+                # support evolves; it never executes or repairs a requested tool.
+                if response.tool_calls or response.finish_reason not in ("end_turn", "stop_sequence"):
+                    raise SingleSendError("partial", response=response)
+                result.output = image.redact(response.content or "")
+                if not result.output.strip():
+                    raise SingleSendError("empty_answer", response=response)
+                # Strict local JSON only. No repair library and no second call.
+                try:
+                    structured = json.loads(result.output)
+                except (ValueError, TypeError):
+                    structured = None
+                    if _reply_tried_json(result.output):
+                        raise SingleSendError("json", response=response) from None
+                if isinstance(structured, dict):
+                    result.structured_output = structured
+                result.status = Status.COMPLETED
+            except Exception as exc:  # noqa: BLE001 - never export provider/template/credential prose
+                failure = safe_failure(exc, response)
+                response = failure.response
+                result.error = f"image_input: {failure.reason} ({failure.error_class})"
+                result.output = ""
+            finally:
+                # A failing recorder/usage sink must not escape to AgentNode's
+                # exception retry and send the image a second time.
+                result.llm_calls = len(control.transmission_ids) if control is not None else 0
+                metadata["transmissions"] = result.llm_calls
+                try:
+                    if control is not None:
+                        control.finish()
+                        metadata["cleanup"] = "uncertain" if control.cleanup_uncertain else "confirmed"
+                    usage = {key: None for key in USAGE_COUNTERS}
+                    if response is not None:
+                        usage.update((response.raw_response or {}).get("usage", {}))
+                        metadata["finish_reason"] = response.finish_reason
+                    metadata.update(usage=usage, cost_basis="unknown", latency_ms=None)
+                    if response is not None:
+                        prompt, completion = usage["input_tokens"], usage["output_tokens"]
+                        result.tokens = TokenUsage(prompt_tokens=prompt or 0, completion_tokens=completion or 0,
+                            total_tokens=usage["total_tokens"] or ((prompt or 0) + (completion or 0)))
+                        if prompt is not None and completion is not None:
+                            result.cost_usd = estimate_cost(response.model, prompt, completion,
+                                cached_prompt_tokens=usage["cache_read_input_tokens"],
+                                cache_write_tokens=usage["cache_creation_input_tokens"])
+                            metadata["cost_basis"] = "list_price_estimate"
+                    # Keep normal usage projections readable, including genuine
+                    # nulls. The legacy aggregate total above is a separate sum.
+                    metrics = {"prompt_tokens": usage["input_tokens"], "completion_tokens": usage["output_tokens"],
+                        "total_tokens": usage["total_tokens"], "cached_prompt_tokens": usage["cache_read_input_tokens"],
+                        "cache_write_tokens": usage["cache_creation_input_tokens"]}
+                    result.duration_seconds = round(time.monotonic() - started, 3)
+                    if context.tool_executor and hasattr(context.tool_executor, "track_usage") and result.llm_calls:
+                        context.tool_executor.track_usage(cost_usd=result.cost_usd, tokens=result.tokens.total_tokens)
+                    if call_id is not None:
+                        record(EventType.LLM_CALL_FAILED if result.error else EventType.LLM_CALL_COMPLETED,
+                            parent_id=agent_id, execution_id=context.run_id, status="failed" if result.error else "completed",
+                            data={"started_event_id": call_id, "agent_name": self.name,
+                                "error": result.error, "cost_usd": result.cost_usd, **metrics, **metadata})
+                    record(EventType.AGENT_FAILED if result.error else EventType.AGENT_COMPLETED,
+                        parent_id=agent_id, execution_id=context.run_id, status="failed" if result.error else "completed",
+                        data={"agent_name": self.name, "node_path": context.node_path, "error": result.error,
+                              "llm_calls": result.llm_calls, "tool_calls": 0, "cost_usd": result.cost_usd,
+                              "duration_seconds": result.duration_seconds, **metadata})
+                except Exception:  # noqa: BLE001 - fixed error; never retry a provider for a sink failure
+                    result.status = Status.FAILED
+                    result.output = ""
+                    result.error = "image_input: observability"
+                    result.structured_output = None
+                    metadata["observability"] = "failed"
+                    logger.error("Image call accounting or terminal recording failed")
+        return result
 
     def _record_agent_started(self, _record, input_data: dict, context: ExecutionContext) -> str:
         """Emit AGENT_STARTED event and return the event id."""
@@ -603,7 +779,7 @@ class LLMAgent(AgentABC):
         return execute_tool
 
     def validate_config(self) -> list[str]:
-        errors = super().validate_config()
+        errors = super().validate_config() + image_config_errors(self.config)
         if not self.config.get("system_prompt") and not self.config.get("task_template"):
             errors.append("LLMAgent requires at least 'system_prompt' or 'task_template'")
         return errors

@@ -16,9 +16,16 @@ Agent config drives per-call LLM behavior (model, temperature, etc.).
 
 Agent that uses LLM with Jinja2 prompt templates, tools, and memory.
 
+Optional image_input selects a separate native Anthropic named-OAuth,
+one-inline-PNG, tool-free single-send path. See docs/image-inputs.md.
+Absence retains the ordinary text/tool/memory pipeline below.
+
 ## Execution Pipeline
 
 Execute the LLM agent pipeline.
+
+With image_input, validate/extract before preparation, then send once
+with metadata-only events. Without it, the legacy pipeline is:
 
 1. Recall memories (if memory enabled in config)
 2. Render prompt via PromptRenderer (Jinja2 template + variables)

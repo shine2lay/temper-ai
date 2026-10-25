@@ -266,6 +266,9 @@ class CandidateUse:
         if current is None:
             refuse(RefusalCode.MISSING)
         self.check_binding(current)
+        parent_path = tuple(context.node_path.split(".")) if context.node_path else ()
+        if parent_path and current.node_path not in (parent_path, path):
+            refuse(RefusalCode.POSITION)
         if context.run_id != self.dispatch.execution_uuid or context.workspace_path != self.descriptor.value()["workspace_path"]:
             refuse(RefusalCode.POSITION)
         return binding
@@ -334,11 +337,13 @@ class CandidateUse:
                 or variables.wire != script["variables_json"].encode()):
             refuse(RefusalCode.FIELDS)
 
-    def script_inputs(self, agent: Any, context: ExecutionContext, template: str, variables: dict) -> dict:
+    def script_inputs(self, agent: Any, context: ExecutionContext, template: object, variables: dict) -> dict:
         binding = cast(AdmissionContext, context).admission
         if binding is None:
             refuse(RefusalCode.MISSING)
         self.check_context(binding, cast(AdmissionContext, context))
+        if type(template) is not str:
+            refuse(RefusalCode.FIELDS)
         if (binding.expected_agent is None or self.projection.agent(agent.config) != binding.expected_agent
                 or agent.name != agent.config.get("name")
                 or agent.strict_undefined is not bool(agent.config.get("strict_undefined", False))):

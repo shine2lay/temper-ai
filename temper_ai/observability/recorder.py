@@ -8,14 +8,14 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Iterable
-from contextlib import nullcontext
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlmodel import col, not_, or_, select
+from sqlmodel import Session, col, not_, or_, select
 
 from temper_ai.database import get_session
 from temper_ai.observability import usage_rows
@@ -122,6 +122,43 @@ def update_event(
 # at a time. On Postgres the row lock does that, across processes too.
 _SQLITE_DECIDE_LOCK = threading.Lock()
 
+# Set while this thread has a deciding_events transaction open: a second one would wait
+# forever on the first's lock (SQLite) or row lock (Postgres), so it is refused instead.
+_DECIDING = threading.local()
+
+
+@contextmanager
+def deciding_events() -> Iterator[Session]:
+    """One transaction for a decision and the writes that go with it.
+
+    Gives one session, for :func:`decide_event_in` and whatever else must land or fail with
+    the decision (``queue_run_in``, a fenced row end). Commits when the block ends; rolls
+    everything back when it raises. Lock order: the event (``decide_event_in``), then the
+    run row.
+
+    On SQLite it holds the decision lock from the start through the commit or the
+    rollback, so the next decision reads this one's outcome. On Postgres the row locks do
+    that. Not re-entrant: inside it, decide with ``decide_event_in``, never
+    ``decide_event`` (RuntimeError rather than a wait that never ends).
+    """
+    if getattr(_DECIDING, "open", False):
+        raise RuntimeError(
+            "deciding_events is already open in this thread: decide inside it with "
+            "decide_event_in, not decide_event or a second deciding_events")
+    _DECIDING.open = True
+    try:
+        with get_session() as session:
+            sqlite = session.get_bind().dialect.name == "sqlite"
+            with _SQLITE_DECIDE_LOCK if sqlite else nullcontext():
+                try:
+                    yield session
+                    session.commit()  # inside the lock: the next decision reads this one
+                except BaseException:
+                    session.rollback()  # inside the lock too
+                    raise
+    finally:
+        _DECIDING.open = False
+
 
 def decide_event(
     event_id: str,
@@ -136,34 +173,56 @@ def decide_event(
     finds the first one's answer. Returns ``(won, event)``, ``event`` being the event as it
     is now (``None`` when there is no such event). ``data`` is merged into the event's data
     in the same write, so who answered and when are never split from the answer itself.
+
+    A transaction of its own: :func:`deciding_events` around :func:`decide_event_in`.
+    """
+    with deciding_events() as session:
+        return decide_event_in(session, event_id, expect=expect, status=status, data=data)
+
+
+def decide_event_in(
+    session: Session,
+    event_id: str,
+    *,
+    expect: Iterable[str],
+    status: str,
+    data: dict[str, Any] | None = None,
+) -> tuple[bool, dict[str, Any] | None]:
+    """:func:`decide_event` inside the caller's transaction (:func:`deciding_events`).
+
+    Same compare-and-set, same answer, but no commit: the caller's session commits it with
+    the writes that go with it, or rolls them all back. A decision that didn't land wrote
+    nothing, so it leaves the caller's transaction as it was.
     """
     wanted = list(expect)
-    with get_session() as session:
-        sqlite = session.get_bind().dialect.name == "sqlite"
-        with _SQLITE_DECIDE_LOCK if sqlite else nullcontext():
-            # FOR UPDATE: a second decision on Postgres waits here for the first to commit,
-            # then reads what it wrote. (SQLite ignores it; the lock above does that job.)
-            event = session.exec(select(Event).where(Event.id == event_id).with_for_update()).first()
-            if event is None:
-                return False, None
-            if event.status not in wanted:
-                return False, _event_to_dict(event)
-            before = _event_to_dict(event)
-            merged = {**(event.data or {}), **(data or {})}
-            # The status is checked again in the write itself, so a decision can only land
-            # on an event that has not been decided meanwhile, lock or no lock.
-            done = session.exec(  # type: ignore[call-overload]
-                sa_update(Event)
-                .where(col(Event.id) == event_id, col(Event.status).in_(wanted))
-                .values(status=status, data=merged)
-                .execution_options(synchronize_session=False)
-            )
-            if done.rowcount != 1:
-                session.rollback()
-                again = session.get(Event, event_id)
-                return False, _event_to_dict(again) if again else None
-            session.commit()  # inside the lock: the next decision reads this one
-            return True, {**before, "status": status, "data": merged}
+    # FOR UPDATE: a second decision on Postgres waits here for the first to commit, then
+    # reads what it wrote. (SQLite ignores it; deciding_events' lock does that job.) Fresh
+    # values, even if the caller's session read this event before.
+    event = session.exec(
+        select(Event).where(Event.id == event_id).with_for_update()
+        .execution_options(populate_existing=True),
+    ).first()
+    if event is None:
+        return False, None
+    if event.status not in wanted:
+        return False, _event_to_dict(event)
+    before = _event_to_dict(event)
+    merged = {**(event.data or {}), **(data or {})}
+    # The status is checked again in the write itself, so a decision can only land on an
+    # event that has not been decided meanwhile, lock or no lock.
+    done = session.exec(  # type: ignore[call-overload]
+        sa_update(Event)
+        .where(col(Event.id) == event_id, col(Event.status).in_(wanted))
+        .values(status=status, data=merged)
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount != 1:
+        again = session.exec(
+            select(Event).where(Event.id == event_id).execution_options(populate_existing=True),
+        ).first()
+        return False, _event_to_dict(again) if again else None
+    session.expire(event)  # the write above went round the session: read it afresh
+    return True, {**before, "status": status, "data": merged}
 
 
 def _db_write_with_retry(fn, max_retries: int = 3, base_delay: float = 0.5) -> None:

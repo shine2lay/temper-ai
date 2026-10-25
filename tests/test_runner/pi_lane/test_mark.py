@@ -336,15 +336,18 @@ def test_the_clean_up_deadline_sweep_keeps_the_run_s_lane(srv, workflow, pi):
 
 
 @BOTH
-def test_carrying_a_parked_run_on_keeps_its_lane(srv, monkeypatch, workflow, pi):
+def test_carrying_a_parked_run_on_keeps_its_lane(srv, workflow, pi):
     """runner/parked.py queue_resume, the worker's reaper's way after the owner's answer."""
+    from temper_ai.database import get_session
+    from temper_ai.observability.models import Event
     from temper_ai.runner import parked
 
     eid = f"parked-{workflow}"
     _ended_row(eid, workflow, pi, status=parked.WAITING)
-    attempt = {"execution_id": eid, "attempt": 1}
-    monkeypatch.setattr(parked, "parked_attempt", lambda e: attempt if e == eid else None)
-    monkeypatch.setattr(parked, "claim", lambda a: a is attempt)
+    # Its attempt, parked: queue_resume claims it and re-queues the row in one commit.
+    with get_session() as session:
+        session.add(Event(id=f"ev-{eid}", type="workflow.started", execution_id=eid,
+                          status=parked.WAITING, data={"name": workflow, "parked": {"path": "talk"}}))
     parked.queue_resume(eid)
     _lands(eid, pi)
 

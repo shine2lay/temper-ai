@@ -1057,16 +1057,14 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     if not restored_outputs and not pi_run:
         raise HTTPException(status_code=400, detail="No checkpoints found — nothing to resume from")
 
-    # A Pi run parked at a gate is carried on once, by whoever claims its parked attempt
-    # first: the owner's answer, the worker that let go, start-up, or this button.
+    # A Pi run parked at a gate is carried on once. Pass this read to _start_resume, which
+    # claims it together with its box row (or with the check that it has no row).
     parked = pi_parked.parked_attempt(execution_id) if pi_run else None
     if answered_parked_only and (parked is None or
                                 (pi_parked.answered(execution_id, parked) is None
                                  and not pi_parked.timer_due(parked))):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is no longer parked on an answered wait")
     if pi_run and seen.leaves_alone(parked):
-        raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
-    if parked is not None and not pi_parked.claim(parked):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     claimed: str | None = None
     if pi_run and parked is None:
@@ -1080,10 +1078,9 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         if claimed is None:
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     try:
-        return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc, restored_outputs)
+        return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc,
+                             restored_outputs, parked_attempt=parked)
     except BaseException:
-        if parked is not None:
-            pi_parked.release(parked)
         if claimed is not None:
             resume_claim.release(execution_id, claimed)
         raise
@@ -1103,11 +1100,14 @@ def _start_resume(
     config: Any,
     checkpoint_svc: CheckpointService,
     restored_outputs: dict,
+    *,
+    parked_attempt: dict | None = None,
 ) -> RunResponse:
-    """Start the resumed attempt: in its own box, or on a thread here (resume_run checked it)."""
-    # This attempt takes over any clean-ups the last one was holding: they are its business
-    # now, and an old deadline must not tear down the setup it is about to use.
-    holds.take_over(execution_id, by=execution_id)
+    """Start the resumed attempt, claiming a parked one atomically before taking its holds."""
+    # Non-parked Resume keeps its existing claim and hold behaviour. A parked Resume must
+    # win its atomic claim below before touching any hold (a losing read may predate cancel).
+    if parked_attempt is None:
+        holds.take_over(execution_id, by=execution_id)
     stopped_at = _stopped_at(result)
 
     logger.info(
@@ -1138,10 +1138,35 @@ def _start_resume(
     if _execution_mode() == "external" or pi_lane:
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
-        _queue_run(execution_id, config.name, workspace,
-                   original_inputs, start="resume",
-                   extra={"rerun": list(body.rerun or [])}, lane=lane)
+        if parked_attempt is None:
+            _queue_run(execution_id, config.name, workspace,
+                       original_inputs, start="resume",
+                       extra={"rerun": list(body.rerun or [])}, lane=lane)
+        else:
+            try:
+                pi_parked.claim_and_queue(parked_attempt, config.name, workspace,
+                                          original_inputs, start="resume",
+                                          extra={"rerun": list(body.rerun or [])}, lane=lane)
+            except pi_parked.AlreadyCarriedOn as exc:
+                raise HTTPException(status_code=409,
+                                    detail=f"Execution '{execution_id}' is already being carried on") from exc
+            except AlreadyQueued as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            # The claim and re-queue committed: never release it if this or anything after
+            # it fails. Its queued row carries it on, or the reaper ends it.
+            holds.take_over(execution_id, by=execution_id)
         return RunResponse(execution_id=execution_id, status="queued")
+
+    if parked_attempt is not None:
+        try:
+            won = pi_parked.claim_without_box_row(parked_attempt)
+        except pi_parked.AlreadyCarriedOn as exc:
+            raise HTTPException(status_code=409,
+                                detail=f"Execution '{execution_id}' is already being carried on") from exc
+        if not won:
+            raise HTTPException(status_code=409,
+                                detail=f"Execution '{execution_id}' is carried on in its box")
+        holds.take_over(execution_id, by=execution_id)
 
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
@@ -1214,7 +1239,15 @@ def _start_resume(
         daemon=True,
         name=f"temper-run-{execution_id}",
     )
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        # Only an in-process, no-row claim may be put back, and only when its thread did
+        # not start. Boxed commits and failures while preparing the thread are not released.
+        if parked_attempt is not None:
+            _state().running.pop(execution_id, None)
+            pi_parked.release(parked_attempt)
+        raise
 
     return RunResponse(execution_id=execution_id, status="resuming")
 

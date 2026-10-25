@@ -1,0 +1,9 @@
+[
+  {"case":"ordered-null-bool-int-float","input":{"z":null,"b":true,"a":1,"f":1.0},"wire":"{\"a\":1,\"b\":true,\"f\":1.0,\"z\":null}"},
+  {"case":"fraction","input":0.1,"wire":"0.1000000000000000055511151231257827021181583404541015625"},
+  {"case":"negative-zero","input":-0.0,"wire":"-0.0"},
+  {"case":"nested","input":{"x":[{"b":2,"a":[]},null]},"wire":"{\"x\":[{\"a\":[],\"b\":2},null]}"},
+  {"case":"scalar-unicode-order","input":{"😀":1,"":2,"é":"é"},"wire":"{\"é\":\"é\",\"\":2,\"😀\":1}"},
+  {"case":"control-escaping","input":"\u0000\b\f\n\r\t\"\\/\u007f","wire":"\"\\u0000\\b\\f\\n\\r\\t\\\"\\\\/\u007f\""},
+  {"case":"wide-integer","input":9007199254740993,"wire":"9007199254740993"}
+]

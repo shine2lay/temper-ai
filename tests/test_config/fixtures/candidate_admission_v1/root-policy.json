@@ -1,0 +1,13 @@
+{
+  "path":"/synthetic/wire-fixture/out",
+  "permitted_parent":"/synthetic/wire-fixture",
+  "custody_receipt_id":"synthetic-no-permission",
+  "worker_label":"synthetic-worker",
+  "mount_label":"synthetic-no-mount",
+  "creator_uid":1000,
+  "creator_gid":1000,
+  "worker_euid":1000,
+  "directory_mode":448,
+  "file_mode":384,
+  "lifetime_label":"synthetic-no-retention"
+}

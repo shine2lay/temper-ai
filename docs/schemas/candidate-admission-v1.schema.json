@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:temper:candidate-admission:v1",
+  "title": "Candidate admission wire v1 (inert contract, not execution authority)",
+  "description": "All objects are closed. Semantic byte/digest, cross-reference and trust rules in candidate-admission-contract.md are normative. Embedded *_json strings use CAJ-1, not arbitrary JSON text. No defaults are filled.",
+  "oneOf": [{"$ref":"#/$defs/descriptor"},{"$ref":"#/$defs/rawRecord"},{"$ref":"#/$defs/record"},{"$ref":"#/$defs/readiness"}],
+  "$defs": {
+    "sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "sha1": {"type":"string","pattern":"^[0-9a-f]{40}$"},
+    "label": {"type":"string","minLength":1},
+    "name": {"type":"string","pattern":"^[A-Za-z0-9_][A-Za-z0-9_-]*$"},
+    "uuid": {"type":"string","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "path": {"type":"array","minItems":1,"items":{"$ref":"#/$defs/name"}},
+    "absolutePath": {"type":"string","pattern":"^/[^\\u0000]*$"},
+    "names": {"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/label"}},
+    "kind": {"enum":["workflow","stage","agent"]},
+    "json": {"type":"string","minLength":1},
+    "dbOrigin": {"type":"object","additionalProperties":false,"required":["kind"],"properties":{"kind":{"const":"db"}}},
+    "fileOrigin": {
+      "type":"object","additionalProperties":false,
+      "required":["kind","launch_id","relative_path","file_sha256","git_blob_sha1"],
+      "properties":{"kind":{"const":"classified_file"},"launch_id":{"$ref":"#/$defs/label"},"relative_path":{"$ref":"#/$defs/label"},"file_sha256":{"$ref":"#/$defs/sha256"},"git_blob_sha1":{"$ref":"#/$defs/sha1"}}
+    },
+    "origin": {"oneOf":[{"$ref":"#/$defs/dbOrigin"},{"$ref":"#/$defs/fileOrigin"}]},
+    "expectedRaw": {
+      "type":"object","additionalProperties":false,
+      "required":["kind","name","schema_version","origin","raw_sha256"],
+      "properties":{"kind":{"$ref":"#/$defs/kind"},"name":{"$ref":"#/$defs/name"},"schema_version":{"$ref":"#/$defs/label"},"origin":{"$ref":"#/$defs/origin"},"raw_sha256":{"$ref":"#/$defs/sha256"}}
+    },
+    "rawRecord": {
+      "type":"object","additionalProperties":false,
+      "required":["format","kind","name","schema_version","origin","config_json","file_base64"],
+      "properties":{"format":{"const":"candidate-raw-record/v1"},"kind":{"$ref":"#/$defs/kind"},"name":{"$ref":"#/$defs/name"},"schema_version":{"$ref":"#/$defs/label"},"origin":{"$ref":"#/$defs/origin"},"config_json":{"$ref":"#/$defs/json"},"file_base64":{"type":["string","null"]}}
+    },
+    "fieldSets": {
+      "type":"object","additionalProperties":false,"required":["workflow","node","request","native"],
+      "properties":{"workflow":{"$ref":"#/$defs/names"},"node":{"$ref":"#/$defs/names"},"request":{"$ref":"#/$defs/names"},"native":{"$ref":"#/$defs/names"}}
+    },
+    "source": {
+      "type":"object","additionalProperties":false,"required":["engine_commit","engine_tree","binding_abi","field_sets"],
+      "properties":{"engine_commit":{"$ref":"#/$defs/sha1"},"engine_tree":{"$ref":"#/$defs/sha1"},"binding_abi":{"const":"candidate-admission/v1"},"field_sets":{"$ref":"#/$defs/fieldSets"}}
+    },
+    "factory": {
+      "type":"object","additionalProperties":false,"required":["type","class_name","config_json"],
+      "properties":{"type":{"enum":["script","single_call"]},"class_name":{"$ref":"#/$defs/label"},"config_json":{"$ref":"#/$defs/json"}}
+    },
+    "node": {
+      "type":"object","additionalProperties":false,"required":["path","node_json","factory"],
+      "properties":{"path":{"$ref":"#/$defs/path"},"node_json":{"$ref":"#/$defs/json"},"factory":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/factory"}]}}
+    },
+    "graph": {
+      "type":"object","additionalProperties":false,"required":["workflow_json","nodes"],
+      "properties":{"workflow_json":{"$ref":"#/$defs/json"},"nodes":{"type":"array","items":{"$ref":"#/$defs/node"}}}
+    },
+    "rootPolicy": {
+      "type":"object","additionalProperties":false,
+      "required":["path","permitted_parent","custody_receipt_id","worker_label","mount_label","creator_uid","creator_gid","worker_euid","directory_mode","file_mode","lifetime_label"],
+      "properties":{"path":{"$ref":"#/$defs/absolutePath"},"permitted_parent":{"$ref":"#/$defs/absolutePath"},"custody_receipt_id":{"$ref":"#/$defs/label"},"worker_label":{"$ref":"#/$defs/label"},"mount_label":{"$ref":"#/$defs/label"},"creator_uid":{"type":"integer","minimum":0},"creator_gid":{"type":"integer","minimum":0},"worker_euid":{"type":"integer","minimum":0},"directory_mode":{"type":"integer","minimum":0,"maximum":4095},"file_mode":{"type":"integer","minimum":0,"maximum":4095},"lifetime_label":{"$ref":"#/$defs/label"}}
+    },
+    "position": {
+      "type":"object","additionalProperties":false,
+      "required":["position_id","node_path","preparation_path","record_id","variant_id","call_id","slot","agent_config_json","root_policy"],
+      "properties":{"position_id":{"$ref":"#/$defs/name"},"node_path":{"$ref":"#/$defs/path"},"preparation_path":{"$ref":"#/$defs/path"},"record_id":{"$ref":"#/$defs/label"},"variant_id":{"$ref":"#/$defs/label"},"call_id":{"$ref":"#/$defs/label"},"slot":{"enum":["A1","A2","A3","B1","B2","B3"]},"agent_config_json":{"$ref":"#/$defs/json"},"root_policy":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/rootPolicy"}]}}
+    },
+    "script": {
+      "type":"object","additionalProperties":false,"required":["node_path","template_utf8","template_sha256","variables_json"],
+      "properties":{"node_path":{"$ref":"#/$defs/path"},"template_utf8":{"type":"string"},"template_sha256":{"$ref":"#/$defs/sha256"},"variables_json":{"$ref":"#/$defs/json"}}
+    },
+    "descriptor": {
+      "type":"object","additionalProperties":false,
+      "required":["format","profile","mode","candidate_identity","logical_run_id","execution_uuid","workflow_name","workspace_path","metadata_inputs_json","request_options_json","source","records","graph","positions","scripts"],
+      "properties":{"format":{"const":"candidate-admission-descriptor/v1"},"profile":{"const":"context-profile-admission/v1"},"mode":{"const":"external-db-fresh"},"candidate_identity":{"$ref":"#/$defs/name"},"logical_run_id":{"$ref":"#/$defs/label"},"execution_uuid":{"$ref":"#/$defs/uuid"},"workflow_name":{"$ref":"#/$defs/name"},"workspace_path":{"$ref":"#/$defs/absolutePath"},"metadata_inputs_json":{"$ref":"#/$defs/json"},"request_options_json":{"$ref":"#/$defs/json"},"source":{"$ref":"#/$defs/source"},"records":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/expectedRaw"}},"graph":{"$ref":"#/$defs/graph"},"positions":{"type":"array","items":{"$ref":"#/$defs/position"}},"scripts":{"type":"array","items":{"$ref":"#/$defs/script"}}}
+    },
+    "immutable": {
+      "type":"object","additionalProperties":false,
+      "required":["descriptor_json","descriptor_sha256","authorized_caller_label","authority_receipt_id","raw_records","raw_closure_sha256","effective_graph_sha256"],
+      "properties":{"descriptor_json":{"$ref":"#/$defs/json"},"descriptor_sha256":{"$ref":"#/$defs/sha256"},"authorized_caller_label":{"$ref":"#/$defs/label"},"authority_receipt_id":{"$ref":"#/$defs/label"},"raw_records":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/rawRecord"}},"raw_closure_sha256":{"$ref":"#/$defs/sha256"},"effective_graph_sha256":{"$ref":"#/$defs/sha256"}}
+    },
+    "dispatch": {
+      "type":"object","additionalProperties":false,"required":["phase","dispatch_nonce","running_attempt","previous_nonce","worker_label"],
+      "properties":{"phase":{"enum":["queued","running"]},"dispatch_nonce":{"$ref":"#/$defs/uuid"},"running_attempt":{"type":"integer","minimum":0},"previous_nonce":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/uuid"}]},"worker_label":{"type":["string","null"]}}
+    },
+    "stat": {
+      "type":"object","additionalProperties":false,"required":["path","device","inode","uid","gid","mode"],
+      "properties":{"path":{"$ref":"#/$defs/absolutePath"},"device":{"type":"integer","minimum":0},"inode":{"type":"integer","minimum":0},"uid":{"type":"integer","minimum":0},"gid":{"type":"integer","minimum":0},"mode":{"type":"integer","minimum":0,"maximum":4095}}
+    },
+    "readyFile": {
+      "type":"object","additionalProperties":false,"required":["stat","length","sha256"],
+      "properties":{"stat":{"$ref":"#/$defs/stat"},"length":{"type":"integer","minimum":0},"sha256":{"$ref":"#/$defs/sha256"}}
+    },
+    "readiness": {
+      "type":"object","additionalProperties":false,
+      "required":["format","preparation_path","position_id","descriptor_sha256","graph_sha256","execution_uuid","dispatch_nonce","running_attempt","checkpoint_sha256","root","parents","files","durable"],
+      "properties":{"format":{"const":"candidate-root-readiness/v1"},"preparation_path":{"$ref":"#/$defs/path"},"position_id":{"$ref":"#/$defs/name"},"descriptor_sha256":{"$ref":"#/$defs/sha256"},"graph_sha256":{"$ref":"#/$defs/sha256"},"execution_uuid":{"$ref":"#/$defs/uuid"},"dispatch_nonce":{"$ref":"#/$defs/uuid"},"running_attempt":{"type":"integer","minimum":1},"checkpoint_sha256":{"$ref":"#/$defs/sha256"},"root":{"$ref":"#/$defs/stat"},"parents":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/stat"}},"files":{"type":"array","items":{"$ref":"#/$defs/readyFile"}},"durable":{"const":true}}
+    },
+    "record": {
+      "type":"object","additionalProperties":false,"required":["format","immutable","immutable_sha256","dispatch","readiness"],
+      "properties":{"format":{"const":"candidate-admission-record/v1"},"immutable":{"$ref":"#/$defs/immutable"},"immutable_sha256":{"$ref":"#/$defs/sha256"},"dispatch":{"$ref":"#/$defs/dispatch"},"readiness":{"type":"array","items":{"$ref":"#/$defs/readiness"}}}
+    }
+  }
+}

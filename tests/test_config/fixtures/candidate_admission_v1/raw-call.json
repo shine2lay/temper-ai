@@ -1,0 +1,1 @@
+{"config_json":"{\"single_call\":{\"output_root\":\"/synthetic/wire-fixture/out\",\"slot\":\"A1\"},\"type\":\"single_call\"}","file_base64":null,"format":"candidate-raw-record/v1","kind":"agent","name":"call","origin":{"kind":"db"},"schema_version":"fixture-1"}

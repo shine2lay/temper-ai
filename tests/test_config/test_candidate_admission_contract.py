@@ -156,7 +156,7 @@ def test_number_extremes_exact_types_and_invalid_utf8():
         assert c.decode_canonical(wire).hex() == number.hex()
     for value in (float("nan"), float("inf"), float("-inf")):
         refused("nonfinite_number", lambda: c.canonical_bytes(value))
-    for value in ({1: "x"}, (1,), b"x", {1}, bytearray(b"x")):
+    for value in ({1: "x"}, (1,), b"x", {1}, bytearray(b"x"), frozenset({"name"})):
         refused("invalid_type", lambda: c.canonical_bytes(value))
     class IntSubclass(int):
         pass

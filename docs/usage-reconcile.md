@@ -14,8 +14,10 @@ The server owns one daemon alongside its existing sweepers. Every60seconds
 1. Attempt pending capture drain, exclusively using the landed
    `usage_rows.drain_pending_row` helper from #125.
 2. Reconcile numeric leaves in the bounded history window.
-3. Check exactly linkable unended starts and the internal cutover conditions.
-4. Record genuinely missing post-cutover capture faults, never fill them.
+3. Check exactly linkable unended starts, then (cutover switch on only) the
+   internal cutover conditions.
+4. Cutover switch on only: record genuinely missing post-cutover capture
+   faults, never fill them.
 
 A wake admits at most200 Event-row attempts in total (drain first,
 then reconciliation, unended revisions and missing-row checks), with no ordering
@@ -33,6 +35,26 @@ wake makes no heartbeat writes. Readiness registration is independent startup
 version evidence, not a drain attempt or completeness certificate. The switch
 is on by default. The existing `TEMPER_USAGE_CAPTURE` writer switch is separate.
 Changing a server environment setting uses the usual controlled deployment.
+
+`TEMPER_USAGE_CUTOVER` is the cutover switch. It is on only for the exact value
+`1` with the reconciler on; unset, empty, `0`, `true`, whitespace or anything
+else is off. It is read in one place (`cutover_enabled`), and nothing in the
+repository sets it. While it is off, the cutover barrier and the post-cutover
+missing-row check never run: no barrier query, no final lap bound to the ready
+boundary, no cutover columns written and no post-cutover fault. Drain, fill,
+unended marks, the heartbeat and diagnostics do not read it and keep running
+under `TEMPER_USAGE_RECONCILER`. `coverage_state` then shows phase
+`cutover-off` and `cutover_switch: off`. A cutover already recorded (for
+example by earlier code) is kept and never moved, and fills stay stopped after
+it; turning the switch on only starts the barrier (if none is recorded) and the
+post-cutover check. #126 deploys with the switch off; turning it on is a
+separate go-live step (GL6-GL8, GL8b) and needs its own approval.
+
+Why only the cutover is off, not the whole reconciler: #125's live writer
+leaves pending captures that only this drain finalizes. Turning everything off
+would leave them pending and miss the 15-minute normal-arrival bar. The
+binding go-live fact is that the barrier cannot evaluate (Architecture C6):
+with the switch off it cannot, whatever the readiness rows say.
 
 ## Pending attempt and truthful heartbeat
 
@@ -134,8 +156,23 @@ ready times. The legacy table keeps its schema and its other kinds' rows.
 
 Old readers fail closed: while a kind's latest start is #126 code, its legacy
 row is missing, so legacy code's readiness gives no boundary and its cutover
-refuses. A revert needs no operator step: legacy starts re-create their own
-rows, and the new table may stay. A re-land heals itself. The witness catches
+refuses. Legacy starts re-create their own rows, and the new table may stay.
+A re-land heals itself.
+
+**Revert (rollback) step.** A revert of this code goes back to code that does
+not read `TEMPER_USAGE_CUTOVER`: its barrier is gated only by
+`TEMPER_USAGE_RECONCILER` (default on) and the legacy readiness rows, which its
+own restarts bring back. So the cutover switch does not protect a revert. Until
+`cutover_at` has committed, a revert needs one of these, before or together
+with the revert's deploy:
+
+- `TEMPER_USAGE_RECONCILER=0` set for the server (the drain then pauses for
+  the rollback, and pending captures wait for it to come back on), or
+- a hashed record that at least one writer kind is not ready for the reverted
+  code's barrier.
+
+After `cutover_at` has committed, a revert cannot record a second cutover (it
+is recorded once and never moved). The witness catches
 only a legacy marker committed before the cutover's read. It cannot see two
 live instances of one kind (go-live check GL2), a legacy start whose marker
 write failed (GL1), a legacy start committing at the moment of the cutover
@@ -157,14 +194,20 @@ by its latest state (H-126-CUTOVER-2). It still holds the barrier when:
    re-queue the row before the new attempt (runner/queue.py); an in-process
    Resume (TEMPER_EXECUTION_MODE=inprocess, api/routes.py) starts an attempt
    under the row as it stands. An ended row therefore cannot exempt a running
-   or NULL-status latest start. Ties at the latest time all count, never broken
-   by id. An older parked start is an attempt a later one carried on
-   (runner/parked.py), so it no longer counts.
+   or NULL-status latest start. "Latest" has one definition, S1's
+   `parked.latest_start_condition`, the same one the claims check. Ties at the
+   latest time all count, never broken by id. An older parked start is an
+   attempt a later one carried on (runner/parked.py), so it no longer counts.
+   Rules 1, 2 and 3 are read in one statement, so one snapshot judges a row and
+   its starts together.
 
    **CARRIED_ON exemption:** a latest start still marked `parked` counts as
-   ended only when its row is in BARRIER_ENDED. A claim marks the parked attempt
-   CARRIED_ON and immediately re-queues the row, or restores the attempt if the
-   re-queue fails. While the claim is live, rule 1 holds that open row. If the box
+   ended only when its row is in BARRIER_ENDED. A boxed claim
+   (`parked.claim_and_queue`, `claim_and_requeue_row`) marks the parked attempt
+   CARRIED_ON and re-queues the run row in ONE transaction, so no reader sees
+   one without the other. An in-process claim (`claim_without_box_row`) has no
+   row, so it gets no exemption; if its thread fails to start, the release puts
+   the attempt back. While a claim is live, rule 1 holds its open row. If the box
    dies before its first start and the reaper orphans the row, the parked start
    never settles: settle_run_event only settles running/queued/waiting starts.
    Without this exemption, that dead history would hold forever. An open or
@@ -362,6 +405,29 @@ these dead shapes, if a quiet ended execution with no nonexempt open latest
 start still blocks, if a live in-process Resume under an ended row passes, or if
 post-cutover faults appear for an execution that was active inside the window
 before the cutover. The live result is recorded in the task's notes, not here.
+
+### H-126-A3 (barrier on S1, cutover off at deploy)
+
+What was wrong: the barrier's exact-head reviews (H3, H4) found that a parked
+attempt's CARRIED_ON mark and its row's re-queue were separate commits, so a
+reader could judge a live claim by half its state, and the barrier kept its own
+copy of "latest start". S1 fixed the claims; the barrier had to be rebuilt on
+it. And the cutover cannot be recorded safely before the go-live records
+(GL6-GL8, GL8b), while #128 waits on this code. Change: the barrier uses S1's
+one latest-start definition and reads rules 1-3 in one statement; readiness
+moves to `usage_writer_ready_v2` (W-B3); and `TEMPER_USAGE_CUTOVER` (off unless
+exactly `1`) stops the barrier and the post-cutover check while drain and fill
+keep running. Expected: the frozen barrier cases (C05c, C06a-d, C07a-c, C08a,
+K9c, QG2-A2) give their known answers on SQLite and PostgreSQL, and each of
+the B4, B8, MF3.2, switch and census bites makes its test fail. On live after
+the deploy, read-only: three v2 ready rows, a completed-attempt heartbeat
+younger than two minutes, pending falling or zero, fill progress, phase
+`cutover-off`, `cutover_switch: off`, and no post-cutover fault made after the
+deploy. Whether earlier code already recorded a cutover is UNKNOWN until that
+read; if it did, it is kept and reported, and this code adds no second one. It
+is wrong if any frozen case flips, any bite still passes, the live phase is not
+`cutover-off`, the post-cutover fault count grows after the deploy, or the
+heartbeat goes stale. The live result is recorded in the task's notes.
 
 Every new guard needs its own mutation bite. Exact-head Architecture LAND TRUE,
 exact-byte Security no-open-findings, all eight checks and deployed live checks

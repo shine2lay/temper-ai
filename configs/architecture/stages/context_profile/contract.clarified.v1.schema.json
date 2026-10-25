@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "temper:architecture/stages/context_profile/contract.clarified.v1.schema.json",
+  "title": "Context profile, clarified contract v1 (opt-in)",
+  "description": "A separate candidate retaining v2 product fields, assumptions and unknowns. Original quotes remain quotes from the original brief. Clarification references name exact current question-answer evidence in the separately bound record. Source labels are caller attribution, not authentication or consent. Reference validity is not semantic correctness or Stage 1 acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "product", "maturity", "current_system", "external_systems", "workload", "performance", "reliability", "privacy", "security", "team", "budget", "constraints", "goals", "unknowns", "assumptions", "brief_sha256", "clarification_source"],
+  "properties": {
+    "contract": {"const": "context_profile_clarified/v1"},
+    "brief_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "clarification_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "record_sha256"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/clarification_source_id"},
+        "record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"}
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "source"],
+      "properties": {
+        "summary": {"type": "string", "minLength": 3},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "maturity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "evidence"],
+      "properties": {
+        "stage": {"enum": ["idea", "startup", "growing", "established", "unknown"]},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/fact"}}
+      }
+    },
+    "current_system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "items"],
+      "properties": {
+        "state": {"enum": ["none", "exists", "unknown"]},
+        "source": {"$ref": "#/$defs/source"},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/system_item"}}
+      }
+    },
+    "external_systems": {"type": "array", "items": {"$ref": "#/$defs/external_system"}},
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed", "projected", "peaks"],
+      "properties": {
+        "observed": {"type": "array", "items": {"$ref": "#/$defs/measure"}},
+        "projected": {"type": "array", "items": {"$ref": "#/$defs/measure"}},
+        "peaks": {"type": "array", "items": {"$ref": "#/$defs/measure"}}
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {"type": "array", "items": {"$ref": "#/$defs/measure"}}
+      }
+    },
+    "reliability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "data_loss_tolerance", "recovery_time"],
+      "properties": {
+        "availability": {"$ref": "#/$defs/fact_or_unknown"},
+        "data_loss_tolerance": {"$ref": "#/$defs/fact_or_unknown"},
+        "recovery_time": {"$ref": "#/$defs/fact_or_unknown"}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_categories", "sensitivity", "retention", "sharing", "jurisdictions_or_rules"],
+      "properties": {
+        "data_categories": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "sensitivity": {"oneOf": [{"$ref": "#/$defs/sensitivity"}, {"const": "unknown"}]},
+        "retention": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "sharing": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "jurisdictions_or_rules": {"type": "array", "items": {"$ref": "#/$defs/fact"}}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "threats", "compliance"],
+      "properties": {
+        "requirements": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "threats": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "compliance": {"type": "array", "items": {"$ref": "#/$defs/fact"}}
+      }
+    },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "skills", "operating_capacity"],
+      "properties": {
+        "size": {"$ref": "#/$defs/fact_or_unknown"},
+        "skills": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "operating_capacity": {"type": "array", "items": {"$ref": "#/$defs/fact"}}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "run_monthly"],
+      "properties": {
+        "build": {"$ref": "#/$defs/fact_or_unknown"},
+        "run_monthly": {"$ref": "#/$defs/fact_or_unknown"}
+      }
+    },
+    "constraints": {"type": "array", "items": {"$ref": "#/$defs/constraint"}},
+    "goals": {"type": "array", "items": {"$ref": "#/$defs/goal"}},
+    "unknowns": {"type": "array", "items": {"$ref": "#/$defs/unknown"}},
+    "assumptions": {"type": "array", "items": {"$ref": "#/$defs/assumption"}}
+  },
+  "$defs": {
+    "quote_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "quote"],
+      "properties": {
+        "kind": {"const": "quote"},
+        "quote": {"type": "string", "minLength": 8}
+      }
+    },
+    "assumption_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "why"],
+      "properties": {
+        "kind": {"const": "assumption"},
+        "why": {"type": "string", "minLength": 8}
+      }
+    },
+    "clarification_source_id": {"type": "string", "pattern": "^clarifications-sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "clarification_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source_id", "question_id", "event_ids", "question", "answer"],
+      "properties": {
+        "kind": {"const": "clarification"},
+        "source_id": {"$ref": "#/$defs/clarification_source_id"},
+        "question_id": {"type": "string", "pattern": "^q-[0-9a-f]{64}(?![\\s\\S])"},
+        "event_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^e-[A-Za-z0-9][A-Za-z0-9._:-]*(?![\\s\\S])"}},
+        "question": {"type": "string", "minLength": 5, "pattern": "\\S"},
+        "answer": {"type": "string", "minLength": 1, "pattern": "\\S"}
+      }
+    },
+    "source": {"oneOf": [{"$ref": "#/$defs/quote_source"}, {"$ref": "#/$defs/assumption_source"}, {"$ref": "#/$defs/clarification_reference"}]},
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source"],
+      "properties": {
+        "value": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "fact_or_unknown": {"oneOf": [{"$ref": "#/$defs/fact"}, {"const": "unknown"}]},
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["what", "value", "unit", "source"],
+      "properties": {
+        "what": {"type": "string", "minLength": 2},
+        "value": {"type": ["number", "string"]},
+        "unit": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "system_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text", "source"],
+      "properties": {
+        "kind": {"enum": ["component", "stack", "hosting", "data_store", "client", "other"]},
+        "text": {"type": "string", "minLength": 2},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "external_system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "source"],
+      "properties": {
+        "name": {"type": "string", "minLength": 2},
+        "role": {"type": "string", "minLength": 3},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "sensitivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "source"],
+      "properties": {
+        "level": {"enum": ["none", "low", "moderate", "high"]},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "source"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^C[0-9]+$"},
+        "text": {"type": "string", "minLength": 3},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "criterion", "rank", "note", "source"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^G[0-9]+$"},
+        "criterion": {"enum": ["cost", "efficiency", "performance", "privacy", "security", "reliability", "delivery_speed", "operability", "change_cost", "scalability", "other"]},
+        "rank": {"type": "integer", "minimum": 1},
+        "note": {"type": "string", "minLength": 3},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "why_it_matters", "decisions_affected", "material"],
+      "properties": {
+        "question": {"type": "string", "minLength": 5},
+        "why_it_matters": {"type": "string", "minLength": 5},
+        "decisions_affected": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 2}},
+        "material": {"type": "boolean"},
+        "field": {"enum": ["maturity.stage", "current_system.state", "current_system.items", "external_systems", "workload.observed", "workload.projected", "workload.peaks", "performance.targets", "reliability.availability", "reliability.data_loss_tolerance", "reliability.recovery_time", "privacy.data_categories", "privacy.sensitivity", "privacy.retention", "privacy.sharing", "privacy.jurisdictions_or_rules", "security.requirements", "security.threats", "security.compliance", "team.size", "team.skills", "team.operating_capacity", "budget.build", "budget.run_monthly", "constraints", "goals"]}
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "why"],
+      "properties": {
+        "text": {"type": "string", "minLength": 3},
+        "why": {"type": "string", "minLength": 5}
+      }
+    }
+  }
+}

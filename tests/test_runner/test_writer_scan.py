@@ -222,6 +222,8 @@ OTHER_WRITERS: dict[tuple[str, str, str, str], tuple[int, str]] = {
     ("temper_ai/integrations/telegram/store.py", "settle_pending", "values", "status"): (1, "TelegramPending"),
     ("temper_ai/integrations/notify/store.py", "rekey_question", "attribute", "status"): (1, "NotifyCopy"),
     ("temper_ai/llm/single_send.py", "SingleSendError.__init__", "attribute", "status"): (1, "HTTP status"),
+    ("temper_ai/agent/llm_agent.py", "LLMAgent._run_image_input", "attribute", "status"):
+        (2, "AgentResult: completion or observability failure, not a stored run row"),
     ("temper_ai/observability/reconcile.py", "settle_run_event", "attribute", "status"): (1, "Event; no run-row update"),
     ("temper_ai/observability/reconcile.py", "reconcile_and_report", "attribute", "status"): (1, "Event; interrupted, never carried-on"),
     ("temper_ai/observability/recorder.py", "update_event._do_update", "attribute", "status"): (1, "Event generic wrapper; P14 checks callers"),
@@ -567,6 +569,8 @@ def test_each_writer_scope_removal_bites(assembled, path, scope, expression, err
 
 @pytest.mark.parametrize(("case", "path", "old", "new", "check", "error"), [
     ("B-SCAN-status", QUEUE, "def queue_run_in(", "def unknown_status(row):\n    row.status = 'completed'\n\n\ndef queue_run_in(", "t9", "unknown or missing writer"),
+    ("B-SCAN-image-result-missing", "temper_ai/agent/llm_agent.py", "result.status = Status.COMPLETED", "None", "t9", "unknown or missing writer"),
+    ("B-SCAN-image-result-extra", "temper_ai/agent/llm_agent.py", "result.status = Status.COMPLETED", "result.status = Status.COMPLETED; result.status = Status.COMPLETED", "t9", "unknown or missing writer"),
     ("B-SCAN-attempts", QUEUE, "def queue_run_in(", "def unknown_attempts(row):\n    row.attempts += 1\n\n\ndef queue_run_in(", "t9", "unknown or missing writer"),
     ("B-SCAN-metadata", QUEUE, "def queue_run_in(", "def unknown_identity(row):\n    row.spawner_metadata = {}\n\n\ndef queue_run_in(", "t9", "unknown or missing writer"),
     ("B-SCAN-dynamic", QUEUE, "def queue_run_in(", "def unknown_dynamic(row, key):\n    setattr(row, key, 'completed')\n\n\ndef queue_run_in(", "t9", "unknown or missing writer"),

@@ -10,7 +10,9 @@ from __future__ import annotations
 import time
 from dataclasses import replace
 
-from temper_ai.agent import create_agent
+from temper_ai.agent import AGENT_TYPES, create_agent
+from temper_ai.agent.admission_use import hooks_for, refuse
+from temper_ai.config.admission_contract import AdmissionRefused, RefusalCode
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
 from temper_ai.stage.models import NodeConfig
@@ -54,18 +56,27 @@ class AgentNode(Node):
         import logging
         logger = logging.getLogger(__name__)
 
-        agent = create_agent(self.agent_config)
-
-        # Update context for this agent execution
-        node_path = (
-            f"{context.node_path}.{self.name}" if context.node_path else self.name
-        )
-        ctx = replace(context, node_path=node_path, agent_name=agent.name)
+        admission = hooks_for(context, self)
+        if admission is not None:
+            intended = AGENT_TYPES.get(self.agent_config.get("type", ""))
+            if intended is None:
+                refuse(RefusalCode.FIELDS)
+            config, ctx = admission.before_factory(self, context, create_agent, intended)
+            agent = create_agent(config)
+            admission.after_factory(self, agent, ctx, intended)
+        else:
+            agent = create_agent(self.agent_config)
+            # Update context for this agent execution.
+            node_path = f"{context.node_path}.{self.name}" if context.node_path else self.name
+            ctx = replace(context, node_path=node_path, agent_name=agent.name)
 
         start = time.monotonic()
         last_result = None
 
-        for attempt in range(1, self.MAX_RETRIES + 1):
+        # A candidate cannot silently continue its spent invocation. A separately
+        # authorized fresh descriptor/slot is an entry-route decision, not banned here.
+        attempts = 1 if admission is not None else self.MAX_RETRIES
+        for attempt in range(1, attempts + 1):
             try:
                 result = agent.run(input_data, ctx)
                 last_result = result
@@ -75,7 +86,7 @@ class AgentNode(Node):
                 # budget): re-running a 40-iteration exploration from scratch
                 # doubles its cost and ends the same way.
                 if (not result.output or not result.output.strip()) and not result.error:
-                    if attempt < self.MAX_RETRIES:
+                    if attempt < attempts:
                         logger.warning(
                             "Agent '%s' returned empty output (attempt %d/%d), retrying...",
                             agent.name, attempt, self.MAX_RETRIES,
@@ -100,6 +111,8 @@ class AgentNode(Node):
                     duration_seconds=duration,
                     error=result.error,
                 )
+            except AdmissionRefused:
+                raise
             except RunParked:
                 # The agent asked the owner and its Pi run lets the worker go: not a failure
                 # to retry (stage/step_waits.py). It goes up to the run's top.
@@ -110,6 +123,8 @@ class AgentNode(Node):
                 # goes up to the run's top, which ends only this attempt (SW-84).
                 raise
             except Exception as exc:
+                if admission is not None:
+                    refuse(RefusalCode.FIELDS)
                 if attempt < self.MAX_RETRIES:
                     logger.warning(
                         "Agent '%s' raised exception (attempt %d/%d): %s",

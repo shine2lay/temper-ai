@@ -607,6 +607,24 @@ def test_journey_waits_for_terminal_traffic_and_disposal_before_next_engine(monk
         assert r['verdict'] == 'BLOCKED' and len(sessions) == 3 and latch.blocked
 
 
+def test_a6_journey_writes_its_marker_and_its_own_marker_never_blocks_its_webkit(monkeypatch, tmp_path):
+    """#279 (Security #105 A6): the run folder sits in the receipts root, so the WebKit admission (asked after the
+    Chromium rows) sees this unit's own unfinished marker; it is not an earlier run and must not refuse it."""
+    t, sessions, hooks = install_journey(monkeypatch, 'clean')
+    root = tmp_path / 'receipts'
+    out = root / 'run1' / 'check'
+    out.mkdir(parents=True)
+    t['receipts_root'], t['receipts_out_name'] = str(root), 'check'
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, out, 'fake', 900, hooks, latch=g.StopLatch()))
+    assert r['verdict'] == 'PASS' and r['exit_code'] == 0 and len(sessions) == 5
+    assert r['admission']['fake:webkit']['status'] == 'ADMITTED'
+    assert r['admission']['fake:webkit']['own_marker'] == str(out / 'started.json') == r['started_marker']['path']
+    marker = json.loads((out / 'started.json').read_text())
+    assert set(marker['services']) == {'fake:chromium', 'fake:webkit'}
+    after = p3.admission.admit(root, 'fake:chromium')  # the marker now has its final receipt beside it
+    assert after['status'] == 'ADMITTED' and after['unfinished_markers'] == [] and after['p3_receipts'] == 1
+
+
 @pytest.mark.parametrize('fault', ['clean', 'off_origin', 'error'])
 def test_probe_keeps_observations_through_navigation_and_transport_error(monkeypatch, fault):
     s, r, latch = FakeTransport('probe'), p3.new_receipt('fake', target()), g.StopLatch()

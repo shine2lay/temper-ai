@@ -10,7 +10,9 @@ mode=controls_p3 on temper-dev; the byte-for-byte binding of every literal to QA
 
 import copy
 import importlib.util
+import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -380,3 +382,98 @@ def test_judges_never_raise_on_garbage():
                     {"obs": {c: {"rows": [None, "x"], "who": None} for c in "ABCLUV"}}):
             v = kit.judge(kit.ROW[rid], copy.deepcopy(res), "chromium", SERVED)
             assert v["status"] in ("FAIL", "BLOCKED"), (rid, v)
+
+
+# ---- #279 (Security #105 R-1, H-279-R1): the rows' page routes keep to the build's origin and fall back ----
+# ROWS_JS runs in Node (no browser) against a fake page and a route chain modelled on Playwright's: page routes
+# newest first, then context routes; fallback() hands the request to the next matching handler, continue() sends it
+# and skips the rest, abort() aborts it. The context chain holds a recorder (it sees what a page route passed on)
+# and the control abort route exactly as SETUP writes it.
+R1_ROUTES_NODE = r"""
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const ORIGIN = input.origin; const T = input.text; const t = () => 'fixed';
+const p3 = {log: {requests: []}, users: {}};
+new Function('p3', 'T', 'ORIGIN', 't', input.rows_js)(p3, T, ORIGIN, t);
+const pageRoutes = [];
+let current = null; const held = [];
+const realSetTimeout = setTimeout;
+globalThis.setTimeout = (fn, ms, ...rest) => { if (ms === input.hold_ms && current) held.push(current);
+  return realSetTimeout(fn, ms, ...rest); };
+const contextRoutes = [
+  {match: () => true, handler: (route) => { current.seen_by_context = true; return route.fallback(); }},
+  {match: (url) => (url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== ORIGIN,
+   handler: (route) => route.abort('blockedbyclient')},
+];
+async function send(name, method, url) {
+  const req = {name, method, url, outcome: 'network', skipped_later_handlers: false, seen_by_context: false};
+  current = req;
+  const chain = [...pageRoutes.slice().reverse(), ...contextRoutes].filter(r => r.match(new URL(url)));
+  let i = 0;
+  const next = async () => {
+    if (i >= chain.length) return;
+    const r = chain[i++];
+    await r.handler({
+      request: () => ({method: () => method, url: () => url}),
+      fallback: async () => next(),
+      continue: async () => { req.skipped_later_handlers = i < chain.length; },
+      abort: async (code) => { req.outcome = (r.page ? 'aborted by page route: ' : 'aborted by context route: ') + code; },
+    });
+  };
+  await next();
+  req.held = held.includes(req);
+  current = null;
+  return req;
+}
+const OTHER = 'https://elsewhere.invalid';
+let scenario = null;
+const locator = () => ({count: async () => { if (scenario) { const s = scenario; scenario = null; await s(); } return 0; }});
+const page = {
+  route: async (match, handler) => { pageRoutes.push({match, handler, page: true}); },
+  unroute: async (match, handler) => { const k = pageRoutes.findIndex(r => r.match === match && r.handler === handler);
+    if (k >= 0) pageRoutes.splice(k, 1); },
+  getByRole: () => locator(), locator: () => locator(),
+};
+const u = {name: 'A', p: page, touch: false};
+(async () => {
+  const out = {held: [], list: []};
+  scenario = async () => {
+    for (const [name, method, url] of [['same GET', 'GET', ORIGIN + '/api/items'],
+        ['same POST (first)', 'POST', ORIGIN + '/api/items'], ['same POST (again)', 'POST', ORIGIN + '/api/items'],
+        ['cross POST', 'POST', OTHER + '/api/items'], ['cross GET', 'GET', OTHER + '/api/items']])
+      out.held.push(await send(name, method, url));
+  };
+  const h = await p3.held(u, {op: 'add', item: 'x', hold_ms: input.hold_ms});
+  out.held_error = h.error || null; out.routes_left_after_held = pageRoutes.length;
+  await p3.act(u, {do: 'abort_list'});
+  for (const [name, method, url] of [['same GET', 'GET', ORIGIN + '/api/items'], ['same POST', 'POST', ORIGIN + '/api/items'],
+      ['cross GET', 'GET', OTHER + '/api/items'], ['cross POST', 'POST', OTHER + '/api/items']])
+    out.list.push(await send(name, method, url));
+  out.unabort = await p3.act(u, {do: 'unabort'}); out.routes_left = pageRoutes.length;
+  console.log(JSON.stringify(out));
+})().catch(e => { console.error(String(e && e.stack || e)); process.exitCode = 1; });
+"""
+
+
+def test_r1_page_routes_keep_to_the_origin_and_fall_back_to_the_control_abort_route():
+    payload = {"origin": "http://100.110.162.4:8962", "text": T, "rows_js": kit.ROWS_JS, "hold_ms": 7}
+    proc = subprocess.run(["node", "-e", R1_ROUTES_NODE], input=json.dumps(payload), text=True, capture_output=True,
+                          timeout=20)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    held = {x["name"]: x for x in out["held"]}
+    assert out["held_error"] and out["routes_left_after_held"] == 0  # the fake page ends the row; route removed
+    # Same origin, unchanged: the first POST is held and then sent; the GET and the second POST are not held.
+    assert [x["name"] for x in out["held"] if x["held"]] == ["same POST (first)"]
+    for name in ("same GET", "same POST (first)", "same POST (again)"):
+        assert held[name]["outcome"] == "network", held[name]
+    lst = {x["name"]: x for x in out["list"]}
+    assert lst["same GET"]["outcome"] == "aborted by page route: failed" and lst["same POST"]["outcome"] == "network"
+    assert out["unabort"] == {"aborted": 1} and out["routes_left"] == 0  # only the same-origin list GET counted
+    # Another origin's /api/items is never theirs: it falls through to the context abort route (the second witness).
+    for x in (held["cross POST"], held["cross GET"], lst["cross GET"], lst["cross POST"]):
+        assert x["outcome"] == "aborted by context route: blockedbyclient" and not x["held"], x
+    # Whatever a page route does not abort itself goes on by fallback(): the context routes still see it.
+    for x in out["held"] + out["list"]:
+        if x["outcome"] != "aborted by page route: failed":
+            assert x["seen_by_context"] and not x["skipped_later_handlers"], x

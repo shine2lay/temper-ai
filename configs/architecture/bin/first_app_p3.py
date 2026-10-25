@@ -88,6 +88,9 @@ GATE_PLANTS = {
 }
 REDIRECT_ROUTE = "/plant-redirect"  # the fixture server's one fixed route, served only in the plant_redirect copy
 REDIRECT_LOCATION = "https://redirect.invalid/r"
+# Security #105 G5-Q: plant kinds Security has named a blind spot, as {kind: the Security record that names it}. None
+# is named (DECISION-10 section 3). DNS-only lookups are a stated residual, not a plant kind.
+G5_BLIND_SPOTS: dict[str, str] = {}
 
 # ---------------------------------------------------------------- engines and contexts
 
@@ -609,12 +612,42 @@ def admitted(r: dict, latch: guard.StopLatch, target: dict, url: str, *, webkit:
     else:
         w1 = (r.get("engine_image") or {}).get("before") if webkit else None
         result = admission.admit(pathlib.Path(root), url, out_name=target.get("receipts_out_name", "check"),
-                                 w2=target.get("w2_recreation"), w1_before=w1, need_w1=webkit)
+                                 w2=target.get("w2_recreation"), w1_before=w1, need_w1=webkit,
+                                 own_marker=(r.get("started_marker") or {}).get("path"))
     seen[url] = result
     if result["status"] != "ADMITTED":
         latch.block("W1 admission refused for " + url + ": " + "; ".join(result["reasons"]))
         latch.bind(r)
         return False
+    return True
+
+
+MARKER_RULE = ("Security #105 A6: written before this unit's first MCP call. With no final receipt.json beside it, "
+               "the unit ended without one (killed, timed out, crashed): every service named here needs Ops' W2 "
+               "recreation, newer than this marker, before any further P3 use. W1 admission enforces it; the "
+               "checker never deletes or rewrites this file.")
+
+
+def write_started_marker(r: dict, latch: guard.StopLatch, out: pathlib.Path, browser_url: str,
+                         webkit_url: str) -> bool:
+    """A6: before the unit's first MCP call, a create-once 0600 fsync'd marker beside where its receipt.json will
+    go, naming the services and phases about to be contacted (both engines: WebKit may follow). False (nothing
+    written, or not created by this call) -> no MCP call. No signal handler or timeout: a SIGKILL leaves it too."""
+    services: dict = {}
+    for url, phases in ((browser_url, [f"chromium:pins-{c}-copy" for c in ("chromium", "webkit")] + ["chromium"]),
+                        (webkit_url, ["webkit:probe", "webkit"])):
+        services.setdefault(url, []).extend(phases)
+    path = out / admission.STARTED_MARKER
+    marker = {"journey": "p3", "marker": "started", "label": r.get("label"), "started_at": fac.now(),
+              "services": services, "receipt": str(out / "receipt.json"), "rule": MARKER_RULE}
+    try:
+        guard.write_json(path, marker)
+    except Exception as exc:  # noqa: BLE001 (an existing marker included: create-once, never overwritten)
+        r["started_marker"] = {"path": None, "error": exc_text(exc)}
+        latch.block("A6: started marker not written, so no MCP call: " + exc_text(exc))
+        latch.bind(r)
+        return False
+    r["started_marker"] = {"path": str(path), "started_at": marker["started_at"], "services": services}
     return True
 
 
@@ -658,6 +691,9 @@ async def _check_target(browser_url, webkit_url, target, out, label, budget_s, h
         r["runner_error"] = "Chromium service not admitted (W1 admission); no MCP call made"
         return
     out.mkdir(parents=True, exist_ok=True)
+    if not write_started_marker(r, latch, out, browser_url, webkit_url):
+        r["runner_error"] = "A6 started marker not written; no MCP call made"
+        return
     deadline = time.monotonic() + budget_s
     r["browser_contact"] = True
     pins = {}
@@ -1402,9 +1438,16 @@ def engine_got(r: dict, engine: str) -> tuple:
     return CLEAN
 
 
+def _g5_result(engines, engine: str):
+    v = engines.get(engine) if isinstance(engines, dict) else None
+    return v.get("result") if isinstance(v, dict) else None
+
+
 def control_status(case: dict, r: dict) -> tuple[str, dict]:
-    """OK, WRONG, NOT RUN (an engine did not run: never OK), UNCALIBRATED (the plant needs a capability the native
-    engine has), BLOCKED or W4 TRIPPED."""
+    """OK, WRONG, NOT EXERCISED (a gate plant not sent on an engine that ran: a named coverage gap, never OK), NOT
+    RUN (an engine did not run: never OK), UNCALIBRATED (the plant needs a capability the native engine has), BLOCKED
+    or W4 TRIPPED. Security #105 G5-Q: a gate plant is OK only when caught on every engine that ran; a MISS is
+    WRONG; a kind Security named a blind spot (G5_BLIND_SPOTS) keeps its row status and is noted."""
     got = {"verdict": r["verdict"]}
     if r["verdict"] == "W4 TRIPPED":
         return "W4 TRIPPED", got
@@ -1414,6 +1457,10 @@ def control_status(case: dict, r: dict) -> tuple[str, dict]:
         return "BLOCKED", got
     gates = r["traffic_gate"]["engines"]
     states = []
+    plant = GATE_PLANTS.get(case.get("variant")) if case.get("plant") else None
+    blind = G5_BLIND_SPOTS.get(plant["kind"]) if plant else None
+    g5 = ((r.get("gate_plant_result") or {}).get("engines") or {}) if plant else {}
+    gaps = {}
     for e in ENGINES:
         sess = (r.get("sessions") or {}).get(e) or {}
         g = got[e] = list(engine_got(r, e))
@@ -1428,10 +1475,45 @@ def control_status(case: dict, r: dict) -> tuple[str, dict]:
             continue
         ok = g == want and (gates[e] == "PASS" if want[0] == "PASS" else gates[e] != "FAIL")
         states.append("OK" if ok else "WRONG")
-    for status in ("WRONG", "NOT RUN", "UNCALIBRATED"):
+        if plant:
+            result = _g5_result(g5, e)
+            got.setdefault("g5", {})[e] = result
+            if blind is not None or result == "caught":
+                continue
+            if result == "MISS":
+                states.append("WRONG")  # the page sent it (or the abort route saw it) and the gate did not
+            else:
+                states.append("NOT EXERCISED")
+                gaps[e] = result or "no G5 result recorded"
+    if blind is not None:
+        got["g5_blind_spot"] = {"kind": plant["kind"], "named_by": blind}
+    if gaps:
+        got["gap"] = {"plant": case.get("variant"), "kind": plant["kind"], "engines": gaps,
+                      "why": f"G5 coverage gap: the {plant['kind']} plant was not exercised on {', '.join(gaps)} "
+                             "(no gate event, abort witness or page mark); never OK, never full qualification"}
+    for status in ("WRONG", "NOT EXERCISED", "NOT RUN", "UNCALIBRATED"):
         if status in states:
             return status, got
     return "OK", got
+
+
+def g5_qualification(results: list) -> tuple[bool, list[str]]:
+    """G5-Q for full qualification: every plant control in CONTROLS caught on every engine that ran (at least one),
+    unless Security named its kind a blind spot (G5_BLIND_SPOTS). (qualified, the gaps)."""
+    by_case = {x.get("case"): x for x in results if isinstance(x, dict)}
+    gaps = []
+    for c in CONTROLS:
+        if not c.get("plant"):
+            continue
+        kind = GATE_PLANTS[c["variant"]]["kind"]
+        if kind in G5_BLIND_SPOTS:
+            continue
+        engines = ((by_case.get(c["case"]) or {}).get("gate_plant") or {}).get("engines") or {}
+        ran = {e: _g5_result(engines, e) for e in ENGINES if _g5_result(engines, e) != "NOT RUN"}
+        if not ran or any(x != "caught" for x in ran.values()):
+            gaps.append(f"{c['case']} ({kind}): " + (", ".join(f"{e} {x}" for e, x in ran.items())
+                                                     or "no engine ran it"))
+    return not gaps, gaps
 
 
 async def dispose_control(servers) -> list[str]:
@@ -1544,10 +1626,12 @@ async def controls(args, out: pathlib.Path) -> int:
                 results.append(await run_control(args, case, out, pathlib.Path(tmp), ip, latch))
     all_ok = bool(selected) and len(results) == len(selected) and all(x["status"] == "OK" for x in results)
     counts = {k: sum(1 for x in results if x["status"] == k)
-              for k in ("OK", "WRONG", "NOT RUN", "UNCALIBRATED", "BLOCKED", "W4 TRIPPED")}
+              for k in ("OK", "WRONG", "NOT EXERCISED", "NOT RUN", "UNCALIBRATED", "BLOCKED", "W4 TRIPPED")}
     g5 = {x["case"]: (x.get("gate_plant") or {}).get("engines") for x in results if x.get("gate_plant")}
+    g5_ok, g5_gaps = g5_qualification(results)
     summary = {"mode": "controls_p3", "journey": "p3", "all_ok": all_ok and not latch.stopped,
-               "full_qualification": all_ok and not latch.stopped and {x["case"] for x in results} == names,
+               "full_qualification": all_ok and not latch.stopped and {x["case"] for x in results} == names
+               and g5_ok, "g5_gaps": g5_gaps, "g5_blind_spots": dict(G5_BLIND_SPOTS),
                "selection_error": "empty/unmatched selection" if invalid or not selected else None,
                "counts": counts, "g5": g5,
                "not_reached": [c["case"] for c in selected if c["case"] not in {x["case"] for x in results}],

@@ -12,6 +12,20 @@ Hypothesis H-125-W1ADM-1 (rule 20), written before this code:
   matching W1 reading -> admitted; malformed earlier receipt -> BLOCKED.
 - Wrong if: a blocked case reaches an MCP call, a malformed receipt admits, or a clean root blocks.
 
+Hypothesis H-279-A6 (rule 20, Security #105 A6), written before the marker code:
+- What is wrong: a receipt is written only when a run finishes, so a run killed after its first MCP contact
+  (SIGKILL, OOM, container stop, Temper restart, the agent timeout) leaves nothing here, and the next run is
+  admitted against a browser service in an unknown state.
+- The one change: the driver writes a create-once started marker (STARTED_MARKER) beside where each unit's
+  receipt.json will go, before that unit's first MCP call. A marker with no receipt.json beside it is held like
+  mcp_service_recreation_required for the services it names, timed by its started_at; a malformed one holds every
+  service, timed by its file's modification time; one that is not a regular file blocks. The unit's own marker
+  (own_marker) is not an earlier run.
+- Expected: marker without receipt -> BLOCKED with no MCP call unless a W2 record newer than the marker is named;
+  marker with its receipt -> as before; malformed marker -> never admitted without W2.
+- Wrong if: a marker without a receipt admits without W2, a marker with its receipt blocks, a malformed marker
+  admits, or a unit's own marker blocks its own later admission.
+
 Pure and fail-closed: it reads only regular files (no symlink is followed, at any component), never touches
 the network or docker, keeps no store of its own and has no override. The receipts root is the parent of the
 run's workspace (<root>/<run>/check/receipt.json and <root>/<run>/check/<case>/receipt.json, the workflow's
@@ -19,6 +33,7 @@ workspaces/first-app-check layout); history is per receipts root.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
@@ -26,6 +41,7 @@ import pathlib
 import re
 import stat
 import urllib.parse
+from decimal import Decimal
 
 import first_app_p3_guard as guard
 import ops_host_client as hc
@@ -33,6 +49,8 @@ import ops_host_client as hc
 RECEIPT_MAX = 64 << 20   # a P3 receipt carries its whole event log
 W2_MAX = 1 << 20
 MAX_RECEIPTS = 5000
+STARTED_MARKER = "started.json"  # A6: written before a unit's first MCP call, beside its receipt.json; never removed
+MARKER_MAX = 1 << 16
 HEX64 = re.compile(r"[0-9a-f]{64}")
 W2_KEYS = {"path", "sha256"}
 
@@ -114,9 +132,33 @@ def _maybe_receipt(fd: int, where: str, found: list) -> None:
     found.append((where + "/receipt.json", _leaf(fd, "receipt.json", RECEIPT_MAX, where + "/receipt.json")))
 
 
-def receipts(root: pathlib.Path, out_name: str = "check") -> list[tuple[str, bytes]]:
-    """Every <root>/<run>/<out_name>/receipt.json and <root>/<run>/<out_name>/<case>/receipt.json, as bytes."""
+def _maybe_marker(fd: int, where: str, markers: list, own: str | None) -> None:
+    """A6: a started marker with no receipt.json beside it (the unit ended without a final receipt), as
+    (path, bytes, mtime_ns). Beside a receipt it is only checked to be a regular file: the receipt decides."""
+    try:
+        st = os.stat(STARTED_MARKER, dir_fd=fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    path = where + "/" + STARTED_MARKER
+    if not stat.S_ISREG(st.st_mode):
+        raise Refused(f"{path} is not a regular file")
+    if own is not None and path == own:
+        return  # this unit's own marker: not an earlier run
+    try:
+        os.stat("receipt.json", dir_fd=fd, follow_symlinks=False)
+        return
+    except FileNotFoundError:
+        pass
+    if len(markers) >= MAX_RECEIPTS:
+        raise Refused(f"more than {MAX_RECEIPTS} started markers under the receipts root")
+    data = _leaf(fd, STARTED_MARKER, MARKER_MAX, path)
+    markers.append((path, data, st.st_mtime_ns))
+
+
+def _scan(root: pathlib.Path, out_name: str, own: str | None) -> tuple[list, list]:
+    """The receipts (as receipts() reads them) and the started markers that have no receipt beside them."""
     found: list[tuple[str, bytes]] = []
+    markers: list[tuple[str, bytes, int]] = []
     with guard.directory_fd(root) as rfd:
         for run in sorted(os.listdir(rfd)):
             run_fd = _subdir(rfd, run, str(root / run))
@@ -129,19 +171,55 @@ def receipts(root: pathlib.Path, out_name: str = "check") -> list[tuple[str, byt
                 try:
                     base = str(root / run / out_name)
                     _maybe_receipt(check_fd, base, found)
+                    _maybe_marker(check_fd, base, markers, own)
                     for case in sorted(os.listdir(check_fd)):
                         case_fd = _subdir(check_fd, case, base + "/" + case)
                         if case_fd is None:
                             continue
                         try:
                             _maybe_receipt(case_fd, base + "/" + case, found)
+                            _maybe_marker(case_fd, base + "/" + case, markers, own)
                         finally:
                             os.close(case_fd)
                 finally:
                     os.close(check_fd)
             finally:
                 os.close(run_fd)
-    return found
+    return found, markers
+
+
+def _marker_use(where: str, data: bytes, mtime_ns: int, url: str) -> dict | None:
+    """A6: an unfinished unit's marker as a use that needs recreation, or None if it names other services only.
+    Malformed content holds every service, timed by the file's modification time (fail closed, never unused)."""
+    try:
+        m = json.loads(data)
+        if not isinstance(m, dict) or m.get("journey") != "p3" or m.get("marker") != "started":
+            raise ValueError("not a P3 started marker")
+        services = m.get("services")
+        if not isinstance(services, dict) or not services or not all(
+                isinstance(k, str) and "://" in k and isinstance(v, list) and all(isinstance(x, str) for x in v)
+                for k, v in services.items()):
+            raise ValueError("services is not {service URL: [phase, ...]}")
+        at = hc.instant(m.get("started_at"), where + ".started_at")
+    except (UnicodeDecodeError, ValueError, hc.Blocked) as exc:
+        whole, frac = divmod(mtime_ns, 1_000_000_000)
+        when = Decimal(whole) + Decimal(frac // 1000) / Decimal(1_000_000)
+        stamp = datetime.datetime.fromtimestamp(whole, datetime.UTC).isoformat() + f" (+{frac} ns)"
+        return {"path": where, "finished": when, "finished_at": stamp, "time_name": "modification time",
+                "recreation": True, "w1_ids": set(),
+                "why": f"is a malformed started marker ({exc.__class__.__name__}: {str(exc)[:200]}), held against "
+                       f"every service with no final receipt.json beside it"}
+    if url not in services:
+        return None
+    return {"path": where, "finished": at, "finished_at": m["started_at"], "time_name": "started_at",
+            "recreation": True, "w1_ids": set(),
+            "why": f"is a started marker naming {url} with no final receipt.json beside it (the run ended without a "
+                   "receipt: recreation-required, Security #105 A6)"}
+
+
+def receipts(root: pathlib.Path, out_name: str = "check") -> list[tuple[str, bytes]]:
+    """Every <root>/<run>/<out_name>/receipt.json and <root>/<run>/<out_name>/<case>/receipt.json, as bytes."""
+    return _scan(root, out_name, None)[0]
 
 
 def _used(d: dict, where: str) -> tuple[set, list]:
@@ -233,8 +311,8 @@ def _container(rec: dict, svc: str, where: str) -> dict:
 
 def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> dict:
     if ref is None:
-        raise Refused(f"{failed['path']} lists mcp_service_recreation_required for {url}; no Ops W2 recreation "
-                      "receipt is named in the profile (w2_recreation)")
+        why = failed.get("why") or f"lists mcp_service_recreation_required for {url}"
+        raise Refused(f"{failed['path']} {why}; no Ops W2 recreation receipt is named in the profile (w2_recreation)")
     problems = _ref_problems(ref, f"w2_recreation[{url}]")
     if isinstance(ref, dict) and "before" in ref:
         problems += _ref_problems(ref["before"], f"w2_recreation[{url}].before")
@@ -249,7 +327,7 @@ def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> d
         raise Refused(f"W2 recreation receipt: {svc} is not running")
     if not new["started"] > failed["finished"]:
         raise Refused(f"W2 recreation receipt: {svc} StartedAt {new['started_at']} is not later than "
-                      f"{failed['path']} finished_at {failed['finished_at']}")
+                      f"{failed['path']} {failed.get('time_name', 'finished_at')} {failed['finished_at']}")
     old = set(failed["w1_ids"])
     evidence = {"after": {"path": ref["path"], "sha256": ref["sha256"], "container_id": new["id"],
                           "started_at": new["started_at"]}}
@@ -289,19 +367,26 @@ def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> d
 
 
 def admit(root: pathlib.Path, url: str, *, out_name: str = "check", w2: dict | None = None,
-          w1_before: dict | None = None, need_w1: bool = False) -> dict:
-    """ADMITTED or BLOCKED for one browser service, before any MCP call to it. Never raises."""
+          w1_before: dict | None = None, need_w1: bool = False, own_marker: str | None = None) -> dict:
+    """ADMITTED or BLOCKED for one browser service, before any MCP call to it. Never raises. own_marker: the path
+    of the started marker the calling unit wrote itself (A6), which is not an earlier run."""
     result = {"service": url, "receipts_root": str(root), "status": "BLOCKED", "reasons": [],
-              "receipts_read": 0, "p3_receipts": 0, "newest_use": [], "recreation_required": False, "w2": None}
+              "receipts_read": 0, "p3_receipts": 0, "newest_use": [], "recreation_required": False, "w2": None,
+              "unfinished_markers": [], "own_marker": own_marker}
     try:
         try:
-            found = receipts(root, out_name)
+            found, markers = _scan(root, out_name, own_marker)
         except Refused:
             raise
         except (OSError, ValueError) as exc:
             raise Refused(f"receipts root unreadable: {exc.__class__.__name__}: {exc}") from exc
         result["receipts_read"] = len(found)
+        result["unfinished_markers"] = [where for where, _, _ in markers]
         uses = []
+        for where, data, mtime_ns in markers:
+            use = _marker_use(where, data, mtime_ns, url)
+            if use is not None:
+                uses.append(use)
         for where, data in found:
             try:
                 d = json.loads(data)

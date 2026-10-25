@@ -17,6 +17,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -334,6 +335,99 @@ def test_g5_reports_caught_miss_and_not_exercised_per_engine():
     r["sessions"]["webkit"] = {"status": "NOT RUN", "why": p3.W1_MISSING}
     assert p3.gate_plant_result(r)["engines"]["webkit"]["result"] == "NOT RUN"
     assert p3.gate_plant_result({"profile": {}}) is None
+
+
+# #279 (Security #105 G3-a, H-279-G3a): a URL with userinfo is never the plant.
+@pytest.mark.parametrize("url", ["https://u:p@beacon.invalid/b", "https://u@beacon.invalid/b",
+                                 "https://@beacon.invalid/b", "https://:@beacon.invalid/b"])
+def test_g3a_a_plant_url_with_userinfo_is_not_the_plant_and_trips_w4(url):
+    beacon = p3.GATE_PLANTS["plant_beacon"]["urls"]
+    assert g.exact_key(url) != g.exact_key(beacon[0])
+    r, latch = {}, g.StopLatch()
+    latch.observe(r, {"requests": [{"url": url, "ctx": "A"}]}, ORIGIN, "chromium:J-1", allowed=beacon)
+    assert latch.tripped and not r.get("gate_catches")
+    assert p3.p3_findings({"requests": [{"url": url}]}, ORIGIN, beacon)  # a finding, not a dropped plant event
+    plain, clean = {}, g.StopLatch()
+    clean.observe(plain, {"requests": [{"url": beacon[0], "ctx": "A"}]}, ORIGIN, "chromium:J-1", allowed=beacon)
+    assert not clean.tripped and plain["gate_catches"][0]["url"] == beacon[0]  # the exact plant is still caught
+    g5 = p3.gate_plant_result({"profile": {"gate_plant": "plant_beacon"},
+                               "sessions": {"chromium": {"status": "RAN"}, "webkit": {"status": "NOT RUN"}},
+                               "gate_catches": [{"phase": "chromium:J-1", "kind": "requests", "url": url}],
+                               "plant_marks": {"chromium": "sent"}})
+    assert g5["engines"]["chromium"]["result"] == "MISS"
+
+
+# #279 (Security #105 G5-Q, H-279-G5Q): a plant MISS or gap is never OK, never full qualification.
+def _plant_receipt(variant, chromium, webkit):
+    r = {"verdict": "PASS", "steps": [], "sessions": {}, "browser_contact": True,
+         "traffic_gate": {"engines": {"chromium": "PASS", "webkit": "PASS"}}}
+    _engine_status(r, "chromium", p3.ROW_IDS["chromium"])
+    _engine_status(r, "webkit", p3.ROW_IDS["webkit"])
+    r["gate_plant_result"] = {"plant": variant, "kind": p3.GATE_PLANTS[variant]["kind"],
+                              "urls": p3.GATE_PLANTS[variant]["urls"],
+                              "engines": {"chromium": {"result": chromium}, "webkit": {"result": webkit}}}
+    return r
+
+
+def test_g5q_a_plant_miss_is_wrong_and_a_gap_is_named_never_ok(monkeypatch):
+    case = {c["case"]: c for c in p3.CONTROLS}["P3-PLANT-BEACON"]
+    assert p3.G5_BLIND_SPOTS == {}  # none named by Security (DECISION-10 section 3)
+    assert p3.control_status(case, _plant_receipt("plant_beacon", "caught", "caught"))[0] == "OK"
+    status, got = p3.control_status(case, _plant_receipt("plant_beacon", "caught", "MISS"))
+    assert status == "WRONG" and got["g5"] == {"chromium": "caught", "webkit": "MISS"}
+    status, got = p3.control_status(case, _plant_receipt("plant_beacon", "not exercised", "caught"))
+    assert status == "NOT EXERCISED" and got["gap"]["kind"] == "beacon" and got["gap"]["plant"] == "plant_beacon"
+    assert got["gap"]["engines"] == {"chromium": "not exercised"} and "beacon" in got["gap"]["why"]
+    r = _plant_receipt("plant_beacon", "caught", "caught")
+    del r["gate_plant_result"]
+    assert p3.control_status(case, r)[0] == "NOT EXERCISED"  # no G5 result at all is a gap, never OK
+    for chromium, want in (("MISS", "WRONG"), ("not exercised", "NOT EXERCISED")):
+        r = _plant_receipt("plant_beacon", chromium, "NOT RUN")
+        r["sessions"]["webkit"] = {"status": "NOT RUN", "why": p3.W1_MISSING}  # the Chromium-only run
+        assert p3.control_status(case, r)[0] == want, chromium
+    clean = {c["case"]: c for c in p3.CONTROLS}["P3-CLEAN"]  # not a plant case: G5 is not read
+    assert p3.control_status(clean, _plant_receipt("plant_beacon", "MISS", "MISS"))[0] == "OK"
+    monkeypatch.setattr(p3, "G5_BLIND_SPOTS", {"beacon": "a Security record (test only)"})
+    status, got = p3.control_status(case, _plant_receipt("plant_beacon", "caught", "MISS"))
+    assert status == "OK" and got["g5_blind_spot"] == {"kind": "beacon", "named_by": "a Security record (test only)"}
+
+
+def test_g5q_full_qualification_needs_every_plant_kind_caught_on_every_engine_that_ran(monkeypatch, tmp_path):
+    plan = {}
+
+    async def control(args, case, out, tmp, ip, latch):
+        x = {"case": case["case"], "status": plan.get("status", "OK") if case.get("plant") else "OK"}
+        if case.get("plant"):
+            x["gate_plant"] = {"plant": case["variant"], "engines": {e: {"result": v} for e, v in plan["g5"].items()}}
+        return x
+
+    monkeypatch.setattr(p3, "CONTROLS", [p3._case("P3-CLEAN", "clean", p3.CLEAN, p3.CLEAN),
+                                         p3._case("P3-PLANT-BEACON", "plant_beacon", p3.CLEAN, p3.CLEAN, plant=True)])
+    monkeypatch.setattr(p3, "run_control", control)
+    monkeypatch.setattr(p3.fs, "serve_ip", lambda *a: "100.110.162.4")
+
+    def run(name, **kw):
+        plan.clear()
+        plan.update(kw)
+        args = SimpleNamespace(only="", browser="fake:", serve_ip="100.110.162.4")
+        code = asyncio.run(p3.controls(args, tmp_path / name))
+        return code, json.loads((tmp_path / name / "controls.json").read_text())
+
+    code, s = run("caught", g5={"chromium": "caught", "webkit": "caught"})
+    assert code == 0 and s["all_ok"] and s["full_qualification"] and s["g5_gaps"] == []
+    assert s["g5"] == {"P3-PLANT-BEACON": {"chromium": {"result": "caught"}, "webkit": {"result": "caught"}}}
+    code, s = run("miss", g5={"chromium": "caught", "webkit": "MISS"})  # even if a status said OK
+    assert s["all_ok"] and not s["full_qualification"]
+    assert s["g5_gaps"] == ["P3-PLANT-BEACON (beacon): chromium caught, webkit MISS"]
+    code, s = run("chromium_only", g5={"chromium": "caught", "webkit": "NOT RUN"})
+    assert s["full_qualification"] and s["g5_gaps"] == []  # caught on every engine that ran
+    code, s = run("none_ran", g5={"chromium": "NOT RUN", "webkit": "NOT RUN"})
+    assert not s["full_qualification"] and s["g5_gaps"] == ["P3-PLANT-BEACON (beacon): no engine ran it"]
+    code, s = run("gap", g5={"chromium": "not exercised", "webkit": "caught"}, status="NOT EXERCISED")
+    assert code == 1 and not s["all_ok"] and not s["full_qualification"] and s["counts"]["NOT EXERCISED"] == 1
+    monkeypatch.setattr(p3, "G5_BLIND_SPOTS", {"beacon": "a Security record (test only)"})
+    code, s = run("blind", g5={"chromium": "caught", "webkit": "MISS"})
+    assert code == 0 and s["full_qualification"] and s["g5_blind_spots"] == {"beacon": "a Security record (test only)"}
 
 
 # ---------------------------------------------------------------- the controls' fixture server

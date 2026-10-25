@@ -24,14 +24,15 @@ def _origin(url: str) -> tuple:
 
 def exact_key(url: str) -> tuple:
     """Security G3: a plant URL matches only exactly: scheme, host, port (defaults filled in), path and query
-    (a planted URL has none; an added query is not the plant). The fragment is never sent."""
+    (a planted URL has none; an added query is not the plant). The fragment is never sent. Security #105 G3-a:
+    the userinfo is part of the key, so a URL with a user name or password (even an empty one) is never a plant."""
     try:
         p = urllib.parse.urlsplit(url)
         scheme = p.scheme.lower()
         port = p.port if p.port is not None else {"http": 80, "ws": 80, "https": 443, "wss": 443}.get(scheme)
     except (ValueError, TypeError, AttributeError):
         return None  # never equal to a plant's key: an unreadable URL is never a catch
-    return scheme, p.hostname, port, p.path or "/", p.query
+    return scheme, p.hostname, port, p.path or "/", p.query, p.username, p.password
 
 
 @dataclass

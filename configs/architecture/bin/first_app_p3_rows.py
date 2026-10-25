@@ -803,11 +803,13 @@ ROWS_JS = r"""
     const r = {op: a.op, method, hold_ms: null, visible_ms: null, max_poll_gap_ms: null, polls: 0, aria_busy: false,
       after_attribution: null, requests: null};
     let holdStart = null; let holdEnd = null;
-    const match = (url) => url.pathname.startsWith('/api/items');
+    // Security #105 R-1: only this origin's list, and pass-through by fallback(), so a control's context abort
+    // route still sees every request this route does not hold.
+    const match = (url) => url.origin === ORIGIN && url.pathname.startsWith('/api/items');
     const handler = async (route) => {
-      if (route.request().method() !== method || holdStart !== null) return route.continue();
+      if (route.request().method() !== method || holdStart !== null) return route.fallback();
       holdStart = Date.now(); await new Promise(res => setTimeout(res, a.hold_ms)); holdEnd = Date.now();
-      try { await route.continue(); } catch (e) { r.continue_error = String(e && e.message || e).slice(0, 200); }
+      try { await route.fallback(); } catch (e) { r.continue_error = String(e && e.message || e).slice(0, 200); }
     };
     await p.route(match, handler);
     try {
@@ -912,8 +914,8 @@ ROWS_JS = r"""
     if (a.do === 'held') return p3.held(u, a);
     if (a.do === 'watch_live') return p3.watchLive(u);
     if (a.do === 'abort_list') {
-      u.aborted = 0; const match = (url) => url.pathname === '/api/items';
-      const handler = (route) => { if (route.request().method() !== 'GET') return route.continue();
+      u.aborted = 0; const match = (url) => url.origin === ORIGIN && url.pathname === '/api/items';  // R-1
+      const handler = (route) => { if (route.request().method() !== 'GET') return route.fallback();
         u.aborted++; return route.abort('failed'); };
       await p.route(match, handler); u.abortRoute = {match, handler}; return null;
     }

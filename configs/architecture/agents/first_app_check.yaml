@@ -24,8 +24,12 @@
 # contexts and WebKit phone contexts (390x844, touch; the second browser service, default
 # http://playwright-mcp-webkit:8931/mcp) on a second, fresh copy of the build. WebKit runs only with a W1
 # engine-image reading before and after and W1 admission; otherwise its rows are NOT RUN, never PASS. Host rows
-# go only through #126's ops_host_client (BLOCKED until that wire is received); W4 (an unexpected off-origin
-# request) exits 4 and holds every later WebKit run for Security.
+# go only through #126's ops_host_client (BLOCKED until that wire is received). W4: an off-origin request that isn't
+# a declared plant stops the batch (exit 4, nothing further runs in that invocation); the request list goes to
+# Security and work resumes once the cause is known. That cross-run hold is an operator rule (DECISION-9 (b)): the
+# checker refuses no later run for it. Before its first browser call each run (and each control case) writes a
+# create-once started.json beside its receipt.json; a run that ends without a final receipt.json counts as a failed
+# teardown, and W1 admission refuses its services until Ops' W2 recreation (Security #105 A6).
 #   mode=controls_p3: its controls on a synthetic Project-3-style page and two servers (fixtures/p3_app).
 #   mode=live with a profile holding "journey_p3": the served build. Up to 3500 s.
 # Writes check/ in the workspace: receipt.json + summary.md (+ after-reload.png for the first app), or one folder per

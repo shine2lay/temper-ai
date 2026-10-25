@@ -1,4 +1,4 @@
-# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125)
+# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125), Security #105 fixes (#279)
 
 Source work only. No browser, controller, host operation, network plant, qualification or run permission.
 Accountable lead: Architecture. Security's a217ee1c review remains CHANGES until its new exact-pin reply.
@@ -49,15 +49,24 @@ Selected-only controls can succeed as a subset, but full_qualification is false 
 control is OK. No expected-destination exemptions exist in this source; future network plants
 need their own exact-pin source approval and exact-URL/per-kind witnesses.
 
-A caller seeing W4 TRIPPED must stop all further P3 controls/build browser use and use the existing
-native queue_blocked hold: lead=security, need/owes naming the unresolved private receipt/run,
-source/import/fixture pins, browser image/container/StartedAt pins, and affected scope; name the
-related Security task and next checkpoint when known. Send Security a new exact-pin request.
-Keep that unresolved receipt and pins in the native task across restart and any later invocation.
-Only Security's explicit reply bound to that receipt, pins and scope releases it. No timeout,
-restart, earlier GO or new case/CLI invocation releases it. No file grants clearance; no profile,
-CLI bypass or automatic resume exists. This invocation-local latch is not cross-process authority.
-These tests manufacture no real W4 receipt and request no release of a real hold.
+Gate-plant controls (Security #105 G5-Q): a plant control is OK only when its plant is caught on
+every engine that ran. A MISS is WRONG. Not exercised on an engine that ran (or no G5 result at all)
+is NOT EXERCISED: the case's gap names the plant, its kind and the engines, and it is never OK.
+full_qualification is also false unless every plant kind is caught on every engine that ran, or
+Security has named the kind a blind spot (G5_BLIND_SPOTS in first_app_p3.py: a code constant, empty
+now). all_ok follows the case statuses; summary g5 per kind stays, with g5_gaps beside it. DNS-only
+lookups are a stated residual, not a plant kind.
+
+W4 (DECISION-9 (b); Security #105 W4-X): an off-origin request that isn't a declared plant endpoint
+stops the batch. The invocation exits 4 and runs nothing further (no later engine, probe or case).
+Keep the request list (the receipt's w4 observations and observations.json) and send it to Security;
+work resumes once the cause is known. Holding later runs is an operator rule, not a checker
+refusal: W1 admission does not read an earlier receipt's W4 status, and there is no release record,
+clearance file, profile key, CLI bypass or automatic resume. The older receipt-bound release wording
+(only Security's reply bound to that receipt releases it) is dropped; the receipt's operator_hold
+text (first_app_p3_guard.HOLD) still carries it, and DECISION-9 (b) supersedes it. This
+invocation-local latch is not cross-process authority. These tests manufacture no real W4 receipt
+and request no release of a real hold.
 
 Unconfirmed browser/probe/server disposal is BLOCKED and prevents the next engine/case.
 Receipts and exact event observation lists are exclusively created regular 0600 files, without
@@ -90,6 +99,16 @@ the receipt's top-level list) records mcp_service_recreation_required = {service
 enforcer, required_receipt}: that browser service is in an unknown state and needs Ops' reviewed W2
 recreation (new container id and StartedAt, receipts to Security) before any further P3 use. The W1
 admission refusal below enforces this across invocations.
+
+A run that ends without a final receipt (Security #105 A6). Before a unit's first MCP call (a live
+run; each control case), the checker writes started.json beside where that unit's receipt.json will
+go: created once, 0600, fsync'd, naming the MCP service URLs and phases it is about to contact (both
+engines' services, since WebKit may follow). The checker never deletes or rewrites it, and adds no
+signal handler or timeout, so a SIGKILL leaves it too. If it cannot be written, no MCP call is made
+(BLOCKED). A P3 run, live or controls, that ends without a final receipt.json (killed, timed out,
+crashed, its container or Temper stopped) counts as a failed teardown: the services its marker names
+are recreation-required, exactly as if browser_close had failed, and the marker makes W1 admission
+enforce it.
 
 ### N1 (#125, Security's source GO note on ecd4cf2b): nothing between CLOSE and browser_close raises
 
@@ -130,6 +149,16 @@ no store of its own, and the checker gets no network or docker access for it.
 An unreadable, partial, non-JSON or malformed receipt, a symlink anywhere on the path, a missing
 receipts root or more than 5000 receipts -> BLOCKED. The result is recorded in the receipt under
 admission[service URL].
+
+Started markers (A6) are uses too. A started.json with no receipt.json beside it is held like a
+recreation entry for every service it names, timed by its started_at in the newest-use rule: only a
+later P3 receipt for the service, or W2 evidence newer than the marker (a container started after it;
+a before record taken after it), lets the service in. A marker whose content is malformed holds every
+service, timed by its file's modification time, and is never treated as unused; a marker that is not
+a regular file, is oversize or unreadable -> BLOCKED. Beside its receipt, a marker is only checked to
+be a regular file: the receipt decides. The unit's own marker (admission is asked again before the
+WebKit probe) is not an earlier run and is skipped by its exact path. Markers without a receipt are
+listed under admission[service URL].unfinished_markers.
 
 Until the W1 engine-image reading is wired (the W-IMG operation, owed by Ops), WebKit after a
 recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 match cannot be shown.
@@ -190,14 +219,22 @@ recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 mat
   (GATE_PLANTS: dedicated worker, WebSocket, EventSource, beacon, redirect, prefetch; literal *.invalid
   hosts in the served app.js; the redirect is the fixture server's fixed /plant-redirect route, 302 to
   https://redirect.invalid/r, served only in that copy). StopLatch.observe records an exact match
-  (scheme, host, port with defaults, path, query) in gate_catches; anything else off the origin trips W4.
-  Builds and the other controls pass no list. In control runs a context.route aborts every off-origin
-  http(s) request before it leaves and logs it as a second witness (log.aborted); a plant counts as
-  caught only from the gate's own event record (G2). Builds never get the route. G5 per engine: caught,
-  MISS (the page marked it sent, or the abort route saw it, and the gate did not) or not exercised (the
-  engine lacks the feature). WebSocket attempts are not routable without an in-page shim, so in control
-  runs they reach DNS for the .invalid host and fail there. Context routing also turns off the HTTP cache
-  in control runs: a known difference from build runs.
+  (scheme, host, port with defaults, path, query, and no user name or password: a URL with userinfo is
+  never a plant, Security #105 G3-a) in gate_catches; anything else off the origin trips W4.
+  Builds and the other controls pass no list. In control runs a context.route aborts the off-origin
+  http(s) requests it is handed and logs them as a second witness (log.aborted); a plant counts as
+  caught only from the gate's own event record (G2). Builds never get the route. The route does not see
+  everything (Security #105 DOC-R): Playwright calls route handlers only for the first URL of a redirect
+  chain, so the 302 hop to https://redirect.invalid/r is not routed, and WebSockets are not routable
+  without an in-page shim (there is none). So in controls the redirect and WebSocket plants are not
+  aborted: they reach DNS for their fixed .invalid names. Report it as "DNS lookup expected; not zero
+  egress". If a resolver answers anyway, TLS validation fails before any request or upgrade (no
+  ignoreHTTPSErrors). Plants stay https/wss and controls-only; any other origin is W4. G5 per engine:
+  caught, MISS (the page marked it sent, or the abort route saw it, and the gate did not) or not
+  exercised (the engine lacks the feature). The rows' own page routes (held writes, the list abort)
+  match only the build's origin and pass everything else on with route.fallback(), so they never take a
+  request away from the context abort route (Security #105 R-1). Context routing also turns off the
+  HTTP cache in control runs: a known difference from build runs.
 - The fixture server serves only the literal STATIC map (/, /index.html, /style.css, /app.js,
   /favicon.svg), GET /api/items and the API writes, plus /plant-redirect in its own copy: no listing, no
   symlinks, nothing else. It binds on the docker network for the run only. Each control case runs two
@@ -214,7 +251,8 @@ recorded recreation stays BLOCKED even with a valid W2 receipt: the fresh W1 mat
   refusal above is in source; the before/after engine-image readings wait on Ops' W-IMG operation.
 - W2: separate hardening source approval and actual recreation/configuration receipt.
 - W3: Security's NEW exact-pin review; actual hosting/confinement and disposal evidence.
-- W4: actual event observations and native Security hold/release when tripped, not a generic FAIL.
+- W4: actual event observations; when tripped, the batch stops and the request list goes to Security
+  (an operator rule, DECISION-9 (b)), not a generic FAIL.
 - G1–G5: approved constant .invalid network plants, exact expected versus extra destinations,
   independent event witnesses, per-kind caught/MISS/not-exercised and blind spots. DNS-only
   traffic and worker/network-kind coverage are not claimed by source or fake tests.
@@ -267,3 +305,11 @@ judges raised on a non-object observation; judge() now turns any unreadable obse
 ignored (killed), the Hebrew item's rtl check dropped (survived at first: the test only flipped the
 Arabic item; it now flips each on its own; killed). A separate stage script checks every literal against
 QA's spec and Product's FINAL byte for byte (161 checks) and caught all four planted mismatches.
+
+#279, Security #105 fixes (hypotheses H-279-A6, -G5Q, -R1, -G3a, -W4X, -DOCR, written before the code;
+record /home/shinelay/architecture-dept/reviews/p3-security-105-fixes/): 25 new fixed cases, fakes and
+Node only (A6 18, G5-Q 2, G3-a 4, R-1 1); the six P3/shared test files passed 458/458 in one run, with
+no existing test or assertion changed. Bites: the A6 fix disabled (no marker written, markers not read)
+failed 17 of its 18 cases (the marker-beside-its-receipt clean case passes either way); G5-Q disabled
+failed both of its cases; G3-a and R-1 reverted to the base lines failed theirs (4 and 1). Each was
+restored byte for byte (sha256 checked). Served fixture bytes are unchanged.

@@ -19,7 +19,7 @@ import pytest
 
 import temper_ai.agent as agents
 from temper_ai.agent import single_call_agent as single_call
-from temper_ai.llm import providers
+from temper_ai.llm import providers, token_pool
 from temper_ai.llm.providers import anthropic, factory, openai
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage import agent_node, dispatch_validation
@@ -33,7 +33,17 @@ from temper_ai.stage.stage_node import StageNode
 assert dispatch_validation.validate_dispatch_block
 
 
-def _fixed_agent():
+# An intentionally nonexistent opaque token NAME: kept as data, never resolved.
+A_TOKEN = "offline-nonexistent-token-name"
+
+
+def _fixed_agent(family="B"):
+    if family == "A":
+        agent = _fixed_agent("B")
+        agent.update(provider="anthropic", model="claude-opus-5-5")
+        agent["single_call"].update(slot="A1", family="A", route="anthropic-oauth-named-token",
+                                    output_bound_mode="request_limit", token=A_TOKEN)
+        return agent
     return {
         "name": "fixed-agent",
         "type": "single_call",
@@ -113,6 +123,12 @@ def offline(monkeypatch):
             (factory, "create_provider"),
             (providers, "create_provider"),
             (anthropic, "resolve_credential"),
+            (anthropic, "named_tokens_from_env"),
+            (anthropic.AnthropicLLM, "check_token"),
+            (anthropic.AnthropicLLM, "_named_token"),
+            (token_pool, "named_tokens_from_env"),
+            (token_pool, "tokens_from_env"),
+            (token_pool.TokenPool, "__init__"),
             (openai, "resolve_credential"),
             (anthropic.AnthropicLLM, "__init__"),
             (openai.OpenAILLM, "__init__"),
@@ -160,13 +176,22 @@ def _load(store):
     return leaf
 
 
-def test_load_workflow_complete_one_stage_one_single_call_has_exact_mapping_and_node_defaults(offline):
-    """Combined whole-feature happy path; separation-removal mutation bite."""
-    expected = _fixed_agent()
+FAMILIES = pytest.mark.parametrize("family", ["B", "A"], ids=["B19", "A20"])
+
+
+@FAMILIES
+def test_load_workflow_complete_one_stage_one_single_call_has_exact_mapping_and_node_defaults(family, offline):
+    """Combined whole-feature happy path; separation-removal mutation bite.
+
+    B1 has the 19 required fixed keys and no optional key. A1 has the same 19
+    plus its route's named token, kept unchanged as an unresolved name.
+    """
+    expected = _fixed_agent(family)
     assert set(expected) == {"name", "type", "provider", "model", "single_call"}
-    assert len(expected["single_call"]) == 19
-    assert set(expected["single_call"]) == single_call.SINGLE_CALL_REQUIRED
-    store = _Store()
+    fixed_keys = set(single_call.SINGLE_CALL_REQUIRED) | ({"token"} if family == "A" else set())
+    assert len(single_call.SINGLE_CALL_REQUIRED) == 19
+    assert set(expected["single_call"]) == fixed_keys and len(fixed_keys) == {"B": 19, "A": 20}[family]
+    store = _Store(agent=expected)
     with offline():
         leaf = _load(store)
         assert leaf.agent_config == expected
@@ -176,9 +201,13 @@ def test_load_workflow_complete_one_stage_one_single_call_has_exact_mapping_and_
         assert leaf.config.gate is False
         assert leaf.config.timeout_seconds is None
         assert store.agent == expected
+        if family == "A":
+            assert leaf.agent_config["single_call"]["token"] == A_TOKEN
+            assert "token" not in leaf.agent_config
 
 
-def test_explicit_node_policies_stay_on_node_not_in_closed_single_call_mapping(offline):
+@FAMILIES
+def test_explicit_node_policies_stay_on_node_not_in_closed_single_call_mapping(family, offline):
     policies = {
         "depends_on": [], "condition": {"source": "only-agent.structured.ok", "operator": "equals", "value": True},
         "loop_to": "only-agent", "max_loops": 3,
@@ -191,16 +220,17 @@ def test_explicit_node_policies_stay_on_node_not_in_closed_single_call_mapping(o
         "outputs": {"answer": "string"},
     }
     with offline():
-        leaf = _load(_Store(node=policies))
-        assert leaf.agent_config == _fixed_agent()
+        leaf = _load(_Store(agent=_fixed_agent(family), node=policies))
+        assert leaf.agent_config == _fixed_agent(family)
         for key, value in policies.items():
             assert getattr(leaf.config, key) == value
 
 
+@FAMILIES
 @pytest.mark.parametrize("origin", ["agent", "defaults", "overrides"])
-def test_unknown_outer_key_is_refused_not_dropped_after_merging(origin, offline):
+def test_unknown_outer_key_is_refused_not_dropped_after_merging(origin, family, offline):
     """Closed-validation-removal mutation bite, at the final merged boundary."""
-    store = _Store()
+    store = _Store(agent=_fixed_agent(family))
     loader = GraphLoader(store)
     if origin == "agent":
         store.agent["unsupported_outer"] = True
@@ -220,25 +250,63 @@ def test_node_policy_key_misplaced_in_agent_is_refused_not_filtered(key, offline
         GraphLoader(store).load_workflow("offline-workflow")
 
 
-def test_unknown_fixed_key_is_refused_not_dropped(offline):
+@pytest.mark.parametrize("inner", [True, False], ids=["also-inside", "only-outside"])
+def test_family_a_token_outside_fixed_mapping_is_refused(inner, offline):
+    """The named token belongs inside single_call only; outside, it is refused, never moved."""
+    store = _Store(agent=_fixed_agent("A"))
+    if not inner:
+        del store.agent["single_call"]["token"]
+    store.agent["token"] = A_TOKEN
+    with offline(), pytest.raises(ValidationError, match="single_call requires a closed fixed-input mapping"):
+        GraphLoader(store).load_workflow("offline-workflow")
+
+
+@pytest.mark.parametrize("case", ["missing", "empty", "int", "none", "b-with-token"])
+def test_family_token_rules_stay_with_the_existing_runtime_contract(case, offline):
+    """Measured existing contract, not a clean case.
+
+    The config-only validator checks key sets, so load keeps an A mapping
+    without a usable token (or a B mapping with one) exactly as written:
+    nothing dropped, coerced or defaulted, and nothing resolved. The family
+    token rule is enforced by the runtime validator before any send
+    (tests/test_single_call_agent.py::test_preflight_denials_send_zero[token-A]
+    and [token-B]); the loader adds no token policy of its own.
+    """
+    store = _Store(agent=_fixed_agent("B" if case == "b-with-token" else "A"))
+    fixed = store.agent["single_call"]
+    if case == "b-with-token":
+        fixed["token"] = A_TOKEN
+    elif case == "missing":
+        del fixed["token"]
+    else:
+        fixed["token"] = {"empty": "", "int": 7, "none": None}[case]
+    written = deepcopy(store.agent)
+    with offline():
+        assert _load(store).agent_config == written
+
+
+@FAMILIES
+def test_unknown_fixed_key_is_refused_not_dropped(family, offline):
     """Closed-validation-removal mutation bite for nested unsupported keys."""
-    store = _Store()
+    store = _Store(agent=_fixed_agent(family))
     store.agent["single_call"]["unsupported_fixed"] = True
     with offline(), pytest.raises(ValidationError, match="Node 'only-agent': single_call has missing or unsupported fixed inputs"):
         GraphLoader(store).load_workflow("offline-workflow")
 
 
+@FAMILIES
 @pytest.mark.parametrize("key", sorted(single_call.SINGLE_CALL_REQUIRED))
-def test_each_required_fixed_key_is_required_by_load_workflow(key, offline):
-    store = _Store()
+def test_each_required_fixed_key_is_required_by_load_workflow(key, family, offline):
+    store = _Store(agent=_fixed_agent(family))
     del store.agent["single_call"][key]
     with offline(), pytest.raises(ValidationError, match="single_call has missing or unsupported fixed inputs"):
         GraphLoader(store).load_workflow("offline-workflow")
 
 
+@FAMILIES
 @pytest.mark.parametrize("key", ["provider", "model"])
-def test_missing_explicit_provider_or_model_is_refused_without_resolution(key, offline):
-    store = _Store(defaults={key: "placeholder-default"})
+def test_missing_explicit_provider_or_model_is_refused_without_resolution(key, family, offline):
+    store = _Store(agent=_fixed_agent(family), defaults={key: "placeholder-default"})
     del store.agent[key]
     with offline(), pytest.raises(ValidationError, match="single_call requires an explicit provider and model"):
         GraphLoader(store).load_workflow("offline-workflow")

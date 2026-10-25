@@ -1,6 +1,7 @@
 """Known-answer stages, SQLite and isolated Postgres5455; no workflow/model calls."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
 import logging
@@ -10,6 +11,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import String, cast, func, literal, text, update
@@ -32,6 +34,8 @@ VALUES = {"provider": "provider-v1", "model": "model-v1", "prompt_tokens": 10,
 @pytest.fixture(autouse=True)
 def bounded_fixture(monkeypatch, _test_db):
     monkeypatch.setenv("TEMPER_USAGE_RECONCILER", "1")
+    # Most cases here judge the cutover itself; the switch's own tests clear it.
+    monkeypatch.setenv("TEMPER_USAGE_CUTOVER", "1")
     reconcile._stop.clear()
     monkeypatch.setattr(reconcile, "BATCH_PAUSE_SECONDS", 0)
     monkeypatch.setattr(reconcile, "_last_blocker_report", None)
@@ -1108,9 +1112,11 @@ QUIET = AFTER + reconcile.QUIET_WINDOW + timedelta(minutes=1)
 
 
 def execution(execution_id, *, row=None, starts=(), events=()):
-    """One fixed execution: its run row status (None: no row), start events (time, status), other events."""
-    for at, status in starts:
-        start = old({}, at=at, kind="workflow.started", execution_id=execution_id)
+    """One fixed execution: its run row status (None: no row), start events (time, status[, event id]),
+    other events."""
+    for at, status, *event_id in starts:
+        start = old({}, at=at, kind="workflow.started", execution_id=execution_id,
+                    event_id=event_id[0] if event_id else None)
         with get_session() as session:
             session.get(Event, start.id).status = status
     for at in events:
@@ -1248,7 +1254,7 @@ def test_row_open_pins_the_ended_set_and_null(status, blocks):
     assert reconcile.TERMINAL == ("completed", "failed", "cancelled", "interrupted")
 
 
-def test_carried_on_constant_matches_parked_claim_without_a_runtime_import():
+def test_carried_on_constant_matches_parked_claim():
     from temper_ai.runner.parked import CARRIED_ON
     assert reconcile.CARRIED_ON == CARRIED_ON == "parked"
 
@@ -1337,8 +1343,8 @@ BARRIER_GUARDS = {  # guard: function, its text, the text with the guard taken o
                            "ended-row-resumed-in-process", QUIET),
     "start-begun-before": (reconcile._cutover_blockers, "began_before(opened.c.execution_id), latest_open",
                            "True, latest_open", "post-cutover-open-start", QUIET),
-    "start-latest": (reconcile._cutover_blockers, "~exists(sql_select(1).where(col(later.execution_id)",
-                     "~exists(sql_select(1).where(False, col(later.execution_id)", "no-row-carried-on", QUIET),
+    "start-latest": (reconcile._cutover_blockers, "parked.latest_start_condition(start.execution_id, start)",
+                     "True", "no-row-carried-on", QUIET),
     "start-latest-open": (reconcile._cutover_blockers, '"workflow.started", start_open(start),',
                           '"workflow.started", True,', "no-row-carried-on", QUIET),
     "dead-carry-on-exemption": (reconcile._cutover_blockers, "~dead_carry_on(start),", "True,",
@@ -1372,3 +1378,482 @@ def test_barrier_guards_have_individual_bites(monkeypatch, guard):
     assert blocking_rules(now) == expected
     mutate_function(monkeypatch, function, before, after)
     assert blocking_rules(now) != expected
+
+
+# --- #126 A3 on S1 (AMENDMENT.md C-1, C-3) --------------------------------------------------
+
+class recorded_statements:  # noqa: N801 - reads like the context manager it is
+    """The SQL text this engine sends inside the block (statements only, never parameters)."""
+
+    def __enter__(self):
+        self.statements = []
+        sa_event.listen(get_database().engine, "before_cursor_execute", self._record)
+        return self.statements
+
+    def __exit__(self, *exc):
+        sa_event.remove(get_database().engine, "before_cursor_execute", self._record)
+
+    def _record(self, conn, cursor, statement, parameters, context, executemany):
+        self.statements.append(statement)
+
+
+T10_SHAPES = ("running-row", "no-row-latest-parked", "ended-row-latest-parked")
+
+
+def barrier_statements():
+    """The barrier's answer and the SQL statements that read run rows while it was made."""
+    with recorded_statements() as statements, get_session() as session:
+        report = reconcile._cutover_blockers(session, NOW, QUIET)
+    answer = {execution_id: rule for execution_id, rule, _ in report["first"]}
+    return answer, [s for s in statements if WorkflowRun.__table__.name in s], statements
+
+
+def test_t10_rules_one_and_two_are_read_in_one_statement():
+    """T10: the run row (rule 1) and the latest starts (rule 2) are judged in ONE statement,
+    one snapshot; only the separate anonymous-start check is a second statement."""
+    for name in T10_SHAPES:
+        execution(name, **SHAPES[name])
+    answer, run_reads, statements = barrier_statements()
+    assert answer == {"running-row": 1, "no-row-latest-parked": 2}
+    assert len(run_reads) == 1 and Event.__table__.name in run_reads[0]
+    assert len(statements) == 2
+
+
+SPLIT_READ = (  # B4: rule 1 read by its own statement, its answers fed back as literals
+    "held = union_all(by_row, by_start, by_activity).subquery()",
+    "row_rows = session.execute(by_row).all()\n"
+    "    held = union_all(*[sql_select(literal(r[0]).label('execution_id'), literal(1).label('rule'),"
+    " literal(r[2], String).label('row_status')) for r in row_rows], by_start, by_activity).subquery()",
+)
+
+
+def test_t10_bite_b4_split_statement_keeps_answers_but_fails_one_snapshot(monkeypatch):
+    for name in T10_SHAPES:
+        execution(name, **SHAPES[name])
+    mutate_function(monkeypatch, reconcile._cutover_blockers, *SPLIT_READ)
+    answer, run_reads, _ = barrier_statements()
+    assert answer == {"running-row": 1, "no-row-latest-parked": 2}  # the same answers
+    assert len(run_reads) == 2  # T10's one-statement check fails
+
+
+def frozen_at(clock: str) -> datetime:
+    """The frozen cases' wall times (barrier-claim-cases.json) moved onto this table: T = NOW sits at
+    11:00, so a 10:00 start is before T, 17:00's quiet-window lease is 13:00 and lies after T."""
+    hours, minutes, *rest = clock.split(":")
+    seconds = float(rest[0]) if rest else 0.0
+    return NOW + timedelta(hours=int(hours) - 11, minutes=int(minutes), seconds=seconds)
+
+
+LEASE = frozen_at("13:00")
+FROZEN = {  # case id (cases/barrier-claim-cases.json, sha256 80f0a983...): shape, observed at, rule or None
+    "C05c-in-process-resume-under-ended-row": (
+        {"row": "failed", "starts": [(frozen_at("10:00"), "failed"), (frozen_at("16:00"), "running")]},
+        frozen_at("17:00"), 2),
+    "C06a-tie-parked-and-waiting": (
+        {"row": "orphaned", "starts": [(frozen_at("10:00"), "parked", "c06a-z-parked"),
+                                     (frozen_at("10:00"), "waiting", "c06a-a-waiting")],
+         "events": [frozen_at("10:30")]}, frozen_at("17:00"), 2),
+    "C06b-tie-parked-and-running": (
+        {"row": "orphaned", "starts": [(frozen_at("10:00"), "parked", "c06b-z-parked"),
+                                     (frozen_at("10:00"), "running", "c06b-a-running")],
+         "events": [frozen_at("10:30")]}, frozen_at("17:00"), 2),
+    "C06c-tie-parked-and-failed-ended-row": (
+        {"row": "failed", "starts": [(frozen_at("10:00"), "parked", "c06c-z-parked"),
+                                   (frozen_at("10:00"), "failed", "c06c-a-failed")],
+         "events": [frozen_at("10:30")]}, frozen_at("17:00"), None),
+    "C06d-tie-two-parked-no-row": (
+        {"starts": [(frozen_at("10:00"), "parked", "c06d-a"), (frozen_at("10:00"), "parked", "c06d-b")],
+         "events": [frozen_at("10:30")]}, frozen_at("17:00"), 2),
+    "C07a-fresh-activity-on-dead-claim-shape": (
+        {"row": "failed", "starts": [(frozen_at("10:00"), "parked")], "events": [frozen_at("14:00")]},
+        frozen_at("17:00"), 3),
+    "C07b-activity-exactly-at-lease": (
+        {"row": "failed", "starts": [(frozen_at("10:00"), "parked")], "events": [LEASE]},
+        frozen_at("17:00"), 3),
+    "C07c-activity-just-before-lease": (
+        {"row": "failed", "starts": [(frozen_at("10:00"), "parked")],
+         "events": [LEASE - timedelta(microseconds=1)]}, frozen_at("17:00"), None),
+    "C08a-api-claim-with-no-row": (
+        {"starts": [(frozen_at("10:00"), "parked")], "events": [frozen_at("10:30")]}, frozen_at("17:00"), 2),
+    # A dead claim one second old: the barrier reads no claim time, so dead history clears.
+    "K9c-same-state-claimant-dead-pre-repair": (
+        {"row": "orphaned", "starts": [(frozen_at("10:00"), "parked")], "events": [frozen_at("10:30")]},
+        frozen_at("12:45"), None),
+}
+
+
+def frozen_answer(name):
+    shape, now, _ = FROZEN[name]
+    execution(name, **shape)
+    return blocking_rules(now)
+
+
+@pytest.mark.parametrize("name", sorted(FROZEN))
+def test_t11_frozen_barrier_cases_known_answers(name):
+    """T11: the parent plan's frozen cases, each alone, at its own database clock."""
+    assert reconcile.QUIET_WINDOW == frozen_at("17:00") - LEASE
+    rule = FROZEN[name][2]
+    assert frozen_answer(name) == ({name: rule} if rule else {})
+
+
+LIVENESS = sorted(name for name, (shape, _, rule) in FROZEN.items()
+                  if rule is None and any(status == "parked" for _, status, *_ in shape["starts"]))
+
+
+@pytest.mark.parametrize("name", LIVENESS)
+def test_t11_bite_b8_without_dead_carry_on_exemption_liveness_rows_block(monkeypatch, name):
+    assert LIVENESS == ["C06c-tie-parked-and-failed-ended-row", "C07c-activity-just-before-lease",
+                        "K9c-same-state-claimant-dead-pre-repair"]
+    mutate_function(monkeypatch, reconcile._cutover_blockers, "~dead_carry_on(start),", "True,")
+    assert frozen_answer(name) == {name: 2}
+
+
+def test_mf32_barrier_uses_s1_latest_start_definition_only():
+    """MF3.2: one definition of "latest start", S1's; the barrier keeps no copy of its own."""
+    from temper_ai.runner import parked
+
+    source = inspect.getsource(reconcile._cutover_blockers)
+    assert source.count("parked.latest_start_condition(start.execution_id, start)") == 1
+    assert source.count("aliased(Event)") == 1 and "> start.timestamp" not in source
+    assert reconcile.parked is parked
+
+
+def own_latest_breaking_ties_by_id(start):
+    """A drifted copy: ties broken by event id (what MF3.2 forbids)."""
+    from sqlalchemy import exists
+    from sqlalchemy.orm import aliased
+
+    later = aliased(Event)
+    return ~exists(sql_select(1).where(
+        col(later.execution_id) == start.execution_id, col(later.type) == "workflow.started",
+        (col(later.timestamp) > start.timestamp)
+        | ((col(later.timestamp) == start.timestamp) & (col(later.id) > start.id))))
+
+
+@pytest.mark.parametrize("name", ["C06a-tie-parked-and-waiting", "C06b-tie-parked-and-running"])
+def test_mf32_bite_own_latest_rule_breaking_ties_fails_tie_cases(monkeypatch, name):
+    monkeypatch.setattr(reconcile, "_own_latest", own_latest_breaking_ties_by_id, raising=False)
+    mutate_function(monkeypatch, reconcile._cutover_blockers,
+                    "parked.latest_start_condition(start.execution_id, start)", "_own_latest(start)")
+    assert frozen_answer(name) == {}  # the parked start wins the tie by id: dead history, passes
+    assert FROZEN[name][2] == 2
+
+
+def test_qg2_a2_attempts_before_and_after_the_boundary_each_counted_once(monkeypatch):
+    """QG2-A2-COUNT-ONCE: a1 began and ended before the boundary; after it E is re-queued
+    and a2 starts anew. a1's call counted once (reconciled), a2's once (live); neither twice."""
+    fixed_clock(monkeypatch)
+    execution("E", row="completed", starts=[(NOW - 2 * HOUR, "completed")])
+    a1_call = old(at=NOW - HOUR, execution_id="E")
+    for kind in reconcile.WRITER_KINDS:
+        reconcile.mark_ready(kind)
+    with get_session() as session:
+        assert reconcile.reconcile_batch(session) == 1
+        assert reconcile.reconcile_batch(session) == 0
+        assert reconcile.try_cutover(session)
+        session.execute(update(WorkflowRun).where(col(WorkflowRun.execution_id) == "E").values(status="running"))
+        session.commit()
+    a2_start = old({}, at=NOW + timedelta(minutes=1), kind="workflow.started", execution_id="E")
+    with get_session() as session:
+        session.get(Event, a2_start.id).status = "running"
+    a2_call = old(at=NOW + timedelta(minutes=2), execution_id="E")
+    capture(a2_call)
+    for _ in range(2):
+        with get_session() as session:
+            assert reconcile.reconcile_batch(session) == 0
+            assert reconcile.check_post_cutover(session) == 0
+            assert reconcile.coverage_state(session)["cutover_at"] == NOW
+    assert sorted((r.event_id, r.origin) for r in final_rows()) == sorted(
+        [(a1_call.id, "reconciled"), (a2_call.id, "live")])
+    with get_session() as session:
+        assert session.exec(select(func.count()).select_from(reconcile.UsageFault)).one() == 0
+
+
+SWITCH_VALUES = ((None, False), ("", False), (" ", False), ("0", False), ("false", False), ("true", False),
+                 ("TRUE", False), ("on", False), ("yes", False), ("01", False), ("1.0", False), (" 1 ", False),
+                 ("1 ", False), ("\t1", False), ("1\n", False), ("1", True))
+
+
+def switch_answers(monkeypatch):
+    """cutover_enabled() for every value above, then for "1" with the reconciler off."""
+    seen = []
+    for value, _ in SWITCH_VALUES:
+        if value is None:
+            monkeypatch.delenv("TEMPER_USAGE_CUTOVER", raising=False)
+        else:
+            monkeypatch.setenv("TEMPER_USAGE_CUTOVER", value)
+        seen.append(reconcile.cutover_enabled())
+    monkeypatch.setenv("TEMPER_USAGE_CUTOVER", "1")
+    monkeypatch.setenv("TEMPER_USAGE_RECONCILER", "0")
+    seen.append(reconcile.cutover_enabled())
+    return seen
+
+
+SWITCH_ANSWERS = [on for _, on in SWITCH_VALUES] + [False]
+
+
+def test_cutover_switch_is_on_only_for_exactly_one(monkeypatch):
+    """Fail-closed, one read: only the exact value "1"; whitespace, case and synonyms are off."""
+    assert SWITCH_ANSWERS.count(True) == 1
+    assert switch_answers(monkeypatch) == SWITCH_ANSWERS
+
+
+@pytest.mark.parametrize("loose", ['("TEMPER_USAGE_CUTOVER", "").strip() == "1"',
+                                   '("TEMPER_USAGE_CUTOVER", "").strip().lower() in ("1", "true", "on")',
+                                   '("TEMPER_USAGE_CUTOVER") != "0"', '("TEMPER_USAGE_CUTOVER") is not None'])
+def test_cutover_switch_exact_value_bites(monkeypatch, loose):
+    mutate_function(monkeypatch, reconcile.cutover_enabled, '("TEMPER_USAGE_CUTOVER") == "1"', loose)
+    assert switch_answers(monkeypatch) != SWITCH_ANSWERS
+
+
+def only_switch_observations(monkeypatch, guard=None):
+    """Every other condition allows the cutover (three kinds ready, no earlier execution open,
+    final lap clean and complete at the ready boundary); only the switch differs."""
+    fixed_clock(monkeypatch)
+    if guard:
+        mutate_function(monkeypatch, *SWITCH_GUARDS[guard])
+    old(at=NOW - timedelta(days=1))
+    execution("ended-before-T", row="completed", starts=[(NOW - HOUR, "completed")])
+    for kind in reconcile.WRITER_KINDS:
+        reconcile.mark_ready(kind)
+    seen = {}
+    with get_session() as session:
+        seen["laps"] = [reconcile.reconcile_batch(session), reconcile.reconcile_batch(session)]
+        seen["boundary"] = reconcile._ready_boundary(session)
+        seen["blockers"] = reconcile._cutover_blockers(session, NOW, NOW)
+        coverage = session.get(reconcile.UsageCoverage, 1, populate_existing=True)
+        seen["final_lap"] = (as_utc(coverage.lap_ready_at), coverage.lap_clean, coverage.lap_complete)
+    for value in ("0", "1"):
+        monkeypatch.setenv("TEMPER_USAGE_CUTOVER", value)
+        with get_session() as session:
+            recorded = reconcile.try_cutover(session)
+            checked = reconcile.check_post_cutover(session)
+            state = reconcile.coverage_state(session)
+            stored = session.get(reconcile.UsageCoverage, 1, populate_existing=True)
+            seen[value] = (recorded, checked, state["phase"], state["cutover_at"], as_utc(stored.cutover_at),
+                           stored.phase, sum(state["fault_counts"].values()))
+    return seen
+
+
+ONLY_SWITCH_ANSWER = {
+    "laps": [1, 0], "boundary": NOW, "blockers": {"executions": 0, "anonymous_open_start": False, "first": []},
+    "final_lap": (NOW, True, True),
+    "0": (False, 0, "cutover-off", None, None, "backfill", 0),  # off: no row, no fault, phase cutover-off
+    "1": (True, 0, "cutover", NOW, NOW, "cutover", 0),  # exactly "1": the cutover is written
+}
+
+
+def test_only_the_switch_stops_a_cutover_every_other_condition_allows(monkeypatch):
+    assert only_switch_observations(monkeypatch) == ONLY_SWITCH_ANSWER
+
+
+def cutover_switch_observations(monkeypatch, guard=None):
+    """Switch off from the start: fill and drain run, the barrier is never read. Then on, long
+    enough to record a cutover; then off again: the cutover is kept, nothing is faulted.
+    A guard is taken out after the clock and recorders are in place (the copy keeps them)."""
+    monkeypatch.delenv("TEMPER_USAGE_CUTOVER")
+    fixed_clock(monkeypatch)
+    barrier_reads = []
+    for name in ("_ready_boundary", "_earlier_execution_open"):
+        original = getattr(reconcile, name)
+        monkeypatch.setattr(reconcile, name,
+                            lambda *a, _o=original, _n=name, **k: barrier_reads.append(_n) or _o(*a, **k))
+    if guard:
+        mutate_function(monkeypatch, *SWITCH_GUARDS[guard])
+    old(at=NOW - timedelta(days=1))
+    capture(old(at=NOW - timedelta(minutes=1)), pending=True)
+    for kind in reconcile.WRITER_KINDS:
+        reconcile.mark_ready(kind)
+    seen = {}
+    with get_session() as session:
+        seen["filled"] = [reconcile.reconcile_batch(session), reconcile.reconcile_batch(session)]
+        seen["drained"] = reconcile.drain_pending(session)["drained"]
+        with recorded_statements() as statements:
+            seen["try"] = reconcile.try_cutover(session)
+            seen["post"] = reconcile.check_post_cutover(session)
+        seen["gated_sql"] = len(statements)
+        state = reconcile.coverage_state(session)
+        seen["off"] = (state["status"], state["phase"], state["cutover_switch"], state["cutover_at"])
+    seen["barrier_reads"] = list(barrier_reads)
+    monkeypatch.setenv("TEMPER_USAGE_CUTOVER", "1")
+    with get_session() as session:
+        while reconcile.reconcile_batch(session):
+            pass
+        seen["recorded"] = reconcile.try_cutover(session)
+    old(at=NOW + timedelta(seconds=1))  # an old-writer call after the cutover, no capture
+    monkeypatch.setenv("TEMPER_USAGE_CUTOVER", "0")
+    with get_session() as session:
+        with recorded_statements() as statements:
+            seen["post_kept"] = reconcile.check_post_cutover(session)
+        seen["post_kept_sql"] = len(statements)
+        seen["fill_after"] = reconcile.reconcile_batch(session)
+        state = reconcile.coverage_state(session)
+        seen["kept"] = (state["phase"], state["cutover_at"], sum(state["fault_counts"].values()))
+    return seen
+
+
+SWITCH_OFF_ANSWER = {
+    "filled": [1, 0], "drained": 1, "try": False, "post": 0, "gated_sql": 0,
+    "off": ("UNKNOWN", "cutover-off", "off", None), "barrier_reads": [], "recorded": True,
+    "post_kept": 0, "post_kept_sql": 0, "fill_after": 0, "kept": ("cutover-off", NOW, 0),
+}
+
+
+def test_cutover_switch_off_keeps_drain_and_fill_and_never_reads_the_barrier(monkeypatch):
+    assert cutover_switch_observations(monkeypatch) == SWITCH_OFF_ANSWER
+
+
+SWITCH_GUARDS = {  # guard: function, its text, the text with the guard taken out
+    "switch-ignored": (reconcile.cutover_enabled,
+                       'return enabled() and os.environ.get("TEMPER_USAGE_CUTOVER") == "1"',
+                       "return enabled()"),
+    "try-cutover": (reconcile.try_cutover, "if not cutover_enabled():", "if not enabled():"),
+    "final-lap": (reconcile._begin_lap, "_ready_boundary(session) if cutover_enabled() else None",
+                  "_ready_boundary(session)"),
+    "post-check": (reconcile.check_post_cutover, "if not cutover_enabled() or", "if not enabled() or"),
+    "phase": (reconcile.coverage_state, 'if switch else "cutover-off"', 'if True else "cutover-off"'),
+}
+
+
+@pytest.mark.parametrize("guard", sorted(SWITCH_GUARDS))
+def test_cutover_switch_guards_have_individual_bites(monkeypatch, guard):
+    assert cutover_switch_observations(monkeypatch, guard) != SWITCH_OFF_ANSWER
+
+
+@pytest.mark.parametrize("guard", ["switch-ignored", "try-cutover", "phase"])
+def test_only_switch_known_answer_bites(monkeypatch, guard):
+    assert only_switch_observations(monkeypatch, guard) != ONLY_SWITCH_ANSWER
+
+
+# Census: every site in the code that runs (temper_ai/, scripts/, configs/ and the files that
+# start processes) that runs or records a cutover, makes a post-cutover fault, touches the
+# coverage/fault tables by name or reads the switch. Docstrings are not sites.
+REPO = Path(__file__).resolve().parents[2]
+CENSUS_ROOTS = ("temper_ai", "scripts", "configs")
+CUTOVER_CALLS = frozenset({"try_cutover", "check_post_cutover"})
+CUTOVER_COLUMNS = frozenset({"cutover_at", "cutover_seq", "phase"})
+CUTOVER_TEXT = ("usage_coverage", "usage_faults", "post-cutover-missing-row", "TEMPER_USAGE_CUTOVER",
+                "try_cutover", "check_post_cutover")
+RECONCILE = "temper_ai/observability/usage_reconcile.py"
+
+
+def census_sources() -> dict[str, str]:
+    files = [path for root in CENSUS_ROOTS if (REPO / root).is_dir() for path in (REPO / root).rglob("*")
+             if path.is_file() and "__pycache__" not in path.parts]
+    files += [path for path in REPO.iterdir() if path.is_file() and path.name.startswith(
+        ("docker-compose", "compose", "Dockerfile", ".env"))]
+    sources = {}
+    for path in sorted(files):
+        try:
+            sources[str(path.relative_to(REPO))] = path.read_text()
+        except UnicodeDecodeError:
+            continue
+    return sources
+
+
+def scoped(node, scope="<module>"):
+    for child in ast.iter_child_nodes(node):
+        inner = scope
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            inner = child.name if scope == "<module>" else f"{scope}.{child.name}"
+        yield scope, child
+        yield from scoped(child, inner)
+
+
+def docstrings(tree):
+    return {id(body[0].value) for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and (body := node.body) and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)}
+
+
+def cutover_census(sources) -> set[tuple[str, str, str]]:
+    """(file, function or class, form) for each site; names and codes only."""
+    sites = set()
+    for path, source in sources.items():
+        if not path.endswith(".py"):
+            sites |= {(path, "<file>", f"text {word}") for word in CUTOVER_TEXT if word in source}
+            continue
+        tree = ast.parse(source, filename=path)
+        skip = docstrings(tree)
+        coverage_module = "UsageCoverage" in source or "usage_coverage" in source
+        for scope, node in scoped(tree):
+            if isinstance(node, ast.Name) and node.id in CUTOVER_CALLS:
+                sites.add((path, scope, f"uses {node.id}"))
+            elif isinstance(node, ast.alias) and node.name.rsplit(".", 1)[-1] in CUTOVER_CALLS:
+                sites.add((path, scope, f"imports {node.name}"))
+            elif isinstance(node, ast.Attribute) and node.attr in CUTOVER_CALLS:
+                sites.add((path, scope, f"uses {node.attr}"))
+            elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) and (
+                    node.attr in CUTOVER_COLUMNS - {"phase"} or (node.attr == "phase" and coverage_module)):
+                sites.add((path, scope, f"writes {node.attr}"))
+            elif isinstance(node, ast.keyword) and node.arg in CUTOVER_COLUMNS - {"phase"}:
+                sites.add((path, scope, f"keyword {node.arg}"))
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
+                sites |= {(path, scope, f"text {word}") for word in CUTOVER_TEXT if word in node.value}
+    return sites
+
+
+CUTOVER_SITES = {
+    (RECONCILE, "<module>", "text post-cutover-missing-row"),  # FAULT_CODES
+    (RECONCILE, "UsageCoverage", "text usage_coverage"),  # __tablename__
+    (RECONCILE, "UsageFault", "text usage_faults"),  # __tablename__
+    (RECONCILE, "UsageFault", "text post-cutover-missing-row"),  # CHECK constraint
+    (RECONCILE, "cutover_enabled", "text TEMPER_USAGE_CUTOVER"),  # the one read of the switch
+    (RECONCILE, "try_cutover", "writes cutover_at"),
+    (RECONCILE, "try_cutover", "writes cutover_seq"),
+    (RECONCILE, "try_cutover", "writes phase"),
+    (RECONCILE, "check_post_cutover", "text post-cutover-missing-row"),
+    (RECONCILE, "_sweep", "uses try_cutover"),  # the 60 s wake: the only caller of either
+    (RECONCILE, "_sweep", "uses check_post_cutover"),
+}
+
+
+def gated(source, name):
+    """The function's first statement after its docstring returns unless cutover_enabled()."""
+    function = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef)
+                    and node.name == name)
+    first = function.body[1] if ast.get_docstring(function) else function.body[0]
+    test = first.test if isinstance(first, ast.If) else None
+    return (isinstance(test, (ast.UnaryOp, ast.BoolOp)) and isinstance(first.body[0], ast.Return)
+            and "not cutover_enabled()" in ast.unparse(test) and not first.orelse)
+
+
+def census_holds(sources):
+    return (cutover_census(sources) == CUTOVER_SITES
+            and all(gated(sources[RECONCILE], name) for name in sorted(CUTOVER_CALLS)))
+
+
+def test_cutover_census_every_caller_and_writer_is_behind_the_switch():
+    """Off: nothing in this commit runs try_cutover or check_post_cutover except the wake loop,
+    whose callees each return first unless cutover_enabled(); only try_cutover writes the
+    cutover columns, only check_post_cutover makes the post-cutover fault, and no CLI, script,
+    config, compose or Docker file names the switch, the tables or the two functions."""
+    sources = census_sources()
+    assert RECONCILE in sources and "temper_ai/cli/watch_queue.py" in sources and "temper_ai/server.py" in sources
+    assert cutover_census(sources) == CUTOVER_SITES
+    assert census_holds(sources)
+
+
+CENSUS_BITES = {  # bite: file, its text, the text with a bypass or a missing gate
+    "cli-caller": ("temper_ai/cli/watch_queue.py", "from temper_ai.observability.usage_reconcile import mark_ready",
+                   "from temper_ai.observability.usage_reconcile import mark_ready, try_cutover"),
+    "script-sql": ("scripts/usage_feed_epoch.py", 'if __name__ == "__main__":',
+                   'SQL = "UPDATE usage_coverage SET phase = 1"\nif __name__ == "__main__":'),
+    "compose-env": ("docker-compose.yml", "services:", "# TEMPER_USAGE_CUTOVER\nservices:"),
+    "try-ungated": (RECONCILE, "    if not cutover_enabled():\n        return False", "    if False:\n        return False"),
+    "post-ungated": (RECONCILE, "if not cutover_enabled() or not _row_limit(session):",
+                     "if not _row_limit(session):"),
+    "second-writer": (RECONCILE, "    coverage = _coverage(session, lock=True)\n    if coverage.cutover_at is not None:",
+                      "    coverage = _coverage(session, lock=True)\n    coverage.cutover_seq = None\n"
+                      "    if coverage.cutover_at is not None:"),
+}
+
+
+@pytest.mark.parametrize("bite", sorted(CENSUS_BITES))
+def test_cutover_census_bites(bite):
+    path, before, after = CENSUS_BITES[bite]
+    sources = census_sources()
+    assert sources[path].count(before) == 1, (bite, before)
+    assert census_holds(sources)
+    sources[path] = sources[path].replace(before, after, 1)
+    assert not census_holds(sources)

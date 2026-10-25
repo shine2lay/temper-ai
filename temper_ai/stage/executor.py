@@ -108,6 +108,15 @@ def execute_graph(
       - `replayed_dispatches` (list[str], optional): dispatcher names
         whose dispatch state was replayed without re-emitting events
     """
+    from temper_ai.agent.admission_use import hooks_for
+
+    admission = hooks_for(context)
+    for candidate_node in nodes:
+        hooks_for(context, candidate_node)
+    if admission is not None:
+        admission.enter_graph(nodes, context, input_data=input_data, initial_outputs=initial_outputs,
+                              resume_metadata=resume_metadata, workflow_outputs=workflow_outputs,
+                              is_workflow=is_workflow)
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
     node_map = {node.name: node for node in nodes}
     batches = topological_sort(nodes)
@@ -605,6 +614,11 @@ def _run_batches(
     while batch_idx < len(batches):
         _check_cancelled(context)
         batch = batches[batch_idx]
+        from temper_ai.agent.admission_use import hooks_for
+        for candidate_node in batch:
+            admission = hooks_for(context, candidate_node)
+            if admission is not None:
+                admission.before_node(candidate_node, context)
 
         # Skip batches where all nodes are already checkpointed (resume/fork path).
         # Events for these nodes are already in the DB — either from the original run
@@ -687,6 +701,10 @@ def _record_outcome(
         return
     if cp is not None:
         cp.save_node_completed(path, result)
+    from temper_ai.agent.admission_use import hooks_for
+    admission = hooks_for(context, node)
+    if admission is not None:
+        admission.checkpointed(node, context, result)
     if result.status == Status.FAILED and isinstance(stop, RunStop):
         stop.note_failure(path, result.error)
     elif undone and result.status == Status.COMPLETED:
@@ -1041,6 +1059,10 @@ def _execute_single_node(
     node_map: dict[str, Node] | None = None,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
+    from temper_ai.agent.admission_use import hooks_for
+    admission = hooks_for(context, node)
+    if admission is not None:
+        context = admission.node_context(node, context)
     stopped = _held_or_skipped(node, context, parent_event_id)
     if stopped is not None:
         return stopped
@@ -1276,6 +1298,12 @@ def _run_node_with_events(
     Enforces per-node timeout if configured via node.config.timeout_seconds.
     """
     from dataclasses import replace as dc_replace
+
+    from temper_ai.agent.admission_use import hooks_for
+    from temper_ai.config.admission_contract import AdmissionRefused
+    admission = hooks_for(context, node)
+    if admission is not None:
+        context = admission.node_context(node, context)
     node_context = dc_replace(
         context,
         parent_event_id=node_event_id,
@@ -1290,6 +1318,8 @@ def _run_node_with_events(
             result = _run_with_timeout(node, resolved, node_context, timeout)
         else:
             result = node.run(resolved, node_context)
+        if admission is not None:
+            admission.returned(node, context, result)
         duration = time.monotonic() - start
         result.duration_seconds = duration
         context.event_recorder.update_event(
@@ -1299,6 +1329,9 @@ def _run_node_with_events(
         )
         return result
 
+    except AdmissionRefused:
+        # Fixed-code refusal propagates; never normal retry or exception prose.
+        raise
     except RunParked:
         # A wait in this step (stage/step_waits.py), or a gate inside this stage, let the
         # worker go: the step is waiting, not failed.
@@ -1350,7 +1383,11 @@ def _release_node_tools(node: Node, context: ExecutionContext) -> None:
 
 def _run_with_timeout(node: Node, resolved: dict, context: ExecutionContext, timeout: int) -> NodeResult:
     """Run a node with a wall-clock timeout. Returns FAILED if timeout exceeded."""
+    from temper_ai.agent.admission_use import hooks_for
     with ThreadPoolExecutor(max_workers=1) as pool:
+        admission = hooks_for(context, node)
+        if admission is not None:
+            admission.before_node(node, context)
         future = pool.submit(node.run, resolved, context)
         try:
             return future.result(timeout=timeout)
@@ -1374,21 +1411,32 @@ def _execute_parallel_batch(
 ) -> list[tuple[Node, NodeResult]]:
     """Execute a batch of independent nodes concurrently."""
     results = []
+    from temper_ai.agent.admission_use import hooks_for
+    from temper_ai.config.admission_contract import AdmissionRefused
+    for node in batch:
+        admission = hooks_for(context, node)
+        if admission is not None:
+            admission.before_node(node, context)
 
     with ThreadPoolExecutor(max_workers=len(batch)) as pool:
-        future_to_node = {
-            pool.submit(
+        future_to_node = {}
+        for node in batch:
+            admission = hooks_for(context, node)
+            if admission is not None:
+                admission.before_node(node, context)
+            future = pool.submit(
                 _execute_single_node, node, input_data, node_outputs,
                 context, parent_event_id, loop_feedback, node_map
-            ): node
-            for node in batch
-        }
+            )
+            future_to_node[future] = node
         parked: RunParked | None = None
         replaced: ReplacedByLaterAttempt | None = None
         for future in as_completed(future_to_node):
             node = future_to_node[future]
             try:
                 result = future.result()
+            except AdmissionRefused:
+                raise
             except ReplacedByLaterAttempt as exc:
                 # A later attempt of this run took a step here over: once the rest of the
                 # batch is done this attempt stands down, before any park (SW-84).

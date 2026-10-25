@@ -16,6 +16,7 @@ import time
 from dataclasses import replace
 from typing import Any
 
+from temper_ai.agent.admission_use import hooks_for
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import policy_for
@@ -48,6 +49,11 @@ class StageNode(Node):
         2. Execute sub-graph via the same graph executor (recursive)
         3. Apply output gate (if declared outputs, filter result)
         """
+        admission = hooks_for(context, self)
+        if admission is not None:
+            binding = admission.before_node(self, context)
+            context = admission.node_context(self, context)
+            admission.begin_invocation(binding)
         # Update node path for nested context
         node_path = (
             f"{context.node_path}.{self.name}" if context.node_path else self.name

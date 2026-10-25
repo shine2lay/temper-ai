@@ -54,6 +54,32 @@ class Guard:
     files: Mapping[str, bytes]
     configs: Mapping[str, Mapping[str, str]]
     allowed: Mapping[str, frozenset[str]]
+    # Retained at activation for the opt-in raw adapter. Not caller-supplied
+    # mutable mappings: later edits to files/configs cannot change raw identity.
+    _raw_files: tuple[tuple[str, str], ...] = ()
+    _raw_configs: tuple[tuple[str, str, str], ...] = ()
+
+    def raw_config_record(self, name: str, config_type: str) -> tuple[str, bytes]:
+        """Exact activated classified path/bytes, before YAML or substitution.
+
+        No new file read and no database fallback. The caller parses these SAME
+        bytes with its duplicate/alias policy and binds the authorized launch id.
+        """
+        from temper_ai.config.admission_contract import AdmissionRefused, RefusalCode
+
+        if self is not active() or type(name) is not str or type(config_type) is not str:
+            raise AdmissionRefused(RefusalCode.ORIGIN)
+        path = self.configs.get(config_type, {}).get(name)
+        if (config_type, name, path) not in self._raw_configs:
+            raise AdmissionRefused(RefusalCode.LOOKUP)
+        if (type(path) is not str or not path.startswith("configs/")
+                or any(p in ("", ".", "..") for p in path.split("/")) or "\0" in path):
+            raise AdmissionRefused(RefusalCode.ORIGIN)
+        data = self.files.get(path)
+        if (type(data) is not bytes or len(data) > MAX_CONFIG_SIZE
+                or (path, blob_id(data)) not in self._raw_files):
+            raise AdmissionRefused(RefusalCode.ORIGIN)
+        return path, data
 
     def _refuse(self, what: str) -> LaunchRefused:
         return LaunchRefused(f"{what} isn't part of this run's classified launch "
@@ -125,6 +151,10 @@ def activate(doc: Mapping[str, Any] | None, root: str | Path | None = None) -> G
         files=checked,
         configs={kind: dict(names) for kind, names in configs.items()},
         allowed={kind: frozenset(allowed.get(kind) or ()) for kind in _KINDS},
+        _raw_files=tuple(sorted(files.items())),
+        _raw_configs=tuple(sorted((kind, name, path)
+                                  for kind, names in configs.items()
+                                  for name, path in names.items())),
     )
     return _ACTIVE
 

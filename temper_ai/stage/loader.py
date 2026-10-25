@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from temper_ai.agent import AGENT_TYPES
 from temper_ai.config.store import ConfigStore
@@ -140,10 +140,17 @@ def _is_valid_node_ref_head(head: str) -> bool:
     return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", head))
 
 
+class ConfigResolver(Protocol):
+    """The loader only needs lookup; candidate snapshots have no backing store."""
+
+    def get(self, name: str, config_type: str) -> dict[str, Any]: ...
+
+
 class GraphLoader:
     """Load and resolve graph configs into executable node trees."""
 
-    def __init__(self, config_store: ConfigStore | None = None):
+    # Retain the concrete import: startup registers Config with Pi on OR off.
+    def __init__(self, config_store: ConfigStore | ConfigResolver | None = None):
         self.config_store = config_store
         self._defaults: dict = {}  # Workflow-level defaults (provider, model, etc.)
         self._overrides: dict = {}  # Top-precedence overrides (e.g. CLI --provider/--model)

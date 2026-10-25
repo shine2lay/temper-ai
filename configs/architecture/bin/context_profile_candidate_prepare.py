@@ -4,6 +4,8 @@
 No credentials, network, engine imports, sends, repair, retry or cleanup deletion.
 Sizing uses native byte-price arithmetic, NEVER an estimated input token count.
 Unknown provider framing stays null. The native final-wire-body cap still decides.
+Each packet also gets its complete single_call agent config (agent.json): the 19 fixed inputs plus the
+family-A token variable NAME, never a value; nothing here reads the environment.
 """
 from __future__ import annotations
 
@@ -30,12 +32,31 @@ CASES = (
 STANDARD_SHA256 = "696f12c42886cf97395e793e7add19bc23007988f1b84dcda21a2bba08feb437"
 SCHEMA_SHA256 = "965a75c384ab0b72220c507a78004aafc478bdcb4916ec1f050d8780ad377fbe"
 PROMPT_SHA256 = "aee4f3b2ce88721c25e49ae6528c3de663e2dc1edfda30e9b2488ee193da3d58"
-FORMAT = "context-profile-candidate-packet/v1"
+FORMAT = "context-profile-candidate-packet/v2"  # v2 (#292): the packet also holds agent.json.
 OUTPUT_LIMIT, CALLS = 8192, 42
 EXPOSURE_CAP = Decimal("12")
 FILES = ("instructions.md", "schema.json", "brief.md", "prompt.txt", "route.json", "pricing.json")
+# The runnable per-call config (#292). Its values are CANDIDATE.md's; the agent and stage files under
+# configs/architecture/ are the checked-in base, with the same invariants and the per-call inputs null.
+AGENT_FILE = "agent.json"
+AGENT_NAME = "context_profile_candidate"
+# The NAME of the variable temper-dev's Anthropic provider already resolves (Security rm-f321865e,
+# Temper rm-1b43ccf4). Only the name is ever written; no value is read, hashed or printed.
+TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN"
+FIXED_INPUTS = frozenset({
+    "prompt_path", "prompt_sha256", "prompt_bytes", "output_root", "slot", "family", "route", "auth_mode",
+    "max_tokens", "output_bound_mode", "deadline_s", "cost_cap_usd", "pricing_path", "pricing_sha256",
+    "experiment_id", "binding_id", "source_sha256", "config_sha256", "packet_sha256"})
+PER_CALL_INPUTS = frozenset({
+    "prompt_path", "prompt_sha256", "prompt_bytes", "output_root", "slot", "cost_cap_usd", "pricing_path",
+    "pricing_sha256", "experiment_id", "binding_id", "source_sha256", "config_sha256", "packet_sha256"})
+INVARIANT_INPUTS = {"family": "A", "route": "anthropic-oauth-named-token", "auth_mode": "oauth", "max_tokens": OUTPUT_LIMIT,
+                    "output_bound_mode": "request_limit", "deadline_s": 900, "token": TOKEN_NAME}
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
+# Template syntax (single_call takes none) and the config store's environment reference, which it
+# would replace with the variable's VALUE at read time.
+_TEMPLATE = re.compile(r"\{\{|\{%|\{#|\$\{")
 
 
 class Refused(ValueError):
@@ -294,6 +315,63 @@ def make_manifest(binding: dict, route: dict, snapshots: dict, directory: Path) 
             "self_check": "STRUCTURAL_ONLY", "semantic_status": "NOT_MEASURED", "activation": "DORMANT"}
 
 
+def templated(value) -> bool:
+    """True if any key or string anywhere holds template or environment-reference syntax."""
+    if isinstance(value, dict):
+        return any(templated(key) or templated(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(templated(item) for item in value)
+    return isinstance(value, str) and bool(_TEMPLATE.search(value))
+
+
+def check_agent_config(document, *, base: bool = False) -> dict:
+    """The candidate's own load check, on top of the engine loader's key-set check.
+
+    The #170 loader checks key sets and an explicit provider/model only; the family-A token and every
+    value stay with single_call's runtime validator (HOME's #170 decision). This holds the candidate's
+    values: exactly CANDIDATE.md's outer keys and 19 fixed inputs plus the token NAME, its invariants,
+    no template or environment reference anywhere, and the per-call inputs either all null (the
+    checked-in base) or all well-formed (one packet's config).
+    """
+    need(isinstance(document, dict) and set(document) == {"agent"}, "agent_document_shape")
+    agent = fields(document["agent"], {"name", "type", "provider", "model", "single_call"}, "agent_outer_keys")
+    need((agent["name"], agent["type"], agent["provider"], agent["model"])
+         == (AGENT_NAME, "single_call", "anthropic", "claude-opus-5-5"), "agent_identity")
+    fixed = fields(agent["single_call"], FIXED_INPUTS | {"token"}, "agent_fixed_inputs")
+    need(all(type(fixed[key]) is type(value) and fixed[key] == value for key, value in INVARIANT_INPUTS.items()),
+         "agent_invariants")
+    need(not templated(document), "unrendered_template")
+    if base:
+        need(all(fixed[key] is None for key in PER_CALL_INPUTS), "base_not_dormant")
+        return agent
+    for key in ("prompt_path", "pricing_path", "output_root"):
+        need(isinstance(fixed[key], str) and Path(fixed[key]).is_absolute() and ".." not in Path(fixed[key]).parts,
+             "agent_path")
+    for key in ("prompt_sha256", "pricing_sha256", "source_sha256", "config_sha256", "packet_sha256"):
+        digest(fixed[key])
+    identifier(fixed["experiment_id"])
+    identifier(fixed["binding_id"])
+    need(fixed["slot"] in ("A1", "A2", "A3"), "native_slot_binding")
+    count(fixed["prompt_bytes"])
+    need(isinstance(fixed["cost_cap_usd"], str), "cost_cap_text")
+    money(fixed["cost_cap_usd"])
+    return agent
+
+
+def agent_config(single_call: dict) -> dict:
+    """One packet's complete single_call agent config, wrapped as the config store keeps agents.
+
+    The packet's 19 fixed inputs plus the family-A token NAME; cost_cap_usd stays exact decimal text.
+    """
+    fixed = fields(dict(single_call), FIXED_INPUTS, "manifest_fixed_inputs")
+    fixed["cost_cap_usd"] = format(money(fixed["cost_cap_usd"]), "f")
+    fixed["token"] = TOKEN_NAME
+    document = {"agent": {"name": AGENT_NAME, "type": "single_call", "provider": "anthropic",
+                          "model": "claude-opus-5-5", "single_call": fixed}}
+    check_agent_config(document)
+    return document
+
+
 def prepare(*, brief: Path, instructions: Path, schema: Path, route_path: Path,
             pricing_path: Path, root: Path, binding: dict) -> dict:
     root = absolute(root)
@@ -314,6 +392,7 @@ def prepare(*, brief: Path, instructions: Path, schema: Path, route_path: Path,
     snapshots = dict(zip(FILES, (prompt_data, schema_data, brief_data, text, route_data, price_data), strict=True))
     directory = root / binding["packet_slot"]
     manifest = make_manifest(binding, route, snapshots, directory)
+    agent_data = json_bytes(agent_config(manifest["single_call"]))
     engine_root = absolute(Path(binding["output_root"]))
     engine_fd = root_fd(engine_root)
     os.close(engine_fd)
@@ -327,6 +406,7 @@ def prepare(*, brief: Path, instructions: Path, schema: Path, route_path: Path,
         slot_fd = os.open(binding["packet_slot"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
         os.fchmod(slot_fd, 0o700)
         snapshots["manifest.json"] = json_bytes(manifest)
+        snapshots[AGENT_FILE] = agent_data
         snapshots["SHA256SUMS"] = "".join(f"{sha(data)}  {name}\n" for name, data in sorted(snapshots.items())).encode("ascii")
         for name, data in snapshots.items():
             target = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=slot_fd)
@@ -347,7 +427,7 @@ def prepare(*, brief: Path, instructions: Path, schema: Path, route_path: Path,
             os.close(slot_fd)
         os.close(fd)
     return {"status": "PREPARED", "semantic_status": "NOT_MEASURED", "files": len(snapshots),
-            "manifest_sha256": sha(snapshots["manifest.json"]),
+            "manifest_sha256": sha(snapshots["manifest.json"]), "agent_config_sha256": sha(agent_data),
             **{key: manifest[key] for key in ("text_utf8_bytes", "text_json_bound_bytes", "framing_bytes",
                "reservation_lower_usd", "reservation_upper_usd", "sizing_status", "pool_reservation_usd")}}
 
@@ -361,14 +441,16 @@ def verify_packet(directory: Path, expected_sha256: str) -> dict:
     manifest = strict_json(manifest_data, decimals=True)
     need(isinstance(manifest, dict) and manifest.get("format") == FORMAT, "packet_format")
     need(set(manifest["files"]) == set(FILES)
-         and set(os.listdir(directory)) == {*FILES, "manifest.json", "SHA256SUMS"}, "packet_files")
+         and set(os.listdir(directory)) == {*FILES, "manifest.json", AGENT_FILE, "SHA256SUMS"}, "packet_files")
     snapshots = {}
     for name in FILES:
         data = read_file(directory / name, private=True)
         descriptor = fields(manifest["files"][name], {"bytes", "sha256"}, "file_descriptor")
         need(len(data) == count(descriptor["bytes"]) and sha(data) == digest(descriptor["sha256"]), "packet_snapshot_changed")
         snapshots[name] = data
-    sums = "".join(f"{sha(data)}  {name}\n" for name, data in sorted({**snapshots, "manifest.json": manifest_data}.items())).encode("ascii")
+    agent_data = read_file(directory / AGENT_FILE, private=True)
+    sums = "".join(f"{sha(data)}  {name}\n" for name, data in
+                   sorted({**snapshots, "manifest.json": manifest_data, AGENT_FILE: agent_data}.items())).encode("ascii")
     need(read_file(directory / "SHA256SUMS", private=True) == sums, "packet_checksum_manifest")
     binding = manifest["binding"]
     binding_check(binding, directory.parent)
@@ -382,6 +464,7 @@ def verify_packet(directory: Path, expected_sha256: str) -> dict:
          "packet_input_changed")
     expected = make_manifest(binding, route_metadata(snapshots["route.json"]), snapshots, directory)
     need(manifest == expected, "packet_manifest_changed")
+    need(agent_data == json_bytes(agent_config(expected["single_call"])), "packet_agent_config_changed")
     return manifest
 
 

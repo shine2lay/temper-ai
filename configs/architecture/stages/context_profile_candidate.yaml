@@ -1,0 +1,14 @@
+# System architecture, context_profile_candidate stage (Architecture queue #292, 2026-10-25). DORMANT:
+# no workflow, trigger, schedule or EPD wiring references it, so nothing runs it.
+#
+# One stage, one agent node: the context-profile candidate's single_call agent
+# (configs/architecture/agents/context_profile_candidate.yaml). Node policies (gate, timeout, loops,
+# failure handling) belong to the node, never to the agent's closed single_call mapping; none is set
+# here, so every one keeps its default. A workflow would reference this stage as a node with
+# type: stage and ref: stages/context_profile_candidate.
+stage:
+  name: context_profile_candidate
+  nodes:
+    - name: context_profile_candidate
+      type: agent
+      agent: context_profile_candidate

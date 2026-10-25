@@ -1,0 +1,43 @@
+# System architecture, context_profile_candidate (Architecture queue #292, 2026-10-25). DORMANT: no
+# workflow, trigger, schedule or EPD wiring names it, so nothing runs it. No tools, memory, fallback,
+# repair or retries.
+#
+# The context-profile candidate's single_call agent (configs/architecture/stages/context_profile/
+# CANDIDATE.md): one provider call per prepared packet. This file is the checked-in BASE: CANDIDATE.md's
+# invariant fixed inputs and the family-A token NAME are set here; the 13 per-call fixed inputs (paths,
+# digests, IDs, slot, prompt size, cost cap) are null, because they exist only for one prepared packet.
+# configs/architecture/bin/context_profile_candidate_prepare.py writes each call's complete config
+# (agent.json in that packet's private folder) with every value filled, and only that file is ever meant
+# to be run. Run as it stands, this base is refused by single_call at its slot claim, before any
+# provider lookup or send (a null slot is not a slot).
+#
+# token is the NAME of the environment variable temper-dev's Anthropic provider already resolves
+# (Security rm-f321865e, Temper rm-1b43ccf4); no value is stored or read here. No value anywhere in
+# this file uses environment-variable or template syntax: the config store substitutes the first at
+# read time, and single_call takes no templates.
+agent:
+  name: context_profile_candidate
+  type: single_call
+  provider: anthropic
+  model: claude-opus-5-5
+  single_call:
+    prompt_path: null
+    prompt_sha256: null
+    prompt_bytes: null
+    output_root: null
+    slot: null
+    family: A
+    route: anthropic-oauth-named-token
+    auth_mode: oauth
+    max_tokens: 8192
+    output_bound_mode: request_limit
+    deadline_s: 900
+    cost_cap_usd: null
+    pricing_path: null
+    pricing_sha256: null
+    experiment_id: null
+    binding_id: null
+    source_sha256: null
+    config_sha256: null
+    packet_sha256: null
+    token: CLAUDE_CODE_OAUTH_TOKEN

@@ -1,6 +1,9 @@
 # `single_call`: a dormant, fixed-input, send-once primitive
 
-No checked-in workflow uses this type. This is **not** T1/T2 admission, permission
+No checked-in workflow uses this type; one dormant agent and stage do
+(configs/architecture/agents/context_profile_candidate.yaml and
+configs/architecture/stages/context_profile_candidate.yaml), and nothing runs them.
+This is **not** T1/T2 admission, permission
 to call a provider, switch-on, or a process sandbox. The flag defaults to off;
 ordinary agents/providers keep their existing request, retries and fallback.
 

@@ -534,6 +534,8 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/stages/context_profile/contract.v2.schema.json` | contract (JSON Schema) |
 | `architecture/bin/context_profile_check.py` | script (contract checker) |
 | `architecture/bin/context_profile_score.py` | script (scorer against a case key) |
+| `architecture/agents/context_profile_candidate.yaml` | agent (single_call; dormant base, per-call values left empty; nothing runs it) |
+| `architecture/stages/context_profile_candidate.yaml` | stage (one agent node; dormant, in no workflow) |
 | `architecture/bin/context_t1_preflight.py` | candidate (on master once landed; not accepted; pure synthetic D0 metadata checks only; gives no dispatch, registration or later-stage authority) |
 | `architecture/stages/context_profile/t1/preflight.v1.schema.json` | candidate contract (closed synthetic plan/expected/result metadata; not adapter pricing) |
 | `architecture/stages/context_profile/t1/PREFLIGHT.md` | candidate scope, frozen H-D0-META-1 and synthetic known-answer table (not D0/Stage1 acceptance) |

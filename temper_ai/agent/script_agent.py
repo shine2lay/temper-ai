@@ -292,6 +292,23 @@ class ScriptAgent(AgentABC):
         3. Return AgentResult with stdout as output; the log's figures go on the completion
            event beside it, never into it
         """
+        from copy import deepcopy
+
+        from temper_ai.agent.admission_use import hooks_for
+        admission = hooks_for(context, self)
+        checked_vars = None
+        checked_template = None
+        if admission is not None:
+            # Complete final variables, BEFORE input/event logging or rewriting.
+            variables = dict(input_data)
+            if context.workspace_path and not variables.get("workspace_path"):
+                variables["workspace_path"] = context.workspace_path
+            if context.run_id and not variables.get("run_id"):
+                variables["run_id"] = str(context.run_id)
+            checked_template = self.config["script_template"]
+            checked_vars = admission.script_inputs(self, context, checked_template, variables)
+            # An owned metadata-only copy also reaches the event sink.
+            input_data = deepcopy({k: checked_vars[k] for k in input_data})
         start = time.monotonic()
         _record = context.event_recorder.record if context.event_recorder else _default_record
         agent_event_id = self._record_script_started(_record, input_data, context)
@@ -300,7 +317,8 @@ class ScriptAgent(AgentABC):
         stash = _ValueStash()
         log: ScriptLog | None = None
         try:
-            template_text = _rewrite_interpolations(self.config["script_template"], self.name)
+            template_text = _rewrite_interpolations(
+                checked_template if checked_template is not None else self.config["script_template"], self.name)
             env = SandboxedEnvironment(
                 loader=BaseLoader(),
                 undefined=StrictUndefined if self.strict_undefined else _recording_undefined(undefined_refs),
@@ -321,6 +339,8 @@ class ScriptAgent(AgentABC):
             # (a claim file, a branch) want to say which run made it.
             if context.run_id and not render_vars.get("run_id"):
                 render_vars["run_id"] = str(context.run_id)
+            if checked_vars is not None:
+                render_vars = checked_vars
             # No escaping here any more: `finalize` moves each value into the environment and writes a
             # reference in its place, so nothing that came from a model is ever parsed as shell code.
             try:

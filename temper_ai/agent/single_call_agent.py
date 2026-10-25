@@ -15,9 +15,17 @@ import uuid
 from datetime import datetime
 from decimal import Decimal, Inexact, InvalidOperation, localcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from temper_ai.agent.admission_use import hooks_for, refuse, stat_identity
 from temper_ai.agent.base import AgentABC
+from temper_ai.config.admission_contract import (
+    AdmissionContext,
+    AdmissionRefused,
+    OpenedRoot,
+    RefusalCode,
+    canonical_bytes,
+)
 from temper_ai.llm import single_send as ss
 from temper_ai.llm.models import LLMResponse
 from temper_ai.observability import EventType
@@ -182,6 +190,99 @@ def recompute_list_price_usd(call_record: dict, pinned_pricing: dict) -> Decimal
         return None
 
 
+class _CandidateRoot:
+    """Native attempt owns these no-follow fds. Hooks only borrow the root.
+
+    Keep every directory/file fd, verify each directory entry against that fd,
+    then read the same files after claiming. No stat(path)-then-reopen window.
+    """
+
+    def __init__(self, root: str, readiness: dict, policy: dict, fixed: dict) -> None:
+        self.directories: dict[str, int] = {}
+        self.files: dict[str, int] = {}
+        self.ready, self.policy = readiness, policy
+        try:
+            self.directories["/"] = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            self.root = self._directory(root)
+            expected = {fixed["prompt_path"], fixed["pricing_path"]}
+            paths = [r["stat"]["path"] for r in readiness["files"]]
+            if len(paths) != len(set(paths)) or expected != set(paths):
+                refuse(RefusalCode.READINESS)
+            for path in paths:
+                parent = self._directory(str(Path(path).parent))
+                self.files[path] = os.open(Path(path).name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            self.verify()
+        except OSError:
+            self.close()
+            refuse(RefusalCode.READINESS)
+        except BaseException:
+            self.close()
+            raise
+
+    def _directory(self, path: str) -> int:
+        current = "/"
+        if not path.startswith("/") or any(p in (".", "..", "") for p in path.split("/")[1:]):
+            refuse(RefusalCode.READINESS)
+        for part in Path(path).parts[1:]:
+            following = str(Path(current) / part)
+            if following not in self.directories:
+                self.directories[following] = os.open(
+                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=self.directories[current])
+            current = following
+        return self.directories[current]
+
+    def _entry_matches_fd(self, path: str, fd: int) -> None:
+        actual = os.fstat(fd)
+        entry = os.stat(Path(path).name, dir_fd=self.directories[str(Path(path).parent)], follow_symlinks=False)
+        if (actual.st_dev, actual.st_ino, actual.st_mode) != (entry.st_dev, entry.st_ino, entry.st_mode):
+            refuse(RefusalCode.READINESS)
+
+    def read(self, path: str, limit: int) -> bytes:
+        fd = self.files[path]
+        pieces: list[bytes] = []
+        size = 0
+        while size <= limit:
+            part = os.pread(fd, min(65536, limit + 1 - size), size)
+            if not part:
+                return b"".join(pieces)
+            pieces.append(part)
+            size += len(part)
+        refuse(RefusalCode.READINESS)
+
+    def verify(self) -> OpenedRoot:
+        ready, policy = self.ready, self.policy
+        parents = {p["path"]: p for p in ready["parents"]}
+        actual_parents = set(self.directories) - {"/", ready["root"]["path"]}
+        if len(parents) != len(ready["parents"]) or set(parents) != actual_parents:
+            refuse(RefusalCode.READINESS)
+        for path, fd in self.directories.items():
+            if path == "/":
+                continue  # filesystem anchor, not a wire path (v1 disallows '/').
+            self._entry_matches_fd(path, fd)
+            expected = ready["root"] if path == ready["root"]["path"] else parents[path]
+            if not stat.S_ISDIR(os.fstat(fd).st_mode) or stat_identity(path, fd).wire != canonical_bytes(expected):
+                refuse(RefusalCode.READINESS)
+        for item in ready["files"]:
+            path = item["stat"]["path"]
+            fd = self.files[path]
+            self._entry_matches_fd(path, fd)
+            value = os.fstat(fd)
+            if (not stat.S_ISREG(value.st_mode) or value.st_nlink != 1 or value.st_size != item["length"]
+                    or value.st_uid != policy["creator_uid"] or value.st_gid != policy["creator_gid"]
+                    or stat.S_IMODE(value.st_mode) != policy["file_mode"]
+                    or stat_identity(path, fd).wire != canonical_bytes(item["stat"])
+                    or ss.sha256(self.read(path, item["length"])) != item["sha256"]):
+                refuse(RefusalCode.READINESS)
+        return OpenedRoot(self.root, tuple(stat_identity(p["path"], self.directories[p["path"]]) for p in ready["parents"]))
+
+    def close(self) -> None:
+        fds = [*self.files.values(), *reversed(self.directories.values())]
+        self.files.clear()
+        self.directories.clear()
+        for fd in fds:
+            os.close(fd)
+
+
 class _Attempt:
     """One invocation's owned fds and measured facts, never reused across calls."""
 
@@ -190,6 +291,7 @@ class _Attempt:
         fixed = config.get("single_call")
         self.fixed: dict = fixed if isinstance(fixed, dict) else {}
         self.root: int | None = None
+        self.candidate_root: _CandidateRoot | None = None
         self.claim: int | None = None
         self.claimed = False
         self.durable = False
@@ -230,18 +332,53 @@ class _Attempt:
     def claim_slot(self) -> None:
         if not isinstance(self.slot, str) or self.slot not in _SLOTS:
             raise ss.SingleSendError("strict_parser")
-        self.root = _open_directory(self.fixed.get("output_root"))
-        _private_root(self.root)
-        self.start, self.started = ss.paired_sample()
-        self.deadline = self.start + 900
-        self.claim = _new_file(self.root, f"{self.slot}.claim")
-        self.claimed = True
+        admission = hooks_for(self.context)
+        if admission is None:
+            self.root = _open_directory(self.fixed.get("output_root"))
+            _private_root(self.root)
+            self._exclusive_claim()
+        else:
+            binding = cast(AdmissionContext, self.context).admission
+            if binding is None or binding.readiness is None:
+                refuse(RefusalCode.READINESS)
+            admission.check_context(binding, cast(AdmissionContext, self.context))
+            actual = admission.check_native_config(binding, self.config)
+            if self.fixed is not self.config.get("single_call"):
+                refuse(RefusalCode.FIELDS)
+            position = next(p for p in binding.descriptor.value()["positions"] if p["position_id"] == binding.position_id)
+            self.candidate_root = _CandidateRoot(self.fixed["output_root"], binding.readiness.value(), position["root_policy"], self.fixed)
+            self.root = self.candidate_root.root
+
+            def claim() -> None:
+                # Inside T2's current-generation fence, immediately before O_EXCL.
+                if (self.candidate_root is None or self.root != self.candidate_root.root
+                        or self.fixed is not self.config.get("single_call")):
+                    refuse(RefusalCode.FIELDS)
+                admission.check_native_config(binding, self.config)
+                try:
+                    self.candidate_root.verify()
+                except OSError:
+                    refuse(RefusalCode.READINESS)
+                admission.check_context(binding, cast(AdmissionContext, self.context))
+                self._exclusive_claim()
+
+            admission.authorize_and_claim(binding=binding, root=self.candidate_root.verify(),
+                                          actual_config=actual, actual_context=cast(AdmissionContext, self.context), claim=claim)
         for suffix in ("raw", "call.json", "attempt.json"):
             try:
                 os.stat(f"{self.slot}.{suffix}", dir_fd=self.root, follow_symlinks=False)
             except FileNotFoundError:
                 continue
             raise ss.SingleSendError("strict_parser")
+
+    def _exclusive_claim(self) -> None:
+        if self.root is None:
+            raise ss.SingleSendError("strict_parser")
+        _private_root(self.root)
+        self.start, self.started = ss.paired_sample()
+        self.deadline = self.start + 900
+        self.claim = _new_file(self.root, f"{self.slot}.claim")
+        self.claimed = True  # Never undone, including transaction/persistence failure.
 
     def validate(self) -> tuple[Any, str, dict]:
         self.call_identity = dict.fromkeys(_CALL_IDENTITY_FIELDS)
@@ -286,10 +423,11 @@ class _Attempt:
             raise ss.SingleSendError("auth")
         self.call_identity.update({k: c[k] for k in ("provider", "model")})
         self.call_identity.update({k: f[k] for k in ("route", "auth_mode", "output_bound_mode")})
-        prompt = _read_bound(f["prompt_path"], f["prompt_bytes"])
+        read = self.candidate_root.read if self.candidate_root is not None else _read_bound
+        prompt = read(f["prompt_path"], f["prompt_bytes"])
         if len(prompt) != f["prompt_bytes"] or ss.sha256(prompt) != f["prompt_sha256"]:
             raise ss.SingleSendError("strict_parser")
-        pricing_bytes = _read_bound(f["pricing_path"], 65536)
+        pricing_bytes = read(f["pricing_path"], 65536)
         if ss.sha256(pricing_bytes) != f["pricing_sha256"]:
             raise ss.SingleSendError("strict_parser")
         self.call_identity["pricing_sha256"] = f["pricing_sha256"]
@@ -496,6 +634,10 @@ class _Attempt:
                 "failure_reasons": [self.failure.reason] if self.failure else []}
 
     def close(self) -> None:
+        if self.candidate_root is not None:
+            self.candidate_root.close()
+            self.candidate_root = None
+            self.root = None
         for name in ("claim", "root"):
             fd = getattr(self, name)
             setattr(self, name, None)
@@ -541,6 +683,7 @@ class SingleCallAgent(AgentABC):
         return errors
 
     def run(self, input_data: dict, context: ExecutionContext) -> AgentResult:
+        hooks_for(context, self)
         state = _Attempt(self.config, context)
         with ss.metadata_only_logs():
             agent_event = context.parent_event_id
@@ -553,6 +696,8 @@ class SingleCallAgent(AgentABC):
                             data={"agent_name": self.name, "agent_type": "single_call", "node_path": context.node_path,
                                   "provider": state.call_identity["provider"], "model": state.call_identity["model"]})
                     state.call()
+                except AdmissionRefused:
+                    raise  # fixed code only, before provider/event/receipt paths
                 except Exception as exc:  # noqa: BLE001 - never propagate provider/file prose
                     state.fail(exc)
                 try:

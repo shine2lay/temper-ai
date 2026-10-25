@@ -136,11 +136,21 @@ The source tuple is engine commit/tree, binding ABI and sorted exact field-name
 inventories for workflow/node/request/native. The workflow_json has exactly the
 workflow inventory, each node_json exactly the node inventory, and request
 options exactly the request inventory. All effective dataclass fields, including
-defaulted values, scheduler policies and nested nodes, must appear. In the
-current source, `_KNOWN_FIELDS` is a class inventory rather than runtime data:
-exclude it from the projection, but bind its exact members in the source node
-inventory; T1 must fail on inventory/dataclass field drift. No guessed omissions.
-The native inventory is the permitted full field-name set; each actual per-call
+defaulted values, scheduler policies and nested nodes, must appear. No field is
+silently dropped, including `_KNOWN_FIELDS`: in the current source it is a
+frozenset dataclass field, and legacy script-agent overrides also inherit it.
+For that engine-owned metadata field ONLY, the effective projection represents
+an exact `frozenset[str]` as its unique strings sorted by Unicode scalar order in
+a JSON array. T1/T3 must check the actual runtime type is frozenset and its full
+membership before projection/comparison; a raw list or candidate-supplied
+`_KNOWN_FIELDS` is not equivalent. Workflow/node field inventories include the
+`_KNOWN_FIELDS` field itself; its projected value pins the separate accepted-raw
+key inventory. Preserve inherited agent metadata by the same explicit rule.
+This is a required adapter projection, not codec coercion: CAJ-1 still rejects
+frozensets, and no other set, dataclass or non-JSON type is silently converted.
+T1 must fail on runtime/dataclass/accepted-key inventory drift. All other fields
+project recursively with their exact JSON type, preserving null/absence. The
+native inventory is the permitted full field-name set; each actual per-call
 config preserves its exact present field set (optional absent != null).
 
 The graph has a complete workflow_json plus a preorder node inventory. Each

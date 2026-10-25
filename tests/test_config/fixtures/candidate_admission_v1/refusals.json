@@ -1,0 +1,14 @@
+[
+  {"case":"duplicate-key","wire":"{\"x\":1,\"x\":2}","code":"duplicate_key"},
+  {"case":"leading-space","wire":" {}","code":"noncanonical_bytes"},
+  {"case":"trailing-newline","wire":"{}\n","code":"noncanonical_bytes"},
+  {"case":"unordered","wire":"{\"z\":1,\"a\":2}","code":"noncanonical_bytes"},
+  {"case":"exponent","wire":"1e0","code":"noncanonical_bytes"},
+  {"case":"integer-negative-zero","wire":"-0","code":"noncanonical_bytes"},
+  {"case":"nonexact-decimal","wire":"0.1","code":"noncanonical_bytes"},
+  {"case":"escaped-unicode","wire":"\"\\u00e9\"","code":"noncanonical_bytes"},
+  {"case":"nan","wire":"NaN","code":"nonfinite_number"},
+  {"case":"overflow","wire":"1e1000","code":"nonfinite_number"},
+  {"case":"surrogate","wire":"\"\\ud800\"","code":"invalid_json"},
+  {"case":"invalid-syntax","wire":"{","code":"invalid_json"}
+]

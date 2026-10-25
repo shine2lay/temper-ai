@@ -564,16 +564,36 @@ def remove_member_boxes_of_killed_run(execution_id: str, *,
     name (``stop_leftover_box``; never a prune, never another run's box). The turns themselves
     stay as they are. A box that is already gone counts as gone; one that Docker couldn't
     confirm gone is logged, and the next start-up sweep tries it again. Never raises."""
+    names = snapshot_member_box_names_of_killed_run(execution_id)
+    return remove_saved_member_boxes_of_killed_run(execution_id, names, docker=docker)
+
+
+def snapshot_member_box_names_of_killed_run(execution_id: str) -> tuple[str, ...]:
+    """Save this run's exact unsettled member names, with no Docker effects. The reaper
+    calls after kill and before its fenced write; a failed/empty read never means reread."""
     from temper_ai.pi_agent import box as pibox
 
     try:
-        names = sorted(set(_ledger_box_names(run_id=execution_id)))
+        return tuple(sorted({name for name in _ledger_box_names(run_id=execution_id)
+                             if pibox.BOX_NAME.fullmatch(name)}))
     except Exception:  # noqa: BLE001
-        logger.error("Pi lane: couldn't read %s's member boxes after the forced stop",
-                     execution_id, exc_info=True)
-        return []
+        logger.error("Pi lane: couldn't read %s's member boxes after the forced stop; "
+                     "the next start-up sweep tries again", execution_id, exc_info=True)
+        return ()
+
+
+def remove_saved_member_boxes_of_killed_run(
+    execution_id: str, names: tuple[str, ...], *, docker: Callable[..., Any] | None = None,
+) -> list[dict]:
+    """Remove only the saved names, never look them up by run (not even for an empty set).
+    The reaper calls only after its fenced write returned True. Failures leave leftovers
+    for the existing start-up sweep; neither helper changes the ledger."""
+    from temper_ai.pi_agent import box as pibox
+
     out = []
     for name in names:
+        if not pibox.BOX_NAME.fullmatch(name):
+            continue
         try:
             got = pibox.stop_leftover_box(name, docker=docker)
         except Exception as exc:  # noqa: BLE001 - one box must not keep the others

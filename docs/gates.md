@@ -156,9 +156,35 @@ run waited and across restarts:
 - an answer given while the worker or server was down is applied when it
   comes back (the reaper, or the server at start-up).
 
-Whoever comes first claims the parked attempt with a compare-and-set, so the
-run is carried on once; a second Resume meanwhile gets a 409. The attempt that
-waited stays in the run's history as `parked`.
+Whoever comes first claims the still-latest parked attempt with a compare-and-set.
+For a boxed run, its `waiting` → `parked` event change and the run row's re-queue
+commit **together**; an API resume may insert a missing queued row, but a worker
+resume requires an existing row. A queued or still-running box refuses the claim
+with no changes. Holds are taken over only after the winning commit. A second
+Resume gets a 409. The attempt that waited stays in history as `parked`.
+
+The three entry points in `runner/parked.py` are `claim_and_queue`,
+`claim_and_requeue_row` and `claim_without_box_row`, sharing the in-transaction
+`_claim_in` CAS. There is no standalone `claim` writer. In-process Resume may
+claim only with **no box row**. Its sole release path puts the event back to
+`waiting` if its thread's `start()` fails; it never releases a boxed claim after
+the queued commit, nor a failure while preparing the thread.
+
+Reaper end writes compare the generation they judged: status and `attempts`,
+plus the queued dispatch's identity (Docker container id or subprocess pid).
+A start increments attempts in the same commit as `running`. A refused end
+changes no row and settles no event; a later tick judges the newer generation.
+A parked cancel commits its attempt CAS and permitted row end together. An
+owner's stop still cancels a same-generation attempt whose row has become
+`waiting` or already ended; an already-ended row stays unchanged. Changed
+attempts or a newly queued row refuse and roll back the attempt CAS. See
+[the engine's generation and dispatch contracts](reference/architecture.md#spawner-abstraction).
+
+`tests/test_runner/test_writer_scan.py` inventories all status, attempts and
+identity writers (including the dynamic box updater's callers), the three
+carried-on entry points and the one in-process release caller. Its source
+checks and measured mutations are not evidence about the live lane, process
+versions, overlapping instances, readiness or a reconciler cutover.
 
 A Pi run cut off while it ran (nothing parked) is held to one copy the same
 way: the first Resume, or temper's start-up pick-up, claims its next attempt

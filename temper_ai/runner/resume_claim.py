@@ -23,8 +23,9 @@ Postgres and on SQLite alike:
 * an asker whose start fails gives the claim back.
 
 The asker that loses is told the run is already being carried on, and starts nothing. A run
-parked on a person's answer is claimed on its parked attempt instead (runner/parked.py
-``claim``), by an asker that saw it parked; runs of other workflows are not claimed here.
+parked on a person's answer is claimed on its parked attempt instead (runner/parked.py:
+``claim_and_queue``, ``claim_and_requeue_row`` or ``claim_without_box_row``), by an asker
+that saw it parked; runs of other workflows are not claimed here.
 """
 
 from __future__ import annotations
@@ -180,7 +181,8 @@ def _still_held(held: _Held, newest: dict | None) -> bool:
         return held.claimed_at is not None and utcnow() - held.claimed_at < CLAIM_STARTS_WITHIN
     # The claimed start wrote its attempt down: the claim lasts while that attempt is going,
     # and while it waits parked on a person's answer: a parked attempt is not over, and only
-    # its own claim carries it on (runner/parked.py ``claim``).
+    # its own atomic claim carries it on (runner/parked.py: claim_and_queue,
+    # claim_and_requeue_row or claim_without_box_row).
     return newest is not None and (str(newest.get("status") or "") == GOING or is_parked(newest))
 
 

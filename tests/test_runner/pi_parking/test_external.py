@@ -61,13 +61,27 @@ def _box(ext, eid: str, monkeypatch, *, finish_pi: bool = False) -> int:
     ``finish_pi``: the box comes to the Pi step's own wait, which lets go too (C7), so it
     exits there; the wait is answered ``done``, the reaper frees and queues the run, and the
     box that carries it on runs. Returns that box's exit code."""
+    from hashlib import sha256
+
     from temper_ai.cli.run_workflow import cmd_run_workflow
     from temper_ai.cli.watch_queue import _claim_row
+    from temper_ai.database import get_session
     from temper_ai.runner.lanes import PI_LANE
+    from temper_ai.runner.models import WorkflowRun
 
     assert _row(eid)["status"] == "queued"
     assert not _claim_row(eid, spawner_kind="docker")  # the main lane's claim
     assert _claim_row(eid, spawner_kind="docker", lane=PI_LANE)
+    # A real Docker handoff stamps its id. This fake handoff must too, before the
+    # worker increments attempts, with a distinct id for the attempt about to run.
+    with get_session() as session:
+        row = session.get(WorkflowRun, eid)
+        assert row is not None
+        row.spawner_metadata = {
+            **(row.spawner_metadata or {}),
+            "container_id": sha256(f"{eid}:{row.attempts + 1}".encode()).hexdigest(),
+        }
+        session.add(row)
     monkeypatch.setenv("TEMPER_RUN_CONTAINER", f"temper-run-{eid}")
     code = cmd_run_workflow(argparse.Namespace(execution_id=eid, config_dir=None, debug=False))
     if not finish_pi:

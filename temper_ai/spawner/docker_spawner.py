@@ -120,6 +120,14 @@ logger = logging.getLogger(__name__)
 
 DOCKER_SOCKET = "/var/run/docker.sock"
 CONTAINER_PREFIX = "temper-run-"
+# A handle's metadata key for the one dispatch a caller has judged (the reaper's
+# RowGeneration.container_id, runner/row_generation.py). With it, is_alive and kill
+# address that container by id, never the run's shared name, which a later dispatch
+# may already hold. Without it, both keep going by name.
+JUDGED_CONTAINER_ID = "judged_container_id"
+# The full id `docker run --detach` prints (both launch paths store it, _handle). Docker
+# looks a reference up as a full id before any name; a short prefix could lose to a name.
+_DOCKER_ID = re.compile(r"^[0-9a-f]{64}$")
 RUN_COMMAND = ["uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow"]
 # How long a run waits for a template container that can't be read (it is
 # being recreated, say) when there is no earlier look to fall back on.
@@ -1104,8 +1112,11 @@ class DockerSpawner(Spawner):
                 "pids": os.environ.get("TEMPER_DOCKER_PIDS_LIMIT") or None}
 
     def is_alive(self, handle: ProcessHandle) -> bool:
+        """Whether the run's box is running: the judged container by id when the handle
+        names one (JUDGED_CONTAINER_ID), otherwise the box holding the run's name."""
         result = self._docker_run(
-            [self._docker, "inspect", "--format", "{{.State.Running}}", self._name_for(handle)],
+            [self._docker, "inspect", "--format", "{{.State.Running}}",
+             self._judged_id_or_name(handle)],
         )
         if result.returncode != 0:
             if _says_gone(result.stderr):
@@ -1120,6 +1131,8 @@ class DockerSpawner(Spawner):
 
         A parked Pi run is carried on in a new container with the same name, which docker
         refuses while the old one is still there (runner/parked.py, spawner/reaper.py).
+        Asked by name even when the handle carries a judged id: the question is whether
+        the name is free for the next box, whichever dispatch holds it.
         """
         result = self._docker_run(
             [self._docker, "inspect", "--format", "{{.State.Running}}", self._name_for(handle)],
@@ -1131,16 +1144,18 @@ class DockerSpawner(Spawner):
         raise SpawnerError(f"docker inspect failed: {result.stderr.strip()}")
 
     def kill(self, handle: ProcessHandle, *, force: bool = False) -> None:
-        name = self._name_for(handle)
+        """SIGTERM (or SIGKILL with force) to the judged container by id when the handle
+        names one (JUDGED_CONTAINER_ID), otherwise to the box holding the run's name."""
+        target = self._judged_id_or_name(handle)
         sig = "KILL" if force else "TERM"
-        result = self._docker_run([self._docker, "kill", "--signal", sig, name])
+        result = self._docker_run([self._docker, "kill", "--signal", sig, target])
         if result.returncode == 0:
-            logger.info("Sent SIG%s to run container %s", sig, name)
+            logger.info("Sent SIG%s to run container %s", sig, target)
             return
         if _says_gone(result.stderr) or "is not running" in result.stderr.lower():
-            logger.debug("Run container %s already gone", name)
+            logger.debug("Run container %s already gone", target)
             return
-        raise SpawnerError(f"docker kill -s {sig} {name} failed: {result.stderr.strip()}")
+        raise SpawnerError(f"docker kill -s {sig} {target} failed: {result.stderr.strip()}")
 
     # -- Building the run container ------------------------------------------
 
@@ -1277,6 +1292,24 @@ class DockerSpawner(Spawner):
         if handle.handle.startswith(CONTAINER_PREFIX):
             return handle.handle
         raise SpawnerError(f"Cannot derive a run container from handle {handle.handle!r}")
+
+    @classmethod
+    def _judged_id_or_name(cls, handle: ProcessHandle) -> str:
+        """The judged container id when the handle carries one, else the run's name.
+
+        A judged id that is present but unusable is an error, never a quiet fall back
+        to the name: the name may belong to a later dispatch. A caller that must not
+        act by name (the reaper) checks the id is there before calling.
+        """
+        if JUDGED_CONTAINER_ID not in handle.metadata:
+            return cls._name_for(handle)
+        judged = handle.metadata[JUDGED_CONTAINER_ID]
+        if not isinstance(judged, str) or not _DOCKER_ID.fullmatch(judged):
+            raise SpawnerError(
+                f"Judged container id {judged!r} is not a Docker container id; "
+                "not falling back to the run's name",
+            )
+        return judged
 
     def _docker_run(self, cmd: list[str]) -> subprocess.CompletedProcess:
         try:

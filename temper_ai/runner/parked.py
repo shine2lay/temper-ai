@@ -35,7 +35,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlmodel import Session
+
+    from temper_ai.runner.row_generation import RowGeneration
 
 from temper_ai.shared.clock import as_utc, utcnow
 from temper_ai.stage.exceptions import CANCEL_MESSAGE as _CANCEL_MESSAGE
@@ -77,8 +82,8 @@ def parked_attempt(execution_id: str) -> dict | None:
 
 
 def is_parked(attempt: dict | None) -> bool:
-    """Whether an attempt waits parked on the owner: its worker let go, and only ``claim``
-    carries it on."""
+    """Whether an attempt waits parked on the owner: its worker let go, and only an atomic
+    parked claim carries it on."""
     return (attempt is not None and attempt.get("status") == WAITING
             and isinstance(_note(attempt), dict))
 
@@ -142,18 +147,139 @@ def answered(execution_id: str, attempt: dict) -> dict | None:
     return None
 
 
-def claim(attempt: dict) -> bool:
-    """Take the parked attempt for carrying on; False when someone else already has."""
-    from temper_ai.observability.recorder import decide_event
+def latest_start_condition(execution_id: Any, start: Any = None) -> Any:
+    """SQL condition: ``start`` is its execution's latest start.
 
+    True when no ``workflow.started`` of ``execution_id`` has a strictly later timestamp than
+    ``start``'s, so starts tied at the latest time all count as latest. ``start`` is the
+    events table (the default) or an alias of it; ``execution_id`` a value or a column. The one
+    definition of "latest start" the claims below check, and the barrier can share.
+    """
+    from sqlalchemy import exists
+    from sqlalchemy.orm import aliased
+    from sqlmodel import col, select
+
+    from temper_ai.observability.event_types import EventType
+    from temper_ai.observability.models import Event
+
+    start = Event if start is None else start
+    later = aliased(Event)
+    return ~exists(select(col(later.id)).where(
+        col(later.execution_id) == execution_id,
+        col(later.type) == EventType.WORKFLOW_STARTED,
+        col(later.timestamp) > start.timestamp,
+    ))
+
+
+class _HasBoxRow(Exception):  # noqa: N818 - rolls back claim_without_box_row's transaction
+    pass
+
+
+def _claim_in(session: Any, attempt: dict) -> str:
+    """The claim's compare-and-set inside the caller's transaction (``deciding_events``):
+    the attempt goes ``waiting`` -> ``parked`` only while it is still waiting and still its
+    execution's latest start. Raises AlreadyCarriedOn otherwise, which rolls the whole
+    transaction back. Returns the execution id, read from the locked event."""
+    from sqlmodel import col, select
+
+    from temper_ai.observability.models import Event
+    from temper_ai.observability.recorder import decide_event_in
+
+    attempt_id = str(attempt["id"])
     note = {**(_note(attempt) or {}), "carried_on_at": utcnow().isoformat()}
-    won, _ = decide_event(str(attempt["id"]), expect=(WAITING,), status=CARRIED_ON,
-                          data={"parked": note})
-    return won
+    # Locks the event row (Postgres; on SQLite deciding_events' lock): lock order is the
+    # event, then the run row.
+    won, now = decide_event_in(session, attempt_id, expect=(WAITING,), status=CARRIED_ON,
+                               data={"parked": note})
+    execution_id = str((now or {}).get("execution_id") or attempt.get("execution_id") or "")
+    if not won:
+        raise AlreadyCarriedOn(execution_id)
+    # A superseded attempt is never carried on, even while it still says waiting (C02c).
+    latest = session.exec(select(col(Event.id)).where(
+        col(Event.id) == attempt_id, latest_start_condition(Event.execution_id))).first()
+    if latest is None:
+        raise AlreadyCarriedOn(execution_id)
+    return execution_id
+
+
+def _locked_row(session: Any, execution_id: str) -> Any:
+    from sqlmodel import select
+
+    from temper_ai.runner.models import WorkflowRun
+
+    return session.exec(
+        select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)
+        .with_for_update().execution_options(populate_existing=True),
+    ).first()
+
+
+def claim_and_queue(attempt: dict, workflow_name: str, workspace_path: str | None,
+                    inputs: dict | None, *, start: str | None, extra: dict | None,
+                    lane: Any) -> None:
+    """Claim a parked attempt and queue its run for the worker, in one commit (the API path).
+
+    One transaction: the attempt's compare-and-set (still waiting, still the latest start),
+    then the run's row, locked, re-queued as ``queue_run`` would, or inserted queued when
+    there is none. Nobody ever sees the attempt claimed under a row that isn't queued.
+    Refusals write nothing: AlreadyCarriedOn when someone else claimed or cancelled it or a
+    later start superseded it; AlreadyQueued when the row is queued or running (a box still
+    letting go included). ``lane`` as ``queue_run``'s: the run's lane from the loaded
+    workflow, or ``lanes.KEEP_LANE`` to keep the row's own mark.
+    """
+    from temper_ai.observability.recorder import deciding_events
+    from temper_ai.runner.queue import queue_run_in
+
+    with deciding_events() as session:
+        execution_id = _claim_in(session, attempt)
+        queue_run_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra,
+                     lane=lane)
+
+
+def claim_and_requeue_row(attempt: dict, *, start: str | None, extra: dict | None) -> None:
+    """Claim a parked attempt and re-queue its existing row, in one commit (the worker path).
+
+    As :func:`claim_and_queue`, with the workflow, workspace and inputs taken from the run's
+    locked row and its lane mark kept. A run with no row raises RuntimeError and nothing is
+    written: the worker never makes a row.
+    """
+    from temper_ai.observability.recorder import deciding_events
+    from temper_ai.runner.queue import queue_run_in
+
+    with deciding_events() as session:
+        execution_id = _claim_in(session, attempt)
+        row = _locked_row(session, execution_id)
+        if row is None:
+            raise RuntimeError("the run has no box row")
+        queue_run_in(session, execution_id, row.workflow_name, row.workspace_path,
+                     dict(row.inputs or {}), start, extra)
+
+
+def claim_without_box_row(attempt: dict) -> bool:
+    """Claim a parked attempt for an in-process carry-on, only when its run has no box row.
+
+    True: claimed (one commit). False: the run has a row, of any status, so it is carried on
+    in its box, not here; nothing written. Raises AlreadyCarriedOn as the other claims do.
+    Only this claim may be undone, by :func:`release`, when the thread fails to start.
+    """
+    from temper_ai.observability.recorder import deciding_events
+
+    try:
+        with deciding_events() as session:
+            execution_id = _claim_in(session, attempt)
+            if _locked_row(session, execution_id) is not None:
+                raise _HasBoxRow
+    except _HasBoxRow:
+        return False
+    return True
 
 
 def release(attempt: dict) -> None:
-    """Put a claimed attempt back to waiting: carrying it on did not start."""
+    """Put a claimed attempt back to waiting: carrying it on did not start.
+
+    Only for an in-process claim (:func:`claim_without_box_row`) whose thread failed to
+    start. A claim committed with its row's re-queue is never released: the queued row
+    carries it on, or the reaper ends it.
+    """
     from temper_ai.observability.recorder import decide_event
 
     note = {k: v for k, v in (_note(attempt) or {}).items() if k != "carried_on_at"}
@@ -255,13 +381,25 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
     return True
 
 
-def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "cancel") -> bool:
-    """End a parked run cancelled, as a cancel during a held wait would. Returns whether it did.
+class _CancelRefused(Exception):  # noqa: N818 - rolls back the whole cancellation
+    pass
 
-    Rejects any wait still open (with the reason as its answer), ends the attempt and its row,
-    and holds the clean-ups the attempt said a cancel owes (worked out when it parked).
+
+def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "cancel",
+                  judged: RowGeneration | None = None) -> bool:
+    """Cancel the latest parked attempt and its permitted row outcome in one commit.
+
+    With ``judged`` (a reaper or the box letting go), only that generation may be cancelled:
+    its row now waiting still ends cancelled; its already-ended row stays untouched. Another
+    attempt count or a queued row refuses, rolling the attempt CAS back too. Without judged
+    (a fresh API stop), judge the row inside this transaction; no box row is allowed for an
+    in-process run. True means the attempt actually became cancelled with a permitted row
+    outcome, never merely that someone tried. Gate/team/hold effects follow that commit.
     """
-    from temper_ai.observability.recorder import decide_event
+    from sqlmodel import col, select
+
+    from temper_ai.observability.models import Event
+    from temper_ai.observability.recorder import decide_event_in, deciding_events
 
     attempt = parked_attempt(execution_id)
     if attempt is None:
@@ -272,18 +410,32 @@ def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "ca
     held = list(on_cancel.get("held") or [])
     stopped = {"path": "the run", "reason": message, "at": utcnow().isoformat(),
                "mode": on_cancel.get("mode"), "held": held}
-    won, _ = decide_event(
-        str(attempt["id"]), expect=(WAITING,), status=CANCELLED,
-        data={"error": message, "cancelled_reason": message, "stopped": stopped},
-    )
-    if not won:
+    try:
+        with deciding_events() as session:
+            attempt_id = str(attempt["id"])
+            won, _ = decide_event_in(
+                session, attempt_id, expect=(WAITING,), status=CANCELLED,
+                data={"error": message, "cancelled_reason": message, "stopped": stopped},
+            )
+            if not won:
+                return False
+            latest = session.exec(select(col(Event.id)).where(
+                col(Event.id) == attempt_id, latest_start_condition(Event.execution_id))).first()
+            if latest is None:
+                raise _CancelRefused
+            row_outcome = _end_row_in(session, execution_id, CANCELLED, judged=judged)
+            if row_outcome == "refused":
+                raise _CancelRefused
+    except _CancelRefused:
+        logger.info("Run %s: parked cancel refused; its attempt and row left alone (%s)",
+                    execution_id, by)
         return False
     _reject_open_waits(execution_id, reason)
-    _end_row(execution_id, CANCELLED)
     _end_pi_teams(execution_id)
     if held and on_cancel.get("mode") == "hold":
         _hold(execution_id, attempt, on_cancel, held, message)
-    logger.info("Run %s: cancelled while it waited on you (%s)", execution_id, by)
+    logger.info("Run %s: cancelled while it waited on you; row %s (%s)",
+                execution_id, row_outcome, by)
     return True
 
 
@@ -325,20 +477,47 @@ def _reject_open_waits(execution_id: str, reason: str | None) -> None:
             decide_event(str(event["id"]), expect=(WAITING,), status=REJECTED, data=rejected)
 
 
-def _end_row(execution_id: str, status: str) -> None:
-    """End the run's box row, if it has one, unless something else ended it already."""
+def _end_row_in(session: Session, execution_id: str, status: str, *,
+                judged: RowGeneration | None) -> str:
+    """The cancel's row disposition, inside its event CAS transaction; never commits.
+
+    ``ended`` means exactly one fenced row update; ``already ended`` and ``no box row``
+    permit the attempt cancel without a row write. ``refused`` must roll the CAS back.
+    Compare attempts to the supplied judgment, but use the row's observed status for the
+    write: freeing the same generation to waiting must not discard the owner's stop (F-A).
+    """
     from sqlmodel import select
 
-    from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
+    from temper_ai.runner.row_generation import (
+        RowGeneration,
+        end_row_if_same_generation,
+    )
 
-    with get_session() as session:
-        row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
-        if row is None or row.status not in (WAITING, "running"):
-            return
-        row.status = status
-        row.completed_at = utcnow()
-        session.add(row)
+    if judged is not None and judged.status not in (WAITING, "running"):
+        return "refused"
+    row = session.exec(select(WorkflowRun).where(
+        WorkflowRun.execution_id == execution_id).execution_options(populate_existing=True)).first()
+    if row is None:
+        return "no box row" if judged is None else "refused"
+    attempts = row.attempts if judged is None else judged.attempts
+    if row.attempts != attempts or row.status == "queued":
+        return "refused"
+    if row.status not in (WAITING, "running"):
+        # No update will take the row lock for this outcome. Take it explicitly, so a
+        # re-queue can't commit between checking the ended row and committing the CAS.
+        row = _locked_row(session, execution_id)
+        if row is None or row.attempts != attempts or row.status == "queued":
+            return "refused"
+        if row.status not in (WAITING, "running"):
+            return "already ended"
+    observed = RowGeneration.from_snapshot({
+        "status": row.status, "attempts": attempts, "spawner_kind": row.spawner_kind,
+        "spawner_handle": row.spawner_handle,
+        "container_id": (row.spawner_metadata or {}).get("container_id"),
+    })
+    changed = end_row_if_same_generation(session, execution_id, observed, status=status)
+    return "ended" if changed else "refused"
 
 
 def _hold(execution_id: str, attempt: dict, on_cancel: dict, held: list, message: str) -> None:
@@ -365,30 +544,18 @@ def _hold(execution_id: str, attempt: dict, on_cancel: dict, held: list, message
 def queue_resume(execution_id: str) -> None:
     """Carry a parked run on in a new box: what Resume does for a run in a box.
 
-    For the worker's reaper, which has no API: claim the attempt, take over anything held,
-    and queue the run to start from its checkpoints, as the Resume button would.
+    For the worker's reaper, which has no API: claim the attempt and re-queue its row to
+    start from its checkpoints in one commit (:func:`claim_and_requeue_row`), then take over
+    anything held, as the Resume button would. Only the winner takes over, after its commit;
+    a failure after that commit leaves the run queued, never released.
     """
-    from sqlmodel import select
-
-    from temper_ai.database import get_session
     from temper_ai.runner import holds
-    from temper_ai.runner.models import WorkflowRun
-    from temper_ai.runner.queue import queue_run
 
     attempt = parked_attempt(execution_id)
-    if attempt is None or not claim(attempt):
+    if attempt is None:
         raise AlreadyCarriedOn(execution_id)
-    try:
-        with get_session() as session:
-            row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
-            if row is None:
-                raise RuntimeError("the run has no box row")
-            name, workspace, inputs = row.workflow_name, row.workspace_path, dict(row.inputs or {})
-        holds.take_over(execution_id, by=execution_id)
-        queue_run(execution_id, name, workspace, inputs, start="resume", extra={"rerun": []})
-    except Exception:
-        release(attempt)
-        raise
+    claim_and_requeue_row(attempt, start="resume", extra={"rerun": []})
+    holds.take_over(execution_id, by=execution_id)
 
 
 def parked_runs() -> list[str]:

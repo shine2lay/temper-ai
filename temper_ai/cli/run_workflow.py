@@ -208,13 +208,21 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # --- Mark running ---------------------------------------------------------
     # The handle the reaper polls: our PID under the subprocess spawner, our
     # container's name when the docker spawner put us in one (a PID would
-    # mean nothing outside the container).
+    # mean nothing outside the container). Keep this box's generation, not a later read:
+    # its letting-go cancel may end only the generation this start writes.
+    from temper_ai.runner.row_generation import RowGeneration
+
+    own_generation = RowGeneration.from_snapshot({
+        **run_row, "status": "running", "attempts": run_row["attempts"] + 1,
+        "spawner_handle": os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
+        "container_id": meta.get("container_id"),
+    })
     _update_run_row(
         execution_id,
         status="running",
         started_at=datetime.now(UTC),
-        spawner_handle=os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
-        attempts=run_row["attempts"] + 1,
+        spawner_handle=own_generation.handle,
+        attempts=own_generation.attempts,
     )
 
     # --- Cancel signal handling ----------------------------------------------
@@ -331,7 +339,8 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     if result.status == PARKED_STATUS:
         if cancel_event.is_set():
             # Cancelled while it was letting go: nothing is left to stop.
-            cancel_parked(execution_id, stop_words(cancel_event), by="cancel while its box let go")
+            cancel_parked(execution_id, stop_words(cancel_event), by="cancel while its box let go",
+                          judged=own_generation)
             return result.exit_code
         # Its row stays as it is: the worker's reaper sees this box gone, frees the run and
         # carries it on once the owner has answered (runner/parked.py). Writing the row here
@@ -414,6 +423,7 @@ def _load_run_row(execution_id: str) -> dict[str, Any] | None:
             "inputs": row.inputs,
             "status": row.status,
             "attempts": row.attempts,
+            "spawner_kind": row.spawner_kind,
             "spawner_metadata": dict(row.spawner_metadata or {}),
         }
 

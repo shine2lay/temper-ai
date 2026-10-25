@@ -11,7 +11,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from temper_ai.config.admission_contract import CandidateInvocationBinding
 
 
 class Status(StrEnum):
@@ -120,7 +123,20 @@ class ExecutionContext:
     park_at_gates: bool = False  # Pi workflows only: a gate saves where the run is and lets the worker go instead of holding it (stage/pi_workflows.py, runner/parked.py). Set by whoever starts the run.
     step_path: str | None = None  # The running step's own path in the run ("review.security_check"), whatever kind of node it is. Set by the executor for each step; what a wait inside the step is filed under (stage/step_waits.py).
 
+    # Opt-in local binding owns immutable bytes. Context replacements preserve
+    # it; use-site adapters must derive/check the actual child path (T3).
+    admission: CandidateInvocationBinding | None = None
+
     def __post_init__(self) -> None:
+        if self.admission is not None:
+            # Lazy import avoids config -> database -> shared type cycles.
+            from temper_ai.config.admission_contract import (
+                AdmissionRefused,
+                CandidateInvocationBinding,
+                RefusalCode,
+            )
+            if type(self.admission) is not CandidateInvocationBinding:
+                raise AdmissionRefused(RefusalCode.TYPE)
         # The run's tool executor learns the run's cancel flag here: every run
         # builds its context once (API, worker, CLI) and every node runs on a
         # copy of it. A stopped run then starts no tool call and kills a

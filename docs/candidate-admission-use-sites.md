@@ -1,6 +1,7 @@
 # Candidate admission: actual use sites (T3)
 
-Status: implementation in progress; source-only, not installed or activated.
+Status: implemented source candidate; not installed or activated. Final exact-head
+CI receipts are delivered separately so recording them cannot change their head.
 Accountable lead: Temper; overall design: Architecture #303. Frozen contract:
 `caf5c16f6d9965cbcbc8e10653d75e1c47b27340`.
 
@@ -13,7 +14,7 @@ same-opened-fd readiness/current generation with the existing exclusive claim,
 should refuse substitutions after preparation. Measure with synthetic real
 entrypoints and forbidden-action counters. A mutated graph, context, template,
 config, root or stale nonce that still schedules, renders or claims falsifies
-this hypothesis. Result: local touched verification PASS (488 tests, including existing native
+this hypothesis. Result: final touched verification PASS (496 tests, including existing native
 caller/read/send/persistence and loader tests); ruff and focused mypy PASS.
 H-T3-USE-1, H-T3-FIXTURE-1, H-T3-METADATA-1 and H-T3-ENQUEUE-1 HIT on isolated
 synthetic adapters. Exact-head full gates/remote PostgreSQL remain pending.
@@ -45,6 +46,20 @@ markers still refuse before events/tools. Falsifier: either legacy still refuses
 or a declared candidate can fall back. HIT: 198 targeted consumer and affected
 legacy tests passed, including explicit markers on dynamic contexts. Full-hook
 gate remains required.
+
+H-T3-OMISSION-1: final source inspection found ScriptAgent indexed the template
+before comparing its full config, so a removed field raised KeyError rather than
+a fixed refusal; before_node also accepted a valid but unrelated binding in a
+nested parent context before replacing it. Read the optional template then let
+the full-field comparison refuse, and require a nested incoming binding to name
+either its current parent or the exact child being invoked. Expected: omission,
+wrong template type and sibling-binding substitutions refuse at the real entry
+before events/factory. Falsifier: raw exceptions or a forbidden counter advance.
+The top-level context remains the agreed graph bootstrap (no fictitious root
+node is added to the frozen contract). HIT: all 496 touched tests pass, including
+the new missing/type/sibling controls; ruff and focused mypy pass. The preceding
+candidate's full SQLite hook passed 16,730 tests plus 2,466 subtests (34 skipped);
+this small repair requires fresh full hooks and exact-head remote checks.
 
 ## Consumer placement
 
@@ -87,7 +102,11 @@ checkpoint service's durable identity, not trust a public receipt constructor.
 preparation. Callbacks allocate the claim only; no provider/network work.
 
 Context construction remains T1-owned. Tests use a dataclass extension with
-`admission`, `admission_hooks` and `admission_required`. No runtime registry or
+`admission: CandidateInvocationBinding | None = None`,
+`admission_hooks: AdmissionUseHooks | None = None` and
+`admission_required: bool = False`. These agreed fields are runtime-only, not
+new v1 wire fields or serialized hook objects; T1's actual propagation is not
+claimed by this isolated stage. No runtime registry or
 thread-local fallback is used. Missing binding/hooks on a designated candidate
 or an already-bound node/agent refuse; ordinary unmarked contexts stay legacy.
 V1 must connect the real designation/restore path, projector and transaction

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import ast
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import pytest
@@ -91,9 +93,14 @@ class Module:
                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                     and self.scope(n) + ("." if self.scope(n) else "") + n.name == scope)
 
+    @cached_property
+    def _resolved_calls(self) -> list[tuple[ast.Call, str]]:
+        # Cost only: one walk per Module, in ast.walk order, each callee resolved once.
+        # names is final after __init__, and a changed source is always a new Module.
+        return [(n, self.name(n.func)) for n in ast.walk(self.tree) if isinstance(n, ast.Call)]
+
     def calls(self, name: str) -> list[ast.Call]:
-        return [n for n in ast.walk(self.tree) if isinstance(n, ast.Call)
-                and (self.name(n.func) == name or self.name(n.func).endswith("." + name))]
+        return [n for n, callee in self._resolved_calls if callee == name or callee.endswith("." + name)]
 
 
 def _modules(sources: dict[str, str]) -> dict[str, Module]:
@@ -424,7 +431,23 @@ def _assert_t19(modules: dict[str, Module]) -> None:
     assert "_WORKER_KEPT = ('box_profile', LANE_RECORD_KEY)" in _exprs(modules[QUEUE].tree), "T19 queue kept identity"
 
 
-def _assert_p14(modules: dict[str, Module]) -> None:
+def _test_sources() -> dict[str, str]:
+    """Direct tests for the P14 legacy-caller scan; this file names the API only in strings."""
+    return {str(p): p.read_text() for p in (ROOT / "tests").rglob("*.py") if p != Path(__file__)}
+
+
+def _may_name_parked(text: str) -> bool:
+    """Cost-only prefilter for the P14 tests/ scan: False means calls() can't find the API.
+
+    A resolved callee is built only from identifiers the parser read (names, attributes,
+    import paths, aliases and what they are rebound to); a string constant keeps its
+    quotes, so it can never end the dotted target. Python folds identifiers to NFKC
+    (PEP 3131), so test the folded text: a look-alike spelling of parked still counts.
+    """
+    return "parked" in unicodedata.normalize("NFKC", text)
+
+
+def _assert_p14(modules: dict[str, Module], tests: dict[str, str] | None = None) -> None:
     parked = modules[PARKED]
     assert not any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "claim"
                    for n in ast.walk(parked.tree)), "P14 legacy claim survived"
@@ -486,9 +509,9 @@ def _assert_p14(modules: dict[str, Module]) -> None:
     # Catch imported aliases of the retired API in runtime AND direct tests.
     for path, mod in modules.items():
         assert not mod.calls("temper_ai.runner.parked.claim"), f"P14 legacy caller in {path}"
-    for path in (ROOT / "tests").rglob("*.py"):
-        if path != Path(__file__):
-            assert not Module(str(path), path.read_text()).calls("temper_ai.runner.parked.claim"), (
+    for path, text in (_test_sources() if tests is None else tests).items():
+        if _may_name_parked(text):
+            assert not Module(path, text).calls("temper_ai.runner.parked.claim"), (
                 f"P14 legacy test caller in {path}")
 
 
@@ -575,3 +598,34 @@ def test_source_mutations_bite(assembled, case, path, old, new, check, error):
     checks = {"t9": _assert_t9, "t19": _assert_t19, "p14": _assert_p14}
     with pytest.raises(AssertionError, match=error):
         checks[check]({**original, path: Module(path, changed)})
+
+
+# Crafted direct tests for the P14 tests/ scan. Every caller spells the retired API a
+# different way and must still fail P14 through the prefilter; \uff50 is a fullwidth p
+# that the parser folds into parked. The unresolvable files lack parked even after that
+# folding: the prefilter skips them, and the full scan finds no caller in them either.
+LEGACY_TEST_CALLERS = {
+    "module-alias": "from temper_ai.runner import parked as p\n\n\ndef test_x(a):\n    p.claim(a)\n",
+    "function-alias": "from temper_ai.runner.parked import claim as take\n\n\ndef test_x(a):\n    take(a)\n",
+    "import-alias": "import temper_ai.runner.parked as tp\n\n\ndef test_x(a):\n    tp.claim(a)\n",
+    "rebound-alias": "from temper_ai.runner import parked\n\nlane = parked\n\n\ndef test_x(a):\n    lane.claim(a)\n",
+    "look-alike": "from temper_ai.runner import \uff50arked as p\n\n\ndef test_x(a):\n    p.claim(a)\n",
+}
+UNRESOLVABLE_TEST_FILES = {
+    "dynamic-import": "import importlib\n\n\ndef test_x(a):\n    importlib.import_module('temper_ai.runner.par' + 'ked').claim(a)\n",
+    "near-name": "from temper_ai.runner import queue as parkd\n\n\ndef test_x(a):\n    parkd.claim(a)\n",
+}
+
+
+@pytest.mark.parametrize("case", sorted(LEGACY_TEST_CALLERS))
+def test_legacy_test_caller_bites(assembled, case):
+    _, original = assembled
+    with pytest.raises(AssertionError, match=re.escape(f"P14 legacy test caller in tests/{case}.py")):
+        _assert_p14(original, tests={f"tests/{case}.py": LEGACY_TEST_CALLERS[case]})
+
+
+@pytest.mark.parametrize("case", sorted(UNRESOLVABLE_TEST_FILES))
+def test_prefilter_skips_only_unresolvable_test_files(case):
+    text = UNRESOLVABLE_TEST_FILES[case]
+    assert not _may_name_parked(text), f"{case}: prefilter keeps it"
+    assert not Module(case, text).calls("temper_ai.runner.parked.claim"), f"{case}: full scan finds a caller"

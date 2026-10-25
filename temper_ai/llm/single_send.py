@@ -247,14 +247,18 @@ class SingleSendControl:
         if self.failure_reason:
             raise SingleSendError(self.failure_reason)
 
+    def parse_request_metadata(self, raw: bytes) -> dict[str, Any]:
+        """Closed text-only projection by default; opt-in modes own their parser."""
+        return request_metadata(raw)
+
     def request_start(self, request: httpx.Request) -> None:
         self.check()
         if self.transmission_ids:
             raise SingleSendError("retry")
-        metadata = request_metadata(request.content)
+        metadata = self.parse_request_metadata(request.content)
         self.on_pre_send(metadata)  # includes durable claim fsync THEN directory fsync
         self.check()
-        if request_metadata(request.content) != metadata:
+        if self.parse_request_metadata(request.content) != metadata:
             raise SingleSendError("strict_parser")
         self.request = metadata
         self.http_started_monotonic_s, self.http_started_utc = paired_sample()

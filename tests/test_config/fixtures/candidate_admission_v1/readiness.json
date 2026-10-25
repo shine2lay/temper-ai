@@ -1,0 +1,18 @@
+{
+  "format":"candidate-root-readiness/v1",
+  "preparation_path":["prepare"],
+  "position_id":"p01",
+  "descriptor_sha256":"836f5368c1e399d6165d48d47eb214b593dd7542612491ef6bb88778550fc561",
+  "graph_sha256":"5c60bce637360534dd75833e382ae21743125438566b3f6a82408dd63e84e00e",
+  "execution_uuid":"00000000-0000-4000-8000-000000000001",
+  "dispatch_nonce":"00000000-0000-4000-8000-000000000003",
+  "running_attempt":1,
+  "checkpoint_sha256":"3333333333333333333333333333333333333333333333333333333333333333",
+  "root":{"path":"/synthetic/wire-fixture/out","device":1,"inode":3,"uid":1000,"gid":1000,"mode":448},
+  "parents":[
+    {"path":"/synthetic","device":1,"inode":1,"uid":1000,"gid":1000,"mode":448},
+    {"path":"/synthetic/wire-fixture","device":1,"inode":2,"uid":1000,"gid":1000,"mode":448}
+  ],
+  "files":[],
+  "durable":true
+}

@@ -1,15 +1,82 @@
-# Full-page web capture
+# capture_page: full-page web capture
 
-Owner: Design. `design_web_capture` is three **script** stages — preflight →
+Owner: Design. `capture_page` is three **script** stages — preflight →
 capture → verify — and makes **zero model calls**. It captures evidence, not a
 semantic or visual-quality verdict. It uses only temper-dev's existing
 Playwright MCP service; it never starts another browser service or Temper.
+
+## Library entry (for Temper's shared tool library)
+
+Ready to register when the shared library exists (Temper's plan,
+`/home/shinelay/company-lab/workflow-tool-library/PLAN.md`). Until the library
+marks it reliable, the workflow description starts "Library tool candidate:".
+
+- **Name:** `capture_page` (candidates run as `capture_page_next`).
+- **Purpose:** Capture a web page as-is and in full, with exact slices,
+  positioned text and an honest status.
+- **Owner:** Design (declared). **Version:** 1 (the full-page capture of
+  Design #150; former name `design_web_capture`, renamed in #151 with no
+  behaviour change).
+- **Config:** `configs/design/workflows/capture_page.yaml`, three script stages
+  (`capture_page_preflight`, `capture_page_capture`, `capture_page_verify`),
+  zero model calls, $0.
+- **Inputs:** `workspace_path` (string, required; an existing folder the worker
+  can write), `url` (string, required; public http(s) only), `ready_selector`
+  (default `body`), `viewports` (default desktop 1440 × 900 and mobile
+  390 × 844), `timeout_ms` (default 30000), `browser_url` (default
+  `http://playwright-mcp:8931/mcp`).
+- **Outputs:** `verified` (the evidence contract passed; not that the page is
+  usable), `receipt_path` (the verification receipt), `captures` (per view:
+  first screen and full page, each with status usable / incomplete / not usable
+  / uncertain, reasons, notes, images, slices, text, cookie action, `cut_off`,
+  `horizontal_overflow`).
+- **Ref snippet:**
+
+  ```yaml
+  - name: page_evidence
+    type: stage
+    ref: capture_page
+    input_map:
+      workspace_path: input.workspace_path
+      url: input.url
+  ```
+
+- **Proof (#150, 24–25 October 2026):** report
+  `/home/shinelay/design-lab/results/full-page-capture-20261024/REPORT.md`.
+  Known pages 72/72 (18 cases × 2 widths × 2 repeats, `known-proof-v7.json`);
+  8 real sites × 2 widths natively on temper-dev, 16/16 verified, 0 model
+  calls, every slice read by eye and the status agreed on all 16 views
+  (`native-state-r4.json`; run ids: Airbnb 64740bc6, b715d095; Mayo Clinic
+  f6189da0, 48571b38; Patagonia 1f21580a, 673d50e4; Monzo bfe5a198, c1ee960f;
+  Brilliant cf384acc, 49ea8352; Fathom d6593651, 2b647c53; The Modern House
+  25880b67, f4719baa; Edenmoor d85df03c, 6c294827; preflight 2656d35a).
+  Landed db51c0d, live 25 October 01:30 PDT.
+- **Rename proof (#151, 25 October 2026):** the renamed code gave #150's
+  answers again: known pages 72/72, with the same status, checks and reasons
+  on every row; the retained #149 captures the same (Airbnb flagged
+  incomplete at both widths, Fathom and Brilliant not); preflight passed;
+  the browser script is byte-identical. Report, with the live example run:
+  `/home/shinelay/design-lab/results/capture-page-rename-151-20261025/REPORT.md`.
+- **Known limits:** the statuses describe what this headless route on
+  temper-dev is served (403, holding and robot-check pages stay not usable;
+  no stealth or bypass), not the site itself; a cookie window without a
+  Reject / Only necessary control is left open, so slice 1 may be partly
+  covered (uncertain); script-driven entrance animations can be caught at
+  their first frame, unflagged; a robot check that reloads the page mid-capture
+  reports the raw browser error as the reason; pages that never go
+  network-quiet take several minutes per view (up to about 9 minutes seen);
+  sampled occlusion, CSS backgrounds, video, closed shadow roots and nested
+  frames are not fully measured; width is not handset emulation. Full list:
+  "Status meanings" and "Known limits" below.
+- **Receipt schema id:** receipts keep `design.web_capture.v2` (the stages
+  check it); it is a data contract, unchanged by the rename so #150's
+  receipts stay readable.
 
 ## Run
 
 Use the normal native workflow API/CLI with `workspace_path` and a public
 HTTP(S) `url`. The workspace must already exist and be writable by the worker.
-`design_web_capture_example` shows reuse as one nested workflow stage.
+`capture_page_example` shows reuse as one nested workflow stage.
 
 Optional inputs:
 
@@ -148,9 +215,9 @@ useful diagnostics, never substituted for a successful target capture.
 
 ## Proof and maintenance
 
-`tests/test_design_web_capture_v2.py` covers input, isolation, PNG corruption,
+`tests/test_capture_page.py` covers input, isolation, PNG corruption,
 exact slice tiling, receipt binding, consent allowlist, text geometry and honest
-statuses. `tests/fixtures/design_web_capture_cases.py` defines fixed browser
+statuses. `tests/fixtures/capture_page_cases.py` defines fixed browser
 pages: short complete, lazy media, sticky header, 100vh hero, Reject, Accept-only,
 iframe consent, blank band, broken image, endless feed, blocked page, wide
 overflow, far lazy image, parked carousel, ticker, off-screen marquee, sideways

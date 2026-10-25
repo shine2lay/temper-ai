@@ -1,4 +1,4 @@
-"""Fixed local browser pages and frozen expected answers for capture v2."""
+"""Fixed local browser pages and frozen expected answers for capture_page."""
 import json
 
 CASES = {"short": "usable", "lazy": "usable", "sticky": "usable", "hero": "usable",

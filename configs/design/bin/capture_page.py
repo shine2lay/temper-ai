@@ -187,7 +187,7 @@ def preflight_code(selector):
 
 
 def capture_code(request, viewport, setup_js="null"):
-    return ("async (page) => {\n" + (HERE / "design_web_capture.js").read_text()
+    return ("async (page) => {\n" + (HERE / "capture_page.js").read_text()
             + "\nreturn await captureWithBrowser(page.context().browser()," + json.dumps(request) + ","
             + json.dumps(viewport) + "," + setup_js + ");\n}")
 

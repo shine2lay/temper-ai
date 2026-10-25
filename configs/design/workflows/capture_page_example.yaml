@@ -1,6 +1,6 @@
 # The same complete capture workflow reused as one stage, not collapsed to one step.
 workflow:
-  name: design_web_capture_example
+  name: capture_page_example
   inputs:
     workspace_path: {type: string, required: true}
     url: {type: string, required: true}
@@ -11,7 +11,7 @@ workflow:
   nodes:
     - name: page_evidence
       type: stage
-      ref: design_web_capture
+      ref: capture_page
       input_map:
         workspace_path: input.workspace_path
         url: input.url

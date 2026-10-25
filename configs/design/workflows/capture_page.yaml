@@ -1,7 +1,9 @@
 workflow:
-  name: design_web_capture
-  version: 2
-  description: Full-page evidence with untouched first screen, reject-only consent, positioned text, exact slices and honest completeness. No models.
+  name: capture_page
+  version: 1
+  description: >-
+    Library tool candidate: capture a web page as-is and in full, with exact slices, positioned text and an honest status.
+    Untouched first screen, reject-only cookie handling, honest completeness. No models.
   inputs:
     workspace_path: {type: string, required: true}
     url: {type: string, required: true}
@@ -20,7 +22,7 @@ workflow:
   nodes:
     - name: preflight
       type: agent
-      agent: design_web_capture_preflight
+      agent: capture_page_preflight
       input_map:
         workspace_path: input.workspace_path
         url: input.url
@@ -30,14 +32,14 @@ workflow:
         browser_url: input.browser_url
     - name: capture
       type: agent
-      agent: design_web_capture_capture
+      agent: capture_page_capture
       depends_on: [preflight]
       input_map:
         workspace_path: input.workspace_path
         preflight_receipt: preflight.structured.receipt_path
     - name: verify
       type: agent
-      agent: design_web_capture_verify
+      agent: capture_page_verify
       depends_on: [capture]
       input_map:
         workspace_path: input.workspace_path

@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("capture_v2", ROOT / "configs/design/bin/design_web_capture.py")
+SPEC = importlib.util.spec_from_file_location("capture_page", ROOT / "configs/design/bin/capture_page.py")
 wc = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(wc)
 VIEW = {"name": "small", "width": 24, "height": 40}
@@ -237,7 +237,7 @@ def test_horizontal_overflow_is_a_note_and_marks_text(tmp_path):
 
 
 def test_workflow_is_three_script_stages():
-    workflow = yaml.safe_load((ROOT / "configs/design/workflows/design_web_capture.yaml").read_text())["workflow"]
+    workflow = yaml.safe_load((ROOT / "configs/design/workflows/capture_page.yaml").read_text())["workflow"]
     assert [node["name"] for node in workflow["nodes"]] == ["preflight", "capture", "verify"]
     for node in workflow["nodes"]:
         agent = yaml.safe_load((ROOT / f'configs/design/agents/{node["agent"]}.yaml').read_text())["agent"]
@@ -300,8 +300,8 @@ def test_native_script_wrappers_pass_values_not_env_names(tmp_path, phase):
 
     printer = tmp_path / "argv.py"
     printer.write_text("import sys,json; print(json.dumps(sys.argv[1:]))")
-    config = yaml.safe_load((ROOT / f"configs/design/agents/design_web_capture_{phase}.yaml").read_text())["agent"]
-    config["script_template"] = config["script_template"].replace("/app/configs/design/bin/design_web_capture.py", str(printer))
+    config = yaml.safe_load((ROOT / f"configs/design/agents/capture_page_{phase}.yaml").read_text())["agent"]
+    config["script_template"] = config["script_template"].replace("/app/configs/design/bin/capture_page.py", str(printer))
     executor = ToolExecutor(workspace_root=str(tmp_path))
     executor.register_tools({"Bash": Bash(config={"workspace_root": str(tmp_path)})})
     context = MagicMock()
@@ -333,7 +333,7 @@ def test_browser_client_waits_past_five_minutes_but_records_a_call_that_never_an
     from contextlib import asynccontextmanager
 
     import mcp.client.streamable_http as transport
-    stage = yaml.safe_load((ROOT / "configs/design/agents/design_web_capture_capture.yaml").read_text())
+    stage = yaml.safe_load((ROOT / "configs/design/agents/capture_page_capture.yaml").read_text())
     stage_timeout = stage["agent"]["timeout_seconds"]
     seen = {}
 
@@ -359,7 +359,7 @@ def test_browser_client_waits_past_five_minutes_but_records_a_call_that_never_an
 
 
 def test_source_cannot_accept_cookies_or_mutate_shared_tab():
-    js = (ROOT / "configs/design/bin/design_web_capture.js").read_text()
+    js = (ROOT / "configs/design/bin/capture_page.js").read_text()
     assert "browser.newContext(" in js and "bypassCSP: false" in js
     assert "addStyleTag" not in js and "setBypassCSP" not in js
     assert "fullPage: true, animations: 'disabled', caret: 'hide', scale: 'css'" in js

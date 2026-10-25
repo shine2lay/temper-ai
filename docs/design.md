@@ -1,6 +1,8 @@
 # Design reviews
 
 Original editable-vector identity work: [Logo workflow and contracts](design-logo.md).
+Full-page web evidence for any role: `capture_page`, a candidate for Temper's
+shared tool library ([capture contract and library entry](capture-page.md)).
 The logo workflow uses new Design-owned agents; reviewers and sealed review
 benchmarks described here are unchanged.
 

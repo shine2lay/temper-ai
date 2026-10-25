@@ -1,12 +1,12 @@
 # Owner: Design. Independent saved-PNG, text, consent, slices and status checks.
 agent:
-  name: design_web_capture_verify
-  version: 2
+  name: capture_page_verify
+  version: 1
   type: script
   strict_undefined: true
   timeout_seconds: 3600
   script_template: |
     #!/bin/sh
     set -eu
-    "$TEMPER_PYTHON" /app/configs/design/bin/design_web_capture.py verify \
+    "$TEMPER_PYTHON" /app/configs/design/bin/capture_page.py verify \
       --workspace {{ workspace_path }} --receipt {{ capture_receipt }}

@@ -1,14 +1,14 @@
 # Owner: Design. Script-only capability and input proof.
 agent:
-  name: design_web_capture_preflight
-  version: 2
+  name: capture_page_preflight
+  version: 1
   type: script
   strict_undefined: true
   timeout_seconds: 600
   script_template: |
     #!/bin/sh
     set -eu
-    "$TEMPER_PYTHON" /app/configs/design/bin/design_web_capture.py preflight \
+    "$TEMPER_PYTHON" /app/configs/design/bin/capture_page.py preflight \
       --workspace {{ workspace_path }} --url {{ url }} \
       --ready-selector {{ ready_selector }} --viewports {{ viewports | tojson }} \
       --timeout-ms {{ timeout_ms }} --browser {{ browser_url }}

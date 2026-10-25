@@ -1,0 +1,32 @@
+{
+  "format": "architecture-admission-oracle-manifest/1",
+  "files": {
+    "README.md": "3a963d59e565833000bc6fda7fa64b365f1c30d1d1a899c60abb4b94a61be496",
+    "provenance.json": "a064a07489876f9eeeddd4080aae2f64ea68c5188a6fddfa7a9251f8f0b8283b",
+    "octets.json": "767b809b0ab2216f3574e7418735962b7fc4e595f60801958b7b3c8d6f28b89f",
+    "inputs.json": "9620ab25c37aa2c4b554507a51e6e254942434d9bedc793fb49e5f1129c51b7c",
+    "expected-raw.json": "b784cfc16a4ea64f76478e6d0804de3024074caa460f2d8eb8e7e449cb8aa4a2",
+    "expected-graph.json": "d003110aaa1e0deb50221ee43b124afde38197e7af06ba7ce382534393781fce",
+    "expected-positions.json": "73d7dde81e532bf6bab57e1bece06ac8fc0ee3e24c5f21dea9cd61cb8a8d58d7",
+    "cases.json": "4ea19e447ae944db27fc151365b89c587a1138ff69b599cfbe3387c9c52afc8b"
+  },
+  "canonical_raw_records": {
+    "workflow:oracle306": "9bf59ce58f33fcf59fdcb11dbe3ef3fa19c02e24cdb659c61a68b9a8380aeb6d",
+    "stage:oracle306_r01": "c65802b912627251a99a5e70eb8aa84e4304e1bab0b0127c613d30564e84f748",
+    "agent:oracle306_prepare": "047c697fe33bae63ae04386a02082d348cb2692beb4368ecc1c18869685945cd",
+    "agent:oracle306_account": "6ec843075d070eadf60dc4977dc63628a02b40c6eec7020b972b4eb6ca9d89f4",
+    "agent:oracle306_receipt": "65f5913c1c03a3c1546035da163c498f59a1e508a8178aae8103f1b5770d30a4",
+    "agent:oracle306_r01_A1": "b1523c37e66831186c5be9e9819587e69ae9e731043cf32855d806cd22b8224a",
+    "agent:oracle306_r01_A2": "6921053b1d945699769441b915f49c4f36d20257e9542b0892548b7a68f660d6",
+    "agent:oracle306_r01_A3": "cd020c81ac2b12e3cd73cad8d177fca10d30023575c4ffd75969a38c86644d78"
+  },
+  "script_template_sha256": {
+    "r01.prepare": "5c63602e7d3612ee926301e160a3ce9de0ecb167f6ee35c08bb63624bd0f14f1",
+    "r01.account_A1": "8f6423224056803321a2936dcbdabf63c62bb1ab38ab477c94141c300fd6646a",
+    "r01.account_A2": "8f6423224056803321a2936dcbdabf63c62bb1ab38ab477c94141c300fd6646a",
+    "r01.account_A3": "8f6423224056803321a2936dcbdabf63c62bb1ab38ab477c94141c300fd6646a",
+    "r01.receipt": "3ad0b17c9c29af44a0302c066f208d14a75ea6fefd884472fe918fe8cb52cf5f"
+  },
+  "canonical_expected_native_maps_sha256": "b675475179d3f0062870d1ba03ab45d29bfa33eccc9d900f95a455dae0e36bb0",
+  "canonical_expected_graph_sha256": "5120bc0a1d422913d242d27f3a477d9176eeb8e6c1bc52904888afd6a92cdb02"
+}

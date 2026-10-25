@@ -1,0 +1,22 @@
+{
+  "format": "architecture-admission-oracle-octets/1",
+  "provenance": "SYNTHETIC_INERT_FIXTURE_BYTES_NOT_MODEL_BOUND",
+  "INPUT": {
+    "prompt": {"hex": "303036"},
+    "other_prompt": {"hex": "303037"},
+    "source": {"hex": "534f555243452d4f5241434c452d333036"},
+    "config": {"hex": "434f4e4649472d4f5241434c452d333036"},
+    "packet": {"hex": "5041434b45542d4f5241434c452d333036"},
+    "pricing_B": {"utf8": "{\"currency\":\"USD\",\"models\":{\"gpt-6.1-sol\":{\"input_usd_per_million\":0,\"output_usd_per_million\":0,\"max_output_tokens\":8192,\"public_source\":\"https://example.invalid/oracle306B\"}}}"},
+    "pricing": {"utf8": "{\"currency\":\"USD\",\"models\":{\"claude-opus-5-5\":{\"input_usd_per_million\":0,\"output_usd_per_million\":0,\"request_limit_evidence\":\"https://example.invalid/oracle306\"}}}"}
+  },
+  "EXPECTED": {
+    "prompt": {"bytes": 3, "sha256": "c0f890f2fd6b058103ded8d296e49ba3b924661210ca87ff190de41dbb91dee0"},
+    "other_prompt": {"bytes": 3, "sha256": "629f4cf9337b0d0c76f305d860f98894cfa8c279516b425747514ca8710deb97"},
+    "source": {"bytes": 17, "sha256": "e90abd9dd0d0479d3e0e76c6e09de563f7e310718f5c871c97e3322c80fd4709"},
+    "config": {"bytes": 17, "sha256": "22a69ef90d407d2c5332d27f3c99fa0d571fd9780c6e7f51158d2d4f1ae4dc87"},
+    "packet": {"bytes": 17, "sha256": "7bbdfb3f15f43a539d19e78eeecb02a67f17c9dce76ba1097d3f2185b7eba1aa"},
+    "pricing_B": {"bytes": 176, "sha256": "517f0e074357572e11c364f59f9a0bcd0192252568c755e2c7433990c8c04c52"},
+    "pricing": {"bytes": 163, "sha256": "f21bb9195c264face6e10401f066e6340b4e11e588bf2666b091afc780162967"}
+  }
+}

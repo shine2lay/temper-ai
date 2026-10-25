@@ -1,0 +1,23 @@
+{
+  "format": "architecture-admission-oracle-raw/1",
+  "EXPECTED": {
+    "schema_version": 1,
+    "native_record_positions": {"agent:oracle306_r01_A1":"r01.call_A1","agent:oracle306_r01_A2":"r01.call_A2","agent:oracle306_r01_A3":"r01.call_A3"},
+    "records": {
+      "workflow:oracle306": {"name":"oracle306","description":"Synthetic preparation/calls/receipt graph","version":"1.0","inputs":{"record_id":{"type":"string","default":"r01"}},"outputs":{"receipt":"r01.receipt"},"safety":null,"on_failure":"hold","notify":null,"starts_runs":false,"nodes":[{"name":"r01","type":"stage","ref":"stages/oracle306_r01"}]},
+      "stage:oracle306_r01": {"name":"oracle306_r01","nodes":[
+        {"name":"prepare","agent":"agents/oracle306_prepare","input_map":{"record_id":"input.record_id"}},
+        {"name":"call_A1","agent":"agents/oracle306_r01_A1","depends_on":["prepare"],"inputs":{},"input_map":{}},
+        {"name":"account_A1","agent":"agents/oracle306_account","depends_on":["call_A1"],"input_map":{"record_id":"input.record_id"}},
+        {"name":"call_A2","agent":"agents/oracle306_r01_A2","depends_on":["account_A1"],"inputs":{},"input_map":{}},
+        {"name":"account_A2","agent":"agents/oracle306_account","depends_on":["call_A2"],"input_map":{"record_id":"input.record_id"}},
+        {"name":"call_A3","agent":"agents/oracle306_r01_A3","depends_on":["account_A2"],"inputs":{},"input_map":{}},
+        {"name":"account_A3","agent":"agents/oracle306_account","depends_on":["call_A3"],"input_map":{"record_id":"input.record_id"}},
+        {"name":"receipt","agent":"agents/oracle306_receipt","depends_on":["account_A3"],"run_after_failure":true,"input_map":{"record_id":"input.record_id"}}
+      ]},
+      "agent:oracle306_prepare": {"name":"oracle306_prepare","type":"script","script_template":"printf '%s\\n' '{\"record_id\":\"{{ record_id }}\",\"status\":\"SYNTHETIC_READY\"}'","strict_undefined":true},
+      "agent:oracle306_account": {"name":"oracle306_account","type":"script","script_template":"printf '%s\\n' '{\"record_id\":\"{{ record_id }}\",\"status\":\"SYNTHETIC_ACCOUNTED\"}'","strict_undefined":true},
+      "agent:oracle306_receipt": {"name":"oracle306_receipt","type":"script","script_template":"printf '%s\\n' '{\"record_id\":\"{{ record_id }}\",\"status\":\"SYNTHETIC_RECEIPT\"}'","strict_undefined":true}
+    }
+  }
+}

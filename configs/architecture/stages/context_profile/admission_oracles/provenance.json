@@ -1,0 +1,53 @@
+{
+  "format": "architecture-admission-oracle-fixture/1",
+  "task": 306,
+  "accountable_lead": "architecture",
+  "synthetic": true,
+  "runnable": false,
+  "runtime_status": "UNEXECUTED",
+  "authority": "TEST_FIXTURE_ONLY_NOT_APPROVED_CANDIDATE_DESCRIPTOR",
+  "source": {
+    "commit": "876e2b677a5eeb38a0371d2004cd31ae12aa0c08",
+    "tree": "1d773cd5a34b16f3e9274c452bcea213d78fa416",
+    "parent": "15dc7a7b866a005c9594e16db8342afdb9effea0",
+    "initial_drift": [],
+    "303_seal": "f44ee360586f95e2f8dc51754ec8ea9474efad12b45965935f4b665065a6d7e6",
+    "303_design": "1926642eec3517059740e5d2cdb659a3b16893148de1dde58a9e1837b5f13d71",
+    "303_plan": "a85d44896c25650bb8123ad422e7b853c9ee552a14afedf8f4797bdc0ce01d9b",
+    "303_matrix": "991513e8faa890a717496be177c30dd91e57cd9ba7e9125bf5e19bdc1ff0a7f5",
+    "original_cases_canonical_sha256": "ff88dc34fb688aba281f562c0485ea983a3e9dbb2b0910a1f91188bc057f571a",
+    "299_seal": "216abd1d35d137eef90c60b74546ebbd54f7776db65d5c03b1a038eed5adfe18",
+    "home_adoption": "bf6f31c0e2f9e4da2a179fafdb234dd32fb2334611ae51262af96cfb96bfd168",
+    "field_inventory_sources": {
+      "temper_ai/stage/models.py": "4aac7d55485ae88de1e349a3398380ea23d883605a1628eae35cb711085c21b6",
+      "temper_ai/agent/single_call_agent.py": "9dfb09c90d73d00d39e34ebdb4ba228eeb02db791e4449df26f9ac698920fe80"
+    }
+  },
+  "independence": "Literal EXPECTED data authored from the adopted requirements; no production import, normalization, compiler, preparer, model client or executed engine output. INPUT expansion is test-local table assembly only; EXPECTED native dictionaries and policies are literal.",
+  "paper_placeholders": {
+    "classification": "PAPER_LABEL_NOT_COMPUTED_HASH",
+    "prompt_r01": "1111111111111111111111111111111111111111111111111111111111111111",
+    "prompt_r02": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "custody": {
+    "status": "UNKNOWN",
+    "custodian": null,
+    "worker_identity": null,
+    "euid": null,
+    "mount": null,
+    "durable_parent": null,
+    "retention": null,
+    "live_receipt": null,
+    "runnable": false
+  },
+  "field_inventories": {
+    "workflow": ["name", "description", "version", "nodes", "inputs", "outputs", "safety", "memory", "defaults", "on_failure", "notify", "starts_runs"],
+    "node": ["name", "type", "agent", "strategy", "strategy_config", "agents", "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops", "loop_condition", "on_max_loops", "run_after_failure", "undoes", "on_failure", "required_files", "renamed_from", "timeout_seconds", "gate", "skip_policies", "input_map", "inputs", "outputs", "task_template", "system_prompt", "role", "model", "provider", "temperature", "max_tokens", "token_budget", "tools", "memory"],
+    "native_envelope": ["name", "type", "description", "provider", "model"],
+    "single_call": ["prompt_path", "prompt_sha256", "prompt_bytes", "output_root", "slot", "family", "route", "auth_mode", "max_tokens", "output_bound_mode", "deadline_s", "cost_cap_usd", "pricing_path", "pricing_sha256", "experiment_id", "binding_id", "source_sha256", "config_sha256", "packet_sha256", "token"],
+    "native_optional_not_admitted": ["temperature", "thinking", "thinking_budget", "effort"],
+    "counters": ["raw_reads", "ordinary_get", "guard_config", "environment_substitution", "graph_template_expansion", "script_render", "script_process", "factory", "claim_create", "private_read", "provider_send"]
+  },
+  "not_proved": ["engine_admission", "custody", "compiler", "model_send", "Stage1_quality", "binding", "runtime_enforcement"],
+  "standing_status": {"292": "PARTIAL", "293_sends": "0/42", "binding": "NOT_MET"}
+}

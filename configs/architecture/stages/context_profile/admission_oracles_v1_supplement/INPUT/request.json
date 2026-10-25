@@ -1,0 +1,6 @@
+{
+  "inputs":{"record_id":"r01"},
+  "notify":null,
+  "workflow":"oracle306",
+  "workspace_path":"/synthetic/316/workspace"
+}

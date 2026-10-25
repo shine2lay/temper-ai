@@ -1,0 +1,18 @@
+{
+  "packet":"admission-oracle-v1-supplement (#316)",
+  "purpose":"Ordinary SHA256 of each fixture file's exact bytes. Fixture evidence only: not a candidate-admission/v1 domain digest, registration, authority or runtime result.",
+  "runtime_status":"UNEXECUTED",
+  "old306_unchanged":"admission_oracles/ (eight-member manifest) is not part of this packet and is not edited",
+  "files":{
+    "EXPECTED/case-mapping.json":"ecde28138d69fb0ee230b69e3afca43b26467fea1af94278e38f887eeed2526c",
+    "EXPECTED/graph.json":"ffe9ba189987a1e7d52f4921df3943e8d89ecb649eead5d5d82e345ec437ecdc",
+    "EXPECTED/identities.json":"460f9fc10438db3b198aa88931a6e1fecb3e38c89a8438562114aa1a1edaa1fd",
+    "EXPECTED/request.json":"662b21d51637761c38e06af5e57ae5adf9c935d3121aa767cdaf3c02ef0fedf6",
+    "INPUT/closure.json":"4ae4982e3d868314abc851e3f9dbb1684fd60e308e545bdc3f6841776ce2152d",
+    "INPUT/native.json":"ab939a8194966c2a10a747ba92838f13b09050171770a776e2f3551f83760375",
+    "INPUT/request.json":"3ac125562756e7086b1a4eb22b0b75d096c16c7a7b8016b2a03c6391cc7a254b",
+    "README.md":"bf31c138923724b10c41306c9e3137435e3a4e32ac55d50fbd027aa5820ae827",
+    "source-facts.json":"6e821c2e34f6090360f027582c8bdfc7e2a3fd62fe107cf8c998ebcb1f12833f",
+    "wire-mapping.json":"2685c5b6a90ca664758477e5a8f4ecae7bbabe341414b46d1389a96244ea1ebf"
+  }
+}

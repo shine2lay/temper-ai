@@ -1,0 +1,62 @@
+{
+  "purpose":"Independently authored expected request options and descriptor metadata for the synthetic #316 fixture. Not a request, registration, run, authority or runtime result.",
+  "runtime_status":"UNEXECUTED",
+  "source":{
+    "status":"PRE_COMMIT_DECLARATION_REBIND_IF_MOVED",
+    "declared_by":"Temper rm-31e24c00, answering Architecture rm-78058d55 (2026-10-25)",
+    "document":"/home/shinelay/company-lab/candidate-admission-t2-198/REQUEST-OPTIONS.md",
+    "document_sha256":"b6347a80cd927df39430aed954acef561cfcece51b6d3179d73bb10d985b823a",
+    "base_commit":"caf5c16f6d9965cbcbc8e10653d75e1c47b27340",
+    "base_tree":"726bf8e8a198f1436bf8caf84bbf2a8115601e47",
+    "branch":"temper-198-admission-transport",
+    "staged_diff_sha256":"59e9ef9e074d896e5e65114e43af61087ac0fd0f1ed787573ad446e1aef93d4d",
+    "files":{
+      "temper_ai/api/routes.py":{"git_blob":"4cd4ec72eece985b7f6c37cdbef6b8c51a044814","sha256":"594b565be89e1b59409cef8a20452ad9052deaa14e5c3a6a170ea84b3abc3222"},
+      "temper_ai/runner/admission.py":{"git_blob":"7b943da86e62dc2c940f52fc973d9918107e922a","sha256":"cbe67b609e328fccc7f72177e838e077bad8800eebbf16090194bf1ce97481ff"}
+    },
+    "declaration":"temper_ai/api/routes.py RunRequest and _start_run: request_options_json is canonical_bytes(body.model_dump(exclude={'admission'})), after Pydantic field parsing and before graph, default or notify parsing",
+    "limits":"Uncommitted #198 source metadata. Not final CI evidence, installed source, runtime behaviour or authority. Rebind if that source moves."
+  },
+  "field_names":["inputs","notify","workflow","workspace_path"],
+  "field_declarations":{
+    "inputs":{"source_type":"dict","required":false,"default":{},"explicit_null":"invalid","always_present":true,
+      "semantics":"Entire parsed mapping. Also bound independently to descriptor metadata_inputs_json. No workflow input defaults applied."},
+    "notify":{"source_type":"dict | str | None","required":false,"default":null,"explicit_null":"same as absent","always_present":true,
+      "semantics":"Unparsed at this point. Capturing it proves no notify behaviour."},
+    "workflow":{"source_type":"str","required":true,"explicit_null":"invalid","always_present":true,
+      "input_aliases":["workflow","workflow_name"],"canonical_key":"workflow",
+      "semantics":"When both aliases are supplied the first validation alias is selected; the dump key is always workflow."},
+    "workspace_path":{"source_type":"str | None","required":false,"default":null,"explicit_null":"same as absent","always_present":true,
+      "semantics":"Candidate ingress requires exact equality with the descriptor's non-null workspace_path, so absent or null cannot satisfy an admitted descriptor. No fallback resolution."}
+  },
+  "literal_types":{"inputs":"dict","notify":"NoneType","workflow":"str","workspace_path":"str"},
+  "options":{
+    "inputs":{"record_id":"r01"},
+    "notify":null,
+    "workflow":"oracle306",
+    "workspace_path":"/synthetic/316/workspace"
+  },
+  "excluded_from_options":{
+    "admission":"RunRequest.admission: str | None = None. Descriptor transport only, excluded to avoid a self-referential descriptor. Never authenticates descriptor or source pins."
+  },
+  "not_option_keys":["logical_run_id","execution_uuid","authority_and_source_pins","dispatch_nonce","worker_identity"],
+  "unknown_http_fields":"Ordinary Pydantic ignore: not forwarded into options and no authority. No new rejection policy is claimed or tested here.",
+  "descriptor_metadata":{
+    "labelled":"SYNTHETIC_FIXTURE_IDENTITIES_NOT_REAL_RUN_DECLARATIONS",
+    "mode":"external-db-fresh",
+    "candidate_identity":"oracle316_supplement",
+    "logical_run_id":"oracle316-synthetic-run",
+    "execution_uuid":"00000000-0000-4000-8000-000000000316",
+    "workflow_name":"oracle306",
+    "workspace_path":"/synthetic/316/workspace"
+  },
+  "metadata_inputs":{"record_id":"r01"},
+  "inputs_left_to_workflow_defaults":["record_r02","record_r03","record_r04","record_r05","record_r06","record_r07","record_r08","record_r09","record_r10","record_r11","record_r12","record_r13","record_r14"],
+  "entry_signatures":{
+    "_start_run":"_start_run(body: RunRequest, *, execution_id: str | None = None) -> RunResponse",
+    "submit_candidate":"submit_candidate(*, descriptor_wire: bytes, caller: Caller | None, workflow_name: str, workspace_path: str | None, inputs: dict, request: FrozenJSON, execution_id: str | None, mode: str, bindings: CandidateBindings | None) -> str",
+    "execution_id":"Internal optional keyword, not a RunRequest field. If supplied it must equal the descriptor's preselected UUID; if absent the descriptor UUID is used, never a new random id or the logical run id.",
+    "production_authority":"Unbound and refused in this source piece (Temper HOME rm-02034875). V1 owes the real authority."
+  },
+  "old306_correspondence":"Old #306 INPUT request_inputs had the same single synthetic record_id value. Its run_id and workspace_path stay old-packet-only; this supplement uses distinct, labelled 316 identities."
+}

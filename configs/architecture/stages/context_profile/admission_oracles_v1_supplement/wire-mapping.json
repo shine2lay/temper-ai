@@ -1,0 +1,86 @@
+{
+  "purpose":"Source-to-wire field correspondence only. Not a second schema, wire codec, descriptor authority, registered candidate or runnable admission. The frozen #192 schema/spec remain authoritative.",
+  "binding_abi":"candidate-admission/v1",
+  "schema_sha256":"426e1c5a12eafa5a82e64144d25e0fa08d5b844149723ea001a76fe9a0f2041d",
+  "spec_sha256":"8932a4b97d0d08bea6a919223f83922804d08486545d94d747886253b5825ba7",
+  "runtime_status":"UNEXECUTED",
+  "rawRecord":{
+    "format":{"literal":"candidate-raw-record/v1"},
+    "kind":{"from":"explicit workflow:/stage:/agent: raw record namespace; only that namespace is removed"},
+    "name":{"from":"explicit raw record key after its namespace; not config.name and not a node/position ID"},
+    "schema_version":{"literal":"1.0","source":"source-facts.json raw_version; never old306 integer 1"},
+    "origin":{"literal":{"kind":"db"}},
+    "config_json":{"from":"INPUT/closure.json records plus INPUT/native.json complete literal rows/envelope, encoded with frozen #192 CAJ-1"},
+    "file_base64":{"literal":null}
+  },
+  "expectedRaw":{
+    "kind":{"from":"rawRecord.kind"},"name":{"from":"rawRecord.name"},
+    "schema_version":{"from":"rawRecord.schema_version exact string"},"origin":{"from":"rawRecord.origin"},
+    "raw_sha256":{"from":"#192 raw-record domain over exactly kind/name/schema_version/origin/config_json; never fixture-file/self hash"}
+  },
+  "graph":{
+    "workflow_json":{"from":"EXPECTED/graph.json workflow, explicit child-path references replaced by those independently literal node objects, with recursively complete children; #192 CAJ-1"},
+    "nodes":{"from":"EXPECTED/graph.json rows in literal preorder; all 126 nodes, including 14 stages, 42 single_call and 70 script occurrences"}
+  },
+  "node":{
+    "path":{"from":"literal EXPECTED/graph.json row.path array, never split from a dotted ID"},
+    "node_json":{"from":"entire row plus disjoint explicit node_envelope; recursively substitute its explicit child references, no default or policy inference"},
+    "factory":{"from":"null for literal stage; otherwise source-facts.json exact type/class_name and entire independent native/script effective config including inherited metadata"}
+  },
+  "factory":{
+    "type":{"from":"source-facts.json factories, keyed by explicit effective script/single_call type"},
+    "class_name":{"from":"full qualified class in source-facts.json factories"},
+    "config_json":{"from":"entire EXPECTED native or script config; #192 CAJ-1; no field filtering"}
+  },
+  "position":{
+    "position_id":{"from":"EXPECTED/identities.json explicit position_id, e.g. r01_A1; not old r01/A1"},
+    "node_path":{"from":"EXPECTED/identities.json explicit node_path array"},
+    "preparation_path":{"from":"EXPECTED/identities.json explicit preparation_path array"},
+    "record_id":{"from":"EXPECTED/identities.json explicit synthetic record_id"},
+    "variant_id":{"from":"EXPECTED/identities.json explicit V01_clean; scenario alternatives mapped separately in EXPECTED/case-mapping.json"},
+    "call_id":{"from":"EXPECTED/identities.json explicit synthetic call_id"},
+    "slot":{"from":"EXPECTED/identities.json explicit slot, also equal to entire native map's slot"},
+    "agent_config_json":{"from":"unchanged independently literal old306 expected-positions.json matching explicit old_position; full envelope + native row; #192 CAJ-1"},
+    "root_policy":{"literal":null}
+  },
+  "script":{
+    "node_path":{"from":"EXPECTED/identities.json roots.script_expected_bindings explicit array path"},
+    "template_utf8":{"from":"unchanged old306 expected-graph.json script_agents at the explicitly named old key"},
+    "template_sha256":{"from":"ordinary SHA256 of exact template UTF-8, not a domain digest; original three template hashes unchanged"},
+    "variables_json":{"from":"EXPECTED/identities.json root.script_variables complete literal object; #192 CAJ-1; no render or private source"}
+  },
+  "source":{
+    "engine_commit":{"from":"actual declared candidate source tuple, not old306 source_basis, installed-source claim or inferred from current checkout"},
+    "engine_tree":{"from":"same actual candidate source tuple as engine_commit"},
+    "binding_abi":{"literal":"candidate-admission/v1"},
+    "field_sets":{"from":"workflow = source-facts.json wire_field_sets.workflow (13 WorkflowConfig fields incl. _KNOWN_FIELDS); node = wire_field_sets.node (36 NodeConfig fields incl. _KNOWN_FIELDS); native = wire_field_sets.native, the 24 INNER single_call keys of SINGLE_CALL_SETTINGS as the PERMITTED set (subset check; required presence is engine validation; the six envelope keys are pinned by the entire factory config_json, never a flattened union; Temper rm-ae19e128); request = EXPECTED/request.json field_names [inputs, notify, workflow, workspace_path] from Temper's closed pre-commit T2 #198 declaration rm-31e24c00 (EXPECTED/request.json source pins). Sorted unique names. Declaration revisions remain explicitly distinct until the consumer binds an actual candidate source tuple; a changed inventory comes from the installed engine source at engine_commit, never from the descriptor."}
+  },
+  "descriptor":{
+    "format":{"literal":"candidate-admission-descriptor/v1"},
+    "profile":{"literal":"context-profile-admission/v1"},
+    "mode":{"literal":"external-db-fresh"},
+    "candidate_identity":{"from":"explicit synthetic fixture identity from EXPECTED/request.json descriptor_metadata; no candidate registration"},
+    "logical_run_id":{"from":"explicit synthetic fixture identity from EXPECTED/request.json descriptor_metadata"},
+    "execution_uuid":{"from":"explicit synthetic fixture UUID from EXPECTED/request.json descriptor_metadata; no real run allocation/collision check"},
+    "workflow_name":{"literal":"oracle306"},
+    "workspace_path":{"from":"explicit synthetic fixture path from EXPECTED/request.json descriptor_metadata; never opened"},
+    "metadata_inputs_json":{"from":"EXPECTED/request.json metadata_inputs, exactly the caller's options.inputs; no workflow input defaults applied (the 13 record_rNN inputs are left to workflow defaults); #192 CAJ-1"},
+    "request_options_json":{"from":"complete literal EXPECTED/request.json options: all four keys always present, notify null, workspace_path equal to descriptor workspace_path, admission excluded; checked separately against INPUT/request.json and the pinned closed T2 declaration; #192 CAJ-1"},
+    "source":{"from":"source mapping above, actual candidate declaration pins must be supplied without pretending this is installed/runtime attestation"},
+    "records":{"from":"all60 expectedRaw entries ordered by (kind,name), exact raw reference closure"},
+    "graph":{"from":"independent graph mapping above, not resolution of INPUT"},
+    "positions":{"from":"all42 explicit position rows in literal order"},
+    "scripts":{"from":"all70 explicit script occurrences in graph preorder, exact variables and byte hashes"}
+  },
+  "unissued":{
+    "DescriptorAuthority":null,"authorized_caller_label":null,"authority_receipt_id":null,
+    "root_readiness":null,"real_custody":null,"real_source_attestation":null,
+    "explanation":"No immutable/admission/readiness record or grant is synthesized. Unresolved source adoption and custody are not represented by invented values in required wire fields. A non-runnable fixture mapping is not permission to fill those fields. #192 must refuse a runnable attempt without actual authority/custody."
+  },
+  "projection_rules":{
+    "_KNOWN_FIELDS":"Only exact engine-owned frozenset[str] metadata, with full source-pinned membership, projects to a sorted unique string array. Workflow, node and inherited script-agent metadata all retain it. Runtime type checking is UNEXECUTED.",
+    "all_other_types":"No cast, repr, set conversion, null/default substitution or dropped key. Native optional absence stays absent. Fixture table decoding never changes a literal value.",
+    "legacy_names":"Legacy old_position and old_node_paths are explicit correspondence labels only; neither slash nor dot splitting is a wire ID conversion.",
+    "digests":"Fixture file/decoded-map hashes are ordinary SHA256 evidence only. Wire digests must use #192's domain separation and CAJ-1. No codec is imported/run by this supplement."
+  }
+}

@@ -57,7 +57,7 @@ COLUMNS = {
 @pytest.fixture(autouse=True)
 def isolated_ordering_key(monkeypatch, _test_db):
     # pgtier isolates SCHEMAS, but advisory locks are DATABASE-wide. A fixed test
-    # key per worker schema prevents a 3s injected holder breaking other workers.
+    # key per worker schema prevents an injected holder breaking other workers.
     # Production COMMIT_ORDER_LOCK and all transaction behavior are unchanged.
     if get_database().engine.dialect.name == "postgresql":
         with get_session() as session:
@@ -1071,31 +1071,73 @@ def postgres_stage(record_property):
 
 
 @contextmanager
-def held_ordering_lock(seconds=3):
-    acquired = threading.Event()
+def held_ordering_lock(cap=20):
+    # Holds the ordering lock until the with-body is done, so the hold outlasts the call under
+    # test by construction instead of racing it with a fixed duration on a slow runner. `cap`
+    # is only the holder's escape: at most `cap` s after taking the lock it lets go even if the
+    # body isn't done (held_whole_body is then False), so a writer waiting with no timeout gets
+    # the lock and fails the test instead of hanging. It is NOT a deadline for record() or the
+    # test: it can't interrupt the body, a connection or lock wait, or a blocked thread, and
+    # leaving the with-block still waits for the holder thread.
+    acquired, body_done = threading.Event(), threading.Event()
+    holder = SimpleNamespace(held_whole_body=None)
     def hold():
         with get_database().engine.connect() as connection:
             connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": usage.COMMIT_ORDER_LOCK})
             acquired.set()
             try:
-                threading.Event().wait(seconds)  # fixed, declared fault-injection duration
+                return body_done.wait(cap)
             finally:
                 connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": usage.COMMIT_ORDER_LOCK})
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(hold)
-        assert acquired.wait(2), "test holder did not start"
+        assert acquired.wait(cap), "test holder did not start"
         try:
-            yield
+            yield holder
         finally:
-            future.result(timeout=seconds + 2)
+            body_done.set()
+            holder.held_whole_body = future.result(timeout=cap + 2)
 
 
-def assert_real_lock_timeout(monkeypatch):
+@contextmanager
+def timed_ordering_statements():
+    # Each ordering statement (WITH commit_order) on the engine: the lock_timeout in force,
+    # READ on the statement's own connection just before it runs, the thread that ran it,
+    # then its client monotonic start/end and SQLSTATE (None when it succeeded). Each end or
+    # error is paired with its own start through the statement's execution context.
+    # Read-only instrument. The duration includes driver and scheduling time: never shorter
+    # than the server's lock wait, but not a pure measure of it.
+    engine, seen = get_database().engine, []
+    def before(conn, cursor, statement, parameters, context, many):
+        if "WITH commit_order" in statement:
+            in_force = conn.execute(text("SELECT current_setting('lock_timeout')")).scalar_one()
+            context.timed_ordering = SimpleNamespace(lock_timeout=in_force, thread=threading.get_ident(),
+                                                     start=time.monotonic(), end=None, code="running")
+            seen.append(context.timed_ordering)
+    def after(conn, cursor, statement, parameters, context, many):
+        if timed := getattr(context, "timed_ordering", None):
+            timed.end, timed.code = time.monotonic(), None
+    def failed(exception_context):
+        if timed := getattr(exception_context.execution_context, "timed_ordering", None):
+            timed.end = time.monotonic()
+            timed.code = getattr(exception_context.original_exception, "pgcode", None)
+    hooks = {"before_cursor_execute": before, "after_cursor_execute": after, "handle_error": failed}
+    for name, hook in hooks.items():
+        sa_event.listen(engine, name, hook)
+    try:
+        yield seen
+    finally:
+        for name, hook in hooks.items():
+            sa_event.remove(engine, name, hook)
+
+
+def assert_real_lock_timeout(monkeypatch, record_property=lambda *_: None):
     db = get_database()
     original = db.session
-    settings = []
+    settings, attempts = [], []
     @contextmanager
     def session():
+        attempts.append(1)
         with original() as s:
             s.execute(text("SET LOCAL lock_timeout = '777ms'"))
             s.execute(text("SET LOCAL idle_in_transaction_session_timeout = '9s'"))
@@ -1103,20 +1145,34 @@ def assert_real_lock_timeout(monkeypatch):
             settings.append(s.execute(text("SELECT current_setting('lock_timeout'), "
                                            "current_setting('idle_in_transaction_session_timeout')")).one())
             assert s.execute(text("SELECT 1")).scalar_one() == 1
-    with held_ordering_lock(), monkeypatch.context() as m:
+    # The holder keeps the lock until record() has returned, so it outlasts the writer's 2 s
+    # by construction: no fixed 3 s hold for a slow runner to race. This checks the writer's
+    # own timeout and deferral; it deliberately no longer certifies record()'s whole-call
+    # latency (the old elapsed < 2.5 s, which depended on the runner's speed).
+    with held_ordering_lock() as holder, timed_ordering_statements() as waits, monkeypatch.context() as m:
         m.setattr(db, "session", session)
-        start = time.monotonic()
-        event_id = record()
-        elapsed = time.monotonic() - start
-    assert elapsed < 2.5 and event_count() == 1
+        caller, start = threading.get_ident(), time.monotonic()
+        try:
+            event_id = record()
+        finally:  # kept when record() fails too, for diagnosis
+            record_property("usage_lock_record_s", time.monotonic() - start)
+            record_property("usage_lock_waits", [(w.lock_timeout, w.code, w.end and w.end - w.start,
+                                                  w.thread == caller) for w in waits])
+    assert len(attempts) == 1 and len(waits) == 1  # one recorder attempt, one ordering statement
+    wait = waits[0]
+    assert wait.code == "55P03"  # gave up on the held lock: not acquired after it, not another error
+    assert wait.end - wait.start >= 1.9  # timed out by the writer's own 2 s, not the caller's 777 ms
+    assert wait.lock_timeout == "2s"  # and by nothing longer: exactly the writer's setting was in force
+    assert holder.held_whole_body  # pending captured and record() returned before the holder let go
+    assert event_count() == 1
     assert settings == [("777ms", "9s")]
     assert rows() == [] and len(pending_rows()) == 1
     assert drain(event_id).status == "drained" and pending_rows() == []
 
 
-def test_real_pg_three_second_holder_captures_before_two_point_five(monkeypatch, record_property):
+def test_real_pg_held_lock_gives_up_at_own_two_seconds_and_captures_pending(monkeypatch, record_property):
     if postgres_stage(record_property):
-        assert_real_lock_timeout(monkeypatch)
+        assert_real_lock_timeout(monkeypatch, record_property)
     else:
         assert usage._ordering_timeout(DBAPIError("", {}, SimpleNamespace(pgcode="55P03")))
 

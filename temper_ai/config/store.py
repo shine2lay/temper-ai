@@ -62,6 +62,46 @@ class ConfigStore:
         check_schema_version({"schema_version": schema_version})
         return substitute_env_vars(config)
 
+    def get_raw_record(
+        self, name: str, config_type: str, *, transaction: object,
+    ) -> tuple[dict[str, Any], str]:
+        """Own the DB JSON and separate version INSIDE the caller's transaction.
+
+        No session creation, ORM identity-map reuse, substitution or file fallback.
+        A classified box must use its guard's checked bytes instead. This API is
+        not an access grant; the ingress caller still owns authorization.
+        """
+        from sqlmodel import Session
+
+        from temper_ai.config.admission_contract import (
+            AdmissionRefused,
+            RefusalCode,
+            canonical_bytes,
+            decode_canonical,
+        )
+        from temper_ai.spawner import box_guard
+
+        if box_guard.active() is not None:
+            raise AdmissionRefused(RefusalCode.ORIGIN)
+        if not isinstance(transaction, Session) or not transaction.in_transaction():
+            raise AdmissionRefused(RefusalCode.ORIGIN)
+        if type(name) is not str or type(config_type) is not str or config_type not in VALID_TYPES:
+            raise AdmissionRefused(RefusalCode.TYPE)
+        query = select(Config.config, Config.schema_version).where(
+            Config.type == config_type, Config.name == name,
+        )
+        if transaction.get_bind().dialect.name != "sqlite":
+            query = query.with_for_update(read=True)
+        result = transaction.exec(query).one_or_none()
+        if result is None:
+            raise AdmissionRefused(RefusalCode.LOOKUP)
+        config, version = result
+        # Canonicalization rejects aliases/non-JSON values before making a copy.
+        owned = decode_canonical(canonical_bytes(config))
+        if type(owned) is not dict or type(version) is not str:
+            raise AdmissionRefused(RefusalCode.TYPE)
+        return owned, version
+
     def put(
         self,
         name: str,

@@ -305,7 +305,7 @@ class ScriptAgent(AgentABC):
                 variables["workspace_path"] = context.workspace_path
             if context.run_id and not variables.get("run_id"):
                 variables["run_id"] = str(context.run_id)
-            checked_template = self.config["script_template"]
+            checked_template = self.config.get("script_template")
             checked_vars = admission.script_inputs(self, context, checked_template, variables)
             # An owned metadata-only copy also reaches the event sink.
             input_data = deepcopy({k: checked_vars[k] for k in input_data})

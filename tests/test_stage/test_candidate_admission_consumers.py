@@ -391,6 +391,27 @@ def test_binding_context_and_graph_loss_fail_closed(tmp_path, mutation):
     assert rig.events.count == 0
 
 
+def test_nested_sibling_binding_refuses_before_actual_factory(tmp_path, monkeypatch):
+    rig = Rig(tmp_path, nested=True)
+    rig.prepare_only()
+    context = replace(rig.ctx, node_path="outer", admission=rig.use.binding(("outer", "call")))
+    from temper_ai.stage import agent_node
+    calls = []
+    factory = agent_node.create_agent
+
+    def counted(config):
+        calls.append(1)
+        return factory(config)
+    monkeypatch.setattr(agent_node, "create_agent", counted)
+    # Make the registry function identity legitimate; the binding must bite first.
+    import temper_ai.agent
+    monkeypatch.setattr(temper_ai.agent, "create_agent", counted)
+    with pytest.raises(AdmissionRefused) as caught:
+        rig.leaves[0].run({}, context)
+    assert caught.value.code == RefusalCode.POSITION
+    assert calls == [] and rig.events.count == rig.tools.calls == 0
+
+
 @pytest.mark.parametrize("option", ["initial_outputs", "resume_metadata"])
 def test_candidate_continuation_refused_before_checkpoint_restore(tmp_path, option):
     rig = Rig(tmp_path)
@@ -464,7 +485,7 @@ def test_factory_invocation_guards_at_actual_factory_site(tmp_path, monkeypatch,
     assert rig.tools.calls == rig.events.script_starts == 0
 
 
-@pytest.mark.parametrize("mutation", ["template", "variable", "workspace", "run", "alias", "body", "answer_path", "name", "cached-option"])
+@pytest.mark.parametrize("mutation", ["template", "template-missing", "template-type", "variable", "workspace", "run", "alias", "body", "answer_path", "name", "cached-option"])
 def test_script_refuses_before_log_rewrite_render_or_tool(tmp_path, monkeypatch, mutation):
     rig = Rig(tmp_path)
     binding = rig.use.binding(("prepare",))
@@ -473,6 +494,10 @@ def test_script_refuses_before_log_rewrite_render_or_tool(tmp_path, monkeypatch,
     data = {}
     if mutation == "template":
         agent.config["script_template"] += " "
+    elif mutation == "template-missing":
+        del agent.config["script_template"]
+    elif mutation == "template-type":
+        agent.config["script_template"] = None
     elif mutation in ("variable", "body", "answer_path"):
         data[mutation] = "synthetic-unadmitted"
     elif mutation == "name":

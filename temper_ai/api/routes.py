@@ -12,7 +12,7 @@ import logging
 import threading
 import uuid
 from contextlib import contextmanager
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
@@ -99,6 +99,9 @@ from temper_ai.stage.plan import build_restore, resume_plan
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
+if TYPE_CHECKING:
+    from temper_ai.runner.admission import CandidateBindings
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -140,6 +143,9 @@ class RunRequest(BaseModel):
     # Where this run's questions and notices go, over its workflow's
     # `notify:` (docs/notify.md), e.g. {"question": "telegram", "finished": "off"}.
     notify: dict | str | None = None
+    # CAJ-1 descriptor data only, never authority/pins. Production composition is
+    # absent: explicit opt-in refuses until its authorized binding is supplied.
+    admission: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -209,9 +215,70 @@ def _note_event_run(workflow: str, execution_id: str) -> None:
         logger.exception("Could not note run %s on the event that started it", execution_id)
 
 
+def _candidate_bindings() -> CandidateBindings | None:
+    # No production binding is installed by this patch. Injected by a future
+    # reviewed composition, not inferred from a request's descriptor or labels.
+    # Before the server's lifespan (_state() raises only then) nothing is bound either:
+    # nothing is designated (row presence still refuses); ordinary helpers work as before.
+    try:
+        state = _state()
+    except RuntimeError:
+        return None
+    return vars(state).get("candidate_bindings")
+
+
+def _refuse_candidate_entry(execution_id: str | None = None, workflow: str | None = None) -> None:
+    from temper_ai.config.admission_contract import AdmissionRefused
+    from temper_ai.runner.admission import is_designated, refuse_legacy_entry
+
+    try:
+        refuse_legacy_entry(execution_id, designated_candidate=bool(
+            workflow and is_designated(workflow, _candidate_bindings())))
+    except AdmissionRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.code.value) from None
+
+
+def _refuse_reserved_row(row) -> None:
+    """Refuse (409, row untouched) rather than let a legacy writer drop the slot."""
+    from temper_ai.config.admission_contract import AdmissionRefused
+    from temper_ai.runner.admission import refuse_legacy_row
+
+    try:
+        refuse_legacy_row(row)
+    except AdmissionRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.code.value) from None
+
+
 def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunResponse:
-    """Start ``body``'s run. ``execution_id`` is the run's id when the caller recorded it
-    before the start (the Team page's trial start); a new one otherwise."""
+    """Start legacy runs by name; opted-in candidates use only a protected snapshot."""
+    from temper_ai.config.admission_contract import (
+        SUPPORTED_MODE,
+        AdmissionRefused,
+        FrozenJSON,
+        RefusalCode,
+        canonical_bytes,
+    )
+    from temper_ai.runner.admission import is_designated, submit_candidate
+
+    bindings = _candidate_bindings()
+    _refuse_candidate_entry(execution_id)
+    if body.admission is not None or is_designated(body.workflow, bindings):
+        try:
+            if body.admission is None:
+                raise AdmissionRefused(RefusalCode.MISSING)
+            from temper_ai.spawner.box_profile import SEALED, boundary_setting
+            mode = _execution_mode()
+            mode = SUPPORTED_MODE if mode == "external" and boundary_setting() != SEALED else mode
+            chosen = submit_candidate(
+                descriptor_wire=body.admission.encode("utf-8"), caller=current_caller(),
+                workflow_name=body.workflow, workspace_path=body.workspace_path,
+                inputs=body.inputs, request=FrozenJSON(canonical_bytes(
+                    body.model_dump(exclude={"admission"}))),
+                execution_id=execution_id, mode=mode, bindings=bindings,
+            )
+        except AdmissionRefused as exc:
+            raise HTTPException(status_code=409, detail=exc.code.value) from None
+        return RunResponse(execution_id=chosen, status="queued")
     execution_id = execution_id or str(uuid.uuid4())
 
     notify_block = None
@@ -363,6 +430,9 @@ def _start_run_external(
     workflow_name + workspace_path + inputs and runs `temper run-workflow`.
     A Pi run (``lane``) is queued with its mark, for the Pi lane only.
     """
+    _refuse_candidate_entry(execution_id, body.workflow)
+    if body.admission is not None:
+        raise HTTPException(status_code=409, detail="unsupported_mode")
     _queue_run(execution_id, config.name, body.workspace_path, body.inputs, lane=lane)
     return RunResponse(execution_id=execution_id, status="queued")
 
@@ -408,11 +478,15 @@ def _queue_run(
     boxes. (runner/queue.py does it; this says a refusal as a 409.) ``lane``: the run's
     lane from the loaded workflow, or KEEP_LANE to keep the row's own mark.
     """
+    from temper_ai.config.admission_contract import AdmissionRefused
+
     try:
         queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
                   lane=lane)
     except AlreadyQueued as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AdmissionRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.code.value) from None
 
 
 def _row_lane(execution_id: str) -> str | None:
@@ -472,6 +546,9 @@ def _start_run_subprocess(
     from temper_ai.runner.models import WorkflowRun
     from temper_ai.spawner import SpawnerError, get_spawner
 
+    _refuse_candidate_entry(execution_id, body.workflow)
+    if body.admission is not None:
+        raise HTTPException(status_code=409, detail="unsupported_mode")
     with get_session() as session:
         session.add(WorkflowRun(
             execution_id=execution_id,
@@ -508,6 +585,8 @@ def _start_run_subprocess(
             select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
         ).first()
         if row is not None:
+            # This fresh-identity writer must never drop a reserved admission record.
+            _refuse_reserved_row(row)
             row.spawner_kind = handle.kind.value
             row.spawner_handle = handle.handle
             # Keep the run's box profile record if the handle doesn't carry one, and its lane.
@@ -905,10 +984,12 @@ def _plan_for(execution_id: str, workflow: str | None, rerun: list[str]) -> dict
     The page shows it before anything runs, and the resume itself works it out the same way
     from the same function, so what someone approves is what happens (stage/plan.py).
     """
+    _refuse_candidate_entry(execution_id, workflow)
     run = get_workflow_execution(execution_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
     name = workflow or run.get("workflow_name")
+    _refuse_candidate_entry(workflow=name)
     if not name:
         raise HTTPException(status_code=400, detail="Cannot determine workflow name")
     try:
@@ -951,6 +1032,7 @@ def release_cleanups(execution_id: str):
 
 
 def _release_cleanups(execution_id: str) -> dict:
+    _refuse_candidate_entry(execution_id)
     run = get_workflow_execution(execution_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
@@ -966,6 +1048,7 @@ def _release_cleanups(execution_id: str) -> dict:
 def _queue_cleanup_pass(hold: dict) -> None:
     """Start the run once more, in its own box, to run only the clean-ups it was holding."""
     execution_id = hold["execution_id"]
+    _refuse_candidate_entry(execution_id, hold.get("workflow_name"))
     paths = [str(c.get("path")) for c in hold.get("cleanups", []) if c.get("path")]
     if not paths:
         return
@@ -1012,6 +1095,7 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     configs (not the configs at crash time).
     """
     body = body or ResumeRequest()
+    _refuse_candidate_entry(execution_id, body.workflow)
 
     # What this asker sees of the run as it asks, read first: a Pi run is carried on from that
     # attempt only, so a Resume that reaches its claim after somebody else's attempt has
@@ -1032,7 +1116,8 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     if pi_parked.pi_switched_off() and pi_parked.parked_attempt(execution_id) is not None:
         raise HTTPException(status_code=409, detail=pi_parked.PI_SWITCHED_OFF)
 
-    # Load current workflow config
+    # Load current workflow config (legacy only).
+    _refuse_candidate_entry(workflow=workflow_name)
     try:
         nodes, config = _state().graph_loader.load_workflow(workflow_name)
     except Exception as exc:
@@ -1104,6 +1189,7 @@ def _start_resume(
     parked_attempt: dict | None = None,
 ) -> RunResponse:
     """Start the resumed attempt, claiming a parked one atomically before taking its holds."""
+    _refuse_candidate_entry(execution_id, body.workflow)
     # Non-parked Resume keeps its existing claim and hold behaviour. A parked Resume must
     # win its atomic claim below before touching any hold (a losing read may predate cancel).
     if parked_attempt is None:
@@ -1268,6 +1354,7 @@ def _fork_run(body: ForkRequest):
     Creates a new execution_id that shares history with the source up to
     the fork point, then continues independently.
     """
+    _refuse_candidate_entry(body.source_execution_id, body.workflow)
     new_execution_id = str(uuid.uuid4())
 
     try:
@@ -1874,11 +1961,13 @@ def _run_key_if(starts_runs: bool, execution_id: str, workflow_name: str):
 def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None,
                   *, starts_runs: bool = False):
     """Run a workflow in a background thread."""
+    _refuse_candidate_entry(execution_id, workflow_name)
     with _run_key_if(starts_runs, execution_id, workflow_name):
         _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs)
 
 
 def _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
+    _refuse_candidate_entry(execution_id, workflow_name)
     stood_down = False
     try:
         logger.info("Starting workflow '%s' (execution: %s)", workflow_name, execution_id)
@@ -1909,6 +1998,7 @@ def _run_workflow_with_checkpoints(
     starts_runs: bool = False,
 ):
     """Run a workflow with pre-populated node_outputs from checkpoints (see below)."""
+    _refuse_candidate_entry(execution_id, workflow_name)
     with _run_key_if(starts_runs, execution_id, workflow_name):
         _run_workflow_with_checkpoints_now(
             nodes, inputs, context, workflow_name, execution_id, restored_outputs,
@@ -1926,6 +2016,7 @@ def _run_workflow_with_checkpoints_now(
     event so the view can identify the new attempt as a resume of a prior
     workflow event (instead of inferring from event count).
     """
+    _refuse_candidate_entry(execution_id, workflow_name)
     stood_down = False
     try:
         logger.info(

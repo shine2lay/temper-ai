@@ -40,6 +40,8 @@ from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
 if TYPE_CHECKING:
+    from temper_ai.config.admission_contract import AdmissionRecord
+    from temper_ai.runner.admission import CandidateBindings
     from temper_ai.runner.context import RunnerContext
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,8 @@ def execute_workflow(
     replay_dispatch_history: bool = False,
     rerun: list[str] | None = None,
     run_only: list[str] | None = None,
+    admission_record: AdmissionRecord | None = None,
+    candidate_bindings: CandidateBindings | None = None,
 ) -> ExecuteResult:
     """Run one workflow end-to-end.
 
@@ -111,6 +115,32 @@ def execute_workflow(
         registry, ws_manager.cleanup) is intentionally NOT done here so the
         runner stays decoupled from the route handler's bookkeeping.
     """
+    from temper_ai.config.admission_contract import (
+        SUPPORTED_MODE,
+        AdmissionRefused,
+        CandidateInvocationBinding,
+        RefusalCode,
+        canonical_bytes,
+        check_preserved,
+    )
+    from temper_ai.runner.admission import is_designated, refuse_legacy_entry
+
+    if admission_record is None:
+        refuse_legacy_entry(execution_id, designated_candidate=is_designated(
+            workflow_name, candidate_bindings))
+    else:
+        if (candidate_bindings is None or initial_outputs is not None or resume_metadata is not None
+                or replay_dispatch_history or rerun is not None or run_only is not None):
+            raise AdmissionRefused(RefusalCode.MODE)
+        authority = candidate_bindings.authority_for_run(execution_id)
+        transport = candidate_bindings.transport(authority)
+        check_preserved(admission_record, transport.restore(
+            execution_uuid=execution_id, authority=authority, mode=SUPPORTED_MODE))
+        descriptor = transport._descriptor(admission_record)
+        if (workflow_name != descriptor["workflow_name"] or workspace_path != descriptor["workspace_path"]
+                or canonical_bytes(inputs) != descriptor["metadata_inputs_json"].encode("utf-8")
+                or admission_record.value()["dispatch"]["phase"] != "running"):
+            raise AdmissionRefused(RefusalCode.PROTECTED)
     is_resume = initial_outputs is not None
     op_label = "Resuming" if is_resume else "Starting"
     resume_suffix = (
@@ -128,15 +158,22 @@ def execute_workflow(
     # A new run also gets the strategies' run-start checks (only the Pi team has one,
     # with its switch on); a resume doesn't check again.
     from temper_ai.stage.topology import run_start_options
-    nodes, config = runner_ctx.graph_loader.load_workflow(
-        workflow_name, inputs=inputs, **({} if is_resume else run_start_options()),
-    )
+    if admission_record is not None:
+        assert candidate_bindings is not None  # Refused at entry above, before loading.
+        nodes, config = candidate_bindings.load_snapshot(admission_record, runner_ctx)
+    else:
+        nodes, config = runner_ctx.graph_loader.load_workflow(
+            workflow_name, inputs=inputs, **({} if is_resume else run_start_options()),
+        )
     # Each declared default in place of an input left out, null or empty, the values the loader
     # read: a resume, a fork and a run queued before defaults were filled in get them too, and
     # every step that reads the run's inputs (one that checks them again on a resume included)
     # sees what the run used (stage/input_defaults.py).
     from temper_ai.stage.input_defaults import fill_input_defaults
-    inputs = fill_input_defaults(getattr(config, "inputs", None), inputs)
+    filled = fill_input_defaults(getattr(config, "inputs", None), inputs)
+    if admission_record is not None and canonical_bytes(filled) != canonical_bytes(inputs):
+        raise AdmissionRefused(RefusalCode.PROTECTED)
+    inputs = filled
 
     # --- Tool executor + safety policy ---
     # Baseline tripwires plus the workflow's own safety block, see PolicyEngine.for_run.
@@ -212,6 +249,23 @@ def execute_workflow(
         # A Pi workflow's gates let the worker go while they wait (runner/parked.py).
         park_at_gates=is_pi_workflow(nodes),
     )
+
+    if admission_record is not None:
+        # Frozen typed seam: T1 owns context propagation, T3 the actual use checks.
+        # No import or guessed fallback into an unfinished sibling implementation.
+        assert candidate_bindings is not None  # Already required at the pre-load entry.
+        context = candidate_bindings.bind_context(admission_record, context)
+        binding = getattr(context, "admission", None)
+        immutable, dispatch = (admission_record.value()[key] for key in ("immutable", "dispatch"))
+        if (type(binding) is not CandidateInvocationBinding
+                or binding.descriptor.wire != immutable["descriptor_json"].encode("utf-8")
+                or binding.closure.sha256 != immutable["raw_closure_sha256"]
+                or binding.graph_sha256 != immutable["effective_graph_sha256"]
+                or binding.dispatch.execution_uuid != execution_id
+                or binding.dispatch.dispatch_nonce != dispatch["dispatch_nonce"]
+                or binding.dispatch.running_attempt != dispatch["running_attempt"]
+                or context.run_id != execution_id or context.workspace_path != workspace_path):
+            raise AdmissionRefused(RefusalCode.GENERATION)
 
     # Bind Delegate tool so agents can spawn sub-agents
     bind_delegate_tool(run_tool_executor, context)

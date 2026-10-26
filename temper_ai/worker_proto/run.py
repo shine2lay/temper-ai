@@ -28,12 +28,11 @@ class RunStatus(str, Enum):
 
 
 class WorkflowRunSpec(BaseModel):
-    """Snapshot of everything the runner needs to execute one workflow.
+    """Legacy run parameters, not a closed configuration snapshot.
 
-    Frozen at spawn time so hot-reload of configs / workflow files does not
-    affect in-flight runs (mirrors how Temporal snapshots activity inputs).
-    Server resolves all references (workflow YAML, agent configs) before
-    handing this to the subprocess.
+    Legacy workers resolve mutable workflow/agent names at startup. Candidate
+    admission instead restores the protected run JSON through AdmissionTransport;
+    this object cannot install or authenticate that reserved record.
     """
 
     execution_id: str
@@ -47,8 +46,10 @@ class WorkflowRunSpec(BaseModel):
 
 
 class RunRequest(BaseModel):
-    """User-facing request to start a workflow run. Server transforms this
-    into a `WorkflowRunSpec` after resolving the workflow definition + inputs.
+    """Legacy internal request, NOT api/routes.py's actual HTTP RunRequest.
+
+    Does not opt in to admission. Use the server's authenticated candidate route,
+    whose request has the optional descriptor data and separate trust binding.
     """
 
     workflow: str  # workflow name registered with the engine

@@ -1,0 +1,1 @@
+{"config_json":"{\"name\":\"fixture\",\"nodes\":[{\"agent\":\"prepare\",\"name\":\"prepare\",\"nodes\":null,\"type\":\"agent\"},{\"agent\":\"call\",\"name\":\"call\",\"nodes\":null,\"type\":\"agent\"}]}","file_base64":null,"format":"candidate-raw-record/v1","kind":"workflow","name":"fixture","origin":{"kind":"db"},"schema_version":"fixture-1"}

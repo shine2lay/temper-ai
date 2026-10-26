@@ -1,0 +1,21 @@
+{
+  "format":"candidate-admission-record/v1",
+  "immutable":{
+    "authorized_caller_label":"synthetic-author",
+    "authority_receipt_id":"synthetic-receipt",
+    "descriptor_json":"$descriptor-file",
+    "descriptor_sha256":"$pinned-descriptor",
+    "effective_graph_sha256":"$pinned-graph",
+    "raw_closure_sha256":"4a5d984240403f49c52d327a408e95b2ff3e9a37fffd93d7429613349e258a21",
+    "raw_records":[]
+  },
+  "immutable_sha256":"$pinned-immutable",
+  "dispatch":{
+    "phase":"queued",
+    "dispatch_nonce":"00000000-0000-4000-8000-000000000002",
+    "running_attempt":0,
+    "previous_nonce":null,
+    "worker_label":null
+  },
+  "readiness":[]
+}

@@ -13,6 +13,10 @@ import argparse
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from temper_ai.runner.admission import CandidateBindings
 
 logger = logging.getLogger(__name__)
 
@@ -417,8 +421,16 @@ def _cmd_serve(args) -> None:
     )
 
 
-def _cmd_validate(args) -> None:
-    """Validate a workflow config without executing."""
+def _cmd_validate(args, *, candidate_bindings: "CandidateBindings | None" = None) -> None:
+    """Validate a legacy workflow; candidates need the source-aware admission path."""
+    from temper_ai.config.admission_contract import AdmissionRefused
+    from temper_ai.runner.admission import is_designated, refuse_legacy_entry
+
+    try:
+        refuse_legacy_entry(designated_candidate=is_designated(args.workflow, candidate_bindings))
+    except AdmissionRefused as exc:
+        print(f"candidate refused: {exc.code.value}", file=sys.stderr)
+        sys.exit(1)
     os.environ.setdefault("TEMPER_DATABASE_URL", "sqlite:///data/dev.db")
 
     from pathlib import Path

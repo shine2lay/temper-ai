@@ -4,8 +4,9 @@ The API's Start, Resume, Fork and clean-up passes use it, and so does the worker
 it carries a parked Pi run on after the owner's answer (runner/parked.py), so a run is put in
 the queue the same way whoever puts it there.
 
-It is one of the two places that write a run row (the server's direct spawn is the other), so
-it sets the run's lane mark on every insert and every re-queue (runner/lanes.py): a Pi run is
+It is one of the two places that write an ordinary run row (the server's direct spawn is the
+other; candidate admission's install, runner/admission.py, writes main-lane rows only, with no
+mark), so it sets the run's lane mark on every insert and every re-queue (runner/lanes.py): a Pi run is
 claimed only by the Pi lane, whichever way it got here.
 """
 
@@ -97,8 +98,11 @@ def queue_run_in(
     """
     from sqlmodel import select
 
+    from temper_ai.runner.admission import refuse_legacy_row, refuse_reserved_extra
     from temper_ai.runner.models import WorkflowRun
 
+    # Presence is forbidden, including null/equal values; never silently filter it.
+    refuse_reserved_extra(extra)
     metadata: dict = {"start": start} if start else {}
     # Only the worker writes a run's box profile record (spawner/box_profile.py) and the Pi
     # lane's commit record: whatever asks for a run can't hand one in.
@@ -110,6 +114,9 @@ def queue_run_in(
         select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)
         .with_for_update().execution_options(populate_existing=True),
     ).first()
+    # Admitted rows are installed already queued by the typed transport. They never
+    # re-enter through legacy resume/retry/cleanup, even after a rename.
+    refuse_legacy_row(row)
     if row is None:
         session.add(WorkflowRun(
             execution_id=execution_id,

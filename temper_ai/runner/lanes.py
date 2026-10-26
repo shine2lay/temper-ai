@@ -2,11 +2,12 @@
 
 A Pi run -- a workflow with a Pi step at any depth, which includes a team stage of Pi
 members -- carries the mark ``{"lane": "pi"}`` in its ``workflow_runs.spawner_metadata``.
-Every other run carries no mark, exactly as before. The two places that write a run row,
-:func:`temper_ai.runner.queue.queue_run` and the server's direct spawn
+Every other run carries no mark, exactly as before. The two places that write an ordinary
+run row, :func:`temper_ai.runner.queue.queue_run` and the server's direct spawn
 (``api/routes.py`` ``_start_run_subprocess``), set the mark through :func:`mark_lane`, on
 every insert and every re-queue, so a resumed, forked, picked-up or cleaned-up Pi run keeps
-it.
+it. The candidate install (``runner/admission.py``) refuses a Pi run; it writes main-lane
+rows only, no mark; its later writes copy the row's own metadata and refuse a marked row.
 
 Each worker claims only its own lane's rows (:func:`lane_clause`): the main watcher never
 claims a marked row, and the Pi lane's watcher (``TEMPER_LANE=pi``: the pi-worker service)

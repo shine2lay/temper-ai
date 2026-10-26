@@ -1,0 +1,27 @@
+# temper (queue #211, Stage1 P1, 2026-10-25). No model, provider or credential.
+#
+# Runs configs/custody/bin/private_parent_proof.py in the run's box. As the run's own identity it checks
+# the identity, the box's mounts and the run's workspace W, then creates the private parent
+# W/<collection>/<profile_id> (0700), the listed families inside it (0700) and its P1-PROOF.json (0600),
+# and leaves them for the host to read back after the box has gone. Every check and every refusal reason
+# is in the script's docstring. It prints one closed JSON line (ids, numbers, enums, digests, nulls; never
+# a path) and nothing on stderr: the shell's stderr goes to /dev/null before anything runs. A refusal is a
+# result (exit 0); the step fails only when the script gives no result at all.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: private_parent_proof
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    exec 2>/dev/null
+    set -u
+    PROOF_WORKSPACE="{{ workspace_path }}" \
+    PROOF_EXPECTED_W_DEV="{{ expected_w_dev }}" \
+    PROOF_EXPECTED_W_INO="{{ expected_w_ino }}" \
+    PROOF_COLLECTION="{{ collection }}" \
+    PROOF_PROFILE_ID="{{ profile_id }}" \
+    PROOF_FAMILIES="{{ families }}" \
+    PROOF_RUN_ID="{{ run_id }}" \
+    "$TEMPER_PYTHON" -I /app/configs/custody/bin/private_parent_proof.py

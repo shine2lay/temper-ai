@@ -1,0 +1,64 @@
+# temper (queue #211, Stage1 P1, 2026-10-25). No model, provider or credential.
+workflow:
+  name: private_parent_proof
+  version: 1
+  description: |
+    Proves, with no model, that a run's own identity can create a private parent inside the run's
+    workspace, and leaves it to outlive the run's box. One script step
+    (configs/custody/bin/private_parent_proof.py): measures the run's euid, egid and groups and the
+    box's mounts of the workspace, /app/temper_ai and /app/configs; checks that code and config are
+    mounted read-only and that the workspace W (reached from / without following links) has the
+    expected st_dev/st_ino, is owned by the run's euid, sits on a writable mount and is empty; then
+    creates W/<collection> and P = W/<collection>/<profile_id> and the listed families inside P,
+    each by exclusive mkdir 0700, plus P/P1-PROOF.json (exclusive, no-follow, 0600), with fsync
+    barriers. Nothing that was there is adopted, changed or deleted; a failure keeps what it made
+    and names the repair. The outputs are closed: ids, numbers, enums, digests and explicit nulls,
+    never a path. Read the result back from the host after the run: lstat each object and compare.
+
+      POST /api/runs {"workflow": "private_parent_proof",
+                      "workspace_path": "<an empty folder the host operator made for this run>",
+                      "inputs": {"expected_w_dev": "<its st_dev>", "expected_w_ino": "<its st_ino>",
+                                 "collection": "context-profile", "profile_id": "cp-example-01",
+                                 "families": "[\"native\", \"native/case-a\"]"}}
+
+    Inputs, all strings and all required: expected_w_dev and expected_w_ino (decimal, from the host
+    operator's record of the workspace); collection and profile_id (lower-case letters, digits,
+    dot, dash, underscore; up to 64); families (a JSON array of one- or two-level names, each parent
+    before its children; "[]" makes P alone).
+  inputs:
+    expected_w_dev: {type: string, required: true}
+    expected_w_ino: {type: string, required: true}
+    collection: {type: string, required: true}
+    profile_id: {type: string, required: true}
+    families: {type: string, required: true}
+  outputs:
+    format: proof.structured.format
+    outcome: proof.structured.outcome
+    phase: proof.structured.phase
+    reason: proof.structured.reason
+    errno: proof.structured.errno
+    failed_object: proof.structured.failed_object
+    repair: proof.structured.repair
+    run_id: proof.structured.run_id
+    collection: proof.structured.collection
+    profile_id: proof.structured.profile_id
+    expected: proof.structured.expected
+    identity: proof.structured.identity
+    mounts: proof.structured.mounts
+    w: proof.structured.w
+    objects: proof.structured.objects
+    proof: proof.structured.proof
+    fsyncs: proof.structured.fsyncs
+    private_reads: proof.structured.private_reads
+    private_input_custody: proof.structured.private_input_custody
+    rights_beyond_objects: proof.structured.rights_beyond_objects
+  nodes:
+    - name: proof
+      type: agent
+      agent: private_parent_proof
+      input_map:
+        expected_w_dev: input.expected_w_dev
+        expected_w_ino: input.expected_w_ino
+        collection: input.collection
+        profile_id: input.profile_id
+        families: input.families

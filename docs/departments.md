@@ -41,8 +41,10 @@ role tests and lands a change.
 Two owners are not departments:
 
 - **temper**: the engine (`temper_ai/`), the integrations (GitHub, Linear,
-  Notion, Slack, Telegram), the demos, and the settings, triggers and MCP
-  servers they use.
+  Notion, Slack, Telegram), the demos, the settings, triggers and MCP
+  servers they use, and the no-model custody proofs of a run's workspace
+  (`custody/`: `private_parent_proof` shows that an ordinary run can make a
+  private folder in its workspace that outlives its box).
 - **RollCall**: runs the EPD loop (firing bets, gates, merges) and owns how
   its stages connect: `epd_loop`'s wiring and the scripts around it. It also
   owns the loop's proposal side: the problems, bets and pitches, the pitch
@@ -727,7 +729,7 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/bin/push_configs.py` | script |
 | `epd/README.md` | readme |
 
-### temper (74)
+### temper (77)
 
 | Config | Kind |
 |---|---|
@@ -782,6 +784,9 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `agents/sprint_recorder.yaml` | agent (script) |
 | `agents/sprint_reviewer.yaml` | agent |
 | `agents/sprint_worker.yaml` | agent |
+| `custody/workflows/private_parent_proof.yaml` | workflow |
+| `custody/agents/private_parent_proof.yaml` | agent (script) |
+| `custody/bin/private_parent_proof.py` | script |
 | `github/github.yaml` | settings |
 | `mcp_servers/git.yaml` | MCP server |
 | `mcp_servers/linear.yaml` | MCP server |

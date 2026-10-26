@@ -10,6 +10,14 @@ It checks shape, binding and consistency. It authenticates nobody: a receipt is
 only as true as the provider-pull ingress that built it (M2, under Security's
 review). Every refusal is a ContractRefusal with one closed RefusalCode and the
 label of the guard that fired. See docs/clarifications/contract.md.
+
+Attribution is not authority. An event's actor.ref, an authorised
+ResponderDecision and source_authority_ref record who answered, under which
+responder policy, and under which authority the answer is kept. None of them is
+authentication beyond the provider-pull ingress, owner consent, a requirement or
+plan approval, an execution, spending or release approval, permission to resume
+work, or permission to use a source. An accepted answer answers its one question
+and authorises nothing else.
 """
 
 import hashlib
@@ -438,7 +446,7 @@ class PresentationBinding:
 
 @dataclass(frozen=True, slots=True)
 class ResponderDecision:
-    """The ingress's authorisation decision for this sender, kept apart from display names."""
+    """The ingress's decision that this sender may answer, kept apart from display names; nothing more."""
 
     policy_ref: str
     sender_id: str
@@ -970,7 +978,7 @@ def _check_receipt(
     question_ids: frozenset[str],
     confirmed: ActionReceipt | None,
 ) -> str:
-    """Every check before an event may exist; returns the exact answer text."""
+    """Every receipt check before an event may exist; returns the exact answer text."""
     _check_action(receipt, presentation, copies)
     _refuse_unless(
         presentation.question_id in question_ids, RefusalCode.UNKNOWN_QUESTION, "binding.known_question",
@@ -1042,7 +1050,11 @@ def validate_receipt(
     question_ids: Collection[str],
     confirmed: ActionReceipt | None = None,
 ) -> ReceiptValidation:
-    """Full validation before any human event exists.
+    """Every receipt check before any human event exists.
+
+    It never compares with stored receipts, active answers or the stream's revision:
+    the store calls check_replay, check_reopen_precondition and
+    check_expected_revision for those.
 
     presentation: the persisted presentation the action is bound to. copies:
     transport message IDs delivered for it. current_generation: the latest

@@ -30,10 +30,17 @@ pinned by `test_the_public_interface_is_frozen`).
   A wrong value raises `ContractRefusal` with one closed `RefusalCode`, the label
   of the guard that fired (`guard`) and the field (`where`).
 - It checks shape, binding and consistency. **It authenticates nobody.** A
-  receipt is only as true as the provider-pull ingress that built it (M2,
-  reviewed by Security). An object forged consistently inside the trusted
-  process is out of its reach.
+  receipt is only as true as the provider-pull ingress that built it (M2, for
+  Security's review). An object forged consistently inside the trusted process
+  is out of its reach.
 - No storage, transport, caller or registration lives here.
+- **Attribution is not authority.** An event's `actor.ref`, an `authorised`
+  `ResponderDecision` and `source_authority_ref` record who answered, under
+  which responder policy, and under which authority the answer is kept. None of
+  them is authentication beyond the provider-pull ingress, owner consent, a
+  requirement or plan approval, an execution, spending or release approval,
+  permission to resume work, or permission to use a source. An accepted answer
+  answers its one question and authorises nothing else.
 
 ## Identities
 
@@ -52,6 +59,11 @@ compact separators, Unicode kept) of
 | Receipt sidecar | `receipt_sha256(receipt)` | SHA-256 of `receipt_json(receipt)`; an event's `source.ref` is `clarification-receipt:<that hash>` |
 | Consumption `c-` | `consumption_id(stream_id, revision, supplement_sha256)` | `digest("consumption", {stream_id, revision, supplement_sha256})` |
 
+The supplement a `c-` ID binds is the foundation's `compose_supplement` output,
+consumed as its own source next to the original brief: never concatenated into
+the brief, and an answer is never presented as a quote from the original brief
+or candidate.
+
 The event ID never includes the response text, disposition, update ID, time or
 retry count. An exact replay keeps its ID; two different actions with the same
 text get different IDs; the same action identity with a changed body is refused
@@ -62,6 +74,9 @@ every place that takes one refuses it with `ordinal_as_question_id`.
 
 `metadata_sha256(unknown)` is the digest a presentation binds, so a question
 whose metadata changes is a different presentation.
+
+`question_id` only recomputes an ID; it does not check the unknown's shape. M1
+derives the questions themselves with the foundation's `derive_questions`.
 
 ## Functions
 
@@ -95,13 +110,16 @@ The caller is handed data, never paths, and opens nothing:
   without its record is `missing_record`: never replaced by an empty history.
 - `question_ids`: the selected questions (full `q-` IDs).
 - `source_authority_ref`: the authority the answers will be kept under. Missing
-  is `missing_authority`.
+  is `missing_authority`. It says where answers are kept, not what they
+  authorise.
 - `transport`, `chat_id`, `responder_policy_ref`: where questions go and who may
   answer. `affected_decisions` are optional notes.
 
 `candidate()` and `prior_record()` return fresh parses of the exact checked text;
 `presentation(question_id, metadata_sha256, generation)` builds a `Presentation`
-for one selected question (an unselected one is `unknown_question`).
+for one selected question (an unselected one is `unknown_question`). Pass
+`metadata_sha256(unknown)` of that same question's unknown: nothing else ties the
+two together.
 
 ## Receipts: `ActionReceipt`
 
@@ -125,20 +143,23 @@ every level, no duplicate keys, no NaN).
 - `binding` (`PresentationBinding`): the stream, question, presentation,
   generation and delivered `message_id` the action answered.
 - `responder` (`ResponderDecision`): the ingress's decision for this sender under
-  a policy; chat membership alone is never authority.
+  a policy; chat membership alone is never authority. `authorised` means this
+  sender may answer this question, and nothing more.
 - `intent`: `answer`, `correct` (names the answers it `supersedes`, with a
   `reason`) or `reopen` (with a `reason` and the snapshot the person saw:
   `seen_revision`, `seen_active_event_ids`).
 - `disposition`: `answered`, `deferred` or `unknown`. Typed text without one is
   kept, not applied: a later button press by the same person (`confirms`, a
   `ConfirmedText` naming the typed message's action, author and text hash)
-  applies that exact text.
+  applies that exact text. A callback without `confirms` carries no text, so it
+  is kept as `blank_text`: a bare button never records a disposition by itself.
+  M2 asks for typed text first, then a button press confirms it.
 
 ## Validation: `validate_receipt`
 
 `validate_receipt(receipt, *, presentation, copies, current_generation,
-question_ids, confirmed=None)` runs every check before any human event exists
-and returns a `ReceiptValidation`:
+question_ids, confirmed=None)` runs every receipt check before any human event
+exists and returns a `ReceiptValidation`:
 
 - `accepted`: carries `event_id` and `event_json`, the canonical #308 event
   (`event()` returns a fresh copy).
@@ -158,6 +179,11 @@ author; then an explicit disposition and non-blank text. Wrongly typed
 arguments raise `ContractRefusal` instead of returning a result.
 
 ## Replay, reopen and the revision check
+
+`validate_receipt` never compares a receipt with stored receipts, the question's
+current active answers or the stream's revision. The store calls `check_replay` on a known action key before
+validating, `check_reopen_precondition` before appending any reopen, and
+`check_expected_revision` in its compare-and-set.
 
 - `check_replay(stored, incoming)`: `True` for an exact replay, `False` for a
   different action, `changed_body` for the same action identity with any other

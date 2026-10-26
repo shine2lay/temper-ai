@@ -31,6 +31,7 @@ from temper_ai.stage.models import NodeConfig
 TEXT = "SYNTHETIC_PRIVATE_IMAGE_TASK"
 SYSTEM = "SYNTHETIC_PRIVATE_IMAGE_SYSTEM"
 ANSWER = '{"verdict":"ok"}'
+NOT_SENT = "not sent"
 
 
 def png_bytes(width=1, height=1, pixels=b"\x00\x10\x20\x30\xff"):
@@ -100,7 +101,7 @@ def response_events(answer=ANSWER, stop="end_turn", terminal=True, tool=False):
     return "".join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events).encode()
 
 
-def rig(monkeypatch, *, payload=None, status=200, on_send=None):
+def rig(monkeypatch, *, payload=None, status=200, on_send=None, refuse_temperature=False, temperatures=None):
     counters = {"resolve": 0, "credential": 0, "prepare": 0, "hook": 0, "send": 0, "close": 0}
     provider = AnthropicLLM.__new__(AnthropicLLM)
     provider.auth_mode, provider.model = "oauth", "claude-opus-5-5"
@@ -128,9 +129,15 @@ def rig(monkeypatch, *, payload=None, status=200, on_send=None):
                     stream=body.get("stream"), max_tokens=body.get("max_tokens"),
                     subscription_only=request.headers.get("authorization") == "Bearer sk-ant-oat-FAKE"
                         and "x-api-key" not in request.headers)
+        if temperatures is not None:
+            temperatures.append(body.get("temperature", NOT_SENT))
         logging.getLogger("httpx").warning("fake unsafe SDK detail %s %s", PNG, TEXT)
         if on_send:
             on_send()
+        if refuse_temperature and "temperature" in body:
+            # What Opus 5 and Sonnet 5 answer (tests/test_llm/test_token_pool.py).
+            return httpx.Response(400, json={"type": "error", "error": {
+                "type": "invalid_request_error", "message": "`temperature` is deprecated for this model."}})
         return httpx.Response(status, content=response_events() if payload is None else payload,
                               headers={"content-type": "text/event-stream"})
 
@@ -393,3 +400,52 @@ def test_legacy_text_entrypoint_remains_legacy(monkeypatch):
     assert result.status == Status.COMPLETED and result.output == "legacy"
     assert len(calls) == 1 and sum(counts.values()) == 0
     assert asdict(result)["tool_calls"] == 0
+
+
+def test_model_that_refuses_temperature_gets_one_send_without_it(monkeypatch):
+    """Opus 5 and Sonnet 5 answer 400 when a request carries `temperature`.
+
+    An image agent that sets none must send none: not the provider's default,
+    whatever the process has learned about the model, and with no resend.
+    """
+    from temper_ai.llm.providers import anthropic as anthropic_provider
+    sent = []
+    ctx, provider, counts, _, rows, _, _ = rig(monkeypatch, refuse_temperature=True, temperatures=sent)
+    provider.temperature = 0.7  # the live provider default; it must stay out of the request
+    learned = set()  # nothing learned yet: the ordinary path would still send temperature here
+    monkeypatch.setattr(anthropic_provider, "_NO_TEMPERATURE", learned)
+    monkeypatch.setattr("temper_ai.stage.agent_node.time.sleep", deny)
+    node_result = AgentNode(NodeConfig(name="image"), config()).run({"task": TEXT, "screenshot": PNG}, ctx)
+    outcome = node_result.agent_results[0] if node_result.agent_results else node_result
+    safe_error = outcome.error if outcome.error and outcome.error.startswith("image_input:") else "redacted"
+    assert node_result.status == Status.COMPLETED, f"synthetic status: {safe_error}; {sent=}"
+    assert sent == [NOT_SENT]
+    assert counts["send"] == counts["hook"] == counts["close"] == 1
+    assert outcome.llm_calls == 1 and outcome.structured_output == {"verdict": "ok"}
+    assert learned == set()
+    assert_private(rows, outcome.metadata)
+
+
+@pytest.mark.parametrize("where", ["top_level", "provider_config"])
+@pytest.mark.parametrize("refuses", [False, True], ids=["model_accepts", "model_refuses"])
+def test_explicit_temperature_is_sent_once_unchanged(monkeypatch, where, refuses):
+    """A temperature the agent sets is sent as is, exactly once. A model that
+    refuses it fails the call: no resend without it, nothing learned."""
+    from temper_ai.llm.providers import anthropic as anthropic_provider
+    sent = []
+    ctx, _, counts, _, rows, _, _ = rig(monkeypatch, refuse_temperature=refuses, temperatures=sent)
+    learned = {"claude-opus-5-5"}  # learned refusal: must not change what this path sends
+    monkeypatch.setattr(anthropic_provider, "_NO_TEMPERATURE", learned)
+    monkeypatch.setattr("temper_ai.stage.agent_node.time.sleep", deny)
+    cfg = config(temperature=0.25) if where == "top_level" else config(provider_config={"temperature": 0.25})
+    node_result = AgentNode(NodeConfig(name="image"), cfg).run({"task": TEXT, "screenshot": PNG}, ctx)
+    outcome = node_result.agent_results[0] if node_result.agent_results else node_result
+    assert sent == [0.25]
+    assert counts["send"] == counts["hook"] == counts["close"] == 1 and outcome.llm_calls == 1
+    if refuses:
+        assert node_result.status == Status.FAILED
+        assert outcome.error == "image_input: transport (BadRequestError)"
+    else:
+        assert node_result.status == Status.COMPLETED
+    assert learned == {"claude-opus-5-5"}
+    assert_private(rows, outcome.metadata, outcome.error)

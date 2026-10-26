@@ -205,7 +205,9 @@ class LLMAgent(AgentABC):
                 kwargs = {**{k: self.config[k] for k in ("max_tokens", "temperature") if k in self.config},
                           **self.config.get("provider_config", {})}
                 kwargs.setdefault("max_tokens", provider.max_tokens)
-                kwargs.setdefault("temperature", provider.temperature)
+                # temperature only when the agent sets it, never the provider's
+                # default: Opus 5 and Sonnet 5 refuse it (400), and this path
+                # neither resends nor reads what the process learned.
                 model = self.model or provider.model
                 if (type(model) is not str or not model.strip() or type(kwargs["max_tokens"]) is not int
                         or kwargs["max_tokens"] <= 0):

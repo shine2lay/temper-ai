@@ -112,6 +112,8 @@ _OPAQUE_ID = re.compile(r"[A-Za-z0-9_.:-]+")  # a callback query ID: opaque by t
 # bot token (<digits>:<secret>) out of every ID. A second transport moves these per transport.
 _TELEGRAM_ID = re.compile(r"[1-9][0-9]*")
 _TELEGRAM_CHAT_ID = re.compile(r"-?[1-9][0-9]*")
+# The actor.ref _actor_ref builds from an authenticated Telegram sender (Architecture S9).
+_ACTOR_REF = re.compile(r"telegram-user:[1-9][0-9]*")
 # What a person sees next to a question ("2", "#2", "Q2", "question 2."):
 # a display position, never the question's identity.
 _ORDINAL = re.compile(r"(?:#|q-?|question[ #-]?)?[0-9]+[.):]?", re.IGNORECASE)
@@ -240,9 +242,13 @@ def _action_ref(value: object, where: str) -> str:
 
 
 def _actor_refs(value: object, where: str) -> dict[str, str]:
-    """Event ID -> actor.ref, as the store read them from the record."""
+    """Event ID -> actor.ref, as the store read them from the record.
+
+    Each ref has the shape _actor_ref builds: a display name or another namespace is a
+    store fault, refused, never taken for somebody else.
+    """
     _refuse_unless(isinstance(value, Mapping), RefusalCode.MALFORMED, "shape.mapping", where)
-    return {_event_ref(key, where): _match(ref, _REF, where) for key, ref in cast(Mapping, value).items()}
+    return {_event_ref(key, where): _match(ref, _ACTOR_REF, where) for key, ref in cast(Mapping, value).items()}
 
 
 def _question_ref(value: object, where: str) -> str:
@@ -1211,17 +1217,21 @@ def check_correction_precondition(receipt: ActionReceipt, *, answer_actors: Mapp
     event ID. A correction supersedes only its sender's own answers. Another person's
     answer changes only through a reopen (with a reason, against the answers the person
     saw) and then a new answer; two people's differing answers stay conflicting. A
-    named answer the store does not have is missing, never assumed.
+    named answer the store does not have is missing, never assumed, whatever else the
+    correction names; the order of supersedes never changes the outcome.
     """
     _instance(receipt, ActionReceipt, "correction.receipt")
     _refuse_unless(receipt.intent == "correct", RefusalCode.MALFORMED, "correction.intent", "receipt.intent")
     actors = _actor_refs(answer_actors, "correction.answer_actors")
-    for superseded in receipt.supersedes:
-        _refuse_unless(superseded in actors, RefusalCode.MISSING_RECORD, "correction.known", "receipt.supersedes")
-        _refuse_unless(
-            actors[superseded] == _actor_ref(receipt), RefusalCode.CROSS_ACTOR_CORRECTION, "correction.same_actor",
-            "receipt.supersedes",
-        )
+    _refuse_unless(
+        all(superseded in actors for superseded in receipt.supersedes), RefusalCode.MISSING_RECORD,
+        "correction.known", "receipt.supersedes",
+    )
+    sender = _actor_ref(receipt)
+    _refuse_unless(
+        all(actors[superseded] == sender for superseded in receipt.supersedes), RefusalCode.CROSS_ACTOR_CORRECTION,
+        "correction.same_actor", "receipt.supersedes",
+    )
 
 
 def check_confirmation_precondition(receipt: ActionReceipt, *, confirmed_actions: Collection[str]) -> None:

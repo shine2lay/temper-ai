@@ -44,6 +44,7 @@ import logging
 import signal
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from sqlmodel import col, select
 
@@ -61,6 +62,9 @@ from temper_ai.runner.models import WorkflowRun
 from temper_ai.spawner import SpawnerBusy, SpawnerError, get_spawner
 from temper_ai.spawner.reaper import CLAIMING, Reaper
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
+
+if TYPE_CHECKING:
+    from temper_ai.runner.admission import CandidateBindings
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +181,8 @@ def _publish_lane_view(view) -> None:
         logger.warning("Pi lane view: writing it failed (continuing): %s", type(exc).__name__)
 
 
-def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
+def _scan_and_dispatch(spawner, lane: str | None = None, *,
+                       candidate_bindings: CandidateBindings | None = None) -> int:
     """Find queued rows, claim each, spawn a worker. Returns dispatched count.
 
     Claim semantics: a row is "ours" once we've UPDATEd spawner_kind from
@@ -197,7 +202,15 @@ def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
             if _mark_cancelled_unclaimed(execution_id):
                 logger.info("Cancelled %s before it started", execution_id)
             continue
-        if not _claim_row(execution_id, spawner.kind.value, lane):
+        from temper_ai.config.admission_contract import AdmissionRefused
+
+        try:
+            claimed = _claim_row(execution_id, spawner.kind.value, lane,
+                                 candidate_bindings=candidate_bindings)
+        except AdmissionRefused as exc:
+            logger.warning("Candidate dispatch refused: %s", exc.code.value)
+            continue
+        if not claimed:
             # Another watcher beat us to it; in the Pi lane, another Pi run holds the lane.
             if lane == PI_LANE and execution_id not in _TOLD_WAITING:
                 _TOLD_WAITING.add(execution_id)
@@ -317,7 +330,8 @@ def _requeue_stuck_claims(spawner, lane: str | None = None) -> int:
 
 
 def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
-               lane: str | None = None) -> bool:
+               lane: str | None = None, *,
+               candidate_bindings: CandidateBindings | None = None) -> bool:
     """Try to atomically claim a queued row. Returns True if we got it.
 
     Uses a single UPDATE...WHERE statement so the claim is atomic at the
@@ -352,7 +366,21 @@ def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
             or_(other.c.status.in_(("running", "waiting")),
                 and_(other.c.status == "queued", other.c.spawner_kind.is_not(None))),
         ))
+    from temper_ai.config.admission_contract import AdmissionRefused, RefusalCode
+    from temper_ai.runner.admission import has_admission, locked_run
+
     with get_session() as session:
+        row = locked_run(session, execution_id)
+        if row is not None and has_admission(row.spawner_metadata):
+            if candidate_bindings is None or lane is not None:
+                raise AdmissionRefused(RefusalCode.MODE)
+            authority = candidate_bindings.authority_for_run(execution_id)
+            transport = candidate_bindings.transport(authority)
+            record = transport._row_record(row)
+            # Row status/attempts/cancel already match the record under this lock
+            # (_row_record), and the lock holds to the UPDATE below.
+            if record.value()["dispatch"]["phase"] != "queued":
+                raise AdmissionRefused(RefusalCode.GENERATION)
         stmt = (
             update(WorkflowRun)
             .where(*conditions)
@@ -363,10 +391,14 @@ def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
 
 
 def _stamp_handle(execution_id: str, handle) -> None:
+    from temper_ai.runner.admission import locked_run, refuse_reserved_extra
+
+    # A spawner's metadata can never name the reserved admission slot, even as null.
+    refuse_reserved_extra(handle.metadata)
     with get_session() as session:
-        row = session.exec(
-            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
-        ).first()
+        # Locked fresh read, so this merge can't write back an older copy of a
+        # record that a box's admission transition has just changed.
+        row = locked_run(session, execution_id)
         if row is None:
             logger.warning("Row vanished after spawn: %s", execution_id)
             return

@@ -32,7 +32,10 @@ import signal
 import sys
 import threading
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from temper_ai.runner.admission import CandidateBindings
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +96,8 @@ def _stop_mcp_manager(manager: Any = None, timeout: float = 15) -> None:
         logger.warning("MCP sessions did not all close at the end of the run: %r", exc)
 
 
-def cmd_run_workflow(args: argparse.Namespace) -> int:
+def cmd_run_workflow(args: argparse.Namespace, *,
+                     candidate_bindings: CandidateBindings | None = None) -> int:
     """Run a single WorkflowRun row to completion. Returns the exit code.
 
     The CLI dispatcher in main.py calls sys.exit(cmd_run_workflow(args));
@@ -122,6 +126,40 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         print(f"box refused: {unboxed}", file=sys.stderr)
         return BOX_REFUSED_EXIT
 
+    # Admission restoration precedes config/provider/bootstrap loading. Only DB
+    # initialization is allowed here; the existing one-shot delivery guard stays.
+    from temper_ai.config.admission_contract import (
+        SUPPORTED_MODE,
+        AdmissionRefused,
+        RefusalCode,
+    )
+    from temper_ai.database import get_database, init_database
+    from temper_ai.runner.admission import has_admission, is_designated
+    from temper_ai.spawner import box_bootstrap
+
+    admitted = None
+    transport = None
+    try:
+        box_bootstrap.require_received()
+        try:
+            get_database()
+        except RuntimeError:
+            init_database(os.environ.get("TEMPER_DATABASE_URL",
+                          os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db")))
+        early_row = _load_run_row(execution_id)
+        if early_row is not None and has_admission(early_row.get("spawner_metadata")):
+            if candidate_bindings is None or (box_doc or {}).get("boundary") == "sealed":
+                raise AdmissionRefused(RefusalCode.MODE)
+            authority = candidate_bindings.authority_for_run(execution_id)
+            transport = candidate_bindings.transport(authority)
+            admitted = transport.restore(execution_uuid=execution_id, authority=authority,
+                                         mode=SUPPORTED_MODE)
+        elif early_row is not None and is_designated(early_row["workflow_name"], candidate_bindings):
+            raise AdmissionRefused(RefusalCode.MISSING)
+    except AdmissionRefused as exc:
+        print(f"candidate refused: {exc.code.value}", file=sys.stderr)
+        return BOX_REFUSED_EXIT
+
     # --- A sealed box loads only the launch the worker classified ------------------
     # Every closure file is checked against the profile before anything is loaded; from
     # here on configs come only from those files, and anything outside the launch is
@@ -136,9 +174,11 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # --- Bootstrap (DB + LLM + memory + configs) ------------------------------
     from temper_ai.runner.bootstrap import bootstrap_runner_context_from_env
     try:
-        runner_ctx = bootstrap_runner_context_from_env(
-            config_dir=getattr(args, "config_dir", None),
-        )
+        if admitted is not None:
+            assert candidate_bindings is not None  # Protected-row restore required this above.
+            runner_ctx = candidate_bindings.bootstrap_snapshot(admitted)
+        else:
+            runner_ctx = bootstrap_runner_context_from_env(config_dir=getattr(args, "config_dir", None))
     except Exception as exc:
         logger.exception("Worker bootstrap failed for %s: %s", execution_id, exc)
         _safe_mark_failed(execution_id, f"bootstrap failed: {exc}")
@@ -164,6 +204,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # resume also links to the attempt it continues and replays its dispatches.
     # Worked out before this attempt writes its own workflow.started event.
     meta = run_row.get("spawner_metadata") or {}
+    if admitted is not None and any(key in meta for key in ("start", "rerun", "only", "lane")):
+        print(f"candidate refused: {RefusalCode.MODE.value}", file=sys.stderr)
+        return BOX_REFUSED_EXIT
     start = meta.get("start")
     # Ticked on the preview: steps that finished and are to run again anyway. And, for the
     # pass that runs a failed run's held clean-ups, the only paths it may run.
@@ -181,8 +224,8 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # rule, the preflight and the commit it runs on. Unmarked runs elsewhere: untouched.
     from temper_ai.runner import pi_lane
 
-    lane_refusal = pi_lane.check_run(execution_id, run_row, start=start,
-                                     graph_loader=runner_ctx.graph_loader)
+    lane_refusal = (None if admitted is not None else pi_lane.check_run(
+        execution_id, run_row, start=start, graph_loader=runner_ctx.graph_loader))
     if lane_refusal is not None:
         from temper_ai.runner.parked import repark_timer_refusal
 
@@ -217,13 +260,42 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         "spawner_handle": os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
         "container_id": meta.get("container_id"),
     })
-    _update_run_row(
-        execution_id,
-        status="running",
-        started_at=datetime.now(UTC),
-        spawner_handle=own_generation.handle,
-        attempts=own_generation.attempts,
-    )
+    if admitted is not None:
+        import uuid
+
+        from temper_ai.config.admission_contract import AdmissionRecord, canonical_bytes
+        from temper_ai.database import get_session
+        from temper_ai.runner.admission import locked_run
+
+        assert transport is not None  # Only its successful restore can set admitted.
+        proposal = admitted.value()
+        if transport.worker_identity is None:
+            return BOX_REFUSED_EXIT
+        proposal["dispatch"] = {
+            "phase": "running", "running_attempt": 1,
+            "previous_nonce": proposal["dispatch"]["dispatch_nonce"],
+            "dispatch_nonce": str(uuid.uuid4()), "worker_label": transport.worker_identity(),
+        }
+        running = AdmissionRecord(canonical_bytes(proposal))
+        try:
+            with get_session() as session:
+                transport.bind_dispatch(admitted, running, transaction=session)
+                row = locked_run(session, execution_id)
+                assert row is not None  # bind_dispatch just locked and verified this row.
+                row.spawner_handle = own_generation.handle
+                session.add(row)
+        except AdmissionRefused as exc:
+            print(f"candidate refused: {exc.code.value}", file=sys.stderr)
+            return BOX_REFUSED_EXIT
+        admitted = running
+    else:
+        _update_run_row(
+            execution_id,
+            status="running",
+            started_at=datetime.now(UTC),
+            spawner_handle=own_generation.handle,
+            attempts=own_generation.attempts,
+        )
 
     # --- Cancel signal handling ----------------------------------------------
     # A signal carries no words: the stop's own words are read from its record once the run
@@ -262,12 +334,17 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     )
 
     # --- MCP servers: their configs, as the server loads them when it starts --
-    _start_mcp_manager(getattr(args, "config_dir", None))
+    if admitted is None:
+        _start_mcp_manager(getattr(args, "config_dir", None))
 
     # --- Execute --------------------------------------------------------------
     from temper_ai.runner.attempts import REPLACED_STATUS
     from temper_ai.runner.execute import execute_workflow
     stood_down = False
+    # Preserve the old call shape for ordinary executor adapters.
+    admission_args: dict[str, Any] = (
+        {"admission_record": admitted, "candidate_bindings": candidate_bindings}
+        if admitted is not None else {})
     try:
         result = execute_workflow(
             execution_id=execution_id,
@@ -280,8 +357,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             initial_outputs=initial_outputs,
             resume_metadata=resume_metadata,
             replay_dispatch_history=start == "resume",
-            rerun=rerun,
+            rerun=None if admitted is not None else rerun,
             run_only=run_only,
+            **admission_args,
         )
         stood_down = result.status == REPLACED_STATUS
     except pi_lane.LaneDrained as drained:
@@ -433,22 +511,18 @@ def _update_run_row(execution_id: str, **fields: Any) -> None:
     row vanished — at terminal time, missing-row means cleanup happened
     elsewhere; not worth crashing the worker over.
     """
-    from sqlmodel import select
-
     from temper_ai.database import get_session
-    from temper_ai.runner.models import WorkflowRun
+    from temper_ai.runner.admission import locked_run, protect_ordinary_update
 
     with get_session() as session:
-        row = session.exec(
-            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
-        ).first()
+        row = locked_run(session, execution_id)
         if row is None:
             logger.warning(
                 "WorkflowRun row vanished mid-update for %s; fields=%s",
                 execution_id, list(fields.keys()),
             )
             return
-        for key, value in fields.items():
+        for key, value in protect_ordinary_update(row, fields).items():
             setattr(row, key, value)
         session.add(row)
 

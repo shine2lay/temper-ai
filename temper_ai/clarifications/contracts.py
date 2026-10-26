@@ -24,6 +24,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -61,6 +62,8 @@ __all__ = [
     "ResponderDecision",
     "StreamKey",
     "TransportNamespace",
+    "check_confirmation_precondition",
+    "check_correction_precondition",
     "check_expected_revision",
     "check_reopen_precondition",
     "check_replay",
@@ -103,7 +106,12 @@ _ACTION_KEY = re.compile(r"a-[0-9a-f]{64}")
 # The #308 foundation's own event-ID and reference patterns, unchanged.
 _EVENT_ID = re.compile(r"e-[A-Za-z0-9][A-Za-z0-9._:-]*")
 _REF = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\x00-\x20\x7f]+")
-_OPAQUE_ID = re.compile(r"[A-Za-z0-9_.:-]+")
+_OPAQUE_ID = re.compile(r"[A-Za-z0-9_.:-]+")  # a callback query ID: opaque by the provider's design
+# Telegram, the only transport (TRANSPORTS), gives user, bot and message IDs as positive
+# integers and chat IDs as signed ones. Their canonical decimal form keeps a username or a
+# bot token (<digits>:<secret>) out of every ID. A second transport moves these per transport.
+_TELEGRAM_ID = re.compile(r"[1-9][0-9]*")
+_TELEGRAM_CHAT_ID = re.compile(r"-?[1-9][0-9]*")
 # What a person sees next to a question ("2", "#2", "Q2", "question 2."):
 # a display position, never the question's identity.
 _ORDINAL = re.compile(r"(?:#|q-?|question[ #-]?)?[0-9]+[.):]?", re.IGNORECASE)
@@ -116,6 +124,7 @@ class RefusalCode(StrEnum):
     MISSING_ORIGINAL = "missing_original"
     MISSING_RECORD = "missing_record"
     MISSING_AUTHORITY = "missing_authority"
+    MISSING_BINDING = "missing_binding"
     HASH_MISMATCH = "hash_mismatch"
     CROSS_CONTEXT = "cross_context"
     ORDINAL_AS_QUESTION_ID = "ordinal_as_question_id"
@@ -135,6 +144,8 @@ class RefusalCode(StrEnum):
     BLANK_TEXT = "blank_text"
     STALE_PRESENTATION = "stale_presentation"
     STALE_REOPEN = "stale_reopen"
+    CROSS_ACTOR_CORRECTION = "cross_actor_correction"
+    ALREADY_CONFIRMED = "already_confirmed"
 
 
 RETAINED_CODES = frozenset({
@@ -142,6 +153,8 @@ RETAINED_CODES = frozenset({
     RefusalCode.BLANK_TEXT,
     RefusalCode.STALE_PRESENTATION,
     RefusalCode.STALE_REOPEN,
+    RefusalCode.CROSS_ACTOR_CORRECTION,
+    RefusalCode.ALREADY_CONFIRMED,
 })
 REFUSED_CODES = frozenset(RefusalCode) - RETAINED_CODES
 
@@ -182,9 +195,17 @@ def _text(value: object, where: str) -> str:
     return cast(str, value)
 
 
+def _blank(text: str) -> bool:
+    """Blank: every character is whitespace or an invisible format character (Unicode Cf).
+
+    The #308 foundation's rule: a lone U+200B is blank, "a" + U+200B is not.
+    """
+    return all(char.isspace() or unicodedata.category(char) == "Cf" for char in text)
+
+
 def _nonblank(value: object, where: str) -> str:
     text = _text(value, where)
-    _refuse_unless(bool(text.strip()), RefusalCode.MALFORMED, "shape.nonblank", where)
+    _refuse_unless(not _blank(text), RefusalCode.MALFORMED, "shape.nonblank", where)
     return text
 
 
@@ -200,8 +221,28 @@ def _opaque(value: object, where: str) -> str:
     return _match(value, _OPAQUE_ID, where)
 
 
+def _telegram_id(value: object, where: str) -> str:
+    """A Telegram user, bot or message ID: a positive integer in canonical decimal form."""
+    return _match(value, _TELEGRAM_ID, where)
+
+
+def _telegram_chat_id(value: object, where: str) -> str:
+    """A Telegram chat ID: a signed integer in canonical decimal form."""
+    return _match(value, _TELEGRAM_CHAT_ID, where)
+
+
 def _event_ref(value: object, where: str) -> str:
     return _match(value, _EVENT_ID, where)
+
+
+def _action_ref(value: object, where: str) -> str:
+    return _match(value, _ACTION_KEY, where)
+
+
+def _actor_refs(value: object, where: str) -> dict[str, str]:
+    """Event ID -> actor.ref, as the store read them from the record."""
+    _refuse_unless(isinstance(value, Mapping), RefusalCode.MALFORMED, "shape.mapping", where)
+    return {_event_ref(key, where): _match(ref, _REF, where) for key, ref in cast(Mapping, value).items()}
 
 
 def _question_ref(value: object, where: str) -> str:
@@ -267,8 +308,19 @@ def _listed(value: object, where: str) -> tuple[Any, ...]:
 
 
 def _canonical(value: object) -> str:
-    """The #308 foundation's canonical JSON: sorted keys, compact, Unicode kept."""
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    """The #308 foundation's canonical JSON: sorted keys, compact, Unicode kept.
+
+    What json.dumps cannot encode within Python's own limits (an int past the
+    int-to-string digit limit, nesting past the recursion limit) is refused as
+    malformed, never raised as another error. No size limit of this module's own.
+    """
+    try:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        encoded = True
+    except (ValueError, RecursionError):
+        text, encoded = "", False
+    _refuse_unless(encoded, RefusalCode.MALFORMED, "json.encode", "canonical")
+    return text
 
 
 def _sha256(text: str) -> str:
@@ -306,7 +358,12 @@ def _plain_json(value: object, where: str, ancestors: frozenset[int] | None = No
 
 def _json_object(value: object, where: str) -> dict[str, Any]:
     _refuse_unless(type(value) is dict, RefusalCode.MALFORMED, "json.object", where)
-    _plain_json(value, where)
+    try:
+        _plain_json(value, where)
+        walked = True
+    except RecursionError:  # nesting past Python's own recursion limit
+        walked = False
+    _refuse_unless(walked, RefusalCode.MALFORMED, "json.data_depth", where)
     return cast(dict, value)
 
 
@@ -326,10 +383,13 @@ def _parse_object(text: object, where: str) -> dict[str, Any]:
 
     try:
         value: object = json.loads(source, object_pairs_hook=pairs, parse_constant=constants.append)
-        parsed = True
+        failure = ""
+    except RecursionError:  # nesting past the decoder's own recursion limit
+        value, failure = None, "depth"
     except ValueError:
-        value, parsed = None, False
-    _refuse_unless(parsed, RefusalCode.MALFORMED, "json.syntax", where)
+        value, failure = None, "syntax"
+    _refuse_unless(failure != "depth", RefusalCode.MALFORMED, "json.decode_depth", where)
+    _refuse_unless(failure == "", RefusalCode.MALFORMED, "json.syntax", where)
     _refuse_unless(not duplicates, RefusalCode.MALFORMED, "json.duplicate_key", where)
     _refuse_unless(not constants, RefusalCode.MALFORMED, "json.constant", where)
     return _json_object(value, where)
@@ -364,7 +424,7 @@ class TransportNamespace:
 
     def __post_init__(self) -> None:
         _member(self.transport, TRANSPORTS, "transport.transport")
-        _opaque(self.bot_id, "transport.bot_id")
+        _telegram_id(self.bot_id, "transport.bot_id")  # the bot's numeric ID (getMe), never its token
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,13 +434,16 @@ class ActionIdentity:
     transport: TransportNamespace
     chat_id: str
     kind: str
-    action_id: str  # a message ID (unique per chat) or a callback query ID
+    action_id: str  # a message ID (numeric, unique per chat) or a callback query ID (opaque)
 
     def __post_init__(self) -> None:
         _instance(self.transport, TransportNamespace, "action.transport")
-        _opaque(self.chat_id, "action.chat_id")
+        _telegram_chat_id(self.chat_id, "action.chat_id")
         _member(self.kind, ACTION_KINDS, "action.kind")
-        _opaque(self.action_id, "action.action_id")
+        if self.kind == "message":
+            _telegram_id(self.action_id, "action.action_id")
+        else:
+            _opaque(self.action_id, "action.callback_query_id")
 
     @property
     def key(self) -> str:
@@ -411,7 +474,7 @@ class Presentation:
         _integer(self.generation, 1, "presentation.generation")
         _match(self.responder_policy_ref, _REF, "presentation.responder_policy_ref")
         _instance(self.transport, TransportNamespace, "presentation.transport")
-        _opaque(self.chat_id, "presentation.chat_id")
+        _telegram_chat_id(self.chat_id, "presentation.chat_id")
 
     @property
     def presentation_id(self) -> str:
@@ -441,7 +504,7 @@ class PresentationBinding:
         _question_ref(self.question_id, "binding.question_id")
         _match(self.presentation_id, _PRESENTATION_ID, "binding.presentation_id")
         _integer(self.generation, 1, "binding.generation")
-        _opaque(self.message_id, "binding.message_id")
+        _telegram_id(self.message_id, "binding.message_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,7 +518,7 @@ class ResponderDecision:
 
     def __post_init__(self) -> None:
         _match(self.policy_ref, _REF, "responder.policy_ref")
-        _opaque(self.sender_id, "responder.sender_id")
+        _telegram_id(self.sender_id, "responder.sender_id")  # from.id, never a username
         _member(self.decision, RESPONDER_DECISIONS, "responder.decision")
         _member(self.basis, RESPONDER_BASES, "responder.basis")
 
@@ -471,7 +534,7 @@ class ConfirmedText:
     def __post_init__(self) -> None:
         _instance(self.action, ActionIdentity, "confirms.action")
         _refuse_unless(self.action.kind == "message", RefusalCode.MALFORMED, "confirms.kind", "confirms.action.kind")
-        _opaque(self.author_id, "confirms.author_id")
+        _telegram_id(self.author_id, "confirms.author_id")
         _match(self.text_sha256, _HEX64, "confirms.text_sha256")
 
 
@@ -506,7 +569,7 @@ class ActionReceipt:
         _member(self.ingress, INGRESSES, "receipt.ingress")
         _instance(self.action, ActionIdentity, "receipt.action")
         _integer(self.update_id, 0, "receipt.update_id")
-        _opaque(self.sender_id, "receipt.sender_id")
+        _telegram_id(self.sender_id, "receipt.sender_id")
         _flag(self.sender_is_bot, "receipt.sender_is_bot")
         _flag(self.forwarded, "receipt.forwarded")
         text = _text(self.text, "receipt.text")
@@ -581,6 +644,7 @@ class CallerInput:
     candidate_json: str
     candidate_sha256: str
     candidate_ref: str
+    candidate_brief_sha256: str | None  # the brief digest recorded with the candidate's packet or run
     prior_revision: int
     prior_record_json: str | None
     prior_record_sha256: str | None
@@ -618,9 +682,21 @@ class CallerInput:
             candidate.get("contract") == PROFILE_CONTRACT, RefusalCode.MALFORMED, "caller.candidate_contract",
             "caller.candidate_json.contract",
         )
+        # The candidate is bound to this brief by the digest recorded with its run, by its own
+        # brief_sha256, or both; each one present must match, and an unbound candidate is refused.
+        if self.candidate_brief_sha256 is not None:
+            _match(self.candidate_brief_sha256, _HEX64, "caller.candidate_brief_sha256")
+            _refuse_unless(
+                self.candidate_brief_sha256 == self.original_sha256, RefusalCode.HASH_MISMATCH, "caller.candidate_run_brief",
+                "caller.candidate_brief_sha256",
+            )
         _refuse_unless(
-            candidate.get("brief_sha256", self.original_sha256) == self.original_sha256, RefusalCode.HASH_MISMATCH,
-            "caller.candidate_brief", "caller.candidate_json.brief_sha256",
+            "brief_sha256" not in candidate or candidate["brief_sha256"] == self.original_sha256,
+            RefusalCode.HASH_MISMATCH, "caller.candidate_brief", "caller.candidate_json.brief_sha256",
+        )
+        _refuse_unless(
+            self.candidate_brief_sha256 is not None or "brief_sha256" in candidate, RefusalCode.MISSING_BINDING,
+            "caller.candidate_bound", "caller.candidate_brief_sha256",
         )
         _integer(self.prior_revision, 0, "caller.prior_revision")
         _refuse_unless(
@@ -655,7 +731,7 @@ class CallerInput:
         )
         _match(self.source_authority_ref, _REF, "caller.source_authority_ref")
         _instance(self.transport, TransportNamespace, "caller.transport")
-        _opaque(self.chat_id, "caller.chat_id")
+        _telegram_chat_id(self.chat_id, "caller.chat_id")
         _match(self.responder_policy_ref, _REF, "caller.responder_policy_ref")
 
     def candidate(self) -> dict[str, Any]:
@@ -1020,8 +1096,13 @@ def _check_receipt(
             receipt.disposition is not None, RefusalCode.NO_EXPLICIT_DISPOSITION, "disposition.explicit",
             "receipt.disposition",
         )
-        _refuse_unless(bool(text.strip()), RefusalCode.BLANK_TEXT, "text.blank", "receipt.text")
+        _refuse_unless(not _blank(text), RefusalCode.BLANK_TEXT, "text.blank", "receipt.text")
     return text
+
+
+def _actor_ref(receipt: ActionReceipt) -> str:
+    """The event's actor.ref: the authenticated sender in the transport's namespace."""
+    return f"{receipt.action.transport.transport}-user:{receipt.sender_id}"
 
 
 def _event(receipt: ActionReceipt, question: str, text: str) -> dict[str, object]:
@@ -1029,7 +1110,7 @@ def _event(receipt: ActionReceipt, question: str, text: str) -> dict[str, object
     event: dict[str, object] = {
         "event_id": event_id(receipt),
         "question_id": question,
-        "actor": {"kind": "human", "ref": f"{receipt.action.transport.transport}-user:{receipt.sender_id}"},
+        "actor": {"kind": "human", "ref": _actor_ref(receipt)},
         "source": {"kind": "human_response", "ref": f"{RECEIPT_REF_SCHEME}:{receipt_sha256(receipt)}"},
     }
     if receipt.intent == "reopen":
@@ -1053,7 +1134,8 @@ def validate_receipt(
     """Every receipt check before any human event exists.
 
     It never compares with stored receipts, active answers or the stream's revision:
-    the store calls check_replay, check_reopen_precondition and
+    the store calls check_replay, check_reopen_precondition,
+    check_correction_precondition, check_confirmation_precondition and
     check_expected_revision for those.
 
     presentation: the persisted presentation the action is bound to. copies:
@@ -1061,11 +1143,13 @@ def validate_receipt(
     generation for its question. question_ids: questions of the latest record.
     confirmed: the earlier typed message a callback confirms. Wrongly typed
     arguments raise ContractRefusal; everything about the action itself is a
-    result: accepted (with the event), retained or refused.
+    result: accepted (with the event), retained or refused. A receipt with no
+    canonical form (an int past Python's digit limit) raises too: it has no
+    digest to keep.
     """
     _instance(receipt, ActionReceipt, "validate.receipt")
     _instance(presentation, Presentation, "validate.presentation")
-    copy_ids = _string_set(copies, _opaque, "validate.copies")
+    copy_ids = _string_set(copies, _telegram_id, "validate.copies")
     _integer(current_generation, 1, "validate.current_generation")
     known = _string_set(question_ids, _question_ref, "validate.question_ids")
     if confirmed is not None:
@@ -1083,9 +1167,17 @@ def validate_receipt(
 
 
 def check_replay(stored: ActionReceipt, incoming: ActionReceipt) -> bool:
-    """True for an exact replay, False for a different action; a changed body is refused."""
+    """True for an exact replay, False for a different action; a changed body is refused.
+
+    Only a provider-pull receipt (accepted or retained) holds an action key. A stored
+    receipt from any other ingress is refused, never compared, so an unverified or
+    model claim on a genuine action's key cannot turn the real answer away.
+    """
     _instance(stored, ActionReceipt, "replay.stored")
     _instance(incoming, ActionReceipt, "replay.incoming")
+    _refuse_unless(
+        stored.ingress == VERIFIED_INGRESS, RefusalCode.MALFORMED, "replay.stored_verified", "replay.stored",
+    )
     if stored.action.key != incoming.action.key:
         return False
     _refuse_unless(receipt_json(stored) == receipt_json(incoming), RefusalCode.CHANGED_BODY, "replay.body", "receipt")
@@ -1109,6 +1201,44 @@ def check_reopen_precondition(receipt: ActionReceipt, *, revision: int, active_e
     _refuse_unless(
         frozenset(receipt.seen_active_event_ids) == active, RefusalCode.STALE_REOPEN, "reopen.active_set",
         "receipt.seen_active_event_ids",
+    )
+
+
+def check_correction_precondition(receipt: ActionReceipt, *, answer_actors: Mapping[str, str]) -> None:
+    """Refuse a correction of somebody else's answer (CROSS_ACTOR_CORRECTION, retained).
+
+    answer_actors: the actor.ref of each stored answer to the receipt's question, by
+    event ID. A correction supersedes only its sender's own answers. Another person's
+    answer changes only through a reopen (with a reason, against the answers the person
+    saw) and then a new answer; two people's differing answers stay conflicting. A
+    named answer the store does not have is missing, never assumed.
+    """
+    _instance(receipt, ActionReceipt, "correction.receipt")
+    _refuse_unless(receipt.intent == "correct", RefusalCode.MALFORMED, "correction.intent", "receipt.intent")
+    actors = _actor_refs(answer_actors, "correction.answer_actors")
+    for superseded in receipt.supersedes:
+        _refuse_unless(superseded in actors, RefusalCode.MISSING_RECORD, "correction.known", "receipt.supersedes")
+        _refuse_unless(
+            actors[superseded] == _actor_ref(receipt), RefusalCode.CROSS_ACTOR_CORRECTION, "correction.same_actor",
+            "receipt.supersedes",
+        )
+
+
+def check_confirmation_precondition(receipt: ActionReceipt, *, confirmed_actions: Collection[str]) -> None:
+    """Refuse a second event from one typed message (ALREADY_CONFIRMED, retained).
+
+    confirmed_actions: the action keys of the typed messages that already gave an event
+    in this stream, applied directly or through a button press. One typed message gives
+    at most one event, whatever disposition a later press carries; a change of mind is a
+    correction.
+    """
+    _instance(receipt, ActionReceipt, "confirmation.receipt")
+    confirms = receipt.confirms
+    _refuse_unless(confirms is not None, RefusalCode.MALFORMED, "confirmation.confirms", "receipt.confirms")
+    done = _string_set(confirmed_actions, _action_ref, "confirmation.confirmed_actions")
+    _refuse_unless(
+        cast(ConfirmedText, confirms).action.key not in done, RefusalCode.ALREADY_CONFIRMED, "confirmation.once",
+        "receipt.confirms.action",
     )
 
 

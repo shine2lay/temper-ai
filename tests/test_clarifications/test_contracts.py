@@ -9,13 +9,16 @@ data only: no model, network, database, clock, environment or real person.
 
 import ast
 import builtins
+import copy
 import dataclasses
+import functools
 import hashlib
 import importlib
 import importlib.util
 import io
 import json
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -57,6 +60,21 @@ def cyclic():
     return loop
 
 
+HUGE = 10 ** 5000  # past Python's int-to-string digit limit (4300): building it is fine, encoding it is not
+
+
+def nested(depth):
+    """A list nested `depth` levels deep, built without recursion."""
+    value = []
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def nested_text(depth):
+    return '{"contract":' + "[" * depth + "]" * depth + "}"
+
+
 BRIEF = "A synthetic booking tool.\r\n  Keep this exact: café, 東京, trailing space. \n"
 BRIEF_SHA = sha(BRIEF)
 UNKNOWN = {
@@ -75,10 +93,11 @@ NAMESPACE = "temper-clarify:synthetic/arch-stage-context"
 POLICY = "responder-policy:synthetic/owner-only"
 AUTHORITY = "authority:synthetic/m0-tests"
 CANDIDATE_REF = "temper-run:synthetic/stage1"
-BOT = "synthetic-bot-1"
-CHAT = "synthetic-chat-1"
-OWNER = "synthetic-user-1"
-OTHER = "synthetic-user-2"
+# Synthetic Telegram IDs: numbers, as the provider gives them (a group chat's ID is negative).
+BOT = "7001"
+CHAT = "-1001"
+OWNER = "5001"
+OTHER = "5002"
 DROP = object()
 WRONG = type("Wrong", (), {"__repr__": lambda self: "WRONG"})()
 
@@ -139,6 +158,12 @@ class World:
         return self.receipt(sender, **{"action": self.action("cb-701", "callback"), "update_id": 9003, "text": "",
                                        "callback_data": "clar:answered", **changes})
 
+    def fix(self, sender=OWNER, supersedes=None, **changes):
+        """A correction by sender of the answers it names (by default the owner's accepted answer)."""
+        targets = supersedes or (self.accepted().event_id,)
+        return self.receipt(sender, **{"action": self.action("503"), "update_id": 9020, "intent": "correct",
+                                       "supersedes": targets, "reason": "Typo.", "text": "No: online only.", **changes})
+
     def reopen(self, **changes):
         return self.callback(**{"intent": "reopen", "disposition": None, "callback_data": "clar:reopen",
                                 "reason": "Plans changed; ask again.", "seen_revision": 1, **changes})
@@ -173,7 +198,7 @@ class World:
         fields = {
             "stream": self.stream, "original_text": BRIEF, "original_sha256": BRIEF_SHA,
             "candidate_json": canon(candidate), "candidate_sha256": sha(canon(candidate)), "candidate_ref": CANDIDATE_REF,
-            "prior_revision": 0 if record is None else 1, "prior_record_json": record_json,
+            "candidate_brief_sha256": BRIEF_SHA, "prior_revision": 0 if record is None else 1, "prior_record_json": record_json,
             "prior_record_sha256": None if record_json is None else sha(record_json),
             "question_ids": (self.qid, self.qid2), "source_authority_ref": AUTHORITY, "transport": self.transport,
             "chat_id": CHAT, "responder_policy_ref": POLICY, "affected_decisions": ("client storage",),
@@ -243,6 +268,7 @@ def test_happy_path_from_caller_to_supplement_through_the_unchanged_foundation()
     assert (kept.status, kept.code, kept.event()) == ("retained", C.RefusalCode.NO_EXPLICIT_DISPOSITION, None)
     press = w.callback(binding=w.binding(second, "600"), disposition="deferred", callback_data="clar:deferred",
                        confirms=w.confirms(draft))
+    assert C.check_confirmation_precondition(press, confirmed_actions=set()) is None  # no event from it yet
     two = C.validate_receipt(press, presentation=second, copies={"600"}, confirmed=draft, **known)
     assert two.status == "accepted" and two.event()["answer"] == TYPED and two.event()["actor"] == actor
     assert C.receipt_from_json(C.receipt_json(press)).confirms.action == draft.action  # both actions linked
@@ -260,6 +286,9 @@ def test_happy_path_from_caller_to_supplement_through_the_unchanged_foundation()
     with pytest.raises(C.ContractRefusal) as changed:
         C.check_replay(typed, edited)
     assert changed.value.code is C.RefusalCode.CHANGED_BODY
+    # A correction may name only its own sender's answers; the owner's own one passes.
+    assert C.check_correction_precondition(w.fix(supersedes=(one.event_id,)), answer_actors={
+        one.event_id: actor["ref"], two.event_id: actor["ref"]}) is None
 
     # 5. Projection and supplement keep the exact text and name each receipt as its source.
     now = states(after)
@@ -307,10 +336,10 @@ def known_answers(w):
 KNOWN_ANSWERS = {
     "question_id": "q-9518697a1297774edca1a275563fea6ee94cfc9f4611463124cf81be445a0bcb",
     "stream_id": "s-8c3a3ec2d0f829e9eabb9da81eeeae433fbb5123c02ebbd3ef24a843cc239219",
-    "presentation_id": "p-d81eb44f95f4d7b7b9404f2a787e462ea0dc4ed0ba27a4330e0b10448c4d7269",
-    "action_key": "a-ab50674b2b765e0bd2e9253fc1ea42312454f0a11d331e8995ebe72368e5d6a1",
-    "event_id": "e-e3a2fec91ac9dccc82be934a0e9a5866a1e9ecbc247a04a395b0e390ba9e3134",
-    "receipt_sha256": "cc79f8a6ac6f40370c262fc7a944c89e3d15d7bbccbb426fcd61cfce23ec9fd7",
+    "presentation_id": "p-74f1101f34bd907430201c678a4519366c77818581a4198f76459505b7a422f9",
+    "action_key": "a-857b639f7da0bbc265980a5e6aadbf3b68167e7a5640ccc5037500056456ec51",
+    "event_id": "e-4a1eaa67dbb9e08ea59c9fb8a5a08e4d94ca3d946594f542595b2c3290ca0385",
+    "receipt_sha256": "675a8362349423887df364b647d18268063962ebd831b86615c2963a816b5d62",
     "consumption_id": "c-8ba138065014e94f5d0748996acdc7d2fcf2673309dba1e94dc9c7e64056341c",
 }
 
@@ -384,6 +413,18 @@ def test_only_the_verified_provider_ingress_yields_a_human_event(ingress):  # T0
     assert (result.status, result.code, result.event()) == ("refused", code, None)
 
 
+@pytest.mark.parametrize("ingress", (*C.UNVERIFIED_INGRESSES, C.MODEL_INGRESS))
+def test_an_unverified_receipt_never_holds_a_genuine_actions_key(ingress):  # Security F3
+    w = World(C)
+    genuine = w.receipt()
+    squatter = w.receipt(ingress=ingress, text="Forged.")
+    assert w.validate(squatter).status == "refused" and squatter.action.key == genuine.action.key
+    with pytest.raises(C.ContractRefusal) as refused:  # never a replay basis, so the real answer is not turned away
+        C.check_replay(squatter, genuine)
+    assert (refused.value.code, refused.value.guard) == (C.RefusalCode.MALFORMED, "replay.stored_verified")
+    assert C.check_replay(genuine, genuine) is True
+
+
 ORDINALS = [1, "1", "#2", "Q3", "q-4", "question 5.", "6)"]
 ORDINAL_SITES = {
     "presentation": lambda w, ordinal: w.present(ordinal, UNKNOWN),
@@ -402,6 +443,39 @@ def test_a_displayed_ordinal_is_never_a_question_id(site, ordinal):
     assert refused.value.code is C.RefusalCode.ORDINAL_AS_QUESTION_ID
 
 
+# Telegram, the only transport, numbers its users, bots, messages and chats: a username or a
+# bot token (<digits>:<secret>) is never an ID, so neither can reach a sidecar (Security F4).
+NOT_TELEGRAM_IDS = ["123456789:not-a-real-token", "owner_username", "@owner", "0", "0500", "+500", " 500", "5e2", "５００"]
+TELEGRAM_IDS = {
+    "transport.bot_id": lambda w, value: w.m.TransportNamespace("telegram", value),
+    "responder.sender_id": lambda w, value: w.responder(value),
+    "receipt.sender_id": lambda w, value: dataclasses.replace(w.receipt(), sender_id=value),
+    "confirms.author_id": lambda w, value: w.confirms(author_id=value),
+    "action.action_id": lambda w, value: w.action(value),
+    "binding.message_id": lambda w, value: w.binding(message_id=value),
+    "validate.copies": lambda w, value: w.validate(w.receipt(), copies={"500", value}),
+}
+CHAT_IDS = {
+    "action.chat_id": lambda w, value: w.action(chat_id=value),
+    "presentation.chat_id": lambda w, value: dataclasses.replace(w.presentation, chat_id=value),
+    "caller.chat_id": lambda w, value: w.caller(chat_id=value),
+}
+
+
+@pytest.mark.parametrize("where", sorted(TELEGRAM_IDS) + sorted(CHAT_IDS))
+def test_telegram_ids_are_the_providers_numbers_never_a_username_or_token(where):  # Security F4
+    chat = where in CHAT_IDS
+    build = (CHAT_IDS if chat else TELEGRAM_IDS)[where]
+    w = World(C)
+    for value in NOT_TELEGRAM_IDS + (["-0", "-0100", "--100", "-100:secret"] if chat else ["-500"]):
+        with pytest.raises(C.ContractRefusal) as refused:
+            build(w, value)
+        assert (refused.value.code, refused.value.guard, refused.value.where) == (
+            C.RefusalCode.MALFORMED, "shape.pattern", where), value
+    for value in ["1", "5001", "9007199254740993"] + (["-1001234567890"] if chat else []):
+        build(w, value)  # the provider's own numbers pass
+
+
 def test_a_confirmer_never_becomes_the_author_of_someone_elses_text():  # T06
     w = World(C)
     typed = w.typed()  # written by OWNER
@@ -414,11 +488,15 @@ def test_a_confirmer_never_becomes_the_author_of_someone_elses_text():  # T06
     assert (own.event()["actor"]["ref"], own.event()["answer"]) == ("telegram-user:" + OWNER, TYPED)
 
 
-def test_missing_original_record_or_authority_is_refused_never_replaced():  # T13, T17
+UNBOUND = {key: value for key, value in PROFILE.items() if key != "brief_sha256"}
+
+
+def test_missing_original_record_binding_or_authority_is_refused_never_replaced():  # T13, T17
     w = World(C)
     truncated = canon({**RECORD, "questions": RECORD["questions"][:1]})
     for code, changes in {
         C.RefusalCode.MISSING_ORIGINAL: {"original_text": None},
+        C.RefusalCode.MISSING_BINDING: {"candidate": UNBOUND, "candidate_brief_sha256": None},
         C.RefusalCode.MISSING_RECORD: {"prior_revision": 3, "prior_record_json": None, "prior_record_sha256": None},
         C.RefusalCode.MISSING_AUTHORITY: {"source_authority_ref": None},
         C.RefusalCode.HASH_MISMATCH: {"prior_record_json": truncated},
@@ -430,8 +508,23 @@ def test_missing_original_record_or_authority_is_refused_never_replaced():  # T1
     assert (unlinked.status, unlinked.code) == ("refused", C.RefusalCode.MISSING_RECORD)
 
 
+def test_a_candidate_is_bound_to_this_brief_by_its_run_or_its_own_digest():  # Architecture R-O5a
+    w = World(C)
+    for candidate, run_digest in ((PROFILE, BRIEF_SHA), (UNBOUND, BRIEF_SHA), (PROFILE, None)):
+        assert w.caller(candidate=candidate, candidate_brief_sha256=run_digest).candidate() == candidate
+    for (code, guard), changes in {
+        ("missing_binding", "caller.candidate_bound"): {"candidate": UNBOUND, "candidate_brief_sha256": None},
+        ("hash_mismatch", "caller.candidate_run_brief"): {"candidate": UNBOUND, "candidate_brief_sha256": sha("x")},
+        ("hash_mismatch", "caller.candidate_brief"): {
+            "candidate": {**PROFILE, "brief_sha256": sha("x")}, "candidate_brief_sha256": None},
+    }.items():
+        with pytest.raises(C.ContractRefusal) as refused:
+            w.caller(**changes)
+        assert (refused.value.code.value, refused.value.guard) == (code, guard)
+
+
 @pytest.mark.parametrize("text", ["y", "  padded both sides  ", "line one\r\nline two\n", "café 東京 ok",
-                                  "zero\u200bwidth", "tab\tinside\n"])
+                                  "zero\u200bwidth", "tab\tinside\n", "a\u200b"])
 def test_exact_text_is_kept_byte_for_byte(text):  # T06
     w = World(C)
     receipt = w.receipt(text=text)
@@ -448,6 +541,69 @@ def test_blank_text_is_kept_as_evidence_but_never_applied(text):  # T06, T07
     assert (result.status, result.code, result.event()) == ("retained", C.RefusalCode.BLANK_TEXT, None)
     with pytest.raises(F.ClarificationError):  # the unchanged foundation agrees
         F.append_event(RECORD, {**w.accepted().event(), "answer": text})
+
+
+INVISIBLE = ["\u200b", "\u2060\ufeff", " \u200b ", "\u200b\n\u200d"]
+
+
+@pytest.mark.parametrize("text", INVISIBLE, ids=lambda text: "+".join(f"U{ord(char):04X}" for char in text))
+def test_invisible_format_characters_alone_are_blank_too(text):  # Architecture R-O5b
+    w = World(C)
+    result = w.validate(w.receipt(text=text))
+    assert (result.status, result.code, result.guard, result.event()) == ("retained", C.RefusalCode.BLANK_TEXT,
+                                                                          "text.blank", None)
+    with pytest.raises(C.ContractRefusal) as refused:  # the same rule for a reason
+        w.fix(reason=text)
+    assert (refused.value.code, refused.value.guard) == (C.RefusalCode.MALFORMED, "shape.nonblank")
+
+
+def test_the_blank_rule_counts_format_characters_and_bites():  # Architecture R-O5b
+    whitespace_only = SOURCE.replace(' or unicodedata.category(char) == "Cf"', "")
+    assert whitespace_only != SOURCE
+    module = types.ModuleType("clarification_contracts_whitespace_only_blank")
+    exec(compile(whitespace_only, "<contracts with a whitespace-only blank rule>", "exec"), module.__dict__)
+    w = World(module)
+    assert [w.validate(w.receipt(text=text)).status for text in INVISIBLE] == ["accepted"] * len(INVISIBLE)
+
+
+def test_a_correction_never_replaces_someone_elses_answer():  # Architecture R-O3
+    w = World(C)
+    mine = w.accepted()
+    theirs = w.validate(w.receipt(OTHER, action=w.action("502"), update_id=9010, text="Online only."))
+    actors = {mine.event_id: mine.event()["actor"]["ref"], theirs.event_id: theirs.event()["actor"]["ref"]}
+    assert actors == {mine.event_id: "telegram-user:" + OWNER, theirs.event_id: "telegram-user:" + OTHER}
+    own = w.fix(supersedes=(mine.event_id,))
+    assert C.check_correction_precondition(own, answer_actors=actors) is None
+    for receipt, code in (
+        (w.fix(supersedes=(theirs.event_id,)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
+        (w.fix(supersedes=(mine.event_id, theirs.event_id)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
+        (w.fix(OTHER, supersedes=(mine.event_id,)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
+        (w.fix(supersedes=(C.event_id(w.receipt(action=w.action("509"))),)), C.RefusalCode.MISSING_RECORD),
+    ):
+        with pytest.raises(C.ContractRefusal) as refused:
+            C.check_correction_precondition(receipt, answer_actors=actors)
+        assert refused.value.code is code
+    assert C.RefusalCode.CROSS_ACTOR_CORRECTION in C.RETAINED_CODES  # kept as evidence, never applied
+    assert C.RefusalCode.MISSING_RECORD in C.REFUSED_CODES
+    # Validation alone accepts the cross-person correction: only the store's precondition stops it.
+    assert w.validate(w.fix(supersedes=(theirs.event_id,))).status == "accepted"
+
+
+def test_one_typed_message_gives_at_most_one_event():  # Architecture R-O5c
+    w = World(C)
+    typed = w.typed()
+    first = w.callback(confirms=w.confirms(typed))
+    assert C.check_confirmation_precondition(first, confirmed_actions=[]) is None
+    assert w.validate(first, confirmed=typed).status == "accepted"
+    again = w.callback(action=w.action("cb-702", "callback"), update_id=9004, disposition="deferred",
+                       callback_data="clar:deferred", confirms=w.confirms(typed))
+    assert w.validate(again, confirmed=typed).status == "accepted"  # validation alone would apply it twice
+    with pytest.raises(C.ContractRefusal) as refused:
+        C.check_confirmation_precondition(again, confirmed_actions=[typed.action.key])
+    assert refused.value.code is C.RefusalCode.ALREADY_CONFIRMED and refused.value.code in C.RETAINED_CODES
+    other = w.typed(action=w.action("602"), update_id=9005)
+    assert C.check_confirmation_precondition(w.callback(confirms=w.confirms(other)), confirmed_actions=[
+        typed.action.key]) is None
 
 
 def test_correction_and_reopen_follow_the_foundation_and_the_seen_snapshot():  # T11
@@ -503,15 +659,66 @@ def test_the_sidecar_is_closed_at_every_level(path):
     assert refused.value.where == ".".join(("sidecar",) + path)
 
 
+@pytest.mark.parametrize("depth", [2_000, 20_000])
+def test_deep_json_is_a_contract_refusal_not_a_crash(depth):  # Security F1
+    w = World(C)
+    deep = '{"contract":"context_profile/v2","unknowns":' + "[" * depth + "]" * depth + "}"
+    for build in (
+        lambda: w.caller(candidate_json=deep, candidate_sha256=sha(deep)),
+        lambda: C.receipt_from_json(nested_text(depth)),
+        lambda: C.metadata_sha256({"x": nested(depth)}),
+        lambda: C.question_id(BRIEF_SHA, {**UNKNOWN, "x": nested(depth)}),
+    ):
+        with pytest.raises(C.ContractRefusal) as refused:
+            build()
+        # Which of Python's own limits trips first depends on its version; either one refuses.
+        assert refused.value.code is C.RefusalCode.MALFORMED
+        assert refused.value.guard in ("json.decode_depth", "json.data_depth")
+
+
+def test_huge_ints_are_a_contract_refusal_not_a_value_error():  # Security F1
+    w = World(C)
+    for build in (
+        lambda: w.validate(w.receipt(update_id=HUGE)),
+        lambda: C.receipt_json(w.reopen(seen_revision=HUGE)),
+        lambda: w.present(w.qid, UNKNOWN, generation=HUGE).presentation_id,
+        lambda: C.question_id(BRIEF_SHA, {**UNKNOWN, "rank": HUGE}),
+        lambda: C.metadata_sha256({**UNKNOWN, "rank": HUGE}),
+        lambda: C.consumption_id(w.stream.stream_id, HUGE, BRIEF_SHA),
+    ):
+        with pytest.raises(C.ContractRefusal) as refused:
+            build()
+        assert (refused.value.code, refused.value.guard) == (C.RefusalCode.MALFORMED, "json.encode")
+    with pytest.raises(C.ContractRefusal) as refused:  # as text, the decoder's own digit limit
+        C.receipt_from_json('{"contract":' + "9" * 5000 + "}")
+    assert (refused.value.code, refused.value.guard) == (C.RefusalCode.MALFORMED, "json.syntax")
+
+
+def test_canonical_refuses_nesting_json_cannot_encode():  # Security F1: the RecursionError member on its own
+    with pytest.raises(C.ContractRefusal) as refused:
+        C._canonical(nested(20_000))
+    assert (refused.value.code, refused.value.guard) == (C.RefusalCode.MALFORMED, "json.encode")
+    narrowed = SOURCE.replace("except (ValueError, RecursionError):", "except ValueError:")
+    assert narrowed.count("except ValueError:") == SOURCE.count("except ValueError:") + 1
+    module = types.ModuleType("clarification_contracts_without_canonical_recursion")
+    exec(compile(narrowed, "<contracts without RecursionError in _canonical>", "exec"), module.__dict__)
+    with pytest.raises(RecursionError):  # the bite: without the member, the error escapes
+        module._canonical(nested(20_000))
+
+
 def test_refusal_codes_are_a_closed_frozen_set():
     assert [code.value for code in C.RefusalCode] == [
-        "malformed", "missing_original", "missing_record", "missing_authority", "hash_mismatch", "cross_context",
+        "malformed", "missing_original", "missing_record", "missing_authority", "missing_binding", "hash_mismatch",
+        "cross_context",
         "ordinal_as_question_id", "unknown_question", "binding_mismatch", "transport_mismatch",
         "unverified_ingress", "model_not_human", "bot_sender", "forwarded_message", "responder_not_authorised",
         "confirmer_not_author", "changed_body", "revision_conflict", "no_explicit_disposition", "blank_text",
-        "stale_presentation", "stale_reopen",
+        "stale_presentation", "stale_reopen", "cross_actor_correction", "already_confirmed",
     ]
-    assert sorted(C.RETAINED_CODES) == ["blank_text", "no_explicit_disposition", "stale_presentation", "stale_reopen"]
+    assert sorted(C.RETAINED_CODES) == [
+        "already_confirmed", "blank_text", "cross_actor_correction", "no_explicit_disposition", "stale_presentation",
+        "stale_reopen",
+    ]
     assert C.RETAINED_CODES | C.REFUSED_CODES == frozenset(C.RefusalCode)
     assert not C.RETAINED_CODES & C.REFUSED_CODES
 
@@ -534,6 +741,8 @@ GUARDS = {
     "shape.tuple": ("raised", M, lambda w: w.receipt(intent="correct", supersedes=["e-prior"], reason="Fix.")),
     "shape.unique": ("raised", M, lambda w: w.receipt(intent="correct", supersedes=("e-prior", "e-prior"), reason="Fix.")),
     "shape.collection": ("raised", M, lambda w: w.validate(w.receipt(), copies="500")),
+    "shape.mapping": ("raised", M, lambda w: w.m.check_correction_precondition(
+        w.fix(), answer_actors=[w.accepted().event_id])),
     "shape.closed": ("raised", M, lambda w: w.m.receipt_from_json(w.sidecar(("receipt",), DROP))),
     "shape.list": ("raised", M, lambda w: w.m.receipt_from_json(w.sidecar(("receipt", "supersedes"), {}))),
     "question.ordinal": ("raised", "ordinal_as_question_id", lambda w: w.binding(question_id="2")),
@@ -546,6 +755,10 @@ GUARDS = {
     "json.syntax": ("raised", M, lambda w: w.m.receipt_from_json("{")),
     "json.duplicate_key": ("raised", M, lambda w: w.m.receipt_from_json('{"contract":"a","contract":"b"}')),
     "json.constant": ("raised", M, lambda w: w.m.receipt_from_json('{"contract":NaN}')),
+    # Python's own recursion and digit limits are the only limits; past them is malformed (Security F1).
+    "json.decode_depth": ("raised", M, lambda w: w.m.receipt_from_json(nested_text(20_000))),
+    "json.data_depth": ("raised", M, lambda w: w.m.metadata_sha256({"x": nested(20_000)})),
+    "json.encode": ("raised", M, lambda w: w.m.consumption_id(w.stream.stream_id, HUGE, BRIEF_SHA)),
     # Receipt shape.
     "confirms.kind": ("raised", M, lambda w: w.m.ConfirmedText(w.action("cb-1", "callback"), OWNER, sha(TYPED))),
     "receipt.text_sha256": ("raised", "hash_mismatch", lambda w: w.receipt(text_sha256=sha("other text"))),
@@ -565,7 +778,10 @@ GUARDS = {
     "caller.stream_brief": ("raised", "hash_mismatch", lambda w: w.caller(stream=w.m.StreamKey(NAMESPACE, sha("other")))),
     "caller.candidate_hash": ("raised", "hash_mismatch", lambda w: w.caller(candidate_sha256=sha("{}"))),
     "caller.candidate_contract": ("raised", M, lambda w: w.caller(candidate={**PROFILE, "contract": "context_profile/v1"})),
+    "caller.candidate_run_brief": ("raised", "hash_mismatch", lambda w: w.caller(candidate_brief_sha256=sha("x"))),
     "caller.candidate_brief": ("raised", "hash_mismatch", lambda w: w.caller(candidate={**PROFILE, "brief_sha256": sha("x")})),
+    "caller.candidate_bound": ("raised", "missing_binding", lambda w: w.caller(
+        candidate=UNBOUND, candidate_brief_sha256=None)),
     "caller.record_missing": ("raised", "missing_record", lambda w: w.caller(
         prior_revision=2, prior_record_json=None, prior_record_sha256=None)),
     "caller.record_unexpected": ("raised", M, lambda w: w.caller(prior_revision=0)),
@@ -603,9 +819,9 @@ GUARDS = {
     "provenance.bot": ("refused", "bot_sender", lambda w: w.validate(w.receipt(sender_is_bot=True))),
     "provenance.forwarded": ("refused", "forwarded_message", lambda w: w.validate(w.receipt(forwarded=True))),
     "provenance.transport": ("refused", "transport_mismatch", lambda w: w.validate(w.receipt(
-        action=w.action(transport=w.m.TransportNamespace("telegram", "synthetic-bot-2"))))),
+        action=w.action(transport=w.m.TransportNamespace("telegram", "7002"))))),
     "provenance.chat": ("refused", "transport_mismatch", lambda w: w.validate(w.receipt(
-        action=w.action(chat_id="synthetic-chat-2")))),
+        action=w.action(chat_id="-1002")))),
     "responder.subject": ("refused", "responder_not_authorised", lambda w: w.validate(w.receipt(responder=w.responder(OTHER)))),
     "responder.policy": ("refused", "responder_not_authorised", lambda w: w.validate(w.receipt(
         responder=w.responder(policy_ref="responder-policy:synthetic/anyone")))),
@@ -641,12 +857,23 @@ GUARDS = {
     "text.blank": ("retained", "blank_text", lambda w: w.validate(w.receipt(text=" \r\n\t"))),
     # Replay, reopen snapshot and CAS (T08, T09, T11).
     "replay.body": ("raised", "changed_body", lambda w: w.m.check_replay(w.receipt(), w.receipt(text="Changed."))),
+    "replay.stored_verified": ("raised", M, lambda w: w.m.check_replay(w.receipt(ingress="caller_label"), w.receipt())),
     "reopen.intent": ("raised", M, lambda w: w.m.check_reopen_precondition(w.receipt(), revision=1, active_event_ids=[])),
     "reopen.revision": ("raised", "stale_reopen", lambda w: w.m.check_reopen_precondition(
         w.reopen(seen_revision=5), revision=3, active_event_ids=[])),
     "reopen.active_set": ("raised", "stale_reopen", lambda w: w.m.check_reopen_precondition(
         w.reopen(seen_active_event_ids=("e-a",)), revision=1, active_event_ids=["e-a", "e-b"])),
     "cas.revision": ("raised", "revision_conflict", lambda w: w.m.check_expected_revision(2, 3)),
+    # Correction and confirmation preconditions (Architecture R-O3, R-O5c): run by the store.
+    "correction.intent": ("raised", M, lambda w: w.m.check_correction_precondition(w.receipt(), answer_actors={})),
+    "correction.known": ("raised", "missing_record", lambda w: w.m.check_correction_precondition(
+        w.fix(), answer_actors={})),
+    "correction.same_actor": ("raised", "cross_actor_correction", lambda w: w.m.check_correction_precondition(
+        w.fix(OTHER), answer_actors={w.accepted().event_id: "telegram-user:" + OWNER})),
+    "confirmation.confirms": ("raised", M, lambda w: w.m.check_confirmation_precondition(
+        w.receipt(), confirmed_actions=[])),
+    "confirmation.once": ("raised", "already_confirmed", lambda w: w.m.check_confirmation_precondition(
+        w.callback(confirms=w.confirms()), confirmed_actions=[w.typed().action.key])),
 }
 
 FIELD_PREFIX = {
@@ -693,6 +920,7 @@ ARGS = {
     ("_string_set", "validate.question_ids"): ("question.ordinal", lambda w: w.validate(w.receipt(), question_ids=["1"])),
     ("_instance", "validate.confirmed"): ("shape.instance", lambda w: w.validate(
         w.callback(confirms=w.confirms()), confirmed=w.confirms())),
+    ("_opaque", "action.callback_query_id"): ("shape.pattern", lambda w: w.action("cb 701", "callback")),
     ("_instance", "replay.stored"): ("shape.instance", lambda w: w.m.check_replay(w.receipt().action, w.receipt())),
     ("_instance", "replay.incoming"): ("shape.instance", lambda w: w.m.check_replay(w.receipt(), w.receipt().action)),
     ("_instance", "reopen.receipt"): ("shape.instance", lambda w: w.m.check_reopen_precondition(
@@ -701,6 +929,14 @@ ARGS = {
         w.reopen(), revision=-1, active_event_ids=[])),
     ("_string_set", "reopen.active_event_ids"): ("shape.pattern", lambda w: w.m.check_reopen_precondition(
         w.reopen(), revision=1, active_event_ids=["x"])),
+    ("_instance", "correction.receipt"): ("shape.instance", lambda w: w.m.check_correction_precondition(
+        w.fix().action, answer_actors={})),
+    ("_actor_refs", "correction.answer_actors"): ("shape.mapping", lambda w: w.m.check_correction_precondition(
+        w.fix(), answer_actors=None)),
+    ("_instance", "confirmation.receipt"): ("shape.instance", lambda w: w.m.check_confirmation_precondition(
+        w.typed().action, confirmed_actions=[])),
+    ("_string_set", "confirmation.confirmed_actions"): ("shape.pattern", lambda w: w.m.check_confirmation_precondition(
+        w.callback(confirms=w.confirms()), confirmed_actions=["x"])),
     ("_integer", "cas.expected"): ("shape.integer", lambda w: w.m.check_expected_revision(-1, -1)),
     ("_integer", "cas.current"): ("shape.integer", lambda w: w.m.check_expected_revision(1, True)),
     ("_match", "consumption.stream_id"): ("shape.pattern", lambda w: w.m.consumption_id("s-1", 1, BRIEF_SHA)),
@@ -717,8 +953,9 @@ ARGS = {
 ARG_CODES = {"question.ordinal": "ordinal_as_question_id"}
 
 HELPERS = frozenset({
-    "_instance", "_text", "_nonblank", "_match", "_opaque", "_event_ref", "_question_ref", "_member", "_integer",
-    "_flag", "_code", "_string_tuple", "_string_set", "_closed", "_listed", "_json_object", "_parse_object",
+    "_instance", "_text", "_nonblank", "_match", "_opaque", "_telegram_id", "_telegram_chat_id", "_event_ref",
+    "_question_ref", "_member", "_integer", "_flag", "_code", "_string_tuple", "_string_set", "_closed", "_listed",
+    "_json_object", "_parse_object", "_actor_refs",
 })
 
 
@@ -779,24 +1016,45 @@ class _Unwrap(ast.NodeTransformer):
         return self.generic_visit(node)
 
 
-def mutant(kind, key):
-    """Compile the module IN MEMORY with one check removed; never touch a file."""
+def mutant_tree(kind, key):
+    """The module's syntax tree with one check removed."""
     tree = ast.parse(SOURCE)
     if kind == "guard":
         _guard_calls(tree)[key].args[0] = ast.Constant(True)
     else:
         call = (_field_calls if kind == "field" else _arg_calls)(tree)[key]
         tree = _Unwrap(call).visit(tree)
-    module = types.ModuleType(f"clarification_contracts_without_{kind}")
-    exec(compile(ast.fix_missing_locations(tree), f"<contracts without {kind} {key}>", "exec"), module.__dict__)
+    return ast.fix_missing_locations(tree)
+
+
+def load(tree, name):
+    """Compile a syntax tree IN MEMORY as a module; never touch a file."""
+    module = types.ModuleType(name.replace(" ", "_"))
+    exec(compile(ast.fix_missing_locations(tree), f"<{name}>", "exec"), module.__dict__)
     return module
+
+
+def mutant(kind, key, tree=None):
+    return load(tree or mutant_tree(kind, key), f"contracts without {kind} {key}")
+
+
+@functools.cache
+def base_checks():
+    return canon(checks(ast.parse(SOURCE)))
+
+
+def moves_the_interface(tree):
+    """Security F2: removing a check changes what the interface hash covers."""
+    return canon(checks(tree)) != base_checks()
 
 
 @pytest.mark.parametrize("label", sorted(GUARDS))
 def test_each_guard_has_a_literal_case_and_bites(label):
     kind, code, case = GUARDS[label]
     assert outcome(C, case)[:3] == (kind, code, label)
-    assert outcome(mutant("guard", label), case)[:3] != (kind, code, label)
+    tree = mutant_tree("guard", label)
+    assert outcome(mutant("guard", label, tree), case)[:3] != (kind, code, label)
+    assert moves_the_interface(tree)
 
 
 @pytest.mark.parametrize(("cls", "field"), FIELDS, ids=[f"{cls}.{field}" for cls, field in FIELDS])
@@ -806,7 +1064,9 @@ def test_each_field_refuses_a_wrong_value_and_its_check_bites(cls, field):
 
     found = outcome(C, case)
     assert found[:2] == ("raised", M) and found[3] == f"{FIELD_PREFIX[cls]}.{field}"
-    assert outcome(mutant("field", (cls, field)), case) != found
+    tree = mutant_tree("field", (cls, field))
+    assert outcome(mutant("field", (cls, field), tree), case) != found
+    assert moves_the_interface(tree)
 
 
 @pytest.mark.parametrize("key", sorted(ARGS), ids=[f"{helper}:{where}" for helper, where in sorted(ARGS)])
@@ -814,7 +1074,9 @@ def test_each_argument_check_has_a_literal_case_and_bites(key):
     guard, case = ARGS[key]
     expected = ("raised", ARG_CODES.get(guard, M), guard, key[1])
     assert outcome(C, case) == expected
-    assert outcome(mutant("arg", key), case) != expected
+    tree = mutant_tree("arg", key)
+    assert outcome(mutant("arg", key, tree), case) != expected
+    assert moves_the_interface(tree)
 
 
 def test_every_check_site_has_exactly_one_literal_case():
@@ -845,7 +1107,7 @@ def test_import_and_every_public_operation_need_no_ambient_access(monkeypatch):
             imports.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             imports.add(node.module)
-    allowed = {"collections.abc", "dataclasses", "enum", "hashlib", "json", "math", "re", "typing"}
+    allowed = {"collections.abc", "dataclasses", "enum", "hashlib", "json", "math", "re", "typing", "unicodedata"}
     assert imports == allowed
     loaded = {name: importlib.import_module(name) for name in allowed}
     code = compile(SOURCE, "pure-clarification-contracts", "exec")
@@ -893,6 +1155,11 @@ def test_import_and_every_public_operation_need_no_ambient_access(monkeypatch):
             module.check_expected_revision(1, 1), caller.candidate(), caller.prior_record(),
             caller.presentation(w.qid, module.metadata_sha256(UNKNOWN), 1) == w.presentation, w.applied().revision,
         ]
+        preconditions = [
+            module.check_correction_precondition(w.fix(), answer_actors={accepted.event_id: "telegram-user:" + OWNER}),
+            module.check_confirmation_precondition(w.callback(confirms=w.confirms(typed)), confirmed_actions=[]),
+            w.validate(w.receipt(text="\u200b")).status,
+        ]
         refused = []
         for operation in (lambda: module.check_replay(typed, w.typed(text="Edited.")),
                           lambda: module.check_expected_revision(1, 2), lambda: w.caller(original_text=None)):
@@ -903,14 +1170,56 @@ def test_import_and_every_public_operation_need_no_ambient_access(monkeypatch):
     assert results[0] == KNOWN_ANSWERS and results[2:5] == ["refused", "retained", "accepted"]
     assert results[5:9] == [True, True, False, None] and results[-2:] == [True, 1]
     assert refused == ["changed_body", "revision_conflict", "missing_original"]
+    assert preconditions == [None, None, "retained"]
 
 
-def interface():
-    """The public surface as stable data: names, fields, signatures, constants and known answers."""
-    tree = ast.parse(SOURCE)
+CHECK_CALLS = HELPERS | {"_refuse_unless"}
+
+
+def _without_docstring(function):
+    body = function.body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        function = copy.copy(function)
+        function.body = body[1:] or [ast.Pass()]
+    return function
+
+
+def checks(tree):
+    """Every guard and shape-check call, by scope and in source order, and every private function's code.
+
+    Normalised source (ast.unparse, docstrings left out): a dropped, weakened, re-coded or
+    relabelled check moves the interface hash; a reworded docstring or comment does not.
+    """
+    scopes = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            scopes.append((node.name, node))
+        elif isinstance(node, ast.ClassDef):
+            scopes += [(f"{node.name}.{m.name}", m) for m in node.body if isinstance(m, ast.FunctionDef)]
+    sites = []
+    for name, scope in scopes:
+        calls = [n for n in ast.walk(scope)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in CHECK_CALLS]
+        sites += [[name, ast.unparse(call)] for call in sorted(calls, key=lambda c: (c.lineno, c.col_offset))]
+    private = {node.name: ast.unparse(_without_docstring(node)) for node in tree.body
+               if isinstance(node, ast.FunctionDef) and node.name.startswith("_")}
+    return {"check_sites": sites, "private_functions": private}
+
+
+def patterns(m):
+    """Every compiled pattern the module holds, as text and flags."""
+    return {name: [value.pattern, int(value.flags)] for name, value in sorted(vars(m).items())
+            if isinstance(value, re.Pattern)}
+
+
+def interface(m=C, tree=None):
+    """The frozen contract as stable data: the public surface (names, fields, signatures,
+    constants), the known answers, every check and every pattern (Security F2)."""
+    tree = ast.parse(SOURCE) if tree is None else tree
 
     def segment(node):
-        return None if node is None else ast.get_source_segment(SOURCE, node)
+        return None if node is None else ast.unparse(node)
 
     def signature(function):
         args = function.args
@@ -926,7 +1235,7 @@ def interface():
 
     nodes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef | ast.FunctionDef)}
     surface = {}
-    for name in sorted(C.__all__):
+    for name in sorted(m.__all__):
         node = nodes.get(name)
         if isinstance(node, ast.FunctionDef):
             surface[name] = signature(node)
@@ -941,12 +1250,12 @@ def interface():
                             if isinstance(m, ast.FunctionDef) and (m.name == "__init__" or not m.name.startswith("_"))},
             }
         else:
-            value = getattr(C, name)
+            value = getattr(m, name)
             surface[name] = sorted(value) if isinstance(value, frozenset) else value
-    return {"surface": surface, "known_answers": known_answers(World(C))}
+    return {"surface": surface, "known_answers": known_answers(World(m)), **checks(tree), "patterns": patterns(m)}
 
 
-INTERFACE_SHA256 = "e7ed854ede93ba9407e398e8c34d58d4858014d670724e28dc6877edfa39b685"
+INTERFACE_SHA256 = "ba03b8d84da5a7f83080b98a04974749281f6fee0d3d519fc217966a78f0ee4f"
 
 
 def test_the_public_interface_is_frozen():
@@ -954,6 +1263,37 @@ def test_the_public_interface_is_frozen():
     # hash: update the pin, docs/clarifications/contract.md and the reviewers' receipts together.
     assert len(set(C.__all__)) == len(C.__all__) and all(hasattr(C, name) for name in C.__all__)
     assert sha(canon(interface())) == INTERFACE_SHA256
+
+
+def _interface_sha256(tree):
+    return sha(canon(interface(load(tree, "changed contracts"), tree)))
+
+
+def _function(tree, name):
+    return next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def test_the_interface_hash_moves_when_a_check_or_pattern_changes_but_not_for_prose():  # Security F2
+    assert _interface_sha256(ast.parse(SOURCE)) == INTERFACE_SHA256
+    changed = {"binding.copy dropped": mutant_tree("guard", "binding.copy")}
+    tree = ast.parse(SOURCE)
+    _field_calls(tree)[("ActionReceipt", "sender_id")].func.id = "_opaque"  # a username would pass again
+    changed["sender ID back to opaque"] = tree
+    tree = ast.parse(SOURCE)
+    pattern = next(node for node in tree.body
+                   if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "_TELEGRAM_ID")
+    pattern.value.args[0] = ast.Constant(r"[0-9A-Za-z_:]+")  # a bot token would pass again
+    changed["looser Telegram ID"] = tree
+    tree = ast.parse(SOURCE)
+    _function(tree, "_blank").body[-1] = ast.parse("return all(char.isspace() for char in text)").body[0]
+    changed["whitespace-only blank rule"] = tree
+    for name, tree in changed.items():
+        assert _interface_sha256(tree) != INTERFACE_SHA256, name
+    # Docstrings are prose: rewording the module's or a helper's keeps the hash.
+    tree = ast.parse(SOURCE)
+    tree.body[0].value = ast.Constant("Reworded module docstring.")
+    _function(tree, "_blank").body[0].value = ast.Constant("Reworded helper docstring.")
+    assert _interface_sha256(tree) == INTERFACE_SHA256
 
 
 def test_the_doc_names_every_public_name_code_and_the_interface_hash_and_its_example_runs():

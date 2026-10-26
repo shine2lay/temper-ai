@@ -120,6 +120,126 @@ class TestBuildAgentExecution:
         assert result["agent_config_snapshot"] is None
 
 
+def _image_call_end(start_id, *, failed=True, tokens=(None, None, None), at="2026-01-01T00:00:01"):
+    """An inline-image call's end, shaped as temper_ai/agent/llm_agent.py records it:
+    it names its start (started_event_id) and carries no iteration."""
+    prompt, completion, total = tokens
+    return _evt(f"{start_id}-end", "llm.call.failed" if failed else "llm.call.completed", parent_id="a1",
+                status="failed" if failed else "completed", timestamp=at, data={
+                    "started_event_id": start_id, "agent_name": "reader",
+                    "error": "image_input: auth (AuthenticationError)" if failed else None,
+                    "cost_usd": 0.0 if failed else 0.002, "prompt_tokens": prompt,
+                    "completion_tokens": completion, "total_tokens": total, "provider": "anthropic",
+                    "transmissions": 1, "latency_ms": None})
+
+
+def _service_call_end(start_id, iteration, total, at):
+    """An ordinary call's end, shaped as temper_ai/llm/service.py records it: it names
+    its start and carries the iteration too."""
+    return _evt(f"{start_id}-end", "llm.call.completed", parent_id="a1", status="completed", timestamp=at,
+                data={"started_event_id": start_id, "iteration": iteration, "prompt_tokens": total - 1,
+                      "completion_tokens": 1, "total_tokens": total, "cost_usd": 0.001})
+
+
+class TestAnLLMCallShowsItsOwnEnd:
+    """An LLM call shows the status, end time and tokens of the end event that is its own.
+
+    The run page showed every inline-image call as running, with 0 tokens and no end
+    time, even after it failed: its end names its start but carries no iteration, and
+    calls were paired by iteration alone.
+    """
+
+    def _call(self, events, start_id):
+        agent = _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "reader"})
+        calls = _build_agent_execution(agent, [agent, *events])["llm_calls"]
+        return next(c for c in calls if c["id"] == start_id)
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_run_shows_a_failed_image_call_and_an_ordinary_call_as_they_ended(self, mock_get_events):
+        """The whole run page: a failed image call next to an ordinary one that completed."""
+        mock_get_events.return_value = [
+            _evt("wf", "workflow.started", status="failed", data={"name": "image_smoke"}),
+            _evt("s1", "stage.started", parent_id="wf", status="failed", data={"name": "read"}),
+            _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "reader"}),
+            _evt("img", "llm.call.started", parent_id="a1", data={
+                "agent_name": "reader", "provider": "anthropic", "model": "claude-opus-5",
+                "tools_available": 0, "streaming": False, "iteration": 1}),
+            _image_call_end("img", at="2026-01-01T00:00:01"),
+            _evt("a1f", "agent.failed", parent_id="a1", status="failed", timestamp="2026-01-01T00:00:01",
+                 data={"agent_name": "reader", "error": "image_input: auth (AuthenticationError)"}),
+            _evt("s2", "stage.started", parent_id="wf", data={"name": "write"}),
+            _evt("a2", "agent.started", parent_id="s2", data={"agent_name": "writer"}),
+            _evt("llm", "llm.call.started", parent_id="a2", data={"iteration": 1}),
+            {**_service_call_end("llm", 1, 150, "2026-01-01T00:00:05"), "parent_id": "a2"},
+        ]
+
+        nodes = {n["name"]: n for n in get_workflow_execution("run-1")["nodes"]}
+        image = nodes["read"]["agent"]["llm_calls"][0]
+        ordinary = nodes["write"]["agent"]["llm_calls"][0]
+
+        assert image["status"] == "failed"
+        assert image["end_time"] == "2026-01-01T00:00:01"
+        assert image["error_message"] == "image_input: auth (AuthenticationError)"
+        # No answer came back, so nothing was counted: unknown, not zero.
+        assert (image["prompt_tokens"], image["completion_tokens"], image["total_tokens"]) == (None, None, None)
+        assert ordinary["status"] == "completed"
+        assert ordinary["end_time"] == "2026-01-01T00:00:05"
+        assert (ordinary["prompt_tokens"], ordinary["completion_tokens"], ordinary["total_tokens"]) == (149, 1, 150)
+
+    def test_a_completed_image_call_shows_its_tokens(self):
+        start = _evt("img", "llm.call.started", parent_id="a1", data={"iteration": 1})
+        call = self._call([start, _image_call_end("img", failed=False, tokens=(1200, 40, 1240))], "img")
+
+        assert call["status"] == "completed"
+        assert call["end_time"] == "2026-01-01T00:00:01"
+        assert (call["prompt_tokens"], call["completion_tokens"], call["total_tokens"]) == (1200, 40, 1240)
+        assert call["estimated_cost_usd"] == 0.002
+
+    def test_two_calls_with_the_same_iteration_each_get_their_own_end(self):
+        """Two runs of the call loop under one agent both count from iteration 1; the
+        end recorded first must not go to both."""
+        events = [
+            _evt("first", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+            _evt("again", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+            _service_call_end("again", 1, 300, "2026-01-01T00:00:09"),
+            _service_call_end("first", 1, 100, "2026-01-01T00:00:04"),
+        ]
+
+        first, again = self._call(events, "first"), self._call(events, "again")
+
+        assert (first["total_tokens"], first["end_time"]) == (100, "2026-01-01T00:00:04")
+        assert (again["total_tokens"], again["end_time"]) == (300, "2026-01-01T00:00:09")
+
+    def test_a_call_still_going_does_not_take_another_calls_end(self):
+        """An end that names its start is that start's alone, even when the iteration matches."""
+        events = [
+            _evt("first", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+            _service_call_end("first", 1, 100, "2026-01-01T00:00:04"),
+            _evt("again", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+        ]
+
+        again = self._call(events, "again")
+
+        assert again["status"] == "running"
+        assert again["end_time"] is None
+
+    def test_ends_that_name_no_start_still_pair_by_iteration(self):
+        """Events recorded before ends named their start keep pairing as they always did."""
+        events = [
+            _evt("l1", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+            _evt("l2", "llm.call.started", parent_id="a1", data={"iteration": 2}),
+            _evt("l2c", "llm.call.failed", parent_id="a1", status="failed", timestamp="T2",
+                 data={"iteration": 2, "error": "overloaded"}),
+            _evt("l1c", "llm.call.completed", parent_id="a1", status="completed", timestamp="T1",
+                 data={"iteration": 1, "total_tokens": 100}),
+        ]
+
+        l1, l2 = self._call(events, "l1"), self._call(events, "l2")
+
+        assert (l1["status"], l1["end_time"], l1["total_tokens"]) == ("completed", "T1", 100)
+        assert (l2["status"], l2["end_time"], l2["error_message"]) == ("failed", "T2", "overloaded")
+
+
 class TestBuildNodeExecution:
     def test_agent_node(self):
         stage = _evt("s1", "stage.started", parent_id="wf", data={"name": "planner"})

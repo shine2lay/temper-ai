@@ -1336,28 +1336,20 @@ def _build_agent_config_snapshot(agent_event: dict) -> dict | None:
 
 
 def _build_llm_call(event: dict, all_events: list[dict]) -> dict:
-    """Build an LLM call dict from a started event, merging completed data.
+    """Build an LLM call dict from a started event, merging its end event's data.
 
-    The LLM service records separate started and completed events (both children
-    of the agent event). We match them by parent_id + iteration number.
+    The end's numbers are kept as recorded: a call that got no answer has null
+    tokens (unknown), not 0.
     """
     data = dict(event.get("data", {}))
     status = _resolve_status(event)
     end_time = None
 
-    # Find corresponding completed/failed event
-    parent_id = event.get("parent_id")
-    iteration = data.get("iteration")
-    for e in all_events:
-        etype = e.get("type", "")
-        if (e.get("parent_id") == parent_id
-                and etype.startswith("llm.call.")
-                and (etype.endswith(".completed") or etype.endswith(".failed"))
-                and e.get("data", {}).get("iteration") == iteration):
-            data.update(e.get("data", {}))
-            status = "completed" if etype.endswith(".completed") else "failed"
-            end_time = e.get("timestamp")
-            break
+    end = _llm_call_end(event, all_events)
+    if end is not None:
+        data.update(end.get("data") or {})
+        status = "completed" if end.get("type", "").endswith(".completed") else "failed"
+        end_time = end.get("timestamp")
 
     return {
         "id": event["id"],
@@ -1377,6 +1369,32 @@ def _build_llm_call(event: dict, all_events: list[dict]) -> dict:
         "tool_calls": data.get("tool_calls"),
         "error_message": data.get("error"),
     }
+
+
+def _llm_call_end(start: dict, all_events: list[dict]) -> dict | None:
+    """The completed/failed event of an LLM call's started event; None while it runs.
+
+    Both are children of the agent event. An end that names its start
+    (``data.started_event_id``) is that start's alone: an inline-image call's end
+    carries only that id, no iteration, and two runs of the call loop under one
+    agent both count from iteration 1. Ends that name no start (events recorded
+    before ends named it, and Pi turns) still pair by parent_id + iteration.
+    """
+    parent_id = start.get("parent_id")
+    iteration = (start.get("data") or {}).get("iteration")
+    by_iteration = None
+    for e in all_events:
+        etype = e.get("type", "")
+        if not (e.get("parent_id") == parent_id and etype.startswith("llm.call.")
+                and (etype.endswith(".completed") or etype.endswith(".failed"))):
+            continue
+        e_data = e.get("data") or {}
+        named_start = e_data.get("started_event_id")
+        if named_start == start["id"]:
+            return e
+        if by_iteration is None and named_start is None and e_data.get("iteration") == iteration:
+            by_iteration = e
+    return by_iteration
 
 
 def _claimed_completions() -> set:

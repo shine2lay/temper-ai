@@ -420,7 +420,8 @@ def test_the_pi_lane_s_start_up_picks_up_only_pi_runs_and_queues_them_marked(srv
 def test_only_the_two_writers_create_run_rows_and_every_metadata_write_keeps_the_mark():
     """A new ``WorkflowRun(`` writer, or a new ``spawner_metadata =`` assignment, must be
     looked at for the lane mark: this fails until it is listed here (rm-0b46a085). Studio
-    (api/studio.py) starts no runs: it isn't here."""
+    (api/studio.py) starts no runs: it isn't here. The name predates runner/admission.py,
+    a third writer: an unmarked main-lane install that refuses Pi runs."""
     rows, metadata = [], []
     for path in sorted((REPO / "temper_ai").rglob("*.py")):
         rel = str(path.relative_to(REPO))
@@ -432,12 +433,19 @@ def test_only_the_two_writers_create_run_rows_and_every_metadata_write_keeps_the
                 rows.append(rel)
             if re.search(r"\.spawner_metadata\s*=[^=]|\bspawner_metadata=", code):
                 metadata.append(rel)
-    assert sorted(rows) == ["temper_ai/api/routes.py", "temper_ai/runner/queue.py"]
+    assert sorted(rows) == [
+        "temper_ai/api/routes.py",
+        "temper_ai/runner/admission.py",  # candidate install: refuses a Pi run; main lane, no mark
+        "temper_ai/runner/queue.py",
+    ]
     assert sorted(metadata) == [
         "temper_ai/api/routes.py",  # the direct spawn: mark_lane on insert and on the stamp
         "temper_ai/api/routes.py",
         "temper_ai/cli/watch_queue.py",  # _stamp_handle: mark_lane(merged, lane_of(old))
         "temper_ai/pi_agent/accounts.py",  # record_account: a copy of the row's own metadata
+        "temper_ai/runner/admission.py",  # install: refuses a Pi run; main-lane row, no mark
+        "temper_ai/runner/admission.py",  # bind_dispatch: a copy of the row's own; a marked row is refused
+        "temper_ai/runner/admission.py",  # bind_root_readiness: a copy of the row's own; marked refused
         "temper_ai/runner/pi_lane.py",  # record_commit: a copy of the row's own metadata
         "temper_ai/runner/queue.py",  # queue_run: mark_lane on insert and re-queue
         "temper_ai/runner/queue.py",

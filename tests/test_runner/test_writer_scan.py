@@ -188,6 +188,8 @@ RUN_WRITERS: dict[tuple[str, str, str, tuple[str, ...]], str] = {
         "Behind won claim; spawn failed before any box runs (GL2/GL5).",
     (BOX, "_update_run_row", "setattr", ("**",)):
         "Explicit caller inventory below. U7: one box per generation (GL2/GL5), not a row CAS.",
+    (BOX, "cmd_run_workflow", "attribute", ("spawner_handle",)):
+        "Admitted candidate only: same transaction as bind_dispatch's locked CAS; own generation handle.",
     (QUEUE, "queue_run_in", "insert", tuple(sorted(FIELDS))):
         "Unique fresh row within caller transaction; attempts default 0.",
     (QUEUE, "queue_run_in", "attribute", ("status", "spawner_kind", "spawner_handle", "spawner_metadata")):
@@ -202,6 +204,13 @@ RUN_WRITERS: dict[tuple[str, str, str, tuple[str, ...]], str] = {
         "Read/merge existing metadata under FOR UPDATE; container id unchanged.",
     ("temper_ai/spawner/box_profile.py", "DbProfileStore.save", "attribute", ("spawner_metadata",)):
         "Read/merge existing metadata under FOR UPDATE; only box_profile entry changes.",
+    ("temper_ai/runner/admission.py", "DbAdmissionTransport.install", "insert", tuple(sorted(FIELDS))):
+        "Candidate row at preselected UUID; locked absence + savepoint PK refuse collision; attempts default 0.",
+    ("temper_ai/runner/admission.py", "DbAdmissionTransport.bind_dispatch", "attribute",
+     ("status", "attempts", "spawner_metadata")):
+        "Locked row/record CAS: queued attempt 0 + nonce -> running attempt 1; merge replaces only the slot.",
+    ("temper_ai/runner/admission.py", "DbAdmissionTransport.bind_root_readiness", "attribute", ("spawner_metadata",)):
+        "Locked compare-once readiness merge; non-readiness record bytes must match; only the slot changes.",
 }
 
 # Non-run candidates are still exact sites, with the different model/object named.

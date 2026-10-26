@@ -17,9 +17,13 @@ described in `docs/architecture/context-profile-clarifications.md`) is unchanged
 This module builds the events that foundation already accepts, and says who and
 what each event comes from.
 
-**Interface hash:** `e7ed854ede93ba9407e398e8c34d58d4858014d670724e28dc6877edfa39b685`
-(SHA-256 of the public names, fields, signatures, constants and known-answer IDs;
-pinned by `test_the_public_interface_is_frozen`).
+**Interface hash:** `ba03b8d84da5a7f83080b98a04974749281f6fee0d3d519fc217966a78f0ee4f`
+(SHA-256 of the public names, fields, signatures, constants and known-answer IDs,
+and of every check: each guard and shape-check call by place, every private
+function's code and every compiled pattern, as normalised source without
+docstrings; pinned by `test_the_public_interface_is_frozen`). A dropped, weakened
+or relabelled check moves it; a reworded docstring does not. Reviewers receipt it
+together with the commit and the SHA-256 of `contracts.py`.
 
 ## What it is, and what it is not
 
@@ -28,7 +32,10 @@ pinned by `test_the_public_interface_is_frozen`).
   script may load the file by path.
 - Every object is a frozen dataclass whose fields are checked when it is built.
   A wrong value raises `ContractRefusal` with one closed `RefusalCode`, the label
-  of the guard that fired (`guard`) and the field (`where`).
+  of the guard that fired (`guard`) and the field (`where`). That includes JSON
+  nested past Python's recursion limit and integers past its digit limit: they
+  are `malformed`, never another exception. Python's own limits are the only
+  size limits.
 - It checks shape, binding and consistency. **It authenticates nobody.** A
   receipt is only as true as the provider-pull ingress that built it (M2, for
   Security's review). An object forged consistently inside the trusted process
@@ -93,6 +100,8 @@ All pure. A wrong argument raises `ContractRefusal`.
 | `validate_receipt` | `(receipt, *, presentation, copies, current_generation, question_ids, confirmed=None) -> ReceiptValidation` | accepted (with the event), retained or refused |
 | `check_replay` | `(stored, incoming) -> bool` | `True` exact replay, `False` another action; raises `changed_body` |
 | `check_reopen_precondition` | `(receipt, *, revision, active_event_ids) -> None` | raises `stale_reopen` when the seen answers changed |
+| `check_correction_precondition` | `(receipt, *, answer_actors) -> None` | raises `cross_actor_correction` for someone else's answer, `missing_record` for an unknown one |
+| `check_confirmation_precondition` | `(receipt, *, confirmed_actions) -> None` | raises `already_confirmed` when the typed message already gave an event |
 | `check_expected_revision` | `(expected, current) -> None` | raises `revision_conflict` when the stream moved |
 | `consumption_id` | `(stream_id, revision, supplement_sha256) -> str` | the `c-` ID; revision 1 or later |
 
@@ -105,6 +114,10 @@ The caller is handed data, never paths, and opens nothing:
   `missing_original`; a hash that does not match is `hash_mismatch`.
 - `candidate_json`, `candidate_sha256` and `candidate_ref`: the exact
   `context_profile/v2` candidate text, its hash and where it came from.
+- `candidate_brief_sha256`: the brief digest recorded with the candidate's run.
+  It and the candidate's own `brief_sha256`, whichever are present, must equal
+  the stream's brief hash (`hash_mismatch`). With neither, the candidate is
+  `missing_binding`: it is never assumed to belong to this brief.
 - `prior_revision`, `prior_record_json`, `prior_record_sha256`: the stored
   record. Revision 0 means a first creation with no record. Any later revision
   without its record is `missing_record`: never replaced by an empty history.
@@ -138,8 +151,15 @@ every level, no duplicate keys, no NaN).
   message ID or callback query ID). Its `key` is the store's unique receipt key.
 - `update_id`, `sender_id`, `sender_is_bot`, `forwarded`: as the provider sent
   them. The event's `actor.ref` is `<transport>-user:<sender_id>`.
+- Telegram IDs are the provider's numbers: user, bot and message IDs and the
+  delivered copies match `[1-9][0-9]*`, chat IDs `-?[1-9][0-9]*`. A username or
+  a bot token (`<digits>:<secret>`) is refused, so neither can reach a sidecar.
+  Callback query IDs stay opaque, as the provider makes them.
 - `text` and `text_sha256`: the exact text, never stripped or reformatted. A
   callback carries no text; its provider payload is kept in `callback_data`.
+  Text is blank when every character is whitespace or an invisible format
+  character (Unicode category Cf, such as U+200B): a lone zero-width space is
+  blank, `a` followed by one is not. The same rule holds for every reason.
 - `binding` (`PresentationBinding`): the stream, question, presentation,
   generation and delivered `message_id` the action answered.
 - `responder` (`ResponderDecision`): the ingress's decision for this sender under
@@ -153,7 +173,9 @@ every level, no duplicate keys, no NaN).
   `ConfirmedText` naming the typed message's action, author and text hash)
   applies that exact text. A callback without `confirms` carries no text, so it
   is kept as `blank_text`: a bare button never records a disposition by itself.
-  M2 asks for typed text first, then a button press confirms it.
+  M2 asks for typed text first, then a button press confirms it. One typed
+  message gives at most one event (`check_confirmation_precondition`); a change
+  of mind is a correction.
 
 ## Validation: `validate_receipt`
 
@@ -178,20 +200,36 @@ the one linked, has the linked text and author, and the confirmer is its
 author; then an explicit disposition and non-blank text. Wrongly typed
 arguments raise `ContractRefusal` instead of returning a result.
 
-## Replay, reopen and the revision check
+## Replay, preconditions and the revision check
 
 `validate_receipt` never compares a receipt with stored receipts, the question's
-current active answers or the stream's revision. The store calls `check_replay` on a known action key before
-validating, `check_reopen_precondition` before appending any reopen, and
-`check_expected_revision` in its compare-and-set.
+current answers or the stream's revision. The store does, in the append
+transaction: `check_replay` on a known action key before validating;
+`check_reopen_precondition` before appending any reopen,
+`check_correction_precondition` before any correction and
+`check_confirmation_precondition` before any confirming button press; and
+`check_expected_revision` in its compare-and-set. Only accepted or retained
+receipts occupy an action key; a refused attempt is kept as a diagnostic under
+its `receipt_sha256`.
 
 - `check_replay(stored, incoming)`: `True` for an exact replay, `False` for a
   different action, `changed_body` for the same action identity with any other
-  content.
+  content. A stored receipt that did not come through `provider_pull` is
+  `malformed`: it can never hold a genuine action's key.
 - `check_reopen_precondition(receipt, revision=, active_event_ids=)`: a reopen
   holds only while the question's active answers are the ones the person saw;
   otherwise `stale_reopen` (retained). Another question moving the revision does
   not make it stale.
+- `check_correction_precondition(receipt, answer_actors=)`: `answer_actors` maps
+  each stored answer of the question (event ID) to its `actor.ref`. A correction
+  supersedes only its sender's own answers: another person's is
+  `cross_actor_correction` (retained, never applied), and an answer the store
+  does not have is `missing_record`. Another person's answer changes only through
+  a reopen and then a new answer.
+- `check_confirmation_precondition(receipt, confirmed_actions=)`:
+  `confirmed_actions` are the action keys of typed messages that already gave an
+  event in the stream. A press confirming one of them is `already_confirmed`
+  (retained), whatever its disposition.
 - `check_expected_revision(expected, current)`: the compare-and-set predicate;
   `revision_conflict` when the stream moved.
 - `AppendResult`: what one append attempt did to one stream. `applied` carries
@@ -207,8 +245,9 @@ validating, `check_reopen_precondition` before appending any reopen, and
 |---|---|---|
 | `malformed` | refused | A value has the wrong type, shape or pattern, or a result is inconsistent. |
 | `missing_original` | refused | The exact original brief was not supplied. |
-| `missing_record` | refused | A stored record, or the typed message a confirmation names, was not supplied. |
+| `missing_record` | refused | A stored record, the typed message a confirmation names, or an answer a correction names, was not supplied. |
 | `missing_authority` | refused | No source authority for keeping answers. |
+| `missing_binding` | refused | The candidate is not bound to a brief: no digest from its run and none of its own. |
 | `hash_mismatch` | refused | A text and its hash, or two bound hashes, disagree. |
 | `cross_context` | refused | The action is bound to another stream. |
 | `ordinal_as_question_id` | refused | A displayed position was used as a question ID. |
@@ -227,6 +266,8 @@ validating, `check_reopen_precondition` before appending any reopen, and
 | `blank_text` | retained | Blank text is kept as evidence, never applied. |
 | `stale_presentation` | retained | An answer to an earlier presentation of the question. |
 | `stale_reopen` | retained | The answers the person saw have changed since. |
+| `cross_actor_correction` | retained | A correction names someone else's answer. |
+| `already_confirmed` | retained | The typed message a press confirms already gave an event. |
 
 ## Constants
 
@@ -264,18 +305,18 @@ unknown = {
     "decisions_affected": ["client storage"], "material": True,
 }
 stream = StreamKey("temper-clarify:example/project", brief_sha256)
-bot = TransportNamespace("telegram", "example-bot")
+bot = TransportNamespace("telegram", "7001")  # the bot's numeric ID, never its token
 policy = "responder-policy:example/owner-only"
 question = question_id(brief_sha256, unknown)
-presentation = Presentation(stream, question, metadata_sha256(unknown), 1, policy, bot, "example-chat")
+presentation = Presentation(stream, question, metadata_sha256(unknown), 1, policy, bot, "-1001")
 text = "Yes, offline first."
 receipt = ActionReceipt(
     ingress="provider_pull",
-    action=ActionIdentity(bot, "example-chat", "message", "42"),
-    update_id=1001, sender_id="example-user", sender_is_bot=False, forwarded=False,
+    action=ActionIdentity(bot, "-1001", "message", "42"),
+    update_id=1001, sender_id="5001", sender_is_bot=False, forwarded=False,
     text=text, text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
     binding=PresentationBinding(stream.stream_id, question, presentation.presentation_id, 1, "41"),
-    responder=ResponderDecision(policy, "example-user", "authorised", "responder_policy"),
+    responder=ResponderDecision(policy, "5001", "authorised", "responder_policy"),
     intent="answer", disposition="answered",
 )
 result = validate_receipt(
@@ -289,11 +330,13 @@ event = result.event()  # the #308 event; its source.ref names the receipt sidec
 
 The interface hash above is pinned in
 `tests/test_clarifications/test_contracts.py`. Changing any public name, field,
-signature, constant, refusal code or ID recipe changes it: update the pin and
-this page together, and have Architecture (meaning) and Security (provenance)
-receipt the new hash before M1–M3 build on it.
+signature, constant, refusal code, ID recipe, check or pattern changes it: update
+the pin and this page together, and have Architecture (meaning) and Security
+(provenance) receipt the new hash, with its commit and the `contracts.py` SHA-256,
+before M1–M3 build on it.
 
 The tests run the combined happy path first, through the unchanged foundation,
 then the refusal cases, then one literal case for every guard, field check and
 argument check. Each case also runs against a copy of the module with that one
-check removed (in memory, never a file), and must then fail.
+check removed (in memory, never a file), and must then fail; that copy's checks
+must also differ from the frozen ones, so removing any check moves the hash.

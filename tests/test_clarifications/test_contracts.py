@@ -965,3 +965,23 @@ def test_the_doc_names_every_public_name_code_and_the_interface_hash_and_its_exa
     namespace = {}
     exec(compile(example, "contract-doc-example", "exec"), namespace)
     assert namespace["result"].status == "accepted"
+
+
+AUTHORITY_LIMIT = (
+    "Attribution is not authority. An event's actor.ref, an authorised ResponderDecision and "
+    "source_authority_ref record who answered, under which responder policy, and under which "
+    "authority the answer is kept. None of them is authentication beyond the provider-pull "
+    "ingress, owner consent, a requirement or plan approval, an execution, spending or release "
+    "approval, permission to resume work, or permission to use a source. An accepted answer "
+    "answers its one question and authorises nothing else."
+)
+
+
+def test_the_doc_and_the_module_say_an_answer_authorises_nothing_beyond_itself():
+    # Rule 33, the #308 foundation and #202 all limit what an answer grants; the words
+    # `authorised` and `source_authority_ref` must carry that limit with them.
+    def plain(text):
+        return " ".join(text.replace("`", "").replace("*", "").split())
+
+    assert AUTHORITY_LIMIT in plain(DOC.read_text(encoding="utf-8"))
+    assert AUTHORITY_LIMIT in plain(C.__doc__)

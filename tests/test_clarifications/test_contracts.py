@@ -512,12 +512,16 @@ def test_a_candidate_is_bound_to_this_brief_by_its_run_or_its_own_digest():  # A
     w = World(C)
     for candidate, run_digest in ((PROFILE, BRIEF_SHA), (UNBOUND, BRIEF_SHA), (PROFILE, None)):
         assert w.caller(candidate=candidate, candidate_brief_sha256=run_digest).candidate() == candidate
-    for (code, guard), changes in {
-        ("missing_binding", "caller.candidate_bound"): {"candidate": UNBOUND, "candidate_brief_sha256": None},
-        ("hash_mismatch", "caller.candidate_run_brief"): {"candidate": UNBOUND, "candidate_brief_sha256": sha("x")},
-        ("hash_mismatch", "caller.candidate_brief"): {
-            "candidate": {**PROFILE, "brief_sha256": sha("x")}, "candidate_brief_sha256": None},
-    }.items():
+    for code, guard, changes in (
+        ("missing_binding", "caller.candidate_bound", {"candidate": UNBOUND, "candidate_brief_sha256": None}),
+        ("hash_mismatch", "caller.candidate_run_brief", {"candidate": UNBOUND, "candidate_brief_sha256": sha("x")}),
+        ("hash_mismatch", "caller.candidate_brief", {
+            "candidate": {**PROFILE, "brief_sha256": sha("x")}, "candidate_brief_sha256": None}),
+        # Both present and one differs (Architecture S8): the one that differs is refused.
+        ("hash_mismatch", "caller.candidate_run_brief", {"candidate": PROFILE, "candidate_brief_sha256": sha("x")}),
+        ("hash_mismatch", "caller.candidate_brief", {
+            "candidate": {**PROFILE, "brief_sha256": sha("x")}, "candidate_brief_sha256": BRIEF_SHA}),
+    ):
         with pytest.raises(C.ContractRefusal) as refused:
             w.caller(**changes)
         assert (refused.value.code.value, refused.value.guard) == (code, guard)
@@ -574,15 +578,32 @@ def test_a_correction_never_replaces_someone_elses_answer():  # Architecture R-O
     assert actors == {mine.event_id: "telegram-user:" + OWNER, theirs.event_id: "telegram-user:" + OTHER}
     own = w.fix(supersedes=(mine.event_id,))
     assert C.check_correction_precondition(own, answer_actors=actors) is None
+    unknown = C.event_id(w.receipt(action=w.action("509")))
     for receipt, code in (
         (w.fix(supersedes=(theirs.event_id,)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
         (w.fix(supersedes=(mine.event_id, theirs.event_id)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
+        (w.fix(supersedes=(theirs.event_id, mine.event_id)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
         (w.fix(OTHER, supersedes=(mine.event_id,)), C.RefusalCode.CROSS_ACTOR_CORRECTION),
-        (w.fix(supersedes=(C.event_id(w.receipt(action=w.action("509"))),)), C.RefusalCode.MISSING_RECORD),
+        (w.fix(supersedes=(unknown,)), C.RefusalCode.MISSING_RECORD),
+        # An unknown answer is missing whatever else the correction names, in either order
+        # (Architecture MF-R3): never kept as a disagreement about an answer the record lacks.
+        (w.fix(supersedes=(theirs.event_id, unknown)), C.RefusalCode.MISSING_RECORD),
+        (w.fix(supersedes=(unknown, theirs.event_id)), C.RefusalCode.MISSING_RECORD),
+        (w.fix(supersedes=(mine.event_id, unknown)), C.RefusalCode.MISSING_RECORD),
+        (w.fix(supersedes=(unknown, mine.event_id)), C.RefusalCode.MISSING_RECORD),
     ):
         with pytest.raises(C.ContractRefusal) as refused:
             C.check_correction_precondition(receipt, answer_actors=actors)
         assert refused.value.code is code
+    # The refs have the shape _actor_ref builds (Architecture S9): a display name or another
+    # namespace is a store fault, refused, never taken for somebody else.
+    assert all(C._ACTOR_REF.fullmatch(ref) for ref in actors.values())
+    for ref in ("telegram-display:Owner", "telegram-user:@owner", "telegram-user:0" + OWNER, "slack-user:" + OWNER,
+                "Owner", "telegram-user: " + OWNER):
+        with pytest.raises(C.ContractRefusal) as refused:
+            C.check_correction_precondition(own, answer_actors={mine.event_id: ref})
+        assert (refused.value.code, refused.value.guard, refused.value.where) == (
+            C.RefusalCode.MALFORMED, "shape.pattern", "correction.answer_actors")
     assert C.RefusalCode.CROSS_ACTOR_CORRECTION in C.RETAINED_CODES  # kept as evidence, never applied
     assert C.RefusalCode.MISSING_RECORD in C.REFUSED_CODES
     # Validation alone accepts the cross-person correction: only the store's precondition stops it.
@@ -1176,20 +1197,26 @@ def test_import_and_every_public_operation_need_no_ambient_access(monkeypatch):
 CHECK_CALLS = HELPERS | {"_refuse_unless"}
 
 
-def _without_docstring(function):
-    body = function.body
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
-            and isinstance(body[0].value.value, str):
-        function = copy.copy(function)
-        function.body = body[1:] or [ast.Pass()]
-    return function
+class _NoDocstrings(ast.NodeTransformer):
+    """Leave out every docstring (module, class, function, method): prose, not code."""
+
+    def _strip(self, node):
+        self.generic_visit(node)
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            node.body = body[1:] or [ast.Pass()]
+        return node
+
+    visit_Module = visit_ClassDef = visit_FunctionDef = visit_AsyncFunctionDef = _strip
 
 
 def checks(tree):
-    """Every guard and shape-check call, by scope and in source order, and every private function's code.
+    """Every guard and shape-check call, by scope and in source order, and the module's whole code.
 
-    Normalised source (ast.unparse, docstrings left out): a dropped, weakened, re-coded or
-    relabelled check moves the interface hash; a reworded docstring or comment does not.
+    Normalised source (ast.unparse, every docstring left out): any change to the code moves
+    the interface hash, including a dropped, weakened, re-coded or relabelled check and the
+    control flow around one (Architecture S7); a reworded docstring or comment does not.
     """
     scopes = []
     for node in tree.body:
@@ -1202,9 +1229,8 @@ def checks(tree):
         calls = [n for n in ast.walk(scope)
                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in CHECK_CALLS]
         sites += [[name, ast.unparse(call)] for call in sorted(calls, key=lambda c: (c.lineno, c.col_offset))]
-    private = {node.name: ast.unparse(_without_docstring(node)) for node in tree.body
-               if isinstance(node, ast.FunctionDef) and node.name.startswith("_")}
-    return {"check_sites": sites, "private_functions": private}
+    code = [ast.unparse(node) for node in _NoDocstrings().visit(copy.deepcopy(tree)).body]
+    return {"check_sites": sites, "code": code}
 
 
 def patterns(m):
@@ -1255,7 +1281,7 @@ def interface(m=C, tree=None):
     return {"surface": surface, "known_answers": known_answers(World(m)), **checks(tree), "patterns": patterns(m)}
 
 
-INTERFACE_SHA256 = "ba03b8d84da5a7f83080b98a04974749281f6fee0d3d519fc217966a78f0ee4f"
+INTERFACE_SHA256 = "9edfb5f39f3b0ccdc33f0553406a1ddd17c21fc0e4fa4ca7151e1b58ec2b3b24"
 
 
 def test_the_public_interface_is_frozen():
@@ -1273,7 +1299,15 @@ def _function(tree, name):
     return next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
 
 
-def test_the_interface_hash_moves_when_a_check_or_pattern_changes_but_not_for_prose():  # Security F2
+def _class(tree, name):
+    return next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name)
+
+
+def _method(tree, cls, name):
+    return next(node for node in _class(tree, cls).body if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def test_the_interface_hash_moves_when_the_code_changes_but_not_for_prose():  # Security F2, Architecture S7
     assert _interface_sha256(ast.parse(SOURCE)) == INTERFACE_SHA256
     changed = {"binding.copy dropped": mutant_tree("guard", "binding.copy")}
     tree = ast.parse(SOURCE)
@@ -1287,11 +1321,20 @@ def test_the_interface_hash_moves_when_a_check_or_pattern_changes_but_not_for_pr
     tree = ast.parse(SOURCE)
     _function(tree, "_blank").body[-1] = ast.parse("return all(char.isspace() for char in text)").body[0]
     changed["whitespace-only blank rule"] = tree
+    tree = ast.parse(SOURCE)  # control flow around unchanged checks, inside a method (Architecture's bite c2)
+    run_digest = next(node for node in ast.walk(_method(tree, "CallerInput", "__post_init__"))
+                      if isinstance(node, ast.If) and "candidate_brief_sha256" in ast.unparse(node.test))
+    skip = ast.parse("'brief_sha256' not in candidate", mode="eval").body
+    run_digest.test = ast.BoolOp(op=ast.And(), values=[run_digest.test, skip])
+    changed["run digest unchecked when the candidate has its own"] = tree
     for name, tree in changed.items():
         assert _interface_sha256(tree) != INTERFACE_SHA256, name
-    # Docstrings are prose: rewording the module's or a helper's keeps the hash.
+    # Docstrings are prose: rewording the module's, a class's, a public function's or a
+    # helper's keeps the hash.
     tree = ast.parse(SOURCE)
     tree.body[0].value = ast.Constant("Reworded module docstring.")
+    _class(tree, "CallerInput").body[0].value = ast.Constant("Reworded class docstring.")
+    _function(tree, "check_correction_precondition").body[0].value = ast.Constant("Reworded public docstring.")
     _function(tree, "_blank").body[0].value = ast.Constant("Reworded helper docstring.")
     assert _interface_sha256(tree) == INTERFACE_SHA256
 

@@ -17,13 +17,14 @@ described in `docs/architecture/context-profile-clarifications.md`) is unchanged
 This module builds the events that foundation already accepts, and says who and
 what each event comes from.
 
-**Interface hash:** `ba03b8d84da5a7f83080b98a04974749281f6fee0d3d519fc217966a78f0ee4f`
+**Interface hash:** `9edfb5f39f3b0ccdc33f0553406a1ddd17c21fc0e4fa4ca7151e1b58ec2b3b24`
 (SHA-256 of the public names, fields, signatures, constants and known-answer IDs,
-and of every check: each guard and shape-check call by place, every private
-function's code and every compiled pattern, as normalised source without
-docstrings; pinned by `test_the_public_interface_is_frozen`). A dropped, weakened
-or relabelled check moves it; a reworded docstring does not. Reviewers receipt it
-together with the commit and the SHA-256 of `contracts.py`.
+of each guard and shape-check call by place, of every compiled pattern, and of the
+module's whole code as normalised source without docstrings; pinned by
+`test_the_public_interface_is_frozen`). Any change to the code moves it, including
+a dropped, weakened or relabelled check and the control flow around one; a
+reworded docstring or comment does not. Reviewers receipt it together with the
+commit and the SHA-256 of `contracts.py`.
 
 ## What it is, and what it is not
 
@@ -100,7 +101,7 @@ All pure. A wrong argument raises `ContractRefusal`.
 | `validate_receipt` | `(receipt, *, presentation, copies, current_generation, question_ids, confirmed=None) -> ReceiptValidation` | accepted (with the event), retained or refused |
 | `check_replay` | `(stored, incoming) -> bool` | `True` exact replay, `False` another action; raises `changed_body` |
 | `check_reopen_precondition` | `(receipt, *, revision, active_event_ids) -> None` | raises `stale_reopen` when the seen answers changed |
-| `check_correction_precondition` | `(receipt, *, answer_actors) -> None` | raises `cross_actor_correction` for someone else's answer, `missing_record` for an unknown one |
+| `check_correction_precondition` | `(receipt, *, answer_actors) -> None` | raises `missing_record` when any named answer is unknown, else `cross_actor_correction` for someone else's answer |
 | `check_confirmation_precondition` | `(receipt, *, confirmed_actions) -> None` | raises `already_confirmed` when the typed message already gave an event |
 | `check_expected_revision` | `(expected, current) -> None` | raises `revision_conflict` when the stream moved |
 | `consumption_id` | `(stream_id, revision, supplement_sha256) -> str` | the `c-` ID; revision 1 or later |
@@ -221,11 +222,13 @@ its `receipt_sha256`.
   otherwise `stale_reopen` (retained). Another question moving the revision does
   not make it stale.
 - `check_correction_precondition(receipt, answer_actors=)`: `answer_actors` maps
-  each stored answer of the question (event ID) to its `actor.ref`. A correction
-  supersedes only its sender's own answers: another person's is
-  `cross_actor_correction` (retained, never applied), and an answer the store
-  does not have is `missing_record`. Another person's answer changes only through
-  a reopen and then a new answer.
+  each stored answer of the question (event ID) to its `actor.ref`, in the shape
+  the event got (`telegram-user:<sender_id>`); any other value, such as a display
+  name, is `malformed`. An answer the store does not have is `missing_record`,
+  whatever else the correction names. Otherwise a correction supersedes only its
+  sender's own answers: another person's is `cross_actor_correction` (retained,
+  never applied). The order of `supersedes` never changes the outcome. Another
+  person's answer changes only through a reopen and then a new answer.
 - `check_confirmation_precondition(receipt, confirmed_actions=)`:
   `confirmed_actions` are the action keys of typed messages that already gave an
   event in the stream. A press confirming one of them is `already_confirmed`
@@ -266,7 +269,7 @@ its `receipt_sha256`.
 | `blank_text` | retained | Blank text is kept as evidence, never applied. |
 | `stale_presentation` | retained | An answer to an earlier presentation of the question. |
 | `stale_reopen` | retained | The answers the person saw have changed since. |
-| `cross_actor_correction` | retained | A correction names someone else's answer. |
+| `cross_actor_correction` | retained | A correction names someone else's answer, and every answer it names is in the record. |
 | `already_confirmed` | retained | The typed message a press confirms already gave an event. |
 
 ## Constants

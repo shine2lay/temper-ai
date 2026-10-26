@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 
 CONTRACT = "context_profile_clarifications/v1"
 FIELDS = (
@@ -35,7 +36,11 @@ REF_PATTERN = r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\x00-\x20\x7f]+"
 
 
 class ClarificationError(ValueError):
-    """An invalid record or ambiguous history operation; input remains unchanged."""
+    """An invalid record or ambiguous history operation; input remains unchanged.
+
+    Every refusal by a public function is this type, including data too deep or
+    too large for the interpreter to encode.
+    """
 
 
 def _require(condition: bool, message: str) -> None:
@@ -43,40 +48,69 @@ def _require(condition: bool, message: str) -> None:
         raise ClarificationError(message)
 
 
-def _json_data(value: object, ancestors: set[int] | None = None) -> None:
-    """Reject non-JSON objects, cycles, nonfinite numbers and non-UTF-8 strings."""
+def _json_node(value: object) -> bool:
+    """Check one value's own type and contents; True for a container still to walk."""
     if value is None or type(value) in (bool, int):
-        return
+        return False
     if type(value) is float:
         _require(math.isfinite(value), "nonfinite number")
-        return
+        return False
     if type(value) is str:
         try:
             value.encode("utf-8")
         except UnicodeEncodeError as exc:
             raise ClarificationError("string is not valid UTF-8") from exc
-        return
+        return False
     _require(type(value) in (dict, list), "expected plain JSON data")
-    ancestors = set() if ancestors is None else ancestors
-    _require(id(value) not in ancestors, "cyclic data")
-    ancestors.add(id(value))
-    if type(value) is dict:
-        for key, item in value.items():
-            _require(type(key) is str, "object keys must be strings")
-            _json_data(key, ancestors)
-            _json_data(item, ancestors)
-    else:
-        for item in value:
-            _json_data(item, ancestors)
-    ancestors.remove(id(value))
+    return True
+
+
+def _json_data(value: object) -> None:
+    """Reject non-JSON objects, cycles, nonfinite numbers and non-UTF-8 strings.
+
+    An explicit stack walks containers depth-first in the order a recursive walk
+    would, so nesting depth meets no interpreter recursion limit. A container is
+    an ancestor only while it is open: cycles are refused, shared objects are not.
+    """
+    ancestors = set()
+    stack = []  # (container ID, is an object, iterator over its items)
+    item = value
+    while True:
+        if _json_node(item):
+            _require(id(item) not in ancestors, "cyclic data")
+            ancestors.add(id(item))
+            is_object = type(item) is dict
+            stack.append((id(item), is_object, iter(item.items() if is_object else item)))
+        while stack:
+            container_id, is_object, children = stack[-1]
+            try:
+                item = next(children)
+            except StopIteration:
+                ancestors.remove(container_id)
+                stack.pop()
+                continue
+            if is_object:
+                key, item = item
+                _require(type(key) is str, "object keys must be strings")
+                _json_node(key)  # a string key: only its UTF-8 check
+            break
+        else:
+            return
 
 
 def _canonical(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (RecursionError, ValueError) as exc:
+        raise ClarificationError("data too deep or too large to encode") from exc
 
 
 def _copy(value: object):
-    return json.loads(_canonical(value))
+    text = _canonical(value)
+    try:
+        return json.loads(text)
+    except (RecursionError, ValueError) as exc:
+        raise ClarificationError("data too deep or too large to encode") from exc
 
 
 def _sha(text: str) -> str:
@@ -89,8 +123,13 @@ def _object(value: object, required: set[str], optional: set[str] | None = None)
     _require(value.keys() <= required | (optional or set()), "unknown fields")
 
 
+def _blank(value: str) -> bool:
+    """True when every character is whitespace or an invisible format character (Cf)."""
+    return all(char.isspace() or unicodedata.category(char) == "Cf" for char in value)
+
+
 def _text(value: object, minimum: int = 1) -> None:
-    _require(type(value) is str and len(value) >= minimum and bool(value.strip()), "invalid text")
+    _require(type(value) is str and len(value) >= minimum and not _blank(value), "invalid text")
 
 
 def _pattern(value: object, pattern: str) -> None:
@@ -194,7 +233,8 @@ def validate_record(record: dict) -> None:
     """Validate closed shapes, content-bound IDs and ordered reference integrity.
 
     Identical duplicate events are legal replays; changed content for an event
-    ID is refused. Supersession can name only earlier answers to this question.
+    ID is refused. Supersession can name only the same actor's earlier answers
+    to this question; setting aside someone else's answer takes a reopen.
     This validates caller attribution, not its truth, authority or consent.
     """
     _json_data(record)
@@ -225,6 +265,7 @@ def validate_record(record: dict) -> None:
             target = seen[target_id]
             _require(target["kind"] == "answer", "supersession must name an answer")
             _require(target["question_id"] == event["question_id"], "cross-question supersession")
+            _require(target["actor"] == event["actor"], "supersession must name the same actor's answer")
         seen[event_id] = event
 
 

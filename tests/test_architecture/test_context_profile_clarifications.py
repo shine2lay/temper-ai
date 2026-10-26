@@ -516,10 +516,11 @@ def test_documented_example_runs_and_uses_closed_schema():
 
 def test_import_and_all_public_operations_need_no_ambient_access(monkeypatch):
     # Load code/dependencies before traps; actual module execution uses only its
-    # five standard-library imports, not a path-resolving runtime/module loader.
+    # six standard-library imports, not a path-resolving runtime/module loader.
+    # unicodedata (#323) is the compiled-in Unicode database for the blank rule.
     source = MODULE.read_text()
     code = compile(source, "pure-clarification-module", "exec")
-    allowed = {"__future__", "hashlib", "json", "math", "re"}
+    allowed = {"__future__", "hashlib", "json", "math", "re", "unicodedata"}
     tree = ast.parse(source)
     imports = set()
     for node in ast.walk(tree):
@@ -585,3 +586,184 @@ def test_import_and_all_public_operations_need_no_ambient_access(monkeypatch):
     assert reused == answered and projected[0]["answer"] == "yes"
     assert output["original_brief"] == BRIEF
     assert not {name for name in set(sys.modules) - modules_before if name.startswith("temper_ai")}
+
+
+# Architecture #323: Security #174's O1/O3/O5 notes (rm-40b3722a), HOME rulings 2026-10-25.
+
+DEEP = 100_000
+FORMAT_ONLY = ["\u200b", "\u2060\ufeff", " \u200b "]
+DELEGATE = {"kind": "human", "ref": "actor:synthetic-delegate"}
+
+
+def deep_list(depth=DEEP):
+    value = []
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def deep_object(depth=DEEP):
+    value = {}
+    for _ in range(depth):
+        value = {"key": value}
+    return value
+
+
+def huge_int():
+    return 10**5000  # 5001 digits: past Python's 4300-digit str conversion limit
+
+
+def outcome(call):
+    """("accepted", "") or the raised exception's type name and message."""
+    try:
+        call()
+    except Exception as exc:  # the type and message are what these cases measure
+        return type(exc).__name__, str(exc)[:80]
+    return "accepted", ""
+
+
+def public_calls(bad):
+    """Every public function, with the bad value at each input it reads."""
+    base = c.append_event(record(), answer(record()))
+    event = answer(base, "e-response-2", "no")
+    return {
+        "derive_questions profile": lambda: c.derive_questions(bad, BRIEF),
+        "derive_questions unknowns": lambda: c.derive_questions(change(profile(unknown()), ["unknowns"], bad), BRIEF),
+        "derive_questions unknown text": lambda: c.derive_questions(change(profile(unknown()), ["unknowns", 0, "question"], bad), BRIEF),
+        "derive_questions brief": lambda: c.derive_questions(profile(unknown()), bad),
+        "create_record profile": lambda: c.create_record(bad, BRIEF),
+        "create_record brief": lambda: c.create_record(profile(unknown()), bad),
+        "create_record previous": lambda: c.create_record(profile(unknown()), BRIEF, previous=bad),
+        "create_record previous event": lambda: c.create_record(profile(unknown()), BRIEF, previous=change(base, ["events", 0, "answer"], bad)),
+        "validate_record record": lambda: c.validate_record(bad),
+        "validate_record question": lambda: c.validate_record(change(base, ["questions", 0, "decisions_affected"], bad)),
+        "validate_record event": lambda: c.validate_record(change(base, ["events", 0], bad)),
+        "validate_record event answer": lambda: c.validate_record(change(base, ["events", 0, "answer"], bad)),
+        "append_event record": lambda: c.append_event(bad, event),
+        "append_event event": lambda: c.append_event(base, bad),
+        "append_event event answer": lambda: c.append_event(base, change(event, ["answer"], bad)),
+        "append_event event actor": lambda: c.append_event(base, change(event, ["actor", "ref"], bad)),
+        "project_states record": lambda: c.project_states(bad),
+        "project_states event answer": lambda: c.project_states(change(base, ["events", 0, "answer"], bad)),
+        "compose_supplement record": lambda: c.compose_supplement(bad, BRIEF),
+        "compose_supplement brief": lambda: c.compose_supplement(base, bad),
+    }
+
+
+def test_refusal_cases_cover_every_public_function():
+    tree = ast.parse(MODULE.read_text())
+    public = {node.name for node in tree.body if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")}
+    assert {name.split()[0] for name in public_calls(None)} == public
+
+
+@pytest.mark.parametrize("make", [deep_list, deep_object, huge_int], ids=["deep-list", "deep-object", "5000-digit-int"])
+def test_deep_or_huge_input_is_refused_only_as_clarification_error(make):
+    outcomes = {name: outcome(call)[0] for name, call in public_calls(make()).items()}
+    assert outcomes == dict.fromkeys(outcomes, "ClarificationError")
+
+
+def test_no_new_cap_unconsumed_deep_or_huge_profile_data_is_still_accepted():
+    expected = c.derive_questions(profile(unknown()), BRIEF)
+    for make in (deep_list, deep_object, huge_int):
+        assert c.derive_questions(change(profile(unknown()), ["workload", "observed"], make()), BRIEF) == expected
+
+
+def test_encoder_refusals_map_to_clarification_error_without_new_caps():
+    # No public path hands the encoder unchecked data today (closed shapes refuse
+    # first), so this pins the helpers' own mapping as defence in depth.
+    for make in (deep_list, deep_object, huge_int):
+        for helper in (c._canonical, c._copy):
+            assert outcome(lambda: helper(make())) == ("ClarificationError", "data too deep or too large to encode")
+    # Only what the interpreter refuses is refused: no depth or size cap is added.
+    assert c._copy(deep_list(100)) == deep_list(100)
+    assert c._copy({"n": 10**4299}) == {"n": 10**4299}
+
+
+@pytest.mark.parametrize("text", FORMAT_ONLY, ids=["U+200B", "U+2060-U+FEFF", "space-U+200B-space"])
+def test_text_of_only_whitespace_and_format_characters_is_blank(text):
+    base = record()
+    first = c.append_event(base, answer(base))
+    correction = answer(first, "e-correction-2", "no", supersedes=["e-response-1"])
+    long = text * 5  # past the question, why and decision minimum lengths, still blank
+    calls = {
+        "answer": lambda: c.append_event(base, answer(base, text=text)),
+        "stored answer": lambda: c.validate_record(change(first, ["events", 0, "answer"], text)),
+        "correction reason": lambda: c.append_event(first, {**correction, "reason": text}),
+        "reopen reason": lambda: c.append_event(first, {**reopen(first), "reason": text}),
+        "question": lambda: c.derive_questions(profile(unknown(long)), BRIEF),
+        "why_it_matters": lambda: c.derive_questions(profile(change(unknown(), ["why_it_matters"], long)), BRIEF),
+        "decision": lambda: c.derive_questions(profile(change(unknown(), ["decisions_affected", 1], long)), BRIEF),
+        "stored question": lambda: c.validate_record(change(base, ["questions", 0, "question"], long)),
+    }
+    outcomes = {name: outcome(call) for name, call in calls.items()}
+    assert outcomes == dict.fromkeys(outcomes, ("ClarificationError", "invalid text"))
+
+
+def test_visible_text_beside_format_characters_counts_and_stays_exact():
+    base = record()
+    base = c.append_event(base, answer(base, text="a\u200b"))
+    assert state(base)["answer"] == "a\u200b"
+    base = c.append_event(base, {**answer(base, "e-correction-2", "a\u200b", supersedes=["e-response-1"]), "reason": "a\u200b"})
+    assert state(base)["active_event_ids"] == ["e-correction-2"]
+    reopened = c.append_event(base, {**reopen(base), "reason": "a\u200b"})
+    assert state(reopened)["state"] == "reopened"
+    assert_valid(reopened)
+    question = {**unknown("Sync?\u200b"), "why_it_matters": "Sync?\u200b", "decisions_affected": ["a\u200b"]}
+    assert {k: v for k, v in c.derive_questions(profile(question), BRIEF)[0].items() if k != "question_id"} == question
+
+
+def test_correction_may_supersede_only_the_same_actors_answers():
+    base = c.append_event(record(), answer(record()))
+    refused = ("ClarificationError", "supersession must name the same actor's answer")
+    cross = {**answer(base, "e-correction-2", "no", supersedes=["e-response-1"]), "actor": DELEGATE}
+    assert outcome(lambda: c.append_event(base, cross)) == refused
+    imported = copy.deepcopy(base)
+    imported["events"].append(cross)
+    assert outcome(lambda: c.validate_record(imported)) == refused
+    # Its own answer beside another person's does not carry the other's along.
+    own = c.append_event(base, {**answer(base, "e-response-2", "maybe"), "actor": DELEGATE})
+    both = {**answer(own, "e-correction-3", "no", supersedes=["e-response-1", "e-response-2"]), "actor": DELEGATE}
+    assert outcome(lambda: c.append_event(own, both)) == refused
+    # The whole actor object counts: a human cannot supersede a model-attributed answer.
+    modelled = c.append_event(record(), answer(record(), "e-model-1", model=True))
+    assert outcome(lambda: c.append_event(modelled, answer(modelled, "e-correction-2", "no", supersedes=["e-model-1"]))) == refused
+    # The same actor may still correct its own answer.
+    same = c.append_event(base, answer(base, "e-correction-2", "no", supersedes=["e-response-1"]))
+    assert state(same)["answer"] == "no"
+    assert state(same)["active_event_ids"] == ["e-correction-2"]
+    assert_valid(same)
+
+
+def test_another_person_sets_an_answer_aside_only_by_explicit_reopen():
+    base = c.append_event(record(), answer(record()))
+    reopened = c.append_event(base, {**reopen(base), "actor": DELEGATE})
+    assert state(reopened)["state"] == "reopened"
+    assert state(reopened)["active_event_ids"] == []
+    answered = c.append_event(reopened, {**answer(reopened, "e-delegate-answer", "no"), "actor": DELEGATE})
+    assert state(answered)["answer"] == "no"
+    assert state(answered)["active_event_ids"] == ["e-delegate-answer"]
+    assert state(answered)["history_event_ids"] == ["e-response-1", "e-reopen-1", "e-delegate-answer"]
+    assert_valid(answered)
+
+
+def test_cycles_stay_refused_and_shared_objects_stay_legal():
+    shared = ["client storage", "sync design"]
+    first = {**unknown(), "decisions_affected": shared}
+    p = profile(first, {**unknown("Do we need reminders?", "goals"), "decisions_affected": shared}, first)
+    p["workload"]["observed"] = [shared, [shared], {"again": shared}]
+    assert [q["decisions_affected"] for q in c.derive_questions(p, BRIEF)] == [shared, shared]
+    base = record()
+    actor = {"kind": "human", "ref": "actor:synthetic-responder"}
+    base["events"] = [{**answer(base), "actor": actor}, {**answer(base, "e-response-2"), "actor": actor}]
+    assert_valid(base)
+    assert state(base)["active_event_ids"] == ["e-response-1", "e-response-2"]
+    loop = profile(unknown())
+    loop["workload"]["observed"].append(loop["workload"])
+    assert outcome(lambda: c.derive_questions(loop, BRIEF)) == ("ClarificationError", "cyclic data")
+    inner = []
+    outer = inner
+    for _ in range(DEEP):
+        outer = [outer]
+    inner.append(outer)  # a cycle 100000 levels round
+    assert outcome(lambda: c.derive_questions(change(profile(unknown()), ["workload", "observed"], outer), BRIEF)) == ("ClarificationError", "cyclic data")
+    inner.clear()

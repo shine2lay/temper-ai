@@ -35,6 +35,40 @@ test path. No module behavior or scope changed. All 76 dedicated cases have now
 passed (75 in the original run and the corrected purity case in its isolated run);
 the normal hooks still run the complete suite.
 
+## ADR-1: closed refusals, format-character blanks, same-actor corrections
+
+Status: accepted, 2026-10-25 (Architecture #323; rulings by HOME). Hypothesis
+H-CLARIFY-3 and its measured result are in that task's report.
+
+Context: Security's #174 notes on the #308 foundation (rm-40b3722a) found three
+gaps. O1: deep or huge input escaped as `RecursionError` or `ValueError` instead of
+`ClarificationError` (a recursive `_json_data`; `json`'s recursion and Python's
+4300-digit integer limit in `_canonical`/`_copy`). O5: `str.strip()` let text made
+only of invisible format characters (U+200B, U+2060, U+FEFF) count as an answer.
+O3: a correction could supersede another person's answer, so one person could
+silently replace another's, against this module's no-last-answer-wins rule.
+
+Decision: every refusal by every public function is a `ClarificationError`.
+`_json_data` walks with an explicit stack, in the same order and with the same
+checks and messages; a container is an ancestor only while it is open, so cycles
+are refused and shared objects are not. `_canonical`/`_copy` turn the encoder's
+`ValueError`/`RecursionError` into `data too deep or too large to encode`. No depth
+or size cap is added (global rule 31). Text is blank when every character is
+whitespace or in Unicode category Cf; minimum lengths are unchanged and nothing is
+normalised. A correction may supersede only answers whose `actor` object equals its
+own; a reopen stays the explicit cross-person route. The contract stays
+`context_profile_clarifications/v1` and the schema file is unchanged, because no
+stored records exist yet and only refusals tighten.
+
+Consequences: callers catch one exception type; outputs for accepted input are
+byte-identical. The bad one: a delegate cannot fix another person's typo without a
+reopen (a sourced reopen with a reason, then a fresh answer). A human cannot
+supersede a model-attributed answer either; it never counts, so a human answer needs
+no supersession. Blankness follows the interpreter's Unicode database: U+13439 to
+U+1343F are unassigned on Python 3.11 (Unicode 14) and Cf from 3.12 (Unicode 15).
+Invisible characters outside Cf, such as U+3164 HANGUL FILLER, still count as text.
+The module now imports `unicodedata`, so the purity allowlist has six modules.
+
 ## Scope and files
 
 - `configs/architecture/bin/context_profile_clarifications.py`: pure functions.
@@ -60,8 +94,8 @@ affected decisions need clarification; `material` is preserved, not a global gat
 
 All arguments and outputs are plain JSON data, except `original_brief`, a Python
 string. Inputs are never mutated; output containers are independent. Only standard
-library hashing, JSON serialization, finite-number checks and regular expressions
-are used. No filesystem, environment, network, subprocess, database, clock or random
+library hashing, JSON serialization, finite-number checks, regular expressions and
+the compiled-in Unicode database (for blank text) are used. No filesystem, environment, network, subprocess, database, clock or random
 source is consulted by the module body or operations. Python's normal source and
 standard-library loading are not a new file-access mechanism. There is no CLI.
 
@@ -90,6 +124,13 @@ standard-library loading are not a new file-access mechanism. There is no CLI.
   and `source_mapping`. Only currently answered human-attributed responses appear
   in the supplement; all unresolved states/history remain in the record/projection.
 
+Every refusal by every public function is a `ClarificationError`; bad input lets no
+other exception type escape. Nesting is walked with an explicit stack, so depth
+meets no recursion limit. Data the interpreter itself cannot encode (too deep for
+`json`, or an integer past Python's 4300-digit conversion limit) is refused as
+`data too deep or too large to encode`. No depth or size cap is added: deep or huge
+data in a profile field this module does not read is accepted.
+
 ### IDs, exact text and structural validation
 
 `brief_sha256` hashes the exact UTF-8 encoding of the supplied original text: no
@@ -112,8 +153,12 @@ Every record object is closed by the schema. Cross-object invariants also requir
 `validate_record`: hash binding, duplicate consistency, ordered references,
 actor/source-kind pairing, correction reason, unique supersession targets and
 model-output restrictions are semantic checks, not assertions JSON Schema makes.
-All inputs must be plain finite JSON and valid UTF-8, with nonblank question/answer
-text. The implementation's allowed `field` values are checked against the frozen
+All inputs must be plain finite JSON and valid UTF-8. Text (`question`,
+`why_it_matters`, each `decisions_affected` entry, `answer`, `reason`) must be
+nonblank: text made only of whitespace (`str.isspace`) and invisible format
+characters (Unicode category Cf, such as U+200B, U+2060 and U+FEFF) is refused.
+The schema's `\S` pattern is only the structural floor. Text is never normalised:
+an answer of `a` followed by U+200B is kept exactly. The implementation's allowed `field` values are checked against the frozen
 v2 unknown-field enum in the tests. No new dependency is needed to use the module.
 
 ## Events and state transitions
@@ -132,10 +177,14 @@ new product requirement. If the caller cannot determine the disposition, it must
 keep the question unresolved, not guess `answered`.
 
 Supersession is explicit: a human correction lists named **earlier answer events
-for the same question** in `supersedes` and supplies a nonblank `reason`. It removes
-only those answers from the active set. Missing, future, self, duplicate,
-cross-question and reopening-event targets are refused. Already inactive earlier
-answers may be cited again without reactivating them. An identical duplicate event
+by the same actor for the same question** in `supersedes` and supplies a nonblank
+`reason`. It removes only those answers from the active set. Missing, future, self,
+duplicate, cross-question, other-actor and reopening-event targets are refused; a
+target whose `actor` object differs from the correction's gives "supersession must
+name the same actor's answer". One person cannot silently replace another's answer:
+to set it aside, use an explicit sourced reopen (below); who may reopen stays with
+the caller's responder policy. Already inactive earlier answers may be cited again
+without reactivating them. An identical duplicate event
 in imported history is permitted and processed once; append never adds that replay.
 
 A reopen event has `kind: "reopen"`, its own event/question IDs, human actor/source,

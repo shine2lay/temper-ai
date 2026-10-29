@@ -3,8 +3,9 @@
 The only temper is the live one: neither the e2e job nor the nightly repeat may start one
 of its own, not even for a few minutes. They serve the commit's built pages with
 scripts/e2e_static_server.py, which answers every API call with a 503, and run only the
-spec files listed in frontend/e2e/server-free.txt. The e2e job keeps its name, because
-master's branch protection and ``wt land`` wait for it.
+spec files listed in frontend/e2e/server-free.txt, split across the "e2e shard" jobs. The
+e2e job keeps its name, because master's branch protection and ``wt land`` wait for it; it
+runs no browser, only the check that the shards ran every test once.
 """
 
 from __future__ import annotations
@@ -40,14 +41,19 @@ def test_no_github_workflow_starts_a_temper(workflow):
     assert not re.search(r"temper\s+serve|uvicorn|temper_ai\.api", text), f"{workflow} starts a temper of its own"
 
 
-def test_the_e2e_job_keeps_its_name_and_runs_only_the_server_free_tests():
-    job = _jobs("ci.yml")["e2e"]
-    runs = "\n".join(step.get("run", "") for step in job["steps"])
+def test_the_e2e_job_keeps_its_name_and_the_shards_run_only_the_server_free_tests():
+    jobs = _jobs("ci.yml")
+    shard = "\n".join(step.get("run", "") for step in jobs["e2e-shard"]["steps"])
+    final = "\n".join(step.get("run", "") for step in jobs["e2e"]["steps"])
 
-    assert "npx playwright test -c playwright.server-free.config.ts" in runs
-    assert "frontend/e2e/server-free.txt" in runs and "GITHUB_STEP_SUMMARY" in runs
-    assert "rule 15" in runs, "with nothing listed, its summary says why none ran"
-    assert not re.search(r"npx playwright test(?! -c playwright\.server-free)", runs)
+    assert "npx playwright test -c playwright.server-free.config.ts --test-list test-list.txt" in shard
+    assert "frontend/e2e/server-free.txt" in shard
+    assert not re.search(r"npx playwright test(?! -c playwright\.server-free)", shard)
+
+    assert "frontend/e2e/server-free.txt" in final and "GITHUB_STEP_SUMMARY" in final
+    assert "rule 15" in final, "with nothing listed, its summary says why none ran"
+    assert "npx playwright" not in final, "the required check runs no browser, only the check"
+    assert "e2e_shards.py check" in final
 
 
 def test_the_nightly_repeats_the_same_tests():

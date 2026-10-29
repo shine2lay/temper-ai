@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="6.308178000000001">
+  <testsuite name="alpha.spec.ts" timestamp="2026-10-29T15:36:09.059Z" hostname="" tests="3" failures="0" skipped="0" time="0.168" errors="0">
+    <testcase name="passes" classname="alpha.spec.ts" time="0.012">
+</testcase>
+    <testcase name="passes only on its retry" classname="alpha.spec.ts" time="0.094">
+</testcase>
+    <testcase name="outer › inner › nested" classname="alpha.spec.ts" time="0.062">
+</testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,323 @@
+{
+  "config": {
+    "argv": [
+      "~/.nvm/versions/node/v22.22.0/bin/node",
+      "<repo>/frontend/node_modules/.bin/playwright",
+      "test",
+      "-c",
+      "<repo>/tests/fixtures/e2e_shards/suite/playwright.config.js",
+      "--list",
+      "--reporter=json"
+    ],
+    "configFile": "<repo>/tests/fixtures/e2e_shards/suite/playwright.config.js",
+    "rootDir": "<repo>/tests/fixtures/e2e_shards/suite",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "<tmp>/results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {},
+        "id": "",
+        "name": "",
+        "testDir": "<repo>/tests/fixtures/e2e_shards/suite",
+        "testIgnore": [],
+        "testMatch": [
+          "alpha.spec.ts",
+          "beta.spec.ts",
+          "gamma.spec.ts",
+          "delta.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "alpha.spec.ts",
+      "file": "alpha.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "passes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "082686f47047c6504cef-8b167a43bd9a605c9cb7",
+          "file": "alpha.spec.ts",
+          "line": 5,
+          "column": 5
+        },
+        {
+          "title": "passes only on its retry",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "082686f47047c6504cef-616306344c579d3111fb",
+          "file": "alpha.spec.ts",
+          "line": 10,
+          "column": 5
+        }
+      ],
+      "suites": [
+        {
+          "title": "outer",
+          "file": "alpha.spec.ts",
+          "line": 14,
+          "column": 6,
+          "specs": [],
+          "suites": [
+            {
+              "title": "inner",
+              "file": "alpha.spec.ts",
+              "line": 15,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "nested",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [],
+                      "status": "skipped"
+                    }
+                  ],
+                  "id": "082686f47047c6504cef-381ffca63c5e7ac0de80",
+                  "file": "alpha.spec.ts",
+                  "line": 16,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "beta.spec.ts",
+      "file": "beta.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "same title in two files",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "9e1062bfa6acc4fb8bd6-3a257b63f09c1a118707",
+          "file": "beta.spec.ts",
+          "line": 5,
+          "column": 5
+        },
+        {
+          "title": "is skipped",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "<repo>/tests/fixtures/e2e_shards/suite/beta.spec.ts",
+                    "line": 9,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "9e1062bfa6acc4fb8bd6-dd5a7f971a8e090831c2",
+          "file": "beta.spec.ts",
+          "line": 9,
+          "column": 6
+        }
+      ],
+      "suites": [
+        {
+          "title": "a",
+          "file": "beta.spec.ts",
+          "line": 14,
+          "column": 6,
+          "specs": [
+            {
+              "title": "b",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9e1062bfa6acc4fb8bd6-6954fcc38ed7c9325eaf",
+              "file": "beta.spec.ts",
+              "line": 15,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "delta.spec.ts",
+      "file": "delta.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "fails on every attempt",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "902dd9ba0ecab61f5b91-00a49231e59de8e1f288",
+          "file": "delta.spec.ts",
+          "line": 6,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "gamma.spec.ts",
+      "file": "gamma.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "same title in two files",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "0354ec885885ea2f80c0-6a3c8ee5dac16cde3bd2",
+          "file": "gamma.spec.ts",
+          "line": 5,
+          "column": 5
+        },
+        {
+          "title": "a › b",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "0354ec885885ea2f80c0-2e69cb44c75bfd4b9cb2",
+          "file": "gamma.spec.ts",
+          "line": 10,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-29T15:35:38.738Z",
+    "duration": 72.35999999999967,
+    "expected": 0,
+    "skipped": 9,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

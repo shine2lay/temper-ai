@@ -22,7 +22,7 @@ wt land                 (in a temper-ai worktree)
   │
   ├─ pushes your branch to GitHub
   ├─ GitHub runs: lint, typecheck, tests, frontend, e2e      a few minutes
-  │    (e2e: the browser tests that need no temper; none is started)
+  │    (e2e: the browser tests that need no temper, in 3 shards; none is started)
   └─ this machine posts: temper/boxes                        at once
        the commit is recorded; nothing is built, no temper is started
   │
@@ -82,6 +82,49 @@ first step-aside, its owed retries need five quiet minutes (300 seconds) instead
   write or remove is logged and changes nothing it decides; a deploy by hand writes none.
   `temper-ci status` shows it on a `yield:` line.
 * `temper-ci deploy <commit>` by hand is not held: that is a person's call.
+
+## Browser test shards
+
+GitHub runs the browser tests that need no temper (`frontend/e2e/server-free.txt`) as three
+jobs, `e2e shard (1/3)` to `(3/3)`, because on one runner they took about 35 minutes while
+every other job ends by about 15. Each shard builds the dashboard, lists the whole suite
+without running it (`list.json`), runs its own part of it (`--test-list`), and uploads all
+of that as `e2e-shard-<i>-of-3`, with a `meta.json` naming the shard, the attempt, the
+commit and the runner image. No shard is a required check. The required one is still
+`e2e`, and it runs no browser: it always runs after the shards, and passes only when every
+shard succeeded, all three listed the same tests, their file lists split `server-free.txt`
+exactly, and each listed test is in their reports exactly once
+(`scripts/e2e_shards.py check`). A missing, extra or doubled report, a test run twice or
+not at all, or a failed, cancelled or skipped shard turns it red; nothing is merged or
+skipped over. Its artifact, `e2e-failures`, holds the three shards' folders.
+
+**The split.** `scripts/e2e_shards.py` weighs each listed file by the most seconds it took
+in recent reports (`frontend/e2e/shard-weights.json`). Heaviest first, each file goes to
+the least-loaded of 3 × 2 worker slots (a GitHub runner runs two Playwright workers), and
+every shard works the same split out by itself, so no job plans it first. A file with no
+weight yet gets the largest one, and its shard's summary names it.
+`python3 scripts/e2e_shards.py plan` prints the split and each shard's predicted time.
+
+**Refreshing the weights**, after files are added or when one shard keeps running much
+longer than the others: download the `e2e-failures` artifacts of five or more recent green
+CI runs (`gh run download <run> -n e2e-failures -D <dir>/<run>`), then run
+
+```
+python3 scripts/e2e_shards.py weights <dir>/*/e2e-shard-*-of-3/playwright-junit.xml \
+    --source "e2e-failures of CI runs <ids>" --out frontend/e2e/shard-weights.json
+```
+
+and commit the file. A weight only moves a file from one shard to another; it never adds
+or drops a test.
+
+**Retries are visible.** Every report keeps its retries
+(`PLAYWRIGHT_JUNIT_INCLUDE_RETRIES=1`): a test that failed and then passed carries
+`flakyFailure` entries, and the `e2e` summary names it, as does `scripts/flaky_report.py`;
+a failing test whose retry failed too is marked as such. A retry still lets a run pass
+(retries stay at 1): being named is the point. The nightly repeat is unchanged.
+
+**Going back to one job** is one revert of the commit that brought the shards in. The `e2e`
+check keeps its name either way, so branch protection and `wt land` need no change.
 
 ## Where everything lives
 
@@ -308,7 +351,7 @@ fixing what was wrong, `temper-ci deploy <commit>` tries that commit again.
 
 * Agents never switch protection off, and `wt` has no bypass flag.
 * One temper only: nothing here builds or starts a test copy of temper, and neither does
-  GitHub (its e2e job serves the commit's built pages with no temper behind them).
+  GitHub (its e2e shards serve the commit's built pages with no temper behind them).
 * What the live check starts on the live temper is $0, quiet (notify off) and tidied away,
   pass or fail.
 * The gate looks only at commits the owner pushed to a branch *of this repository*. A

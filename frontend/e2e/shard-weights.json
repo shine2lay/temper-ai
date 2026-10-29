@@ -1,0 +1,32 @@
+{
+ "about": "Seconds each server-free spec file took: the most over the reports below. scripts/e2e_shards.py balances the CI shards with it; docs/ci-gate.md says how to refresh it.",
+ "sources": [
+  "e2e-failures of CI run 40823138877",
+  "e2e-failures of CI run 40819679472",
+  "e2e-failures of CI run 40276043722",
+  "e2e-failures of CI run 40269253231",
+  "e2e-failures of CI run 40268234694"
+ ],
+ "seconds": {
+  "bigView.spec.ts": 45,
+  "liveview.spec.ts": 14,
+  "piA2.spec.ts": 18,
+  "safeRendering.spec.ts": 52,
+  "team-c.spec.ts": 547,
+  "team-form-flow.spec.ts": 104,
+  "team-glance-answers.spec.ts": 180,
+  "team-glance-fields.spec.ts": 272,
+  "team-glance-g6.spec.ts": 213,
+  "team-glance-git-refused.spec.ts": 23,
+  "team-glance-map.spec.ts": 564,
+  "team-glance-receipt.spec.ts": 40,
+  "team-glance-status.spec.ts": 97,
+  "team-glance-stop-words.spec.ts": 43,
+  "team-glance-words.spec.ts": 207,
+  "team-glance.spec.ts": 313,
+  "team-journey.spec.ts": 55,
+  "team-run-ownership.spec.ts": 28,
+  "team-status.spec.ts": 108,
+  "team.spec.ts": 684
+ }
+}

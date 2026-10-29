@@ -1,0 +1,10 @@
+{
+ "shard": 3,
+ "of": 3,
+ "run_attempt": 1,
+ "sha": "5ad0f1c75ad0f1c75ad0f1c75ad0f1c75ad0f1c7",
+ "image_os": "fixture",
+ "image_version": "fixture",
+ "node": "v22.22.0",
+ "playwright": "1.63.0"
+}

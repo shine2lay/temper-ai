@@ -164,15 +164,113 @@ jobs:
         run: python3 ../scripts/junit_summary.py vitest-junit.xml --title "Dashboard unit tests"
       - run: npm run build
 
+  e2e-shard:
+    # The browser tests that need no temper, a third of them per job, split
+    # by time (scripts/e2e_shards.py, docs/ci-gate.md "Browser test shards").
+    # No temper is started here, not even a throwaway one: AGENTS.md rule 15
+    # allows no copy of Temper but the live one, GitHub's included. The spec
+    # files listed in frontend/e2e/server-free.txt answer every API call
+    # themselves and run against this commit's own build, served by
+    # scripts/e2e_static_server.py (frontend/playwright.server-free.config.ts).
+    # The live dashboard is looked at by temper-ci after every deploy
+    # (docs/ci-gate.md). No shard is a required check: the `e2e` job below
+    # is, and it passes only when the shards together ran every test once.
+    name: e2e shard (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    strategy:
+      # Every shard runs to its end, so one failure doesn't hide another's.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which browser tests need no temper
+        id: list
+        run: |
+          specs=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' frontend/e2e/server-free.txt | grep -v '^$' || true)
+          count=$(printf '%s\n' "$specs" | grep -c . || true)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      # Every shard works the same split out by itself, from the list and
+      # frontend/e2e/shard-weights.json; the step summary names its files.
+      - name: Which of them this shard runs
+        if: steps.list.outputs.count != '0'
+        run: python3 scripts/e2e_shards.py split --shard ${{ matrix.shard }} --of 3 --out frontend/test-list.txt
+
+      - uses: actions/setup-node@v4
+        if: steps.list.outputs.count != '0'
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the dashboard
+        if: steps.list.outputs.count != '0'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Install the browser
+        if: steps.list.outputs.count != '0'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # The whole suite, listed and not run: the `e2e` job checks that the
+      # three shards' reports hold exactly these tests, each once.
+      - name: List every test of the suite
+        if: steps.list.outputs.count != '0'
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: list.json
+        run: npx playwright test -c playwright.server-free.config.ts --list --reporter=json
+
+      # What ran where, kept with the report: a later look at this run (or a
+      # comparison with another) needs the shard, the attempt, the commit and
+      # the runner image without reading any log.
+      - name: Record what ran
+        if: steps.list.outputs.count != '0'
+        run: python3 scripts/e2e_shards.py meta --shard ${{ matrix.shard }} --of 3 --out frontend/meta.json
+
+      # PLAYWRIGHT_JUNIT_INCLUDE_RETRIES keeps a retry in the report: a test
+      # that failed and then passed gets flakyFailure entries instead of
+      # looking like a plain pass, so the `e2e` job can name it.
+      - name: Run this shard's browser tests
+        if: steps.list.outputs.count != '0'
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: playwright-junit.xml
+          PLAYWRIGHT_JUNIT_INCLUDE_RETRIES: '1'
+        run: npx playwright test -c playwright.server-free.config.ts --test-list test-list.txt --reporter=list,junit
+
+      - name: Summarise
+        if: always() && steps.list.outputs.count != '0'
+        working-directory: frontend
+        run: python3 ../scripts/junit_summary.py playwright-junit.xml --title "Browser tests, shard ${{ matrix.shard }}/3"
+
+      # overwrite: re-running a failed shard replaces its first attempt's
+      # report, so the `e2e` job reads the newest one.
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.list.outputs.count != '0'
+        with:
+          name: e2e-shard-${{ matrix.shard }}-of-3
+          path: |
+            frontend/test-results/
+            frontend/playwright-junit.xml
+            frontend/meta.json
+            frontend/list.json
+            frontend/test-list.txt
+          retention-days: 7
+          overwrite: true
+
   e2e:
-    # The browser tests that need no temper. No temper is started here, not
-    # even a throwaway one: AGENTS.md rule 15 allows no copy of Temper but the
-    # live one, GitHub's included. The spec files listed in
-    # frontend/e2e/server-free.txt answer every API call themselves and run
-    # against this commit's own build, served by scripts/e2e_static_server.py
-    # (frontend/playwright.server-free.config.ts). The live dashboard is looked
-    # at by temper-ci after every deploy (docs/ci-gate.md). The job keeps its
-    # name: master's branch protection and `wt land` wait for it.
+    # The check master's branch protection and `wt land` wait for; it keeps
+    # its name. It runs no browser and no temper: it reads what the three
+    # shards left and passes only when every shard succeeded and, together,
+    # they ran each test of the listing exactly once (scripts/e2e_shards.py
+    # check). always(), not !cancelled(): a cancelled run must leave this
+    # check red, because a skipped required check counts as passing.
+    needs: e2e-shard
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,56 +290,30 @@ jobs:
             if [ "$count" = 0 ]; then
               echo "No spec file is listed in \`frontend/e2e/server-free.txt\`, so none ran."
             else
-              echo "$count spec file(s) from \`frontend/e2e/server-free.txt\`, against this commit's own build:"
+              echo "$count spec file(s) from \`frontend/e2e/server-free.txt\`, against this commit's own build, in 3 shards:"
               printf -- '- %s\n' $specs
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/setup-node@v4
+      # Each shard's artifact into its own folder, never merged, so a
+      # missing, extra or doubled report shows.
+      - uses: actions/download-artifact@v4
         if: steps.list.outputs.count != '0'
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Build the dashboard
-        if: steps.list.outputs.count != '0'
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-      - name: Install the browser
-        if: steps.list.outputs.count != '0'
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
+          pattern: e2e-shard-*-of-3
+          path: shards
 
-      # What ran where, kept with the report: a later look at this run (or a
-      # comparison with another) needs the attempt, the commit and the
-      # runner image without reading any log.
-      - name: Record what ran
-        if: steps.list.outputs.count != '0'
-        working-directory: frontend
-        run: >-
-          node -e 'const e = process.env; require("fs").writeFileSync("meta.json",
-          JSON.stringify({shard: 1, of: 1, run_attempt: Number(e.GITHUB_RUN_ATTEMPT) || null,
-          sha: e.GITHUB_SHA, image_os: e.ImageOS, image_version: e.ImageVersion,
-          node: process.version, playwright: require("@playwright/test/package.json").version},
-          null, 1) + "\n")'
-
-      # PLAYWRIGHT_JUNIT_INCLUDE_RETRIES keeps a retry in the report: a test
-      # that failed and then passed gets flakyFailure entries instead of
-      # looking like a plain pass, so the next step can name it.
-      - name: Run the browser tests that need no temper
-        if: steps.list.outputs.count != '0'
-        working-directory: frontend
+      # Runs whatever is listed: with nothing listed it still fails when a
+      # shard job did not succeed.
+      - name: Check the shards ran every test exactly once
+        if: always()
         env:
-          PLAYWRIGHT_JUNIT_OUTPUT_NAME: playwright-junit.xml
-          PLAYWRIGHT_JUNIT_INCLUDE_RETRIES: '1'
-        run: npx playwright test -c playwright.server-free.config.ts --reporter=list,junit
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/e2e_shards.py check shards --of 3 --sha "$GITHUB_SHA" --needs "$NEEDS"
 
       - name: Summarise
         if: always() && steps.list.outputs.count != '0'
-        working-directory: frontend
-        run: python3 ../scripts/junit_summary.py playwright-junit.xml --title "Browser tests"
+        run: python3 scripts/junit_summary.py shards/*/playwright-junit.xml --title "Browser tests"
 
       # Named, not fatal. Failing the commit on a flake would push everyone
       # into re-running until green, which is the habit we are trying to
@@ -249,15 +321,13 @@ jobs:
       # failure, and that is what sends the message.
       - name: Say which tests only passed on their retry
         if: always() && steps.list.outputs.count != '0'
-        working-directory: frontend
-        run: python3 ../scripts/flaky_report.py playwright-junit.xml --title "Browser tests" --soft
+        run: python3 scripts/flaky_report.py shards/*/playwright-junit.xml --title "Browser tests" --soft
 
+      # overwrite: re-running this job after a shard's re-run replaces it.
       - uses: actions/upload-artifact@v4
         if: always() && steps.list.outputs.count != '0'
         with:
           name: e2e-failures
-          path: |
-            frontend/test-results/
-            frontend/playwright-junit.xml
-            frontend/meta.json
+          path: shards/
           retention-days: 7
+          overwrite: true

@@ -1,0 +1,4 @@
+# The fixture suite's files, as frontend/e2e/server-free.txt lists the real ones.
+alpha.spec.ts
+beta.spec.ts
+gamma.spec.ts

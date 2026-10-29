@@ -1294,11 +1294,238 @@ def trust_main_clone() -> None:
         log(f"trusted {want} in ~/.gitconfig (the pipeline's clone, owned by the container's user)")
 
 
+# ---------------------------------------------------------------- releases --
+#
+# deploy_prod() is the one way a commit goes live, and it undoes itself. In order: back the
+# database up; `standee up` the checkout (again, after a pause, when the image pull or build
+# failed on the registry or the network); check the live database is still the one mounted;
+# wait for the URL; migrate the database (`alembic upgrade head` inside the new container,
+# which until 2026-10-29 somebody had to remember to run by hand); check the release is
+# healthy. When a step after the first change fails, it puts the release before back by
+# itself: the database restored from the copy taken just before the migration (only when a
+# migration ran), the previous images back with `standee rollback`, the result checked, and
+# the run dies saying what failed and what state prod is in.
+
+#: Seconds to wait before each new try of a `standee up` that failed on the registry or the network:
+#: the same three waits as a bet's deploy (configs/epd/agents/task_deploy.yaml, version 4).
+UP_RETRY_WAITS = (20, 40, 80)
+
+#: What a failed pull or build says when the registry or the network was at fault: the same list as
+#: a bet's deploy (task_deploy.yaml's TRANSIENT). 2026-10-26: Docker Hub's TLS handshake timed out
+#: on node:22-alpine's metadata during a release; standee put the running images back by itself,
+#: and the same `standee up` passed when it was run again by hand. Any other failure (a broken
+#: build, a stack that never got healthy) is not tried again: the same commit would fail the same way.
+TRANSIENT_UP_ERRORS = re.compile(
+    r"TLS handshake timeout|i/o timeout|connection reset by peer|connection refused|no such host|"
+    r"temporary failure in name resolution|toomanyrequests|too many requests|service unavailable|"
+    r"bad gateway|gateway time-?out|unexpected EOF|request canceled|failed to resolve source metadata|"
+    r"failed to do request|context deadline exceeded", re.IGNORECASE)
+
+#: /api/health is asked up to HEALTH_TRIES times, HEALTH_PAUSE seconds apart, before a release (or
+#: the release put back after an undo) is called unhealthy: a proxy can blink once.
+HEALTH_TRIES, HEALTH_PAUSE = 18, 5
+
+
+class ReleaseFailed(RuntimeError):
+    """One step of a production release failed; deploy_prod undoes the release and says why."""
+
+
+def _last_line(text: str) -> str:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    return lines[-1][:300] if lines else "(no output)"
+
+
+def _short_image(image: str) -> str:
+    return image.split(":")[-1][:12]
+
+
+def prod_image() -> str:
+    """The image the live container runs now ('' when there is no such container)."""
+    r = sh(["docker", "inspect", PROD_CONTAINER, "--format", "{{.Image}}"], check=False)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def transient_up_error(output: str) -> str:
+    """The registry or network failure a failed `standee up` reports ('' when it reports none): the
+    last one named, because a Go error chain ends with its root cause ("...: failed to do request:
+    ...: net/http: TLS handshake timeout")."""
+    found = TRANSIENT_UP_ERRORS.findall(output)
+    return found[-1] if found else ""
+
+
+def up_prod() -> None:
+    """`standee up` the checkout as the live product; tried again after a pause when the pull or the
+    build failed on the registry or the network. Raises ReleaseFailed when it did not go up.
+
+    When compose fails, `standee up --wait` puts the images that ran before back by itself, so a
+    new try starts from the release before. When that put-back failed too ("rollback failed
+    too"), there is nothing sound to build on: the release is undone instead.
+    """
+    tries = len(UP_RETRY_WAITS) + 1
+    for n in range(1, tries + 1):
+        r = sh(["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT, "--wait"],
+               check=False)
+        if r.returncode == 0:
+            return
+        out = f"{r.stdout}\n{r.stderr}"
+        cause = transient_up_error(out)
+        if not cause or n == tries or "rollback failed too" in out.lower():
+            raise ReleaseFailed(f"`standee up` exited {r.returncode}"
+                                + (f" on try {n} of {tries} (registry or network: {cause})" if cause else "")
+                                + f": {_last_line(r.stderr or r.stdout)}")
+        pause = UP_RETRY_WAITS[n - 1]
+        log(f"`standee up` failed on a registry or network error ({cause}); "
+            f"trying again in {pause}s (try {n + 1} of {tries})")
+        time.sleep(pause)
+
+
+def prod_alembic(args: str) -> subprocess.CompletedProcess:
+    """`alembic <args>` inside the live container, against the database the app itself uses."""
+    return sh(["docker", "exec", PROD_CONTAINER, "sh", "-c", f"cd /app && alembic {args}"], check=False)
+
+
+def alembic_revisions(out: str) -> tuple[str, ...]:
+    """The revisions `alembic current` / `alembic heads` print: "d2e4f6a8b1c3 (head)" -> ("d2e4f6a8b1c3",).
+    Its log lines go to stderr; a database with no version prints nothing."""
+    revs = set()
+    for line in out.splitlines():
+        words = line.split()
+        word = words[0] if words else ""
+        if re.fullmatch(r"\w+", word) and word not in ("INFO", "WARNING", "WARN", "ERROR", "DEBUG", "CRITICAL"):
+            revs.add(word)
+    return tuple(sorted(revs))
+
+
+def prod_alembic_state() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(the live database's revisions, the head revisions of the code that runs). ReleaseFailed when unreadable."""
+    current, heads = prod_alembic("current"), prod_alembic("heads")
+    for name, r in (("current", current), ("heads", heads)):
+        if r.returncode != 0:
+            raise ReleaseFailed(f"could not read the database version: `alembic {name}` exited {r.returncode}: "
+                                f"{_last_line(r.stderr or r.stdout)}")
+    head_revs = alembic_revisions(heads.stdout)
+    if not head_revs:
+        raise ReleaseFailed("could not read the database version: `alembic heads` named no revision")
+    return alembic_revisions(current.stdout), head_revs
+
+
+def prod_api_health() -> str | None:
+    """None when the live product's /api/health says ok (its database answers), else what was wrong."""
+    try:
+        with urllib.request.urlopen(PROD_URL.rstrip("/") + "/api/health", timeout=15) as resp:
+            body = json.loads(resp.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        return f"/api/health answered HTTP {e.code}"
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        return f"/api/health did not answer ({getattr(e, 'reason', e)})"
+    if not isinstance(body, dict):
+        return f"/api/health answered {str(body)[:100]!r}, not an object"
+    if body.get("ok") is not True:
+        return f"/api/health says ok={body.get('ok')}, db_ok={body.get('db_ok')}"
+    return None
+
+
+def prod_health_problems() -> list[str]:
+    """What is wrong with the live product now; [] when /api/health says ok and the database is at
+    the head of the code that runs."""
+    problems: list[str] = []
+    problem: str | None = None
+    for n in range(1, HEALTH_TRIES + 1):
+        problem = prod_api_health()
+        if problem is None:
+            break
+        if n < HEALTH_TRIES:
+            time.sleep(HEALTH_PAUSE)
+    else:
+        problems.append(f"{problem} ({HEALTH_TRIES} tries)")
+    try:
+        current, heads = prod_alembic_state()
+        if current != heads:
+            problems.append(f"the database is at {', '.join(current) or 'no version'} "
+                            f"but the code's head is {', '.join(heads)}")
+    except ReleaseFailed as e:
+        problems.append(str(e))
+    return problems
+
+
+def newest_backup(env: str) -> Path:
+    """The newest database copy `standee backup` keeps for `env`: what a restore puts back.
+    (An unchanged database makes no new copy, so the newest one is the database as it is now.)"""
+    r = sh(["standee", "backup", env, "--list"], check=False)
+    found = []
+    for line in r.stdout.splitlines():
+        cells = line.split()
+        # "<when> <service> <size> <path>"; the `files` rows are the companion files, not the database
+        if len(cells) >= 3 and cells[1] != "files" and cells[-1].endswith(".gz"):
+            found.append((cells[0], cells[-1]))
+    if r.returncode != 0 or not found:
+        raise ReleaseFailed(f"`standee backup {env} --list` shows no database copy to restore from "
+                            f"(exit {r.returncode})")
+    return Path(max(found)[1])
+
+
+def restore_prod_db(backup: Path) -> bool:
+    """Put `backup` back as the live database (sqlite's backup API, inside the running container)."""
+    return sh(["standee", "backup", PROD_ENV, "--restore", str(backup), "--yes"], check=False).returncode == 0
+
+
+def undo_release(ref: str, stage: str, why: str, was_running: str, restore_from: Path | None) -> None:
+    """Put the live product back as it was before the release of `ref`, check it, and die saying
+    what failed and where prod stands now. Never returns.
+
+    The database goes back first, while the new code still runs (a restore needs a running
+    container), then `standee rollback` recreates the container from the previous images, so the
+    old code starts fresh on the old database. When the restore could not run first, it runs into
+    whatever container runs after the rollback, and the app is restarted to open it.
+    """
+    log(f"RELEASE FAILED while {stage}: {why}")
+    done: list[str] = []
+    left: list[str] = []
+    restored = restart = False
+    if restore_from:
+        log(f"undo: restoring the database from {restore_from} (the copy taken just before the migration)")
+        restored = restore_prod_db(restore_from)
+    now = prod_image()
+    if not was_running:
+        left.append("no live container ran before this release, so there are no previous images to go back to")
+    elif now == was_running:
+        done.append(f"the images that ran before ({_short_image(was_running)}) are the ones running "
+                    f"(a failed `standee up` puts them back itself)")
+        restart = restored
+    else:
+        log(f"undo: back to the previous images ({_short_image(was_running)})")
+        r = sh(["standee", "rollback", PROD_ENV], check=False)
+        if r.returncode == 0 and prod_image() == was_running:
+            done.append(f"rolled back to the previous images ({_short_image(was_running)})")
+        else:
+            left.append(f"`standee rollback {PROD_ENV}` did not put the previous images "
+                        f"({_short_image(was_running)}) back (exit {r.returncode}): {_last_line(r.stderr or r.stdout)}")
+    if restore_from and not restored:
+        log("undo: restoring the database again, into the container that runs now")
+        restored = restart = restore_prod_db(restore_from)
+    if not restore_from:
+        done.append("database left as it was (no migration had run)")
+    elif restored:
+        done.append(f"database restored from {restore_from}, the copy taken just before the migration "
+                    f"(anything written after it is not in it)")
+    else:
+        left.append(f"the database is NOT restored: run `standee backup {PROD_ENV} --restore {restore_from} "
+                    f"--yes`, then `standee restart {PROD_ENV}`")
+    if restart and sh(["standee", "restart", PROD_ENV], check=False).returncode != 0:
+        left.append(f"`standee restart {PROD_ENV}` after the restore failed: run it again")
+    problems = [p for p in [prod_mount_problem()] if p] + prod_health_problems()
+    state = ("healthy (/api/health ok, database at the head of the code that runs)" if not problems
+             else "NOT HEALTHY: " + "; ".join(problems))
+    die(f"release of {ref[:12]} failed while {stage}: {why}. "
+        f"{'Undone' if not left else 'UNDO INCOMPLETE'}: {'; '.join(done + left)}. Prod now: {state}.")
+
+
 def deploy_prod(ref: str) -> None:
-    """Stand the live product up again at `ref`, backup first.
+    """Put the live product on `ref`: backup, up, migrate, health check; undone by itself on a failure.
 
     `standee up` on an existing environment updates it in place: same name,
     same URL, same host port, previous images kept for `standee rollback`.
+    The order and the undo are described above ReleaseFailed.
 
     Deliberately WITHOUT --ref. That flag builds from `git archive` into
     ~/.standee/envs/<env>/src/<short>/ and runs compose there, and this
@@ -1323,14 +1550,47 @@ def deploy_prod(ref: str) -> None:
     if sh(["git", "status", "--porcelain"], cwd=REPO_CHECKOUT).stdout.strip():
         die(f"{REPO_CHECKOUT} has uncommitted changes; the live product is built from this tree")
     ensure_qa_password()  # before `up`: the container reads the env file at start
+    was_running = prod_image()
     sh(["standee", "backup", PROD_ENV])
-    sh(["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT, "--wait"])
-    assert_prod_kept_its_data()
-    wait_for_url(PROD_URL)
+    stage, restore_from, heads = "starting the new images (`standee up`)", None, ()
+    try:
+        up_prod()
+        stage = "checking the live database is still mounted"
+        problem = prod_mount_problem()
+        if problem:
+            raise ReleaseFailed(problem)
+        log(f"live database still mounted from {(REPO_CHECKOUT / 'var').resolve()}")
+        stage = f"waiting for {PROD_URL} to answer"
+        wait_for_url(PROD_URL)
+        stage = "reading the database version"
+        current, heads = prod_alembic_state()
+        if current == heads:
+            log(f"database already at head ({', '.join(heads)}): no migration to run")
+        else:
+            stage = "backing the database up before the migration"
+            r = sh(["standee", "backup", PROD_ENV], check=False)
+            if r.returncode != 0:
+                raise ReleaseFailed(f"`standee backup {PROD_ENV}` exited {r.returncode}: {_last_line(r.stderr)}")
+            backup = newest_backup(PROD_ENV)
+            stage = f"migrating the database from {', '.join(current) or 'no version'} to {', '.join(heads)}"
+            restore_from = backup  # from here on the database may have changed
+            r = prod_alembic("upgrade head")
+            if r.returncode != 0:
+                raise ReleaseFailed(f"`alembic upgrade head` exited {r.returncode}: {_last_line(r.stderr or r.stdout)}")
+            log(f"migrated the live database: {', '.join(current) or 'no version'} -> {', '.join(heads)}")
+        stage = "checking the release is healthy"
+        problems = prod_health_problems()
+        if problems:
+            raise ReleaseFailed("; ".join(problems))
+    except SystemExit:  # a helper died (wait_for_url); its ERROR line above says why
+        undo_release(ref, stage, "see the ERROR line above", was_running, restore_from)
+    except Exception as e:  # any failure after the first change is undone, expected or not
+        undo_release(ref, stage, str(e), was_running, restore_from)
+    log(f"release of {ref[:12]} is live and healthy: /api/health ok, database at head ({', '.join(heads)})")
 
 
-def assert_prod_kept_its_data() -> None:
-    """The live container must still be mounting the owner's database.
+def prod_mount_problem() -> str | None:
+    """None while the live container still mounts the owner's database, else what it mounts.
 
     Cheap, and it tests the exact way a deploy could quietly destroy the
     product: a compose run from the wrong directory gives every relative
@@ -1341,9 +1601,9 @@ def assert_prod_kept_its_data() -> None:
             "{{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}"], check=False)
     mounts = r.stdout.strip()
     if f"{want}->/data" not in mounts:
-        die(f"the live container is not mounting {want} at /data (mounts: {mounts or 'none'}). "
-            f"Its database would be empty -- `standee rollback {PROD_ENV}`.")
-    log(f"live database still mounted from {want}")
+        return (f"the live container is not mounting {want} at /data (mounts: {mounts or 'none'}): "
+                f"its database would be empty")
+    return None
 
 
 # ------------------------------------------------------------------- state --

@@ -214,11 +214,28 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      # What ran where, kept with the report: a later look at this run (or a
+      # comparison with another) needs the attempt, the commit and the
+      # runner image without reading any log.
+      - name: Record what ran
+        if: steps.list.outputs.count != '0'
+        working-directory: frontend
+        run: >-
+          node -e 'const e = process.env; require("fs").writeFileSync("meta.json",
+          JSON.stringify({shard: 1, of: 1, run_attempt: Number(e.GITHUB_RUN_ATTEMPT) || null,
+          sha: e.GITHUB_SHA, image_os: e.ImageOS, image_version: e.ImageVersion,
+          node: process.version, playwright: require("@playwright/test/package.json").version},
+          null, 1) + "\n")'
+
+      # PLAYWRIGHT_JUNIT_INCLUDE_RETRIES keeps a retry in the report: a test
+      # that failed and then passed gets flakyFailure entries instead of
+      # looking like a plain pass, so the next step can name it.
       - name: Run the browser tests that need no temper
         if: steps.list.outputs.count != '0'
         working-directory: frontend
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_NAME: playwright-junit.xml
+          PLAYWRIGHT_JUNIT_INCLUDE_RETRIES: '1'
         run: npx playwright test -c playwright.server-free.config.ts --reporter=list,junit
 
       - name: Summarise
@@ -242,4 +259,5 @@ jobs:
           path: |
             frontend/test-results/
             frontend/playwright-junit.xml
+            frontend/meta.json
           retention-days: 7

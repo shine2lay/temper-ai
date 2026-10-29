@@ -9,8 +9,13 @@ overlook by naming it in the job summary.
 
 Two ways to spot one, both supported:
 
-* **one report, retries**: Playwright writes a ``testcase`` per attempt, so
-  a test with both a failed and a passed attempt was flaky.
+* **one report, retries**: Playwright writes one ``testcase`` per test. With
+  PLAYWRIGHT_JUNIT_INCLUDE_RETRIES=1 (as CI sets it) a test that failed and
+  then passed on its retry carries a ``flakyFailure`` or ``flakyError`` per
+  failed attempt, so it counts as both failed and passed: flaky. A test that
+  failed on every attempt carries ``rerunFailure`` or ``rerunError`` for its
+  retries next to its ``failure``: a plain failure. Without that setting a
+  retry-only pass looks like any other pass.
 * **many reports, repeats**: the nightly runs the suite several times; a
   test that failed in one run and passed in another was flaky.
 
@@ -29,9 +34,16 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 
+FAILED = {"failure", "error", "rerunFailure", "rerunError"}  # the test's result was a failure
+FAILED_THEN_PASSED = {"flakyFailure", "flakyError"}  # failed attempts of a test that then passed
+
 
 def outcomes(paths: list[Path]) -> dict[str, set[str]]:
-    """test name -> the set of outcomes seen for it across every report."""
+    """test name -> the set of outcomes seen for it across every report.
+
+    Only element names and the name and classname attributes are read, never
+    a message, stack trace or captured output.
+    """
     seen: dict[str, set[str]] = defaultdict(set)
     for path in paths:
         if not path.exists():
@@ -40,10 +52,15 @@ def outcomes(paths: list[Path]) -> dict[str, set[str]]:
         for case in root.iter("testcase"):
             classname = (case.get("classname") or "").strip()
             name = f"{classname} :: {case.get('name')}" if classname else str(case.get("name"))
-            if case.find("skipped") is not None:
+            tags = {child.tag for child in case}
+            if "skipped" in tags:
                 continue
-            bad = case.find("failure") is not None or case.find("error") is not None
-            seen[name].add("failed" if bad else "passed")
+            if tags & FAILED:
+                seen[name].add("failed")
+                continue
+            seen[name].add("passed")
+            if tags & FAILED_THEN_PASSED:
+                seen[name].add("failed")
     return seen
 
 

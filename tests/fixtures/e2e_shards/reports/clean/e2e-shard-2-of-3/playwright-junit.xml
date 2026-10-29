@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites id="" name="" tests="3" failures="0" skipped="1" errors="0" time="2.299499">
+  <testsuite name="beta.spec.ts" timestamp="2026-10-29T15:35:12.126Z" hostname="" tests="3" failures="0" skipped="1" time="0.032" errors="0">
+    <testcase name="same title in two files" classname="beta.spec.ts" time="0.013">
+</testcase>
+    <testcase name="is skipped" classname="beta.spec.ts">
+      <properties>
+        <property name="skip" value="">
+</property>
+      </properties>
+      <skipped />
+    </testcase>
+    <testcase name="a › b" classname="beta.spec.ts" time="0.019">
+</testcase>
+  </testsuite>
+</testsuites>

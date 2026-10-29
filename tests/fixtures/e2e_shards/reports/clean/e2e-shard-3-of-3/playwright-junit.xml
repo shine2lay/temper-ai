@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="4.153747999999999">
+  <testsuite name="gamma.spec.ts" timestamp="2026-10-29T15:35:24.427Z" hostname="" tests="2" failures="0" skipped="0" time="0.02" errors="0">
+    <testcase name="same title in two files" classname="gamma.spec.ts" time="0.015">
+</testcase>
+    <testcase name="a › b" classname="gamma.spec.ts" time="0.005">
+</testcase>
+  </testsuite>
+</testsuites>

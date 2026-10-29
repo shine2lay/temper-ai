@@ -1,0 +1,5 @@
+# The clean files plus one test that fails on every attempt.
+alpha.spec.ts
+beta.spec.ts
+gamma.spec.ts
+delta.spec.ts

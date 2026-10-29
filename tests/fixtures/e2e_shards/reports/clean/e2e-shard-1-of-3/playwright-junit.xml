@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="6.380323">
+  <testsuite name="alpha.spec.ts" timestamp="2026-10-29T15:34:52.891Z" hostname="" tests="3" failures="0" skipped="0" time="0.096" errors="0">
+    <testcase name="passes" classname="alpha.spec.ts" time="0.023">
+</testcase>
+    <testcase name="passes only on its retry" classname="alpha.spec.ts" time="0.011">
+      <flakyFailure type="expect.toBe" time="0.019" />
+    </testcase>
+    <testcase name="outer › inner › nested" classname="alpha.spec.ts" time="0.043">
+</testcase>
+  </testsuite>
+</testsuites>

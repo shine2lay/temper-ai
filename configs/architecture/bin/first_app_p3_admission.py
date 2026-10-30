@@ -292,14 +292,22 @@ def read_regular(path: pathlib.Path, cap: int, where: str) -> bytes:
 
 
 def _record(ref: dict, where: str) -> dict:
-    data = read_regular(pathlib.Path(ref["path"]), W2_MAX, where)
-    got = hashlib.sha256(data).hexdigest()
-    if got != ref["sha256"]:
-        raise Refused(f"{where}: sha256 {got} is not the named {ref['sha256']}")
+    """One W2 record at the path the caller named. Its refusals say only the check and what the caller named:
+    never why the read failed (absent, folder, fifo, link, too big, the OS error), the file's own sha256 or its
+    JSON error. Anything more would tell whoever starts a run whether any path on the box exists, its type, and
+    the sha256 of any file the checker can read (#339). Checker-chosen reads (_scan) keep their diagnostics."""
+    path = ref["path"]
+    try:
+        data = read_regular(pathlib.Path(path), W2_MAX, where)
+    except Refused:
+        raise Refused(f"{where}: {path} is not a readable regular file of at most {W2_MAX} bytes with no symlink "
+                      "in its path") from None
+    if hashlib.sha256(data).hexdigest() != ref["sha256"]:
+        raise Refused(f"{where}: {path} does not have the named sha256 {ref['sha256']}")
     try:
         rec = json.loads(data)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise Refused(f"{where}: not JSON") from exc
+    except ValueError:  # UnicodeDecodeError, JSONDecodeError, and the int-digit limit's plain ValueError
+        raise Refused(f"{where}: not JSON") from None
     if not isinstance(rec, dict) or not isinstance(rec.get("containers"), dict):
         raise Refused(f"{where}: not a recreation record (#124 shape: mode, at, containers)")
     return rec

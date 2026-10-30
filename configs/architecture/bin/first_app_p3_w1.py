@@ -113,18 +113,22 @@ def _unique_keys(pairs):
 
 def load(path: str, digest: str, side: str):
     """Read one reading the admission way (no symlink in any component, a regular file, capped), check its sha256
-    against the named one and parse it."""
+    against the named one and parse it.
+
+    The path is the caller's, so a refusal says only the rule and what the caller named: never why the read
+    failed, the file's own sha256 or what JSON error it hit. Anything more would tell whoever starts a run
+    whether any path on the box exists, its type, and the sha256 of any file the checker can read (#339)."""
     try:
         data = admission.read_regular(pathlib.Path(path), READING_MAX, f"W1 {side}-reading {path}")
-    except admission.Refused as exc:
-        raise Refused(f"missing:{side}", str(exc)) from exc
-    got = hashlib.sha256(data).hexdigest()
-    if got != digest:
-        raise Refused(f"sha256:{side}", f"{path} has sha256 {got}, not the named {digest}")
+    except admission.Refused:
+        raise Refused(f"missing:{side}", f"{path} is not a readable regular file of at most {READING_MAX} bytes "
+                                         "with no symlink in its path") from None
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise Refused(f"sha256:{side}", f"{path} does not have the named sha256 {digest}")
     try:
         return json.loads(data, object_pairs_hook=_unique_keys)
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Refused(f"bad-schema:{side}", f"not JSON ({exc.__class__.__name__}: {exc})") from exc
+    except (UnicodeDecodeError, ValueError):
+        raise Refused(f"bad-schema:{side}", "not JSON with unique keys") from None
 
 
 def _bad(side: str, text: str) -> Refused:
@@ -133,22 +137,23 @@ def _bad(side: str, text: str) -> Refused:
 
 def shape(rec, side: str) -> None:
     """Exactly a closed webkit-reading/1 record with status OK. UNKNOWN raises unknown:<side>; anything else that
-    is not the closed shape raises bad-schema:<side>."""
+    is not the closed shape raises bad-schema:<side>. A refusal names the check that failed, never the file's own
+    keys or values (the file is the caller's: #339)."""
     if not isinstance(rec, dict):
         raise _bad(side, "not a JSON object")
     if set(rec) != KEYS:
-        raise _bad(side, f"not the closed key set (extra {sorted(set(rec) - KEYS)}, missing {sorted(KEYS - set(rec))})")
+        raise _bad(side, "not the closed webkit-reading/1 key set")
     if rec["schema"] != SCHEMA:
-        raise _bad(side, f"schema {rec['schema']!r} is not {SCHEMA}")
+        raise _bad(side, f"schema is not {SCHEMA}")
     if rec["limits"] != LIMITS:
         raise _bad(side, "limits is not the fixed webkit-reading/1 line")
     status, reason = rec["status"], rec["reason"]
     if status == "UNKNOWN":
         if not (isinstance(reason, str) and reason in REASONS):
-            raise _bad(side, f"an UNKNOWN record with reason {reason!r}, not one of the tool's fixed reasons")
+            raise _bad(side, "an UNKNOWN record whose reason is not one of the tool's fixed reasons")
         raise Refused(f"unknown:{side}", f"reason={reason}: the reading was UNKNOWN")
     if status != "OK":
-        raise _bad(side, f"status {status!r} is neither OK nor UNKNOWN")
+        raise _bad(side, "status is neither OK nor UNKNOWN")
     if reason is not None:
         raise _bad(side, "an OK record has a reason")
     if not (isinstance(rec["taken_at"], str) and TAKEN_RE.fullmatch(rec["taken_at"])):
@@ -178,11 +183,11 @@ def shape(rec, side: str) -> None:
     if holders != sorted(holders):
         raise _bad(side, "endpoint.holders are not sorted")
     if type(count) is not int or count != len(holders):
-        raise _bad(side, f"endpoint.count {count!r} is not the number of holders ({len(holders)})")
+        raise _bad(side, "endpoint.count is not the number of holders")
     if ep["alias"] != ALIAS:
-        raise _bad(side, f"endpoint.alias {ep['alias']!r} is not {ALIAS}")
+        raise _bad(side, f"endpoint.alias is not {ALIAS}")
     if ep["network"] != NETWORK:
-        raise _bad(side, f"endpoint.network {ep['network']!r} is not {NETWORK}")
+        raise _bad(side, f"endpoint.network is not {NETWORK}")
     for key in ("taken_at", "started_at"):
         try:
             hc.instant(rec[key], key)

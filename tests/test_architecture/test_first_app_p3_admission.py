@@ -170,9 +170,11 @@ def test_w2_hash_mismatch_blocks(tmp_path):
     root = root_of(tmp_path)
     receipt(root, 'r1')
     ref = w2_record(tmp_path)
-    ref['sha256'] = '0' * 64
+    own, ref['sha256'] = ref['sha256'], '0' * 64
     got = adm.admit(root, WK, w2={WK: ref}, w1_before=w1(), need_w1=True)
-    assert got['status'] == 'BLOCKED' and 'is not the named' in got['reasons'][0]
+    # #339: the refusal is the check and the caller's own path and digest, never the file's computed sha256.
+    assert got['status'] == 'BLOCKED' and own[:16] not in json.dumps(got)
+    assert got['reasons'] == [f"W2 recreation receipt: {ref['path']} does not have the named sha256 {'0' * 64}"]
 
 
 def test_valid_w2_and_matching_w1_admits(tmp_path):
@@ -247,6 +249,141 @@ def test_profile_and_argument_shapes(tmp_path):
     t, problems = p3.parse_p3_profile(json.dumps({**profile, 'w2_recreation': good}))
     assert not problems and t['w2_recreation'] == good
     assert p3.parse_p3_profile(json.dumps({**profile, 'w2_recreation': {WK: {}}}))[1]
+
+
+# ---- #339: a refusal of a caller-named W2 record carries no byte derived from that file ----
+# The profile (or --w2-recreation) names the W2 records. Before #339 the refusal echoed the file's computed sha256
+# and how its read failed (absent, folder, fifo, link, too big, the OS error): an existence, type and hash oracle
+# over every file the checker can read. The receipts root is the checker's own choice and keeps its diagnostics.
+
+READ_TEXT = f'is not a readable regular file of at most {1 << 20} bytes with no symlink in its path'
+READ_LEAKS = ('FileNotFoundError', 'PermissionError', 'NotADirectoryError', 'IsADirectoryError', 'OSError',
+              'Errno', 'No such file', 'Permission denied', 'Not a directory', 'symbolic link', 'unreadable (',
+              'is not a regular file', 'is larger than')
+READ_MODES = ['missing', 'unreadable', 'folder', 'fifo', 'over cap', 'leaf symlink', 'symlink in its path',
+              'parent is a file']
+
+
+def planted_w2(tmp_path, mode):
+    """Chromium's W2 records with the after-record's path made unreadable the admission way by one failure mode."""
+    w2 = cr_w2(tmp_path)
+    good = w2[CR]['path']
+    path = tmp_path / 'named.json'
+    if mode == 'unreadable':
+        path.write_bytes(Path(good).read_bytes())
+        path.chmod(0)
+    elif mode == 'folder':
+        path.mkdir()
+    elif mode == 'fifo':
+        os.mkfifo(path)
+    elif mode == 'over cap':
+        path.write_bytes(b' ' * (adm.W2_MAX + 1))
+    elif mode == 'leaf symlink':
+        path.symlink_to(good)
+    elif mode == 'symlink in its path':
+        (tmp_path / 'real').mkdir()
+        (tmp_path / 'real' / 'after.json').write_bytes(Path(good).read_bytes())
+        (tmp_path / 'via').symlink_to(tmp_path / 'real')
+        path = tmp_path / 'via' / 'after.json'
+    elif mode == 'parent is a file':
+        path = Path(good) / 'after.json'
+    w2[CR]['path'] = str(path)
+    return w2
+
+
+@pytest.mark.parametrize('mode', READ_MODES)
+def test_339_a_named_w2_record_that_cannot_be_read_says_only_the_check_and_the_callers_path(tmp_path, mode):
+    if mode == 'unreadable' and os.geteuid() == 0:
+        pytest.skip('root reads a 0000 file')
+    root = root_of(tmp_path)
+    receipt(root, 'r1', service=CR)
+    w2 = planted_w2(tmp_path, mode)
+    got = adm.admit(root, CR, w2=w2)
+    assert got['status'] == 'BLOCKED' and got['recreation_required']
+    assert [word for word in READ_LEAKS if word in json.dumps(got)] == []
+    # One text for every failure mode: nothing in it says which one it was.
+    assert got['reasons'] == [f"W2 recreation receipt: {w2[CR]['path']} {READ_TEXT}"]
+
+
+def test_339_a_named_w2_before_record_never_shows_its_own_sha256(tmp_path):
+    root = root_of(tmp_path)
+    receipt(root, 'r1', service=CR)
+    w2 = cr_w2(tmp_path)
+    before = w2[CR]['before']
+    own, before['sha256'] = before['sha256'], '0' * 64
+    got = adm.admit(root, CR, w2=w2)
+    assert got['status'] == 'BLOCKED' and own[:16] not in json.dumps(got)
+    assert got['reasons'] == [f"W2 before-recreation record: {before['path']} does not have the named sha256 "
+                              f"{'0' * 64}"]
+
+
+def test_339_a_named_w2_before_record_that_cannot_be_read_says_only_the_check_and_the_callers_path(tmp_path):
+    root = root_of(tmp_path)
+    receipt(root, 'r1', service=CR)
+    w2 = cr_w2(tmp_path)
+    w2[CR]['before']['path'] = str(tmp_path / 'absent.json')
+    got = adm.admit(root, CR, w2=w2)
+    assert got['status'] == 'BLOCKED' and [word for word in READ_LEAKS if word in json.dumps(got)] == []
+    assert got['reasons'] == [f"W2 before-recreation record: {tmp_path / 'absent.json'} {READ_TEXT}"]
+
+
+def test_339_a_named_w2_record_with_a_number_too_long_to_read_shows_not_its_length(tmp_path):
+    # Python refuses an integer of more than sys.get_int_max_str_digits() digits with a plain ValueError naming
+    # its length; before #339 it fell through to admit()'s catch-all with that text.
+    root = root_of(tmp_path)
+    receipt(root, 'r1', service=CR)
+    w2 = cr_w2(tmp_path)
+    path = tmp_path / 'long.json'
+    path.write_bytes(b'{"containers": ' + b'7' * 43391 + b'}')
+    w2[CR].update(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    old = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(4300)
+    try:
+        got = adm.admit(root, CR, w2=w2)
+    finally:
+        sys.set_int_max_str_digits(old)
+    assert got['status'] == 'BLOCKED' and '43391' not in json.dumps(got)
+    assert got['reasons'] == ['W2 recreation receipt: not JSON']
+
+
+@pytest.mark.parametrize('mode', ['sha256', 'missing', 'folder', 'over cap', 'leaf symlink'])
+def test_339_the_journeys_receipt_summary_and_output_carry_no_byte_of_a_named_w2_record(tmp_path, capsys,
+                                                                                       mcp_calls, mode):
+    root = root_of(tmp_path)
+    receipt(root, 'r1', service=CR)
+    if mode == 'sha256':
+        w2 = cr_w2(tmp_path)
+        own, w2[CR]['sha256'] = w2[CR]['sha256'], '0' * 64
+        leaks = (own[:16],)
+    else:
+        w2 = planted_w2(tmp_path, mode)
+        leaks = READ_LEAKS
+    target = dict(full_target(root), w2_recreation=w2)
+    out = tmp_path / 'out'
+    r = asyncio.run(p3.check_target(CR, WK, target, out, 'R', 900, latch=g.StopLatch(),
+                                    receipt=p3.new_receipt('R', None)))
+    seen = capsys.readouterr()
+    assert mcp_calls == [] and r['verdict'] == 'BLOCKED' and r['admission'][CR]['status'] == 'BLOCKED'
+    text = ''.join((out / name).read_text() for name in ('receipt.json', 'summary.md', 'observations.json'))
+    text += json.dumps(r) + seen.out + seen.err
+    assert 'W2 recreation receipt' in json.dumps(r['admission'][CR]['reasons'])  # refused on the named record
+    assert [word for word in leaks if word in text] == []
+    assert w2[CR]['path'] in json.dumps(r['admission'][CR]['reasons'])
+
+
+def test_339_checker_chosen_reads_keep_their_diagnostics(tmp_path):
+    # The receipts root and what lies under it are the checker's own choice: these texts are unchanged by #339.
+    absent = tmp_path / 'absent-root'
+    got = adm.admit(absent, CR)
+    assert got['reasons'] == [f"receipts root unreadable: FileNotFoundError: [Errno 2] No such file or directory: "
+                              f"'{absent.name}'"]
+    root = root_of(tmp_path)
+    (root / 'r0').mkdir()
+    (root / 'r1').symlink_to(root / 'r0')
+    assert adm.admit(root, CR)['reasons'] == [f"{root / 'r1'} is a symlink"]
+    other = root_of(tmp_path / 'other')
+    (other / 'r1' / 'check' / 'receipt.json').mkdir(parents=True)
+    assert adm.admit(other, CR)['reasons'] == [f"{other / 'r1' / 'check'}/receipt.json is not a regular file"]
 
 
 # ---- 4c: Security N1, nothing between the terminal CLOSE result and browser_close raises ----

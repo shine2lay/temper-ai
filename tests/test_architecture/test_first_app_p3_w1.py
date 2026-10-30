@@ -157,6 +157,151 @@ def test_precheck_catches_wrong_sha256_symlinks_and_files_that_are_not_regular(t
     assert refused_rule(w1.precheck, write(tmp_path, b'\xff', 'bytes.json'), START) == 'bad-schema:before'
 
 
+# ---- #339: a refusal of a caller-named reading carries no byte derived from that file ----
+# Whoever starts a run names the reading. Before #339 the refusal echoed the file's computed sha256, its OS error,
+# its key names and values, and how it failed (absent, folder, fifo, link, too big): an existence, type and hash
+# oracle over every file the checker can read. Each failure mode below plants a marker the old text carried.
+
+READ_TEXT = f'is not a readable regular file of at most {1 << 16} bytes with no symlink in its path'
+# Words the old refusals carried for one failure mode and not another.
+READ_LEAKS = ('FileNotFoundError', 'PermissionError', 'NotADirectoryError', 'IsADirectoryError', 'OSError',
+              'Errno', 'No such file', 'Permission denied', 'Not a directory', 'symbolic link', 'unreadable (',
+              'is not a regular file', 'is larger than')
+
+
+def plant(tmp_path, mode):
+    """A caller-named reading that cannot be read the admission way, by one failure mode; returns its path."""
+    good = write(tmp_path / 'good', reading())['path']
+    path = tmp_path / 'named.json'
+    if mode == 'unreadable':
+        path.write_bytes(Path(good).read_bytes())
+        path.chmod(0)
+    elif mode == 'folder':
+        path.mkdir()
+    elif mode == 'fifo':
+        os.mkfifo(path)
+    elif mode == 'over cap':
+        path.write_bytes(b' ' * (w1.READING_MAX + 1))
+    elif mode == 'leaf symlink':
+        path.symlink_to(good)
+    elif mode == 'symlink in its path':
+        (tmp_path / 'via').symlink_to(tmp_path / 'good')
+        path = tmp_path / 'via' / 'before.json'
+    elif mode == 'parent is a file':
+        path = Path(good) / 'before.json'
+    return str(path)  # 'missing': nothing there
+
+
+READ_MODES = ['missing', 'unreadable', 'folder', 'fifo', 'over cap', 'leaf symlink', 'symlink in its path',
+              'parent is a file']
+
+
+def gate_outputs(ref, tmp_path, capsys):
+    """The W1 gate entry and every place a refusal reaches: the session, each WebKit step, receipt.json,
+    summary.md and observations.json (finish persists them), and stdout/stderr. Returns (gate, all of it as text)."""
+    ok, r, sess, latch = run_gate(ref)
+    assert not ok
+    out = tmp_path / 'out'
+    out.mkdir()
+    r = p3.finish(dict(p3.new_receipt('R', None), **{k: r[k] for k in ('w1', 'steps')}, sessions={'webkit': sess}),
+                  out)
+    seen = capsys.readouterr()
+    files = ''.join((out / name).read_text() for name in ('receipt.json', 'summary.md', 'observations.json'))
+    return r['w1'], json.dumps(r) + files + seen.out + seen.err
+
+
+@pytest.mark.parametrize('mode', READ_MODES)
+def test_339_a_named_reading_that_cannot_be_read_says_only_the_rule_and_the_callers_path(tmp_path, capsys,
+                                                                                       webkit_calls, mode):
+    if mode == 'unreadable' and os.geteuid() == 0:
+        pytest.skip('root reads a 0000 file')
+    path = plant(tmp_path, mode)
+    ref = {'path': path, 'sha256': 'a' * 64}
+    gate, seen = gate_outputs(ref, tmp_path, capsys)
+    assert webkit_calls == [] and gate['status'] == 'REFUSED' and gate['rule'] == 'missing:before'
+    assert [word for word in READ_LEAKS if word in seen] == []
+    # One text for every failure mode: nothing in it says which one it was.
+    assert gate['reason'] == f'W1 before-reading refused: missing:before: {path} {READ_TEXT}'
+
+
+def test_339_a_wrong_named_sha256_never_shows_the_files_own(tmp_path, capsys, webkit_calls):
+    ref = write(tmp_path, reading())
+    own = ref['sha256']
+    named = dict(ref, sha256='0' * 64)
+    gate, seen = gate_outputs(named, tmp_path, capsys)
+    assert gate['rule'] == 'sha256:before'
+    assert own not in seen and own[:16] not in seen
+    assert gate['reason'] == f"W1 before-reading refused: sha256:before: {ref['path']} does not have the named " \
+                             f"sha256 {'0' * 64}"
+
+
+SCHEMA_MARKERS = {
+    # name: (file bytes, the marker the old refusal carried); each file is named with its true sha256.
+    'extra key': (json.dumps(dict(reading(), k339_extra_key=1)).encode(), 'k339_extra_key'),
+    'missing key': (json.dumps({k: v for k, v in reading().items() if k != 'restart_count'}).encode(),
+                    "'restart_count'"),
+    'duplicate key': (b'{"k339_dup_key": 1, "k339_dup_key": 2}', 'k339_dup_key'),
+    'not utf-8': (b'{"a": "\xfe"}', '0xfe'),
+    'not json': (b'{"k339": nope}', 'Expecting value'),
+    'number too long': (b'{"a": ' + b'7' * 43391 + b'}', '43391'),  # Python's int-digit limit names the length
+    'schema value': (json.dumps(reading(schema='k339-schema')).encode(), 'k339-schema'),
+    'status value': (json.dumps(reading(status='k339-status')).encode(), 'k339-status'),
+    'unknown reason value': (json.dumps(unknown(reason='k339-reason')).encode(), 'k339-reason'),
+    'endpoint count value': (json.dumps(reading(endpoint=endpoint(count=33917))).encode(), '33917'),
+    'endpoint alias value': (json.dumps(reading(endpoint=endpoint(alias='k339-alias'))).encode(), 'k339-alias'),
+    'endpoint network value': (json.dumps(reading(endpoint=endpoint(network='k339-net'))).encode(), 'k339-net'),
+}
+
+
+@pytest.mark.parametrize('case', sorted(SCHEMA_MARKERS))
+def test_339_a_named_reading_that_is_not_the_closed_shape_shows_none_of_its_keys_or_values(tmp_path, capsys,
+                                                                                         webkit_calls, case):
+    data, marker = SCHEMA_MARKERS[case]
+    ref = write(tmp_path, data)
+    gate, seen = gate_outputs(ref, tmp_path, capsys)
+    assert webkit_calls == [] and gate['status'] == 'REFUSED' and gate['rule'] == 'bad-schema:before'
+    assert marker not in gate['reason']
+    if marker.startswith('k339'):  # unique enough to look for in every output, not only the reason
+        assert marker not in seen
+
+
+# finalize's --after goes through the same load() and shape(); the receipt's before-reading too.
+
+def test_339_finalize_never_shows_a_named_after_readings_own_sha256(tmp_path, capsys):
+    receipt, _ = run_folder(tmp_path)
+    aft = after(tmp_path)
+    argv = ['finalize', '--receipt', str(receipt), '--after', aft['path'], '--after-sha256', '0' * 64]
+    assert w1.main(argv) == 1
+    seen = capsys.readouterr()
+    out = seen.out + seen.err + (receipt.parent / 'w1.json').read_text()
+    assert aft['sha256'] not in out and aft['sha256'][:16] not in out
+    assert saved(receipt)['rule'] == f"sha256:after: {aft['path']} does not have the named sha256 {'0' * 64}"
+
+
+def test_339_finalize_never_shows_a_changed_before_readings_new_sha256(tmp_path):
+    receipt, before = run_folder(tmp_path)
+    Path(before['path']).write_text(json.dumps(reading(paused=True)))
+    now = hashlib.sha256(Path(before['path']).read_bytes()).hexdigest()
+    code, record, text = finalize(receipt, after(tmp_path))
+    assert code == 1 and now[:16] not in json.dumps(record) + text
+    assert record['rule'] == f"sha256:before: {before['path']} does not have the named sha256 {before['sha256']}"
+
+
+def test_339_finalize_shows_only_the_rule_and_path_of_an_after_reading_it_cannot_read(tmp_path):
+    receipt, _ = run_folder(tmp_path)
+    (tmp_path / 'after.json').mkdir()
+    code, record, text = w1.finalize(str(receipt), str(tmp_path / 'after.json'), 'a' * 64)
+    assert code == 1 and [word for word in READ_LEAKS if word in json.dumps(record) + text] == []
+    assert record['rule'] == f"missing:after: {tmp_path / 'after.json'} {READ_TEXT}"
+
+
+def test_339_finalize_shows_no_key_of_a_named_after_reading(tmp_path):
+    receipt, _ = run_folder(tmp_path)
+    code, record, text = finalize(receipt, after(tmp_path, dict(reading(AFTER_AT), k339_after_key=1)))
+    assert code == 1 and 'k339_after_key' not in json.dumps(record) + text
+    assert record['rule'].startswith('bad-schema:after: ')
+
+
 @pytest.mark.parametrize('ref', [[], {'path': 'before.json', 'sha256': 'a' * 64},
                                  {'path': '/x/before.json', 'sha256': 'A' * 64},
                                  {'path': '/x/before.json', 'sha256': 'a' * 64, 'id': ID}, {'path': '/x/b.json'}])

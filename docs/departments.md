@@ -698,6 +698,7 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | Config | Kind |
 |---|---|
 | `epd/bin/capabilities.py` | script |
+| `epd/bin/fastapi_router_bindings.py` | static local-router binding resolver used by `capabilities.py` |
 | `epd/bin/kb_check.py` | script |
 
 ### RollCall (24)

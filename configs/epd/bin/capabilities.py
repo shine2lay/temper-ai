@@ -44,6 +44,8 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from fastapi_router_bindings import RouterBindings
+
 VERSION = "1"
 MARKER = f"<!-- temper:capabilities v{VERSION} -->"
 UNDESCRIBED = "_(undescribed)_"
@@ -55,6 +57,7 @@ SKIP_DIRS = {
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache",
     ".pytest_cache", ".ruff_cache", "dist", "build", ".next", ".temper",
     ".epd", "migrations", "alembic", ".tox", "htmlcov", "site-packages",
+    "vendor", "vendored",
 }
 # A path containing any of these is test or example code.
 SKIP_PARTS = ("test", "tests", "conftest", "fixtures", "examples", "example")
@@ -137,7 +140,12 @@ def _walk(root: Path, suffixes: tuple[str, ...]):
             continue
         if any(part in SKIP_DIRS or part.lower() in SKIP_PARTS for part in rel_parts):
             continue
-        if p.name.lower().startswith("test") or "_test" in p.name.lower():
+        if p.name.lower().startswith("test") or "_test" in p.name.lower() or p.stem.lower() in SKIP_PARTS:
+            continue
+        # A tracked symlink is not an admitted source file. Never let imports
+        # reach untracked files (even inside the repo) or another repository.
+        parents = [root.joinpath(*rel_parts[:i]) for i in range(1, len(rel_parts) + 1)]
+        if p.is_symlink() or any(parent.is_symlink() or (parent / ".git").exists() for parent in parents):
             continue
         if not p.is_file():
             continue
@@ -172,64 +180,44 @@ def probe_fastapi(root: Path) -> list[Capability]:
     environment variables and a database it can reach. Static reading works in
     a bare checkout, which is where this has to run.
 
-    Resolution is per-file: `router = APIRouter(prefix="/api")` binds a prefix
-    to a name, and `@router.get("/orders")` is then a route at `/api/orders`.
-    Routers included from elsewhere with an extra prefix are the one case this
-    cannot see; when a router's prefix is not a literal it is reported as `?`
-    rather than guessed at.
+    Router bindings follow explicit local imports, aliases and re-exports
+    through this probe's admitted source set. Package roots come from
+    __init__.py files and src/backend layouts, never sys.path. Lexical scopes
+    keep nested declarations separate; a parameter needs consistent explicit
+    router arguments at direct same-file calls, not just a type annotation.
+    Ambiguous, cyclic and unresolved bindings are skipped. Conditional/class
+    definitions, wildcard/dynamic imports, factory return values, expanded or
+    defaulted router arguments and include_router extra prefixes are not
+    inferred. A nonliteral router prefix is still `?`, never evaluated.
     """
     caps: list[Capability] = []
     methods = {"get", "post", "put", "patch", "delete", "head", "options"}
 
+    sources: dict[Path, ast.Module] = {}
     for py in _walk(root, (".py",)):
         try:
-            tree = ast.parse(py.read_text(errors="replace"))
-        except (SyntaxError, ValueError):
+            sources[py.relative_to(root)] = ast.parse(py.read_text(errors="replace"))
+        except (SyntaxError, ValueError, OSError):
             continue
+    bindings = RouterBindings(sources)
 
-        # name -> prefix, plus the tag we will group by
-        prefixes: dict[str, str] = {}
-        tags: dict[str, str] = {}
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
-                continue
-            fn = node.value.func
-            fname = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
-            if fname not in ("APIRouter", "FastAPI"):
-                continue
-            for target in node.targets:
-                if not isinstance(target, ast.Name):
-                    continue
-                prefix, tag = "", ""
-                for kw in node.value.keywords:
-                    if kw.arg == "prefix":
-                        prefix = kw.value.value if isinstance(kw.value, ast.Constant) else "?"
-                    elif kw.arg == "tags" and isinstance(kw.value, ast.List) and kw.value.elts:
-                        first = kw.value.elts[0]
-                        if isinstance(first, ast.Constant):
-                            tag = str(first.value)
-                prefixes[target.id] = prefix
-                tags[target.id] = tag
-
-        if not prefixes:
-            continue
-
-        for node in ast.walk(tree):
+    for scope, py in bindings.paths.items():
+        for index, node in enumerate(scope.body):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for dec in node.decorator_list:
                 if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
                     continue
                 verb = dec.func.attr
-                obj = dec.func.value
-                if verb not in methods or not isinstance(obj, ast.Name):
+                if verb not in methods:
                     continue
-                if obj.id not in prefixes:
+                router = bindings.router(scope, dec.func.value, index)
+                if router is None:
                     continue
                 if not dec.args or not isinstance(dec.args[0], ast.Constant):
                     continue
                 path = str(dec.args[0].value)
-                full = f"{prefixes[obj.id]}{path}" or "/"
+                full = f"{router.prefix}{path}" or "/"
                 summary = ""
                 for kw in dec.keywords:
                     if kw.arg == "summary" and isinstance(kw.value, ast.Constant):
@@ -237,8 +225,8 @@ def probe_fastapi(root: Path) -> list[Capability]:
                 caps.append(Capability(
                     kind="http",
                     key=f"{verb.upper()} {full}",
-                    where=f"{_rel(root, py)}:{node.lineno}",
-                    group=tags.get(obj.id) or _rel(root, py),
+                    where=f"{py}:{node.lineno}",
+                    group=router.tag or str(py),
                     intent=summary or _first_docline(node),
                 ))
     return caps

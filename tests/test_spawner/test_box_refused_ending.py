@@ -64,7 +64,7 @@ def test_the_wrapper_counts_only_a_kill_of_that_box_docker_took(monkeypatch):
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, int(cmd[-1] in turned_down), "", "")
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("tests.test_spawner.test_box_bootstrap_docker.run_test_docker", run)
     docker = OneshotDocker(install=None)
     for cmd in (["docker", "kill", "box-a"], ["docker", "kill", "box-b"],
                 ["docker", "kill", "--signal", "TERM", "box-c"], ["docker", "exec", "box-d"]):

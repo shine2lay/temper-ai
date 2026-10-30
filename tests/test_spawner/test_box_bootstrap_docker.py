@@ -239,10 +239,11 @@ class OneshotDocker:
             cmd = [c for c in cmd if c != "--rm"]
             cmd[2:2] = ["--label", TEST_LABEL, "--label", OWN_LABEL]
             self.names.append(box_name(cmd))
-        if cmd[1] == "exec" and self.on_exec is not None:
-            cmd, kwargs = self.on_exec(cmd, kwargs)
         kwargs.setdefault("timeout", 120)
-        result = run_test_docker(cmd, **kwargs)
+        # Verification precedes cancellation/tampering; no slow placement query
+        # may run between arming the callback and the writer's actual exec.
+        result = run_test_docker(cmd, before_exec=self.on_exec if cmd[1] == "exec" else None,
+                                 **kwargs)
         if cmd[1] == "exec":
             self.execs.append(result)
         elif cmd[1] == "kill":

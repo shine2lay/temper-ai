@@ -65,9 +65,47 @@ stay correct. Falsifier: present policy is accepted without a usable CLI, or
 kill accounting changes. Run this doubtful stage and its regression once after
 the repair, then the normal hook. Do not rerun the unchanged failing hook.
 
-Result: **HIT**, repaired focused contract/PG controls plus the unchanged
-kill-accounting file: **103 passed in 60.54 s** (`systems60-compatibility`).
-Present-policy refusal and original kill accounting both remain intact.
+Result: **LIMITED HIT** on an absent-install host: **103 passed in 60.54 s**
+(`systems60-compatibility`). Present-policy refusal and kill accounting passed,
+but Temper #235 reproduced the installed-CLI hole below; this is not acceptance.
+
+## Temper review repair hypotheses (before edits)
+
+Written first in `shared-test-cpu-plan/evidence-E/REPAIR-HYPOTHESES.md`.
+Systems Lead's queue answer (2026-10-30) admits the eighth file,
+`tests/test_spawner/test_box_refused_ending.py`, solely for hermetic injection.
+This is a technical repair decision, not owner consent or activation.
+
+- **H-SHARED-CPU-E-3 / R1:** the installed CLI is still swallowed by the old
+  kill-accounting test's global subprocess mock. Inject its unchanged fake at
+  OneshotDocker's placement boundary; retain every kill/exit/refusal assertion.
+  Fixed absent, installed-inactive and installed-enabled states must all pass
+  without policy queries; the old broad patch must still fail when installed.
+  Any weakened policy validation or fabricated membership falsifies the fix.
+- **H-SHARED-CPU-E-4 / R2:** Temper's fixed 1.0-second caller budget reached 1.7
+  because verification renewed each query's allowance. Capture one original
+  caller deadline and pass remaining time through policy, daemon, PID and
+  builder queries plus payload work. Fixed slow successes must exhaust at 1.0,
+  release no payload and retain TimeoutExpired/cleanup; an independent-query
+  mutation must miss that answer. The one-second case is test design, not a
+  runtime cap. Non-finite caller timeouts remain non-finite.
+- **H-SHARED-CPU-E-5 / R3:** source review found the cancellation timer armed
+  before potentially slow preflight (not a claimed live reproduction). Verify
+  first, then invoke the callback once immediately before exec. A fixed clock
+  must spend over two seconds in unarmed preflight, then cancel while the fake
+  writer waits. Exercise the real spawner's revoked-delivery/error handling and
+  unchanged kill validator. Callback-before-preflight must fail that answer.
+  Command/stdin tampering remains; switching the verified container must fail.
+
+R1/R2 were independently reproduced; R3 started as static reasoning. Repair
+stage **PASS: 140 passed in 69.17 s**, 2026-10-30 16:52:52 PDT, detached
+`systems60-review-repairs`. H-E-3/E-4/E-5 are **HIT for the fixed synthetic
+controls**: installed-state compatibility, one shared deadline, deterministic
+cancellation and their negative mutations. R3 now has a reproduced synthetic
+ordering failure, not live Docker evidence. Malformed builder diagnostics and
+PG override/stopped-parent controls also passed. The in-flight old hook was
+left unchanged to finish before edits. These results are not live builder,
+PG concurrency or aggregate CPU proof.
 
 ## Implemented transport and safeguards
 
@@ -88,7 +126,10 @@ Present-policy refusal and original kill accounting both remain intact.
   original entry and arguments. No added mount, environment or network access.
   No successful return is accepted without proof. The original timeout and
   output/exit contract remain, and fixture cleanup still removes only its own
-  named containers. Inactive mode calls the original subprocess unchanged.
+  named containers. Policy/daemon/identity checks and payload share the original
+  caller deadline; no fresh per-query budget extends it. Exec callbacks run
+  after preflight, immediately before exec. Inactive argv/stdin/output behavior
+  stays unchanged, with only elapsed discovery deducted from a finite timeout.
 - PG selects `temper-test-postgres-cpu` on 127.0.0.1:5456 when enabled. Custom
   capped names use its `-suffix`; ports 5432/5433/5455 and legacy names are
   refused. Old 5455 PG is not inspected, replaced, stopped or migrated.
@@ -123,7 +164,16 @@ not a skipped case or permission to enable. G/H own installation and activation.
   records the bounded repair. Ruff and mypy passed. No commit was made.
 - Compatibility repair stage: **PASS**, 103 passed in 60.54 s; no live placement
   trial. Receipt: `shared-test-cpu-plan/evidence-E/compatibility.log`.
-- Final mandatory hook, eight CI checks, post-land temper-ci: UNPROVEN.
+- Pre-review-repair hook: **PASS**, 17,435 passed / 34 skipped / 2,804 subtests
+  passed in 1594.00 s; Ruff and mypy passed. Commit
+  `075a682cac598aff6c954bd4ddf149708e0fe7bd`, before R1/R2/R3 repairs, is not
+  accepted or landed. The missing installed/slow-preflight controls explain
+  why this green hook did not close Temper's findings.
+- Review repairs: **PASS**, 140 passed in 69.17 s, including original offline
+  kill accounting and fixed installed-state, clock/cancellation, malformed
+  builder and PG override/stopped-parent controls. Receipt:
+  `shared-test-cpu-plan/evidence-E/review-repairs.log`.
+- Final repaired hook, eight CI checks, post-land temper-ci: UNPROVEN.
 - Enabled Docker/PG/build RUN PID and descendant placement: UNPROVEN, reserved
   for G. Successful CLI parsing/flags or a cached image cannot establish it.
 - Aggregate CPU allowance: UNPROVEN, G's joined proof, not this task's claim.

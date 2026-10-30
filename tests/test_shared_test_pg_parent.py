@@ -236,6 +236,53 @@ def test_bridge_new_pg_is_loopback_only(pg):
     assert create[create.index("-p") + 1] == "127.0.0.1:5456:5432"
 
 
+@pytest.mark.parametrize("mode", ["enabled", "inactive"])
+def test_explicit_empty_overrides_keep_each_modes_defaults(pg, mode):
+    pg.state.update(mode=mode, port=5456 if mode == "enabled" else 5455)
+    result = pg.run("url", TEMPER_TEST_PG_NAME="", TEMPER_TEST_PG_PORT="")
+    assert result.returncode == 0, result.stderr
+    assert f":{pg.state['port']}/" in result.stdout
+    name = "temper-test-postgres-cpu" if mode == "enabled" else "temper-test-postgres"
+    create = next(c for c in pg.changes() if c[1] == "run")
+    assert create[create.index("--name") + 1] == name
+
+
+@pytest.mark.parametrize("mode", ["enabled", "inactive"])
+def test_safe_custom_name_port_image_and_network_overrides_are_retained(pg, mode):
+    pg.state.update(mode=mode, port=5462)
+    name = "temper-test-postgres-cpu-worker-a" if mode == "enabled" else "private-test-pg"
+    result = pg.run("url", TEMPER_TEST_PG_NAME=name, TEMPER_TEST_PG_PORT="5462",
+                    TEMPER_TEST_PG_IMAGE="synthetic-postgres:16", TEMPER_TEST_PG_NETWORK="bridge")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "postgresql://temper_ai:test@127.0.0.1:5462/temper_ai_test\n"
+    create = next(c for c in pg.changes() if c[1] == "run")
+    assert create[create.index("--name") + 1] == name
+    assert "127.0.0.1:5462:5432" in create and "synthetic-postgres:16" in create
+    assert pg.run("down", TEMPER_TEST_PG_NAME=name, TEMPER_TEST_PG_PORT="5462").returncode == 0
+    assert pg.changes() == [["docker", "rm", "-f", name]]
+
+
+@pytest.mark.parametrize("env", [{"TEMPER_TEST_PG_NAME": "temper-test-postgres-cpu-bad/name"},
+    {"TEMPER_TEST_PG_NAME": "temper-test-postgres-cpu-"}, {"TEMPER_TEST_PG_PORT": "nope"},
+    {"TEMPER_TEST_PG_PORT": "-1"}, {"TEMPER_TEST_PG_PORT": "0"}])
+def test_malformed_enabled_overrides_refuse_before_docker_mutation(pg, env):
+    result = pg.run("url", **env)
+    assert result.returncode == 1 and "separate" in result.stderr
+    assert pg.changes() == []
+
+
+@pytest.mark.parametrize("verb", ["url", "down"])
+def test_stopped_same_parent_pg_can_be_cleaned_or_replaced_without_old_pg_access(pg, verb):
+    pg.state.update(exists=True, running=False)
+    result = pg.run(verb)
+    assert result.returncode == 0, result.stderr
+    assert pg.changes()[0] == ["docker", "rm", "-f", "temper-test-postgres-cpu"]
+    assert len(pg.changes()) == (2 if verb == "url" else 1)
+    assert not any("temper-test-postgres" in c[1:] for c in pg.calls)
+    if verb == "url":
+        assert "--cgroup-parent=testcpu.slice" in pg.changes()[1]
+
+
 @pytest.mark.parametrize("remove", ["parent", "verify"])
 def test_removed_parent_or_reuse_verifier_is_caught(pg, remove):
     """A fixed red control, not an assertion that old code is compliant."""

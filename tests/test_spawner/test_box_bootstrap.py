@@ -514,15 +514,80 @@ def test_an_acknowledgement_for_another_envelope_is_not_success(boot):
     _waiting(boot)
     writer = Writer(boot, bb.envelope(doc, digest_of(doc), NAMES))
     writer.start()
-    deadline = time.monotonic() + 10
-    while not (boot / bb.LEAF).exists() and time.monotonic() < deadline:
-        time.sleep(0.01)
-    (boot / bb.LEAF).unlink()
-    (boot / bb.ACK).write_text(json.dumps({"state": "consumed", "nonce": "0" * 16,
-                                           "names": 2}))
-    status = writer.status()
-    assert (status["state"], status["reason"]) == (
-        "refused", "the acknowledgement is for another delivery")
+    try:
+        deadline = time.monotonic() + 10
+        while not (boot / bb.LEAF).exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        (boot / bb.LEAF).unlink()
+        bb._publish(str(boot), bb.ACK, {"state": "consumed", "nonce": "0" * 16,
+                                       "names": 2})
+        status = writer.status()
+        assert (status["state"], status["reason"]) == (
+            "refused", "the acknowledgement is for another delivery")
+    finally:
+        writer.join(30)
+        assert not writer.is_alive()
+
+
+def test_the_wrong_envelope_ack_is_complete_when_the_writer_sees_it(boot, monkeypatch):
+    """Hold creation before content; the real writer must never read a partial ACK."""
+    ack = boot / bb.ACK
+    temporary = boot / f".{bb.ACK}.tmp"
+    creation_started = threading.Event()
+    reader_checked = threading.Event()
+    complete_reads: list[bool] = []
+    original_open, original_path_open = os.open, Path.open
+    original_exists, original_read = os.path.lexists, bb._read_marker
+
+    def wait_for_reader():
+        creation_started.set()
+        assert reader_checked.wait(10), "the writer never checked the acknowledgement"
+
+    def held_temporary_open(path, flags, *args, **kwargs):
+        fd = original_open(path, flags, *args, **kwargs)
+        if Path(path) == temporary and flags & os.O_CREAT:
+            try:
+                wait_for_reader()
+            except BaseException:
+                os.close(fd)
+                raise
+        return fd
+
+    def held_final_open(path, mode="r", *args, **kwargs):
+        # Restoring Path.write_text must expose the final file empty until it is read.
+        file = original_path_open(path, mode, *args, **kwargs)
+        if path == ack and "w" in mode:
+            try:
+                wait_for_reader()
+            except BaseException:
+                file.close()
+                raise
+        return file
+
+    def observed_exists(path):
+        # Check the event first: an absence observed before creation must not release it.
+        after_creation = creation_started.is_set()
+        exists = original_exists(path)
+        if Path(path) == ack and after_creation and not exists:
+            reader_checked.set()  # the reader cannot see the empty temporary file
+        return exists
+
+    def observed_read(path):
+        value = original_read(path)
+        if Path(path) == ack:
+            complete_reads.append(value == {"state": "consumed", "nonce": "0" * 16,
+                                             "names": 2})
+            reader_checked.set()  # direct publication must wait for the partial read
+        return value
+
+    monkeypatch.setattr(os, "open", held_temporary_open)
+    monkeypatch.setattr(Path, "open", held_final_open)
+    monkeypatch.setattr(os.path, "lexists", observed_exists)
+    monkeypatch.setattr(bb, "_read_marker", observed_read)
+    test_an_acknowledgement_for_another_envelope_is_not_success(boot)
+    assert creation_started.is_set()
+    assert reader_checked.is_set()
+    assert complete_reads == [True]
 
 
 def test_a_writer_started_wrongly_says_so():

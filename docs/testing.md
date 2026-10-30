@@ -49,10 +49,38 @@ versions used are in the log rather than assumed.
 `uv run pytest tests/` — about 3,500 tests in roughly 20 seconds at `-n 8`.
 Each test gets a fresh in-memory SQLite.
 
-In the hook (and so in every land) the suite starts only when the machine has
-room for it: at most 3 suites at once across the machine, with workers sized
-to the free cores, 8 at most and 4 at least. On a busy machine it waits, up to
-20 minutes, printing a line a minute ([test-slots.md](test-slots.md)).
+#### The shared machine pool
+
+The hook and parallel runs started by hand use the same machine pool as
+other repositories' land checks, through
+[`wt slot`](https://github.com/shine2lay/agent-tools/blob/master/docs/wt-land-queue.md#wt-slot-a-machine-slot-for-any-command-ops-646).
+That document owns the pool, worker defaults, bounded wait, fail-open behavior
+and nested-slot handling; temper-ai has no separate pool.
+
+Before pytest configures its workers, `tests/conftest.py` calls
+`tests/machine_slot.py`. A run requesting `-n` / `--numprocesses` with `auto`,
+`logical` or a positive number restarts the same interpreter and arguments
+under `wt slot --`. An environment marker (`TEMPER_PYTEST_MACHINE_SLOT`)
+prevents another restart. An explicit `-n 8` stays 8, and the caller's
+`PYTEST_XDIST_AUTO_NUM_WORKERS` is left alone. The hook uses `-n auto`; its
+`PRECOMMIT_PYTEST_WORKERS` override, when set, is exported as
+`PYTEST_XDIST_AUTO_NUM_WORKERS` before pytest starts.
+
+Single-process runs (no `-n`, or `-n 0`) start immediately without wrapping.
+So do xdist workers (`PYTEST_XDIST_WORKER`), pytest subprocesses inside a test
+(`PYTEST_CURRENT_TEST`), CI (`CI` or `GITHUB_ACTIONS`), runs with the restart
+marker, and machines without `wt` on PATH. A failed restart prints one line
+and continues unwrapped. A hook or chat already inside a machine slot reuses
+it through wt, never taking a second slot.
+
+For a longer wait before a commit, wrap it explicitly:
+
+```bash
+wt slot --wait 30 -- git commit -m "Describe the change"
+```
+
+`TEST_SLOTS_*` settings no longer do anything in this checkout. Old worktrees
+keep their own hook until rebased; their live v1 state directory is left alone.
 
 **No `-x`.** Stopping at the first failure meant one red run told you about
 one broken test; you fixed it and the next run told you about the next.

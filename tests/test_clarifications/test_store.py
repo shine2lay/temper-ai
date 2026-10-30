@@ -690,15 +690,62 @@ def test_unknown_correction_preserves_earlier_provenance_and_binding_refusals(db
     assert db.dump(skip=("clarification_refusals",)) == before
 
 
-def test_unused_copy_and_authority_metadata_are_not_authenticated(db):
-    """Pin the documented trusted-writer limit; these changes need no coordinated hash-chain rewrite."""
+PUBLIC_PATHS = ("load", "supplement", "merge_candidate", "save_presentation", "record_copy", "append_receipt",
+                "mark_consumed")
+
+
+def invoke_public(store, name):
+    """All public paths, with exact replay as append_receipt and valid arguments for the rest."""
+    return {
+        "load": lambda: store.load(STREAM),
+        "supplement": lambda: store.supplement(STREAM, revision=2, original_brief=BRIEF),
+        "merge_candidate": lambda: store.merge_candidate(caller(PROFILE_3)),
+        "save_presentation": lambda: store.save_presentation(present(generation=2)),
+        "record_copy": lambda: store.record_copy(binding(message_id="590")),
+        "append_receipt": lambda: store.append_receipt(receipt()),
+        "mark_consumed": lambda: store.mark_consumed(STREAM, revision=2, original_brief=BRIEF),
+    }[name]()
+
+
+@pytest.mark.parametrize("name", PUBLIC_PATHS)
+def test_every_public_path_rejects_changed_applied_event_identity(db, name):
+    """Architecture #342: one changed column, not a coherent rewrite of the whole history."""
+    ready(db.store)
+    db.store.append_receipt(receipt())
+    db.run(update(M.ClarificationReceipt).values(event_id=NO_EVENT))
+    damaged = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        invoke_public(db.store, name)
+    assert error.value.guard == "receipt.result"
+    assert db.dump() == damaged
+
+
+def test_retained_outcome_change_is_rejected_on_replay(db):
+    ready(db.store)
+    words = typed()
+    assert db.store.append_receipt(words).code is C.RefusalCode.NO_EXPLICIT_DISPOSITION
+    db.run(update(M.ClarificationReceipt).values(code="already_confirmed"))
+    damaged = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        db.store.append_receipt(words)
+    assert error.value.guard == "receipt.result"
+    assert db.dump() == damaged
+
+
+def test_unused_copy_id_change_is_rejected_before_new_answer(db):
+    ready(db.store)
+    db.run(update(M.ClarificationCopy).values(message_id="599"))  # nothing ever referenced this delivered copy
+    damaged = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        db.store.append_receipt(receipt(message_id="599"))
+    assert error.value.guard == "copy.digest"
+    assert db.dump() == damaged
+
+
+def test_authority_metadata_is_not_authenticated(db):
+    """Authority refs remain a documented trusted-writer limitation, unlike result/copy semantics."""
     history(db.store)
     before = db.store.load(STREAM)
-    assert db.store.record_copy(binding(P1, "599")) is True  # unused: no applied receipt depends on this copy
-    db.run(update(M.ClarificationCopy).where(M.ClarificationCopy.message_id == "599").values(message_id="598"))
-    after_copy = db.restart().load(STREAM)
-    assert binding(P1, "598") in after_copy.copies and binding(P1, "599") not in after_copy.copies
-    assert after_copy.record_json == before.record_json
     changed_authority = "authority:synthetic/replaced"
     db.run(update(M.ClarificationStream).values(source_authority_ref=changed_authority))
     after_authority = db.restart().load(STREAM)
@@ -781,10 +828,102 @@ def test_a_failure_before_commit_keeps_nothing(db, monkeypatch):
     assert db.store.append_receipt(receipt()).revision == 2
 
 
-def edit_receipt(db, key, text):
+RESULT_FIELDS = ("action_key", "stream_id", "receipt_sha256", "status", "code", "guard", "event_id",
+                 "expected_revision", "revision")
+COPY_FIELDS = ("presentation_id", "message_id", "stream_id")
+
+
+def result_digest(row):
+    """Independent expected representation: do not reuse the production binding builder in tests."""
+    return sha(canon({field: getattr(row, field) for field in RESULT_FIELDS}))
+
+
+def rewrite_result(db, key, **changes):
+    """Coordinated synthetic rewrite, to exercise deeper semantic guards past the digest check."""
+    row = next(row for row in db.rows(M.ClarificationReceipt) if row.action_key == key)
+    for field, value in changes.items():
+        setattr(row, field, value)
     db.run(update(M.ClarificationReceipt).where(M.ClarificationReceipt.action_key == key).values(
-        receipt_json=text, receipt_sha256=sha(text),
+        **changes, result_sha256=result_digest(row),
     ))
+
+
+def edit_receipt(db, key, text):
+    rewrite_result(db, key, receipt_json=text, receipt_sha256=sha(text))
+
+
+def test_clean_result_and_copy_bindings_replay_without_writes(db):
+    """Both result kinds, confirmation, restart, duplicate delivery, exact replay and every bound field."""
+    ready(db.store)
+    words = typed()
+    held = db.store.append_receipt(words)
+    answer = press(words)
+    applied = db.store.append_receipt(answer)
+    assert (held.status, applied.status) == ("retained", "applied")
+    for row in db.rows(M.ClarificationReceipt):
+        assert row.result_sha256 == result_digest(row)
+    for row in db.rows(M.ClarificationCopy):
+        assert row.copy_sha256 == sha(canon({field: getattr(row, field) for field in COPY_FIELDS}))
+    before = db.dump()
+    store = db.restart()
+    assert store.record_copy(binding()) is False
+    assert store.save_presentation(P1) is False
+    assert store.append_receipt(words) == held
+    assert store.append_receipt(answer) == applied
+    assert db.dump() == before
+
+
+RESULT_DAMAGE = {
+    "code": "already_confirmed", "guard": "confirmation.once",
+    "decision_revision": 2, "missing_digest": "", "wrong_digest": "f" * 64,
+    "status": "applied", "event_id": NO_EVENT,
+}
+
+
+@pytest.mark.parametrize("field", RESULT_DAMAGE)
+def test_immutable_saved_result_damage_is_rejected(db, field):
+    history(db.store)
+    key = OWNER_KEY if field == "event_id" else TYPED_KEY
+    if field == "decision_revision":
+        values = {"expected_revision": 2, "revision": 2}  # still well-shaped, inside kept history
+    elif field == "status":
+        values = {"status": "applied", "code": None, "guard": None, "event_id": NO_EVENT, "revision": 2}
+    else:
+        values = {"result_sha256" if field.endswith("digest") else field: RESULT_DAMAGE[field]}
+    db.run(update(M.ClarificationReceipt).where(M.ClarificationReceipt.action_key == key).values(**values))
+    before = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        db.store.append_receipt(receipt() if key == OWNER_KEY else typed())
+    assert error.value.guard == "receipt.result"
+    assert db.dump() == before
+
+
+@pytest.mark.parametrize("name", PUBLIC_PATHS)
+def test_applied_event_identity_is_checked_even_with_recomputed_digest(db, name):
+    ready(db.store)
+    db.store.append_receipt(receipt())
+    rewrite_result(db, OWNER_KEY, event_id=NO_EVENT)
+    before = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        invoke_public(db.store, name)
+    assert error.value.guard == "receipt.event_identity"
+    assert db.dump() == before
+
+
+@pytest.mark.parametrize("field", ["message_id", "presentation_id", "missing_digest", "wrong_digest"])
+def test_delivered_copy_damage_is_checked_before_membership(db, field):
+    ready(db.store)
+    deliver(db.store, P2, "510")  # the other presentation exists, so this is not a missing-parent failure
+    values = {
+        "message_id": {"message_id": "599"}, "presentation_id": {"presentation_id": P2.presentation_id},
+        "missing_digest": {"copy_sha256": ""}, "wrong_digest": {"copy_sha256": "f" * 64},
+    }[field]
+    db.run(update(M.ClarificationCopy).where(M.ClarificationCopy.message_id == "500").values(**values))
+    before = db.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        db.store.append_receipt(receipt(message_id="599"))
+    assert error.value.guard == "copy.digest"
+    assert db.dump() == before
 
 
 def rewrite_record(db, revision, text):
@@ -825,6 +964,8 @@ TAMPERS = {
     "copy.count": lambda db: db.run(delete(M.ClarificationCopy).where(M.ClarificationCopy.message_id == "510")),
     "copy.identity": lambda db: db.run(update(M.ClarificationCopy).where(
         M.ClarificationCopy.message_id == "510").values(presentation_id="p-" + "0" * 64)),
+    "copy.digest": lambda db: db.run(update(M.ClarificationCopy).where(
+        M.ClarificationCopy.message_id == "510").values(message_id="599")),
     "receipt.count": lambda db: db.run(delete(M.ClarificationReceipt).where(M.ClarificationReceipt.action_key == TYPED_KEY)),
     "receipt.digest": lambda db: db.run(update(M.ClarificationReceipt).where(
         M.ClarificationReceipt.action_key == OWNER_KEY).values(receipt_json=C.receipt_json(receipt()).replace("Yes", "Yep"))),
@@ -836,9 +977,11 @@ TAMPERS = {
         update(M.ClarificationStream).values(receipt_count=M.ClarificationStream.receipt_count - 1),
     ),
     "receipt.event": lambda db: edit_receipt(db, OWNER_KEY, C.receipt_json(receipt(text="Other text."))),
-    "receipt.applied": lambda db: db.run(update(M.ClarificationReceipt).where(
-        M.ClarificationReceipt.action_key == TYPED_KEY).values(
-        status="applied", event_id=NO_EVENT, revision=2, code=None, guard=None)),
+    "receipt.result": lambda db: db.run(update(M.ClarificationReceipt).where(
+        M.ClarificationReceipt.action_key == TYPED_KEY).values(code="already_confirmed")),
+    "receipt.event_identity": lambda db: rewrite_result(db, OWNER_KEY, event_id=NO_EVENT),
+    "receipt.applied": lambda db: rewrite_result(db, TYPED_KEY, status="applied", event_id=NO_EVENT,
+                                                 revision=2, code=None, guard=None),
     "consumption.count": lambda db: db.run(delete(M.ClarificationConsumption)),
     "consumption.identity": lambda db: db.run(update(M.ClarificationConsumption).values(record_sha256="f" * 64)),
 }
@@ -1396,6 +1539,117 @@ def test_retention_check_changes_only_unknown_target_outcomes(lite, monkeypatch)
         test_known_corrections_preserve_prior_retained_outcomes(lite, "no_disposition", "other")
     kept = next(row for row in lite.rows(M.ClarificationReceipt) if row.action_key == fix(OWNER, [NO_EVENT]).action.key)
     assert (kept.status, kept.code) == ("retained", "cross_actor_correction")
+
+
+@pytest.mark.parametrize("guard, field", [
+    ("receipt.result", "code"), ("receipt.result", "guard"),
+    ("receipt.event_identity", "event_id"), ("copy.digest", "message_id"),
+])
+def test_new_integrity_checks_have_discriminating_bites(lite, monkeypatch, guard, field):
+    """Remove one check only: require its exact unsafe result, never accept an unrelated exception."""
+    ready(lite.store)
+    if guard == "receipt.result":
+        action = typed()
+        held = lite.store.append_receipt(action)
+        lite.run(update(M.ClarificationReceipt).values(**{field: "already_confirmed" if field == "code"
+                                                        else "confirmation.once"}))
+    elif guard == "receipt.event_identity":
+        action = receipt()
+        held = lite.store.append_receipt(action)
+        rewrite_result(lite, action.action.key, event_id=NO_EVENT)
+    else:
+        lite.run(update(M.ClarificationCopy).values(message_id="599"))
+        action = receipt(message_id="599")
+    before = lite.dump()
+    with pytest.raises(S.ClarificationIntegrityError) as error:
+        lite.store.append_receipt(action)
+    assert error.value.guard == guard
+    assert lite.dump() == before
+    drop = DropGuard(guard)
+    changed = mutant(monkeypatch, ast.fix_missing_locations(drop.visit(ast.parse(SOURCE))))
+    assert drop.dropped == 1
+    result = lite.store_of(changed).append_receipt(action)
+    if guard == "copy.digest":
+        assert (result.status, result.event_id, result.revision) == ("applied", C.event_id(action), 2)
+        assert len(lite.rows(M.ClarificationReceipt)) == 1  # substituted delivery admitted an answer
+    elif guard == "receipt.event_identity":
+        assert result.event_id == NO_EVENT and result.event_id != held.event_id
+        assert lite.dump() == before
+    elif field == "code":
+        assert result.code is C.RefusalCode.ALREADY_CONFIRMED and result.code != held.code
+        assert lite.dump() == before
+    else:
+        assert result == held  # guard is stored even though M0 AppendResult does not expose it
+        assert lite.rows(M.ClarificationReceipt)[0].guard == "confirmation.once"
+        assert lite.dump() == before
+
+
+@pytest.mark.parametrize("kind, field", [("result", field) for field in RESULT_FIELDS]
+                         + [("copy", field) for field in COPY_FIELDS])
+def test_each_immutable_binding_field_has_a_bite(lite, monkeypatch, kind, field):
+    """Dropping a field on both write/read must fail independent canonical binding expectations."""
+    tree = ast.parse(SOURCE)
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                    and node.name == ("_saved_result_sha256" if kind == "result" else "_copy_sha256"))
+    mapping, = [node for node in ast.walk(function) if isinstance(node, ast.Dict)]
+    index, = [i for i, key in enumerate(mapping.keys) if isinstance(key, ast.Constant) and key.value == field]
+    del mapping.keys[index]
+    del mapping.values[index]
+    changed = mutant(monkeypatch, ast.fix_missing_locations(tree))
+    ready(lite.store_of(changed))
+    lite.store_of(changed).append_receipt(receipt())
+    if kind == "result":
+        row, = lite.rows(M.ClarificationReceipt)
+        assert row.result_sha256 == changed._saved_result_sha256(row)
+        assert row.result_sha256 != result_digest(row)
+    else:
+        row, = lite.rows(M.ClarificationCopy)
+        assert row.copy_sha256 == changed._copy_sha256(row)
+        assert row.copy_sha256 != sha(canon({name: getattr(row, name) for name in COPY_FIELDS}))
+
+
+@pytest.mark.parametrize("check", ["correction", "confirmation", "stale_prior", "previous_hash"])
+def test_preserved_order_and_history_checks_have_semantic_bites(lite, monkeypatch, check):
+    """Independent Architecture controls, expressed using the existing store fixtures and variants."""
+    initial = ready(lite.store)
+    first = lite.store.append_receipt(receipt())
+    if check in ("correction", "confirmation"):
+        words = typed(OTHER)
+        lite.store.append_receipt(words)
+        lite.store.append_receipt(press(words, OTHER))
+        action = press(words, OTHER, "cb-705", **({"intent": "correct", "supersedes": (first.event_id,),
+                                                  "reason": "Typo."} if check == "correction" else {}))
+        before = lite.dump()
+        old, new, _, _ = SWAPS[f"precondition.{check}"]
+        expected = C.RefusalCode.CROSS_ACTOR_CORRECTION if check == "correction" else C.RefusalCode.ALREADY_CONFIRMED
+        assert lite.store.append_receipt(action).code is expected
+        # Restore the same pre-decision state without changing code or any committed event.
+        lite.run(delete(M.ClarificationReceipt).where(M.ClarificationReceipt.action_key == action.action.key),
+                 update(M.ClarificationStream).values(receipt_count=M.ClarificationStream.receipt_count - 1))
+        assert len(lite.rows(M.ClarificationReceipt)) == len(before["clarification_receipts"])
+        assert SOURCE.count(old) == 1
+        changed = mutant(monkeypatch, SOURCE.replace(old, new))
+        result = lite.store_of(changed).append_receipt(action)
+        if check == "correction":
+            assert (result.status, result.code) == ("retained", C.RefusalCode.ALREADY_CONFIRMED)
+        else:
+            assert (result.status, result.code, result.revision) == ("applied", None, 4)
+    elif check == "stale_prior":
+        old, new, _, _ = SWAPS["merge.latest"]
+        changed = mutant(monkeypatch, SOURCE.replace(old, new))
+        result = lite.store_of(changed).merge_candidate(caller(PROFILE_3, prior=(1, initial.record_json)))
+        assert result.revision == 3
+        assert kept_record(lite, 3)["events"] == []  # specific lost-answer defect
+    else:
+        lite.run(update(M.ClarificationRevision).where(M.ClarificationRevision.revision == 2)
+                 .values(previous_record_sha256="f" * 64))
+        with pytest.raises(S.ClarificationIntegrityError) as error:
+            lite.store.load(STREAM)
+        assert error.value.guard == "history.chain"
+        drop = DropGuard("history.chain")
+        changed = mutant(monkeypatch, ast.fix_missing_locations(drop.visit(ast.parse(SOURCE))))
+        assert drop.dropped == 1
+        assert lite.store_of(changed).load(STREAM).revision == 2
 
 
 def test_every_guard_in_the_store_has_a_case():

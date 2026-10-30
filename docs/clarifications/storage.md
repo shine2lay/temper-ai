@@ -14,16 +14,20 @@ export). Until then the store is tested with synthetic data only.
 
 ## What it keeps
 
-Seven additive tables. No existing table changes.
+Seven additive, unlanded M3 tables; no changes to any pre-M3 table. The repair
+adds only two required integrity columns within that unlanded schema:
+`clarification_receipts.result_sha256` and `clarification_copies.copy_sha256`.
+There is no migration or backfill. Old synthetic databases require recreation;
+missing bindings are not inferred or silently blessed during reads.
 
 | Table | One row per | Holds |
 |---|---|---|
 | `clarification_streams` | stream (`StreamKey`: namespace + brief digest) | the revision, the latest record's digest, the source authority, and counts of receipts, presentations, copies and consumptions |
 | `clarification_revisions` | revision 1, 2, 3... of a stream | that revision's whole foundation record (canonical JSON), its digest, the previous revision's digest, and for an event revision the event and receipt it came from |
-| `clarification_receipts` | action key (`ActionIdentity.key`) that was applied or retained | the exact canonical receipt JSON, its digest, and the result returned for it |
+| `clarification_receipts` | action key (`ActionIdentity.key`) that was applied or retained | exact canonical receipt JSON and its digest, immutable result fields and their canonical digest |
 | `clarification_refusals` | refused receipt digest + code + guard | linkable diagnostics: integer row ID, receipt digest, **non-unique action-key digest**, stream ID, code, guard and time; no receipt JSON, answer text or sender column |
 | `clarification_presentations` | presentation | the persisted presentation; one generation per question is current |
-| `clarification_copies` | delivered message of a presentation | the message IDs a receipt may bind to |
+| `clarification_copies` | delivered message of a presentation | presentation/stream/message tuple and its canonical digest, checked before admitting a receipt through that copy |
 | `clarification_consumptions` | consumed (stream, revision, supplement) | the consumption identity, so a revision is consumed once |
 
 Times are UTC. A revision with no consumption row is the pending consumption
@@ -89,7 +93,9 @@ beyond keeping it.
 2. **Load and check** the stream named by the binding and its whole history (see
    [Damaged history](#damaged-history)). No stream: refused `missing_record`
    (`store.stream`).
-3. **Bind** to a persisted presentation and its delivered copies only. Unknown
+3. **Bind** to a persisted presentation and its integrity-checked delivered
+   copies only; the copy tuple is checked during load, **before** M0 validation.
+   Unknown
    presentation: refused `binding_mismatch` (`store.presentation`). Then M0's
    `validate_receipt` decides provenance, responder, binding, generation,
    confirmation and text.
@@ -189,16 +195,20 @@ coverage. Shape checks and SQL constraints do not authenticate historical values
 |---|---|---|
 | `clarification_streams` | namespace + brief digest reproduce the stream ID; contiguous revision range and latest record digest; counts agree with associated rows | `source_authority_ref` and timestamps. Merges compare the authority label to the currently stored label, not an independent original. |
 | `clarification_revisions` | record digest/canonical JSON/foundation validity/brief, previous digest, first-record rule, one-record-change or one-event step, applied receipt/action/event correspondence | timestamps; a consistent rewrite/rollback of records and dependent links has no independent witness |
-| `clarification_receipts` | JSON digest, parsed M0 shape and result shape, action key, bound stream, verified-ingress label, non-refused status; every applied receipt corresponds to a revision whose event matches validation and receipt source digest | timestamps and `guard`; retained outcomes are not revalidated/recomputed on load. Result shape checks constrain status/code/event/revisions but do not establish the original decision; retained code/decision revision and a shape-valid applied result `event_id` are not independently compared to their original values. |
+| `clarification_receipts` | JSON digest, parsed M0 shape and result shape, action key, bound stream, verified-ingress label, non-refused status; canonical result digest covers action key, stream, receipt digest, status, code, guard, event ID, expected revision and decided revision. An applied result's event ID must equal its committed event's ID, even when the result digest is consistently rewritten; the event also matches validation and receipt source digest. | timestamps; retained outcomes are checked against their immutable saved decision, not re-decided on newer state. A trusted writer can consistently replace a retained decision and its unkeyed digest. |
 | `clarification_presentations` | count, reconstructed presentation identity covering binding/policy/transport/generation fields, namespace/brief match, known question and metadata digest | timestamps; no external proof of who actually presented it or of the policy ref's authority |
-| `clarification_copies` | count and referenced presentation existence; applied events also need their receipt's copy ID still present | timestamps and unused `message_id` values. Replacing an unused numeric copy ID with another valid unused one is undetected; the replacement is then trusted as delivered. |
+| `clarification_copies` | count, referenced presentation existence and canonical digest of presentation ID + message ID + stream ID, including unused copies, before these memberships reach validation; applied events also need their receipt's copy ID still present | timestamps; a coordinated replacement tuple + digest by a trusted writer is not authenticated against provider delivery |
 | `clarification_consumptions` | count, revision range, record digest for that revision, identity derived from stream/revision/supplement digest | timestamps, actual downstream effect/acknowledgement, and correctness of a consistently replaced supplement digest + identity; load does not recompose supplements |
 | `clarification_refusals` | schema constraints only; not loaded into the authoritative history check | all diagnostic contents/identifiers/timestamps and deletion; no content integrity or anonymity promise |
 
-In particular, changing a stream's authority ref or an unused copy ID needs no
-hash-chain rewrite to escape these checks. The synthetic test
-`test_unused_copy_and_authority_metadata_are_not_authenticated` pins that
-limitation, rather than adding cryptography or silently expanding coverage.
+Changing a stream's authority ref still needs no hash-chain rewrite to escape
+these checks; `test_authority_metadata_is_not_authenticated` pins that remaining
+limitation. Authority refs and timestamps are deliberately not given a universal
+metadata guarantee. Immutable result and copy semantics are different: shape-valid
+substitution of an event ID, retained result code/guard/revision, or unused copy ID
+is an integrity error, not a new replay result, delivered binding or fresh history.
+Their digests use the same deterministic compact, sorted JSON serialization and
+SHA-256 as the rest of this store, not a key or signature service.
 
 ### Failure guards
 
@@ -215,7 +225,10 @@ limitation, rather than adding cryptography or silently expanding coverage.
 | `history.latest` | the stream row does not name the latest revision's record |
 | `presentation.count`, `presentation.identity` | presentation count, reconstructed identity or question metadata does not match |
 | `copy.count`, `copy.identity` | copy count disagrees, or a copy names a presentation not kept in this stream |
+| `copy.digest` | a delivered-copy tuple differs from its saved binding digest |
 | `receipt.count`, `receipt.digest`, `receipt.sidecar`, `receipt.identity` | receipt count, JSON digest, shape, action/stream identity, verified-ingress label or stored status fails its check |
+| `receipt.result` | immutable result/receipt identity fields differ from their saved canonical digest |
+| `receipt.event_identity` | the applied result's event ID differs from its committed event, even if its result digest was recomputed |
 | `receipt.missing`, `receipt.event`, `receipt.applied` | an event revision and its applied receipt do not match one to one |
 | `consumption.count`, `consumption.identity` | consumption count, revision range, record digest or derived identity fails its check |
 | `consume.record` | a supplement names another record than the one kept |
@@ -258,7 +271,13 @@ no-disposition, retired and confirming actions, mixed targets in both orders,
 prior provenance/binding refusals, unchanged known-target outcomes and genuine
 same-key recovery. Targeted in-memory mutations require the specific regression
 assertion and then verify the wrong retained result; an unrelated exception is
-not counted as that semantic bite.
+not counted as that semantic bite. The nine strict damage controls reject changed
+applied event identity through all seven public entry paths, a changed retained
+outcome on exact replay, and an unused copy substitution before a new answer.
+Independent canonical-binding expectations cover every immutable result/copy
+field. Additional semantic bites require the actual wrong replay/admission,
+N2 ordering, repeated confirmation, stale-prior overwrite and broken-chain read;
+an unrelated exception cannot satisfy them.
 
 ```
 env -u TEMPER_TEST_DATABASE_URL uv run --frozen pytest tests/test_clarifications/test_store.py -n 8

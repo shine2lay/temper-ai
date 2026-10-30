@@ -104,6 +104,7 @@ class ClarificationReceipt(SQLModel, table=True):
     event_id: str | None = None                  # applied: the event it added
     expected_revision: int                       # the revision it was decided on
     revision: int                                # applied: expected + 1; retained: expected
+    result_sha256: str                           # canonical immutable result + action/stream/receipt digest
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -148,6 +149,7 @@ class ClarificationCopy(SQLModel, table=True):
     presentation_id: str = Field(primary_key=True)
     message_id: str = Field(primary_key=True)    # a delivered copy of the presentation
     stream_id: str = Field(index=True)
+    copy_sha256: str                             # canonical (presentation_id, message_id, stream_id)
     created_at: datetime = Field(default_factory=utcnow)
 
 

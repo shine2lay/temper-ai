@@ -23,9 +23,10 @@ are used. In short:
   action key with other content is refused (changed_body); history is
   unchanged.
 - Detected history inconsistencies raise ClarificationIntegrityError, never
-  a fresh record. Checks cover records, receipts, links and counts, not every
-  stored field: source-authority refs, unused copy IDs and timestamps can
-  change undetected. Refusal diagnostics are outside the history checks.
+  a fresh record. Checks cover records, receipts, immutable saved results,
+  delivered-copy tuples, links and counts, not every stored field:
+  source-authority refs and timestamps can change undetected. Refusal
+  diagnostics are outside the history checks.
   DB writers are trusted; unkeyed digests cannot authenticate a consistent
   rewrite, complete deletion or rollback. See the storage guide's inventory.
 
@@ -201,6 +202,22 @@ def _encodable(compute: Callable[[], T], where: str) -> T:
 def _metadata(question: dict[str, Any]) -> dict[str, Any]:
     """A record question's unknown metadata: everything but its ID."""
     return {key: value for key, value in question.items() if key != "question_id"}
+
+
+def _saved_result_sha256(row: ClarificationReceipt) -> str:
+    """Bind every immutable decision field and its receipt identity, not mutable metadata or DB writers."""
+    return _sha256(_canonical({
+        "action_key": row.action_key, "stream_id": row.stream_id, "receipt_sha256": row.receipt_sha256,
+        "status": row.status, "code": row.code, "guard": row.guard, "event_id": row.event_id,
+        "expected_revision": row.expected_revision, "revision": row.revision,
+    }))
+
+
+def _copy_sha256(row: ClarificationCopy) -> str:
+    """The immutable delivered-copy tuple; checked before this membership can validate a receipt."""
+    return _sha256(_canonical({
+        "presentation_id": row.presentation_id, "message_id": row.message_id, "stream_id": row.stream_id,
+    }))
 
 
 def load_foundation(path: Path = FOUNDATION_PATH) -> ModuleType:
@@ -556,9 +573,11 @@ class ClarificationStore:
         if binding.message_id in loaded.copies.get(binding.presentation_id, frozenset()):
             return False
         self._cas(session, binding.stream_id, loaded.revision, adds="copy")
-        session.add(ClarificationCopy(
+        row = ClarificationCopy(
             presentation_id=binding.presentation_id, message_id=binding.message_id, stream_id=binding.stream_id,
-        ))
+        )
+        row.copy_sha256 = _copy_sha256(row)
+        session.add(row)
         key = (binding.presentation_id, binding.message_id)
         self._commit(session, lambda again: again.get(ClarificationCopy, key, populate_existing=True) is not None)
         return True
@@ -655,6 +674,7 @@ class ClarificationStore:
             action_key=key, stream_id=loaded.stream_id, receipt_sha256=digest, receipt_json=receipt_json(receipt),
             status="applied", event_id=event["event_id"], expected_revision=expected, revision=expected + 1,
         )
+        row.result_sha256 = _saved_result_sha256(row)
         session.add(row)
         self._commit(session, lambda again: self._moved(again, loaded.stream_id, key, expected))
         return self._result(row)
@@ -672,6 +692,7 @@ class ClarificationStore:
             action_key=key, stream_id=loaded.stream_id, receipt_sha256=digest, receipt_json=receipt_json(receipt),
             status="retained", code=code.value, guard=guard, expected_revision=expected, revision=expected,
         )
+        row.result_sha256 = _saved_result_sha256(row)
         session.add(row)
         self._commit(session, lambda again: self._moved(again, loaded.stream_id, key, expected))
         return self._result(row)
@@ -881,6 +902,8 @@ class ClarificationStore:
         for copy in history["copies"]:
             _intact(copy.presentation_id in presentations, stream_id, "copy.identity",
                     f"copy {copy.message_id} names presentation {copy.presentation_id}, which is not kept")
+            _intact(copy.copy_sha256 == _copy_sha256(copy), stream_id, "copy.digest",
+                    "a delivered-copy tuple does not match its saved digest")
             copies.setdefault(copy.presentation_id, set()).add(copy.message_id)
         receipts, parsed = self._checked_receipts(row, history["receipts"])
         self._checked_events(row, revisions, records, receipts, parsed, presentations, copies)
@@ -1019,6 +1042,8 @@ class ClarificationStore:
                 and receipt.ingress == VERIFIED_INGRESS and result.status != "refused", stream_id, "receipt.identity",
                 f"receipt {key} is not the receipt its row names",
             )
+            _intact(kept.result_sha256 == _saved_result_sha256(kept), stream_id, "receipt.result",
+                    f"receipt {key}'s saved decision does not match its result digest")
             receipts[key] = kept
             parsed[key] = receipt
         return receipts, parsed
@@ -1056,6 +1081,8 @@ class ClarificationStore:
                 except ContractRefusal:
                     expected = None
             event = record["events"][-1]
+            _intact(cast(ClarificationReceipt, kept).event_id == event["event_id"], stream_id,
+                    "receipt.event_identity", f"receipt {key}'s saved event identity differs from its committed event")
             _intact(
                 cast(ClarificationReceipt, kept).revision == revision.revision and expected == event
                 and event["source"]["ref"] == f"{RECEIPT_REF_SCHEME}:{cast(ClarificationReceipt, kept).receipt_sha256}",

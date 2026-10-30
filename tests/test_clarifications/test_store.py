@@ -555,6 +555,161 @@ def test_corrections_and_reopens_follow_the_plan(db):
     assert (answer.status, answer.revision) == ("applied", 6)
 
 
+# Security #180: check correction targets even when another condition would retain the action.
+CORRECTION_STATES = {
+    "message": None,
+    "no_disposition": ("no_explicit_disposition", "disposition.explicit"),
+    "blank_text": ("blank_text", "text.blank"),
+    "retired": ("stale_presentation", "binding.stale"),
+    "press": None,
+    "press_no_disposition": ("no_explicit_disposition", "disposition.explicit"),
+    "press_blank_text": ("blank_text", "text.blank"),
+    "press_retired": ("stale_presentation", "binding.stale"),
+    "press_already_confirmed": None,  # accepted validation; correction must still precede confirmation
+}
+
+
+def correction_candidate(store, state, targets, **changes):
+    """Compose retained/accepted validation with a correction, using actual persisted answers/copies."""
+    if state.startswith("press"):
+        words = typed() if state != "press_blank_text" else receipt(action_id="601", text=" \u200b ", disposition=None)
+        assert store.append_receipt(words).status == "retained"
+        if state == "press_already_confirmed":
+            assert store.append_receipt(press(words, action_id="cb-700")).status == "applied"
+        attempt = press(words, intent="correct", supersedes=tuple(targets), reason="Typo.", **{
+            **({"disposition": None} if state == "press_no_disposition" else {}), **changes,
+        })
+    else:
+        fields = {"disposition": None} if state == "no_disposition" else {}
+        if state == "blank_text":
+            fields["text"] = " \u200b "
+        attempt = fix(OWNER, targets, **{**fields, **changes})
+    if state in ("retired", "press_retired"):
+        deliver(store, present(generation=2), "520")
+    return attempt
+
+
+def assert_unknown_correction_diagnostic_only(db, store, attempt):
+    """No authoritative row/text/key changes; the diagnostic is linkable but non-reserving."""
+    before = db.dump(skip=("clarification_refusals",))
+    result = store.append_receipt(attempt)
+    assert (result.status, result.code) == ("refused", C.RefusalCode.MISSING_RECORD), "unknown correction retained"
+    assert diag(db) == [("missing_record", "correction.known")]
+    assert db.dump(skip=("clarification_refusals",)) == before  # includes whole foundation history and exact sidecars
+    assert attempt.action.key not in {row.action_key for row in db.rows(M.ClarificationReceipt)}
+    diagnostic, = db.rows(M.ClarificationRefusal)
+    assert (diagnostic.receipt_sha256, diagnostic.action_key, diagnostic.stream_id) == (
+        C.receipt_sha256(attempt), attempt.action.key, SID,
+    )
+    assert diagnostic.id is not None and diagnostic.created_at is not None
+    after = db.dump()
+    assert store.append_receipt(attempt) == result  # still refused, same diagnostic, no replay authority
+    assert db.dump() == after
+
+
+@pytest.mark.parametrize("state", CORRECTION_STATES)
+@pytest.mark.parametrize("targets", ["unknown", "other_then_unknown", "unknown_then_other"])
+def test_unknown_correction_never_retains_and_same_key_recovers(db, state, targets):
+    """Combined regression: real answers, mixed targets, retained validation, diagnostic/replay and recovery."""
+    store = db.store
+    ready(store)
+    own = store.append_receipt(receipt())
+    other = store.append_receipt(receipt(OTHER, "502"))
+    named = {
+        "unknown": [NO_EVENT], "other_then_unknown": [other.event_id, NO_EVENT],
+        "unknown_then_other": [NO_EVENT, other.event_id],
+    }[targets]
+    attempt = correction_candidate(store, state, named)
+    assert_unknown_correction_diagnostic_only(db, store, attempt)
+    store = db.restart()
+    current = store.load(STREAM).presentations[0]
+    copy_id = "520" if current.generation == 2 else "500"
+    if attempt.action.kind == "callback":
+        words = typed(action_id="622", p=current, message_id=copy_id)
+        assert store.append_receipt(words).status == "retained"
+        genuine = press(words, action_id=attempt.action.action_id, p=current, message_id=copy_id,
+                        intent="correct", supersedes=(own.event_id,), reason="Typo.")
+    else:
+        genuine = fix(OWNER, [own.event_id], action_id=attempt.action.action_id, p=current, message_id=copy_id)
+    assert genuine.action.key == attempt.action.key
+    applied = store.append_receipt(genuine)
+    assert applied.status == "applied"  # an earlier unknown-target diagnostic never poisons this key
+    before = db.dump()
+    assert store.append_receipt(genuine) == applied
+    assert db.dump() == before
+
+
+@pytest.mark.parametrize("state", CORRECTION_STATES)
+@pytest.mark.parametrize("target_actor", ["own", "other"])
+def test_known_corrections_preserve_prior_retained_outcomes(db, state, target_actor):
+    ready(db.store)
+    own = db.store.append_receipt(receipt())
+    other = db.store.append_receipt(receipt(OTHER, "502"))
+    target = own.event_id if target_actor == "own" else other.event_id
+    attempt = correction_candidate(db.store, state, [target])
+    before = db.store.load(STREAM)
+    result = db.store.append_receipt(attempt)
+    expected = CORRECTION_STATES[state]
+    if expected is None and target_actor == "other":
+        expected = ("cross_actor_correction", "correction.same_actor")
+    if expected is None and state == "press_already_confirmed":
+        expected = ("already_confirmed", "confirmation.once")
+    kept = next(row for row in db.rows(M.ClarificationReceipt) if row.action_key == attempt.action.key)
+    assert kept.receipt_json == C.receipt_json(attempt)
+    if expected is None:
+        assert result.status == "applied"
+        assert result.revision == before.revision + 1
+    else:
+        assert (result.status, kept.code, kept.guard) == ("retained", *expected), "prior retained outcome changed"
+        assert db.store.load(STREAM).record_json == before.record_json
+        assert result.revision == before.revision
+    assert diag(db) == []
+    assert db.store.append_receipt(attempt) == result
+
+
+CORRECTION_REFUSALS = {
+    "unverified": (FORGED["unverified_ingress"], "unverified_ingress", "provenance.ingress"),
+    "model": (FORGED["model_not_human"], "model_not_human", "provenance.model"),
+    "bot": (FORGED["bot_sender"], "bot_sender", "provenance.bot"),
+    "forwarded": (FORGED["forwarded_message"], "forwarded_message", "provenance.forwarded"),
+    "denied": (FORGED["responder_not_authorised"], "responder_not_authorised", "responder.decision"),
+    "unknown_copy": ({"message_id": "999"}, "binding_mismatch", "binding.copy"),
+}
+
+
+@pytest.mark.parametrize("state", CORRECTION_STATES)
+@pytest.mark.parametrize("refusal", CORRECTION_REFUSALS)
+def test_unknown_correction_preserves_earlier_provenance_and_binding_refusals(db, state, refusal):
+    ready(db.store)
+    changes, code, guard = CORRECTION_REFUSALS[refusal]
+    attempt = correction_candidate(db.store, state, [NO_EVENT], **changes)
+    before = db.dump(skip=("clarification_refusals",))
+    result = db.store.append_receipt(attempt)
+    assert (result.status, result.code) == ("refused", C.RefusalCode(code)), "earlier refusal replaced"
+    assert diag(db) == [(code, guard)]  # not reclassified as a correction or retained outcome
+    assert db.dump(skip=("clarification_refusals",)) == before
+
+
+def test_unused_copy_and_authority_metadata_are_not_authenticated(db):
+    """Pin the documented trusted-writer limit; these changes need no coordinated hash-chain rewrite."""
+    history(db.store)
+    before = db.store.load(STREAM)
+    assert db.store.record_copy(binding(P1, "599")) is True  # unused: no applied receipt depends on this copy
+    db.run(update(M.ClarificationCopy).where(M.ClarificationCopy.message_id == "599").values(message_id="598"))
+    after_copy = db.restart().load(STREAM)
+    assert binding(P1, "598") in after_copy.copies and binding(P1, "599") not in after_copy.copies
+    assert after_copy.record_json == before.record_json
+    changed_authority = "authority:synthetic/replaced"
+    db.run(update(M.ClarificationStream).values(source_authority_ref=changed_authority))
+    after_authority = db.restart().load(STREAM)
+    assert after_authority.source_authority_ref == changed_authority
+    assert after_authority.record_json == before.record_json
+    with pytest.raises(C.ContractRefusal) as refused:
+        db.store.merge_candidate(caller())
+    assert (refused.value.code, refused.value.guard) == (C.RefusalCode.CROSS_CONTEXT, "store.authority")
+    assert db.store.merge_candidate(caller(source_authority_ref=changed_authority)).changed is False
+
+
 CHILD = r"""
 import os
 import sys
@@ -1201,6 +1356,46 @@ def mutant(mp, code):
 
     module.Session = Counted
     return module
+
+
+@pytest.mark.parametrize("state", [state for state, outcome in CORRECTION_STATES.items() if outcome is not None])
+def test_retained_unknown_correction_check_has_a_semantic_bite(lite, monkeypatch, state):
+    """Bypass only the new retention check: the same named regression fails specifically on retention."""
+    test_unknown_correction_never_retains_and_same_key_recovers(lite, state, "other_then_unknown")
+    lite.clear()
+    old = 'if validation.status == "retained":'
+    assert SOURCE.count(old) == 1
+    changed = mutant(monkeypatch, SOURCE.replace(old, "if False:"))
+    lite.store = lite.store_of(changed)
+    with pytest.raises(AssertionError, match="unknown correction retained"):
+        test_unknown_correction_never_retains_and_same_key_recovers(lite, state, "other_then_unknown")
+    key = press(typed()).action.key if state.startswith("press") else fix(OWNER, [NO_EVENT]).action.key
+    kept = next(row for row in lite.rows(M.ClarificationReceipt) if row.action_key == key)
+    assert (kept.status, kept.code, kept.guard) == ("retained", *CORRECTION_STATES[state])
+    assert NO_EVENT in C.receipt_from_json(kept.receipt_json).supersedes
+    assert diag(lite) == []  # exactly the old defect, not an unrelated exception
+
+
+def test_retention_check_cannot_override_an_earlier_refusal(lite, monkeypatch):
+    old = 'if validation.status == "retained":'
+    assert SOURCE.count(old) == 1
+    changed = mutant(monkeypatch, SOURCE.replace(old, 'if validation.status != "accepted":'))
+    lite.store = lite.store_of(changed)
+    with pytest.raises(AssertionError, match="earlier refusal replaced"):
+        test_unknown_correction_preserves_earlier_provenance_and_binding_refusals(lite, "no_disposition", "model")
+    assert diag(lite) == [("missing_record", "correction.known")]
+    assert lite.rows(M.ClarificationReceipt) == []
+
+
+def test_retention_check_changes_only_unknown_target_outcomes(lite, monkeypatch):
+    old = "if refusal is not None and refusal.code is RefusalCode.MISSING_RECORD:"
+    assert SOURCE.count(old) == 1
+    changed = mutant(monkeypatch, SOURCE.replace(old, "if refusal is not None:"))
+    lite.store = lite.store_of(changed)
+    with pytest.raises(AssertionError, match="prior retained outcome changed"):
+        test_known_corrections_preserve_prior_retained_outcomes(lite, "no_disposition", "other")
+    kept = next(row for row in lite.rows(M.ClarificationReceipt) if row.action_key == fix(OWNER, [NO_EVENT]).action.key)
+    assert (kept.status, kept.code) == ("retained", "cross_actor_correction")
 
 
 def test_every_guard_in_the_store_has_a_case():

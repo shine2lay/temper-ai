@@ -16,14 +16,18 @@ are used. In short:
   returns only after its commit. An attempt that loses a race is rolled back
   and decided again on the new latest record: nothing is ever written from a
   stale snapshot.
-- Only an applied or retained receipt takes its action key. A refused one
-  never does (Security #176 N1); it leaves a diagnostic row under its digest.
+- Only an applied or retained receipt occupies the unique authoritative action
+  key. A refusal keeps linkable diagnostic identifiers (including a non-unique
+  action-key digest), but never occupies that receipt key (Security #176 N1).
 - An identical replay returns the kept result and changes nothing. The same
   action key with other content is refused (changed_body); history is
   unchanged.
-- History that is missing, cut short or changed raises
-  ClarificationIntegrityError, naming what is wrong. It is never answered
-  with a fresh record.
+- Detected history inconsistencies raise ClarificationIntegrityError, never
+  a fresh record. Checks cover records, receipts, links and counts, not every
+  stored field: source-authority refs, unused copy IDs and timestamps can
+  change undetected. Refusal diagnostics are outside the history checks.
+  DB writers are trusted; unkeyed digests cannot authenticate a consistent
+  rewrite, complete deletion or rollback. See the storage guide's inventory.
 
 The store opens no reference, signals and resumes nothing, and keeps nothing
 outside its tables. D3: no real answer may be kept here before the owner's
@@ -102,11 +106,12 @@ FOUNDATION_PATH = (
 
 
 class ClarificationIntegrityError(RuntimeError):
-    """Kept history is missing, cut short or changed. Never answered with a fresh record.
+    """A history consistency check failed. Never answered with a fresh record.
 
     guard names the check that failed; detail names the exact revision,
     receipt or row, so the accountable lead can recover it. Nothing was
-    written.
+    written. This is not authentication of DB writers or all-field damage
+    detection; docs/clarifications/storage.md inventories unchecked metadata.
     """
 
     def __init__(self, stream_id: str, guard: str, detail: str) -> None:
@@ -180,7 +185,7 @@ def _require(ok: bool, code: RefusalCode, guard: str, where: str) -> None:
 
 
 def _intact(ok: bool, stream_id: str, guard: str, detail: str) -> None:
-    """The store's integrity primitive: kept rows are not what the store wrote."""
+    """The store's integrity primitive: a specified consistency check failed."""
     if not ok:
         raise ClarificationIntegrityError(stream_id, guard, detail)
 
@@ -337,8 +342,8 @@ class ClarificationStore:
         applied: its human event was appended to the LATEST record as revision
         N + 1, together with the receipt, by the transaction that moved the
         revision. retained: kept under its action key as evidence; nothing
-        applied. refused: only a diagnostic under its digest; the key stays
-        free. A receipt whose key is already kept gets the kept result back
+        applied. refused: a diagnostic with linkable IDs, not receipt text;
+        the authoritative key stays free. A receipt whose key is already kept gets the kept result back
         when identical (a replay) and is refused as changed_body otherwise.
         """
         _require(type(receipt) is ActionReceipt, RefusalCode.MALFORMED, "store.receipt_type", "append_receipt.receipt")
@@ -346,9 +351,11 @@ class ClarificationStore:
         return self._attempt(lambda session: self._append(session, receipt, digest))
 
     def load(self, stream: StreamKey) -> StoredStream | None:
-        """Recover a stream after a restart, its whole history checked first. None: it was never created.
+        """Recover a stream with history consistency checks. None: no authoritative/history rows remain.
 
-        Damage raises ClarificationIntegrityError; it never reads as an empty stream.
+        Detected inconsistencies raise ClarificationIntegrityError, not an
+        empty stream. Complete deletion is indistinguishable from no creation;
+        unchecked metadata and consistent rewrites/rollbacks are not authenticated.
         """
         stream_id = self._stream_id(stream, "load.stream")
         return self._attempt(lambda session: self._recover(session, stream_id))
@@ -581,6 +588,10 @@ class ClarificationStore:
         )
         if validation.status != "accepted":
             code, guard = cast(RefusalCode, validation.code), cast(str, validation.guard)
+            if validation.status == "retained":
+                refusal = self._precondition_refusal(loaded, receipt, question)
+                if refusal is not None and refusal.code is RefusalCode.MISSING_RECORD:
+                    code, guard = refusal.code, refusal.guard
         else:
             refusal = self._precondition_refusal(loaded, receipt, question)
             if refusal is None:
@@ -592,13 +603,14 @@ class ClarificationStore:
         return self._refuse(session, receipt, digest, stream_id, loaded.revision, code, guard)
 
     def _precondition_refusal(self, loaded: _Loaded, receipt: ActionReceipt, question: str) -> ContractRefusal | None:
-        """The checks only kept state answers, after validate_receipt accepted the receipt.
+        """Kept-state checks after accepted or retention-eligible validation, never after a refusal.
 
-        Every correction (a press included, Architecture N2) is checked against
-        the question's kept answers first, so an unknown target is refused
-        (missing_record) before any retained outcome; then every confirming
-        press against the typed messages already applied; then every reopen
-        against the revision and active set it was shown.
+        Correction comes first (presses included, Architecture N2), then
+        confirmation-once, then reopen revision/active set. For accepted
+        validation the first refusal decides the outcome. For retained
+        validation only an unknown correction target (missing_record) replaces
+        the original outcome; other retained evidence keeps its prior code.
+        M0 checks all targets for existence before checking their actors.
         """
         try:
             if receipt.intent == "correct":
@@ -668,7 +680,11 @@ class ClarificationStore:
         self, session: Session, receipt: ActionReceipt, digest: str, stream_id: str, revision: int,
         code: RefusalCode, guard: str,
     ) -> AppendResult:
-        """Keep a refused attempt as a diagnostic only: digest, code and guard; never its text, sender or key."""
+        """Keep linkable diagnostics: row ID, receipt/action-key digests, stream ID, code, guard and time.
+
+        No receipt JSON, answer text or sender column. The action key is a
+        non-unique index here, never occupation of the authoritative receipt key.
+        """
         result = AppendResult(
             status="refused", stream_id=stream_id, action_key=receipt.action.key, receipt_sha256=digest,
             expected_revision=revision, revision=revision, code=code,
@@ -818,7 +834,7 @@ class ClarificationStore:
         }
 
     def _load(self, session: Session, stream_id: str) -> _Loaded | None:
-        """Read one stream and its whole history, and check it is the history this store wrote.
+        """Read one stream and check history consistency, not authenticity against DB writers.
 
         The reads are separate statements, not one snapshot, so a writer may
         commit between them: rows that look ahead of the stream row read first

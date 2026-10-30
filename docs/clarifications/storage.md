@@ -21,13 +21,35 @@ Seven additive tables. No existing table changes.
 | `clarification_streams` | stream (`StreamKey`: namespace + brief digest) | the revision, the latest record's digest, the source authority, and counts of receipts, presentations, copies and consumptions |
 | `clarification_revisions` | revision 1, 2, 3... of a stream | that revision's whole foundation record (canonical JSON), its digest, the previous revision's digest, and for an event revision the event and receipt it came from |
 | `clarification_receipts` | action key (`ActionIdentity.key`) that was applied or retained | the exact canonical receipt JSON, its digest, and the result returned for it |
-| `clarification_refusals` | refused receipt digest + code + guard | a diagnostic only: no text, no sender, never the action key |
+| `clarification_refusals` | refused receipt digest + code + guard | linkable diagnostics: integer row ID, receipt digest, **non-unique action-key digest**, stream ID, code, guard and time; no receipt JSON, answer text or sender column |
 | `clarification_presentations` | presentation | the persisted presentation; one generation per question is current |
 | `clarification_copies` | delivered message of a presentation | the message IDs a receipt may bind to |
 | `clarification_consumptions` | consumed (stream, revision, supplement) | the consumption identity, so a revision is consumed once |
 
 Times are UTC. A revision with no consumption row is the pending consumption
-intent: it was kept, and nothing has used it yet.
+intent: it was kept, and no consumption acknowledgement has been recorded yet.
+This is not proof that no downstream effect happened.
+
+Applied and retained receipt JSON includes exact text/reason, callback data,
+transport/bot/chat/action/update/sender IDs, responder policy/decision, binding
+and copy IDs, correction targets, confirmation author/action/text digest, and
+reopen snapshots. Revisions repeat whole foundation records, including question
+metadata, applied answers and their actor/source refs. Corrections and reopens
+preserve old evidence; they do not erase it. Authority and policy refs are opaque
+text and can themselves contain identifying information.
+
+Refusal identifiers remain linkable to known actions and contexts; a digest is
+not an anonymity guarantee. The non-unique diagnostic action-key index is **not**
+the primary key in `clarification_receipts`: it neither participates in replay
+lookup nor prevents a genuine same-key receipt from being decided later. A
+repeated identical refusal is deduplicated by receipt digest + code + guard.
+
+The original brief is supplied when composing a supplement, not persisted as a
+separate plaintext brief field. Candidate envelopes/refs/content digests and
+caller affected-decision selections are not stored as such; selected question
+metadata is. No TTL, purge, export, reader ACL, payload encryption or backup
+erasure facility is implemented here. D3 must cover all these data categories,
+including diagnostic links, repeated historical text and opaque refs.
 
 ## Using it
 
@@ -71,13 +93,19 @@ beyond keeping it.
    presentation: refused `binding_mismatch` (`store.presentation`). Then M0's
    `validate_receipt` decides provenance, responder, binding, generation,
    confirmation and text.
-4. **Preconditions on kept state**, in this order: every correction
-   (`check_correction_precondition`, presses carrying a correction included,
-   Architecture N2), then every confirming press
-   (`check_confirmation_precondition`), then every reopen
-   (`check_reopen_precondition` on the current revision and active set). A
-   correction may set aside only the same person's answers; another person's
-   answer takes a reopen.
+4. **Preconditions on kept state**, after accepted or retention-eligible
+   validation, never in place of an earlier provenance/binding refusal.
+   `check_correction_precondition` comes first (presses carrying a correction
+   included, Architecture N2), then `check_confirmation_precondition`, then
+   `check_reopen_precondition` on the current revision and active set. For
+   accepted validation the first failing precondition decides the outcome.
+   For retained validation only an unknown correction target overrides the
+   existing outcome: `missing_record / correction.known`, diagnostic-only.
+   That includes no disposition, blank text and retired presentations. M0
+   checks **all** target IDs for existence before checking actors, so an
+   unknown plus another person's answer is refused in either order. Known
+   targets preserve other retained outcomes. A correction may set aside only
+   the same person's answers; another person's answer takes a reopen.
 5. **Append to the latest record.** The foundation's `append_event` adds the one
    event to the latest record, never to an older copy.
 6. **Compare-and-set and insert.** The stream row moves from revision N to N + 1
@@ -92,10 +120,11 @@ Results:
   correction): the receipt is kept as evidence under its key; nothing applies.
   The decision is revision-checked too: the stream row is touched where its
   revision is still N.
-- **refused**: only a diagnostic row (digest, code, guard). The key stays free, so
-  a refused receipt from an unverified source never blocks the genuine one
-  (Security #176 N1). A refusal changes no history and keeps no key, so it is not
-  revision-checked: the next delivery of the same action is decided afresh.
+- **refused**: only the linkable diagnostic row inventoried above. The unique
+  authoritative receipt key stays free, so a refused receipt from an unverified
+  source or with an unknown correction target never blocks the genuine one
+  (Security #176 N1). A refusal changes no foundation history or authoritative
+  receipt and is not revision-checked: the next delivery is decided afresh.
 
 ## Concurrency
 
@@ -137,9 +166,41 @@ stop; there is no retry cap.
 
 ## Damaged history
 
-Every read checks the whole stream first. Anything missing, cut short or changed
-raises `ClarificationIntegrityError(stream_id, guard, detail)`. It is never
+Every stream read checks its authoritative history first. **Detected
+inconsistencies**, not every possible change, raise
+`ClarificationIntegrityError(stream_id, guard, detail)`. Such a failure is never
 answered with a fresh record, and nothing is written.
+
+DB writers and the application's store callers are trusted. Digests, links and
+counts are unkeyed and kept beside the data: they check internal consistency,
+not authenticity against a writer who can change those tables. A consistent
+rewrite with updated dependent hashes/counts, complete removal of a stream's
+authoritative/history rows, or restoration of a complete earlier valid snapshot
+cannot be authenticated by these checks. Complete removal returns `None`, just
+like a stream never created; refusal rows do not serve as an existence witness.
+A valid rollback cannot prove which later receipts/effects once existed.
+
+### Checked and unchecked fields
+
+These are the read-time predicates, not a promise of comprehensive corruption
+coverage. Shape checks and SQL constraints do not authenticate historical values.
+
+| Table | Checked | Not independently checked/authenticated |
+|---|---|---|
+| `clarification_streams` | namespace + brief digest reproduce the stream ID; contiguous revision range and latest record digest; counts agree with associated rows | `source_authority_ref` and timestamps. Merges compare the authority label to the currently stored label, not an independent original. |
+| `clarification_revisions` | record digest/canonical JSON/foundation validity/brief, previous digest, first-record rule, one-record-change or one-event step, applied receipt/action/event correspondence | timestamps; a consistent rewrite/rollback of records and dependent links has no independent witness |
+| `clarification_receipts` | JSON digest, parsed M0 shape and result shape, action key, bound stream, verified-ingress label, non-refused status; every applied receipt corresponds to a revision whose event matches validation and receipt source digest | timestamps and `guard`; retained outcomes are not revalidated/recomputed on load. Result shape checks constrain status/code/event/revisions but do not establish the original decision; retained code/decision revision and a shape-valid applied result `event_id` are not independently compared to their original values. |
+| `clarification_presentations` | count, reconstructed presentation identity covering binding/policy/transport/generation fields, namespace/brief match, known question and metadata digest | timestamps; no external proof of who actually presented it or of the policy ref's authority |
+| `clarification_copies` | count and referenced presentation existence; applied events also need their receipt's copy ID still present | timestamps and unused `message_id` values. Replacing an unused numeric copy ID with another valid unused one is undetected; the replacement is then trusted as delivered. |
+| `clarification_consumptions` | count, revision range, record digest for that revision, identity derived from stream/revision/supplement digest | timestamps, actual downstream effect/acknowledgement, and correctness of a consistently replaced supplement digest + identity; load does not recompose supplements |
+| `clarification_refusals` | schema constraints only; not loaded into the authoritative history check | all diagnostic contents/identifiers/timestamps and deletion; no content integrity or anonymity promise |
+
+In particular, changing a stream's authority ref or an unused copy ID needs no
+hash-chain rewrite to escape these checks. The synthetic test
+`test_unused_copy_and_authority_metadata_are_not_authenticated` pins that
+limitation, rather than adding cryptography or silently expanding coverage.
+
+### Failure guards
 
 | Guard | Means |
 |---|---|
@@ -152,11 +213,11 @@ answered with a fresh record, and nothing is written.
 | `history.json`, `history.record`, `history.brief` | a record is not canonical, not a valid foundation record, or for another brief |
 | `history.first`, `history.record_step`, `history.event_step` | a revision is not exactly one record change or one event on the one before |
 | `history.latest` | the stream row does not name the latest revision's record |
-| `presentation.count`, `presentation.identity` | a presentation row is missing or changed |
-| `copy.count`, `copy.identity` | a copy row is missing or names another presentation |
-| `receipt.count`, `receipt.digest`, `receipt.sidecar`, `receipt.identity` | a receipt row is missing, changed, unreadable or under another key |
+| `presentation.count`, `presentation.identity` | presentation count, reconstructed identity or question metadata does not match |
+| `copy.count`, `copy.identity` | copy count disagrees, or a copy names a presentation not kept in this stream |
+| `receipt.count`, `receipt.digest`, `receipt.sidecar`, `receipt.identity` | receipt count, JSON digest, shape, action/stream identity, verified-ingress label or stored status fails its check |
 | `receipt.missing`, `receipt.event`, `receipt.applied` | an event revision and its applied receipt do not match one to one |
-| `consumption.count`, `consumption.identity` | a consumption row is missing or changed |
+| `consumption.count`, `consumption.identity` | consumption count, revision range, record digest or derived identity fails its check |
 | `consume.record` | a supplement names another record than the one kept |
 | `store.event_added`, `stream.cas` | the foundation or the database did not do what the store asked |
 
@@ -168,9 +229,20 @@ those are read again before they are called damage.
 - A ref holding a lone surrogate passes M0's `StreamKey` but has no UTF-8 form;
   computing its ID raises `UnicodeEncodeError`. The store refuses it as
   `malformed` (`store.utf8`). The fix belongs in M0's ref check, at its land step.
-- Refused corrections leave evidence: a correction of another person's answer is
-  retained with its receipt, and one naming an unknown answer is refused with a
-  diagnostic (`correction.known`) (Architecture N3, Security N6).
+- Corrections leave evidence: known cross-actor corrections remain retained,
+  unapplied; unknown targets are diagnostic-only before any authoritative
+  retention (`correction.known`) (Architecture N3, Security N6). Earlier
+  provenance/binding refusals remain earlier refusals.
+- M0's S10 test-only follow-up remains at M0's eventual land step.
+- M4 must enforce trusted ingress, responder decisions and namespace/read/write
+  authority at the service boundary. A stored `provider_pull` label or knowledge
+  of a digest/ID does not itself authenticate a human, grant read access or
+  authorise resume. It must also keep provider delivery mapping and current-state
+  send/continuation decisions correct; M2's repairs are separate.
+- Consumption identity is available for downstream idempotency, not a proof of
+  exactly-once external execution. M4 must handle effect/acknowledgement crash
+  ordering. D3 must decide retention/readers/deletion/export/backup handling and
+  trusted DB-writer scope before real answers; this repair chooses none of them.
 
 ## Tests
 
@@ -181,7 +253,12 @@ then fail. Every test runs on SQLite (a file, so connections really contend) and
 on PostgreSQL where `TEMPER_TEST_DATABASE_URL` is set, in the worker's throwaway
 schema. Concurrency tests use separate engines and a barrier at the
 compare-and-set; crash tests kill a real child process just before or after its
-commit.
+commit. Combined correction-state regressions cover accepted, blank,
+no-disposition, retired and confirming actions, mixed targets in both orders,
+prior provenance/binding refusals, unchanged known-target outcomes and genuine
+same-key recovery. Targeted in-memory mutations require the specific regression
+assertion and then verify the wrong retained result; an unrelated exception is
+not counted as that semantic bite.
 
 ```
 env -u TEMPER_TEST_DATABASE_URL uv run --frozen pytest tests/test_clarifications/test_store.py -n 8

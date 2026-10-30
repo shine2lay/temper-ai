@@ -972,26 +972,34 @@ def test_native_end_leaves_require_exact_pi_scope_not_a_near_match(monkeypatch, 
 
 
 class _ProfiledScalarCursor:
-    """Test-only: preserve the production scalar API while retaining DB grant time."""
+    """Test-only: preserve the production scalar API while retaining the DB grant and statement-end times."""
     def __init__(self, cursor, connection):
         self.cursor, self.connection = cursor, connection
     def fetchone(self):
         row = self.cursor.fetchone()
         if row is not None:
-            self.connection.usage_grant = row[-1]
+            self.connection.usage_grant, self.connection.usage_statement_end = row[-2], row[-1]
             return row[:1]
         return row
     def __getattr__(self, name):
         return getattr(self.cursor, name)
 
 
-def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatch, capsys):
-    """Actual grant→release upper bound, BOTH timestamps from Postgres.
+def test_original_batch_lock_hold_one_statement_then_commit_with_four_live_writers(monkeypatch, capsys,
+                                                                                    record_property):
+    """#126's batch ordering-lock hold under four live writers, asserted by its shape and statement.
 
-    Grant timestamp is sampled inside the SAME materialized lock CTE. Release
-    upper bound is the first DB clock after real COMMIT, including the return
-    trip. No wall/monotonic clock is subtracted from a native timestamp, no
-    workload retry, no100ms WAIT substitution. All rows/DB are throwaway5455.
+    S1: each ordering acquisition (batch, writers, setup) is one statement followed on its
+    connection by COMMIT: no other SQL under the lock, none left open. S2: the batch pauses
+    once per row, never while one of its grants is uncommitted. S3: one acquisition per row
+    moved (100). S4: the batch statement's own time under the lock, from the grant (sampled in
+    a materialized CTE that depends on the real grant) to clock_timestamp() in RETURNING, both
+    DB clock, has p95 <= 25 ms, so a statement that got slower under the lock still fails.
+    The whole hold (to the first DB clock after the real COMMIT) is recorded, not asserted
+    (#222; formerly ..._p95_fifty_ms_...): past the statement the span is the client getting a
+    CPU and the GIL back, i.e. the runner's speed, while a pause or extra SQL under the lock can
+    stay under 50 ms on a calm runner (docs/usage-reconcile.md).
+    No workload retry; all rows/DB are throwaway5455.
     """
     database = get_database()
     if database.engine.dialect.name != "postgresql":
@@ -1006,14 +1014,18 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
     import psycopg2
     from sqlalchemy import create_engine
 
-    samples = []
+    samples, trace = [], []
     local = threading.local()
     samples_lock = threading.Lock()
+    def note(connection, what):
+        # One ordered trace across threads (list.append is atomic): (thread, kind, connection, what).
+        trace.append((threading.get_ident(), getattr(local, "kind", "other"), connection, what))
     class MeasuredConnection(psycopg2.extensions.connection):
-        usage_grant = None
+        usage_grant = usage_statement_end = None
         def commit(self):
-            grant = self.usage_grant
-            self.usage_grant = None
+            grant, statement_end = self.usage_grant, self.usage_statement_end
+            self.usage_grant = self.usage_statement_end = None
+            note(id(self), "commit")
             super().commit()  # actual ordering-lock release
             if grant is not None:
                 with self.cursor() as cursor:
@@ -1022,7 +1034,8 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
                 super().rollback()  # close only the profiling SELECT's transaction
                 with samples_lock:
                     samples.append((getattr(local, "kind", "other"),
-                                    (released_upper - grant).total_seconds() * 1000))
+                                    (released_upper - grant).total_seconds() * 1000,
+                                    (statement_end - grant).total_seconds() * 1000))
     base = database.engine
     url = base.url.set(drivername="postgresql+psycopg2")
     measured = create_engine(url, pool_size=8, max_overflow=2,
@@ -1034,9 +1047,13 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
         with connection.cursor() as cursor:
             cursor.execute('SET search_path TO "' + schema.replace('"', '""') + '"')
         connection.commit()
+    @sa_event.listens_for(measured, "before_cursor_execute")
+    def note_statement(connection, cursor, statement, parameters, context, executemany):
+        note(id(connection.connection.driver_connection), "sql")
     @sa_event.listens_for(measured, "after_cursor_execute")
     def preserve_scalar(connection, cursor, statement, parameters, context, executemany):
         if "usage_grant_at" in statement:
+            note(id(connection.connection.driver_connection), "grant")
             context.cursor = _ProfiledScalarCursor(cursor, connection.connection.driver_connection)
     monkeypatch.setattr(database, "engine", measured)
     # Add a dependent materialized clock AFTER the EXISTING lock CTE. A
@@ -1047,7 +1064,8 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
         instrumented = original.replace("FROM commit_order", "FROM timed_order").replace("USING commit_order", "USING timed_order")
         instrumented = instrumented.replace("    )", "    ), timed_order AS MATERIALIZED (\n"
             "        SELECT clock_timestamp() AS usage_grant_at FROM commit_order\n    )", 1)
-        return text(instrumented.replace("RETURNING seq", "RETURNING seq, (SELECT usage_grant_at FROM timed_order) AS usage_grant_at"))
+        return text(instrumented.replace("RETURNING seq", "RETURNING seq, (SELECT usage_grant_at FROM timed_order) AS usage_grant_at, "
+                                         "clock_timestamp() AS usage_statement_end_at"))
     monkeypatch.setattr(usage, "_POSTGRES_ROW_INSERT", profile(usage._POSTGRES_ROW_INSERT))
     monkeypatch.setattr(usage, "_POSTGRES_PENDING_DRAIN", profile(usage._POSTGRES_PENDING_DRAIN))
     fixed_clock(monkeypatch)
@@ -1055,6 +1073,22 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
         capture(old(), pending=True)
         old()
     monkeypatch.setattr(reconcile, "BATCH_PAUSE_SECONDS", 0.025)
+    class NotedPause:
+        # The batch's per-row pause, noted on its thread, then the same wait on the same Event.
+        def __init__(self, stop):
+            self._stop = stop
+        def wait(self, timeout=None):
+            note(None, "pause")
+            return self._stop.wait(timeout)
+        def __getattr__(self, name):
+            return getattr(self._stop, name)
+    monkeypatch.setattr(reconcile, "_stop", NotedPause(reconcile._stop))
+    # The per-call 20 s wall-clock budgets would make each `== 50` below a machine-speed bar
+    # under four live writers (#222: reconcile 12.8-15.7 s at load 70). Lifted for this test's
+    # own calls only: a batch that never finishes is still failed, by the gate's pytest timeout.
+    hang_only_budget = 600.0
+    monkeypatch.setattr(reconcile, "DRAIN_BUDGET_SECONDS", hang_only_budget)
+    monkeypatch.setattr(reconcile, "RECONCILE_BUDGET_SECONDS", hang_only_budget)
     barrier = threading.Barrier(5)
     done = threading.Event()
     def writer(index):
@@ -1081,21 +1115,61 @@ def test_original_batch_lock_hold_p95_fifty_ms_with_four_live_writers(monkeypatc
             local.kind = "batch"
             try:
                 with get_session() as session:
-                    assert reconcile.drain_pending(session)["drained"] == 50
+                    started = time.monotonic()
+                    drained = reconcile.drain_pending(session, budget=hang_only_budget)
+                    assert drained["drained"] == 50, drained  # "deferred": its 2 s ordering lock wait ran out
+                    drained_at = time.monotonic()
                     assert reconcile.reconcile_batch(session) == 50
+                    record_property("usage_q126_drain_s", round(drained_at - started, 3))
+                    record_property("usage_q126_reconcile_s", round(time.monotonic() - drained_at, 3))
             finally:
                 done.set()
             writer_counts = [job.result(timeout=20) for job in jobs]
-        holds = sorted(ms for kind, ms in samples if kind == "batch")
-        assert len(holds) == 100
+        holds = sorted(hold for kind, hold, _ in samples if kind == "batch")
+        assert len(holds) == 100  # S3: one ordering acquisition per row moved
         assert all(writer_counts), writer_counts
-        p95 = holds[math.ceil(len(holds) * 0.95) - 1]
-        all_holds = sorted(ms for kind, ms in samples if kind in ("batch", "writer"))
-        all_p95 = all_holds[math.ceil(len(all_holds) * 0.95) - 1]
-        print(f"q126 HOLD batch=100 writers=4 counts={writer_counts} p95_ms={p95:.3f} max_ms={max(holds):.3f} "
-              f"all_grants={len(all_holds)} all_p95_ms={all_p95:.3f} all_max_ms={max(all_holds):.3f}")
-        assert p95 <= 50, f"original50ms batch LOCK-HOLD miss: {p95:.3f}ms; route to Temper lead, do not relax"
-        assert all_p95 <= 50, f"Architecture all-acquisition HOLD miss: {all_p95:.3f}ms"
+        statement_parts = sorted(part for kind, _, part in samples if kind == "batch")
+        all_holds = sorted(hold for kind, hold, _ in samples if kind in ("batch", "writer"))
+        def p95(values):
+            return values[math.ceil(len(values) * 0.95) - 1]
+        figures = {"p95_ms": p95(holds), "max_ms": holds[-1], "statement_p95_ms": p95(statement_parts),
+                   "statement_max_ms": statement_parts[-1], "all_grants": len(all_holds),
+                   "all_p95_ms": p95(all_holds), "all_max_ms": all_holds[-1]}
+        for name, value in figures.items():
+            record_property(f"usage_q126_hold_{name}", round(value, 3))  # recorded; S4 below asserts one
+        print(f"q126 HOLD batch=100 writers=4 counts={writer_counts} "
+              + " ".join(f"{name}={value:.3f}" if isinstance(value, float) else f"{name}={value}"
+                         for name, value in figures.items()))
+        # S1: on every connection, the entry after an ordering grant is its COMMIT, and none stays open.
+        after_grant, extra = {}, []
+        for _, kind, connection, what in trace:
+            if connection is None:
+                continue
+            if after_grant.get(connection) and what != "commit":
+                extra.append((kind, what))
+            after_grant[connection] = what == "grant"
+        assert extra == [] and not any(after_grant.values()), (
+            f"SQL under the ordering lock or a grant left open: {extra[:5]}; route to Temper lead")
+        # S2: the batch pauses once per row, never while one of its grants is uncommitted.
+        batch_threads = {thread for thread, kind, _, _ in trace if kind == "batch"}
+        open_grants, pauses, holding = set(), 0, 0
+        for thread, _, connection, what in trace:
+            if thread not in batch_threads:
+                continue
+            if what == "grant":
+                open_grants.add(connection)
+            elif what == "commit":
+                open_grants.discard(connection)
+            elif what == "pause":
+                pauses += 1
+                holding += bool(open_grants)
+        assert pauses == 100 and holding == 0, (
+            f"{holding} of {pauses} batch pauses held an ordering grant; route to Temper lead")
+        # S4: no client round trip in this span, so not the runner's speed (#222: p95 0.95-2.05 ms in
+        # 95 runs at load 40-159, while single statements reached 74 ms: hence p95, never max).
+        assert figures["statement_p95_ms"] <= 25, (
+            f"batch statement under the ordering lock p95 {figures['statement_p95_ms']:.3f} ms > 25 ms; "
+            "route to Temper lead, do not relax")
     finally:
         measured.dispose()
 

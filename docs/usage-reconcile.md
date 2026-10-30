@@ -350,15 +350,31 @@ ones. No joining by time, iteration, agent, amount or model is permitted.
 
 ## Timing, storage and recovery
 
-The original #126 bar is **batch ordering-lock HOLD p95<=50ms**, under four
+The original #126 bar was **batch ordering-lock HOLD p95<=50ms**, under four
 concurrent live-writer transactions. It is not batch wall-clock duration and
-not #125's separately approved100ms per-call lock-WAIT bar. Test instrumentation
-samples the DB clock in a materialized CTE dependent on the real lock grant,
-and the first DB clock after real COMMIT gives a conservative release upper
-bound. Every exercised ordering acquisition in the batch and all four live
-writers is sampled; report separate batch and combined p95/max. Both endpoints
-use the same DB clock. No runtime instrumentation or
-relaxed threshold is shipped; a miss returns to Temper lead.
+not #125's separately approved100ms per-call lock-WAIT bar. Since #222 the head
+gate asserts the property that bar stood for instead of the clock, because on a
+loaded runner the figure measured the runner, not the lock (batch p95 25-80ms
+at load 40-72 while the statement's own server time stayed at p95 1-2ms). On every
+connection, the batch's and all four live writers', the ordering-lock grant is
+followed by its own transaction's COMMIT with no other SQL in between; no batch
+pause starts while the batch holds a grant; and the batch takes exactly one
+grant per row (100). The batch statement's time from the grant to its RETURNING
+(`clock_timestamp()` in the RETURNING projection; both DB clock, no client round
+trip) is asserted at p95<=25ms: it stayed at p95 0.95-2.05ms in 95 runs at load
+40-159, so a statement whose work under the lock gets slower (a lost index, a
+worse plan, a larger CTE) still fails. Anything after that projection, such as
+an AFTER STATEMENT trigger, is outside the span. The whole HOLD is sampled and
+recorded every run, not asserted: test instrumentation samples the DB clock in a
+materialized CTE dependent on the real lock grant, and the first DB clock after
+real COMMIT gives a conservative release upper bound; batch and combined
+p95/max, plus the grant-to-RETURNING time, are reported. Both endpoints use the
+same DB clock. No bound on the whole hold, which includes the client's round
+trips and the COMMIT, is gate-enforced.
+The test lifts the reconciler's 20s per-call budgets for its own two calls, so
+its `== 50` checks completeness, not runner speed; a batch that never finishes
+still fails on the gate's test timeout. No runtime instrumentation or relaxed
+threshold is shipped; a broken property returns to Temper lead.
 
 Tables are additive and work with older code. Backup/restore must keep usage
 instance/rows/pending and these diagnostic tables together under the existing
@@ -399,7 +415,10 @@ field/CHECK or256-byte bound changes; no existing code is renamed or discarded.
 The four-writer Postgres timing proof sampled100 batch grants: p95=3.011ms,
 max=4.996ms. Writer sample counts were428/418/412/421; all1779 grants together
 had p95=3.242ms, max=13.397ms. These are fixed-workload stage results, not a
-latency or completeness promise. The required head gate still enforces50ms.
+latency or completeness promise. Since #222 the required head gate enforces the
+one-statement-then-COMMIT shape above, bounds the batch statement's time from
+the grant to its RETURNING at p95<=25ms, and records HOLD p95/max every run
+instead of asserting 50ms; no whole-hold bound is gate-enforced.
 
 ### H-126-CUTOVER-2 (latest-state barrier)
 

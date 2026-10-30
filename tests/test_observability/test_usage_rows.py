@@ -1071,8 +1071,8 @@ def postgres_stage(record_property):
 
 
 @contextmanager
-def held_ordering_lock(cap=20):
-    # Holds the ordering lock until the with-body is done, so the hold outlasts the call under
+def held_advisory_lock(key, cap=20):
+    # Holds advisory lock `key` until the with-body is done, so the hold outlasts the call under
     # test by construction instead of racing it with a fixed duration on a slow runner. `cap`
     # is only the holder's escape: at most `cap` s after taking the lock it lets go even if the
     # body isn't done (held_whole_body is then False), so a writer waiting with no timeout gets
@@ -1083,12 +1083,12 @@ def held_ordering_lock(cap=20):
     holder = SimpleNamespace(held_whole_body=None)
     def hold():
         with get_database().engine.connect() as connection:
-            connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": usage.COMMIT_ORDER_LOCK})
+            connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
             acquired.set()
             try:
                 return body_done.wait(cap)
             finally:
-                connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": usage.COMMIT_ORDER_LOCK})
+                connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(hold)
         assert acquired.wait(cap), "test holder did not start"
@@ -1097,6 +1097,11 @@ def held_ordering_lock(cap=20):
         finally:
             body_done.set()
             holder.held_whole_body = future.result(timeout=cap + 2)
+
+
+def held_ordering_lock(cap=20):
+    # The writer's ordering lock (this schema's key, isolated_ordering_key), held as above.
+    return held_advisory_lock(usage.COMMIT_ORDER_LOCK, cap)
 
 
 @contextmanager
@@ -1210,8 +1215,16 @@ def test_real_pg_drain_skips_locked_correction(monkeypatch, record_property):
         assert_pending_happy_path(monkeypatch)
 
 
-@pytest.mark.timeout(20)
+# Escape for this test's own waits, so a hang fails with a message instead of stalling the run.
+# Never a property under test: each wait it bounds ends on an event, within seconds normally.
+FROZEN_CAP = 30
+
+
+@pytest.mark.timeout(120)
 def test_real_pg_idle_frozen_recorder_killed_and_retry_preserved(monkeypatch, record_property):
+    # Asserts what happened, the settings in force and lower bounds on the waits, never an upper
+    # bound on the caller's wall time, which a loaded runner stretches (#222): capture time and
+    # kill delay are recorded, not asserted.
     if not postgres_stage(record_property):
         assert_pending_happy_path(monkeypatch)
         return
@@ -1220,46 +1233,91 @@ def test_real_pg_idle_frozen_recorder_killed_and_retry_preserved(monkeypatch, re
     # insertion BEFORE the ordering timeout, testing a different lock entirely.
     with get_session() as session:
         usage.ensure_instance(session)
+        schema = session.execute(text("SELECT current_schema()")).scalar_one()
+    # The test's own gate: a second per-schema advisory key, derived as isolated_ordering_key does.
+    gate_key = int.from_bytes(hashlib.sha256(f"{schema}:frozen-gate".encode("ascii")).digest()[:8], "big", signed=True)
     original = db.session
-    frozen, resume = threading.Event(), threading.Event()
-    holder_pid = []
+    frozen, idle, resume = threading.Event(), threading.Event(), threading.Event()
+    holder = SimpleNamespace(pid=None, idle_timeout=None, idle_from=None)
+    caller_sessions = []
     once = False
     @contextmanager
     def session():
         nonlocal once
+        if threading.current_thread() is threading.main_thread():
+            caller_sessions.append(1)
         with original() as s:
             this_holder = threading.current_thread().name.startswith("usage-frozen") and not once
             if this_holder:
                 once = True
-                holder_pid.append(s.execute(text("SELECT pg_backend_pid()")).scalar_one())
+                holder.pid = s.execute(text("SELECT pg_backend_pid()")).scalar_one()
             yield s
             if this_holder:
-                frozen.set()  # INSERT done, COMMIT intentionally withheld
-                assert resume.wait(8), "test did not release its frozen recorder"
+                # INSERT done, ordering lock held, COMMIT withheld. Wait ACTIVE on the test's gate
+                # (no idle timer runs during a statement) until the capture under test has returned,
+                # so the holder's own idle timeout can't race the capture on a slow runner. The gate
+                # wait is the test's own: no lock or statement timeout in force may end it early.
+                s.execute(text("SELECT set_config('lock_timeout', '0', true), set_config('statement_timeout', '0', true)"))
+                frozen.set()
+                s.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": gate_key})
+                # Then go idle in transaction: the timeout in force, and the DB clock as it goes idle.
+                holder.idle_timeout, holder.idle_from = s.execute(text(
+                    "SELECT current_setting('idle_in_transaction_session_timeout'), clock_timestamp()")).one()
+                idle.set()
+                assert resume.wait(FROZEN_CAP), "test did not release its frozen recorder"
     with monkeypatch.context() as m, ThreadPoolExecutor(max_workers=1, thread_name_prefix="usage-frozen") as pool:
         m.setattr(db, "session", session)
         m.setattr(recorder.time, "sleep", lambda _: None)
-        first = pool.submit(record)
         try:
-            assert frozen.wait(2)
-            started = time.monotonic()
-            pending_id = record()
-            capture_ms = (time.monotonic() - started) * 1000
-            record_property("usage_frozen_capture_ms", capture_ms)
-            assert capture_ms < 2500
+            with held_advisory_lock(gate_key, cap=FROZEN_CAP) as gate:
+                first = pool.submit(record)
+                assert frozen.wait(FROZEN_CAP), "frozen recorder did not reach the gate"
+                with timed_ordering_statements() as waits:
+                    caller, before, start = threading.get_ident(), len(caller_sessions), time.monotonic()
+                    try:
+                        pending_id = record()
+                    finally:  # kept when record() fails too, for diagnosis
+                        attempts = len(caller_sessions) - before
+                        record_property("usage_frozen_capture_ms", (time.monotonic() - start) * 1000)
+                        record_property("usage_frozen_capture_waits", [
+                            (w.lock_timeout, w.code, w.end and w.end - w.start, w.thread == caller) for w in waits])
+            # P1: the capture gave up at the writer's own 2 s and waited on nothing else of the holder's.
+            assert attempts == 1 and len(waits) == 1  # one recorder attempt, one ordering statement
+            wait = waits[0]
+            assert wait.thread == caller
+            assert wait.code == "55P03"  # gave up on the frozen holder's lock: not acquired after it
+            assert wait.end - wait.start >= 1.9  # timed out by the writer's own 2 s (load only lengthens it)
+            assert wait.lock_timeout == "2s"  # and by nothing longer: the writer's setting was in force
+            # Returned while the frozen recorder still held everything: a capture that also waited
+            # on the holder could only return after the gate's escape, failing here.
+            assert gate.held_whole_body
             assert rows() == [] and len(pending_rows()) == 1
-            # Wait a FIXED remaining interval, not polling for a favorable result.
-            threading.Event().wait(max(0, 5.6 - (time.monotonic() - started)))
+            # P2: the writer's own idle timeout ends the frozen recorder, which frees the lock.
+            assert idle.wait(FROZEN_CAP), "frozen recorder did not go idle"
+            assert holder.idle_timeout == "5s"
+            gone_after = None
             with get_session() as s:
-                live = s.execute(text("SELECT count(*) FROM pg_stat_activity WHERE pid = :pid"),
-                                 {"pid": holder_pid[0]}).scalar_one()
-            absent_at_ms = (time.monotonic() - started) * 1000
-            record_property("usage_frozen_holder_absent_at_ms", absent_at_ms)
-            assert live == 0 and absent_at_ms < 6500
+                while gone_after is None:  # looks every 50 ms
+                    live, seen_at = s.execute(text("SELECT count(*), clock_timestamp() FROM pg_stat_activity"
+                                                   " WHERE pid = :pid"), {"pid": holder.pid}).one()
+                    s.commit()  # a fresh pg_stat_activity snapshot for the next look
+                    idle_for = (seen_at - holder.idle_from).total_seconds()
+                    if not live:
+                        gone_after = idle_for
+                    elif idle_for > FROZEN_CAP:
+                        break
+                    else:
+                        threading.Event().wait(0.05)
+            record_property("usage_frozen_holder_gone_after_idle_s", gone_after)
+            assert gone_after is not None, "frozen recorder outlived the escape: its idle timeout did not end it"
+            # Both from the DB clock: gone no earlier than its 5 s idle timeout allows, so nothing
+            # ended it sooner (an upper bound would time this poll, not the server).
+            assert gone_after >= 4.9
+            # P3/P4: the frozen recorder's retry and a later record are both kept; the capture drains.
             later_id = record()
         finally:
             resume.set()
-        first_id = first.result(timeout=3)
+        first_id = first.result(timeout=FROZEN_CAP)
     assert event_count() == 3
     assert {row.event_id for row in rows()} == {first_id, later_id}
     assert drain(pending_id).status == "drained"

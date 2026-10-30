@@ -235,8 +235,10 @@ malformed-value/canary/link/compaction/revision/commit-order proofs and guard
 mutations remain. Added cases cover bounded ordering deferral, Event+pending
 atomicity, pending revisions and start links, unknown commit, drain rollback/
 idempotency and content exclusion. Real Postgres cases are counted (not skipped):
-3s session-lock holder with capture<2.5s, restored settings/usable transaction,
-frozen-recorder disconnect/retry, drain with held lock/locked correction,
+a session-lock holder held until the capture returns (one attempt, the writer's
+own 2s timeout), restored settings/usable transaction, a frozen recorder held by
+a test gate until the capture returns, then ended by the writer's own 5s idle
+timeout (DB-clock lower bound), disconnect/retry, drain with held lock/locked correction,
 equal/different conflict, non-55P03 failures, stricter statement timeout and
 known-bad deferred constraint. SQLite tests its actual path, not fabricated PG
 behavior. Mutation cases remove each critical new guard and must fail its check.
@@ -245,7 +247,11 @@ No model, provider or workflow is called.
 Test Postgres uses schemas per worker, while advisory locks are database-wide.
 This test module substitutes one stable test key per schema, preserving all
 locking semantics and preventing intentional3–5s fault injections from blocking
-other workers/runs. Production still uses the single fixed key above.
+other workers/runs; the frozen-recorder test derives a second per-schema key for
+its gate. Production still uses the single fixed key above. These real-Postgres
+tests assert the mechanism's own facts (SQLSTATE, the timeout in force, lower
+bounds on its waits), never an upper bound on the caller's wall time, which a
+loaded runner stretches; capture and kill timings are recorded per run.
 
 The normal gate checks correctness with4000 concurrent events, not a machine-load
 latency assertion. Performance runs separately with `TEMPER_USAGE_FIXED_LOAD=1`,

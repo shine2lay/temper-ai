@@ -57,11 +57,19 @@ class _Handler(BaseHTTPRequestHandler):
 def server() -> Any:
     """A threading server on an ephemeral port (threading: /delay must not block others)."""
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    # shutdown() stops only the accept loop. The timeout test leaves a handler
+    # writing after its client disconnects; server_close() joins non-daemon
+    # handlers so their genuine errors cannot enter the next test's stderr.
+    httpd.daemon_threads = False
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
     host, port = httpd.server_address[0], httpd.server_address[1]
-    yield f"http://{host}:{port}"
-    httpd.shutdown()
-    httpd.server_close()
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join()
 
 
 class TestHttpBasics:

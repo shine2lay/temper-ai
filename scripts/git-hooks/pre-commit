@@ -3,12 +3,11 @@
 # failures surface locally before push. Scope matches CI exactly:
 #   - ruff check .                (whole project)
 #   - mypy temper_ai/             (whole package)
-#   - pytest tests/ --timeout=120 (full suite), started by scripts/test_slot.py
-#     only when the machine has room for it (docs/test-slots.md)
+#   - pytest tests/ --timeout=120 (full suite), through the same machine pool
+#     as heavy runs started by hand (docs/testing.md)
 #
-# `wt land` runs this same hook as temper-ai's check, so a land's test phase
-# waits for room too: up to TEST_SLOTS_WAIT_MINUTES (20), then it runs anyway
-# and says so. `python3 scripts/test_slot.py status` shows who holds the slots.
+# tests/conftest.py enters `wt slot` before starting pytest's workers. Inside
+# a land's check it reuses the land's slot; it never waits for its own slot.
 #
 # There is no bypass. `--no-verify` exists, but a commit that needs it is a
 # commit that breaks the build for everyone else; fix the cause instead.
@@ -101,19 +100,11 @@ echo -e "$PASS mypy passed."
 # ─── 4. pytest (full suite — matches CI) ──────────────────────────────────
 # No -x. Stopping at the first failure meant a commit told you about one
 # broken test, you fixed it, and the next run told you about the next.
-# -n 8: the suite is xdist-safe and this is where the speedup plateaus on a
-# 20-core box (68s serial -> 20s at 8 workers; 16 workers only buys ~1s more
-# while taking twice the machine). Override with PRECOMMIT_PYTEST_WORKERS.
-#
-# 8 is the most, not a given. scripts/test_slot.py starts the phase only when
-# the machine has room: at most 3 test phases at once across the machine, and
-# workers sized to the cores that are free (at least 4). On an oversubscribed
-# machine the Team-run waits in tests/test_runner/pi_parking overran their 20 s
-# and a land failed for the machine, not the change (Systems #18). While it
-# waits it prints a line a minute on stderr (fd 3 below, so the lines show
-# live instead of going through `tail`). docs/test-slots.md has the protocol
-# and the settings (TEST_SLOTS_MAX=0 turns admission off).
-PYTEST_WORKERS="${PRECOMMIT_PYTEST_WORKERS:-8}"
+# -n auto lets wt's check_workers default apply. Keep the hook's explicit
+# override; otherwise leave the caller's PYTEST_XDIST_AUTO_NUM_WORKERS alone.
+if [ -n "${PRECOMMIT_PYTEST_WORKERS:-}" ]; then
+    export PYTEST_XDIST_AUTO_NUM_WORKERS="$PRECOMMIT_PYTEST_WORKERS"
+fi
 
 # ─── 4a. The database tier ────────────────────────────────────────────────
 # When the commit touches anything that stores something, the tests that
@@ -156,8 +147,9 @@ echo "Running pytest..."
 # worktree it is an absolute path, so the test's `git init`, `git config` and
 # `git commit` land in this repository: core.bare set, the branch being committed
 # moved to the test's commits.
+# Keep wt's stderr live while retaining the tail of pytest's stdout.
 # shellcheck disable=SC2046  (word splitting is intentional)
-if ! (unset $(git rev-parse --local-env-vars); python3 scripts/test_slot.py run --label "temper-ai pytest" --min-workers 4 --max-workers "$PYTEST_WORKERS" --progress-fd 3 -- uv run --quiet pytest tests/ --timeout=120 -q --no-header -n {workers}) 3>&2 2>&1 | tail -40; then
+if ! (unset $(git rev-parse --local-env-vars); uv run --quiet pytest tests/ --timeout=120 -q --no-header -n auto) | tail -40; then
     echo ""
     echo -e "$FAIL pytest failed."
     exit 1

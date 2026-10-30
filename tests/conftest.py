@@ -4,6 +4,7 @@ import pytest
 
 from temper_ai.database import init_database, locate, reset_database
 from temper_ai.tools.executor import ToolExecutor
+from tests.machine_slot import enter_machine_slot
 from tests.pgtier import database_tier_url, truncate_everything
 
 # The database this test got, so the guard below can hand back the same one.
@@ -11,6 +12,11 @@ TEST_DATABASE_URL = pytest.StashKey[str]()
 
 # Kept before the guard replaces it, so the guard itself can be tested.
 REAL_RESOLVE_HOST_DATABASE_URL = locate.resolve_host_database_url
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config):
+    enter_machine_slot(config.getoption("numprocesses", default=None))
 
 
 @pytest.fixture(autouse=True)

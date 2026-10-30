@@ -164,6 +164,12 @@ class GitSpy:
 _IN_ACCESS, _IN_OPEN = 0x1, 0x20
 
 
+# Every watch made during one test, so none can outlive it. fs.inotify.max_user_instances
+# (128) is per user, not per process: one leaked instance here is one fewer for every other
+# suite and for pi-web-ui's watchers, and it shows up as an unrelated file going red.
+_WATCHES: list[Opens] = []
+
+
 class Opens:
     """Linux inotify on a folder and every folder below it: the names opened or read there."""
 
@@ -172,6 +178,7 @@ class Opens:
         self.fd = self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
         if self.fd < 0:
             raise OSError(ctypes.get_errno(), "inotify_init1")
+        _WATCHES.append(self)
         for here, dirs, _files in os.walk(folder):
             if self.libc.inotify_add_watch(self.fd, os.fsencode(here), _IN_ACCESS | _IN_OPEN) < 0:
                 raise OSError(ctypes.get_errno(), f"inotify_add_watch {here}")
@@ -192,7 +199,87 @@ class Opens:
                 pos += 16 + size
 
     def close(self) -> None:
-        os.close(self.fd)
+        """Give the instance back. Safe to call twice, so an explicit close and the
+        sweep below cannot close the same descriptor (or a reused one) twice."""
+        if self.fd is None:
+            return
+        fd, self.fd = self.fd, None
+        if self in _WATCHES:
+            _WATCHES.remove(self)
+        os.close(fd)
+
+    def __enter__(self) -> Opens:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
+
+
+def _close_leftover_watches() -> int:
+    """Close every watch still open, and say how many there were."""
+    leaked = len(_WATCHES)
+    while _WATCHES:
+        _WATCHES.pop().close()
+    return leaked
+
+
+@pytest.fixture(autouse=True)
+def _no_watch_outlives_its_test():
+    """Close any watch a test did not close itself.
+
+    A forgotten close can pass in isolation while consuming another suite's watch quota.
+    Release it at test teardown rather than waiting for this worker process to exit.
+    """
+    yield
+    _close_leftover_watches()
+
+
+def _inotify_fds() -> int:
+    """How many inotify instances this process holds right now."""
+    found = 0
+    for entry in os.listdir("/proc/self/fd"):
+        try:
+            if os.readlink(f"/proc/self/fd/{entry}") == "anon_inode:inotify":
+                found += 1
+        except OSError:
+            pass        # that descriptor went away while we were looking
+    return found
+
+
+def test_m1_test_lifetime_automatically_sweeps_a_forgotten_watch(tmp_path, request):
+    """Check both the autouse connection and the real fixture's teardown, not just its helper."""
+    assert "_no_watch_outlives_its_test" in request.fixturenames
+    before = _inotify_fds()
+    lifetime = _no_watch_outlives_its_test.__wrapped__()
+    next(lifetime)
+    Opens(tmp_path)
+    assert _inotify_fds() == before + 1
+    with pytest.raises(StopIteration):
+        next(lifetime)
+    assert _inotify_fds() == before and _WATCHES == []
+
+
+def test_m1_a_watch_is_given_back_when_closed_and_closing_it_twice_is_safe(tmp_path):
+    """An explicit close and the sweep must never close the same descriptor twice: by then
+    the number can belong to something else entirely."""
+    before = _inotify_fds()
+    watch = Opens(tmp_path)
+    assert _inotify_fds() == before + 1 and watch in _WATCHES
+    watch.close()
+    assert _inotify_fds() == before and watch not in _WATCHES
+    watch.close()
+    assert _inotify_fds() == before
+
+
+def test_m1_the_sweep_closes_a_watch_its_test_forgot(tmp_path):
+    """fs.inotify.max_user_instances (128) is per user, not per process: a watch that
+    outlives its test consumes quota shared with every other suite on the machine.
+    Exercise the sweep directly as well as through the fixture's lifecycle."""
+    before = _inotify_fds()
+    Opens(tmp_path)             # forgotten on purpose, as three tests in this file once did
+    assert _inotify_fds() == before + 1
+    assert _close_leftover_watches() == 1
+    assert _inotify_fds() == before and _WATCHES == []
 
 
 def _gitlinks(git_dir: Path) -> set[tuple[str, str]]:

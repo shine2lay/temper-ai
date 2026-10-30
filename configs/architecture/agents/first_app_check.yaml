@@ -31,7 +31,11 @@
 # checker refuses no later run for it. Before its first browser call each run (and each control case) writes a
 # create-once started.json beside its receipt.json; a run that ends without a final receipt.json counts as a failed
 # teardown, and W1 admission refuses its services until Ops' W2 recreation (Security #105 A6).
-#   mode=controls_p3: its controls on a synthetic Project-3-style page and two servers (fixtures/p3_app).
+#   mode=controls_p3: its controls on a synthetic Project-3-style page and two servers (fixtures/p3_app). Input
+#     w1_before (controls_p3 only; one JSON object as text, {path, sha256}) names the WebKit W1 before-reading
+#     (webkit-reading/1) taken before the run and goes to first_app_p3.py as --w1-before, which checks it; with any
+#     other mode it is refused (a live profile names its own w1_before). Left out = the command line exactly as
+#     before, and the WebKit rows stay NOT RUN (Architecture queue #337).
 #   mode=live with a profile holding "journey_p3": the served build. Up to 3500 s.
 # Writes check/ in the workspace: receipt.json + summary.md (+ after-reload.png for the first app), or one folder per
 # control plus controls.json. A FAIL, REFUSED or BLOCKED verdict is a result, not a step failure: the step
@@ -57,10 +61,14 @@ agent:
 
     mode = (os.environ.get("{{ mode | env }}") or "").strip()
     profile = os.environ.get("{{ profile | env }}") or ""
+    w1_before = os.environ.get("{{ w1_before | env }}") or ""
     if mode not in ("controls", "live", "controls_shared", "controls_p3"):
         raise SystemExit("first_app_check needs mode = controls, live, controls_shared or controls_p3, got %r" % mode)
     if profile.strip() and mode != "live":
         raise SystemExit("first_app_check: profile is for mode=live; the controls bring their own")
+    if w1_before.strip() and mode != "controls_p3":
+        raise SystemExit("first_app_check: w1_before is for mode=controls_p3, not %s; a live profile names its W1 "
+                         "before-reading itself (w1_before)" % mode)
     try:
         p3 = mode == "controls_p3" or "journey_p3" in json.loads(profile)
     except (ValueError, TypeError):
@@ -71,6 +79,8 @@ agent:
     cmd = [sys.executable, "-u", script, "--mode", mode, "--out", "check"]
     if profile.strip():
         cmd += ["--profile", profile]
+    if w1_before.strip() and mode == "controls_p3":
+        cmd += ["--w1-before", w1_before]
     try:
         shared = mode == "controls_shared" or "journey" in json.loads(profile)
     except (ValueError, TypeError):

@@ -586,7 +586,169 @@ def test_configs_pass_the_profile():
     agent = yaml.safe_load((root / "configs/architecture/agents/first_app_check.yaml").read_text())["agent"]
     flow = yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
     assert flow["inputs"]["profile"] == {"type": "string", "required": False}
-    assert flow["nodes"][0]["input_map"] == {"mode": "input.mode", "profile": "input.profile"}
+    assert flow["nodes"][0]["input_map"] == {"mode": "input.mode", "profile": "input.profile",
+                                             "w1_before": "input.w1_before"}
     template = agent["script_template"]
     assert 'os.environ.get("{{ profile | env }}")' in template and 'cmd += ["--profile", profile]' in template
     assert "architecture/fixtures/first_app_reworded/" in (root / "docs" / "departments.md").read_text()
+
+
+# --- w1_before, the WebKit half's way in (Architecture queue #337) ---------------------------------------------------
+# Wiring only. The workflow's optional w1_before reaches first_app_p3.py as --w1-before for mode=controls_p3, the one
+# mode whose checker takes that flag (a live profile names its own w1_before key). Each case goes through the real
+# configs and temper's own code: the workflow's input_map by temper's input resolution, the agent's template by
+# temper's ScriptAgent rendering, then the template's Python part with subprocess.run captured, so no checker,
+# browser or server is started.
+
+BOX_BIN = "/app/configs/architecture/bin/"
+# A reference of the right shape that names no reading: the agent only passes it on; first_app_p3_w1 reads the file.
+W1_REF = json.dumps({"path": "/nonexistent/webkit-before.json", "sha256": "0" * 64})
+P3_PROFILE = json.dumps({"journey_p3": "p3"})
+SHARED_PROFILE = json.dumps({"journey": "shared"})
+FIRST_PROFILE = json.dumps({"origin": ORIGIN})
+
+
+def run_agent(monkeypatch, tmp_path, **given):
+    """first_app_check's node started with these workflow inputs: (cmd, how, refusal). cmd and how are the argument
+    list and keywords the template hands to subprocess.run; refusal is the text it exits with before that."""
+    import subprocess
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import yaml
+
+    from temper_ai.agent.script_agent import ScriptAgent
+    from temper_ai.stage.executor import _resolve_inputs
+    from temper_ai.stage.models import WorkflowConfig
+    from temper_ai.tools.base import ToolResult
+
+    root = SCRIPT.parents[3]
+    agent = yaml.safe_load((root / "configs/architecture/agents/first_app_check.yaml").read_text())["agent"]
+    flow = WorkflowConfig.from_dict(
+        yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"])
+    (check,) = flow.nodes
+    inputs = _resolve_inputs(SimpleNamespace(name=check.name, config=check), given, {})
+    ctx = MagicMock()
+    ctx.run_id, ctx.workspace_path = "run-337", str(tmp_path)
+    ctx.tool_executor.execute.return_value = ToolResult(success=True, result="{}")
+    ScriptAgent(config=agent).run(inputs, ctx)
+    params = ctx.tool_executor.execute.call_args[0][1]
+    python = params["command"].split("<<'PYEOF'\n", 1)[1].rsplit("\nPYEOF", 1)[0]
+    for name, value in params["env"].items():
+        monkeypatch.setenv(name, value)
+    calls = []
+
+    def run(cmd, **how):
+        calls.append((list(cmd), how))
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"verdict": "STUB"}\n', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "check").mkdir(exist_ok=True)
+    try:
+        exec(compile(python, "first_app_check.yaml script_template", "exec"), {"__name__": "__main__"})
+    except SystemExit as exc:
+        assert calls == [], "a refusal comes before the checker is started"
+        return None, None, str(exc.code)
+    ((cmd, how),) = calls
+    return cmd, how, None
+
+
+def first_app_p3():
+    """The P3 checker as its own tests load it: the copy already loaded, else a fresh one."""
+    if "first_app_p3" not in sys.modules:
+        spec_p3 = importlib.util.spec_from_file_location("first_app_p3", SCRIPT.parent / "first_app_p3.py")
+        module = importlib.util.module_from_spec(spec_p3)
+        sys.modules["first_app_p3"] = module
+        spec_p3.loader.exec_module(module)
+    return sys.modules["first_app_p3"]
+
+
+# Today's command lines: the arguments after the interpreter and the subprocess.run timeout.
+TODAY = {
+    "controls": ({"mode": "controls"}, [BOX_BIN + "first_app_check.py", "--mode", "controls", "--out", "check"], 840),
+    "controls_shared": ({"mode": "controls_shared"},
+                        [BOX_BIN + "first_app_check.py", "--mode", "controls_shared", "--out", "check"], 3500),
+    "controls_p3": ({"mode": "controls_p3"},
+                    [BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check"], 3500),
+    "live": ({"mode": "live"}, [BOX_BIN + "first_app_check.py", "--mode", "live", "--out", "check"], 840),
+    "live-first-profile": ({"mode": "live", "profile": FIRST_PROFILE},
+                           [BOX_BIN + "first_app_check.py", "--mode", "live", "--out", "check", "--profile",
+                            FIRST_PROFILE], 840),
+    "live-shared-profile": ({"mode": "live", "profile": SHARED_PROFILE},
+                            [BOX_BIN + "first_app_check.py", "--mode", "live", "--out", "check", "--profile",
+                             SHARED_PROFILE], 3500),
+    "live-p3-profile": ({"mode": "live", "profile": P3_PROFILE},
+                        [BOX_BIN + "first_app_p3.py", "--mode", "live", "--out", "check", "--profile", P3_PROFILE],
+                        3500),
+}
+
+
+@pytest.mark.parametrize("no_w1", [{}, {"w1_before": None}, {"w1_before": ""}, {"w1_before": " \n"}],
+                         ids=["left-out", "null", "empty", "blank"])
+@pytest.mark.parametrize("case", sorted(TODAY))
+def test_without_w1_before_the_command_line_is_todays_exactly(monkeypatch, tmp_path, case, no_w1):
+    given, args, timeout = TODAY[case]
+    cmd, how, refusal = run_agent(monkeypatch, tmp_path, **given, **no_w1)
+    assert refusal is None
+    assert cmd == [sys.executable, "-u", *args]
+    assert how == {"capture_output": True, "text": True, "timeout": timeout}
+
+
+@pytest.mark.parametrize("value", [W1_REF, "\n" + W1_REF + "\n"], ids=["plain", "with-newlines"])
+def test_controls_p3_with_w1_before_adds_the_flag_once_with_that_value(monkeypatch, tmp_path, value):
+    cmd, how, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w1_before=value)
+    assert refusal is None
+    assert cmd == [sys.executable, "-u", BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check",
+                   "--w1-before", value]
+    assert cmd.count("--w1-before") == 1
+    assert how == {"capture_output": True, "text": True, "timeout": 3500}
+
+
+@pytest.mark.parametrize("case", ["live", "live-p3-profile", "live-first-profile", "controls", "controls_shared"])
+def test_w1_before_with_any_other_mode_is_refused_before_the_checker_starts(monkeypatch, tmp_path, case):
+    given = TODAY[case][0]
+    cmd, how, refusal = run_agent(monkeypatch, tmp_path, **given, w1_before=W1_REF)
+    assert cmd is None
+    assert refusal == (f"first_app_check: w1_before is for mode=controls_p3, not {given['mode']}; a live profile "
+                       "names its W1 before-reading itself (w1_before)")
+    # The checker's own rule for its flag, in its own words: the agent mirrors it rather than contradicting it.
+    rule = "a live profile names its W1 before-reading itself (w1_before)"
+    assert refusal.endswith(rule) and rule in (SCRIPT.parent / "first_app_p3.py").read_text()
+
+
+@pytest.mark.parametrize("value, error", [
+    ("not json", "--w1-before is not JSON: Expecting value"),
+    ('["/nonexistent/webkit-before.json"]', "--w1-before: w1_before is not an object"),
+    ('{"path": "webkit-before.json", "sha256": "AB"}',
+     "--w1-before: w1_before.path must be an absolute path; w1_before.sha256 must be 64 lowercase hex characters"),
+    (json.dumps({"path": "/nonexistent/webkit-before.json", "sha256": "0" * 64, "id": "x"}),
+     "--w1-before: w1_before must have exactly the keys path and sha256, not ['id', 'path', 'sha256']"),
+], ids=["not-json", "not-an-object", "bad-fields", "extra-key"])
+def test_a_malformed_w1_before_goes_on_unchanged_and_the_checkers_own_parser_refuses_it(monkeypatch, tmp_path, capsys,
+                                                                                         value, error):
+    cmd, _, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w1_before=value)
+    assert refusal is None and cmd.count("--w1-before") == 1 and cmd[cmd.index("--w1-before") + 1] == value
+    p3 = first_app_p3()
+
+    def never(*a, **kw):
+        raise AssertionError("the checker went past its argument parser")
+
+    monkeypatch.setattr(p3, "controls", never)
+    monkeypatch.setattr(p3, "live", never)
+    monkeypatch.setattr(sys, "argv", ["first_app_p3.py", *cmd[3:]])
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as exc:
+        p3.main()
+    assert exc.value.code == 2
+    assert capsys.readouterr().err.strip().endswith("first_app_p3.py: error: " + error)
+
+
+def test_configs_take_w1_before_as_an_optional_input():
+    import yaml
+    root = SCRIPT.parents[3]
+    agent = yaml.safe_load((root / "configs/architecture/agents/first_app_check.yaml").read_text())["agent"]
+    flow = yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
+    assert flow["inputs"]["w1_before"] == {"type": "string", "required": False}
+    assert flow["nodes"][0]["input_map"]["w1_before"] == "input.w1_before"
+    assert 'os.environ.get("{{ w1_before | env }}")' in agent["script_template"]

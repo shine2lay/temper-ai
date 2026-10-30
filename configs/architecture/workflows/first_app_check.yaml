@@ -33,11 +33,18 @@ workflow:
     only through #126's ops_host_client. An unexpected off-origin request is W4 (exit 4).
     mode=controls_p3 proves it on a synthetic Project-3-style page and servers; mode=live with a
     profile holding "journey_p3" checks a served build (form: first_app_p3.py --print-p3-profile).
+    w1_before (mode=controls_p3 only, queue #337) names the WebKit W1 before-reading taken before the
+    run (webkit-reading/1, from chromium-reading take --webkit), as one JSON object as text with
+    exactly path and sha256 (64 lowercase hex). The path is absolute and is read inside the run's
+    box, so the box's user must be able to read it; first_app_p3.py checks it (--w1-before).
+    Left out, the WebKit rows stay NOT RUN, exactly as before; with any other mode it is refused
+    (a live profile names its own w1_before).
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
     mode: {type: string, required: true}      # controls | live | controls_shared | controls_p3
     profile: {type: string, required: false}  # live only; left out = the first app, exactly as before
+    w1_before: {type: string, required: false}  # controls_p3 only; left out = WebKit rows NOT RUN, as before
   outputs:
     mode: check.structured.mode
     verdict: check.structured.verdict
@@ -65,3 +72,4 @@ workflow:
       input_map:
         mode: input.mode
         profile: input.profile
+        w1_before: input.w1_before

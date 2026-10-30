@@ -106,6 +106,44 @@ worker never opens the file; docker binds it.
 - Sealed boxes get no login file, with the setting or without
   ([Sealed boxes](#sealed-boxes-bs1)).
 
+## A worktree's main repository
+
+A run whose workspace is a `git worktree` needs its main repository too: the
+worktree's `.git` is a file naming `<main>/.git/worktrees/<name>`, and git reads and
+writes there. A legacy box gets that main repository read-write, at its host path,
+only for a real worktree (`checked_main_repo()` in
+`temper_ai/spawner/docker_spawner.py`):
+
+- the `.git` file names a worktree record, `<main>/.git/worktrees/<name>`, and
+  `<main>` holds no comma or quote (docker would read the rest of its `--mount`
+  argument as more options, such as another source);
+- `<main>` is inside `WORKSPACE_DIR` (never `WORKSPACE_DIR` itself), or inside a
+  folder of the worker's `TEMPER_DOCKER_MAIN_REPO_ROOTS` (`:`-separated host paths;
+  unset or empty: the install's checkout, the folder the template's `/app/configs`
+  comes from; set it to `WORKSPACE_DIR`'s path to allow nothing more);
+- no symlink lies between that folder and the record, and the record is a folder
+  the worker can see;
+- the record's back-link file, `<record>/gitdir`, which `git worktree add` writes,
+  names this workspace's `.git`. A run can write its own `.git`, but not that file
+  in a repository it doesn't have, so a planted `.git` can't pass.
+
+Anything else that would need a mount stops the spawn with `MainRepoRefused`, which
+names the workspace and the path refused, and the run fails with that message.
+Nothing more is mounted, and nothing checked, when the workspace has no `.git` file
+(a `.git` folder is its own repository; a `.git` symlink is not followed), or when
+the record is inside the workspace or inside a mount the box already has (with
+`TEMPER_DOCKER_WORKSPACES=all`, the whole workspaces tree). A moved worktree fails
+the back-link check: `git worktree repair` in it fixes the link.
+
+- The worker checks with what it can see, so a worktree of a repository it has no
+  view of is refused. The worker `docker-compose.yml` sets up has the checkout's
+  `temper_ai/`, `configs/` and workspaces tree, not its `.git`: there, a worktree of
+  the checkout itself is refused, though the checkout is an allowed folder.
+- The worker reads the setting once, when it starts. A value that isn't absolute
+  and plain, or is `/`, keeps the worker from starting (`Watcher won't start:
+  TEMPER_DOCKER_MAIN_REPO_ROOTS=...`).
+- Sealed boxes never get a main repository ([Sealed boxes](#sealed-boxes-bs1)).
+
 ## Emergency rollback
 
 `TEMPER_BOX_ENV=inherit` in the worker's environment brings back the old box: a copy
@@ -132,6 +170,17 @@ What temper cannot close by itself yet, handed to Architecture:
   `/proc/1/environ` and the main process's `/proc/<pid>/environ` and find those
   values there. Scrubbing the tool environment stops a casual `env`, not a
   determined agent.
+- A legacy box's mounts are checked, then bound by path: between the two, a run
+  still going in another box could swap a folder on the way for a symlink. That
+  holds for the workspace itself as much as for a worktree's main repository;
+  sealed boxes bind pinned paths instead.
+- The default main-repository root, the install's checkout, holds `WORKSPACE_DIR`
+  and `.env`. A worker that could see the checkout's `.git` at its host path would
+  give a real worktree of the checkout the whole checkout read-write, `.env` and
+  every run's workspace with it (under `TEMPER_DOCKER_WORKSPACES=own` too). The
+  worker `docker-compose.yml` sets up can't see it, so nothing is mounted today.
+  Give no worker that view until a main repository that is `WORKSPACE_DIR` or holds
+  it is refused.
 - Built, switched off: a one-shot delivery into a non-dumpable runner
   (`TEMPER_BOX_SECRET_BOOTSTRAP=oneshot`, below), which closes the `/proc` read.
   Still under consideration: a separate user for agent tools; a database role per

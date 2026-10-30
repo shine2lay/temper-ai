@@ -322,6 +322,12 @@ services:
       # `own`: a run sees only its own workspace. `all`: the whole
       # workspaces tree, where runs share folders (repos, readonly, ...).
       TEMPER_DOCKER_WORKSPACES: ${TEMPER_DOCKER_WORKSPACES:-own}
+      # Where a run's git worktree may have its main repository, which its
+      # box then also gets read-write: inside WORKSPACE_DIR always, plus
+      # these folders (":"-separated host paths). Empty: this checkout (the
+      # folder ./configs is in). Any other main repository stops the run
+      # (docs/boxes.md, "A worktree's main repository").
+      TEMPER_DOCKER_MAIN_REPO_ROOTS: ${TEMPER_DOCKER_MAIN_REPO_ROOTS:-}
       # What the box runs, when not `uv run python -m temper_ai.cli.main
       # run-workflow` (the server image: `.venv/bin/python -m ...`).
       TEMPER_DOCKER_RUN_COMMAND: ${TEMPER_DOCKER_RUN_COMMAND:-}

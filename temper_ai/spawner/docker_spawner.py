@@ -34,7 +34,12 @@ What a run container is, precisely:
             `WORKSPACE_DIR:WORKSPACE_DIR`) replaced by the run's own
             workspace, read-write, at the same host path — plus the git
             main repository when that workspace is a `git worktree`, since
-            worktree operations write to the main repo's .git.
+            worktree operations write to the main repo's .git. Only a real
+            one: the record its .git names must be a worktree record git
+            made for this workspace (its back-link names this .git), in a
+            repository inside WORKSPACE_DIR or a root of
+            TEMPER_DOCKER_MAIN_REPO_ROOTS (unset: the install's checkout);
+            any other gitdir refuses the spawn (MainRepoRefused).
             TEMPER_DOCKER_WORKSPACES=all keeps the whole tree instead (runs
             here share folders under it, as they did inside the server);
             a run's workspace inside an inherited mount is not mounted again
@@ -145,6 +150,22 @@ LOGIN_FILE_TARGET = f"{box_seal.CLAUDE_STATE}/.credentials.json"
 LOGIN_FILE_KIND = f"login file ({LOGIN_FILE_ENV})"
 #: A template bind of the Claude CLI's login file, in whichever home it sits.
 _LOGIN_FILE_SUFFIX = "/.claude/.credentials.json"
+#: Set on the worker: the folders, besides WORKSPACE_DIR, a legacy box's git worktree may
+#: have its main repository in (absolute paths, separated by ":"). Unset or empty: the
+#: install's own checkout (install_checkout). Read once, when the spawner is made.
+MAIN_REPO_ROOTS_ENV = "TEMPER_DOCKER_MAIN_REPO_ROOTS"
+#: The most of a .git file or a worktree's back-link file that is read: the first line counts.
+_GIT_LINK_BYTES = 4096
+
+
+class MainRepoRefused(SpawnerError):
+    """A legacy box's workspace names a gitdir whose main repository may not be mounted.
+
+    Its .git file points outside the workspace and every mount the box has, at something
+    that is not a worktree record git made for this workspace in a repository inside
+    WORKSPACE_DIR or an allowed root. The box is not started: one without the mount would
+    have a broken git, one with it could be given any folder of the host.
+    """
 
 #: What a sealed box runs: the template image's own interpreter, isolated (-I: no
 #: PYTHON* variables, no user site, no current folder on the import path).
@@ -375,7 +396,9 @@ def _lookup_workspace_path(execution_id: str) -> str | None:
         return None if row is None else row.workspace_path
 
 
-def workspace_mounts(workspace_path: str, covered: Iterable[Mount] = ()) -> list[Mount]:
+def workspace_mounts(workspace_path: str, covered: Iterable[Mount] = (), *,
+                     workspace_dir: str | None = None,
+                     main_repo_roots: Iterable[str] = ()) -> list[Mount]:
     """The run's workspace, read-write, at its host path — and, when it is a
     git worktree, the main repository too (its `.git` is a file pointing at
     `<main>/.git/worktrees/<name>`; git in the worktree reads and writes there).
@@ -383,6 +406,11 @@ def workspace_mounts(workspace_path: str, covered: Iterable[Mount] = ()) -> list
     ``covered`` are the mounts the run already inherits: a path inside one of
     them is left out (it is there already, and inside the worker it may not
     be a host path at all, like /app/workspaces).
+
+    The main repository is mounted only for a real worktree (checked_main_repo):
+    one inside ``workspace_dir`` (WORKSPACE_DIR) or one of ``main_repo_roots``,
+    whose worktree record names this workspace back. Anything else that would
+    need a mount is MainRepoRefused.
     """
     covered = list(covered)
     workspace = Path(workspace_path)
@@ -393,10 +421,10 @@ def workspace_mounts(workspace_path: str, covered: Iterable[Mount] = ()) -> list
             "the run container needs it bind-mounted at the same path",
         )
     mounts = [] if inside else [Mount(str(workspace), str(workspace), read_only=False)]
-    main_repo = _git_main_repo(workspace) if workspace.is_dir() else None
-    if (main_repo is not None and not _is_relative_to(main_repo, workspace)
-            and not _inside_any(main_repo, covered)):
-        mounts.append(Mount(str(main_repo), str(main_repo), read_only=False))
+    main_repo = (checked_main_repo(workspace_path, covered, workspace_dir, main_repo_roots)
+                 if workspace.is_dir() else None)
+    if main_repo is not None:
+        mounts.append(Mount(main_repo, main_repo, read_only=False))
     return mounts
 
 
@@ -404,24 +432,109 @@ def _inside_any(path: Path, mounts: list[Mount]) -> bool:
     return any(_is_relative_to(path, Path(m.target)) for m in mounts)
 
 
-def _git_main_repo(workspace: Path) -> Path | None:
-    dot_git = workspace / ".git"
-    if not dot_git.is_file():
+def _gitdir_named(workspace: str) -> str | None:
+    """What the workspace's own .git file names after "gitdir:"; None when it names nothing.
+
+    Opened as a sealed box opens it: never through a symlink (a linked .git is not
+    followed, so nothing outside is mounted for it), never waiting on a FIFO, and only
+    its first line read. No .git, or a .git folder (the workspace's own repository): None.
+    """
+    try:
+        fd = os.open(os.path.join(workspace, ".git"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
         return None
     try:
-        first = dot_git.read_text().splitlines()[0]
-    except (OSError, IndexError):
+        head = os.read(fd, _GIT_LINK_BYTES)
+    except OSError:
+        return None  # a folder, or nothing to read
+    finally:
+        os.close(fd)
+    first = head.decode("utf-8", "replace").splitlines()[:1]
+    if not first or not first[0].startswith("gitdir:"):
         return None
-    if not first.startswith("gitdir:"):
+    return first[0][len("gitdir:"):].strip()
+
+
+def checked_main_repo(workspace_path: str, covered: Iterable[Mount], workspace_dir: str | None,
+                      roots: Iterable[str]) -> str | None:
+    """The main repository a legacy box must also mount for its git worktree, checked (E7).
+
+    None when nothing more is needed: no .git file naming a gitdir, or a gitdir inside the
+    workspace or inside a mount the box inherits. Otherwise the gitdir must be a worktree
+    record <main>/.git/worktrees/<name>; <main> a path a docker --mount argument carries as
+    it is (no commas or quotes), inside WORKSPACE_DIR (never the tree itself)
+    or one of ``roots``; no symlink between that root and the record; the record
+    a folder the worker sees; and its back-link file (<record>/gitdir, which `git worktree
+    add` writes) naming this workspace's .git. That link is git's own, so a real worktree
+    has it and a planted .git file can't make it. Anything else is MainRepoRefused,
+    naming the workspace and the path refused.
+    """
+    named = _gitdir_named(workspace_path)
+    if named is None:
         return None
-    gitdir = Path(first[len("gitdir:"):].strip())
-    if not gitdir.is_absolute():
-        gitdir = (workspace / gitdir).resolve()
-    # <main>/.git/worktrees/<name> → <main>
-    for parent in gitdir.parents:
-        if parent.name == ".git":
-            return parent.parent
-    return None
+    roots = tuple(roots)
+    workspace = os.path.normpath(workspace_path)
+    if "\x00" in named:  # no path holds one; the checks below would trip on it unnamed
+        raise MainRepoRefused(f"Main repository mount refused for workspace {workspace}: its .git "
+                              f"names {named!r}, which holds a NUL byte and so is no path")
+    record = os.path.normpath(os.path.join(workspace, named))
+    if _within(record, workspace) or _inside_any(Path(record), list(covered)):
+        return None  # the box has it already: its own repository, or an inherited mount
+    refused = f"Main repository mount refused for workspace {workspace}: its .git names {record!r}"
+    dot_git, worktrees = os.path.split(os.path.dirname(record))
+    if worktrees != "worktrees" or os.path.basename(dot_git) != ".git":
+        raise MainRepoRefused(f"{refused}, which is not a git worktree record "
+                              "(<repository>/.git/worktrees/<name>)")
+    main = os.path.dirname(dot_git)
+    # docker reads --mount as comma-separated values: after a comma come more options. (A line
+    # break gets only as far as the back-link, whose one line can't name a path holding one.)
+    if any(char in main for char in ',"'):
+        raise MainRepoRefused(f"{refused}, whose repository path {main!r} can't go into a "
+                              "docker --mount argument (no commas or quotes)")
+    shared = os.path.normpath(workspace_dir) if workspace_dir else None
+    if main == shared:
+        raise MainRepoRefused(f"{refused}, whose repository is WORKSPACE_DIR itself; the "
+                              "shared tree is never mounted as one repository")
+    allowed = [shared] if shared and _within(main, shared) else []
+    allowed += [root for root in roots if _within(main, root)]
+    if not allowed:
+        listed = ", ".join([*([shared] if shared else []), *roots]) or "none"
+        raise MainRepoRefused(
+            f"{refused}, whose repository {main} is outside WORKSPACE_DIR and the allowed "
+            f"roots ({listed}); {MAIN_REPO_ROOTS_ENV} on the worker sets those roots")
+    root = allowed[0]
+    if os.path.realpath(record) != os.path.join(os.path.realpath(root), os.path.relpath(record, root)):
+        raise MainRepoRefused(f"{refused}, and the path from {root} to it goes through a symlink")
+    if not os.path.isdir(record):
+        raise MainRepoRefused(f"{refused}, which is not a folder the worker can see (a worktree "
+                              "record the worker can't read can't be checked, so its "
+                              "repository is not mounted)")
+    back_link = os.path.join(record, "gitdir")
+    try:
+        fd = os.open(back_link, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            head = os.read(fd, _GIT_LINK_BYTES)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise MainRepoRefused(
+            f"{refused}, whose back-link file {back_link} can't be read as a plain file "
+            f"({exc.strerror or exc})") from exc
+    first = head.decode("utf-8", "replace").splitlines()[:1]
+    linked = first[0].strip() if first else ""
+    linked = os.path.normpath(os.path.join(record, linked)) if linked else ""
+    # git writes the worktree's path as it resolved it: either spelling names this workspace.
+    own = {os.path.join(workspace, ".git"), os.path.join(os.path.realpath(workspace), ".git")}
+    if linked not in own:
+        raise MainRepoRefused(
+            f"{refused}, whose back-link file {back_link} does not name this workspace's "
+            f"{workspace}/.git (a moved worktree: `git worktree repair` in it)")
+    return main
+
+
+def _within(path: str, root: str) -> bool:
+    """Whether ``path`` is ``root`` or inside it; both absolute and normalized."""
+    return path == root or path.startswith(root.rstrip("/") + "/")
 
 
 def _is_relative_to(path: Path, other: Path) -> bool:
@@ -467,6 +580,44 @@ def _workspace_forms(workspace_path: str, workspace_dir: str | None) -> list[str
 
 def _all_workspaces() -> bool:
     return os.environ.get("TEMPER_DOCKER_WORKSPACES", "own").strip().lower() == "all"
+
+
+def main_repo_roots_setting(value: str | None) -> tuple[str, ...] | None:
+    """TEMPER_DOCKER_MAIN_REPO_ROOTS's folders, checked; None when it is unset or empty.
+
+    None means the default: the install's own checkout (install_checkout). Set, it takes the
+    place of that default (WORKSPACE_DIR stays allowed either way; set it to WORKSPACE_DIR's
+    own path to allow nothing else). Each ":"-separated entry must be an absolute, plain
+    host path and not / itself (a root of / would let any folder be mounted); anything else
+    is SpawnerError, so the worker starts no box on a setting it misread.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    roots: list[str] = []
+    for entry in text.split(":"):
+        root = entry.strip()
+        if not root.startswith("/") or root == "/" or os.path.normpath(root) != root:
+            raise SpawnerError(
+                f"{MAIN_REPO_ROOTS_ENV}={text!r} holds {root!r}, which is not an absolute, plain "
+                "host path other than / (no '.' or '..', empty entries or trailing '/'); no box "
+                "starts until it is fixed or unset",
+            )
+        roots.append(root)
+    return tuple(roots)
+
+
+def install_checkout(template: Template) -> str | None:
+    """The install's own checkout on the host: the folder the template's configs come from.
+
+    The default extra main-repository root (TEMPER_DOCKER_MAIN_REPO_ROOTS unset): the parent
+    of the template's bind at /app/configs. None when it has none, or when that is /.
+    """
+    for mount in template.mounts:
+        if mount.target == box_seal.CONFIG_TARGET:
+            checkout = os.path.dirname(os.path.normpath(mount.source))
+            return checkout if checkout != "/" else None
+    return None
 
 
 def login_file_setting(value: str | None) -> str | None:
@@ -571,11 +722,18 @@ class DockerSpawner(Spawner):
         engine_launches: Mapping[str, str] | None = None,
         delivery_limits: Mapping[str, int] | None = None,
         login_file: str | None = None,
+        main_repo_roots: str | None = None,
     ) -> None:
         self._docker = docker_bin
         # The legacy boxes' login file (None: TEMPER_BOX_LOGIN_FILE, read once, here).
         self._login_file = login_file_setting(
             login_file if login_file is not None else os.environ.get(LOGIN_FILE_ENV))
+        # Where a legacy box's git worktree may have its main repository, besides
+        # WORKSPACE_DIR (None: TEMPER_DOCKER_MAIN_REPO_ROOTS, read once, here; unset: the
+        # install's checkout, from each template).
+        self._main_repo_roots = main_repo_roots_setting(
+            main_repo_roots if main_repo_roots is not None
+            else os.environ.get(MAIN_REPO_ROOTS_ENV))
         self._template_container = (
             template_container
             or os.environ.get("TEMPER_DOCKER_TEMPLATE_CONTAINER")
@@ -700,7 +858,9 @@ class DockerSpawner(Spawner):
         """A legacy box's profile, stored on the row; None (the box starts as before) on trouble.
 
         The profile machinery never stops a legacy box, with one exception: a run that
-        ever had a sealed box is never given a legacy one (BoxProfileError).
+        ever had a sealed box is never given a legacy one (BoxProfileError). A refused
+        main-repository mount (MainRepoRefused) is not the profile's trouble: it is
+        raised, and stops the spawn as run_command would.
         """
         facts = None
         try:
@@ -747,6 +907,8 @@ class DockerSpawner(Spawner):
             record = box_profile.record_for(doc, previous)
             self._store.save(execution_id, record,
                              previous.generation if previous else None)
+        except MainRepoRefused:
+            raise  # no box at all, not a box without a profile
         except Exception as exc:  # noqa: BLE001 - as before: the box starts without one
             logger.warning("Run container %s: no box profile (%s); it starts without one",
                            container_name(execution_id), exc)
@@ -1226,12 +1388,24 @@ class DockerSpawner(Spawner):
         inherited = [m for m in template.mounts if _passes_through(m, all_workspaces)]
         return bind_login_file_from_setting(inherited, self._login_file)
 
+    def main_repo_roots(self, template: Template) -> tuple[str, ...]:
+        """Where, besides WORKSPACE_DIR, a legacy box's worktree may have its main repository."""
+        if self._main_repo_roots is not None:
+            return self._main_repo_roots
+        checkout = install_checkout(template)
+        return (checkout,) if checkout else ()
+
     def legacy_mounts(self, workspace_path: str, template: Template) -> tuple[list[str], list[Mount]]:
-        """A legacy box's ~/.claude tmpfs homes and bind mounts, in the order docker gets them."""
+        """A legacy box's ~/.claude tmpfs homes and bind mounts, in the order docker gets them.
+
+        MainRepoRefused when the workspace's .git names a main repository it may not have.
+        """
         inherited = self.inherited_mounts(template)
         mounts = list(inherited)
         if workspace_path:
-            mounts += workspace_mounts(workspace_path, covered=inherited)
+            mounts += workspace_mounts(workspace_path, covered=inherited,
+                                       workspace_dir=template.env_value("WORKSPACE_DIR"),
+                                       main_repo_roots=self.main_repo_roots(template))
         return _claude_homes(inherited), mounts
 
     def run_command(

@@ -472,13 +472,17 @@ class TestWorkspaceMounts:
         assert workspace_mounts(str(workspace)) == [Mount(str(workspace), str(workspace), read_only=False)]
 
     def test_a_git_worktree_brings_its_main_repository(self, tmp_path):
+        # Laid out as `git worktree add` lays it out, back-link included; which worktrees
+        # may have their repository mounted: test_main_repo_guard.py.
         main = tmp_path / "repos" / "proj"
-        (main / ".git" / "worktrees" / "feature").mkdir(parents=True)
+        record = main / ".git" / "worktrees" / "feature"
+        record.mkdir(parents=True)
         wt = main / "worktrees" / "feature"
         wt.mkdir(parents=True)
-        (wt / ".git").write_text(f"gitdir: {main}/.git/worktrees/feature\n")
+        (wt / ".git").write_text(f"gitdir: {record}\n")
+        (record / "gitdir").write_text(f"{wt}/.git\n")
 
-        mounts = workspace_mounts(str(wt))
+        mounts = workspace_mounts(str(wt), main_repo_roots=[str(tmp_path / "repos")])
         assert mounts == [
             Mount(str(wt), str(wt), read_only=False),
             Mount(str(main), str(main), read_only=False),
@@ -490,11 +494,13 @@ class TestWorkspaceMounts:
         # so the intent (this run's workspace, plus what git needs) is
         # visible in `docker inspect`.
         main = tmp_path / "proj"
-        (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+        record = main / ".git" / "worktrees" / "wt"
+        record.mkdir(parents=True)
         wt = main / "wt"
         wt.mkdir()
-        (wt / ".git").write_text(f"gitdir: {main}/.git/worktrees/wt\n")
-        mounts = workspace_mounts(str(wt))
+        (wt / ".git").write_text(f"gitdir: {record}\n")
+        (record / "gitdir").write_text(f"{wt}/.git\n")
+        mounts = workspace_mounts(str(wt), main_repo_roots=[str(main)])
         assert mounts[0] == Mount(str(wt), str(wt), read_only=False)
         assert Mount(str(main), str(main), read_only=False) in mounts
 

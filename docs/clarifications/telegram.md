@@ -1,7 +1,7 @@
 # Clarification answers over Telegram (M2)
 
-`temper_ai/integrations/telegram/clarifications.py` is the one path by which a
-real person's answer to a clarification question reaches temper. It sits at the
+`temper_ai/integrations/telegram/clarifications.py` is the intended provider-backed
+path for a person's answer to a clarification question. It sits at the
 Telegram bot's own `getUpdates` call and turns a person's reply into an
 `ActionReceipt` from the frozen contract (`docs/clarifications/contract.md`),
 judged by the contract's `validate_receipt` and kept before anything else
@@ -13,8 +13,10 @@ or while an edge is bound but has delivered no question, every update goes the
 ordinary way, exactly as before. It goes live only in a later, separate step,
 once the responder policy and its decisions exist (M4).
 
-The edge only keeps receipts. Applying an accepted answer to the record, with
-its revision check, is the store's job (M3), as wired by the caller (M4).
+The edge only keeps receipts. Applying an accepted answer is the store's job
+(M3), as wired by the caller (M4): its transaction must recheck current question,
+active-answer and confirmation-once rules as well as the revision. "Received."
+acknowledges a validated receipt, not successful application, consent or resume.
 
 ## How a person answers
 
@@ -38,9 +40,25 @@ one of the payloads kept with that prompt chooses how the reply counts.
 
 Only the server's own pull. `ClarificationEdge.pull(client, offset, ...)` makes
 the `getUpdates` call with the poller's own client (any other client is refused)
-and returns a `PulledBatch`. `PulledBatch.claim(update)` takes only the very
-objects that call returned; anything else is refused, whatever it holds. A
-`PulledBatch` cannot be built outside `pull`.
+and returns a `PulledBatch`. At pull time it privately captures independent
+nested snapshots and their canonical JSON. `claim(update)` checks the separately
+captured original object membership, then consumes that snapshot, not whatever
+the exposed object holds now. A later nested edit (including through a provider
+alias or during a policy call) cannot change kept text, disposition or digest.
+The public iteration tuple, namespace, offset and originating edge cannot be
+rebound. Appending/replacing membership is not supported; a foreign dict is
+refused even if it looks identical. Replaying the same captured object still
+uses that pull's original contents and the usual receipt replay check. The
+constructor requires `pull`'s private token.
+
+This is **capture integrity for the supported API**, not a hostile-Python
+sandbox. Server code, injected store and policy are trusted. The real client,
+HTTPS provider, bot token and endpoint must remain fixed for the lifetime of
+an edge; client object identity does not authenticate a replacement token or
+endpoint. Arbitrary code that replaces clients or invokes private methods is
+outside this boundary. No examined handler/API/inbox route gives callers a
+batch. Provider account authentication is not proof of physical human presence,
+original authorship or uncompromised accounts.
 
 So there is no route from:
 
@@ -118,7 +136,8 @@ without responder authority (`responder_not_authorised`); an answer given in
 another chat or through another bot (`transport_mismatch`); a question the latest
 record no longer asks (`unknown_question`); a press by someone other than the
 author of the words (`confirmer_not_author`); words with no UTF-8 form
-(`malformed`).
+(`malformed`). Forwarding markers are detectable; manual copying/retyping by
+an authenticated account cannot be distinguished from that account's own words.
 
 Retained (kept, bound to its presentation, applies nothing): words with no
 explicit disposition, or a press whose data is not exactly a kept payload
@@ -139,8 +158,11 @@ UTF-16 code units). Then, in order:
 
 - the record already holds an answer: `answered`, nothing kept or sent;
 - the generation is not the current one: `not_current`, nothing kept or sent;
-- the send intent is kept (`save_send`) under the presentation's ID, one attempt
-  is counted, the message is sent, and its message ID is kept: `sent`.
+- the send intent is kept (`save_send`) under the presentation's ID;
+- `start_attempt(send_id, expected_attempts=..., resend=...)` atomically compares
+  that saved attempt count with current state and admits at most one caller;
+- only the winner sends, then keeps the returned message ID: `sent`. A loser
+  returns the committed state, without a provider call or an automatic retry.
 
 A retry uses the same intent and the same presentation: no new question or
 presentation ID is ever made here. A different text under the same ID is refused
@@ -150,12 +172,26 @@ presentation ID is ever made here. A different text under the same ID is refused
 **No exactly-once claim.** When an attempt was started but no message ID was
 kept (the provider failed, or temper stopped after sending), the send is
 `uncertain`. It is shown as such and sent again only with `resend=True`, after
-someone has checked the chat; the same presentation keeps its ID. A reply to a
-copy whose message ID was never kept is not recognised and goes the ordinary way.
+someone has checked the chat; the flag itself is not proof of that check. The
+same presentation keeps its ID. Concurrent callers with the same observed
+attempt cannot both win. A later explicit reconciliation can intentionally
+overlap an uncertain in-flight network attempt; every ID returned by either
+attempt must remain a recognised copy, even when responses arrive out of order.
+
+A reply to a copy whose message ID was never kept is not recognised and goes
+the ordinary way (K1). That route is not necessarily a no-op: existing allowed
+commands/ask behaviour may start ordinary work under its own permissions. It
+never mints a clarification receipt. M4 still owes the lost-copy fallback and
+reconciliation choice; this adapter does not accept that operational risk.
+
+The answered/current check and the network send are not atomic (K5). An answer
+or new generation can commit in between. A subsequent reply stays tied to the
+original presentation; M3 must decide its application against current state.
+Exclusive send admission does not remove this separate race.
 
 Each prompt is kept the same way before it is sent, under an ID made from the
-typed reply's action key: when the update comes again, the kept prompt says
-whether it went out, so it is never sent twice. A prompt kept earlier with other
+typed reply's action key: repeated or concurrent claims share atomic admission
+and do not automatically send it again after an admitted attempt. A prompt kept earlier with other
 words (an older release) is left as kept and noted; the poller goes on.
 
 ## The store
@@ -163,15 +199,33 @@ words (an older release) is left as kept and noted; the poller goes on.
 `ClarificationStore` is what the edge needs from durable storage, each call one
 transaction: `save_send`, `start_attempt`, `record_delivery`, `delivery`,
 `copies`, `current_generation`, `question_ids`, `answered`, `receipt`,
-`keep_receipt`, `keep_refusal`. The current generation and the record's questions
-come from the record, never from what was sent. M3 implements it; the tests use
-a fake.
+`keep_receipt`, `keep_refusal`. The current generation and questions come from
+the record, never from what was sent. M3/M4's future adapter must implement this
+protocol; it is not implemented by the M0 contract. The tests use a locked fake,
+not a durable production store.
+
+`start_attempt(send_id, *, expected_attempts, resend)` returns `(record, won)`
+after committing. It wins only if no message ID is held, the current attempt
+count equals `expected_attempts`, and the count is zero or `resend=True`.
+Only a win increments the count. On a loss it returns current state without a
+write. Compare and increment must be atomic across every edge/process sharing
+the store; a local precheck followed by a separate increment is insufficient.
+The edge consumes the winner result before any network send. Intent identity
+must be immutable, so a mismatch cannot be hidden by a concurrent writer.
+
+`record_delivery` keeps every returned copy, not just the ID in the latest
+`SendRecord`. Both `delivery` and `copies` must retain those IDs. A committed
+attempt with a lost acknowledgement stays uncertain; a committed delivery
+with a lost acknowledgement is delivered on retry. Neither automatically
+sends again. These are explicit store requirements, not proof supplied by the
+fake of a real database's transactions.
 
 ## Tests
 
 `tests/test_integrations/test_telegram_clarifications.py` runs the combined clean
 path first, through the fake provider (`FakeTelegram`) and a fake store, then
-every refusal and crash point, then the default-off regression. Every guard has
+every refusal and crash point, captured-data mutations, barrier-controlled
+concurrent sends/claims, commit-then-raise ambiguity, then the default-off regression. Every guard has
 its own bite: `test_every_guard_bites` changes the guard's line in an in-memory
 copy of the module (never the file) and the guard's case must then fail. These
 fakes prove that the code enforces provenance; they are not evidence of a live

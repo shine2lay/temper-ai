@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 CORE_BUDGET_TOKENS = 4000
@@ -152,26 +153,41 @@ def resolve(root: Path, path: str) -> Path | None:
     return ReferenceResolver(root).resolve(path)
 
 
-def check_refs(root: Path, kb: Path) -> tuple[list[str], int]:
-    problems, checked = [], 0
-    resolver = ReferenceResolver(root)
+def iter_refs(kb: Path) -> Iterator[tuple[str, int, str]]:
+    """Yield (knowledge-relative file, line, span) in the checker's existing order."""
     for md in sorted(kb.rglob("*.md")):
         rel = md.relative_to(kb).as_posix()
         if rel == DERIVED:
             continue
         for n, line in enumerate(md.read_text().splitlines(), 1):
             for span in REF.findall(line):
-                if not looks_like_ref(span):
-                    continue
-                checked += 1
-                path, _, symbol = span.partition("::")
-                target = resolver.resolve(path)
-                if target is None:
-                    problems.append(f"{rel}:{n}: `{span}`: no such path")
-                elif symbol:
-                    name = symbol.split("(")[0]
-                    if resolver.is_dir(target) or not re.search(rf"\b{re.escape(name)}\b", resolver.read_text(target)):
-                        problems.append(f"{rel}:{n}: `{span}`: {name} not found in {path}")
+                if looks_like_ref(span):
+                    yield rel, n, span
+
+
+def contains_symbol(text: str, symbol: str) -> bool:
+    """A whole-word occurrence, not proof of a definition or a true sentence."""
+    name = symbol.split("(")[0]
+    return bool(re.search(rf"\b{re.escape(name)}\b", text))
+
+
+def has_symbol(resolver: ReferenceResolver, target: Path, symbol: str) -> bool:
+    """Use the same tracked/index content boundary as path resolution."""
+    return not resolver.is_dir(target) and contains_symbol(resolver.read_text(target), symbol)
+
+
+def check_refs(root: Path, kb: Path) -> tuple[list[str], int]:
+    problems, checked = [], 0
+    resolver = ReferenceResolver(root)
+    for rel, n, span in iter_refs(kb):
+        checked += 1
+        path, _, symbol = span.partition("::")
+        target = resolver.resolve(path)
+        if target is None:
+            problems.append(f"{rel}:{n}: `{span}`: no such path")
+        elif symbol and not has_symbol(resolver, target, symbol):
+            name = symbol.split("(")[0]
+            problems.append(f"{rel}:{n}: `{span}`: {name} not found in {path}")
     return problems, checked
 
 

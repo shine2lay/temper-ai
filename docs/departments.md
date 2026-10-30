@@ -693,13 +693,15 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/agents/epd_plan_numbers.yaml` | agent |
 | `epd/agents/epd_report.yaml` | agent |
 
-### docs (2)
+### docs (4)
 
 | Config | Kind |
 |---|---|
 | `epd/bin/capabilities.py` | script |
 | `epd/bin/fastapi_router_bindings.py` | static local-router binding resolver used by `capabilities.py` |
 | `epd/bin/kb_check.py` | script |
+| `epd/bin/kb_refresh.py` | report-only reference classification CLI; `--write` never writes |
+| `epd/bin/kb_reference_history.py` | read-only Git rename evidence used by `kb_refresh.py` |
 
 ### RollCall (24)
 

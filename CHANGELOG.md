@@ -39,6 +39,7 @@ Splits orchestration (server) from execution (worker) so engineers in workflows 
 
 ### Added
 
+- **Report-only knowledge-reference refresh** — `configs/epd/bin/kb_refresh.py --repo PATH [--write]` classifies broken references and lists conservative path/symbol hints using `kb_check.py`'s resolver and recognition. Unique tracked suffixes and Git-detected renames get candidate references only when the required symbol is present. Ambiguous targets are all reported, never selected. Both modes leave files unchanged; `--write` explicitly refuses rewriting because the initial history supplied no eligible real rewrite answers. Generated capabilities remain untouched. Exit 0 means references resolve, 1 means findings, and 2 means a usage or internal error; budget and map checks remain `kb_check.py`'s job.
 - **Dashboard sidebar** — persistent navigation (Workflows, Studio, Library, Docs) with theme toggle
 - **Docs page** — built-in config reference with schema tables, example configs, and registries
 - **Re-run button** — re-run a workflow with the same inputs from the execution view

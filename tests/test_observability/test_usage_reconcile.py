@@ -1254,11 +1254,6 @@ def test_row_open_pins_the_ended_set_and_null(status, blocks):
     assert reconcile.TERMINAL == ("completed", "failed", "cancelled", "interrupted")
 
 
-def test_carried_on_constant_matches_parked_claim():
-    from temper_ai.runner.parked import CARRIED_ON
-    assert reconcile.CARRIED_ON == CARRIED_ON == "parked"
-
-
 @pytest.mark.parametrize("status", reconcile.BARRIER_ENDED)
 def test_dead_carried_on_exemption_for_every_ended_row_status(status):
     execution("dead-claim", row=status, starts=[(BEFORE, "parked")])
@@ -1350,12 +1345,12 @@ BARRIER_GUARDS = {  # guard: function, its text, the text with the guard taken o
     "dead-carry-on-exemption": (reconcile._cutover_blockers, "~dead_carry_on(start),", "True,",
                                  "ended-row-latest-parked", QUIET),
     "dead-carry-on-needs-row": (reconcile._cutover_blockers,
-                                "col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended",
-                                "col(event.status).is_not_distinct_from(CARRIED_ON)",
+                                "col(event.status).is_not_distinct_from(parked.CARRIED_ON) & row_ended",
+                                "col(event.status).is_not_distinct_from(parked.CARRIED_ON)",
                                 "no-row-latest-parked", QUIET),
     "dead-carry-on-null-safe": (reconcile._cutover_blockers,
-                                "col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended",
-                                "(col(event.status) == CARRIED_ON) & row_ended",
+                                "col(event.status).is_not_distinct_from(parked.CARRIED_ON) & row_ended",
+                                "(col(event.status) == parked.CARRIED_ON) & row_ended",
                                 "ended-row-null-start", QUIET),
     "writing-rule": (reconcile._cutover_blockers, "union_all(by_row, by_start, by_activity)",
                      "union_all(by_row, by_start)", "orphaned-active", INSIDE),
@@ -1438,10 +1433,11 @@ def test_t10_bite_b4_split_statement_keeps_answers_but_fails_one_snapshot(monkey
 
 def frozen_at(clock: str) -> datetime:
     """The frozen cases' wall times (barrier-claim-cases.json) moved onto this table: T = NOW sits at
-    11:00, so a 10:00 start is before T, 17:00's quiet-window lease is 13:00 and lies after T."""
+    12:00, the file's cutoff_T, so a 10:00 start is before T, 17:00's quiet-window lease is 13:00
+    and lies after T, and 12:45's lease is T itself (lease = max(T, now - QUIET_WINDOW))."""
     hours, minutes, *rest = clock.split(":")
     seconds = float(rest[0]) if rest else 0.0
-    return NOW + timedelta(hours=int(hours) - 11, minutes=int(minutes), seconds=seconds)
+    return NOW + timedelta(hours=int(hours) - 12, minutes=int(minutes), seconds=seconds)
 
 
 LEASE = frozen_at("13:00")
@@ -1496,6 +1492,13 @@ def test_t11_frozen_barrier_cases_known_answers(name):
     assert frozen_answer(name) == ({name: rule} if rule else {})
 
 
+# The file's C03c (a pre-repair claimant killed between its two commits, required PASS) is a
+# liveness case this table leaves out: after S1 (the claim repair in runner/parked.py) a claim marks
+# CARRIED_ON and re-queues its row in ONE transaction, so no claimant can die between the two any
+# more. K9c is its barrier-level
+# twin: every column the barrier reads (row status, start status and time, event times) is the
+# same; only the observation time and the claim's carried_on_at, which the barrier never reads,
+# differ.
 LIVENESS = sorted(name for name, (shape, _, rule) in FROZEN.items()
                   if rule is None and any(status == "parked" for _, status, *_ in shape["starts"]))
 
@@ -1725,11 +1728,14 @@ def test_only_switch_known_answer_bites(monkeypatch, guard):
     assert only_switch_observations(monkeypatch, guard) != ONLY_SWITCH_ANSWER
 
 
-# Census: every site in the code that runs (temper_ai/, scripts/, configs/ and the files that
-# start processes) that runs or records a cutover, makes a post-cutover fault, touches the
-# coverage/fault tables by name or reads the switch. Docstrings are not sites.
+# Census: every site in the code that runs or in the files that start processes or set their
+# environment (CENSUS_ROOTS, plus the top-level compose, Dockerfile and .env files) that runs or
+# records a cutover, makes a post-cutover fault, touches the coverage/fault tables by name or
+# reads or sets the switch. Docstrings are not sites. A folder root is scanned whole; a file root
+# (pyproject.toml: its [project.scripts] and every [tool.*] section) as its whole text.
 REPO = Path(__file__).resolve().parents[2]
-CENSUS_ROOTS = ("temper_ai", "scripts", "configs")
+CENSUS_ROOTS = ("temper_ai", "scripts", "configs", "docker", ".github/workflows",
+                "entrypoint.sh", "Makefile", "pyproject.toml")
 CUTOVER_CALLS = frozenset({"try_cutover", "check_post_cutover"})
 CUTOVER_COLUMNS = frozenset({"cutover_at", "cutover_seq", "phase"})
 CUTOVER_TEXT = ("usage_coverage", "usage_faults", "post-cutover-missing-row", "TEMPER_USAGE_CUTOVER",
@@ -1738,7 +1744,10 @@ RECONCILE = "temper_ai/observability/usage_reconcile.py"
 
 
 def census_sources() -> dict[str, str]:
-    files = [path for root in CENSUS_ROOTS if (REPO / root).is_dir() for path in (REPO / root).rglob("*")
+    missing = [root for root in CENSUS_ROOTS if not (REPO / root).exists()]
+    assert not missing, f"census roots missing from the repo: {missing}"
+    files = [path for root in CENSUS_ROOTS
+             for path in ((REPO / root).rglob("*") if (REPO / root).is_dir() else [REPO / root])
              if path.is_file() and "__pycache__" not in path.parts]
     files += [path for path in REPO.iterdir() if path.is_file() and path.name.startswith(
         ("docker-compose", "compose", "Dockerfile", ".env"))]
@@ -1827,7 +1836,8 @@ def test_cutover_census_every_caller_and_writer_is_behind_the_switch():
     """Off: nothing in this commit runs try_cutover or check_post_cutover except the wake loop,
     whose callees each return first unless cutover_enabled(); only try_cutover writes the
     cutover columns, only check_post_cutover makes the post-cutover fault, and no CLI, script,
-    config, compose or Docker file names the switch, the tables or the two functions."""
+    config, compose or Docker file, entrypoint, Makefile, pyproject.toml or CI workflow names
+    the switch, the tables or the two functions."""
     sources = census_sources()
     assert RECONCILE in sources and "temper_ai/cli/watch_queue.py" in sources and "temper_ai/server.py" in sources
     assert cutover_census(sources) == CUTOVER_SITES
@@ -1840,6 +1850,16 @@ CENSUS_BITES = {  # bite: file, its text, the text with a bypass or a missing ga
     "script-sql": ("scripts/usage_feed_epoch.py", 'if __name__ == "__main__":',
                    'SQL = "UPDATE usage_coverage SET phase = 1"\nif __name__ == "__main__":'),
     "compose-env": ("docker-compose.yml", "services:", "# TEMPER_USAGE_CUTOVER\nservices:"),
+    "entrypoint-setter": ("entrypoint.sh", 'exec "$@"', 'export TEMPER_USAGE_CUTOVER=1\nexec "$@"'),
+    "docker-setter": ("docker/playwright-mcp-webkit/Dockerfile", "\nFROM ",
+                      "\nARG TEMPER_USAGE_CUTOVER=1\nFROM "),
+    "makefile-setter": ("Makefile", ".PHONY:", "export TEMPER_USAGE_CUTOVER = 1\n.PHONY:"),
+    "pyproject-script-caller": ("pyproject.toml", "[project.scripts]\n",
+                                '[project.scripts]\ncutover = "temper_ai.observability.usage_reconcile:try_cutover"\n'),
+    "pyproject-tool-setter": ("pyproject.toml", "[tool.pytest.ini_options]\n",
+                              '[tool.pytest.ini_options]\nenv = ["TEMPER_USAGE_CUTOVER=1"]\n'),
+    "workflow-setter": (".github/workflows/ci.yml", 'env:\n  UV_FROZEN: "1"\n',
+                        'env:\n  UV_FROZEN: "1"\n  TEMPER_USAGE_CUTOVER: "1"\n'),
     "try-ungated": (RECONCILE, "    if not cutover_enabled():\n        return False", "    if False:\n        return False"),
     "post-ungated": (RECONCILE, "if not cutover_enabled() or not _row_limit(session):",
                      "if not _row_limit(session):"),
@@ -1857,3 +1877,10 @@ def test_cutover_census_bites(bite):
     assert census_holds(sources)
     sources[path] = sources[path].replace(before, after, 1)
     assert not census_holds(sources)
+
+
+def test_cutover_census_names_a_missing_root(monkeypatch):
+    """A listed root the repo no longer has fails the census by name, never a silent skip."""
+    monkeypatch.setitem(globals(), "CENSUS_ROOTS", (*CENSUS_ROOTS, "no-such-root"))
+    with pytest.raises(AssertionError, match="no-such-root"):
+        census_sources()

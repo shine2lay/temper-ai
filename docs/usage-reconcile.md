@@ -38,15 +38,24 @@ Changing a server environment setting uses the usual controlled deployment.
 
 `TEMPER_USAGE_CUTOVER` is the cutover switch. It is on only for the exact value
 `1` with the reconciler on; unset, empty, `0`, `true`, whitespace or anything
-else is off. It is read in one place (`cutover_enabled`), and nothing in the
-repository sets it. While it is off, the cutover barrier and the post-cutover
+else is off. The variable is read in one place (`cutover_enabled`), and nothing
+in the repository sets it: a test's census checks the code, scripts, configs,
+compose and Docker files, `entrypoint.sh`, the Makefile, `pyproject.toml` and
+the CI workflows. Four places read the switch: `try_cutover` and
+`check_post_cutover` (each returns first when it is off), `_begin_lap` and
+`coverage_state`. While it is off, the cutover barrier and the post-cutover
 missing-row check never run: no barrier query, no final lap bound to the ready
-boundary, no cutover columns written and no post-cutover fault. Drain, fill,
-unended marks, the heartbeat and diagnostics do not read it and keep running
-under `TEMPER_USAGE_RECONCILER`. `coverage_state` then shows phase
+boundary (`_begin_lap` sets none, so every lap stays an ordinary backfill lap),
+no cutover columns written and no post-cutover fault. Drain, the fill's row
+writes, unended marks and the heartbeat do not read it and keep running under
+`TEMPER_USAGE_RECONCILER`. `coverage_state` reads it and then shows phase
 `cutover-off` and `cutover_switch: off`. A cutover already recorded (for
 example by earlier code) is kept and never moved, and fills stay stopped after
-it; turning the switch on only starts the barrier (if none is recorded) and the
+it. With the switch off, that recorded cutover still shows phase `cutover-off`
+(its `cutover_at` and `cutover_seq` still show), and its post-cutover
+missing-row faults wait for switch-on: `check_post_cutover` then looks from
+`cutover_at`, so calls made while the switch was off are checked then. Turning
+the switch on only starts the barrier (if none is recorded) and the
 post-cutover check. #126 deploys with the switch off; turning it on is a
 separate go-live step (GL6-GL8, GL8b) and needs its own approval.
 
@@ -294,8 +303,10 @@ Architecture's 2026-10-23 H4 refinement (P2) changes the original must-block
 row exempts that CARRIED_ON start. The reason is the code-derived claim ->
 re-queue -> box dies before first start -> reaper sequence above. This is not a
 shape observed on live. The exemption, rather than a weaker rule for all ended
-rows, is the only H4 runtime change. The local CARRIED_ON constant is pinned by a
-test to runner/parked.py, with no new runtime import. Rule 3 still applies
+rows, is the only H4 runtime change. The barrier reads `parked.CARRIED_ON`
+through the module's existing `parked` import (the one it already uses for
+`parked.latest_start_condition`), so no second copy needs a test to keep it in
+step; #188 removed H4's local copy and its pin test. Rule 3 still applies
 whatever the row/start says, using the unchanged 240-minute window and T floor.
 No other departure is intended; review requests must list any new departure and
 its reason explicitly.

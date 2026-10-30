@@ -52,12 +52,6 @@ TERMINAL = ("completed", "failed", "cancelled", "interrupted")
 # checks (_start_snapshot) read it too. A box still writing after its row looks ended
 # holds the barrier through QUIET_WINDOW instead (rule 3, _cutover_blockers).
 BARRIER_ENDED = (*TERMINAL, "orphaned")
-# A parked attempt a later one carried on (runner/parked.py CARRIED_ON; a test pins the two).
-# parked.claim_and_queue and claim_and_requeue_row set it and re-queue the run row in ONE
-# transaction; claim_without_box_row sets it only for a run with no row (release puts it back
-# if its thread fails to start). So under an ended row it is a dead carry-on: its box died
-# before writing its own start (rule 2's exemption).
-CARRIED_ON = "parked"
 # How long an earlier execution must be quiet before the barrier lets it go. On live (15 days,
 # 64,269 gaps between one execution's events) the longest silence was 183 min; 240 adds margin.
 QUIET_WINDOW = timedelta(minutes=240)
@@ -194,10 +188,17 @@ def cutover_enabled() -> bool:
     """TEMPER_USAGE_CUTOVER: ON only for the exact value "1" (and the reconciler on); unset,
     empty, "0", "true", " 1 " or anything else is OFF. One read, fail-closed.
 
+    Four places call it: try_cutover and check_post_cutover (each returns first when it is
+    off), _begin_lap (off: no ready boundary, so no barrier query and every lap stays an
+    ordinary backfill lap) and coverage_state (off: phase "cutover-off", cutover_switch
+    "off"). Drain, the fill's row writes, unended marks and the heartbeat never call it.
+
     Off, the cutover barrier and the post-cutover missing-row check never run: no barrier
-    query, no cutover columns written, no post-cutover fault. Drain, fill, unended marks and
-    diagnostics do not read it. A cutover already recorded is kept, never moved, and fills
-    stay stopped.
+    query, no cutover columns written, no post-cutover fault. A cutover already recorded is
+    kept, never moved, and fills stay stopped after it. Its cutover_at and cutover_seq still
+    show, but its phase shows "cutover-off", and its post-cutover missing-row faults wait for
+    switch-on: check_post_cutover then looks from cutover_at, so calls made while the switch
+    was off are checked then.
     """
     return enabled() and os.environ.get("TEMPER_USAGE_CUTOVER") == "1"
 
@@ -663,9 +664,14 @@ def _cutover_blockers(session: Session, cutoff: datetime, now: datetime,
         return col(event.status).is_(None) | col(event.status).not_in(TERMINAL)
 
     def dead_carry_on(event):
+        # parked.CARRIED_ON marks a parked attempt a later one carried on. parked.claim_and_queue
+        # and claim_and_requeue_row set it and re-queue the run row in ONE transaction;
+        # claim_without_box_row sets it only for a run with no row (release puts it back if its
+        # thread fails to start). So under an ended row it is a dead carry-on: its box died
+        # before writing its own start (rule 2's exemption).
         row_ended = exists(sql_select(1).where(col(WorkflowRun.execution_id) == event.execution_id,
                                                col(WorkflowRun.status).in_(BARRIER_ENDED)))
-        return col(event.status).is_not_distinct_from(CARRIED_ON) & row_ended
+        return col(event.status).is_not_distinct_from(parked.CARRIED_ON) & row_ended
 
     # Only an execution with some open start can have an open latest one.
     opened = (sql_select(col(Event.execution_id).label("execution_id"))

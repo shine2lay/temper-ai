@@ -57,6 +57,7 @@ from tests.test_spawner.box_fixtures import (
     image_id,
     run_id,
 )
+from tests.test_spawner.test_container_parent import run_test_docker
 
 pytestmark = [pytest.mark.timeout(900)]
 
@@ -241,7 +242,7 @@ class OneshotDocker:
         if cmd[1] == "exec" and self.on_exec is not None:
             cmd, kwargs = self.on_exec(cmd, kwargs)
         kwargs.setdefault("timeout", 120)
-        result = subprocess.run(cmd, **kwargs)
+        result = run_test_docker(cmd, **kwargs)
         if cmd[1] == "exec":
             self.execs.append(result)
         elif cmd[1] == "kill":
@@ -260,8 +261,8 @@ class OneshotDocker:
 
 
 def _docker(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout,
-                          check=False)
+    return run_test_docker(["docker", *args], capture_output=True, text=True, timeout=timeout,
+                           check=False)
 
 
 def _running(name: str) -> bool:

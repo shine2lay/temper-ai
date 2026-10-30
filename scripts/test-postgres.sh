@@ -28,8 +28,27 @@
 # (tests/pgtier.py).
 set -euo pipefail
 
-NAME="${TEMPER_TEST_PG_NAME:-temper-test-postgres}"
-PORT="${TEMPER_TEST_PG_PORT:-5455}"      # live temper is on 5433; this is not that
+# Same central contract as the box/build fixtures. Inactive keeps the old
+# singleton; enabled never adopts or touches that container, even for down.
+PARENT_CONTRACT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../tests/test_spawner/test_container_parent.py"
+PARENT=""
+parent_args=()
+if PARENT=$(python3 "$PARENT_CONTRACT" parent); then
+    parent_args=("--cgroup-parent=$PARENT")
+    NAME="${TEMPER_TEST_PG_NAME:-temper-test-postgres-cpu}"
+    PORT="${TEMPER_TEST_PG_PORT:-5456}"
+    if [[ ! "$NAME" =~ ^temper-test-postgres-cpu(-[a-zA-Z0-9_-]+)?$ ]] \
+        || [[ ! "$PORT" =~ ^[1-9][0-9]{3,4}$ ]] \
+        || [ "$PORT" -gt 65535 ] || [[ "$PORT" = 5432 || "$PORT" = 5433 || "$PORT" = 5455 ]]; then
+        echo "test-postgres.sh: enabled tests require a separate temper-test-postgres-cpu name and non-live port (default 5456)." >&2
+        exit 1
+    fi
+else
+    status=$?
+    [ "$status" = 3 ] || exit "$status"
+    NAME="${TEMPER_TEST_PG_NAME:-temper-test-postgres}"
+    PORT="${TEMPER_TEST_PG_PORT:-5455}"  # live temper is on 5433
+fi
 IMAGE="${TEMPER_TEST_PG_IMAGE:-pgvector/pgvector:pg16}"
 NETWORK="${TEMPER_TEST_PG_NETWORK:-}"    # host, bridge, or empty: host where it works
 DB="temper_ai_test"
@@ -121,7 +140,7 @@ start() {
     # container has.
     docker run -d --name "$NAME" \
         --label temper.test-pg.version=4 --label temper.test-pg.network="$mode" \
-        "${net[@]}" \
+        "${parent_args[@]}" "${net[@]}" \
         -e POSTGRES_DB="$DB" -e POSTGRES_USER=temper_ai -e POSTGRES_PASSWORD=test \
         -e POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 \
         -e PGDATA=/var/lib/postgresql/data/pgdata \
@@ -174,6 +193,11 @@ reachable() {
 
 up() {
     take_lock
+    if [ -n "$PARENT" ] && docker container inspect "$NAME" >/dev/null 2>&1; then
+        # Validate BEFORE the old stopped-container replacement path. An
+        # off-parent stopped container is not ours to delete, either.
+        python3 "$PARENT_CONTRACT" verify "$NAME" --stopped
+    fi
     if ! running; then
         # Nobody can be using a container that is not running: one that exists
         # (it stopped, or its start failed) is replaced. A running one never is.
@@ -185,7 +209,22 @@ up() {
         fi
         start "${NETWORK:-$(default_network)}"
     fi
+    if [ -n "$PARENT" ]; then
+        python3 "$PARENT_CONTRACT" verify "$NAME"
+    fi
     wait_ready
+    if [ -n "$PARENT" ]; then
+        # A listener on the requested port alone is not proof it is this DB.
+        local mode actual
+        mode=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$NAME")
+        if [ "$mode" = host ]; then
+            actual=$(psql_in "SHOW port")
+            [ "$actual" = "$PORT" ] || { echo "test-postgres.sh: reused PG port mismatch" >&2; return 1; }
+        else
+            actual=$(docker port "$NAME" 5432/tcp)
+            [ "$actual" = "127.0.0.1:$PORT" ] || { echo "test-postgres.sh: reused PG binding mismatch" >&2; return 1; }
+        fi
+    fi
 }
 
 pid_alive() {
@@ -238,6 +277,11 @@ down() {
     take_lock
     if ! docker container inspect "$NAME" >/dev/null 2>&1; then
         return 0
+    fi
+    if [ -n "$PARENT" ]; then
+        python3 "$PARENT_CONTRACT" verify "$NAME" --stopped
+        # Active-parent adoption never makes --force safe for a live shared DB.
+        [ "$force" = 0 ] || { echo "test-postgres.sh: enabled test PG refuses forced cleanup" >&2; return 1; }
     fi
     if [ "$force" = 0 ] && running; then
         why=$(in_use)

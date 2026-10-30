@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from temper_ai.spawner.box_profile import METADATA_KEY, BoxProfileError, RunFacts
+from tests.test_spawner.test_container_parent import run_test_docker
 
 SYNTHETIC_MARK = "SYNTHETIC-NOT-A-REAL-SECRET"
 TEST_LABEL = "temper.test=box-sealed"
@@ -374,7 +375,7 @@ def box_image() -> str | None:
     have = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, timeout=30)
     if have.returncode == 0:
         return tag
-    built = subprocess.run(
+    built = run_test_docker(
         ["docker", "build", "--label", TEST_LABEL, "-t", tag, "-"],
         input=TINY_DOCKERFILE, capture_output=True, text=True, timeout=600,
     )
@@ -414,7 +415,7 @@ class BoxDocker:
         cmd[2:2] = ["--label", TEST_LABEL, "--label", OWN_LABEL]
         self.names.append(box_name(cmd))
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = run_test_docker(cmd, capture_output=True, text=True, timeout=120)
         finally:
             self.cleanup()
         self.runs.append(result)

@@ -7,6 +7,9 @@ import os
 import stat
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from threading import Event
 from unittest.mock import Mock
 
 import pytest
@@ -265,27 +268,151 @@ def test_protected_custody_refusals(store, tmp_path, object_kind):
             pytest.fail("unsafe custody")
 
 
+_MUTEX_CHILD = r'''
+import sys
+from pathlib import Path
+from temper_ai.observability.usage_feed_epoch_journal import HostJournal, JournalError, JournalHead
+
+j = HostJournal(Path(sys.argv[1]), sys.argv[2], lambda rows: None)
+h = JournalHead(int(sys.argv[3]), sys.argv[4])
+print("READY", flush=True)
+if sys.stdin.readline() != "GO\n":
+    sys.exit(2)
+print("ATTEMPT", flush=True)
+try:
+    with j.locked(h, timeout=.08):
+        print("entered")
+except JournalError as error:
+    print(error.code)
+'''
+
+
+@contextmanager
+def _mutex_child(store, head, source=SOURCE, *, code=_MUTEX_CHILD, pass_fds=()):
+    command = [sys.executable, "-c", code, str(store.path), source, str(head.sequence), head.checksum]
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, pass_fds=pass_fds) as child:
+        try:
+            yield child
+        finally:
+            # Popen's context closes every pipe; kill first so a failed assertion
+            # or result watchdog cannot leave its context waiting on a stuck child.
+            if child.poll() is None:
+                child.kill()
+            child.wait()
+
+
+def _expect_mutex_result(child, expected):
+    # Imports and construction are startup, bounded by pytest's existing overall
+    # watchdog (also bounds cleanup), not the three-second lock-result watchdog.
+    assert child.stdout.readline() == "READY\n", "mutex child did not reach READY"
+    out, err = child.communicate(input="GO\n", timeout=3)
+    assert child.returncode == 0 and not err, "mutex child exited with an error"
+    assert out.splitlines() == ["ATTEMPT", expected], "mutex child returned wrong result"
+
+
+def _assert_child_closed(child):
+    assert child.returncode is not None
+    assert all(pipe.closed for pipe in (child.stdin, child.stdout, child.stderr))
+    with pytest.raises(ChildProcessError):
+        os.waitpid(child.pid, os.WNOHANG)  # reaped, not merely signalled
+
+
 def test_cross_process_source_mutex_and_no_replacement(store):
     head = initialize(store)
-    code = (
-        "from pathlib import Path; import sys; "
-        "from temper_ai.observability.usage_feed_epoch_journal import *; "
-        "j=HostJournal(Path(sys.argv[1]),sys.argv[2],lambda rows:None); "
-        "h=JournalHead(int(sys.argv[3]),sys.argv[4]); "
-        "\ntry:\n with j.locked(h,timeout=.08): print('entered')"
-        "\nexcept JournalError as e: print(e.code)"
-    )
-    command = [sys.executable, "-c", code, str(store.path), SOURCE, str(head.sequence), head.checksum]
     with store.locked(head):
-        child = subprocess.run(command, capture_output=True, text=True, timeout=3, check=True)
-        assert child.stdout.strip() == "epoch-host-busy" and not child.stderr
-        # Wrong source uses the SAME lock, not a per-source-id second inode.
-        command[4] = OTHER
-        child = subprocess.run(command, capture_output=True, text=True, timeout=3, check=True)
-        assert child.stdout.strip() == "epoch-host-busy"
-    command[4] = SOURCE
-    child = subprocess.run(command, capture_output=True, text=True, timeout=3, check=True)
-    assert child.stdout.strip() == "entered"
+        for source in (SOURCE, OTHER):
+            # Wrong source uses the SAME lock, not a per-source-id second inode.
+            with _mutex_child(store, head, source) as child:
+                _expect_mutex_result(child, "epoch-host-busy")
+            _assert_child_closed(child)
+    with _mutex_child(store, head) as child:
+        _expect_mutex_result(child, "entered")
+    _assert_child_closed(child)
+
+
+def test_mutex_child_startup_is_outside_the_lock_result_watchdog(store, monkeypatch):
+    head = initialize(store)
+    reader, writer = os.pipe()
+    with os.fdopen(reader, "rb") as gate, os.fdopen(writer, "wb") as release:
+        code = (f'import os\nprint("SPAWNED", flush=True)\nassert os.read({gate.fileno()}, 1) == b"!"\n'
+                + _MUTEX_CHILD)
+        # Close/kill the child BEFORE joining a worker blocked on its READY pipe.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with store.locked(head), _mutex_child(store, head, code=code, pass_fds=(gate.fileno(),)) as child:
+                assert child.stdout.readline() == "SPAWNED\n"
+                started, ready = Event(), Event()
+                readline, communicate = child.stdout.readline, child.communicate
+
+                def observe_ready():
+                    line = readline()
+                    if line == "READY\n":
+                        ready.set()
+                    return line
+
+                def after_ready(*args, **kwargs):
+                    assert ready.is_set(), "result watchdog started before READY"
+                    assert kwargs == {"input": "GO\n", "timeout": 3}
+                    return communicate(*args, **kwargs)
+
+                def expect():
+                    started.set()
+                    _expect_mutex_result(child, "epoch-host-busy")
+
+                monkeypatch.setattr(child.stdout, "readline", observe_ready)
+                monkeypatch.setattr(child, "communicate", after_ready)
+                result = pool.submit(expect)
+                started.wait()  # bounded, like child startup, by the suite watchdog
+                # A controlled pre-import hold outlasts the OLD combined deadline.
+                # No sleep or slow-machine assumption decides when startup resumes.
+                with pytest.raises(subprocess.TimeoutExpired):
+                    child.wait(timeout=3)
+                assert not result.done() and not ready.is_set()
+                release.write(b"!")
+                release.flush()
+                result.result()
+            _assert_child_closed(child)
+    assert gate.closed and release.closed
+
+
+def test_mutex_child_post_ready_hang_still_times_out_and_is_reaped(store):
+    head = initialize(store)
+    code = _MUTEX_CHILD.replace('print("ATTEMPT", flush=True)',
+                               'print("ATTEMPT", flush=True)\nimport signal\nsignal.pause()')
+    with store.locked(head):
+        with pytest.raises(subprocess.TimeoutExpired) as error:
+            with _mutex_child(store, head, code=code) as child:
+                _expect_mutex_result(child, "epoch-host-busy")
+        assert error.value.timeout == 3 and error.value.output == b"ATTEMPT\n"
+        _assert_child_closed(child)
+
+
+@pytest.mark.parametrize("source", [SOURCE, OTHER])
+def test_mutex_child_cannot_pass_exclusion_when_flock_is_bypassed(store, source):
+    head = initialize(store)
+    code = _MUTEX_CHILD.replace('print("READY", flush=True)',
+                               'import fcntl\nfcntl.flock = lambda *args: None\nprint("READY", flush=True)')
+    with store.locked(head):
+        with pytest.raises(AssertionError, match="mutex child returned wrong result"):
+            with _mutex_child(store, head, source, code=code) as child:
+                _expect_mutex_result(child, "epoch-host-busy")
+        _assert_child_closed(child)
+
+
+@pytest.mark.parametrize("old,new", [
+    ('print("READY", flush=True)', 'print("NOT-READY", flush=True)'),
+    ('print("READY", flush=True)', 'sys.exit(0)'),
+    ('print("ATTEMPT", flush=True)', ''),
+    ('print("entered")', 'print("epoch-host-busy")'),
+    ('print("entered")', 'print("entered"); sys.exit(7)'),
+    ('print("entered")', 'print("entered"); print("known-error", file=sys.stderr)'),
+])
+def test_mutex_child_protocol_and_result_failures_close_every_pipe(store, old, new):
+    head = initialize(store)
+    with pytest.raises(AssertionError, match="mutex child"):
+        with _mutex_child(store, head, code=_MUTEX_CHILD.replace(old, new)) as child:
+            _expect_mutex_result(child, "entered")
+    _assert_child_closed(child)
 
 
 def test_inode_change_has_real_bite(store, tmp_path, monkeypatch):

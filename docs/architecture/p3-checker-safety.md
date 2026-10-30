@@ -26,7 +26,7 @@ Tests use fixed temporary files and fake browser/MCP/host/server objects only. T
 MCP, start an HTTP server, browser, Docker operation or Temper instance. Existing network-starting
 server tests are outside this source-only run, not rewritten, weakened or presented as executed.
 Run relevant unchanged pure first_app/shared tests plus P3 safety tests once after all edits using
-scripts/test_slot.py and taskset -c 0-4,10-14. Record any miss and a new hypothesis before repair.
+wt slot (docs/testing.md) and taskset -c 0-4,10-14. Record any miss and a new hypothesis before repair.
 Normal mandatory landing checks remain mandatory and use the approved normal pipeline.
 Architecture's explicit amendment permits only the unmodified mandatory gate's two pre-existing
 P3 server tests with temporary data, loopback HTTP clients and finally cleanup, not a manual rerun,

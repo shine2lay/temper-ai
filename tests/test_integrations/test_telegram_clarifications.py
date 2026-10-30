@@ -20,9 +20,11 @@ import itertools
 import json
 import re
 import sys
+import threading
 import time
 import types
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -91,6 +93,7 @@ class FakeStore:
 
     def __init__(self, module: types.ModuleType) -> None:
         self.M = module
+        self._lock = threading.RLock()  # the fake's transaction boundary, shared by all its edges
         self.sends: dict[str, Any] = {}
         self.delivered: dict[tuple[TransportNamespace, str, str], str] = {}
         self.generations: dict[tuple[str, str], int] = {}
@@ -114,33 +117,43 @@ class FakeStore:
         self.questions[stream] = self.questions.get(stream, frozenset()) | {presentation.question_id}
 
     def save_send(self, intent: Any) -> Any:
-        self.note("save_send")
-        return self.sends.setdefault(intent.send_id, self.M.SendRecord(intent))
+        with self._lock:
+            self.note("save_send")
+            return self.sends.setdefault(intent.send_id, self.M.SendRecord(intent))
 
-    def start_attempt(self, send_id: str) -> Any:
-        self.note("start_attempt")
-        if send_id in self.sends:
-            self.sends[send_id] = replace(self.sends[send_id], attempts=self.sends[send_id].attempts + 1)
-        return self.sends.get(send_id)
+    def start_attempt(self, send_id: str, *, expected_attempts: int, resend: bool) -> tuple[Any, bool]:
+        with self._lock:
+            self.note("start_attempt")
+            if send_id not in self.sends:
+                return None, True  # lenient only to let the intent-order bite reach its assertion
+            record = self.sends[send_id]
+            won = (record.message_id is None and record.attempts == expected_attempts
+                   and (record.attempts == 0 or resend))
+            if won:
+                record = self.sends[send_id] = replace(record, attempts=record.attempts + 1)
+            return record, won
 
     def record_delivery(self, send_id: str, message_id: str) -> Any:
-        self.note("record_delivery")
-        if send_id in self.sends:
-            record = self.sends[send_id] = replace(self.sends[send_id], message_id=message_id)
-            presentation = record.intent.presentation
-            self.delivered[(presentation.transport, presentation.chat_id, message_id)] = send_id
-        return self.sends.get(send_id)
+        with self._lock:
+            self.note("record_delivery")
+            if send_id in self.sends:
+                record = self.sends[send_id] = replace(self.sends[send_id], message_id=message_id)
+                presentation = record.intent.presentation
+                self.delivered[(presentation.transport, presentation.chat_id, message_id)] = send_id
+            return self.sends.get(send_id)
 
     def delivery(self, transport: TransportNamespace, chat_id: str, message_id: str) -> Any:
-        self.note("delivery")
-        for (bot, chat, message), send_id in self.delivered.items():
-            if (bot == transport or self.any_bot) and (chat, message) == (chat_id, message_id):
-                return self.sends[send_id]
-        return None
+        with self._lock:
+            self.note("delivery")
+            for (bot, chat, message), send_id in self.delivered.items():
+                if (bot == transport or self.any_bot) and (chat, message) == (chat_id, message_id):
+                    return self.sends[send_id]
+            return None
 
     def copies(self, presentation_id: str) -> frozenset[str]:
-        return frozenset(record.message_id for record in self.sends.values() if record.message_id is not None
-                         and record.intent.presentation.presentation_id == presentation_id)
+        with self._lock:
+            return frozenset(message for (_, _, message), send_id in self.delivered.items()
+                             if self.sends[send_id].intent.presentation.presentation_id == presentation_id)
 
     def current_generation(self, stream_id: str, question_id: str) -> int:
         return self.generations[(stream_id, question_id)]
@@ -156,12 +169,13 @@ class FakeStore:
         return held[1] if held is not None else None
 
     def keep_receipt(self, ingress: Any, receipt: Any, validation: Any) -> tuple[Any, bool]:
-        self.note("keep_receipt")
-        key = receipt.action.key
-        if key in self.held:
-            return self.held[key][1], False
-        self.held[key] = (ingress, receipt, validation)
-        return receipt, True
+        with self._lock:
+            self.note("keep_receipt")
+            key = receipt.action.key
+            if key in self.held:
+                return self.held[key][1], False
+            self.held[key] = (ingress, receipt, validation)
+            return receipt, True
 
     def keep_refusal(self, refusal: Any) -> None:
         self.note("keep_refusal")
@@ -451,6 +465,87 @@ def test_only_objects_from_the_servers_own_pull_can_be_claimed(telegram, M=edge_
     assert batch.claim(batch.updates[0]) is True and w.held(typed)[1].text == EXACT
 
 
+def test_batch_context_and_membership_cannot_be_rebound(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    _, question = w.ask()
+    typed = w.reply(question, EXACT)
+    batch = w.edge.pull(telegram, 0, timeout=0, allowed=P.ALLOWED)
+    forged = copy.deepcopy(typed)
+    with pytest.raises(AttributeError):
+        batch.updates.append(forged)
+    for field, value in (("updates", [forged]), ("namespace", TransportNamespace("telegram", str(TG_BOT + 1))),
+                         ("offset", 12345)):
+        with pytest.raises(AttributeError):
+            setattr(batch, field, value)
+    assert batch.claim(typed) is True
+    ingress, receipt, _ = w.held(typed)
+    assert ingress == M.PulledIngress(BOT, typed["update_id"], digest(typed), 0)
+    assert receipt.action.transport == BOT and receipt.text == EXACT
+
+
+def test_a_callback_appended_after_pull_has_no_pull_authority(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    _, question = w.ask()
+    typed = w.reply(question, EXACT)
+    w.poll()
+    prompt = w.prompts()[-1]["message_id"]
+    real = w.press(prompt, "clar:deferred")
+    batch = w.edge.pull(telegram, int(w.offset()), timeout=0, allowed=P.ALLOWED)
+    forged = w.press(prompt, "clar:answered")  # provider-list alias changed after this pull returned
+    with pytest.raises(AttributeError):
+        batch.updates.append(forged)
+    with pytest.raises(AttributeError):
+        batch.updates = (forged,)
+    with pytest.raises(ContractRefusal) as refused:
+        batch.claim(forged)
+    assert (refused.value.code, refused.value.guard) == (RefusalCode.UNVERIFIED_INGRESS, "edge.pulled")
+    assert set(w.store.held) == {w.key(typed)} and telegram.callbacks == []
+    assert batch.claim(real) is True
+    assert w.held(real)[2].event()["disposition"] == "deferred"
+    assert w.key(forged) not in w.store.held
+
+
+def test_claim_consumes_captured_words_not_mutable_provider_aliases(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    _, question = w.ask()
+    typed = w.reply(question, EXACT)
+    original = copy.deepcopy(typed)
+    batch = w.edge.pull(telegram, 0, timeout=0, allowed=P.ALLOWED)
+    typed["message"]["text"] = "changed through provider alias"
+    batch.updates[0]["message"]["from"]["id"] = TG_OTHER
+    decide = w.policy.decide
+
+    def mutate_during_policy(**kwargs):
+        typed["message"]["text"] = "changed while deciding"
+        return decide(**kwargs)
+
+    w.policy.decide = mutate_during_policy
+    assert batch.claim(typed) is True
+    ingress, receipt, verdict = w.held(original)
+    assert ingress == M.PulledIngress(BOT, original["update_id"], digest(original), 0)
+    assert (receipt.text, receipt.sender_id, verdict.code) == (EXACT, str(TG_OWNER), RefusalCode.NO_EXPLICIT_DISPOSITION)
+    assert batch.claim(typed) is True  # the captured original still replays, not the mutated live dict
+    assert len(w.store.held) == 1 and len(w.prompts()) == 1 and w.edge.counts["repeat"] == 1
+    assert not w.store.refused
+
+
+def test_claim_consumes_captured_callback_data(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    _, question = w.ask()
+    w.reply(question, EXACT)
+    w.poll()
+    press = w.press(w.prompts()[-1]["message_id"], "clar:deferred")
+    original = copy.deepcopy(press)
+    offset = int(w.offset())
+    batch = w.edge.pull(telegram, offset, timeout=0, allowed=P.ALLOWED)
+    press["callback_query"]["data"] = "clar:answered"
+    assert batch.claim(press) is True
+    ingress, receipt, verdict = w.held(original)
+    assert ingress == M.PulledIngress(BOT, original["update_id"], digest(original), offset)
+    assert receipt.callback_data == "clar:deferred" and verdict.event()["disposition"] == "deferred"
+    assert batch.claim(press) is True and w.edge.counts["repeat"] == 1
+
+
 def test_handler_dicts_and_inbox_rows_never_reach_the_edge(telegram, ops, notify_config, M=edge_module,
                                                            P=poller_module):
     """Handler.handle, TelegramService.save and an inbox row (what the events replay API re-runs, with a
@@ -477,7 +572,8 @@ def test_no_other_door_into_the_edge():
     Edited messages are never pulled, so a typed answer cannot change after it is kept."""
     assert {name for name in vars(edge_module.ClarificationEdge) if not name.startswith("_")} == {
         "namespace", "status", "pull", "present"}
-    assert {name for name in vars(edge_module.PulledBatch) if not name.startswith("_")} == {"claim"}
+    assert {name for name in vars(edge_module.PulledBatch) if not name.startswith("_")} == {
+        "claim", "namespace", "offset", "updates"}
     assert "edited_message" not in poller_module.ALLOWED
 
 
@@ -991,6 +1087,155 @@ def test_question_text_must_fit_one_message_and_say_something(telegram, M=edge_m
     assert w.edge.present(presentation, UNKNOWN, "\U0001f642" * (M.TEXT_MAX // 2)).state == "sent"
 
 
+# --- overlapping callers: store admission, not a stale local read -----------------------
+
+
+def together_after_saved(w: World, first: Callable, second: Callable) -> list[Any]:
+    """Both callers hold the same saved snapshot before either can attempt a send.
+
+    Only the fake's in-memory store is used by worker threads. The deadline
+    guards a broken test, not a timing assertion; the interleaving uses a barrier.
+    """
+    barrier = threading.Barrier(2, timeout=60)
+    save, note = w.store.save_send, w.store.note
+    offset = w.offset()
+    w.store.note = lambda name: w.store.log.append((name, offset))
+
+    def saved(intent):
+        record = save(intent)
+        barrier.wait()
+        return record
+
+    w.store.save_send = saved
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(first), pool.submit(second)]
+            return [future.result(timeout=60) for future in futures]
+    finally:
+        w.store.save_send, w.store.note = save, note
+
+
+def test_concurrent_present_admits_one_send(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    presentation = w.presentation()
+    w.store.ask(presentation)
+    rival = M.ClarificationEdge(telegram, w.store, w.policy)
+    results = together_after_saved(w, lambda: w.edge.present(presentation, UNKNOWN, QUESTION),
+                                  lambda: rival.present(presentation, UNKNOWN, QUESTION))
+    assert len(telegram.sent) == 1 and [r.state for r in results].count("sent") == 1
+    assert {r.state for r in results} <= {"sent", "delivered", "uncertain"}
+    assert {r.send_id for r in results} == {presentation.presentation_id}
+    assert w.store.sends[presentation.presentation_id].attempts == 1
+    copies = w.store.copies(presentation.presentation_id)
+    assert copies == {str(telegram.sent[0]["message_id"])}
+    reply = w.reply(int(next(iter(copies))), EXACT)
+    w.poll()
+    assert w.held(reply)[2].code == RefusalCode.NO_EXPLICIT_DISPOSITION and not w.store.refused
+
+
+def test_concurrent_claims_admit_one_prompt(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    presentation, question = w.ask()
+    typed = w.reply(question, EXACT)
+    rival = M.ClarificationEdge(telegram, w.store, w.policy)
+    first = w.edge.pull(telegram, None, timeout=0, allowed=P.ALLOWED)
+    second = rival.pull(telegram, None, timeout=0, allowed=P.ALLOWED)
+    assert together_after_saved(w, lambda: first.claim(typed), lambda: second.claim(typed)) == [True, True]
+    assert len(w.store.held) == 1 and len(w.prompts()) == 1
+    prompt = w.prompts()[0]
+    copies = w.store.copies(presentation.presentation_id)
+    assert copies == {str(question), str(prompt["message_id"])}
+    assert len(w.store.sends) == 2 and all(record.attempts == 1 for record in w.store.sends.values())
+    replies = [w.reply(int(message), EXACT) for message in sorted(copies)]
+    w.poll()
+    assert all(w.held(reply)[2].code == RefusalCode.NO_EXPLICIT_DISPOSITION for reply in replies)
+    assert not w.store.refused
+
+
+def test_concurrent_explicit_retries_compare_the_observed_attempt(telegram, M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    presentation = w.presentation()
+    w.store.ask(presentation)
+    telegram.forbidden.add(TG_GROUP)
+    assert w.edge.present(presentation, UNKNOWN, QUESTION).state == "uncertain"
+    telegram.forbidden.clear()
+    rival = M.ClarificationEdge(telegram, w.store, w.policy)
+    results = together_after_saved(w, lambda: w.edge.present(presentation, UNKNOWN, QUESTION, resend=True),
+                                  lambda: rival.present(presentation, UNKNOWN, QUESTION, resend=True))
+    assert len(telegram.sent) == 1 and [r.state for r in results].count("sent") == 1
+    assert w.store.sends[presentation.presentation_id].attempts == 2
+    assert w.store.copies(presentation.presentation_id) == {str(telegram.sent[0]["message_id"])}
+
+
+@pytest.mark.parametrize("resend", [False, True])
+def test_an_inflight_attempt_needs_explicit_reconciliation_and_keeps_all_copies(telegram, resend,
+                                                                                M=edge_module, P=poller_module):
+    """Normal overlap never resends. Explicit reconciliation of an uncertain network call may do so;
+    both returned message IDs must then remain usable, even if their completions are out of order."""
+    w = World(telegram, M, P)
+    presentation = w.presentation()
+    w.store.ask(presentation)
+    rival = M.ClarificationEdge(telegram, w.store, w.policy)
+    entered, release = threading.Event(), threading.Event()
+    send, note = telegram.send, w.store.note
+    w.store.note = lambda name: w.store.log.append((name, None))
+    calls = itertools.count()
+
+    def held_send(*args, **kwargs):
+        if next(calls) == 0:
+            entered.set()
+            assert release.wait(timeout=60), "test did not release the first provider call"
+        return send(*args, **kwargs)
+
+    telegram.send = held_send
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(w.edge.present, presentation, UNKNOWN, QUESTION)
+            try:
+                assert entered.wait(timeout=60), "first provider call was not reached"
+                other = rival.present(presentation, UNKNOWN, QUESTION, resend=resend)
+                assert other.state == ("sent" if resend else "uncertain")
+            finally:
+                release.set()
+            first = future.result(timeout=60)
+    finally:
+        telegram.send, w.store.note = send, note
+    assert first.state == "sent" and len(telegram.sent) == (2 if resend else 1)
+    copies = w.store.copies(presentation.presentation_id)
+    assert copies == {str(message["message_id"]) for message in telegram.sent}
+    assert {first.send_id, other.send_id} == {presentation.presentation_id}
+    replies = [w.reply(int(message), EXACT) for message in sorted(copies)]
+    w.poll()
+    assert all(w.held(reply)[2].code == RefusalCode.NO_EXPLICIT_DISPOSITION for reply in replies)
+    assert not w.store.refused
+
+
+@pytest.mark.parametrize("method", ["start_attempt", "record_delivery"])
+def test_a_committed_send_write_can_raise_without_an_implicit_resend(telegram, method,
+                                                                    M=edge_module, P=poller_module):
+    w = World(telegram, M, P)
+    presentation = w.presentation()
+    w.store.ask(presentation)
+    original = getattr(w.store, method)
+
+    def commit_then_raise(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("commit succeeded but its acknowledgement was lost")
+
+    setattr(w.store, method, commit_then_raise)
+    with pytest.raises(RuntimeError, match="commit succeeded"):
+        w.edge.present(presentation, UNKNOWN, QUESTION)
+    setattr(w.store, method, original)
+    result = w.edge.present(presentation, UNKNOWN, QUESTION)
+    assert result.send_id == presentation.presentation_id
+    if method == "start_attempt":
+        assert result.state == "uncertain" and telegram.sent == []
+        assert w.edge.present(presentation, UNKNOWN, QUESTION, resend=True).state == "sent"
+    else:
+        assert result.state == "delivered" and len(telegram.sent) == 1
+        assert w.store.copies(presentation.presentation_id) == {result.message_id}
+
+
 # --- off by default ---------------------------------------------------------------------
 
 
@@ -1067,8 +1312,16 @@ def _with(test: Callable[..., None], *args: Any) -> Callable[..., None]:
 
 EDGE, POLLER = "edge", "poller"
 BITES = [
-    Bite("pulled-object", EDGE, "        if not any(update is pulled for pulled in self.updates):",
-         "        if False:", test_only_objects_from_the_servers_own_pull_can_be_claimed),
+    Bite("pulled-object", EDGE, "            if update is pulled:",
+         "            if True:", test_only_objects_from_the_servers_own_pull_can_be_claimed),
+    Bite("capture-not-alias", EDGE, "            snapshot = copy.deepcopy(original)",
+         "            snapshot = original", test_claim_consumes_captured_words_not_mutable_provider_aliases),
+    Bite("consume-snapshot", EDGE, "return self._edge._claim(self, snapshot, body)",
+         "return self._edge._claim(self, update, body)", test_claim_consumes_captured_words_not_mutable_provider_aliases),
+    Bite("batch-context-frozen", EDGE, "@dataclass(frozen=True, slots=True)\nclass PulledBatch:",
+         "@dataclass(slots=True)\nclass PulledBatch:", test_batch_context_and_membership_cannot_be_rebound),
+    Bite("batch-iteration-fixed", EDGE, 'object.__setattr__(self, "updates", tuple(self.updates))',
+         'object.__setattr__(self, "updates", list(self.updates))', test_batch_context_and_membership_cannot_be_rebound),
     Bite("batch-token", EDGE, "        if token is not _PULL:", "        if False:",
          test_only_objects_from_the_servers_own_pull_can_be_claimed),
     Bite("pull-client", EDGE, "        if client is not self.client:", "        if False:",
@@ -1179,10 +1432,14 @@ BITES = [
          test_the_question_intent_is_kept_before_it_is_sent),
     Bite("changed-send", EDGE, "        if record.intent != intent:", "        if False:",
          test_send_retries_keep_the_same_presentation),
-    Bite("delivered-once", EDGE, '        if record.message_id is not None:\n            return SendResult("delivered"',
-         '        if False:\n            return SendResult("delivered"', test_send_retries_keep_the_same_presentation),
-    Bite("uncertain-not-resent", EDGE, "        if record.attempts and not resend:", "        if False:",
-         test_send_retries_keep_the_same_presentation),
+    Bite("send-admission-winner", EDGE, "        if not won:", "        if False:",
+         test_concurrent_present_admits_one_send),
+    Bite("prompt-admission-winner", EDGE, "        if not won:", "        if False:",
+         test_concurrent_claims_admit_one_prompt),
+    Bite("resend-must-be-explicit", EDGE, "expected_attempts=record.attempts, resend=resend,",
+         "expected_attempts=record.attempts, resend=True,", test_send_retries_keep_the_same_presentation),
+    Bite("admission-observed-attempt", EDGE, "expected_attempts=record.attempts, resend=resend,",
+         "expected_attempts=0, resend=resend,", test_send_retries_keep_the_same_presentation),
     Bite("answered-not-sent", EDGE, "        if self.store.answered(stream_id, presentation.question_id):",
          "        if False:", test_an_answered_question_is_not_sent),
     Bite("current-only-sent", EDGE,

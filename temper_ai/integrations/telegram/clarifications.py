@@ -10,11 +10,15 @@ nothing.
 
 Only the server's own getUpdates call can lead to a receipt.
 ClarificationEdge.pull makes that call and returns a PulledBatch, and
-PulledBatch.claim takes only the update objects that call returned. It claims
-an update only when it replies to, or presses a button on, a message this
-edge delivered for a persisted presentation; everything else goes the
-ordinary way, unchanged. Handler.handle, TelegramService.save, inbox rows,
-the events replay API and caller-supplied dicts or labels have no route here.
+PulledBatch.claim takes only the update objects that call returned, consuming
+independent snapshots captured at pull time, not their subsequently mutable
+contents. The batch's membership, namespace, offset and originating edge are
+fixed. It claims an update only when it replies to, or presses a button on, a
+message this edge delivered for a persisted presentation; everything else
+goes the ordinary way, unchanged. Handler.handle, TelegramService.save, inbox
+rows, the events replay API and caller-supplied dicts or labels have no route.
+This assumes a trusted server, store, policy and fixed client/credentials for
+the edge's lifetime; it is capture integrity, not a hostile-Python sandbox.
 
 For each claimed update the edge keeps, before the poller moves the offset
 and before anything is acknowledged or sent: the ingress record (the bot, the
@@ -35,12 +39,13 @@ and nothing in the server binds an edge. See docs/clarifications/telegram.md.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any, Protocol, cast
 
 from temper_ai.clarifications.contracts import (
@@ -168,12 +173,24 @@ class ClarificationStore(Protocol):
         """Keep the intent if its send_id is new; return the record held under that ID."""
         ...
 
-    def start_attempt(self, send_id: str) -> SendRecord:
-        """Count one more send attempt, before the provider is called."""
+    def start_attempt(self, send_id: str, *, expected_attempts: int, resend: bool) -> tuple[SendRecord, bool]:
+        """Atomically admit an attempt; return (committed record, won).
+
+        Win only if no delivery is held, attempts equals expected_attempts,
+        and attempts is zero or resend is explicit. Increment on a win only,
+        before any provider call. A loss returns current state without a write.
+        The comparison and increment MUST be one store transaction across all
+        callers, including different edges/processes, not a read then a write.
+        """
         ...
 
     def record_delivery(self, send_id: str, message_id: str) -> SendRecord:
-        """Keep the message ID Telegram returned: from now on it is a copy of the presentation."""
+        """Keep this returned message ID and never remove an earlier delivered copy.
+
+        An explicit reconciliation can overlap an uncertain network attempt.
+        Every returned ID must remain in delivery() and copies(), regardless
+        of which ID the latest SendRecord holds. Commit then raise is safe to retry.
+        """
         ...
 
     def delivery(self, transport: TransportNamespace, chat_id: str, message_id: str) -> SendRecord | None:
@@ -307,17 +324,31 @@ def _keyboard(payloads: tuple[tuple[str, str], ...]) -> list[list[dict[str, str]
     return [[{"text": LABELS[disposition], "callback_data": data} for data, disposition in payloads]]
 
 
+@dataclass(frozen=True, slots=True)
 class PulledBatch:
-    """The updates one getUpdates call returned. Only these objects can be claimed."""
+    """One pull's fixed context and membership, with private independent content snapshots.
 
-    def __init__(self, token: object, edge: ClarificationEdge, namespace: TransportNamespace,
-                 offset: int | None, updates: list[Any]) -> None:
+    updates exposes the original objects for the poller's ordinary path. Nested
+    mutations there never change what claim consumes. Private capture state is
+    not exposed by the supported API; this is not isolation from hostile code.
+    """
+
+    token: InitVar[object]
+    _edge: ClarificationEdge
+    namespace: TransportNamespace
+    offset: int | None
+    updates: tuple[Any, ...]
+    _captured: tuple[tuple[object, object, str | None], ...] = field(init=False, repr=False)
+
+    def __post_init__(self, token: object) -> None:
         if token is not _PULL:
             raise ContractRefusal(RefusalCode.UNVERIFIED_INGRESS, "edge.batch", "PulledBatch")
-        self.namespace = namespace
-        self.offset = offset
-        self.updates = updates
-        self._edge = edge
+        captures = []
+        for original in self.updates:
+            snapshot = copy.deepcopy(original)
+            captures.append((original, snapshot, _canonical_update(snapshot)))
+        object.__setattr__(self, "updates", tuple(self.updates))
+        object.__setattr__(self, "_captured", tuple(captures))
 
     def claim(self, update: object) -> bool:
         """Keep a clarification action from this pull; False leaves the update to the ordinary path.
@@ -328,9 +359,10 @@ class PulledBatch:
         repeat never sends a prompt twice. Store and policy errors are raised.
         An object this pull did not return is refused, whatever it holds.
         """
-        if not any(update is pulled for pulled in self.updates):
-            raise ContractRefusal(RefusalCode.UNVERIFIED_INGRESS, "edge.pulled", "update")
-        return self._edge._claim(self, update)
+        for pulled, snapshot, body in self._captured:
+            if update is pulled:
+                return self._edge._claim(self, snapshot, body)
+        raise ContractRefusal(RefusalCode.UNVERIFIED_INGRESS, "edge.pulled", "update")
 
 
 class ClarificationEdge:
@@ -363,18 +395,17 @@ class ClarificationEdge:
             raise ContractRefusal(RefusalCode.TRANSPORT_MISMATCH, "edge.client", "client")
         namespace = self.namespace
         updates = self.client.get_updates(offset, timeout=timeout, allowed=allowed)
-        return PulledBatch(_PULL, self, namespace, offset, list(updates or []))
+        return PulledBatch(_PULL, self, namespace, offset, tuple(updates or ()))
 
     # --- receiving ----------------------------------------------------------------
 
-    def _claim(self, batch: PulledBatch, update: object) -> bool:
+    def _claim(self, batch: PulledBatch, update: object, body: str | None) -> bool:
         target = _target(update)
         if target is None:
             return False
         record = self.store.delivery(batch.namespace, target.target_chat, target.target_id)
         if record is None:
             return False
-        body = _canonical_update(target.update)
         digest = hashlib.sha256(body.encode("ascii")).hexdigest() if body is not None else None
         ingress = PulledIngress(batch.namespace, target.update_id, digest, batch.offset)
         presentation = record.intent.presentation
@@ -553,11 +584,11 @@ class ClarificationEdge:
         return record
 
     def _send(self, intent: SendIntent, record: SendRecord, *, resend: bool) -> SendResult:
-        if record.message_id is not None:
-            return SendResult("delivered", intent.send_id, record.message_id)
-        if record.attempts and not resend:
-            return SendResult("uncertain", intent.send_id)
-        self.store.start_attempt(intent.send_id)
+        record, won = self.store.start_attempt(
+            intent.send_id, expected_attempts=record.attempts, resend=resend,
+        )
+        if not won:
+            return SendResult(record.state, intent.send_id, record.message_id)
         try:
             sent = self.client.send(
                 int(intent.presentation.chat_id), intent.text,

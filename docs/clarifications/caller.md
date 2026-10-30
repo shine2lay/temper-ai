@@ -33,7 +33,13 @@ Its output format is `context_profile_clarification_caller/v1`.
    exact original text, before any record work. Every error refuses, with the
    checker's diagnostics in `errors` and the candidate's ref in the message. The
    foundation's own envelope check is not a replacement: an envelope it accepts
-   is still refused here.
+   is still refused here. The frozen checker can raise `TypeError` on unhashable
+   fields/IDs after schema validation. Only then, a narrow adapter reruns its
+   already-loaded validator on the exact candidate. Real schema errors become
+   `candidate.complete` diagnostics; they are not a completed semantic report.
+   With no schema errors, the original `TypeError` propagates. Other exception
+   types also propagate: internal failures are not disguised as input refusals.
+   Neither path reaches prior-record work.
 4. **The prior record** is validated by the foundation inside
    `create_record(candidate, original, previous=<prior record>)` (or
    `project_states` when composing). A truncated history, an event without its
@@ -150,6 +156,10 @@ Three layers refuse, in order, and each keeps its own error:
 
 A separate bite shows that `create_record` must get the prior record: given none,
 an answered question that the candidate dropped disappears with its history.
+Recovery controls also distinguish removing the checker-error adapter, dropping
+its schema-invalid evidence condition, and widening its exception catch. Neither
+schema-valid `TypeError` nor a different internal exception may be converted into
+an ordinary candidate refusal.
 
 ## Loading, and what it touches
 
@@ -172,4 +182,7 @@ data only: the combined happy path first (prepare, a person's exact answer throu
 an accepted M0 receipt, a deferral and a model suggestion, re-prepare with the
 unknowns reordered, compose), then the refusals and edge cases, then one bite per
 guard. A bite disables exactly one guard in an in-memory copy of the module, never
-a file, and shows the unsafe outcome above.
+a file, and shows the unsafe outcome above. Schema-invalid unhashable fields and
+IDs are checked together and separately through both entry points, using the real
+checker/validator and asserting that no prior-record work is reached. Injected
+internal failures separately test the adapter's narrow propagation boundary.

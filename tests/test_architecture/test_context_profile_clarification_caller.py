@@ -320,6 +320,93 @@ BROKEN = {
 }
 
 
+UNHASHABLE_SHAPES = {
+    "unknown_list": (_setting(("unknowns", 0, "field"), []), "$.unknowns[0].field", "bad_enum"),
+    "unknown_object": (_setting(("unknowns", 1, "field"), {}), "$.unknowns[1].field", "bad_enum"),
+    "constraint_list": (_setting(("constraints",), [
+        {"id": [], "text": "Use the clinic tool",
+         "source": {"kind": "assumption", "why": "Synthetic assumption"}},
+    ]), "$.constraints[0].id", "schema"),
+    "goal_object": (_setting(("goals",), [
+        {"id": {}, "criterion": "cost", "rank": 1, "note": "Keep costs low",
+         "source": {"kind": "assumption", "why": "Synthetic assumption"}},
+    ]), "$.goals[0].id", "schema"),
+}
+
+
+def _unhashable_profile(*cases):
+    candidate = profile(*PROBES)
+    for case in cases:
+        change, _path, _reason = UNHASHABLE_SHAPES[case]
+        candidate = change(candidate)
+    return candidate
+
+
+@pytest.mark.parametrize("entry", ["prepare", "compose_supplement"])
+@pytest.mark.parametrize("case", ["combined", *UNHASHABLE_SHAPES, "mixed_diagnostics"])
+def test_schema_invalid_checker_crash_is_a_diagnostic_refusal_before_record_work(monkeypatch, case, entry):
+    cases = tuple(UNHASHABLE_SHAPES) if case in ("combined", "mixed_diagnostics") else (case,)
+    candidate = _unhashable_profile(*cases)
+    expected_reasons = {UNHASHABLE_SHAPES[name][1]: UNHASHABLE_SHAPES[name][2] for name in cases}
+    if case == "mixed_diagnostics":
+        del candidate["budget"]
+        del candidate["team"]["size"]
+        expected_reasons.update({"$": "missing_section", "$.team": "schema"})
+    # Actual schema diagnostics, not a fabricated checker result. M0 accepts these
+    # finite JSON shapes; the real checker then reaches its unsafe set/map operations.
+    expected_details = {path: detail for _keyword, path, detail in caller.VALIDATOR.errors(candidate)}
+    assert set(expected_details) == set(expected_reasons)
+    bound = inputs(candidate, revision=1, record=record_with())
+    calls = []
+    real_check, real_schema = caller.checker.check, caller.VALIDATOR.errors
+
+    def check(*args, **kwargs):
+        calls.append("complete_check")
+        return real_check(*args, **kwargs)
+
+    def schema(value, node=None, path="$"):
+        if node is None:
+            calls.append("schema_errors")
+        return real_schema(value, node, path)
+
+    def no_record_work(*args, **kwargs):
+        raise AssertionError("malformed candidate reached prior-record work")
+
+    monkeypatch.setattr(caller.checker, "check", check)
+    monkeypatch.setattr(caller.VALIDATOR, "errors", schema)
+    monkeypatch.setattr(k.CallerInput, "prior_record", no_record_work)
+    monkeypatch.setattr(c, "create_record", no_record_work)
+    monkeypatch.setattr(c, "project_states", no_record_work)
+    error = refused("candidate.complete", getattr(caller, entry), bound)
+    assert {item["path"]: item["reason"] for item in error.errors} == expected_reasons
+    assert {item["path"]: item["detail"] for item in error.errors} == expected_details
+    assert bound.candidate_ref in str(error) and error.meaning_status == "NOT_EVALUATED"
+    # One full check (including its schema pass), then recovery's real schema pass.
+    assert calls == ["complete_check", "schema_errors", "schema_errors"]
+
+
+@pytest.mark.parametrize("entry", ["prepare", "compose_supplement"])
+@pytest.mark.parametrize("schema_invalid,error_type", [(False, TypeError), (True, ValueError), (True, RuntimeError)])
+def test_unexplained_checker_errors_are_not_disguised_as_candidate_refusals(monkeypatch, entry,
+                                                                          schema_invalid, error_type):
+    candidate = _unhashable_profile("unknown_list") if schema_invalid else profile(*PROBES)
+    assert bool(caller.VALIDATOR.errors(candidate)) is schema_invalid
+    bound = inputs(candidate, revision=1, record=record_with())
+    failure = error_type("synthetic internal checker failure")
+
+    def broken_check(*args, **kwargs):
+        raise failure
+
+    def no_record_work(*args, **kwargs):
+        raise AssertionError("internal failure reached prior-record work")
+
+    monkeypatch.setattr(caller.checker, "check", broken_check)
+    monkeypatch.setattr(k.CallerInput, "prior_record", no_record_work)
+    with pytest.raises(error_type) as caught:
+        getattr(caller, entry)(bound)
+    assert caught.value is failure
+
+
 @pytest.mark.parametrize("entry", ["prepare", "compose_supplement"])
 @pytest.mark.parametrize("case", sorted(BROKEN))
 def test_incomplete_or_mismatched_candidate_is_refused_with_diagnostics(case, entry):
@@ -862,3 +949,63 @@ def test_previous_record_is_always_passed_to_create_record():
     forgot = scenario(_mutated(_forget_previous))
     assert Q_OFF not in {item["question_id"] for item in forgot["questions"]}  # unguarded: history lost
     assert json.loads(forgot["record_json"])["events"] == []
+
+
+def _recovery_handler(tree):
+    adapter = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "_check_with_schema_error_recovery")
+    return [node for node in ast.walk(adapter) if isinstance(node, ast.ExceptHandler)
+            and isinstance(node.type, ast.Name) and node.type.id == "TypeError"]
+
+
+def _remove_checker_typeerror_recovery(tree):
+    handlers = _recovery_handler(tree)
+    for handler in handlers:
+        handler.type = ast.Name(id="LookupError", ctx=ast.Load())
+    return len(handlers)
+
+
+def _widen_checker_error_recovery(tree):
+    handlers = _recovery_handler(tree)
+    for handler in handlers:
+        handler.type = ast.Name(id="Exception", ctx=ast.Load())
+    return len(handlers)
+
+
+def _remove_schema_error_evidence(tree):
+    conditions = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                  and isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not)
+                  and isinstance(node.test.operand, ast.Name) and node.test.operand.id == "schema_errors"]
+    for condition in conditions:
+        condition.test = ast.Constant(False)
+    return len(conditions)
+
+
+def test_schema_error_recovery_bites():
+    candidate = _unhashable_profile("unknown_list")
+    refused("candidate.complete", caller.prepare, inputs(candidate))
+    mutated = _mutated(_remove_checker_typeerror_recovery)
+    with pytest.raises(TypeError, match="unhashable type"):
+        mutated.prepare(inputs(candidate, contracts=mutated.contracts))
+
+
+@pytest.mark.parametrize("change,error_type,schema_invalid", [
+    (_remove_schema_error_evidence, TypeError, False),
+    (_widen_checker_error_recovery, RuntimeError, True),
+])
+def test_schema_error_recovery_scope_bites(monkeypatch, change, error_type, schema_invalid):
+    candidate = _unhashable_profile("unknown_list") if schema_invalid else profile(*PROBES)
+    failure = error_type("synthetic internal checker failure")
+
+    def broken_check(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(caller.checker, "check", broken_check)
+    with pytest.raises(error_type) as caught:
+        caller.prepare(inputs(candidate))
+    assert caught.value is failure
+    mutated = _mutated(change)
+    with pytest.raises(mutated.CallerRefusal) as caught:
+        mutated.prepare(inputs(candidate, contracts=mutated.contracts))
+    # Unguarded: an unexplained failure is hidden as an ordinary candidate refusal.
+    assert caught.value.guard == "candidate.complete"

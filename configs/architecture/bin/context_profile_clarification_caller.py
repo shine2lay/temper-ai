@@ -89,6 +89,34 @@ def _fresh(value: object):
     return json.loads(_json_text(value))
 
 
+def _check_with_schema_error_recovery(candidate: dict, caller: contracts.CallerInput) -> dict:
+    """Complete check first; recover only TypeError with real schema-invalid evidence.
+
+    The frozen checker can reach set/map operations after finding schema errors
+    (unhashable unknown fields or constraint/goal IDs). Reuse its validator to
+    recover those diagnostics, not a successful or completed semantic check.
+    Schema-valid TypeError and every other exception remain internal failures.
+    """
+    try:
+        return checker.check(candidate, caller.original_text, caller.original_sha256, VALIDATOR)
+    except TypeError:
+        schema_errors = VALIDATOR.errors(candidate)
+        if not schema_errors:
+            raise
+        # Adapt the validator's tuples to the checker's existing diagnostic shape;
+        # no quote, identity, rank or other semantic checking is reproduced here.
+        return {
+            "ok": False,
+            "errors": [
+                {"reason": ("missing_section" if keyword == "required" and path == "$"
+                            else "bad_enum" if keyword == "enum" else "schema"),
+                 "path": path, "detail": detail}
+                for keyword, path, detail in schema_errors
+            ],
+            "counts": {},
+        }
+
+
 def _checked_input(caller: object) -> tuple[dict, dict | None, dict]:
     """M0's exact input type, then the complete v2 checker, before any record work."""
     _refuse_unless(
@@ -96,7 +124,7 @@ def _checked_input(caller: object) -> tuple[dict, dict | None, dict]:
         "expected a CallerInput built with this module's contracts",
     )
     candidate = caller.candidate()
-    report = checker.check(candidate, caller.original_text, caller.original_sha256, VALIDATOR)
+    report = _check_with_schema_error_recovery(candidate, caller)
     _refuse_unless(
         report["ok"], "candidate.complete",
         f"candidate {caller.candidate_ref} is not a complete context_profile/v2 profile of this original text",

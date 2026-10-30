@@ -218,6 +218,22 @@ SETUP = r"""async (page) => {
 
 DRAIN = guard.DRAIN
 CLOSE = guard.CLOSE
+# R1 (#338): the fixed vocabulary of terminal-cleanup steps and the part of cleanup each belongs to. user: a tracked
+# context's disposal inside CLOSE; carrier: the guard's own page, context and terminal state inside CLOSE; mcp: the
+# terminal CLOSE call itself (it raised, or returned no metadata); checker: reading its result. Any other step text
+# is recorded as step "unlisted", scope "unknown": the driver's own text never enters these two fields.
+# Security (rm-e2f1f6ba): error_message is Playwright/Node text only because no close step runs page JavaScript
+# (ctx.close, page.close({runBeforeUnload: false}), ctx.pages, browser.contexts, page.isClosed, the drain). That is
+# a property of today's close body, not a constraint: the first close step that calls evaluate or waitForFunction
+# makes error_message page-controlled, so such a step needs Security's look first.
+CLOSE_STEPS = {"context-close": "user", "page-close": "user", "context-retry": "user", "escalation": "user",
+               "disposal": "user", "guard-page-close": "carrier", "guard-context-close": "carrier",
+               "terminal-state": "carrier", "mcp-close": "mcp", "close-metadata": "mcp", "close-reader": "checker"}
+# H2 (#338): what an unconfirmed terminal cleanup means for the operator. It is not a recreation record:
+# mcp_service_recreation_required stays the browser_close failure path's alone.
+UNCONFIRMED_RECREATION = ("required before any further P3 use of this service: its terminal cleanup was not "
+                          "confirmed, a failed or unknown final teardown (DECISION-12); the receipt's "
+                          "mcp_service_recreation_required lists browser_close failures only")
 PLANT_MARK = ("async (page) => page.__p3.users[__CTX__].p.evaluate(() => "
               "document.documentElement.dataset.plant || null)")
 
@@ -470,9 +486,11 @@ def collect(r: dict, new: dict, origin: str, latch: guard.StopLatch, phase: str)
         latch.bind(r)
 
 
-def read_terminal(closed, expected: set, errors: list) -> tuple[dict, dict, list[str]]:
+def read_terminal(closed, expected: set, errors: list, steps: list | None = None) -> tuple[dict, dict, list[str]]:
     """The terminal CLOSE result -> (result, context states, reasons). Total (Security N1): every malformed
-    field becomes an incomplete reason, never an exception, so browser_close always follows."""
+    field becomes an incomplete reason, never an exception, so browser_close always follows. R1 (#338): each
+    well-formed error entry is also appended to steps as close_step fields, beside its prose in errors."""
+    steps = steps if steps is not None else []
     reasons: list[str] = []
     terminal = closed if isinstance(closed, dict) else {}
     if closed is not None and not isinstance(closed, dict):
@@ -530,6 +548,7 @@ def read_terminal(closed, expected: set, errors: list) -> tuple[dict, dict, list
         return out
 
     for name, state in got.items():
+        label = name if name in expected else "unlisted"  # a context name the checker gave, never the driver's
         listed_errors = entries(state.get("errors"), f"CLOSE {name}")
         single = state.get("error")
         if single is not None and not isinstance(single, str):
@@ -537,13 +556,16 @@ def read_terminal(closed, expected: set, errors: list) -> tuple[dict, dict, list
             errors.append(f"CLOSE {name}: malformed error " + _brief(single))
         elif single and not state.get("errors"):
             errors.append(f"CLOSE {name}: " + single)
+            steps.append(close_step(None, label, None, None))  # an error with no step: recorded as unlisted
         for error in listed_errors:
             errors.append(f"CLOSE {name} {error['step']}: " + error["error"])
+            steps.append(close_step(error["step"], label, error.get("error_name"), error.get("error_message")))
         if any(error["step"] != "context-close" for error in listed_errors):
             reasons.append(f"{name}: escalation raised")
     for error in entries(terminal.get("errors"), "CLOSE"):
         errors.append("CLOSE " + error["step"] + ": " + error["error"])
         reasons.append("terminal disposal raised")
+        steps.append(close_step(error["step"], None, error.get("error_name"), error.get("error_message")))
     if errors and not terminal:
         reasons.append("CLOSE/disposal result unavailable")
     return terminal, got, reasons
@@ -791,6 +813,65 @@ def exc_text(exc: BaseException) -> str:
     return f"{exc.__class__.__name__}: {str(exc)[:400]}"
 
 
+def exc_parts(exc: BaseException) -> tuple[str, str]:
+    """R1 (#338): an error's class name and message as two fields (the first error inside an exception group).
+    Only the first line of the message, after an MCP tool error's '### Error' heading: later lines (a call log, an
+    MCP response's page or console sections) never enter, and both fields are cut from what exc_text already puts
+    in the errors entry beside them. Total: nothing between CLOSE and browser_close raises."""
+    try:
+        while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+            exc = exc.exceptions[0]
+        text = str(exc)[:400]
+        if text.startswith("### Error\n"):
+            text = text[len("### Error\n"):]
+        return exc.__class__.__name__[:80], text.split("\n", 1)[0]
+    except Exception:  # noqa: BLE001
+        return "unreadable", "unreadable"
+
+
+def close_step(step, context: str | None, error_name, error_message) -> dict:
+    """One terminal-cleanup failure as fields a script reads (R1, #338): scope and step from CLOSE_STEPS, the
+    context only when the checker named it, the error's name and the first line of its message, capped. Nothing
+    else from the driver's entry is copied. Total."""
+    known = isinstance(step, str) and step in CLOSE_STEPS
+    return {"scope": CLOSE_STEPS[step] if known else "unknown", "context": context,
+            "step": step if known else "unlisted",
+            "error_name": error_name[:80] if isinstance(error_name, str) else None,
+            "error_message": error_message.split("\n", 1)[0][:400] if isinstance(error_message, str) else None}
+
+
+URL_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://\S*")
+
+
+def _bare_url(url: str) -> str:
+    """scheme://host:port/path of one URL; an unreadable one becomes a fixed text, never itself."""
+    try:
+        p = urllib.parse.urlsplit(url)
+        host, port = p.hostname or "", p.port
+    except ValueError:
+        return "<unreadable URL>"
+    return f"{p.scheme}://" + (f"[{host}]" if ":" in host else host) + (f":{port}" if port is not None else "") + p.path
+
+
+def without_url_secrets(text):
+    """#338, Security rm-e2f1f6ba: every scheme://... in text as scheme://host:port/path, so an MCP endpoint's user
+    name, password, query or fragment never enters cleanup_unconfirmed, which is printed to stdout (the workflow's
+    captured output). Quotes and punctuation that end a URL stay. The receipt keeps the verbatim URL where it
+    already was (sessions, probe_services, errors, close_steps). Total; anything but text comes back as it is."""
+    if not isinstance(text, str):
+        return text
+
+    def one(m: re.Match) -> str:
+        token = m.group(0)
+        core = token.rstrip("'\"),.;>")
+        return _bare_url(core) + token[len(core):]
+
+    try:
+        return URL_TOKEN.sub(one, text)
+    except Exception:  # noqa: BLE001
+        return "<unreadable text>"
+
+
 async def _call(s, code):
     return fac.mcp_result(await s.call_tool("browser_run_code_unsafe", {"code": code}))
 
@@ -941,6 +1022,7 @@ async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | 
     latch = latch if latch is not None else guard.StopLatch()
     origin = origin or r["origin"]
     c: dict = {"errors": []}
+    steps: list = []  # R1 (#338): the structured record of each step that raised, beside the prose errors
     cancelled = close_raised = False
     closed = None
     try:
@@ -949,6 +1031,7 @@ async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | 
         cancelled = cancelled or isinstance(exc, asyncio.CancelledError)
         close_raised = True
         c["errors"].append("CLOSE: " + exc_text(exc))
+        steps.append(close_step("mcp-close", None, *exc_parts(exc)))
     expected = {"probe"} if probe else set(ENGINES[engine]["contexts"])
     prefix = "terminal observation not established: "
     got: dict = {}
@@ -957,15 +1040,18 @@ async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | 
         # Security N1: any log object reaches collect before (and whatever) the shape check says.
         if isinstance(closed, dict) and "log" in closed:
             collect(r, closed.get("log"), origin, latch, engine + ":close")
-        terminal, got, reasons = read_terminal(closed, expected, c["errors"])
+        terminal, got, reasons = read_terminal(closed, expected, c["errors"], steps)
         if isinstance(closed, dict) and isinstance(closed.get("contexts"), dict):
             c["contexts"] = {k: v for k, v in closed.items() if k != "log"}
         elif not close_raised:
             c["close_result"] = _brief(closed)
             c["errors"].append("CLOSE: RuntimeError: terminal CLOSE did not return context/journal metadata")
+            steps.append(close_step("close-metadata", None, "RuntimeError",
+                                    "terminal CLOSE did not return context/journal metadata"))
     except Exception as exc:  # noqa: BLE001  (defence in depth: nothing may skip browser_close)
         reasons = ["terminal CLOSE result unreadable: " + exc_text(exc)]
         c["errors"].append("CLOSE reader: " + exc_text(exc))
+        steps.append(close_step("close-reader", None, *exc_parts(exc)))
     c["journal"] = {"status": "incomplete" if reasons else "complete",
                     "reasons": list(dict.fromkeys(x if x.startswith(prefix) else prefix + x for x in reasons)),
                     "boundary": "terminal CLOSE; subsequent MCP browser_close is unobserved"}
@@ -1003,6 +1089,11 @@ async def cleanup(s, r: dict, engine: str, label: str, latch: guard.StopLatch | 
         c["confirmed"] = False
         c["journal"]["status"] = "incomplete"
         c["journal"]["reasons"].append(prefix + "confirmation unreadable: " + exc_text(exc))
+    # R1 (#338): what a script reads instead of the prose: how the terminal CLOSE call ended and each step that
+    # raised. Set after confirmed, which neither changes.
+    c["close_call"] = ("raised" if close_raised else "returned"
+                       if isinstance(closed, dict) and isinstance(closed.get("contexts"), dict) else "no-metadata")
+    c["close_steps"] = steps
     r.setdefault("probe_cleanup" if probe else "cleanup", {})[engine] = c
     if c["journal"]["status"] == "incomplete":
         latch.block(engine + ": " + "; ".join(c["journal"]["reasons"]))
@@ -1182,7 +1273,10 @@ def final_verdict(r: dict) -> tuple[str, str]:
         return "BLOCKED", "W1 before-reading not checked: " + str(checked.get("reason") or "WebKit not reached")
     cl = r.get("cleanup") or {}
     if set(cl) != set(ENGINES) or not all(x.get("confirmed") for x in cl.values()):
-        return "BLOCKED", "cleanup not confirmed: " + json.dumps(cl)[:600]
+        # R1 (#338): the structured close record stays out of this prose, which keeps its pre-#338 text.
+        shown = {k: ({f: v for f, v in x.items() if f not in ("close_call", "close_steps")}
+                     if isinstance(x, dict) else x) for k, x in cl.items()}
+        return "BLOCKED", "cleanup not confirmed: " + json.dumps(shown)[:600]
     # DECISION-11 rule 3: never PASS before finalize judges the after-reading COUNT (r["w1"]["on_count"]).
     return "BLOCKED", (f"{w1.PENDING}all {len(EXPECTED_STEPS)} rows observed as expected (Chromium, WebKit phone and "
                        "PH-1); the WebKit rows are PROVISIONAL until first_app_p3_w1.py finalize judges the "
@@ -1210,6 +1304,7 @@ def finish(r: dict, out: pathlib.Path, *, persist: bool = True) -> dict:
     plant = gate_plant_result(r)
     if plant:
         r["gate_plant_result"] = plant
+    r["cleanup_unconfirmed"] = unconfirmed_cleanup(r)
     r["verdict"], r["why"] = final_verdict(r)
     if (r.get("w1") or {}).get("status") == "PROVISIONAL":
         # The verdict this run gets if finalize says COUNT; BLOCKED stands if it says BLOCKED.
@@ -1222,6 +1317,45 @@ def finish(r: dict, out: pathlib.Path, *, persist: bool = True) -> dict:
         guard.write_private(out / "summary.md", summary_md(r))
     fac.say(f"[{r['label']}] VERDICT {r['verdict']}: {r['why'][:600]}")
     return r
+
+
+def unconfirmed_cleanup(r: dict) -> list[dict]:
+    """H2 (#338): each MCP session whose terminal cleanup was not confirmed, probes first, from that cleanup's own
+    record, so controls.json, summary.md and the live line say so and name the recreation it needs. URLs in it,
+    the service's and any inside a failed step's message, are scheme://host:port/path only (without_url_secrets).
+    It adds no recreation record and changes nothing browser_close reports."""
+    out = []
+    for section in ("probe_cleanup", "cleanup"):
+        for phase, c in (r.get(section) or {}).items():
+            if not isinstance(c, dict) or c.get("confirmed") is True:
+                continue
+            service = ((r.get("probe_services") or {}).get(phase) if section == "probe_cleanup"
+                       else ((r.get("sessions") or {}).get(phase) or {}).get("url"))
+            steps = [dict(x, error_message=without_url_secrets(x.get("error_message"))) if isinstance(x, dict) else x
+                     for x in c.get("close_steps") or []]
+            out.append({"section": section, "phase": phase,
+                        "service": without_url_secrets(service or "unknown MCP service for " + phase),
+                        "close_call": c.get("close_call"), "browser_close": c.get("browser_close"),
+                        "failed_steps": steps, "recreation": UNCONFIRMED_RECREATION})
+    return out
+
+
+def cleanup_lines(r: dict) -> list[str]:
+    """summary.md's Cleanup line: unchanged when every cleanup was confirmed; otherwise it says NOT confirmed and
+    lists each unconfirmed session's service, terminal CLOSE outcome, failed steps and needed recreation (H2)."""
+    journey = json.dumps({k: v.get('confirmed') for k, v in (r.get('cleanup') or {}).items()})
+    unconfirmed = r.get("cleanup_unconfirmed") or []
+    if not unconfirmed:
+        return [f"Cleanup: {journey}."]
+    probes = json.dumps({k: v.get('confirmed') for k, v in (r.get('probe_cleanup') or {}).items()})
+    lines = [f"Cleanup: NOT confirmed for {len(unconfirmed)} MCP session(s) (journey {journey}; probes {probes}).",
+             f"Recreation {UNCONFIRMED_RECREATION}:"]
+    for u in unconfirmed:
+        steps = "; ".join(f"{x.get('scope')} {x.get('step')}" + (f" [{x['context']}]" if x.get("context") else "")
+                          + f" ({x.get('error_name')}: {x.get('error_message')})" for x in u["failed_steps"])
+        lines.append(f"- {u['service']} ({u['section']} {u['phase']}): terminal CLOSE {u['close_call']}, "
+                     f"browser_close {u['browser_close']}; failed steps: {steps or 'none recorded'}")
+    return lines
 
 
 def summary_md(r: dict) -> str:
@@ -1254,8 +1388,7 @@ def summary_md(r: dict) -> str:
     lines += [f"- {x}" for x in g["findings"][:50]]
     if r.get("gate_plant_result"):
         lines += ["", "## Gate plant (G5)", "", "```", json.dumps(r["gate_plant_result"], indent=1), "```"]
-    lines += ["", w1_line(r),
-              f"Cleanup: {json.dumps({k: v.get('confirmed') for k, v in (r.get('cleanup') or {}).items()})}.",
+    lines += ["", w1_line(r), *cleanup_lines(r),
               f"Service recreation required: {json.dumps(r.get('mcp_service_recreation_required') or [])}.",
               "", "## NOT CHECKED (the kit's list; not waived)", ""]
     lines += [f"- {x}" for x in r.get("kit_not_checked") or ["(no kit: the profile was refused)"]]
@@ -1292,6 +1425,7 @@ async def live(args, out: pathlib.Path) -> int:
                       "webkit": (r.get("sessions") or {}).get("webkit", {}).get("status"),
                       "w1": (r.get("w1") or {}).get("status"), "w1_on_count": (r.get("w1") or {}).get("on_count"),
                       "traffic_gate": r["traffic_gate"]["status"], "browser_contact": r["browser_contact"],
+                      "cleanup_unconfirmed": r.get("cleanup_unconfirmed") or [],
                       "receipt": str(out / "receipt.json")}, ensure_ascii=False), flush=True)
     return exit_status(r)
 
@@ -1617,6 +1751,7 @@ async def run_control(args, case: dict, out: pathlib.Path, tmp: pathlib.Path, ip
             "browser_contact": r["browser_contact"], "server_requests": len(hits),
             "server_starts": [s.starts for s in servers if s is not None],
             "recreation_required": r.get("mcp_service_recreation_required") or [],
+            "cleanup_unconfirmed": r.get("cleanup_unconfirmed") or [],
             "rows": {f"{s.get('engine')}:{s['id']}": s["status"] for s in r["steps"]},
             "w1": (r.get("w1") or {}).get("status"), "receipt": str(case_out / "receipt.json")}
 
@@ -1663,6 +1798,8 @@ async def controls(args, out: pathlib.Path) -> int:
                "not_reached": [c["case"] for c in selected if c["case"] not in {x["case"] for x in results}],
                "not_run": [x["case"] for x in results if x["status"] == "NOT RUN"], "cases": results,
                "recreation_required": [y for x in results for y in x.get("recreation_required") or []],
+               "cleanup_unconfirmed": [dict(y, case=x["case"]) for x in results
+                                       for y in x.get("cleanup_unconfirmed") or []],
                **module_pins()}
     latch.bind(summary)
     summary["exit_code"] = guard.W4_EXIT if latch.tripped else (0 if summary["all_ok"] else 1)

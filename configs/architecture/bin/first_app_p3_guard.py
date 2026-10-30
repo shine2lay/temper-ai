@@ -161,8 +161,25 @@ def write_json(path: pathlib.Path, value) -> None:
     write_private(path, json.dumps(value, indent=1, ensure_ascii=False))
 
 
+# R1 (#338): a caught close error as two separate fields beside the legacy error String(e): its name and the first
+# line of its message, capped. Never its stack or later lines (a Playwright call log), never a page, console or DOM
+# value. Total: it never throws, so recording an error cannot become a new failure.
+ERROR_PARTS = r"""
+    const errorParts = e => {
+      let name = 'unreadable', message = 'unreadable';
+      try { name = String(e && typeof e.name === 'string' ? e.name : typeof e).slice(0, 80); } catch (_) {}
+      try { message = String(e && typeof e.message === 'string' ? e.message : e).split('\n')[0].slice(0, 400); }
+      catch (_) {}
+      return {error_name: name, error_message: message};
+    };"""
+
 # Used verbatim in every P3 page-bearing probe and journey SETUP. Context listeners precede newPage;
 # the page event installs page listeners even if newPage later raises. Exact URLs are never shortened.
+# Terminal close steps (R1, #338): each caught error is {step, error, error_name, error_message}; the step is one of
+# the fixed vocabulary first_app_p3.CLOSE_STEPS names (context-close, page-close, context-retry, escalation,
+# disposal, guard-page-close, guard-context-close, terminal-state). No close step runs page JavaScript: a step that
+# calls evaluate or waitForFunction would make error_message page-controlled (Security rm-e2f1f6ba; the note above
+# first_app_p3.CLOSE_STEPS), so it needs Security's look first.
 OBSERVERS = r"""
   const t = () => new Date().toISOString();
   const log = {requests: [], responses: [], failed: [], pageerrors: [], console: [], dialogs: [], websockets: [],
@@ -196,8 +213,8 @@ OBSERVERS = r"""
   const carrier = p3.attach(page.context(), '__guard', false); delete p3.users.__guard;
   carrier.p = page; carrier.attachPage(page);
   p3.close = async (terminal = false) => {
-    const out = {contexts: {}, errors: [], untracked: false}, reasons = [];
-    const fail = (errors, step, e) => errors.push({step, error: String(e)});
+    const out = {contexts: {}, errors: [], untracked: false}, reasons = [];__ERROR_PARTS__
+    const fail = (errors, step, e) => errors.push({step, error: String(e), ...errorParts(e)});
     const pages = u => { const current = u.ctx.pages();
       if (current.some(pg => !u.pages.has(pg))) out.untracked = true;
       return [...new Set([...u.pages, ...current])]; };
@@ -250,20 +267,20 @@ OBSERVERS = r"""
     }
     return out;
   };
-"""
+""".replace("__ERROR_PARTS__", ERROR_PARTS)
 
 CLOSE = r"""async (page) => {
-  if (!page.__p3) {
+  if (!page.__p3) {__ERROR_PARTS__
     const out = {contexts: {}, log: {}, untracked: true, errors: [],
       journal: {status: 'incomplete', reasons: ['terminal observation not established: P3 journal missing'],
         boundary: 'terminal CLOSE; subsequent MCP browser_close is unobserved'}};
     const ctx = page.context(), browser = ctx.browser();
     try { await page.close({runBeforeUnload: false}); out.guard_page_closed = page.isClosed(); }
-    catch (e) { out.errors.push({step: 'guard-page-close', error: String(e)}); }
+    catch (e) { out.errors.push({step: 'guard-page-close', error: String(e), ...errorParts(e)}); }
     try { await ctx.close(); out.guard_context_closed = !browser.contexts().includes(ctx); }
-    catch (e) { out.errors.push({step: 'guard-context-close', error: String(e)}); }
+    catch (e) { out.errors.push({step: 'guard-context-close', error: String(e), ...errorParts(e)}); }
     return out;
   }
   return await page.__p3.close(true);
-}"""
+}""".replace("__ERROR_PARTS__", ERROR_PARTS)
 DRAIN = "async (page) => page.__p3 ? page.__p3.drain() : {}"

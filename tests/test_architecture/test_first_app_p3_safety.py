@@ -501,6 +501,232 @@ def test_r1_followup_fallback_recreation(monkeypatch, tmp_path, fault):
     assert all(x.startswith('terminal observation not established: ') for x in c['journal']['reasons'])
 
 
+# #338 (R1): the terminal-cleanup record a script reads. A caught carrier-context close error and an outer terminal
+# CLOSE failure must differ in fields (close_call; each close step's scope, step and error name), not only in prose.
+TERMINAL_FAILURES = {
+    'carrier_context': {'close_call': 'returned', 'scope': 'carrier', 'step': 'guard-context-close',
+                        'error_name': 'Error', 'error_message': 'fixed carrier context close failure'},
+    'outer_close': {'close_call': 'raised', 'scope': 'mcp', 'step': 'mcp-close',
+                    'error_name': 'RuntimeError', 'error_message': 'fixed outer CLOSE failure'},
+}
+
+
+def terminal_failure(record):
+    """What a script keys on (#338), fields only: how the terminal CLOSE call ended and each failed step."""
+    return record['close_call'], [(x['scope'], x['step'], x['error_name']) for x in record['close_steps']]
+
+
+def injected_terminal_failure(monkeypatch, out, kind):
+    """One journey Chromium cleanup with a fixed terminal-cleanup failure, finished and written to out:
+    'carrier_context' runs the actual guard in Node with the carrier context's close raising; 'outer_close' makes
+    the terminal CLOSE call itself raise."""
+    data = r1_close_case('carrier_context_error') if kind == 'carrier_context' else None
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R1', target())), g.StopLatch()
+    r['sessions']['chromium']['url'] = 'fake:affected-chromium-service'
+
+    async def call(session, code):
+        assert not session.browser_closes and code == p3.CLOSE
+        if data is None:
+            raise RuntimeError('fixed outer CLOSE failure')
+        return data['result']
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R1', latch))
+    p3.finish(r, out)
+    assert s.browser_closes == 1 and latch.blocked
+    return r
+
+
+@pytest.mark.usefixtures('chromium_ab')
+@pytest.mark.parametrize('kind', sorted(TERMINAL_FAILURES))
+def test_r1_terminal_failure_is_a_structured_record(monkeypatch, tmp_path, kind):
+    """#338: each injected failure leaves one close step: a step from the fixed vocabulary, its scope, and the
+    error's name and message as separate fields, kept in the case receipt and its cleanup_unconfirmed entry. The
+    browser_close classifier does not move: it succeeded, so no recreation record is made."""
+    want = TERMINAL_FAILURES[kind]
+    r = injected_terminal_failure(monkeypatch, tmp_path, kind)
+    c = r['cleanup']['chromium']
+    assert r['verdict'] == 'BLOCKED' and r['exit_code'] == 3
+    assert not c['confirmed'] and c['browser_close'] == 'ok' and not r.get('mcp_service_recreation_required')
+    step = {'scope': want['scope'], 'context': None, 'step': want['step'], 'error_name': want['error_name'],
+            'error_message': want['error_message']}
+    assert c['close_call'] == want['close_call'] and c['close_steps'] == [step]
+    receipt = json.loads((tmp_path / 'receipt.json').read_text())
+    assert receipt['cleanup']['chromium']['close_steps'] == [step]
+    assert receipt['cleanup_unconfirmed'] == [{
+        'section': 'cleanup', 'phase': 'chromium', 'service': 'fake:affected-chromium-service',
+        'close_call': want['close_call'], 'browser_close': 'ok', 'failed_steps': [step],
+        'recreation': p3.UNCONFIRMED_RECREATION}]
+
+
+@pytest.mark.usefixtures('chromium_ab')
+def test_r1_carrier_context_error_and_outer_close_failure_are_machine_distinguishable(monkeypatch, tmp_path):
+    """#338 (#298 R1): the two failures run 4637731d's reader could not tell apart differ in the fields a script
+    reads from the written receipt, both in the cleanup record and in the run-level projection, with no prose."""
+    got = {}
+    for kind in TERMINAL_FAILURES:
+        (tmp_path / kind).mkdir()
+        injected_terminal_failure(monkeypatch, tmp_path / kind, kind)
+        receipt = json.loads((tmp_path / kind / 'receipt.json').read_text())
+        [projected] = receipt['cleanup_unconfirmed']
+        got[kind] = terminal_failure(receipt['cleanup']['chromium'])
+        assert terminal_failure({'close_call': projected['close_call'],
+                                 'close_steps': projected['failed_steps']}) == got[kind]
+    assert got == {'carrier_context': ('returned', [('carrier', 'guard-context-close', 'Error')]),
+                   'outer_close': ('raised', [('mcp', 'mcp-close', 'RuntimeError')])}
+
+
+# #338 (H2): run 59850933's terminal CLOSE (temper #219). The carrier page closed; the carrier context's close
+# raised because the context was already gone; no other context was left; the guard's journal is incomplete for
+# that one error. browser_close then succeeds, so recreation_required stays [] and only the cleanup record can say.
+ALREADY_CLOSED = 'browserContext.close: Target page, context or browser has been closed'
+ALREADY_CLOSED_STEP = {'scope': 'carrier', 'context': None, 'step': 'guard-context-close', 'error_name': 'Error',
+                       'error_message': ALREADY_CLOSED}
+
+
+def carrier_already_closed(names):
+    result = clean_close(names)
+    result['errors'] = [{'step': 'guard-context-close', 'error': 'Error: ' + ALREADY_CLOSED,
+                         'error_name': 'Error', 'error_message': ALREADY_CLOSED}]
+    result['journal'] = {'status': 'incomplete',
+                         'reasons': ['terminal observation not established: guard context close raised']}
+    return result
+
+
+def test_h2_unconfirmed_probe_cleanup_names_the_service_to_recreate(monkeypatch, tmp_path):
+    """#338 H2: the first probe's terminal cleanup is not confirmed and browser_close succeeds. The receipt and
+    summary.md say the cleanup was not confirmed and name the service to recreate, instead of 'Cleanup: {}', and
+    recreation_required keeps its meaning (browser_close failures only)."""
+    t, sessions, hooks = install_journey(monkeypatch, tmp_path)
+    original_call = p3._call
+
+    async def call(s, code):
+        if code == p3.CLOSE and s.kind == 'pins' and len(sessions) == 1:
+            return carrier_already_closed(['probe'])
+        return await original_call(s, code)
+
+    monkeypatch.setattr(p3, '_call', call)
+    latch = g.StopLatch()
+    empty_receipts_root(t, tmp_path)
+    r = asyncio.run(p3.check_target('fake:chromium', 'fake:webkit', t, tmp_path, 'H2', 900, hooks, latch=latch))
+    assert len(sessions) == 1 and sessions[0].browser_closes == 1 and latch.blocked
+    assert r['verdict'] == 'BLOCKED' and r['exit_code'] == 3 and not r.get('cleanup')
+    c = r['probe_cleanup'][PIN_PHASE]
+    assert not c['confirmed'] and c['browser_close'] == 'ok' and not r.get('mcp_service_recreation_required')
+    want = [{'section': 'probe_cleanup', 'phase': PIN_PHASE, 'service': 'fake:chromium', 'close_call': 'returned',
+             'browser_close': 'ok', 'failed_steps': [ALREADY_CLOSED_STEP], 'recreation': p3.UNCONFIRMED_RECREATION}]
+    assert r['cleanup_unconfirmed'] == want
+    assert json.loads((tmp_path / 'receipt.json').read_text())['cleanup_unconfirmed'] == want
+    summary = (tmp_path / 'summary.md').read_text()
+    assert 'Cleanup: {}.' not in summary and 'Cleanup: NOT confirmed for 1 MCP session(s)' in summary
+    assert f'- fake:chromium (probe_cleanup {PIN_PHASE}): terminal CLOSE returned, browser_close ok' in summary
+    assert p3.UNCONFIRMED_RECREATION in summary and 'Service recreation required: [].' in summary
+
+
+def fake_controls(monkeypatch, tmp_path, service, close):
+    """One control case through the real controls(): run_control, the real probe session on MCP service URL
+    service, its cleanup with the terminal CLOSE result close() (it returns or raises), finish, controls.json and
+    the printed summary. Only the browser, the fixture server and check_target's journey are fake."""
+
+    class FakeServer:
+        port, hits, starts = 8962, [], 1
+
+        def __init__(self, site, data, variant, *, bind_address):
+            self.files = g.snapshot(site, p3.CTYPES)
+
+        def start(self):
+            pass
+
+        retire = shutdown = start
+
+        def host_action(self, kind):
+            return {'action': kind, 'done': True}
+
+    @contextlib.asynccontextmanager
+    async def open_fake(url):
+        yield FakeTransport('pins')
+
+    async def call(s, code):
+        assert not s.browser_closes
+        return close() if code == p3.CLOSE else {'status': 200, 'log': {}}
+
+    async def check(*a, **kw):  # the real probe session, cleanup and finish; only the browser is fake
+        await p3.probe_session(service, 'fixed probe code', r=kw['receipt'], latch=kw['latch'], phase=PIN_PHASE)
+        return kw['receipt']
+
+    monkeypatch.setattr(p3, 'P3Server', FakeServer)
+    monkeypatch.setattr(p3, 'open_session', open_fake)
+    monkeypatch.setattr(p3, '_call', call)
+    monkeypatch.setattr(p3, 'check_target', check)
+    monkeypatch.setattr(p3, 'CONTROLS', [dict(p3.CONTROLS[0], case='FAKE')])
+    args = SimpleNamespace(only='', browser='fake:', browser_webkit='fake:', serve_ip='100.110.162.4')
+    assert asyncio.run(p3.controls(args, tmp_path)) == 1
+    data = json.loads((tmp_path / 'controls.json').read_text())
+    assert data['cases'][0]['status'] == 'BLOCKED' and data['recreation_required'] == []
+    return data
+
+
+def test_h2_controls_json_says_cleanup_unconfirmed_beside_recreation_required(monkeypatch, tmp_path):
+    """#338 H2, run level: an unconfirmed probe cleanup inside a control case reaches controls.json as
+    cleanup_unconfirmed, with the case, the service and the recreation it needs; recreation_required stays []."""
+    data = fake_controls(monkeypatch, tmp_path, 'fake:chromium-copy-service', lambda: carrier_already_closed(['probe']))
+    want = {'section': 'probe_cleanup', 'phase': PIN_PHASE, 'service': 'fake:chromium-copy-service',
+            'close_call': 'returned', 'browser_close': 'ok', 'failed_steps': [ALREADY_CLOSED_STEP],
+            'recreation': p3.UNCONFIRMED_RECREATION}
+    assert data['cases'][0]['cleanup_unconfirmed'] == [want]
+    assert data['cleanup_unconfirmed'] == [dict(want, case='FAKE')]
+    assert 'Cleanup: NOT confirmed for 1 MCP session(s)' in (tmp_path / 'FAKE/summary.md').read_text()
+
+
+# #338, Security's Low finding (rm-e2f1f6ba): cleanup_unconfirmed is printed to stdout, the workflow's captured
+# output, so an MCP endpoint URL's user name, password, query and fragment never enter it.
+SECRET_URL = 'http://u5er-338:pw-338-secret@mcp.invalid:8931/mcp?token=tok-338#frag-338'
+SECRET_PARTS = ('u5er-338', 'pw-338-secret', 'tok-338', 'frag-338')
+
+
+@pytest.mark.parametrize('text, shown', [
+    (SECRET_URL, 'http://mcp.invalid:8931/mcp'),
+    ('http://:@mcp.invalid/mcp', 'http://mcp.invalid/mcp'),
+    ('http://[::1]:8931/mcp?x=1', 'http://[::1]:8931/mcp'),
+    (f"Client error '401 Unauthorized' for url '{SECRET_URL}'",
+     "Client error '401 Unauthorized' for url 'http://mcp.invalid:8931/mcp'"),
+    ('two: http://a:b@h1/x?q=1 and HTTPS://c@H2:443/y#z.', 'two: http://h1/x and https://h2:443/y.'),
+    ('http://u:p@h:notaport/x', '<unreadable URL>'),
+    ('http://u:p@[::1/x', '<unreadable URL>'),
+    (ALREADY_CLOSED, ALREADY_CLOSED),
+    ('fake:chromium', 'fake:chromium'),
+    ('unknown MCP service for chromium:pins', 'unknown MCP service for chromium:pins'),
+    (None, None),
+])
+def test_h3_url_secrets_are_cut_from_the_printed_record(text, shown):
+    assert p3.without_url_secrets(text) == shown
+
+
+def test_h3_printed_controls_carry_no_url_credential(monkeypatch, tmp_path, capsys):
+    """#338 H3: the terminal CLOSE call raises with the MCP endpoint's full URL in its message (as httpx's
+    HTTPStatusError does). stdout and controls.json name the service and the failed step's message with
+    scheme://host:port/path only; the receipt keeps the verbatim URL where it already was."""
+
+    def close():
+        raise RuntimeError(f"Client error '401 Unauthorized' for url '{SECRET_URL}'")
+
+    data = fake_controls(monkeypatch, tmp_path, SECRET_URL, close)
+    printed = capsys.readouterr().out
+    shown = {'section': 'probe_cleanup', 'phase': PIN_PHASE, 'service': 'http://mcp.invalid:8931/mcp',
+             'close_call': 'raised', 'browser_close': 'ok',
+             'failed_steps': [{'scope': 'mcp', 'context': None, 'step': 'mcp-close', 'error_name': 'RuntimeError',
+                               'error_message': "Client error '401 Unauthorized' for url "
+                                                "'http://mcp.invalid:8931/mcp'"}],
+             'recreation': p3.UNCONFIRMED_RECREATION}
+    assert data['cleanup_unconfirmed'] == [dict(shown, case='FAKE')]
+    for text in (printed, (tmp_path / 'controls.json').read_text()):
+        assert 'http://mcp.invalid:8931/mcp' in text and not [x for x in SECRET_PARTS if x in text]
+    receipt = json.loads((tmp_path / 'FAKE/receipt.json').read_text())
+    assert receipt['cleanup_unconfirmed'] == [shown]  # what the live line prints
+    assert receipt['probe_services'][PIN_PHASE] == SECRET_URL
+    assert SECRET_URL in receipt['probe_cleanup'][PIN_PHASE]['close_steps'][0]['error_message']
+
+
 @pytest.mark.usefixtures('chromium_ab')
 @pytest.mark.parametrize('fault', ['guard_event', 'guard_alive', 'guard_error', 'untracked', 'other_context', 'bad_close'])
 def test_r1_carrier_and_unknown_lifetimes(monkeypatch, tmp_path, fault):

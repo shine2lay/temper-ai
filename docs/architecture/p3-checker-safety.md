@@ -1,4 +1,4 @@
-# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125), Security #105 fixes (#279), W1 from readings (#280)
+# P3 source boundary: S1–S5 (#129), terminal cleanup (#136), N1 and W1 admission (#125), Security #105 fixes (#279), W1 from readings (#280), terminal-cleanup record (#338)
 
 Source work only. No browser, controller, host operation, network plant, qualification or run permission.
 Accountable lead: Architecture. Security's a217ee1c review remains CHANGES until its new exact-pin reply.
@@ -128,6 +128,85 @@ enforce it.
   blocks the invocation and is listed under malformed_logs.
 - The reader and the confirmation are also wrapped, so a reader bug becomes an incomplete journal.
   browser_close and the recreation record always happen.
+
+### Terminal-cleanup record (#338, #298's R1): which step failed, as fields
+
+The prose stays as it was (each errors line, each journal reason). Beside it, the record now says which
+terminal-cleanup step failed in fields a script reads, so a caught carrier-context close error and a
+failed terminal CLOSE call no longer have to be told apart from wording.
+
+- The guard's error entries inside CLOSE are {step, error, error_name, error_message}. error is String(e)
+  as before. error_name is the error's name (or the thrown value's type); error_message is the first line
+  of its message; at most 80 and 400 characters. No stack, no later line (Playwright's call log), no page,
+  console or DOM value. Building them never throws.
+- Every cleanup and probe_cleanup entry gets two more fields, after confirmed:
+  - close_call: how the terminal CLOSE call itself ended. returned: it returned context and journal
+    metadata. no-metadata: it returned something else. raised: the MCP call raised, timed out or was
+    cancelled.
+  - close_steps: one entry per step that failed, {scope, context, step, error_name, error_message}.
+- step comes from a fixed list (CLOSE_STEPS in first_app_p3.py), and scope says which part of cleanup
+  the step belongs to:
+  - user: context-close, page-close, context-retry, escalation, disposal (a tracked context's disposal
+    inside CLOSE; context is the checker's own name for it);
+  - carrier: guard-page-close, guard-context-close, terminal-state (the guard's own page and context, and
+    reading the terminal state);
+  - mcp: mcp-close (the CLOSE call raised), close-metadata (it returned no context or journal metadata);
+  - checker: close-reader (reading the result raised).
+  Any other step text becomes step unlisted, scope unknown, and a context the checker did not expect
+  becomes unlisted: the driver's own text never enters step, scope or context.
+- error_name and error_message come from the guard's fields, capped again. For mcp-close and
+  close-reader they are the Python exception's class name and the first line of its message (after an
+  MCP "### Error" heading), cut from the same text the errors line beside them already holds. A malformed
+  guard entry stays an errors line and a reason, as before, and adds no close_step.
+- The two failures, by fields alone: a caught carrier-context close error is close_call returned with
+  close_steps [{scope carrier, step guard-context-close, error_name Error, …}]; a failed terminal CLOSE
+  call is close_call raised with close_steps [{scope mcp, step mcp-close, error_name RuntimeError (or the
+  exception's own class), …}]. One guard error is one close_step, so the three phrases run 59850933 printed
+  for a single error ("guard context close raised", "terminal journal not complete", "terminal disposal
+  raised") show as one failed step.
+- Where a reader finds it: the receipt's cleanup and probe_cleanup entries, and each unconfirmed
+  session's entry in cleanup_unconfirmed (below), which reaches summary.md, the live line on stdout and
+  controls.json. final_verdict's "cleanup not confirmed: …" text leaves the two new fields out, so it reads
+  as before.
+- What it does not change: the close order, the last drain, the journal and its reasons, the
+  confirmation rule, browser_close and the recreation record. It makes no lifecycle claim: which boundary
+  failed in a real run stays open until the next occurrence's record is read. Its fields are step
+  identity and the error's name and message only; there is no page, console, DOM, prompt or tool-payload
+  field.
+- Why error_message holds no page content (Security rm-e2f1f6ba): no close step runs page JavaScript
+  (ctx.close, page.close({runBeforeUnload: false}), ctx.pages, browser.contexts, page.isClosed, the
+  drain), so a page cannot author the thrown value and the message is Playwright or Node text. That is a
+  property of today's close body, not a constraint: the first close step that calls evaluate or
+  waitForFunction makes error_message page-controlled, so such a step needs Security's look first. The
+  same note sits beside CLOSE_STEPS and in the guard.
+
+### Cleanup not confirmed (#338): the receipt, summary.md and controls.json say so
+
+- finish() builds cleanup_unconfirmed from the receipt: one entry per MCP session, probes first, whose
+  cleanup is not confirmed: {section (probe_cleanup or cleanup), phase, service (the MCP service URL that
+  session used, else "unknown MCP service for <phase>"), close_call, browser_close, failed_steps (its
+  close_steps), recreation}. recreation is one fixed text: the service must be recreated before any
+  further P3 use, because its final teardown failed or is unknown (DECISION-12).
+- No URL secret in it (Security rm-e2f1f6ba, Low): cleanup_unconfirmed is printed to stdout, which is
+  the workflow's captured output, while receipt.json, summary.md and controls.json are 0600 files. An MCP
+  endpoint URL can carry a user name, password or query token, and the MCP client's HTTP errors print the
+  full URL (httpx: "Client error '401 Unauthorized' for url '…'"). So every scheme://… in the service and
+  in each failed step's error_message is cut to scheme://host:port/path (without_url_secrets); a URL that
+  cannot be read becomes "<unreadable URL>". The receipt keeps the verbatim URL where it already was:
+  sessions, probe_services, errors and close_steps.
+- summary.md: the Cleanup line is unchanged when every cleanup was confirmed. Otherwise it reads
+  "Cleanup: NOT confirmed for N MCP session(s) (journey {…}; probes {…})", then the recreation line, then
+  one line per session: its service, how the terminal CLOSE ended, browser_close and the failed steps.
+  Before #338, a run whose only unconfirmed cleanup was a probe's printed "Cleanup: {}." (the journey
+  had none), as run 59850933 did.
+- controls.json: each case carries cleanup_unconfirmed, and the run level lists all of them with their
+  case. The live line on stdout carries it too.
+- mcp_service_recreation_required (recreation_required in controls.json) keeps its meaning: browser_close
+  failures only. A failed terminal CLOSE followed by a successful browser_close still leaves it [], because
+  that record is written only when browser_close fails; no recreation record is invented.
+- Not enforced across runs: W1 admission (first_app_p3_admission.py) still holds a service only for
+  mcp_service_recreation_required and unfinished markers, and does not read cleanup_unconfirmed. Until
+  it does, the operator and the calling lead enforce DECISION-12's recreation from these lines.
 
 ### W1 admission refusal (#125, Security #16 condition 4)
 
@@ -306,6 +385,9 @@ R-1i, D-1, D-5) are unchanged.
 - W3: Security's NEW exact-pin review; actual hosting/confinement and disposal evidence.
 - W4: actual event observations; when tripped, the batch stops and the request list goes to Security
   (an operator rule, DECISION-9 (b)), not a generic FAIL.
+- Cleanup not confirmed (#338): the receipt, summary.md, controls.json and the live line say so and name
+  the service, but W1 admission does not refuse on it yet; the next run's operator enforces DECISION-12's
+  recreation from those lines.
 - G1–G5: approved constant .invalid network plants, exact expected versus extra destinations,
   independent event witnesses, per-kind caught/MISS/not-exercised and blind spots. DNS-only
   traffic and worker/network-kind coverage are not claimed by source or fake tests.
@@ -382,3 +464,20 @@ first run of the six P3 test files had 3 failures, all in that new safety test: 
 verdict answers before "not every row was observed", so the expectation was wrong, not the code; after
 the fix 444/444 passed. Bites, one at a time and restored byte for byte (sha256 checked): the pin check
 off failed 2 cases, the paused check 4, the holder = id check 3, the after-time check 2.
+
+#338, terminal-cleanup record and unconfirmed cleanup (#298's R1; hypothesis and result in
+/home/shinelay/architecture-dept/reviews/p3-r1-terminal-record-338/HYPOTHESIS.md): 17 new fixed cases in
+tests/test_architecture/test_first_app_p3_safety.py, fakes and Node only (the carrier-context error runs
+the real guard in Node): 5 for the record and the unconfirmed cleanup, 12 for Security's URL finding
+(11 fixed texts for without_url_secrets, and a controls run whose CLOSE error carries a credential URL,
+checked on the captured stdout and controls.json). On the parent source (628ed017) all 17 failed
+(KeyError close_call or cleanup_unconfirmed, AttributeError UNCONFIRMED_RECREATION or
+without_url_secrets) and the other 112 passed; at the head 129/129. On the parent, the unconfirmed probe
+case wrote "Cleanup: {}." and "Service recreation
+required: []." to summary.md, the run-59850933 shape. Each test's written receipt, summary.md and
+controls.json, parent against head, after normalizing paths, times and the two module pins: 84 files,
+79 byte-identical once only the keys #338 adds are removed (close_call, close_steps, cleanup_unconfirmed,
+the guard entries' error_name and error_message); the other 5 are summary.md files whose Cleanup lines
+changed because a cleanup was not confirmed, as intended. The success path (confirmed, complete journal,
+latch not blocked), the carrier-failure cases (BLOCKED, exit 3) and the fallback recreation cases wrote
+identical records.

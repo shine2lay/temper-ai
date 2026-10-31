@@ -1,5 +1,6 @@
 """Captured provider input and committed application are different boundaries."""
 
+import json
 from copy import deepcopy
 from dataclasses import replace
 
@@ -16,6 +17,19 @@ from tests.test_clarifications.test_caller_integration import Composition
 from tests.test_clarifications.test_caller_integration import db as db
 from tests.test_clarifications.test_composed_history import cases
 
+# V08 provenance controls: the earlier provenance/binding refusal wins, kept as
+# one durable refused ingress observation with this diagnostic code (M4 plan section 7).
+PROVENANCE_REFUSALS = {
+    "wrong_chat": c.RefusalCode.TRANSPORT_MISMATCH,
+    "denied_sender": c.RefusalCode.RESPONDER_NOT_AUTHORISED,
+    "bot_sender": c.RefusalCode.BOT_SENDER,
+    "forwarded": c.RefusalCode.FORWARDED_MESSAGE,
+}
+TRUSTED_PORT_REFUSALS = {
+    **dict.fromkeys(c.UNVERIFIED_INGRESSES, c.RefusalCode.UNVERIFIED_INGRESS),
+    c.MODEL_INGRESS: c.RefusalCode.MODEL_NOT_HUMAN,
+}
+
 
 def pull_batch(rig, update):
     rig.provider.updates = [deepcopy(update)]
@@ -29,7 +43,7 @@ def test_V08_real_capture_provenance_and_independent_snapshot(db, monkeypatch, c
     words, press = v.pulled_updates()
     if "trusted_port_receipt" in case.inputs:
         result = rig.append(case.inputs["trusted_port_receipt"]).result
-        assert result.status == "refused" and result.code in (c.RefusalCode.UNVERIFIED_INGRESS, c.RefusalCode.MODEL_NOT_HUMAN)
+        assert (result.status, result.code) == ("refused", TRUSTED_PORT_REFUSALS[case.name])
         assert rig.receipts() == {}
     elif "after_capture_change" in case.inputs:
         name = case.name
@@ -89,7 +103,14 @@ def test_V08_real_capture_provenance_and_independent_snapshot(db, monkeypatch, c
                 message["from"]["is_bot"] = True
             else:
                 message["forward_origin"] = {"type": "user"}
-            rig.pull(words)
+            sends = len(rig.provider.sent)
+            assert rig.pull(words) == 0 and rig.ordinary == [], "provenance control routed ordinarily"
+            observed = [(row.update_id, row.capture_status, row.diagnostic_code,
+                         row.result_json and json.loads(row.result_json)["status"])
+                        for row in rig.db.rows(dm.ClarificationIngress)]
+            assert observed == [(words["update_id"], "refused", PROVENANCE_REFUSALS[case.name].value, "refused")], \
+                "exact provenance refusal"
+            assert len(rig.provider.sent) == sends
         assert rig.context().prior_revision == 1 and rig.receipts() == {}
     else:
         rig.pull(words)

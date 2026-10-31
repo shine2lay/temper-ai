@@ -1,8 +1,11 @@
 """M4 supplied-input, identity, reference and explicit-effect boundaries."""
 
 import json
+import subprocess
+import sys
 from copy import deepcopy
 from dataclasses import asdict, replace
+from pathlib import Path
 
 import pytest
 
@@ -15,11 +18,77 @@ from temper_ai.clarifications import models as m
 from temper_ai.clarifications import preparation_adapter as adapter
 from temper_ai.clarifications.caller import ClarificationCoordinator
 from temper_ai.integrations.telegram import poller
+from temper_ai.integrations.telegram.service import TelegramService
 from tests.test_clarifications import composition_scenarios as s
 from tests.test_clarifications import composition_vectors as v
-from tests.test_clarifications.test_caller_integration import Composition
+from tests.test_clarifications.test_caller_integration import (
+    OPERATIONAL_SPIES,
+    Composition,
+)
 from tests.test_clarifications.test_caller_integration import db as db
 from tests.test_clarifications.test_composed_history import cases
+
+# The library V20 imports and constructs, plus the ordinary Telegram parts it leaves unbound.
+LIBRARY = (
+    "configs.architecture.bin.context_profile_clarification_caller",
+    "configs.architecture.bin.context_profile_clarified_check",
+    "temper_ai.clarifications.caller",
+    "temper_ai.clarifications.caller_contracts",
+    "temper_ai.clarifications.contracts",
+    "temper_ai.clarifications.delivery_models",
+    "temper_ai.clarifications.delivery_store",
+    "temper_ai.clarifications.models",
+    "temper_ai.clarifications.preparation_adapter",
+    "temper_ai.clarifications.store",
+    "temper_ai.integrations.telegram.clarification_store",
+    "temper_ai.integrations.telegram.clarifications",
+    "temper_ai.integrations.telegram.poller",
+    "temper_ai.integrations.telegram.service",
+)
+FRESH_IMPORT = """
+import importlib, json, sys
+spies, library = json.loads(sys.argv[1]), json.loads(sys.argv[2])
+counts = {label: 0 for _, _, label in spies}
+def counted(label, original):
+    def call(*args, **kwargs):
+        counts[label] += 1
+        return original(*args, **kwargs)
+    return call
+for module, path, label in spies:
+    owner = importlib.import_module(module)
+    *parents, name = path.split(".")
+    for parent in parents:
+        owner = getattr(owner, parent)
+    setattr(owner, name, counted(label, getattr(owner, name)))
+preloaded = sorted(name for name in library if name in sys.modules)
+for name in library:
+    importlib.import_module(name)
+print(json.dumps({"preloaded": preloaded, "loaded": sorted(n for n in library if n in sys.modules),
+                  "counts": counts}))
+"""
+
+
+def fresh_import():
+    """Import the library in a new interpreter whose spies are installed first; counts only."""
+    done = subprocess.run(
+        [sys.executable, "-c", FRESH_IMPORT, json.dumps(OPERATIONAL_SPIES), json.dumps(LIBRARY)],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=120,
+    )
+    assert done.returncode == 0, f"fresh import exited {done.returncode}"
+    return json.loads(done.stdout.splitlines()[-1])
+
+
+def unused_construction(db, monkeypatch):
+    """V20: construct the composed library and the ordinary unbound Telegram parts; run nothing."""
+    rig = Composition(db, monkeypatch)
+    ordinary = poller.Poller(rig.provider, rig.ordinary.append, timeout=0, clock=lambda: 1700000001)
+    service = TelegramService(client=rig.provider, clarifications=None)
+    assert ordinary.clarifications is None and service.clarifications is None and service.poller is None
+    return rig, service
+
+
+def assert_operationally_off(rig, expected):
+    assert rig.operational() == expected, "unused library made no provider, engine, registration or run contact"
 
 
 @pytest.mark.parametrize("case", cases("V02"), ids=lambda case: case.name)
@@ -236,13 +305,21 @@ def test_V18_current_only_consumption_and_no_automatic_effect(db, monkeypatch, c
 @pytest.mark.parametrize("case", cases("V20"), ids=lambda case: case.name)
 def test_V20_explicit_binding_stays_operationally_off(db, monkeypatch, case):
     before = db.dump()
-    rig = Composition(db, monkeypatch)
+    rig, service = unused_construction(db, monkeypatch)
     assert rig.effects == [] and rig.authority.calls == [] and rig.ordinary == []
     assert db.dump() == before and not rig.poller.running
-    if case.name == "ordinary_unbound":
+    if case.name == "unused_import_constructor":
+        assert set(case.expected) == set(rig.operational())
+        assert_operationally_off(rig, case.expected)
+        imported = fresh_import()
+        assert imported["preloaded"] == [] and imported["loaded"] == sorted(LIBRARY)
+        assert imported["counts"] == dict.fromkeys(imported["counts"], 0), "fresh library import made no contact"
+    elif case.name == "ordinary_unbound":
         words = v.pulled_updates()[0]
         rig.provider.updates = [words]
-        ordinary = poller.Poller(rig.provider, rig.ordinary.append, timeout=0, clock=lambda: 1700000001)
+        # The poller TelegramService would build from its own unbound edge.
+        ordinary = poller.Poller(service.client, rig.ordinary.append, timeout=0, clock=lambda: 1700000001,
+                                 clarifications=service.clarifications)
         assert ordinary.clarifications is None
         assert ordinary.poll_once() == 1 and rig.ordinary == [words]
         assert db.dump() == before and rig.provider.sent == []

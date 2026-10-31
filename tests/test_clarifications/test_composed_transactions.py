@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import pytest
 
+from configs.architecture.bin import context_profile_clarification_caller as m1
 from temper_ai.clarifications import contracts as c
 from temper_ai.clarifications import delivery_models as dm
 from temper_ai.clarifications import models as m
@@ -31,7 +32,8 @@ class BeforeAdmission(Exception):
 # reported NOT_REALIZED, never as passes, and D's data stays unchanged (temper
 # lead decision for #242): M3 save_presentation of a known ID is a touch that
 # keeps revision and record digest, C checks only those, and C's accepted doc
-# leaves the final eligibility fence to M2/B.
+# leaves eligibility to two send-side fences: M2's pre-present generation check
+# first, then B's locked start_attempt admission.
 NOT_REALIZED = {("V07", "generation_before_present"): {"stale_coordinator_refusal": True}}
 
 
@@ -58,8 +60,13 @@ def assert_fenced_application(status, code, added_events, expected_code):
         "stale or duplicate action added a human event"
 
 
-def assert_m2_single_fence(rig, snapshots, expected):
-    """No coordinator refusal; M2 alone answers not_current, sending and writing nothing."""
+def assert_m2_first_fence(rig, snapshots, expected):
+    """No coordinator refusal; M2's pre-present check, the first of two send-side fences, answers not_current.
+
+    It is the only source of not_current and sends and writes nothing. B's locked
+    start_attempt admission is the second fence (its own bites); with M2's read
+    stale the result is delivered or pending, never a send.
+    """
     calls, attempts, before = len(rig.provider.sent), send_attempts(rig.db), rig.db.dump()
     for caller in snapshots:
         states = [result.state for result in rig.present(caller)]
@@ -146,6 +153,8 @@ def test_V05_all_copies_reverse_completion_and_uncertainty(db, monkeypatch, case
         before = db.dump()
         rig.ledger.record_delivery(send_id, "502")
         assert db.dump() == before
+        if "intents" in case.expected:
+            assert len(db.rows(dm.ClarificationSend)) == case.expected["intents"]
     else:
         index = 1 if case.name == "attempt_commit_then_raise" else 2
         with Child(db, "send", boundary="after_commit", commit_index=index, send_id=send_id) as child:
@@ -212,7 +221,8 @@ def test_V07_last_application_fence_wins_over_capture(db, monkeypatch, case):
     if case.name == "answered_before_present":
         rig.answer()
         before = len(rig.provider.sent)
-        with pytest.raises(Exception) as caught:
+        # M1's own refusal reaches the caller unwrapped through the adapter and coordinator.
+        with pytest.raises(m1.CallerRefusal) as caught:
             rig.present()
         assert caught.value.guard == case.expected["m1_guard"]
         assert len(rig.provider.sent) == before
@@ -225,7 +235,7 @@ def test_V07_last_application_fence_wins_over_capture(db, monkeypatch, case):
         assert db.store.save_presentation(v.presentation(2))
         fresh = rig.context(ask=(v.Q,))
         assert (stale.prior_revision, stale.prior_record_sha256) == (fresh.prior_revision, fresh.prior_record_sha256)
-        assert_m2_single_fence(rig, (stale, fresh), case.expected)
+        assert_m2_first_fence(rig, (stale, fresh), case.expected)
         return
     if case.name == "after_confirmed_typed_action":
         rig.ready()
@@ -272,12 +282,17 @@ def test_V11_two_real_processes_keep_both_histories(db, monkeypatch, case):
         profiles = case.inputs["candidates"]
         with Child(db, "prepare", boundary="create", profile=profiles[0]) as a, \
                 Child(db, "prepare", boundary="create", profile=profiles[1]) as b:
+            # Both observed the missing stream. a commits first, so b's own
+            # first-create insert is the one that loses and merges its extra
+            # question; released together, either may win and D's ordered
+            # revisions would depend on the scheduler.
             a.at("create")
             b.at("create")
             a.release()
+            first = a.finish()
             b.release()
-            results = [a.finish(), b.finish()]
-        assert all(row[0] == "prepare" for row in results)
+            second = b.finish()
+        assert [first, second] == [["prepare", revision] for revision in case.expected["revisions"]]
         rig.restart()
         ids = {row["question_id"] for row in db.store.load(rig.initial.stream).record()["questions"]}
         assert set(case.expected["question_ids_include"]) <= ids

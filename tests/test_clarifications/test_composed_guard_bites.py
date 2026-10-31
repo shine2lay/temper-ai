@@ -7,8 +7,11 @@ import pytest
 from temper_ai.clarifications import caller as coordinator
 from temper_ai.clarifications import contracts, delivery_store
 from temper_ai.clarifications import models as m
+from temper_ai.integrations.telegram import clarifications as edge_module
 from temper_ai.integrations.telegram import poller
 from tests.test_clarifications import composition_vectors as v
+from tests.test_clarifications import test_caller_integration as integration
+from tests.test_clarifications import test_composed_boundaries as boundaries
 from tests.test_clarifications import test_composed_transactions as composed
 from tests.test_clarifications.test_caller_integration import Composition
 from tests.test_clarifications.test_caller_integration import db as db
@@ -21,6 +24,7 @@ WITHOUT_ADMISSION_CHECK = {
     "answered": "and p.generation == loaded.generation(p.question_id))",
 }
 APPLICATION_FENCE = {"generation_2": "binding.stale", "confirmed_typed_action": "confirmation.once"}
+EDGE_CONSTRUCTED = "        self._namespace: TransportNamespace | None = None\n"
 
 
 def vector_case(vector, name):
@@ -71,7 +75,7 @@ def test_actual_consumption_refusal_has_its_specific_guard_bite(db, monkeypatch,
 @pytest.mark.parametrize("rival", ("generation_2", "answered"))
 @pytest.mark.parametrize("kind", ("question", "prompt", "retry"))
 def test_V07_atomic_admission_check_is_the_fence_after_a_pre_admission_rival(db, monkeypatch, kind, rival, mutant):
-    """M2/B's locked eligibility read alone stops the send once the edge's pre-check has passed."""
+    """B's locked start_attempt eligibility, the second fence, stops the send once M2's pre-check has passed."""
     rig = Composition(db, monkeypatch)
     send_id = composed.pending(rig, monkeypatch, "prompt" if kind == "prompt" else "question")
     if kind == "retry":
@@ -157,7 +161,8 @@ def test_V07_fences_keep_distinct_same_generation_genuine_answers(db, monkeypatc
 
 
 @pytest.mark.parametrize("mutant", (False, True), ids=("control", "generation_check_reads_stale"))
-def test_V07_m2_generation_check_is_the_single_fence_before_present(db, monkeypatch, mutant):
+def test_V07_m2_generation_check_is_the_first_fence_before_present(db, monkeypatch, mutant):
+    """M2's pre-present check is the only source of not_current; with it stale, B still sends nothing."""
     rig = Composition(db, monkeypatch)
     rig.ready()
     assert db.store.save_presentation(v.presentation(2))
@@ -165,9 +170,9 @@ def test_V07_m2_generation_check_is_the_single_fence_before_present(db, monkeypa
     if mutant:
         monkeypatch.setattr(rig.transport_store, "current_generation", lambda stream_id, question_id: 1)
         with pytest.raises(AssertionError, match="M2 did not fence the superseded generation"):
-            composed.assert_m2_single_fence(rig, (rig.context(ask=(v.Q,)),), expected)
+            composed.assert_m2_first_fence(rig, (rig.context(ask=(v.Q,)),), expected)
     else:
-        composed.assert_m2_single_fence(rig, (rig.context(ask=(v.Q,)),), expected)
+        composed.assert_m2_first_fence(rig, (rig.context(ask=(v.Q,)),), expected)
     assert len(rig.provider.sent) == 1
 
 
@@ -194,6 +199,41 @@ def test_V01_suppressed_application_commit_fails_the_revision_assertion(db, monk
         assert db.other().load(rig.initial.stream).revision == 2 and rig.offset() == "1003"
         assert rig.receipts()[confirmed].status == "applied"
     assert rig.ordinary == [] and not rig.poller.running
+
+
+@pytest.mark.parametrize("mutant", ("restart_skipped", "replay_not_redelivered"))
+def test_V01_restart_and_replay_bookkeeping_bites(db, monkeypatch, mutant):
+    """Architecture #378 S1/S2: V01's restart and exact replay delta each fail their named assertion."""
+    if mutant == "restart_skipped":
+        # Architecture's MUTR: recovery would run on the same objects that wrote the history.
+        monkeypatch.setattr(Composition, "restart", lambda self: None)
+        expected = "restart built new parts"
+    else:
+        # The replay leaves the saved offset alone, so the provider filters both updates out and the
+        # store never sees them: "no extra events or sends" would then hold without being tested.
+        pull = Composition.pull
+        monkeypatch.setattr(Composition, "pull", lambda self, update, *, replay=False: pull(self, update))
+        expected = "replay re-delivered typed 1001 to the store"
+    with pytest.raises(AssertionError, match=expected):
+        integration.test_V01_combined_happy_first(db, monkeypatch)
+
+
+@pytest.mark.parametrize("contact", (False, True), ids=("control", "construction_contacts_provider"))
+def test_V20_unused_construction_has_a_provider_contact_bite(db, monkeypatch, contact):
+    expected = vector_case("V20", "unused_import_constructor").expected
+    if contact:
+        # Architecture #378 MUT4: the edge contacts the provider when constructed, not lazily in pull().
+        changed = mutated_module(monkeypatch, edge_module, EDGE_CONSTRUCTED, EDGE_CONSTRUCTED
+                                 + "        self.client.get_me()\n        self.client.get_updates(None, timeout=0)\n")
+        monkeypatch.setattr(edge_module, "ClarificationEdge", changed.ClarificationEdge)
+    rig, _service = boundaries.unused_construction(db, monkeypatch)
+    if contact:
+        with pytest.raises(AssertionError, match="unused library made no provider, engine, registration"):
+            boundaries.assert_operationally_off(rig, expected)
+        assert rig.operational() == {**expected, "get_me": 1, "pull": 1}
+    else:
+        boundaries.assert_operationally_off(rig, expected)
+    assert rig.effects == [] and rig.ordinary == []
 
 
 @pytest.mark.parametrize("early_offset", (False, True), ids=("control", "early_offset_mutant"))

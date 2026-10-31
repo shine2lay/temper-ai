@@ -7,10 +7,13 @@ engine. No default engine, running poller, provider, model or application is use
 
 from __future__ import annotations
 
+import collections
+import importlib
 import json
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
+from itertools import pairwise
 
 import pytest
 from sqlmodel import Session, SQLModel
@@ -36,6 +39,31 @@ from tests.test_integrations.test_telegram_store_binding import Authority
 
 db = persistence.db
 
+# Operational contacts V20 counts: (module, attribute path, counter). Strings, so a
+# fresh interpreter can install the same spies before the library is imported.
+OPERATIONAL_SPIES = (
+    ("temper_ai.integrations.telegram.client", "TelegramClient.__init__", "client_constructions"),
+    ("httpx", "Client.send", "http_requests"),
+    ("temper_ai.database", "get_session", "default_engine"),
+    ("temper_ai.database", "get_database", "default_engine"),
+    ("temper_ai.database", "init_database", "default_engine"),
+    ("temper_ai.database.session", "get_session", "default_engine"),
+    ("temper_ai.database.session", "get_database", "default_engine"),
+    ("temper_ai.database.session", "init_database", "default_engine"),
+    ("temper_ai.integrations.notify.service", "register", "registrations"),
+    ("temper_ai.integrations.inbox.service", "register", "registrations"),
+    ("temper_ai.integrations.inbox.service", "register_checker", "registrations"),
+)
+
+
+def spy_owner(module, path):
+    """The object holding a spied attribute, and the attribute's name."""
+    owner = importlib.import_module(module)
+    *parents, name = path.split(".")
+    for parent in parents:
+        owner = getattr(owner, parent)
+    return owner, name
+
 
 class Composition:
     """Real components; observations wrap effects, never supply store results."""
@@ -52,6 +80,10 @@ class Composition:
         self.before_send = lambda: None
         self.before_ack = lambda: None
         self.observer_errors = []
+        self.calls = collections.Counter()
+        for module, path, label in OPERATIONAL_SPIES:
+            owner, name = spy_owner(module, path)
+            monkeypatch.setattr(owner, name, self.counted(label, getattr(owner, name)))
         if initialize:
             SQLModel.metadata.create_all(db.engine, tables=[TelegramState.__table__])
             db.run(TelegramState.__table__.delete())
@@ -59,6 +91,7 @@ class Composition:
         @contextmanager
         def session():
             # Ordinary Telegram offset persistence, explicitly scoped to this fixture.
+            self.calls["default_engine"] += 1
             with Session(self.db.engine) as held:
                 yield held
 
@@ -77,7 +110,38 @@ class Composition:
 
         self.provider.send = observed_send
         self.provider.answer_callback = observed_ack
+        # Provider reads are counted apart from the send/ack effect order V01 asserts.
+        self.provider.get_me = self.counted("get_me", self.provider.get_me)
+        self.provider.get_updates = self.counted("pull", self.provider.get_updates)
         self.bind()
+
+    def counted(self, label, original):
+        def call(*args, **kwargs):
+            self.calls[label] += 1
+            return original(*args, **kwargs)
+        return call
+
+    def operational(self):
+        """D's V20 counters, each from an observation of this composition.
+
+        model_calls counts outbound httpx requests (the repository's HTTP client,
+        which a real Telegram or model client would use); source_discovery counts
+        source-authority calls; run_signals counts ordinary submissions plus a
+        running poller. send counts every provider write: sends, callback
+        acknowledgements and edits.
+        """
+        provider = self.provider
+        return {
+            "client_constructions": self.calls["client_constructions"],
+            "get_me": self.calls["get_me"],
+            "pull": self.calls["pull"],
+            "send": len(provider.sent) + len(provider.callbacks) + len(provider.edits) + len(provider.markups),
+            "default_engine": self.calls["default_engine"],
+            "model_calls": self.calls["http_requests"],
+            "source_discovery": len(self.authority.calls),
+            "registrations": self.calls["registrations"],
+            "run_signals": len(self.ordinary) + int(self.poller.running),
+        }
 
     def observe(self, check):
         try:
@@ -233,7 +297,13 @@ def test_V01_combined_happy_first(db, monkeypatch):
     assert rig.effects == [("send", None), ("send", None), ("ack", "1002")]
     assert rig.ordinary == [] and not rig.poller.running
 
+    parts = ("ledger", "transport_store", "edge", "coordinator", "poller")
+    old_engine, old_store, old_parts = db.engine, db.store, [getattr(rig, part) for part in parts]
     rig.restart()
+    # Architecture #378 S1: recovery below runs on a new engine, store, edge, coordinator and poller.
+    assert db.engine is not old_engine and db.store is not old_store, "restart built new parts"
+    assert all(getattr(rig, part) is not old for part, old in zip(parts, old_parts, strict=True)), (
+        "restart built new parts")
     assert rig.offset() == "1003"
     before_recovery = db.dump()
     recovered = rig.coordinator.recover(rig.initial)
@@ -256,11 +326,38 @@ def test_V01_combined_happy_first(db, monkeypatch):
     assert rig.coordinator.acknowledge_consumption(context, checked=checked) is False
     assert len(db.rows(m.ClarificationConsumption)) == 1
 
-    stable = db.dump(skip=("clarification_streams", "clarification_ingresses"))
+    bookkeeping = ("clarification_streams", "clarification_ingresses")
+    stable = db.dump(skip=bookkeeping)
+    ingress_before = {row.ingress_id: row for row in db.rows(dm.ClarificationIngress)}
+
+    def stream_fields():
+        stream, = db.rows(m.ClarificationStream)
+        return stream.model_dump(exclude={"updated_at"})
+
+    streams = [stream_fields()]
     rig.before_send = lambda: pytest.fail("replay sent a new question or prompt")
     rig.before_ack = lambda: None  # repeated callback receipt acknowledgement is allowed, not a new send
-    assert rig.pull(words, replay=True) == 0 and rig.pull(press) == 0
-    assert db.dump(skip=("clarification_streams", "clarification_ingresses")) == stable
+    assert rig.pull(words, replay=True) == 0
+    streams.append(stream_fields())
+    assert rig.pull(press) == 0
+    streams.append(stream_fields())
+    assert db.dump(skip=bookkeeping) == stable
+    # Architecture #378 S2: the replay's exact bookkeeping delta. Re-pulled typed 1001 logs one
+    # ingress row carrying the saved retained result; re-pulled press 1002 logs none.
+    ingress_after = {row.ingress_id: row for row in db.rows(dm.ClarificationIngress)}
+    assert {key: ingress_after[key] for key in ingress_before} == ingress_before
+    added = [row for key, row in ingress_after.items() if key not in ingress_before]
+    first_typed = next(row for row in ingress_before.values() if row.update_id == 1001)
+    assert [row.update_id for row in added] == [1001], "replay re-delivered typed 1001 to the store"
+    assert json.loads(added[0].result_json) == json.loads(first_typed.result_json)
+    assert json.loads(added[0].result_json)["status"] == "retained"
+    # Per pull: only the stream's ingress_count and state_version move, by these exact steps.
+    moving = ("ingress_count", "state_version")
+    steps = [{key: after[key] - before[key] for key in moving} for before, after in pairwise(streams)]
+    assert steps == [{"ingress_count": 1, "state_version": 2}, {"ingress_count": 0, "state_version": 0}]
+    unmoved = set(streams[0]) - set(moving)
+    assert all({name: fields[name] for name in unmoved} == {name: streams[0][name] for name in unmoved}
+               for fields in streams)
     assert rig.context().prior_revision == 2 and len(rig.provider.sent) == 2
     assert rig.ordinary == [] and not rig.poller.running
     assert rig.coordinator.acknowledge_consumption(context, checked=checked) is False

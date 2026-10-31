@@ -20,12 +20,34 @@ the authorized caller is a typed test object (see
 
 ## Status
 
-**Binding NOT MET; not ready to land.** Architecture resolved the V11/V14
-eligibility conflict without changing the frozen matrix. The bounded raw-stage
-repair and independently approved composition controls are described under D4.
-V33 exercises overlapping snapshot loads as well as sequential full runs. The
-full ordinary gate, exact-head CI and both source reviews remain required; no
-land approval or production authority is implied by these focused results.
+**Binding NOT MET; LAND FALSE on reviewed head `1111627c`.** That head passed
+the full local gate and all eight hosted checks, and Security closed the E1
+disclosure finding within its stated source-review scope. Architecture nevertheless
+found that a refused cleanup can lose its waiting obligation (F1). D7 below
+reproduces it and repairs it on the shared cleanup transaction that #228 landed
+(`369d1af0`); the branch was rebased onto that master. D8 adds the fork takeover
+repair Architecture's #375 assigned to this work (FWS375-FORK-TAKEOVER). Both
+were reproduced failing first on the rebased tree and pass after the repair, with
+a bite for each guard. Old green checks are not a pass for the repaired head or
+permission to land: it needs the normal exact-head gates, Architecture's focused
+re-review and Security's applicable delta review.
+
+### Reviewed-head test accounting
+
+The hosted JUnit artifacts on `1111627c` each emit **18,301 primary testcase
+elements**, not 21,184 distinct testcase identities:
+
+- PostgreSQL: 18,260 passed and 41 skipped; no failures or errors.
+- Each of Python 3.11 and 3.12 SQLite: 18,257 passed and 44 skipped; no failures
+  or errors.
+- Each aggregate `tests=21184` includes 2,883 subtests that are not separately
+  emitted testcase elements. Do not sum these different executions.
+- The separate local hook passed 18,267 primary cases with 34 skipped, plus
+  2,883 subtests.
+
+The hosted evidence includes all 149 integration cases and the two named T2
+PostgreSQL concurrency controls. These are historical results on the reviewed
+head, not evidence that the additional D7 controls or changed-head checks pass.
 
 ## What the existing checks exercise
 
@@ -87,7 +109,9 @@ below. Each delivered cherry-pick's patch-id is
 identical to the delivered commit's, so the pieces arrived unchanged. The #192
 contract was not on master before this branch; it lands with it. Master moved
 several times while V1 was built; each time the branch was rebased and the
-patch-ids checked again. The exact base, head and tree are recorded with the land
+patch-ids checked again. The last rebase (2026-10-31) put it on `369d1af0`, which
+carries #228's shared cleanup transaction; the adaptations that rebase needed are
+listed under [Rebind adaptations](#rebind-adaptations-onto-228). The exact base, head and tree are recorded with the land
 request, not here, because this document is part of the commit it describes.
 
 ## Owned by V1
@@ -96,6 +120,11 @@ request, not here, because this document is part of the commit it describes.
   proof. One happy path (V01 small, V02 14x3), the V03-V36 controls, the cross-check
   against A1's compiler, the S3/S4 controls owed from T2, and a bite for each glue
   edit and defect fix.
+- `tests/test_runner/test_candidate_cleanup_admission.py`: D7's real API/deadline
+  cleanup controls, reusing T2 bindings and the existing hold/run fixtures; no
+  competing dispatcher or production authority.
+- `tests/test_runner/test_fork_hold_takeover.py`: D8's fork takeover controls,
+  reusing #228's route harness and the parked-claim readers.
 - `docs/candidate-admission-verification.md`: this document.
 
 Every other change V1 makes is in the next two sections, and nowhere else.
@@ -254,9 +283,9 @@ a post-approval change to each supported policy field.
 | wrong-typed loop target | REFUSE `invalid_type` | existing B1 type check |
 | absent tools/memory/fallback; null/absent target; standalone count; pinned cleanup/gate/rename | ACCEPT | literal full projection still compared |
 
-### D5: the V30 replacement writer was inside the old worker's row fence (fixture repaired; PostgreSQL proof pending)
+### D5: the V30 replacement writer was inside the old worker's row fence (fixture repaired)
 
-**Evidence.** The first composed remote PostgreSQL job stays in its test step
+**Evidence.** The first composed remote PostgreSQL job remained in its test step
 well beyond the base head's 15m33s PostgreSQL job. Hosted logs are not available
 while it runs, so elapsed time alone does not identify the stuck test. Source
 inspection finds an independently actionable fixture error: V30 supplies
@@ -271,9 +300,10 @@ PostgreSQL row-lock wait.
 worker enters its protected readiness action, not write through the held fence.
 First add a deterministic test-side assertion that the replacement writer runs
 outside the real `current_generation` callback. Then inject the replacement
-immediately before the actual preparation checkpoint callback, retaining the
-real row fence, full generation comparison, literal `dispatch_generation`
-refusal, zero claims/sends and unchanged empty readiness. Only the V30 test's
+after the preparation result and its completion checkpoint persist, but before
+the original readiness callback enters its protected action. Retain the real row
+fence, full generation comparison, literal `dispatch_generation` refusal, zero
+claims/sends and unchanged empty readiness. Only the V30 test's
 schedule changes; no production or frozen-oracle code changes.
 
 **Expected measurement.** The old schedule fails the new assertion even on
@@ -298,7 +328,10 @@ ruff and **all three controls (V01, V30, G2) passed in 13.35 s**. The callback s
 exactly the completed preparation, the writer ran once outside the protected
 action, and the unchanged refusal/zero-effect assertions passed. This confirms
 the fixture-ordering repair on SQLite; it does not by itself identify the hosted
-hang or satisfy the required PostgreSQL/full exact-head gates. Those are pending.
+hang or satisfy the required PostgreSQL/full exact-head gates. Those were pending
+at this stage. The corrected control subsequently passed in the full local and
+hosted PostgreSQL suites on `1111627c`; that does not identify the earlier hang's
+cause or clear the separate cleanup defect below.
 
 ### D6: V35 retained the same impossible replacement schedule (fixture repair)
 
@@ -327,8 +360,156 @@ preparation callback for both tests. **V01, V30, V35 and G2 passed together in
 13.48 s**, with one outside-fence replacement and one completed preparation in
 each changed control. V35 retains all diagnostic/body-exclusion checks and now
 also explicitly asserts zero claims/sends and empty readiness. Ruff and diff
-checks passed. Full ordinary and exact-head PostgreSQL gates remain required;
-these local results do not establish the hosted hang's cause.
+checks passed. The corrected controls subsequently passed in the full ordinary
+and exact-head PostgreSQL gates on `1111627c`. Generation changes after persisted
+preparation and before the original readiness action; this is not a stale native
+claim-race reproduction. Neither the local nor hosted passes establish the
+historical hang's cause. The changed cleanup repair still needs renewed gates.
+
+### D7: cleanup refusal loses its retryable hold (fixed)
+
+**Evidence.** Architecture's cleanup-source F1 finding concerns the real API
+Give-up and deadline-sweeper callers, not the separate real-oracle inventory
+section below. They can commit `holds.end(..., released)` before cleanup admission
+refuses. A designated legacy hold, or a protected run reached through the sweeper,
+then loses the waiting obligation despite no cleanup being queued. The old
+end-before-queue ordering predates T2; T2's deterministic refusal exposes it. This
+is a source finding reproduced with isolated test data, not an observed production
+loss.
+
+**Hypothesis H-V1-CLEANUP-RELEASE-1.** Commit the conditional hold release and
+successfully admitted cleanup queueing in one shared transaction, validating the
+current protected run and effective held workflow at that boundary. Both public
+callers must preserve every hold field, including end/deadline fields, on refusal
+and queue nothing. An ordinary twin must release once and queue exactly one
+cleanup. A refused late row/classification change that ends the hold, queues work
+or loses retryability falsifies the repair; so does breaking the ordinary twin.
+No compensating restore or blanket cleanup ban.
+
+**Reuse.** #228 landed the shared transaction this needs:
+`runner/cleanup_dispatch.py::queue_held_cleanups` ends the hold with
+`holds.end_in` and queues the cleanup pass with `queue.queue_run_in` in one commit,
+for both Give up and the deadline sweeper. V1 composes T2 with that landed seam
+rather than building a second one.
+
+**Failing-first stage on the original head.** The new regression file reuses `SyntheticBindings` and
+the existing parked-claim hold/run fixtures. It exercises the real HTTP router or
+deadline sweep, real hold writes and real queue function against a fresh test
+database, without a server lifespan, worker or provider. On `1111627c`'s production
+source, the 12-case SQLite stage completed in 7.599 s: **4 passed, 8 failed**, no
+errors or skips. The earlier lint-only setup failure is not testcase evidence.
+
+| Control on the reviewed production baseline | Count | Observed result |
+| --- | --- | --- |
+| ordinary API/deadline complete paths, including repeated-call uniqueness | 2 | PASS: release once, queue once |
+| admitted/null-slot early API refusal | 2 | PASS: hold unchanged |
+| admitted/null-slot deadline refusal | 2 | FAIL: `F1-REFUSED-HOLD` |
+| designated legacy refusal, API and deadline | 2 | FAIL: `F1-REFUSED-HOLD` |
+| late row or designation change before cleanup queueing, both callers | 4 | FAIL: `F1-LATE-REFUSAL-HOLD` |
+
+Each failing case first passed its literal `unsupported_mode` or
+`admission_required` assertion, zero-successful-queue assertion and unchanged
+run-fingerprint assertion; the full persisted hold comparison then failed. A
+setup/type/digest failure was not counted as policy evidence. The late-change
+controls are controlled pre-queue interleavings, not a proof of concurrent
+registry revocation or lock behavior.
+
+**Failing first again on the rebased tree.** After the rebase onto `369d1af0`, with
+no production change, the controls were adapted to the landed seam (the cleanup
+workspace is now a folder inside `WORKSPACE_DIR`, which #228 requires; the late
+changes are injected after every early route guard: at the release seam's entry,
+and inside its transaction once the hold is ended). 14 controls: **6 passed, 8
+failed**. The ordinary twins and the admitted/null-slot refusals passed: #228's
+transaction plus T2's row fence in `queue_run_in` already roll a protected row's
+release back. The designated refusals (API and deadline) and both late designation
+changes (seam entry and after the hold end, both callers) released the hold and
+queued the pass. The late row change was refused and rolled back inside the
+transaction, but its code reached neither caller as a 409: the API raised the bare
+refusal and the sweeper logged it as an unexplained error.
+
+**The repair.** Two changes, both on the shared seam:
+
+- `queue_held_cleanups` takes `refuse_held`, which sees the ended hold inside the
+  transaction before anything is queued; whatever it raises rolls the release back.
+  The routes pass `_refuse_designated_hold`, which refuses (`admission_required`)
+  clean-ups held for a designated workflow, by the hold's own workflow name, even
+  when the row carries another name. The row's own slot stays fenced by T2's check
+  in `queue_run_in`, on the row it locks.
+- `_queue_refusals_as_http` says every refused queue write the same way for each
+  caller (`_queue_run`, the cleanup pass and the fork): already queued or a
+  candidate refusal as 409 with the refusal's code, an unsafe workspace as 400. The
+  deadline sweeper logs that 409 and leaves the wait for its next sweep.
+
+T2's early fences (`_release_cleanups` and the start of `_queue_cleanup_pass`) are
+kept: they refuse before any write, also for holds with no paths and in-process
+mode, where nothing is queued.
+
+**Result: hit.** All 14 controls pass. Bites: dropping the `refuse_held` call
+releases a designated hold for both callers (2 cases); dropping the refusal's 409
+mapping makes the deadline log a bare refusal (1 case).
+
+### D8: a fork takes its source's clean-ups over in a second commit (fixed)
+
+**Evidence.** Architecture's #375 review of #228 (Suggestions, FWS375-FORK-TAKEOVER)
+assigned this to V1's T2 composition. `_fork_run` queued the fork in one commit
+and then called `holds.take_over(source, by=fork)` in another, ignoring its result.
+A fork is a new execution id, so the busy-row refusal that protects a same-id
+successor never protects it. If the takeover write failed, or Give up or a due
+sweep ended the source's hold in between, the source's clean-ups were queued while
+the fork resumed into the same workspace.
+
+**Hypothesis H-V1-FORK-TAKEOVER-1.** Extend the shared seam with a variant that
+takes the source's hold over and queues the fork in one transaction, hold first,
+and refuses the fork (409) when the hold the source had when the fork began is no
+longer waiting. Expected: a failed takeover write queues no fork and keeps the
+source's hold; a hold ended inside the window refuses the fork with nothing
+queued for it; a valid twin queues the fork and records the takeover by the fork's
+id; a fork whose source held nothing (or released it before) is unchanged. A fork
+queued beside a released hold, or a twin that stops working, proves it wrong.
+
+**Failing first.** On an export of master `369d1af0` (no production change), 10
+controls: **4 passed, 6 failed**. Both takeover-write cases (Pi and plain) failed
+at `FWS375-FORK-WRITE-NO-FORK` (the fork was queued beside a still-waiting hold);
+all four window cases (Give up or sweep, Pi or plain) failed at
+`FWS375-FORK-WINDOW-STATUS` (200, not 409). The four twins passed, as did #228's 36
+cases. The same six failed on the rebased tree.
+
+**The repair.** `cleanup_dispatch._end_hold_then_queue` is the one
+hold-then-queue transaction, now shared by `queue_held_cleanups` and the new
+`queue_fork_taking_over`. The fork variant ends the source's hold as `taken_over`
+by the fork's id, then queues the fork in the same transaction. If the hold is not
+waiting but was when the fork began (read at the start of `_fork_run`), it raises
+`HoldNoLongerWaiting` (409) and queues nothing. A hold that appears during the
+window is taken over as before. The in-process fork branch, which queues nothing,
+is unchanged.
+
+**Result: hit.** All 10 controls pass. Bites: the refusal of an ended wait (Give
+up and sweep: the fork is queued, `FWS375-FORK-WINDOW-STATUS`); the hold-first
+order (a queue write before the hold decision, `FWS375-FORK-HOLD-FIRST`); the
+reading at fork start (`FWS375-FORK-WINDOW-STATUS`). The same-transaction guard's
+bite is #228's fork case, re-pointed to the shared transaction (below).
+
+**Not in this repair** (Temper follow-ups, per #375): the late takeovers on resume
+and in the Pi lane, stale holds, and the WORKSPACE_DIR agreement between server and
+worker. A refused fork still leaves the checkpoints it copied under its own unused
+id, as any refused fork queue did before.
+
+### Rebind adaptations onto #228
+
+The rebase onto `369d1af0` needed these test changes; none weakens a check:
+
+- T2's `test_actual_entries_refuse_reserved_row_before_legacy_loading`
+  (`cleanup-execution`) calls `_queue_cleanup_pass(EXECUTION, by="deadline")`: #228
+  changed it to take the run id; the held workflow is now checked inside the release
+  (D7).
+- The writer scan's caller inventory (`tests/test_runner/test_writer_scan.py`) names
+  the queue writes in their new scopes: the cleanup pass and the fork takeover inside
+  `cleanup_dispatch`, and `_fork_run` no longer among `_queue_run`'s callers. The
+  scan itself is unchanged; it is what made the new writer be declared.
+- #228's early-hold bites for fork, cleanup and sweep now drop the in-transaction
+  end in `_end_hold_then_queue` (a separately committed takeover or release); each
+  still fails its `REFUSED-HOLD` check.
+- D7's controls use a workspace folder inside `WORKSPACE_DIR`, as #228 requires.
 
 ## Predicted and actual codes
 
@@ -487,7 +668,9 @@ timeout mark.
 Every expected outcome below is the matrix's own text; no expected value was taken
 from the engine or from A1's compiler. Codes are the contract's fixed refusal codes.
 "Before any row is read" means the contract refused the wire, so the capture never
-started.
+started. Results below describe the reviewed `1111627c` composition. The repaired
+head (D7, D8, the rebase onto `369d1af0`) renews them through the normal full
+gate and the hosted checks; it does not inherit these passes.
 
 | Case | Expected (matrix) | Controls and code | Result |
 | --- | --- | --- | --- |
@@ -520,12 +703,12 @@ started.
 | V27 | REFUSE a new claim or send; keep the consumed state and evidence | preparer without durability (`wire_schema`); missing or stale receipt (`root_readiness`); an existing claim file is never taken again and keeps its bytes | PASS |
 | V28 | Restore the original bytes and generation; roots revalidated; completed leaves not replayed | a completed run entered again (`dispatch_generation`); a worker that died after its first send, entered again (`root_readiness`): one send, claim files unchanged, record unchanged | PASS |
 | V29 | REFUSE a mismatched or consumed claim; a fork needs its own admitted identity | a candidate row carrying resume or rerun (`unsupported_mode` at worker entry); a fork that copies the admission, even with a vouching authority (`protected_metadata`) | PASS |
-| V30 | The current-generation check refuses stale side effects | a replacement wins before the stale worker enters its protected readiness action (`dispatch_generation`, zero claim/send, readiness unchanged); D5 asserts the writer is outside the old row fence | Corrected focused SQLite PASS; full exact-head/PostgreSQL gate pending |
+| V30 | The current-generation check refuses stale side effects | a replacement wins before the stale worker enters its protected readiness action (`dispatch_generation`, zero claim/send, readiness unchanged); D5 asserts the writer is outside the old row fence | PASS on reviewed `1111627c`, including PostgreSQL; repaired-head checks pending |
 | V31 | REFUSE and retain the original protected record | the handle stamp refuses to replace it (`protected_metadata`, record unchanged); a record rewritten to format v2 refuses at worker entry (`unsupported_version`) and is not rewritten | PASS |
 | V32 | REFUSE; replacing the trusted caller authority is out of scope | a changed manifest carrying its own digest (`descriptor_authority`) | PASS |
 | V33 | Separate fresh loaders and contexts per admitted run | overlapping real B2 snapshot loads receive the same poisoned legacy runner/loader/defaults/overrides; a barrier proves overlap; each uses a fresh resolver/loader and equals its literal graph. Separate sequential full runs prove independent contexts and claims | PASS for B2 overlap and sequential full-run isolation; not a simultaneous end-to-end worker test |
 | V34 | REFUSE a designated candidate before the transformed load; ordinary workflows unchanged | a designated workflow without an admission refuses at worker entry (`admission_required`); the ordinary suite is unchanged | PASS |
-| V35 | Only fixed codes, position ids and digests in evidence | a stale-generation refusal using D6's shared outside-fence replacement: the only code recorded is `dispatch_generation`, and none of the fixture's strings appear; zero claim/send and empty readiness | Corrected focused SQLite PASS; full exact-head/PostgreSQL gate pending |
+| V35 | Only fixed codes, position ids and digests in evidence | a stale-generation refusal using D6's shared outside-fence replacement: the only code recorded is `dispatch_generation`, and none of the fixture's strings appear; zero claim/send and empty readiness | PASS on reviewed `1111627c`, including PostgreSQL; repaired-head checks pending |
 | V36 | The native defence fails honestly, possibly after the claim; no retry | a native failure after the claim: run failed, the claim stays, the slot is not tried again, no send | PASS |
 
 Also covered on this head by T2's own tests, which run in the same suite and whose

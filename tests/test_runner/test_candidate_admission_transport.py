@@ -655,8 +655,8 @@ def test_actual_entries_refuse_reserved_row_before_legacy_loading(monkeypatch, e
         "fork": lambda: routes._fork_run(routes.ForkRequest(
             source_execution_id=EXECUTION, workflow="now-ordinary", sequence=0)),
         "release-cleanup": lambda: routes._release_cleanups(EXECUTION),
-        "cleanup-execution": lambda: routes._queue_cleanup_pass(
-            {"execution_id": EXECUTION, "workflow_name": "now-ordinary"}),
+        # #228 (369d1af0) passes the run id; the held workflow is checked inside the release.
+        "cleanup-execution": lambda: routes._queue_cleanup_pass(EXECUTION, by="deadline"),
         "direct-spawn": lambda: routes._start_run_subprocess(EXECUTION, body, SimpleNamespace(name="now-ordinary")),
         "direct-queue": lambda: routes._start_run_external(EXECUTION, body, SimpleNamespace(name="now-ordinary")),
         "inprocess": lambda: routes._run_workflow([], {}, None, "now-ordinary", EXECUTION),

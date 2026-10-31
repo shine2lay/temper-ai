@@ -35,7 +35,10 @@
 #     w1_before (controls_p3 only; one JSON object as text, {path, sha256}) names the WebKit W1 before-reading
 #     (webkit-reading/1) taken before the run and goes to first_app_p3.py as --w1-before, which checks it; with any
 #     other mode it is refused (a live profile names its own w1_before). Left out = the command line exactly as
-#     before, and the WebKit rows stay NOT RUN (Architecture queue #337).
+#     before, and the WebKit rows stay NOT RUN (Architecture queue #337). Inline variant (#351): exactly
+#     {data_base64, sha256} stages exact bytes at check/w1-input/before.json as the run identity, then uses the
+#     unchanged W1 reader. Ordinary workflow input/events RETAIN the envelope; this is not secret transport.
+#     See docs/p3-w1-input.md for authority, collision and retention limits.
 #   mode=live with a profile holding "journey_p3": the served build. Up to 3500 s.
 # Writes check/ in the workspace: receipt.json + summary.md (+ after-reload.png for the first app), or one folder per
 # control plus controls.json. A FAIL, REFUSED or BLOCKED verdict is a result, not a step failure: the step
@@ -56,12 +59,14 @@ agent:
     "$TEMPER_PYTHON" - <<'PYEOF'
     import json
     import os
+    import pathlib
     import subprocess
     import sys
 
     mode = (os.environ.get("{{ mode | env }}") or "").strip()
     profile = os.environ.get("{{ profile | env }}") or ""
-    w1_before = os.environ.get("{{ w1_before | env }}") or ""
+    w1_before_env = "{{ w1_before | env }}"
+    w1_before = os.environ.get(w1_before_env) or ""
     if mode not in ("controls", "live", "controls_shared", "controls_p3"):
         raise SystemExit("first_app_check needs mode = controls, live, controls_shared or controls_p3, got %r" % mode)
     if profile.strip() and mode != "live":
@@ -79,7 +84,17 @@ agent:
     cmd = [sys.executable, "-u", script, "--mode", mode, "--out", "check"]
     if profile.strip():
         cmd += ["--profile", profile]
+    w1_input_staging = None
     if w1_before.strip() and mode == "controls_p3":
+        sys.path.insert(0, "/app/configs/architecture/bin")
+        from first_app_p3_w1_input import Refused, prepare
+        try:
+            w1_before, w1_input_staging = prepare(w1_before, pathlib.Path.cwd())
+        except Refused as exc:
+            raise SystemExit("first_app_check: " + str(exc)) from None
+        if w1_input_staging is not None:
+            # Only the inline slot: no environment enumeration, copy or legacy behavior change.
+            os.environ.pop(w1_before_env, None)
         cmd += ["--w1-before", w1_before]
     try:
         shared = mode == "controls_shared" or "journey" in json.loads(profile)
@@ -97,5 +112,7 @@ agent:
     out.update({"status": "completed", "exit_code": res.returncode, "workspace": os.getcwd(),
                 "summary_path": "check/summary.md" if mode == "live" else "check/controls.json"})
     out.setdefault("journey", "p3" if p3 else "shared" if shared else "first_app")
+    if w1_input_staging is not None:
+        out["w1_input_staging"] = w1_input_staging
     print(json.dumps(out))
     PYEOF

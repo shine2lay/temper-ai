@@ -38,7 +38,14 @@ workflow:
     exactly path and sha256 (64 lowercase hex). The path is absolute and is read inside the run's
     box, so the box's user must be able to read it; first_app_p3.py checks it (--w1-before).
     Left out, the WebKit rows stay NOT RUN, exactly as before; with any other mode it is refused
-    (a live profile names its own w1_before).
+    (a live profile names its own w1_before). An inline variant (#351), exactly {data_base64, sha256},
+    stages exact operator-supplied bytes at check/w1-input/before.json under the run identity before
+    the unchanged W1 checks. Standard base64, existing 65536-byte W1 bound, verified digest, private
+    create-once file; invalid transport/unsafe path/collision refuses before the checker. No host
+    source path is read. This is NOT secret transport: ordinary workflow input/events retain the
+    envelope. The operator needs authority for that boundary; base64/private modes grant none.
+    See docs/p3-w1-input.md. Optional w1_input_staging is non-content identity/mode metadata only,
+    absent/null for legacy input; it authenticates neither the caller nor custody.
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
@@ -64,6 +71,7 @@ workflow:
     pins_ok: check.structured.pins_ok
     list_equal_after_restart: check.structured.list_equal_after_restart
     cleanup_confirmed: check.structured.cleanup_confirmed
+    w1_input_staging: check.structured.w1_input_staging
 
   nodes:
     - name: check

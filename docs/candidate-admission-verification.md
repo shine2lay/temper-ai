@@ -242,6 +242,52 @@ a post-approval change to each supported policy field.
 | wrong-typed loop target | REFUSE `invalid_type` | existing B1 type check |
 | absent tools/memory/fallback; null/absent target; standalone count; pinned cleanup/gate/rename | ACCEPT | literal full projection still compared |
 
+### D5: the V30 replacement writer was inside the old worker's row fence (fixture repaired; PostgreSQL proof pending)
+
+**Evidence.** The first composed remote PostgreSQL job stays in its test step
+well beyond the base head's 15m33s PostgreSQL job. Hosted logs are not available
+while it runs, so elapsed time alone does not identify the stuck test. Source
+inspection finds an independently actionable fixture error: V30 supplies
+`bump_dispatch` as `EntryBindings.after_prepare`; the callback runs inside
+`CandidateUse.checkpointed`'s `current_generation` action, while that action holds
+`SELECT FOR UPDATE` on the run row. `bump_dispatch` opens another session and
+synchronously commits an update to that same row. The old worker cannot release
+its fence until the nested writer returns. In-memory SQLite does not model this
+PostgreSQL row-lock wait.
+
+**Hypothesis H-V1-PG-RACE-1.** The intended replacement must win before the stale
+worker enters its protected readiness action, not write through the held fence.
+First add a deterministic test-side assertion that the replacement writer runs
+outside the real `current_generation` callback. Then inject the replacement
+immediately before the actual preparation checkpoint callback, retaining the
+real row fence, full generation comparison, literal `dispatch_generation`
+refusal, zero claims/sends and unchanged empty readiness. Only the V30 test's
+schedule changes; no production or frozen-oracle code changes.
+
+**Expected measurement.** The old schedule fails the new assertion even on
+SQLite. The corrected schedule passes that assertion and the existing refusal
+and side-effect checks. The full ordinary local gate and all eight exact-head
+remote checks, including this test on PostgreSQL, must then pass afresh. A
+successful SQLite check alone cannot establish the hosted job's root cause.
+
+**Falsifiers.** The writer already runs outside the fence; the corrected test
+admits stale effects, changes its expected refusal or loses its zero-effect
+checks; PostgreSQL still blocks on this control. Preserve the incomplete/red
+remote attempt as history, not a passing gate.
+
+**First probe.** The added assertion failed on the old schedule in 3.24 s:
+`replacement_writes == [True]`, not `[False]`. The first corrected probe did not
+reach the writer (`[]`): the new callback refers to `Status` without importing it.
+**Setup correction hypothesis.** Import the existing enum and record the fixed
+callback metadata before checking it; expect one completed preparation callback
+and one outside-fence write. A still-empty write list falsifies that diagnosis.
+The clean V01 and G2 controls passed in that attempt. After importing the enum,
+ruff and **all three controls (V01, V30, G2) passed in 13.35 s**. The callback saw
+exactly the completed preparation, the writer ran once outside the protected
+action, and the unchanged refusal/zero-effect assertions passed. This confirms
+the fixture-ordering repair on SQLite; it does not by itself identify the hosted
+hang or satisfy the required PostgreSQL/full exact-head gates. Those are pending.
+
 ## Predicted and actual codes
 
 The refusal code for each new control was written down before its first run, from
@@ -412,7 +458,7 @@ started.
 | V27 | REFUSE a new claim or send; keep the consumed state and evidence | preparer without durability (`wire_schema`); missing or stale receipt (`root_readiness`); an existing claim file is never taken again and keeps its bytes | PASS |
 | V28 | Restore the original bytes and generation; roots revalidated; completed leaves not replayed | a completed run entered again (`dispatch_generation`); a worker that died after its first send, entered again (`root_readiness`): one send, claim files unchanged, record unchanged | PASS |
 | V29 | REFUSE a mismatched or consumed claim; a fork needs its own admitted identity | a candidate row carrying resume or rerun (`unsupported_mode` at worker entry); a fork that copies the admission, even with a vouching authority (`protected_metadata`) | PASS |
-| V30 | The current-generation check refuses stale side effects | a replacement generation becomes current mid-run (`dispatch_generation`, no claim, no send) | PASS |
+| V30 | The current-generation check refuses stale side effects | a replacement wins before the stale worker enters its protected readiness action (`dispatch_generation`, zero claim/send, readiness unchanged); D5 asserts the writer is outside the old row fence | Corrected focused SQLite PASS; full exact-head/PostgreSQL gate pending |
 | V31 | REFUSE and retain the original protected record | the handle stamp refuses to replace it (`protected_metadata`, record unchanged); a record rewritten to format v2 refuses at worker entry (`unsupported_version`) and is not rewritten | PASS |
 | V32 | REFUSE; replacing the trusted caller authority is out of scope | a changed manifest carrying its own digest (`descriptor_authority`) | PASS |
 | V33 | Separate fresh loaders and contexts per admitted run | overlapping real B2 snapshot loads receive the same poisoned legacy runner/loader/defaults/overrides; a barrier proves overlap; each uses a fresh resolver/loader and equals its literal graph. Separate sequential full runs prove independent contexts and claims | PASS for B2 overlap and sequential full-run isolation; not a simultaneous end-to-end worker test |

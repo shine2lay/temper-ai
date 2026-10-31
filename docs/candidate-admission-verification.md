@@ -8,10 +8,11 @@ against its verification matrix `VERIFICATION-MATRIX.json`
 V01-V36).
 
 Until now the pieces of the admission seam each passed on their own. V1 puts them
-on one branch and drives **one synthetic candidate from submit to the native claim**
-through the real engine, compares what the engine actually consumes with an
-independent literal oracle, and runs the matrix's negative controls against that
-composition.
+on one branch and drives **one reduced synthetic candidate from submit to the
+native claim** through the real engine. It compares what the engine consumes with
+literal expectations independently written for that synthetic authoring, and runs
+the matrix's negative controls against that composition. It does not execute
+Architecture's real published topology.
 
 Nothing here is a custody attestation, and nothing here admits a real candidate:
 the authorized caller is a typed test object (see
@@ -33,11 +34,13 @@ land approval or production authority is implied by these focused results.
   snapshot, the protected record and the use-site checks all live at once.
 - Every config the engine actually used, and every metadata value it rendered,
   equals an **independent literal oracle** written by hand in the test (json and
-  hashlib only), not read back from the engine. For the clean 14-record case the
-  same descriptor also compiles byte-identically with Architecture's independent
-  compiler (A1, its #311), unmodified.
-- At 14 records x 3 leaves the run makes **42 claims on 42 unique (root, slot,
-  position) tuples**, each on the root its readiness receipt measured.
+  hashlib only), not read back from the engine. For the clean 14-record case,
+  Architecture's unmodified A1 compiler (#311) produces the same descriptor from
+  the **same synthetic authoring**. This is compiler/contract compatibility, not
+  an independently sourced second graph.
+- At 14 records x 3 native positions the run makes **42 claims on 42 unique (root,
+  slot, position) tuples across 14 physical roots**, each on the root its readiness
+  receipt measured. Each record's three native slots share one root.
 - The negative controls record the actual refusal boundary and fixed code, with
   counters for effects on the rejected node. The table below distinguishes observed
   checks from their limitations; a green characterization test alone does not prove
@@ -58,6 +61,14 @@ land approval or production authority is implied by these focused results.
   see [The real 14x3 oracle on this head](#the-real-14x3-oracle-on-this-head-f1).
 - **Not a promise that a bound run succeeds.** V36 is explicit: an exact binding is
   not runtime success; a native failure after the claim stays a failure.
+- **Not global stale-worker revocation.** Current-generation validation is a
+  claim-time fence. It does not prove that every already-bound preparation or render
+  stops immediately when generation or cancellation changes. A post-claim
+  cancellation cannot retract a send: the network send is outside the exclusive
+  claim callback.
+- **Not an exercised rollback or old-binary fence.** Safe rollback remains
+  conditional on retained admission/claim state and the operational ingress/worker
+  refusal fence described below.
 
 ## The pieces composed here
 
@@ -70,8 +81,9 @@ land approval or production authority is implied by these focused results.
 | A1 compiler + oracle | architecture #311 | `ac4cba62` (`33008124`) | an independent compiler and the 14x3 oracle, used here as cross-checks only; unmodified |
 
 The composed branch is `temper-208-admission-v1`: the seven commits above
-cherry-picked in that order onto current master, then one V1 commit carrying the
-test file, this document and the edits listed below. Each cherry-pick's patch-id is
+cherry-picked in that order onto current master, then V1's composition and
+follow-up repair commits carrying the test file, this document and the edits listed
+below. Each delivered cherry-pick's patch-id is
 identical to the delivered commit's, so the pieces arrived unchanged. The #192
 contract was not on master before this branch; it lands with it. Master moved
 several times while V1 was built; each time the branch was rebased and the
@@ -288,6 +300,36 @@ action, and the unchanged refusal/zero-effect assertions passed. This confirms
 the fixture-ordering repair on SQLite; it does not by itself identify the hosted
 hang or satisfy the required PostgreSQL/full exact-head gates. Those are pending.
 
+### D6: V35 retained the same impossible replacement schedule (fixture repair)
+
+**Evidence.** D5 repaired V30 but missed its other caller:
+`test_v35_diagnostics_carry_only_fixed_code_values` still injected `bump_dispatch`
+as `after_prepare`, inside the protected action. The next head's local gate passed
+18,267 tests and 2,883 subtests, but its hosted PostgreSQL job remained in its test
+step after an hour. Live hosted logs were unavailable; this is not identification
+of that job's hung testcase or proof of its cause.
+
+**Hypothesis H-V1-V35-SCHEDULE-1.** Reuse D5's actual-fence observer and
+pre-readiness replacement schedule for both V30 and V35, rather than repairing
+callers separately. First observe V35's unchanged old schedule, then move only its
+replacement injection outside the protected action. Preserve all diagnostics
+checks and literal `dispatch_generation`, zero claims/sends and empty readiness.
+No production, frozen input, compiler or CI change. Falsifiers: no observed nested
+write in the old schedule, missing preparation callback, a corrected nested write,
+changed refusal/diagnostics or weakened fence. Continued hosted stalling requires
+further diagnosis rather than a claim that this repair solved it.
+
+**Failing-first result.** The old V35 schedule fails the outside-fence assertion in
+2.85 s: observed writes `[True]`, expected `[False]`. The observer stops before the
+second-session write, so this discriminates fixture ordering even on SQLite.
+`GenerationReplacement` now reuses the real action observation and the completed
+preparation callback for both tests. **V01, V30, V35 and G2 passed together in
+13.48 s**, with one outside-fence replacement and one completed preparation in
+each changed control. V35 retains all diagnostic/body-exclusion checks and now
+also explicitly asserts zero claims/sends and empty readiness. Ruff and diff
+checks passed. Full ordinary and exact-head PostgreSQL gates remain required;
+these local results do not establish the hosted hang's cause.
+
 ## Predicted and actual codes
 
 The refusal code for each new control was written down before its first run, from
@@ -314,18 +356,36 @@ not re-pinned as passing expectations.
 - **Literal oracle.** Every expected value (descriptor, raw records, queued record,
   claims) is written by hand in the test from the raw rows, with json and hashlib
   only. No loader, codec or engine output builds an expectation.
-- **A1 cross-check.** `test_clean_case_matches_architecture_a1_compiler_unmodified`
-  feeds the same 14-record authoring input to A1's compiler (imported unmodified
-  from `tests/test_config/test_context_profile_admission_compile.py`); its
-  `descriptor.json` equals the literal oracle byte for byte. Two separately written
-  expectations agree, and the engine agrees with both.
-- **The deltas from Architecture's #316 oracle.** The synthetic case differs from
-  Architecture's real 14x3 oracle in four ways, each needed for the composed engine
-  to admit it; each is a gap in the real oracle, found below:
+- **A1 compiler/contract compatibility for the same synthetic authoring.**
+  `test_clean_case_matches_architecture_a1_compiler_unmodified` feeds the same
+  14-record authoring input to A1's unchanged compiler in
+  `tests/test_config/test_context_profile_admission_compile.py`. Its descriptor
+  equals the handwritten synthetic descriptor byte for byte. This is an
+  independently implemented compiler/encoder cross-check, not an independently
+  sourced second graph or execution of Architecture's real oracle.
+- **Four admission blockers illustrated by a reduced synthetic harness.** These
+  are the four identified blockers below, not an exhaustive list of differences
+  from Architecture's real 14x3 oracle:
   - d1: each leaf agent's body `name` equals its record key;
   - d2: script templates use supported indirection (`{{ label }}` outside quotes);
-  - d3: the metadata inputs are explicit and complete;
-  - d4: root policies are synthetic, test-only, on real temporary paths and bytes.
+  - d3: metadata inputs are explicit and complete;
+  - d4: root policies are synthetic, test-only, on temporary paths and bytes.
+
+| Property | Reduced synthetic V02 | Real published oracle inventory |
+| --- | --- | --- |
+| Raw records | 85: 1 workflow, 14 stages, 70 agents | 60 |
+| Flattened graph | 84 nodes: 14 stages and 70 leaves | 126 nodes, 14 top-level |
+| Script positions | 28: one prepare and one receipt per record | 70 |
+| Native positions | 42 | 42 |
+| Output roots | 14 temporary physical roots; each record's three native slots share one | 42 distinct roots in published position metadata; custody remains unresolved |
+
+For each synthetic record the execution is prepare -> three chained native calls
+-> receipt. This reduced topology, script schedule and root sharing are additional
+differences, not coverage of the real oracle's unexercised topology or cross-root
+paths. Forty-two unique `(root, slot, position)` tuples do not mean 42 physical
+synthetic roots. No I1-I4 blocker is cleared by this synthetic pass or A1
+compatibility. This disclosure corrects Security's E1 evidence finding; it does
+not change the harness to claim new real-oracle coverage.
 
 ## The real 14x3 oracle on this head (F1)
 
@@ -366,8 +426,10 @@ Unrelaxed, the real loader refuses the real oracle at its first script
 (`wire_schema`). With exactly the three loader checks I1-I3 relaxed in memory
 (nothing on disk changed), the load is accepted and the projected graph equals the
 descriptor's graph: both SHA256
-`1bbfb207b9316b088fbd08113283c97810b4d407bb7547365b9bdc43667b28a6`, 126 nodes. So
-apart from I1-I4 the real oracle and the composed engine agree.
+`1bbfb207b9316b088fbd08113283c97810b4d407bb7547365b9bdc43667b28a6`, 126 nodes.
+This establishes graph-projection equality under those three deliberately relaxed
+loader checks, not admission or end-to-end execution of the real topology,
+custody, readiness, claims or sends. I1-I4 remain unresolved.
 
 ## S3 and S4, owed from T2's handoff
 
@@ -463,7 +525,7 @@ started.
 | V32 | REFUSE; replacing the trusted caller authority is out of scope | a changed manifest carrying its own digest (`descriptor_authority`) | PASS |
 | V33 | Separate fresh loaders and contexts per admitted run | overlapping real B2 snapshot loads receive the same poisoned legacy runner/loader/defaults/overrides; a barrier proves overlap; each uses a fresh resolver/loader and equals its literal graph. Separate sequential full runs prove independent contexts and claims | PASS for B2 overlap and sequential full-run isolation; not a simultaneous end-to-end worker test |
 | V34 | REFUSE a designated candidate before the transformed load; ordinary workflows unchanged | a designated workflow without an admission refuses at worker entry (`admission_required`); the ordinary suite is unchanged | PASS |
-| V35 | Only fixed codes, position ids and digests in evidence | a stale-generation refusal: the only code recorded is `dispatch_generation`, and none of the fixture's strings appear | PASS |
+| V35 | Only fixed codes, position ids and digests in evidence | a stale-generation refusal using D6's shared outside-fence replacement: the only code recorded is `dispatch_generation`, and none of the fixture's strings appear; zero claim/send and empty readiness | Corrected focused SQLite PASS; full exact-head/PostgreSQL gate pending |
 | V36 | The native defence fails honestly, possibly after the claim; no retry | a native failure after the claim: run failed, the claim stays, the slot is not tried again, no send | PASS |
 
 Also covered on this head by T2's own tests, which run in the same suite and whose

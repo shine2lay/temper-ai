@@ -1733,57 +1733,61 @@ def test_v28_a_worker_that_dies_mid_run_is_not_replayed(tmp_path, monkeypatch, c
     assert stored_record() == record
 
 
-def bump_dispatch(b, binding):
-    """A replacement generation becomes current while this one is preparing."""
-    set_meta(slot=lambda record: record["dispatch"].update(
-        dispatch_nonce="00000000-0000-4000-8000-000000000099", running_attempt=2,
-        previous_nonce=record["dispatch"]["dispatch_nonce"]))
+class GenerationReplacement:
+    """One test-only replacement schedule, observed against the real row fence.
+
+    SQLite cannot model a second writer waiting on its caller's FOR UPDATE lock.
+    Keep the real protected action, but fail before an impossible nested write.
+    V30 and V35 share this schedule instead of repairing only one of its callers.
+    """
+
+    def __init__(self, monkeypatch):
+        self.inside_fence = False
+        self.writes = []
+        self.preparations = []
+        current_generation = a.DbAdmissionTransport.current_generation
+
+        def observed_generation(store, binding, action):
+            def while_locked(current, transaction):
+                self.inside_fence = True
+                try:
+                    return action(current, transaction)
+                finally:
+                    self.inside_fence = False
+            return current_generation(store, binding, while_locked)
+
+        monkeypatch.setattr(a.DbAdmissionTransport, "current_generation", observed_generation)
+
+    def replace(self, b, binding):
+        self.writes.append(self.inside_fence)
+        assert not self.inside_fence, "replacement writer would wait on its caller's row fence"
+        set_meta(execution=binding.dispatch.execution_uuid, slot=lambda record: record["dispatch"].update(
+            dispatch_nonce="00000000-0000-4000-8000-000000000099", running_attempt=2,
+            previous_nonce=record["dispatch"]["dispatch_nonce"]))
+
+    def before_readiness(self, monkeypatch, b):
+        checkpointed = CandidateUse.checkpointed
+
+        def replace_before_readiness(use, node, context, result):
+            if node.name == "prepare":
+                self.preparations.append((context.node_path, result.status))
+                assert context.node_path == b.case.names[0] and result.status is Status.COMPLETED
+                self.replace(b, use.binding((b.case.names[0], "prepare")))
+            return checkpointed(use, node, context, result)
+
+        monkeypatch.setattr(CandidateUse, "checkpointed", replace_before_readiness)
 
 
 def test_v30_a_replacement_generation_becomes_current_mid_run(tmp_path, monkeypatch):
-    """V30: the replacement wins before the stale worker's protected readiness action.
-
-    A replacement writer cannot commit while the old worker holds the same row's
-    FOR UPDATE fence. SQLite does not model that wait, so check the real action's
-    extent explicitly instead of letting an impossible test schedule look green.
-    """
-    inside_fence = False
-    replacement_writes = []
-    current_generation = a.DbAdmissionTransport.current_generation
-
-    def observed_generation(self, binding, action):
-        def while_locked(current, transaction):
-            nonlocal inside_fence
-            inside_fence = True
-            try:
-                return action(current, transaction)
-            finally:
-                inside_fence = False
-        return current_generation(self, binding, while_locked)
-
-    def replace_generation(b, binding):
-        replacement_writes.append(inside_fence)
-        assert not inside_fence, "replacement writer would wait on its caller's row fence"
-        bump_dispatch(b, binding)
-
-    monkeypatch.setattr(a.DbAdmissionTransport, "current_generation", observed_generation)
+    """V30: the replacement wins before the stale worker's protected readiness action."""
+    replacement = GenerationReplacement(monkeypatch)
     case, counters, b = control(tmp_path, monkeypatch)
-    checkpointed = CandidateUse.checkpointed
-    preparation_callbacks = []
-
-    def replace_before_readiness(use, node, context, result):
-        if node.name == "prepare":
-            preparation_callbacks.append((context.node_path, result.status))
-            assert context.node_path == case.names[0] and result.status is Status.COMPLETED
-            replace_generation(b, use.binding((case.names[0], "prepare")))
-        return checkpointed(use, node, context, result)
-
-    monkeypatch.setattr(CandidateUse, "checkpointed", replace_before_readiness)
+    replacement.before_readiness(monkeypatch, b)
     assert b.submit() == EXECUTION
     queue_and_claim(b)
     exit_code = run_worker(b)
-    assert preparation_callbacks == [(case.names[0], Status.COMPLETED)]
-    assert replacement_writes == [False], "replacement must commit outside the old worker's row fence"
+    assert replacement.preparations == [(case.names[0], Status.COMPLETED)]
+    assert replacement.writes == [False], "replacement must commit outside the old worker's row fence"
     assert exit_code == 1 and row()["status"] == "failed"
     assert RefusalCode.GENERATION.value in recorded_failures(), recorded_failures()
     assert (counters.n["claim"], counters.n["send"]) == (0, 0)
@@ -2094,8 +2098,18 @@ def test_v15_supported_policies_cannot_mutate_after_approval(tmp_path, monkeypat
 
 def test_v35_diagnostics_carry_only_fixed_code_values(tmp_path, monkeypatch, capsys):
     """V35: run error/log/stderr/events contain only fixed code values, no body values."""
-    case, counters, b = refused_in_run(tmp_path, monkeypatch, RefusalCode.GENERATION,
-                                       after_prepare=bump_dispatch)
+    replacement = GenerationReplacement(monkeypatch)
+    case, counters, b = control(tmp_path, monkeypatch)
+    replacement.before_readiness(monkeypatch, b)
+    assert b.submit() == EXECUTION
+    queue_and_claim(b)
+    exit_code = run_worker(b)
+    assert replacement.preparations == [(case.names[0], Status.COMPLETED)]
+    assert replacement.writes == [False], "replacement must commit outside the old worker's row fence"
+    assert exit_code == 1 and row()["status"] == "failed"
+    assert RefusalCode.GENERATION.value in recorded_failures(), recorded_failures()
+    assert (counters.n["claim"], counters.n["send"]) == (0, 0)
+    assert stored_record()["readiness"] == [], "a stale generation wrote readiness"
     # Config body values, not run values: the run's own inputs and outputs (the
     # label the workflow was started with) belong in its diagnostics.
     bodies = [PROMPT.decode(), PREPARE, RECEIPT, str(case.roots[case.names[0]]),

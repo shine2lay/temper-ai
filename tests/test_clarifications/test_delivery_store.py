@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 import textwrap
-from dataclasses import fields, replace
+from dataclasses import asdict, fields, replace
 from functools import partial
 
 import pytest
@@ -97,6 +97,15 @@ def test_combined_durable_copy_ingress_and_current_ack_across_restart(db):
     assert db.store.load(R.STREAM).pending_revision is None
 
 
+def ingress_crash_receipt(operation):
+    """Fixed inputs for the distinct applied, retained and diagnostic-only commits."""
+    return {
+        "ingress": R.receipt,
+        "ingress-retained": R.typed,
+        "ingress-refused": partial(R.fix, R.OWNER, [R.NO_EVENT]),
+    }[operation]()
+
+
 def _process(url, barrier, sink, operation, expected=0, resend=False, crash=None, split=False):
     """Real independent engine; returns only closed outcomes, never a traceback/payload."""
     engine = create_test_engine(url) if url.startswith("sqlite") else create_app_engine(url)
@@ -147,8 +156,8 @@ def _process(url, barrier, sink, operation, expected=0, resend=False, crash=None
             receipt = R.receipt() if operation == "answer-a" else R.receipt(R.OTHER, "502", "Different answer")
             outcome = append(store, receipt)
             sink.send(("append", outcome.result.status, outcome.result.revision))
-        elif operation == "ingress":
-            append(store, R.receipt())
+        elif operation in ("ingress", "ingress-retained", "ingress-refused"):
+            append(store, ingress_crash_receipt(operation))
         elif operation == "delivery":
             ledger.record_delivery(R.P1.presentation_id, "500")
         elif operation == "intent":
@@ -383,19 +392,90 @@ def test_confirmation_once_reopen_and_immutable_replay(db):
     assert changed.result.code == R.C.RefusalCode.CHANGED_BODY and changed.held is None
 
 
-@pytest.mark.parametrize("operation", ["intent", "attempt", "delivery", "ingress", "ack"])
+def assert_nonapplied_ingress_commit(db, operation):
+    """Inspect the committed child state BEFORE replay can create any missing row."""
+    receipt = ingress_crash_receipt(operation)
+    retained = operation == "ingress-retained"
+    code = R.C.RefusalCode.NO_EXPLICIT_DISPOSITION if retained else R.C.RefusalCode.MISSING_RECORD
+    guard = "disposition.explicit" if retained else "correction.known"
+    expected = R.C.AppendResult(
+        status="retained" if retained else "refused", stream_id=R.STREAM.stream_id,
+        action_key=receipt.action.key, receipt_sha256=R.C.receipt_sha256(receipt),
+        expected_revision=1, revision=1, code=code,
+    )
+    loaded = db.store.load(R.STREAM)
+    assert loaded.revision == 1 and loaded.record()["events"] == []
+    assert len(db.rows(M.ClarificationRevision)) == 1
+    stream, = db.rows(M.ClarificationStream)
+    assert (stream.revision, stream.receipt_count, stream.ingress_count) == (1, int(retained), 1)
+    assert (stream.send_count, stream.delivery_count, stream.copy_count, stream.consumption_count) == (1, 1, 1, 0)
+    ingress, = db.rows(D.ClarificationIngress)
+    assert (ingress.stream_id, ingress.transport, ingress.bot_id, ingress.update_id,
+            ingress.update_sha256, ingress.offset, ingress.action_key, ingress.receipt_sha256) == (
+        R.STREAM.stream_id, R.TRANSPORT.transport, R.TRANSPORT.bot_id, receipt.update_id,
+        "1" * 64, None, receipt.action.key, expected.receipt_sha256)
+    assert json.loads(ingress.result_json) == asdict(expected)
+    assert ingress.result_guard == guard
+    assert (ingress.capture_status, ingress.capture_code, ingress.capture_guard) == (
+        ("retained", code.value, guard) if retained else ("accepted", None, None))
+    if retained:
+        saved, = db.rows(M.ClarificationReceipt)
+        assert S.ClarificationStore._result(saved) == expected
+        assert (saved.guard, saved.receipt_json) == (guard, R.C.receipt_json(receipt))
+        assert (ingress.refusal_id, ingress.diagnostic_code, ingress.diagnostic_guard) == (None, None, None)
+        assert db.rows(M.ClarificationRefusal) == []
+    else:
+        assert db.rows(M.ClarificationReceipt) == []
+        diagnostic, = db.rows(M.ClarificationRefusal)
+        assert (diagnostic.stream_id, diagnostic.action_key, diagnostic.receipt_sha256,
+                diagnostic.code, diagnostic.guard) == (
+            R.STREAM.stream_id, receipt.action.key, expected.receipt_sha256, code.value, guard)
+        assert (ingress.refusal_id, ingress.diagnostic_code, ingress.diagnostic_guard) == (
+            diagnostic.id, code.value, guard)
+    assert db.store.protocol_view(R.STREAM).receipts == ((receipt,) if retained else ())
+    committed = db.dump()
+    replay = append(db.store, receipt)
+    assert (replay.result, replay.guard, replay.held, replay.new) == (
+        expected, guard, receipt if retained else None, False)
+    assert db.dump() == committed
+    db.restart()
+    assert db.dump() == committed and db.store.load(R.STREAM).revision == 1
+    if not retained:
+        # A refused action is still available to a genuine answer; preserve its
+        # old diagnostic/ingress rather than overwrite them on recovery.
+        genuine = R.receipt(action_id=receipt.action.action_id)
+        assert R.C.receipt_sha256(genuine) != expected.receipt_sha256
+        recovered = append(db.store, genuine)
+        assert (recovered.result.status, recovered.result.revision, recovered.held, recovered.new) == (
+            "applied", 2, genuine, True)
+        saved, = db.rows(M.ClarificationReceipt)
+        assert (saved.action_key, saved.receipt_sha256) == (receipt.action.key, R.C.receipt_sha256(genuine))
+        assert db.dump()["clarification_refusals"] == committed["clarification_refusals"]
+        assert len(db.rows(D.ClarificationIngress)) == 2
+        assert next(row for row in db.rows(D.ClarificationIngress)
+                    if row.ingress_id == ingress.ingress_id).model_dump() == ingress.model_dump()
+        db.restart()
+        assert db.store.load(R.STREAM).revision == 2
+        assert db.store.protocol_view(R.STREAM).receipts == (genuine,)
+
+
+@pytest.mark.parametrize("operation", ["intent", "attempt", "delivery", "ingress", "ingress-retained", "ingress-refused", "ack"])
 @pytest.mark.parametrize("when", ["before", "after"])
 def test_process_crash_at_real_commit_has_no_partial_transaction(db, operation, when):
     if operation == "intent":
         db.store.merge_candidate(R.caller())
         db.store.save_presentation(R.P1)
     else:
-        intent_ready(db.store, delivery=operation in ("ingress", "ack"))
+        intent_ready(db.store, delivery=operation in ("ingress", "ingress-retained", "ingress-refused", "ack"))
     before = db.dump()
     children(db, [operation], crash=when)
     db.restart()
     if when == "before":
         assert db.dump() == before
+        if operation in ("ingress-retained", "ingress-refused"):
+            retry = append(db.store, ingress_crash_receipt(operation))
+            assert retry.new is (operation == "ingress-retained")
+            assert_nonapplied_ingress_commit(db, operation)
     else:
         ledger = L.ClarificationDeliveryStore(db.store)
         if operation == "attempt":
@@ -410,6 +490,8 @@ def test_process_crash_at_real_commit_has_no_partial_transaction(db, operation, 
             assert db.store.load(R.STREAM).revision == 2
             assert len(db.rows(D.ClarificationIngress)) == len(db.rows(M.ClarificationReceipt)) == 1
             assert append(db.store, R.receipt()).new is False
+        elif operation in ("ingress-retained", "ingress-refused"):
+            assert_nonapplied_ingress_commit(db, operation)
         elif operation == "intent":
             assert ledger.send(R.P1.presentation_id, stream=R.STREAM).state == "pending"
         else:

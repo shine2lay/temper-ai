@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from temper_ai.agent.admission_use import CandidateUse
     from temper_ai.config.admission_contract import CandidateInvocationBinding
 
 
@@ -126,16 +127,31 @@ class ExecutionContext:
     # Opt-in local binding owns immutable bytes. Context replacements preserve
     # it; use-site adapters must derive/check the actual child path (T3).
     admission: CandidateInvocationBinding | None = None
+    # Runtime-only partners of `admission`, read by the use-site checks
+    # (agent/admission_use.hooks_for): the one running generation's
+    # CandidateUse, and whether this context must carry it. Never configured
+    # or persisted; an ordinary run leaves all three unset, so its nodes and
+    # agents take the ordinary path (docs/candidate-admission-use-sites.md).
+    admission_hooks: CandidateUse | None = None
+    admission_required: bool = False
 
     def __post_init__(self) -> None:
-        if self.admission is not None:
+        if self.admission is not None or self.admission_hooks is not None \
+                or self.admission_required is not False:
             # Lazy import avoids config -> database -> shared type cycles.
+            from temper_ai.agent.admission_use import CandidateUse
             from temper_ai.config.admission_contract import (
                 AdmissionRefused,
                 CandidateInvocationBinding,
                 RefusalCode,
             )
-            if type(self.admission) is not CandidateInvocationBinding:
+            if self.admission is not None \
+                    and type(self.admission) is not CandidateInvocationBinding:
+                raise AdmissionRefused(RefusalCode.TYPE)
+            if self.admission_hooks is not None \
+                    and type(self.admission_hooks) is not CandidateUse:
+                raise AdmissionRefused(RefusalCode.TYPE)
+            if type(self.admission_required) is not bool:
                 raise AdmissionRefused(RefusalCode.TYPE)
         # The run's tool executor learns the run's cancel flag here: every run
         # builds its context once (API, worker, CLI) and every node runs on a

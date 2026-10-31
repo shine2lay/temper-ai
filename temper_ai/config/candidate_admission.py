@@ -307,7 +307,13 @@ def validate_raw(resolver: SnapshotResolver, descriptor: ApprovedCandidateDescri
         if type(raw) is not dict:
             _refuse(RefusalCode.TYPE)
         _raw_fields(raw, NodeConfig)
-        if any(k in raw for k in ("strategy", "strategy_config", "agents")):
+        # Eligibility is separate from wire/graph equality: even an explicitly
+        # approved null setting is prohibited raw presence in this profile.
+        if any(k in raw for k in ("strategy", "strategy_config", "agents", "tools", "memory")):
+            _refuse(RefusalCode.SCHEMA)
+        # A count/default without a target is inert, not an active loop. Keep
+        # on_failure/undoes (cleanup metadata) separate from LLM fallback.
+        if raw.get("loop_to") is not None:
             _refuse(RefusalCode.SCHEMA)
         kind = raw.get("type", "agent")
         if "ref" in raw:
@@ -380,7 +386,7 @@ def validate_raw(resolver: SnapshotResolver, descriptor: ApprovedCandidateDescri
             cls = WorkflowConfig if key[0] == "workflow" else NodeConfig
             _raw_fields(body, cls)
             if key[0] == "workflow":
-                if body.get("starts_runs") is True:
+                if body.get("starts_runs") is True or "memory" in body:
                     _refuse(RefusalCode.SCHEMA)
                 defaults = body.get("defaults")
                 if defaults is not None:

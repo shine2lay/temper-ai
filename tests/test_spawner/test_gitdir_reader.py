@@ -9,10 +9,15 @@ from temper_ai.spawner import box_seal
 from temper_ai.spawner.docker_spawner import _gitdir_named
 
 
-def test_both_callers_share_the_first_line_and_sealed_keeps_its_pinned_directory(tmp_path):
+def test_both_callers_share_the_first_line_and_sealed_keeps_its_pinned_directory(tmp_path, monkeypatch):
     workspace = tmp_path / "run"
     workspace.mkdir()
     (workspace / ".git").write_text("gitdir: .own\ngitdir: /outside\n")
+    # A lost dir_fd must not pass just because the process's own .git also points outside.
+    unrelated = tmp_path / "unrelated-cwd"
+    unrelated.mkdir()
+    (unrelated / ".git").write_text("gitdir: .own\n")
+    monkeypatch.chdir(unrelated)
     fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
     try:
         assert _gitdir_named(str(workspace)) == ".own"
@@ -25,6 +30,11 @@ def test_both_callers_share_the_first_line_and_sealed_keeps_its_pinned_directory
         assert _gitdir_named(str(workspace)) == "/replacement"
         assert box_seal.read_gitdir(".git", dir_fd=fd, regular_only=True) == ".own"
         box_seal._no_outside_repo(fd, str(workspace))
+
+        # The harmless cwd decoy stays put; only the pinned record now points outside.
+        (tmp_path / "pinned" / ".git").write_text("gitdir: /outside-pinned\n")
+        with pytest.raises(box_seal.BoxProfileError, match="outside-pinned"):
+            box_seal._no_outside_repo(fd, str(workspace))
     finally:
         os.close(fd)
 

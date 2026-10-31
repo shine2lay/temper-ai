@@ -117,10 +117,13 @@ only for a real worktree (`checked_main_repo()` in
 - the `.git` file names a worktree record, `<main>/.git/worktrees/<name>`, and
   `<main>` holds no comma or quote (docker would read the rest of its `--mount`
   argument as more options, such as another source);
-- `<main>` is inside `WORKSPACE_DIR` (never `WORKSPACE_DIR` itself), or inside a
-  folder of the worker's `TEMPER_DOCKER_MAIN_REPO_ROOTS` (`:`-separated host paths;
-  unset or empty: the install's checkout, the folder the template's `/app/configs`
-  comes from; set it to `WORKSPACE_DIR`'s path to allow nothing more);
+- `<main>` is strictly inside `WORKSPACE_DIR`, or inside a folder explicitly named
+  in the worker's `TEMPER_DOCKER_MAIN_REPO_ROOTS` (`:`-separated host paths; unset or
+  empty: no extra roots). The install's checkout is **not** implicitly allowed;
+- `<main>` must never be `WORKSPACE_DIR` itself or contain it, even when explicitly
+  named in that setting. Both normalized and resolved paths are checked, so naming
+  a symlink to the checkout or to the shared root does not evade the refusal. A
+  checkout containing the shared tree cannot be added as a main-repository mount;
 - no symlink lies between that folder and the record, and the record is a folder
   the worker can see;
 - the record's back-link file, `<record>/gitdir`, which `git worktree add` writes,
@@ -135,10 +138,13 @@ the record is inside the workspace or inside a mount the box already has (with
 `TEMPER_DOCKER_WORKSPACES=all`, the whole workspaces tree). A moved worktree fails
 the back-link check: `git worktree repair` in it fixes the link.
 
-- The worker checks with what it can see, so a worktree of a repository it has no
-  view of is refused. The worker `docker-compose.yml` sets up has the checkout's
-  `temper_ai/`, `configs/` and workspaces tree, not its `.git`: there, a worktree of
-  the checkout itself is refused, though the checkout is an allowed folder.
+- The worker checks with what it can see, so an otherwise allowed repository's
+  worktree is refused if its record is invisible. The shared-tree/ancestor refusal
+  does not depend on missing visibility: it holds even if a worker can read the
+  checkout's `.git`.
+- This guard controls only an **additional** main-repository mount. It does not
+  remove or narrow inherited mounts; a record already covered by one still adds
+  nothing. This change alone does not make legacy boxes isolated.
 - The worker reads the setting once, when it starts. A value that isn't absolute
   and plain, or is `/`, keeps the worker from starting (`Watcher won't start:
   TEMPER_DOCKER_MAIN_REPO_ROOTS=...`).
@@ -174,13 +180,6 @@ What temper cannot close by itself yet, handed to Architecture:
   still going in another box could swap a folder on the way for a symlink. That
   holds for the workspace itself as much as for a worktree's main repository;
   sealed boxes bind pinned paths instead.
-- The default main-repository root, the install's checkout, holds `WORKSPACE_DIR`
-  and `.env`. A worker that could see the checkout's `.git` at its host path would
-  give a real worktree of the checkout the whole checkout read-write, `.env` and
-  every run's workspace with it (under `TEMPER_DOCKER_WORKSPACES=own` too). The
-  worker `docker-compose.yml` sets up can't see it, so nothing is mounted today.
-  Give no worker that view until a main repository that is `WORKSPACE_DIR` or holds
-  it is refused.
 - Built, switched off: a one-shot delivery into a non-dumpable runner
   (`TEMPER_BOX_SECRET_BOOTSTRAP=oneshot`, below), which closes the `/proc` read.
   Still under consideration: a separate user for agent tools; a database role per

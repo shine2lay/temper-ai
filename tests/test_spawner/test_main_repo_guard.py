@@ -2,9 +2,10 @@
 
 A run whose workspace is a `git worktree` has a .git file naming <main>/.git/worktrees/<name>,
 and its legacy box gets <main> read-write at its host path. Any run can write its own .git, so
-that name proves nothing by itself: <main> is mounted only when it is inside WORKSPACE_DIR or a
-root of TEMPER_DOCKER_MAIN_REPO_ROOTS (unset: the install's checkout), the way there has no
-symlink, and the worktree record's back-link, <record>/gitdir, which `git worktree add` writes,
+that name proves nothing by itself: <main> is mounted only when it is inside WORKSPACE_DIR or an
+explicit root of TEMPER_DOCKER_MAIN_REPO_ROOTS (unset: no extra roots), is not WORKSPACE_DIR
+or its ancestor, the way there has no symlink, and the worktree record's back-link,
+<record>/gitdir, which `git worktree add` writes,
 names this workspace's .git. Any other gitdir that would need a mount stops the spawn with
 MainRepoRefused, naming the workspace and the path refused (docs/boxes.md, "A worktree's main
 repository"). Sealed boxes never get a main repository, and still don't.
@@ -123,14 +124,14 @@ def lay_record(main: Path, name: str, back_link: str | None) -> Path:
 
 
 def checkout(install: Install) -> Path:
-    """The install's checkout: the folder its configs come from (the default allowed root)."""
+    """The install's checkout: the folder its configs come from (not implicitly allowed)."""
     return install.configs.parent
 
 
 def mounts(install: Install, workspace: Path, roots: list[str] | None = None) -> list[Mount]:
-    """workspace_mounts as a legacy box's spawner calls it; ``roots`` default: the checkout."""
+    """workspace_mounts as a legacy box's spawner calls it; no extra roots by default."""
     return workspace_mounts(str(workspace), workspace_dir=str(install.workspaces),
-                            main_repo_roots=[str(checkout(install))] if roots is None else roots)
+                            main_repo_roots=[] if roots is None else roots)
 
 
 def rw(path: Path) -> Mount:
@@ -187,11 +188,11 @@ def host_binds(cmd: list[str]) -> list[tuple[str, bool]]:
 # -- a real worktree ---------------------------------------------------------------------------
 
 
-def test_a_real_worktree_of_the_checkout_gets_it_read_write_and_git_finds_all_it_needs(install):
-    """The whole feature, as the two worktrees in use had it: git's own worktree of the install's
-    checkout, inside WORKSPACE_DIR. The box gets the checkout read-write beside the workspace,
-    and everything git in the worktree reads and writes is inside those two mounts."""
-    main = repository(checkout(install))
+def test_a_real_worktree_inside_workspace_dir_gets_its_repository_and_git_finds_all_it_needs(install):
+    """The whole feature: a repository strictly inside WORKSPACE_DIR and git's own worktree.
+    The box gets the repository read-write beside the workspace, and everything git in the
+    worktree reads and writes is inside those two mounts. No extra root is configured."""
+    main = repository(install.workspaces / "repos" / "proj")
     ws = worktree(main, install.run_a)
 
     assert mounts(install, ws) == [rw(ws), rw(main)]
@@ -199,7 +200,7 @@ def test_a_real_worktree_of_the_checkout_gets_it_read_write_and_git_finds_all_it
         found = Path(git("rev-parse", "--path-format=absolute", asked, cwd=ws)).resolve()
         assert found.is_relative_to(main.resolve()), (asked, found)
 
-    # The spawner, setting unset: the checkout is the template's (the folder /app/configs is in).
+    # The spawner, setting unset: only WORKSPACE_DIR permits a main repository.
     store = MemoryStore()
     store.add("wt-happy", workspace=str(ws))
     docker = TemplateDocker(install.inspect())
@@ -215,14 +216,16 @@ def test_a_worktree_of_a_repository_inside_workspace_dir_needs_no_root(install):
 
 
 def test_the_same_worktree_is_refused_once_its_repository_is_not_allowed(install, monkeypatch):
-    """The happy path with the allow-list entry taken away."""
+    """An unrelated repository is allowed only when named; this fixture's checkout is a sibling
+    of WORKSPACE_DIR, not its ancestor (the ancestor cases are in test_main_repo_ancestors)."""
     main = repository(checkout(install))
     ws = worktree(main, install.run_a)
+    assert mounts(install, ws, roots=[str(main)]) == [rw(ws), rw(main)]
     named = str(record_of(ws))
     reason = f"whose repository {main} is outside WORKSPACE_DIR and the allowed roots"
     assert_refused(lambda: mounts(install, ws, roots=[]), ws, named, reason)
 
-    # The worker's setting takes the checkout's place: WORKSPACE_DIR alone allows no checkout.
+    # Naming WORKSPACE_DIR permits no additional repository.
     monkeypatch.setenv(MAIN_REPO_ROOTS_ENV, str(install.workspaces))
     store = MemoryStore()
     store.add("wt-gone", workspace=str(ws))
@@ -231,10 +234,13 @@ def test_the_same_worktree_is_refused_once_its_repository_is_not_allowed(install
     assert docker.runs == []
 
 
-def test_the_setting_replaces_the_checkout_and_workspace_dir_stays_allowed(install, monkeypatch):
+@pytest.mark.parametrize("empty", [None, "", "   "])
+def test_the_default_has_no_extra_roots_and_workspace_dir_stays_allowed(install, monkeypatch, empty):
+    if empty is not None:
+        monkeypatch.setenv(MAIN_REPO_ROOTS_ENV, empty)
     docker = TemplateDocker(install.inspect())
     unset = spawner(install, MemoryStore(), docker)
-    assert unset.main_repo_roots(unset.template()) == (str(checkout(install)),)
+    assert unset.main_repo_roots(unset.template()) == ()
 
     monkeypatch.setenv(MAIN_REPO_ROOTS_ENV, " /srv/repos:/opt/more ")
     given = spawner(install, MemoryStore(), docker)
@@ -245,7 +251,7 @@ def test_the_setting_replaces_the_checkout_and_workspace_dir_stays_allowed(insta
 
 
 def test_a_template_with_its_configs_at_the_host_root_allows_no_checkout(install):
-    """A checkout at / would allow every folder: then the default allows WORKSPACE_DIR alone."""
+    """The template cannot restore an implicit root, including a checkout at /."""
     described = json.loads(install.inspect())
     for mount in described[0]["Mounts"]:
         if mount["Destination"] == "/app/configs":
@@ -357,7 +363,7 @@ def test_a_repository_outside_every_allowed_folder_is_refused(install, how):
 def test_a_gitdir_that_makes_the_host_root_the_repository_is_refused(install, gitdir):
     ws = plant(install.run_a, gitdir)
     assert_refused(lambda: mounts(install, ws), ws, "/.git/worktrees/x",
-                   "whose repository / is outside WORKSPACE_DIR and the allowed roots")
+                   "whose repository is WORKSPACE_DIR itself or contains it")
 
 
 @pytest.mark.parametrize("target", ["its folder", "its repository", "a record laid inside it",
@@ -412,14 +418,15 @@ def test_a_symlink_on_the_way_to_the_record_is_refused(install, where):
     link = (checkout(install) if where == "in the checkout" else install.run_b) / "linked"
     link.symlink_to(secret)
     plant(ws, f"{link}/.git/worktrees/run-a")
-    assert_refused(lambda: mounts(install, ws), ws, f"{link}/.git/worktrees/run-a",
-                   "goes through a symlink")
+    assert_refused(lambda: mounts(install, ws, roots=[str(checkout(install))]), ws,
+                   f"{link}/.git/worktrees/run-a", "goes through a symlink")
 
 
 def test_a_record_the_worker_cant_see_is_refused(install):
-    """The live worker sees no checkout's .git: a worktree of the checkout can't be checked there."""
-    ws = plant(install.run_a, f"{checkout(install)}/.git/worktrees/run-a")
-    assert_refused(lambda: mounts(install, ws), ws, f"{checkout(install)}/.git/worktrees/run-a",
+    """Even an otherwise allowed record must be visible to the worker."""
+    named = f"{install.workspaces}/repos/proj/.git/worktrees/run-a"
+    ws = plant(install.run_a, named)
+    assert_refused(lambda: mounts(install, ws), ws, named,
                    "which is not a folder the worker can see")
 
 
@@ -438,7 +445,7 @@ def test_a_record_without_its_back_link_is_refused(install, how):
 
 @pytest.mark.parametrize("how", ["another run's worktree", "a moved worktree"])
 def test_a_back_link_naming_another_workspace_is_refused(install, how):
-    main = repository(checkout(install))
+    main = repository(install.workspaces / "repos" / "proj")
     if how == "another run's worktree":
         ws = plant(install.run_a, str(record_of(worktree(main, install.run_b))))
     else:
@@ -482,7 +489,7 @@ def test_a_refused_spawn_starts_no_box_and_keeps_no_profile(install, caplog):
 
 
 def test_a_sealed_box_still_never_gets_a_main_repository(install, monkeypatch):
-    """Sealed boxes are untouched: even git's own worktree of an allowed repository is refused."""
+    """Sealed boxes are untouched: even git's own worktree is refused."""
     monkeypatch.setenv(box_profile.BOUNDARY_ENV, "sealed")
     monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", "/app/.venv/bin/python -m temper_ai.cli.main run-workflow")
     ws = worktree(repository(checkout(install)), install.run_a)
@@ -539,8 +546,11 @@ def test_git_works_inside_a_real_legacy_box_on_a_checked_worktree(tmp_path, monk
         _unavailable("no image with git (python:3.12-slim and apt-get)")
     install = Install(tmp_path / "host", user=box_user(), image_ref=image,
                       image_id=image_id(image)).build()
+    # An unrelated explicitly allowed repository exercises both a real box and removal of
+    # that allowance. The opening combined test covers the WORKSPACE_DIR-only default.
     main = repository(checkout(install))
     ws = worktree(main, install.run_a)
+    monkeypatch.setenv(MAIN_REPO_ROOTS_ENV, str(main))
     monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", f"sh -c '{IN_THE_BOX.format(ws=ws)}'")
     store = MemoryStore()
     first, second = run_id("git-in-box"), run_id("git-not-allowed")

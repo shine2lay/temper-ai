@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import builtins
 import copy
-import hashlib
 import importlib.util
 import io
 import json
@@ -20,12 +19,24 @@ import sqlite3
 import subprocess
 import sys
 import time
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from configs.architecture.bin import context_profile_clarification_caller as caller
+from tests.test_clarifications.composition_scenarios import (
+    BRIEF,
+    BRIEF_SHA,
+    profile,
+    row,
+    sha,
+)
+from tests.test_clarifications.composition_scenarios import inputs as canonical_inputs
+from tests.test_clarifications.composition_scenarios import (
+    receipt_event as canonical_receipt_event,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "configs/architecture/bin/context_profile_clarification_caller.py"
@@ -33,18 +44,8 @@ CONTRACTS = ROOT / "temper_ai/clarifications/contracts.py"
 c = caller.clarifications
 k = caller.contracts
 
-BRIEF = "Synthetic brief: a small booking tool for one clinic.\nKeep exact text: café, 東京.\r\n"
-BRIEF_SHA = hashlib.sha256(BRIEF.encode("utf-8")).hexdigest()
-# Explicit independent list: every field an unknown may name, except current_system.items.
-BASE_FIELDS = (
-    "maturity.stage", "current_system.state", "external_systems",
-    "workload.observed", "workload.projected", "workload.peaks", "performance.targets",
-    "reliability.availability", "reliability.data_loss_tolerance", "reliability.recovery_time",
-    "privacy.data_categories", "privacy.sensitivity", "privacy.retention", "privacy.sharing",
-    "privacy.jurisdictions_or_rules", "security.requirements", "security.threats",
-    "security.compliance", "team.size", "team.skills", "team.operating_capacity",
-    "budget.build", "budget.run_monthly", "constraints", "goals",
-)
+# Preserve M1's path-local default; the shared constructor defaults to canonical M0.
+inputs = partial(canonical_inputs, contracts=k)
 OFFLINE = {
     "question": "Must the booking tool work offline?", "why_it_matters": "It changes storage and sync.",
     "decisions_affected": ["client storage", "sync design"], "material": True, "field": "constraints",
@@ -61,58 +62,8 @@ PROBES = (OFFLINE, REGION, USERS)
 EXACT = "Yes, offline first.\r\n  Keep café 東京 bookings local."
 
 
-def sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def qid(unknown: dict) -> str:
     return k.question_id(BRIEF_SHA, unknown)
-
-
-def base_unknown(field: str) -> dict:
-    return {
-        "question": f"What is the {field} for this synthetic tool?", "why_it_matters": f"It changes the {field} design.",
-        "decisions_affected": [f"{field} plan"], "material": False, "field": field,
-    }
-
-
-def profile(*probes: dict, reverse: bool = False, quote: str = "a small booking tool for one clinic") -> dict:
-    """A complete synthetic v2 candidate: everything unknown, each field named."""
-    unknowns = [base_unknown(field) for field in BASE_FIELDS] + [copy.deepcopy(probe) for probe in probes]
-    if reverse:
-        unknowns.reverse()
-    return {
-        "contract": "context_profile/v2", "brief_sha256": BRIEF_SHA,
-        "product": {"summary": "Synthetic booking tool", "source": {"kind": "quote", "quote": quote}},
-        "maturity": {"stage": "unknown", "evidence": []}, "current_system": {"state": "unknown", "items": []},
-        "external_systems": [], "workload": {"observed": [], "projected": [], "peaks": []},
-        "performance": {"targets": []},
-        "reliability": {"availability": "unknown", "data_loss_tolerance": "unknown", "recovery_time": "unknown"},
-        "privacy": {"data_categories": [], "sensitivity": "unknown", "retention": [], "sharing": [],
-                    "jurisdictions_or_rules": []},
-        "security": {"requirements": [], "threats": [], "compliance": []},
-        "team": {"size": "unknown", "skills": [], "operating_capacity": []},
-        "budget": {"build": "unknown", "run_monthly": "unknown"},
-        "constraints": [], "goals": [], "assumptions": [], "unknowns": unknowns,
-    }
-
-
-def inputs(candidate, *, revision=0, record=None, ask=(), contracts=k, **changes):
-    """A CallerInput (M0's contract) for the synthetic stream; text inputs stay exact."""
-    text = candidate if isinstance(candidate, str) else json.dumps(candidate, ensure_ascii=False)
-    record_json = record if record is None or isinstance(record, str) else json.dumps(record, ensure_ascii=False)
-    fields = {
-        "stream": contracts.StreamKey("project:synthetic-clinic", BRIEF_SHA),
-        "original_text": BRIEF, "original_sha256": BRIEF_SHA,
-        "candidate_json": text, "candidate_sha256": sha(text), "candidate_ref": "candidate:synthetic/1",
-        "candidate_brief_sha256": None, "prior_revision": revision, "prior_record_json": record_json,
-        "prior_record_sha256": None if record_json is None else sha(record_json),
-        "question_ids": tuple(ask), "source_authority_ref": "authority:synthetic/clinic",
-        "transport": contracts.TransportNamespace("telegram", "7001"), "chat_id": "-1001",
-        "responder_policy_ref": "responder-policy:synthetic/owner-only",
-    }
-    fields.update(changes)
-    return contracts.CallerInput(**fields)
 
 
 def receipt(event_id: str) -> dict:
@@ -156,30 +107,7 @@ def record_with(*events, candidate=None) -> dict:
     return record
 
 
-def receipt_event(caller_input, prepared, question_id, text, message_id, *, disposition="answered") -> dict:
-    """An accepted M0 receipt's #308 event, as M2's provider-pull edge would build it."""
-    metadata = row(prepared, question_id)["metadata_sha256"]
-    presentation = caller_input.presentation(question_id, metadata, 1)
-    copy_id = str(int(message_id) + 100)
-    action = k.ActionReceipt(
-        ingress="provider_pull",
-        action=k.ActionIdentity(caller_input.transport, caller_input.chat_id, "message", message_id),
-        update_id=int(message_id) + 1000, sender_id="5001", sender_is_bot=False, forwarded=False,
-        text=text, text_sha256=sha(text),
-        binding=k.PresentationBinding(caller_input.stream.stream_id, question_id, presentation.presentation_id, 1,
-                                      copy_id),
-        responder=k.ResponderDecision(caller_input.responder_policy_ref, "5001", "authorised", "responder_policy"),
-        intent="answer", disposition=disposition,
-    )
-    result = k.validate_receipt(
-        action, presentation=presentation, copies={copy_id}, current_generation=1, question_ids={question_id},
-    )
-    assert result.status == "accepted"
-    return result.event()
-
-
-def row(prepared: dict, question_id: str) -> dict:
-    return next(item for item in prepared["questions"] if item["question_id"] == question_id)
+receipt_event = partial(canonical_receipt_event, contracts=k)
 
 
 def pointer(document, path: str):

@@ -26,13 +26,17 @@ import pytest
 from configs.architecture.bin import context_profile_check as v2
 from configs.architecture.bin import context_profile_clarifications as c
 from configs.architecture.bin import context_profile_clarified_check as checked
+from tests.test_clarifications.composition_scenarios import (
+    clarification_reference,
+    clarified_validator,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 STAGE = ROOT / "configs/architecture/stages/context_profile"
 MODULE = ROOT / "configs/architecture/bin/context_profile_clarified_check.py"
 SCHEMA = json.loads((STAGE / "contract.clarified.v1.schema.json").read_text())
 V2_SCHEMA = json.loads((STAGE / "contract.v2.schema.json").read_text())
-VALIDATOR = v2.Validator(SCHEMA)
+VALIDATOR = clarified_validator()
 BRIEF = "A synthetic scheduling app.\nKeep café, 東京.\r\n"
 BRIEF_HASH = "7c6d239b848b82d85fbcbcf6fab74182146289b2b84b134a722a8c2c16f5119b"
 Q1 = "q-e2083b8d563b6cd450a7603c8785fe72f7c1d62c4e9560dbec4b49fe0c2b403a"
@@ -75,8 +79,9 @@ def record():
 
 
 def reference(question_id=Q1, answer="yes", event_ids=("e-1",), question="Must it work offline?", source_id=SOURCE_ID):
-    return {"kind": "clarification", "source_id": source_id, "question_id": question_id,
-            "event_ids": list(event_ids), "question": question, "answer": answer}
+    return clarification_reference(
+        question_id=question_id, answer=answer, event_ids=event_ids, question=question, source_id=source_id,
+    )
 
 
 def assumption():

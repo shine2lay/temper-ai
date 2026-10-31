@@ -56,6 +56,7 @@ from temper_ai.integrations.telegram.config import ConfigWatcher
 from temper_ai.integrations.telegram.handlers import Handler
 from temper_ai.integrations.telegram.sender import TelegramSender
 from temper_ai.integrations.telegram.service import TelegramService
+from tests.test_clarifications.composition_scenarios import SyntheticResponderPolicy
 
 from .conftest import TG_BOT, TG_GROUP, TG_OTHER, TG_OWNER, FakeTelegram
 
@@ -182,22 +183,11 @@ class FakeStore:
         self.refused.append(refusal)
 
 
-class FakePolicy:
-    """Who may answer, as (policy, chat, sender) triples. Injected and synthetic."""
+class FakePolicy(SyntheticResponderPolicy):
+    """The original M2 allow-list, using the shared recording policy behavior."""
 
     def __init__(self) -> None:
-        self.allowed = {(POLICY, str(TG_GROUP), str(TG_OWNER)), (POLICY, str(TG_OWNER), str(TG_OWNER))}
-        self.calls: list[tuple[str, str, str]] = []
-        self.answer: object = None  # when set, the answer whoever asks
-        self.fail = False
-
-    def decide(self, *, policy_ref: str, chat_id: str, sender_id: str) -> object:
-        self.calls.append((policy_ref, chat_id, sender_id))
-        if self.fail:
-            raise RuntimeError("the responder policy is down")
-        if self.answer is not None:
-            return self.answer
-        return "authorised" if (policy_ref, chat_id, sender_id) in self.allowed else "denied"
+        super().__init__({(POLICY, str(TG_GROUP), str(TG_OWNER)), (POLICY, str(TG_OWNER), str(TG_OWNER))})
 
 
 class _Picker:

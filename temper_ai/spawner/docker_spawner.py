@@ -439,20 +439,7 @@ def _gitdir_named(workspace: str) -> str | None:
     followed, so nothing outside is mounted for it), never waiting on a FIFO, and only
     its first line read. No .git, or a .git folder (the workspace's own repository): None.
     """
-    try:
-        fd = os.open(os.path.join(workspace, ".git"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError:
-        return None
-    try:
-        head = os.read(fd, _GIT_LINK_BYTES)
-    except OSError:
-        return None  # a folder, or nothing to read
-    finally:
-        os.close(fd)
-    first = head.decode("utf-8", "replace").splitlines()[:1]
-    if not first or not first[0].startswith("gitdir:"):
-        return None
-    return first[0][len("gitdir:"):].strip()
+    return box_seal.read_gitdir(os.path.join(workspace, ".git"), ignore_read_errors=True)
 
 
 def checked_main_repo(workspace_path: str, covered: Iterable[Mount], workspace_dir: str | None,
@@ -478,7 +465,7 @@ def checked_main_repo(workspace_path: str, covered: Iterable[Mount], workspace_d
         raise MainRepoRefused(f"Main repository mount refused for workspace {workspace}: its .git "
                               f"names {named!r}, which holds a NUL byte and so is no path")
     record = os.path.normpath(os.path.join(workspace, named))
-    if _within(record, workspace) or _inside_any(Path(record), list(covered)):
+    if box_seal._inside(record, workspace) or _inside_any(Path(record), list(covered)):
         return None  # the box has it already: its own repository, or an inherited mount
     refused = f"Main repository mount refused for workspace {workspace}: its .git names {record!r}"
     dot_git, worktrees = os.path.split(os.path.dirname(record))
@@ -495,8 +482,8 @@ def checked_main_repo(workspace_path: str, covered: Iterable[Mount], workspace_d
     if main == shared:
         raise MainRepoRefused(f"{refused}, whose repository is WORKSPACE_DIR itself; the "
                               "shared tree is never mounted as one repository")
-    allowed = [shared] if shared and _within(main, shared) else []
-    allowed += [root for root in roots if _within(main, root)]
+    allowed = [shared] if shared and box_seal._inside(main, shared) else []
+    allowed += [root for root in roots if box_seal._inside(main, root)]
     if not allowed:
         listed = ", ".join([*([shared] if shared else []), *roots]) or "none"
         raise MainRepoRefused(
@@ -530,11 +517,6 @@ def checked_main_repo(workspace_path: str, covered: Iterable[Mount], workspace_d
             f"{refused}, whose back-link file {back_link} does not name this workspace's "
             f"{workspace}/.git (a moved worktree: `git worktree repair` in it)")
     return main
-
-
-def _within(path: str, root: str) -> bool:
-    """Whether ``path`` is ``root`` or inside it; both absolute and normalized."""
-    return path == root or path.startswith(root.rstrip("/") + "/")
 
 
 def _is_relative_to(path: Path, other: Path) -> bool:

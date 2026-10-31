@@ -331,25 +331,43 @@ def _workspace(workspace_path: str, workspace_dir: str | None) -> str:
     return workspace_path
 
 
-def _no_outside_repo(fd: int, workspace_path: str) -> None:
-    """A git worktree's .git points at its main repository: a sealed box can't have that."""
+def read_gitdir(path: str, *, dir_fd: int | None = None, regular_only: bool = False,
+                ignore_read_errors: bool = False) -> str | None:
+    """Read only a .git file's first line (at most 4096 bytes), without following links or waiting.
+
+    None when opening fails or the line has no ``gitdir:`` prefix. Sealed boxes read relative
+    to their pinned workspace descriptor and require a regular file; legacy boxes attempt
+    non-regular reads too and treat read errors as no gitdir. Keep those existing policies
+    explicit at each caller. Descriptor/type/close errors are not read errors.
+    """
     try:
-        git = os.open(".git", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        git = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     except OSError:
-        return  # no .git, or a symlink (it dangles inside the box: nothing outside is mounted)
+        return None
     try:
-        if not stat.S_ISREG(os.fstat(git).st_mode):
-            return  # a .git folder: the repository is the workspace's own
-        first = os.read(git, 4096).decode("utf-8", "replace").splitlines()[:1]
+        if regular_only and not stat.S_ISREG(os.fstat(git).st_mode):
+            return None
+        try:
+            head = os.read(git, 4096)
+        except OSError:
+            if ignore_read_errors:
+                return None
+            raise
     finally:
         os.close(git)
-    if first and first[0].startswith("gitdir:"):
-        gitdir = first[0][len("gitdir:"):].strip()
-        if not _inside(os.path.normpath(os.path.join(workspace_path, gitdir)), workspace_path):
-            raise BoxProfileError(
-                f"the run's workspace {workspace_path} is a git worktree of a repository "
-                f"outside it ({gitdir}); a sealed box can't have the main repo's backing",
-            )
+    first = head.decode("utf-8", "replace").splitlines()[:1]
+    return first[0][len("gitdir:"):].strip() if first and first[0].startswith("gitdir:") else None
+
+
+def _no_outside_repo(fd: int, workspace_path: str) -> None:
+    """A git worktree's .git points at its main repository: a sealed box can't have that."""
+    gitdir = read_gitdir(".git", dir_fd=fd, regular_only=True)
+    if gitdir is not None and not _inside(
+            os.path.normpath(os.path.join(workspace_path, gitdir)), workspace_path):
+        raise BoxProfileError(
+            f"the run's workspace {workspace_path} is a git worktree of a repository "
+            f"outside it ({gitdir}); a sealed box can't have the main repo's backing",
+        )
 
 
 # -- declared data ---------------------------------------------------------------------------

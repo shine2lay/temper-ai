@@ -117,7 +117,7 @@ def _spawner(docker: FakeDocker, workspace_path: str | None, **kwargs) -> Docker
         template_container="worker-self",
         workspace_lookup=lambda _eid: workspace_path,
         run=docker,
-        **{"box_env": lambda: LISTED, **kwargs},
+        **{"box_env": lambda: LISTED, "worker_view": WorkerView(None), **kwargs},
     )
 
 
@@ -420,7 +420,7 @@ class TestBoxEnvAllowList:
         monkeypatch.delenv("TEMPER_CONFIG_DIR", raising=False)
         docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
         DockerSpawner(template_container="worker-self", workspace_lookup=lambda _e: str(workspace),
-                      run=docker).spawn("exec-1")
+                      run=docker, worker_view=WorkerView(None)).spawn("exec-1")
         names = {e.split("=", 1)[0] for e in _envs(_run_cmd(docker))}
         assert {"PATH", "TEMPER_DATABASE_URL", "TEMPER_RUN_CONTAINER"} <= names
         assert not {"SLACK_BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "INTERNAL_API_TOKEN"} & names

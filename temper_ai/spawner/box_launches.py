@@ -706,6 +706,7 @@ ENGINE_LAUNCHES: dict[str, str] = {
     "temper_ai/spawner/docker_spawner.py::DockerSpawner._deliver": _WORKER,
     "temper_ai/spawner/docker_spawner.py::DockerSpawner._docker_run": _WORKER,
     "temper_ai/spawner/docker_spawner.py::DockerSpawner._handle": _WORKER,
+    "temper_ai/spawner/docker_spawner.py::DockerSpawner._launch_container": _WORKER,
     "temper_ai/spawner/docker_spawner.py::_delivery_status": _WORKER,
     "temper_ai/spawner/subprocess_spawner.py::SubprocessSpawner.__init__": _WORKER,
     "temper_ai/spawner/subprocess_spawner.py::SubprocessSpawner._collect": _WORKER,

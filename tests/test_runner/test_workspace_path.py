@@ -62,7 +62,7 @@ def _spawn(install, workspace: str, *, eid="workspace-run"):
     docker = FakeDocker(answers={"inspect": [(0, install.inspect(), "")]})
     spawner = DockerSpawner(
         template_container="worker-self", workspace_lookup=lambda _eid: workspace,
-        profile_store=store, run=docker,
+        profile_store=store, run=docker, worker_view=box_seal.WorkerView(None),
     )
     return spawner, docker, store
 

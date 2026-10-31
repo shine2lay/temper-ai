@@ -60,7 +60,7 @@ from temper_ai.observability.models import Event
 from temper_ai.runner import admission as a
 from temper_ai.runner.context import RunnerContext
 from temper_ai.runner.models import WorkflowRun
-from temper_ai.shared.types import ExecutionContext
+from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 from tests.test_config.admission_cases import (
     NATIVE,
@@ -1741,9 +1741,51 @@ def bump_dispatch(b, binding):
 
 
 def test_v30_a_replacement_generation_becomes_current_mid_run(tmp_path, monkeypatch):
-    """V30: GENERATION at claim, claims 0; the stale worker binds nothing."""
-    case, counters, b = refused_in_run(tmp_path, monkeypatch, RefusalCode.GENERATION,
-                                       after_prepare=bump_dispatch)
+    """V30: the replacement wins before the stale worker's protected readiness action.
+
+    A replacement writer cannot commit while the old worker holds the same row's
+    FOR UPDATE fence. SQLite does not model that wait, so check the real action's
+    extent explicitly instead of letting an impossible test schedule look green.
+    """
+    inside_fence = False
+    replacement_writes = []
+    current_generation = a.DbAdmissionTransport.current_generation
+
+    def observed_generation(self, binding, action):
+        def while_locked(current, transaction):
+            nonlocal inside_fence
+            inside_fence = True
+            try:
+                return action(current, transaction)
+            finally:
+                inside_fence = False
+        return current_generation(self, binding, while_locked)
+
+    def replace_generation(b, binding):
+        replacement_writes.append(inside_fence)
+        assert not inside_fence, "replacement writer would wait on its caller's row fence"
+        bump_dispatch(b, binding)
+
+    monkeypatch.setattr(a.DbAdmissionTransport, "current_generation", observed_generation)
+    case, counters, b = control(tmp_path, monkeypatch)
+    checkpointed = CandidateUse.checkpointed
+    preparation_callbacks = []
+
+    def replace_before_readiness(use, node, context, result):
+        if node.name == "prepare":
+            preparation_callbacks.append((context.node_path, result.status))
+            assert context.node_path == case.names[0] and result.status is Status.COMPLETED
+            replace_generation(b, use.binding((case.names[0], "prepare")))
+        return checkpointed(use, node, context, result)
+
+    monkeypatch.setattr(CandidateUse, "checkpointed", replace_before_readiness)
+    assert b.submit() == EXECUTION
+    queue_and_claim(b)
+    exit_code = run_worker(b)
+    assert preparation_callbacks == [(case.names[0], Status.COMPLETED)]
+    assert replacement_writes == [False], "replacement must commit outside the old worker's row fence"
+    assert exit_code == 1 and row()["status"] == "failed"
+    assert RefusalCode.GENERATION.value in recorded_failures(), recorded_failures()
     assert (counters.n["claim"], counters.n["send"]) == (0, 0)
     assert stored_record()["readiness"] == [], "a stale generation wrote readiness"
 

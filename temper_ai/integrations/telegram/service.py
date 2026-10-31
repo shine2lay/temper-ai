@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.notify import service as notify
@@ -32,6 +32,9 @@ from temper_ai.integrations.telegram.config import ConfigWatcher
 from temper_ai.integrations.telegram.handlers import COMMANDS, SOURCE, Handler, describe
 from temper_ai.integrations.telegram.poller import Poller
 from temper_ai.integrations.telegram.sender import TelegramSender
+
+if TYPE_CHECKING:
+    from temper_ai.integrations.telegram.clarifications import ClarificationEdge
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,11 @@ def why_off() -> str | None:
 
 
 class TelegramService:
-    def __init__(self, client: TelegramClient | None = None, config: ConfigWatcher | None = None) -> None:
+    def __init__(self, client: TelegramClient | None = None, config: ConfigWatcher | None = None,
+                 clarifications: ClarificationEdge | None = None) -> None:
+        # Clarification answers are off unless an edge built on this client is
+        # passed in; the server passes none (clarifications.py).
+        self.clarifications = clarifications
         self.client = client or TelegramClient()
         self.config = config or ConfigWatcher()
         self.sender = TelegramSender(self.client, self.config)
@@ -101,7 +108,8 @@ class TelegramService:
         except TelegramError as exc:
             logger.info("Telegram: could not set the command menu: %s", exc)
         inbox.register(SOURCE, self.handler.handle_saved)
-        self.poller = Poller(self.client, self.handler.submit, accept=self.save, skip=self.save_skipped)
+        self.poller = Poller(self.client, self.handler.submit, accept=self.save, skip=self.save_skipped,
+                             clarifications=self.clarifications)
         self.poller.start()
         logger.info("Telegram: polling as @%s", self.bot.get("username"))
 

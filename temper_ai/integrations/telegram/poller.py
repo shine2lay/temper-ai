@@ -20,10 +20,13 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from temper_ai.integrations.telegram import store
 from temper_ai.integrations.telegram.client import TelegramClient, TelegramError
+
+if TYPE_CHECKING:
+    from temper_ai.integrations.telegram.clarifications import ClarificationEdge
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +47,14 @@ def _age_s(update: dict[str, Any], now: float) -> float:
 class Poller:
     def __init__(self, client: TelegramClient, submit: Any, *, timeout: int = POLL_TIMEOUT_S,
                  clock: Any = time.time, sleep: Any = None, accept: Any = None,
-                 skip: Any = None) -> None:
+                 skip: Any = None, clarifications: ClarificationEdge | None = None) -> None:
         """``accept(update)`` saves an update and returns what ``submit`` is
         handed (its event id), or None for a repeat; ``skip(update, why)``
         keeps a note of one too old to act on. Without ``accept`` updates
-        are handed on as they are."""
+        are handed on as they are. ``clarifications`` (off when None) makes
+        the getUpdates call and keeps clarification answers before the
+        offset moves; every other update goes on as before (clarifications.py)."""
+        self.clarifications = clarifications
         self.client = client
         self.submit = submit
         self.accept = accept
@@ -106,7 +112,11 @@ class Poller:
         """One getUpdates; returns how many updates were handed on."""
         stored = store.get_state(OFFSET_KEY)
         offset = int(stored) if stored else None
-        updates = self.client.get_updates(offset, timeout=self.timeout, allowed=ALLOWED)
+        batch = None
+        if self.clarifications is not None:
+            batch = self.clarifications.pull(self.client, offset, timeout=self.timeout, allowed=ALLOWED)
+        updates = batch.updates if batch is not None else self.client.get_updates(
+            offset, timeout=self.timeout, allowed=ALLOWED)
         self.last_poll_at = datetime.now(UTC).isoformat()
         self.conflict = False
         if self.last_error and "409" in self.last_error:
@@ -122,6 +132,8 @@ class Poller:
         for update in updates:
             age = _age_s(update, now)
             try:
+                if batch is not None and batch.claim(update):
+                    continue  # a clarification answer, kept before the offset moves
                 if age > STALE_S:
                     self.skipped += 1
                     logger.info("Telegram: skipped update %s (sent %.0f min ago)", update.get("update_id"),

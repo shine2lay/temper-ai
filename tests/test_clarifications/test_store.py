@@ -392,6 +392,7 @@ def test_keeping_an_answer_resumes_nothing():
     public = {name for name in vars(S.ClarificationStore) if not name.startswith("_")}
     assert public == {
         "merge_candidate", "save_presentation", "record_copy", "append_receipt", "load", "supplement", "mark_consumed",
+        "append_receipt_with_ingress", "protocol_view", "mark_current_consumed",
     }
     assert {table.name for table in M.TABLES} <= set(SQLModel.metadata.tables)
     assert all(table.name.startswith("clarification_") for table in M.TABLES)
@@ -1358,6 +1359,36 @@ def case_replay(m, db, mp):
     return db.store_of(m).append_receipt(receipt())
 
 
+@guard_case("replay.stream", ("scoped", "refused", "cross_context", "replay.stream", True, 0, 1))
+def case_scoped_replay(m, db, mp):
+    ready(db.store)
+    db.store.append_receipt(receipt())
+    bound = C.StreamKey("synthetic:scoped-guard", BRIEF_SHA)
+    presentation = present(stream=bound)
+    db.store.merge_candidate(caller(stream=bound))
+    db.store.save_presentation(presentation)
+    db.store.record_copy(binding(presentation))
+    collision = receipt(p=presentation)
+    store = db.store_of(m)
+    load, foreign_reads = store._load, []
+
+    def observed(session, stream_id):
+        if stream_id != bound.stream_id:
+            foreign_reads.append(stream_id)
+        return load(session, stream_id)
+
+    mp.setattr(store, "_load", observed)
+
+    def step(session):
+        result = store._append(session, collision, C.receipt_sha256(collision), restrict_replay_to_receipt_stream=True)
+        store._commit_receipt(session, result)
+        return result
+
+    result = store._attempt(step)
+    return ("scoped", result.result.status, result.result.code.value, result.guard,
+            result.result.stream_id == bound.stream_id, len(foreign_reads), len(db.rows(M.ClarificationReceipt)))
+
+
 def case_replay_gone(m, db, mp):
     ready(db.store)
     db.store.append_receipt(receipt())
@@ -1650,6 +1681,15 @@ def test_preserved_order_and_history_checks_have_semantic_bites(lite, monkeypatc
         changed = mutant(monkeypatch, ast.fix_missing_locations(drop.visit(ast.parse(SOURCE))))
         assert drop.dropped == 1
         assert lite.store_of(changed).load(STREAM).revision == 2
+
+
+def test_scoped_replay_guard_mutation_reads_foreign_history_specifically(lite, monkeypatch):
+    drop = DropGuard("replay.stream")
+    changed = mutant(monkeypatch, ast.fix_missing_locations(drop.visit(ast.parse(SOURCE))))
+    assert drop.dropped == 1
+    assert outcome(changed, case_scoped_replay, lite, monkeypatch) == (
+        "scoped", "refused", "changed_body", "replay.body", False, 1, 1,
+    )  # wrong stream/guard and exactly one forbidden history read, not a setup exception
 
 
 def test_every_guard_in_the_store_has_a_case():

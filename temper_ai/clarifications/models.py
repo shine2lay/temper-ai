@@ -1,7 +1,8 @@
 """What the clarification store keeps (Temper #207, plan #202 unit M3).
 
-Seven additive tables, written only through ``ClarificationStore``
-(store.py) and never edited by hand. Nothing here changes an existing table.
+The seven original tables plus delivery_models.py's three additive tables,
+written only through the clarification persistence component. New stream
+counters/version require a fresh schema here, not an implicit migration.
 
 ``clarification_streams``: one row per stream, a context namespace plus one
 original brief (``StreamKey``). Its ``revision`` is the compare-and-set
@@ -46,6 +47,7 @@ from datetime import datetime
 from sqlalchemy import Column, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+from temper_ai.clarifications.delivery_models import TABLES as DELIVERY_TABLES
 from temper_ai.shared.clock import utcnow
 
 __all__ = [
@@ -73,6 +75,10 @@ class ClarificationStream(SQLModel, table=True):
     presentation_count: int = 0
     copy_count: int = 0
     consumption_count: int = 0
+    send_count: int = 0
+    delivery_count: int = 0
+    ingress_count: int = 0
+    state_version: int = 0                       # all writes, including non-revision send changes
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -171,4 +177,4 @@ TABLES = tuple(
         ClarificationStream, ClarificationRevision, ClarificationReceipt, ClarificationRefusal,
         ClarificationPresentation, ClarificationCopy, ClarificationConsumption,
     )
-)
+) + DELIVERY_TABLES

@@ -14,7 +14,16 @@ export). Until then the store is tested with synthetic data only.
 
 ## What it keeps
 
-Seven additive, unlanded M3 tables; no changes to any pre-M3 table. The repair
+M4 B extends this same persistence component with three additive tables,
+`clarification_sends`, `clarification_deliveries`, `clarification_ingresses`, and
+stream `send_count`, `delivery_count`, `ingress_count`, `state_version` columns.
+See [delivery.md](delivery.md) for their complete data/integrity inventory,
+registration, fresh-schema requirement and unchanged D3/release boundary. It
+adds no migration, default binding, second answer cache or real-data grant.
+The seven original tables/API coexist on that fresh schema; existing copy IDs
+are never inferred to be verified send/delivery mappings.
+
+Seven additive, unlanded M3 tables; no changes to any pre-M3 table. The M3 repair
 adds only two required integrity columns within that unlanded schema:
 `clarification_receipts.result_sha256` and `clarification_copies.copy_sha256`.
 There is no migration or backfill. Old synthetic databases require recreation;

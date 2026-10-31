@@ -153,6 +153,14 @@ class SendResult:
     error: str | None = None
 
 
+class ReceiptApplicationRefusal(ContractRefusal):
+    """The durable store committed a diagnostic-only final refusal, including ingress.
+
+    Unlike a DB/policy outage this is safe to acknowledge as Not applied. Only
+    this subtype is caught by the edge; ordinary ContractRefusal still raises.
+    """
+
+
 class ResponderPolicy(Protocol):
     """Who may answer under a presentation's responder policy. Injected: no list lives in this module."""
 
@@ -515,7 +523,11 @@ class ClarificationEdge:
             code, guard = cast(RefusalCode, validation.code), cast(str, validation.guard)
             self._refuse(Refusal(ingress, code, guard, receipt, validation.receipt_sha256))
             return "refused"
-        held, new = self.store.keep_receipt(ingress, receipt, validation)
+        try:
+            held, new = self.store.keep_receipt(ingress, receipt, validation)
+        except ReceiptApplicationRefusal as refusal:
+            self._refuse(Refusal(ingress, refusal.code, refusal.guard, receipt, receipt_sha256(receipt)))
+            return "refused"
         if not new:
             try:
                 same = check_replay(held, receipt)

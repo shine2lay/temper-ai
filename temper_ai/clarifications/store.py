@@ -41,11 +41,11 @@ import hashlib
 import importlib.util
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from sqlalchemy import Engine, func, update
 from sqlalchemy.exc import IntegrityError
@@ -77,6 +77,12 @@ from temper_ai.clarifications.contracts import (
     receipt_sha256,
     validate_receipt,
 )
+from temper_ai.clarifications.delivery_models import (
+    ClarificationDelivery,
+    ClarificationIngress,
+    ClarificationSend,
+    IngressAppendResult,
+)
 from temper_ai.clarifications.models import (
     ClarificationConsumption,
     ClarificationCopy,
@@ -98,8 +104,12 @@ __all__ = [
     "load_foundation",
 ]
 
+if TYPE_CHECKING:
+    from temper_ai.clarifications.contracts import ReceiptValidation
+    from temper_ai.integrations.telegram.clarifications import PulledIngress, SendRecord
+
 T = TypeVar("T")
-_RowKind = Literal["receipt", "presentation", "copy", "consumption"]  # rows the stream row counts
+_RowKind = Literal["receipt", "presentation", "copy", "consumption", "send", "delivery", "ingress"]
 
 FOUNDATION_PATH = (
     Path(__file__).resolve().parents[2] / "configs" / "architecture" / "bin" / "context_profile_clarifications.py"
@@ -153,6 +163,18 @@ class StoredStream:
     def record(self) -> dict[str, Any]:
         """A fresh parse of the latest record."""
         return cast(dict[str, Any], json.loads(self.record_json))
+
+
+@dataclass(frozen=True, slots=True)
+class ProtocolView:
+    """Detached checked protocol state, including retired presentation membership."""
+
+    source_authority_ref: str
+    question_ids: frozenset[str]
+    answered: frozenset[str]
+    presentations: tuple[Presentation, ...]
+    copies: tuple[PresentationBinding, ...]
+    receipts: tuple[ActionReceipt, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +262,13 @@ def _shared_foundation() -> ModuleType:
     return load_foundation()
 
 
+@dataclass(frozen=True, slots=True)
+class _ReceiptOwner:
+    """Metadata-only ownership projection; replay routing must not read a foreign body."""
+
+    stream_id: str
+
+
 @dataclass(slots=True)
 class _Loaded:
     """One stream as read and checked inside one attempt."""
@@ -254,6 +283,8 @@ class _Loaded:
     copies: dict[str, frozenset[str]]            # message IDs by presentation ID
     consumed: frozenset[str]                     # consumption IDs
     consumed_revisions: frozenset[int]
+    sends: dict[str, SendRecord] = field(default_factory=dict)
+    deliveries: dict[tuple[str, str, str, str], str] = field(default_factory=dict)
 
     @property
     def stream_id(self) -> str:
@@ -365,7 +396,36 @@ class ClarificationStore:
         """
         _require(type(receipt) is ActionReceipt, RefusalCode.MALFORMED, "store.receipt_type", "append_receipt.receipt")
         digest = _encodable(lambda: receipt_sha256(receipt), "append_receipt.receipt")
-        return self._attempt(lambda session: self._append(session, receipt, digest))
+        return self._attempt(lambda session: self._append_committed(session, receipt, digest)).result
+
+    def append_receipt_with_ingress(
+        self, ingress: PulledIngress, receipt: ActionReceipt, validation: ReceiptValidation,
+    ) -> IngressAppendResult:
+        """Commit the current-state append decision and non-body pull linkage together.
+
+        Capture validation is evidence, not a command. Refused outcomes contain
+        no held receipt; callers must not describe them as successful replays.
+        """
+        from temper_ai.clarifications.delivery_store import append_with_ingress
+
+        return append_with_ingress(self, ingress, receipt, validation)
+
+    def protocol_view(self, stream: StreamKey) -> ProtocolView:
+        """Checked questions, receipts and ALL historical presentations/copies, without a write."""
+        stream_id = self._stream_id(stream, "protocol_view.stream")
+        return self._attempt(lambda session: self._protocol_view(self._existing(session, stream_id)))
+
+    def mark_current_consumed(
+        self, stream: StreamKey, *, revision: int, record_sha256: str,
+        consumption_id: str, original_brief: str,
+    ) -> bool:
+        """Exact kept ack first; otherwise require the current revision and exact identities."""
+        from temper_ai.clarifications.delivery_store import mark_current_consumed
+
+        return mark_current_consumed(
+            self, stream, revision=revision, record_sha256=record_sha256,
+            identity=consumption_id, original_brief=original_brief,
+        )
 
     def load(self, stream: StreamKey) -> StoredStream | None:
         """Recover a stream with history consistency checks. None: no authoritative/history rows remain.
@@ -392,7 +452,7 @@ class ClarificationStore:
 
     # --- transactions -------------------------------------------------------------
 
-    def _attempt(self, step: Callable[[Session], T]) -> T:
+    def _attempt(self, step: Callable[[Session], T], *, retry_revision_conflict: bool = True) -> T:
         """Run one step in a fresh session until it commits or decides; a lost race is decided again."""
         while True:
             with Session(self._engine, expire_on_commit=False) as session:
@@ -401,6 +461,8 @@ class ClarificationStore:
                 except _Retry:
                     session.rollback()
                 except ContractRefusal as refusal:
+                    if not retry_revision_conflict:
+                        raise
                     if refusal.code is not RefusalCode.REVISION_CONFLICT:
                         raise
                     session.rollback()
@@ -438,6 +500,10 @@ class ClarificationStore:
             presentation_count=count("presentation", col(stream.presentation_count)),
             copy_count=count("copy", col(stream.copy_count)),
             consumption_count=count("consumption", col(stream.consumption_count)),
+            send_count=count("send", col(stream.send_count)),
+            delivery_count=count("delivery", col(stream.delivery_count)),
+            ingress_count=count("ingress", col(stream.ingress_count)),
+            state_version=col(stream.state_version) + 1,
         ).execution_options(synchronize_session=False)
         if session.exec(statement).rowcount == 1:  # type: ignore[call-overload]
             return
@@ -582,10 +648,35 @@ class ClarificationStore:
         self._commit(session, lambda again: again.get(ClarificationCopy, key, populate_existing=True) is not None)
         return True
 
-    def _append(self, session: Session, receipt: ActionReceipt, digest: str) -> AppendResult:
+    def _append_committed(self, session: Session, receipt: ActionReceipt, digest: str) -> IngressAppendResult:
+        outcome = self._append(session, receipt, digest)
+        self._commit_receipt(session, outcome)
+        return outcome
+
+    def _commit_receipt(self, session: Session, outcome: IngressAppendResult) -> None:
+        result = outcome.result
+        if result.status == "refused":
+            self._commit(session, lambda again: self._diagnosed(
+                again, result.receipt_sha256, cast(RefusalCode, result.code), cast(str, outcome.guard),
+            ))
+        else:
+            self._commit(session, lambda again: self._moved(
+                again, result.stream_id, result.action_key, result.expected_revision,
+            ))
+
+    def _append(self, session: Session, receipt: ActionReceipt, digest: str, *,
+                restrict_replay_to_receipt_stream: bool = False) -> IngressAppendResult:
+        """Stage one append decision; scoped ingress never loads a foreign replay's body/history."""
         key = receipt.action.key
-        kept = session.get(ClarificationReceipt, key)
+        owner = session.exec(select(ClarificationReceipt.stream_id).where(
+            col(ClarificationReceipt.action_key) == key,
+        )).first()
+        kept = _ReceiptOwner(owner) if owner is not None else None
         if kept is not None:
+            if restrict_replay_to_receipt_stream and kept.stream_id != receipt.binding.stream_id:
+                bound = self._existing(session, receipt.binding.stream_id)
+                return self._refuse(session, receipt, digest, bound.stream_id, bound.revision,
+                                    RefusalCode.CROSS_CONTEXT, "replay.stream")
             return self._replay(session, kept.stream_id, receipt, digest)
         stream_id = receipt.binding.stream_id
         loaded = self._load(session, stream_id)
@@ -653,7 +744,7 @@ class ClarificationStore:
     def _apply(
         self, session: Session, loaded: _Loaded, receipt: ActionReceipt, digest: str, event: dict[str, Any],
         question: str, generation: int,
-    ) -> AppendResult:
+    ) -> IngressAppendResult:
         try:
             record = self._foundation.append_event(loaded.record, event)
         except self._foundation.ClarificationError:
@@ -676,13 +767,12 @@ class ClarificationStore:
         )
         row.result_sha256 = _saved_result_sha256(row)
         session.add(row)
-        self._commit(session, lambda again: self._moved(again, loaded.stream_id, key, expected))
-        return self._result(row)
+        return IngressAppendResult(self._result(row), row.guard, receipt, True)
 
     def _retain(
         self, session: Session, loaded: _Loaded, receipt: ActionReceipt, digest: str, code: RefusalCode, guard: str,
         question: str, generation: int,
-    ) -> AppendResult:
+    ) -> IngressAppendResult:
         """Keep a retained receipt, decided on the committed revision: the touch below is its compare-and-set."""
         key = receipt.action.key
         expected = loaded.revision
@@ -694,13 +784,12 @@ class ClarificationStore:
         )
         row.result_sha256 = _saved_result_sha256(row)
         session.add(row)
-        self._commit(session, lambda again: self._moved(again, loaded.stream_id, key, expected))
-        return self._result(row)
+        return IngressAppendResult(self._result(row), row.guard, receipt, True)
 
     def _refuse(
         self, session: Session, receipt: ActionReceipt, digest: str, stream_id: str, revision: int,
         code: RefusalCode, guard: str,
-    ) -> AppendResult:
+    ) -> IngressAppendResult:
         """Keep linkable diagnostics: row ID, receipt/action-key digests, stream ID, code, guard and time.
 
         No receipt JSON, answer text or sender column. The action key is a
@@ -714,10 +803,9 @@ class ClarificationStore:
             session.add(ClarificationRefusal(
                 receipt_sha256=digest, action_key=receipt.action.key, stream_id=stream_id, code=code.value, guard=guard,
             ))
-            self._commit(session, lambda again: self._diagnosed(again, digest, code, guard))
-        return result
+        return IngressAppendResult(result, guard, None, False)
 
-    def _replay(self, session: Session, stream_id: str, receipt: ActionReceipt, digest: str) -> AppendResult:
+    def _replay(self, session: Session, stream_id: str, receipt: ActionReceipt, digest: str) -> IngressAppendResult:
         loaded = self._load(session, stream_id)
         kept = None if loaded is None else loaded.receipts.get(receipt.action.key)
         if loaded is None or kept is None:
@@ -728,7 +816,21 @@ class ClarificationStore:
             if refusal.code is not RefusalCode.CHANGED_BODY:
                 raise
             return self._refuse(session, receipt, digest, stream_id, loaded.revision, refusal.code, refusal.guard)
-        return self._result(kept)
+        return IngressAppendResult(self._result(kept), kept.guard, loaded.parsed[kept.action_key], False)
+
+    def _protocol_view(self, loaded: _Loaded) -> ProtocolView:
+        return ProtocolView(
+            source_authority_ref=loaded.row.source_authority_ref,
+            question_ids=frozenset(loaded.question_ids()),
+            answered=frozenset(state["question_id"] for state in self._foundation.project_states(loaded.record)
+                               if state["state"] == "answered"),
+            presentations=tuple(loaded.presentations.values()),
+            copies=tuple(PresentationBinding(
+                stream_id=loaded.stream_id, question_id=p.question_id, presentation_id=p.presentation_id,
+                generation=p.generation, message_id=message_id,
+            ) for p in loaded.presentations.values() for message_id in sorted(loaded.copies.get(p.presentation_id, ()))),
+            receipts=tuple(loaded.parsed.values()),
+        )
 
     def _recover(self, session: Session, stream_id: str) -> StoredStream | None:
         loaded = self._load(session, stream_id)
@@ -782,6 +884,10 @@ class ClarificationStore:
         supplement = self._composed(loaded, revision, original_brief)
         if supplement.consumed:
             return False
+        return self._record_consumption(session, loaded, supplement)
+
+    def _record_consumption(self, session: Session, loaded: _Loaded, supplement: Supplement) -> bool:
+        stream_id, revision = loaded.stream_id, supplement.revision
         self._cas(session, stream_id, loaded.revision, adds="consumption")
         session.add(ClarificationConsumption(
             consumption_id=supplement.consumption_id, stream_id=stream_id, revision=revision,
@@ -824,7 +930,9 @@ class ClarificationStore:
 
     def _moved(self, session: Session, stream_id: str, key: str, expected: int) -> bool:
         """A clash is explained when another writer kept this key or moved the stream."""
-        kept = session.get(ClarificationReceipt, key, populate_existing=True) is not None
+        kept = session.exec(select(ClarificationReceipt.action_key).where(
+            col(ClarificationReceipt.action_key) == key,
+        )).first() is not None
         return kept or self._revision(session, stream_id) != expected
 
     @staticmethod
@@ -852,6 +960,9 @@ class ClarificationStore:
             "presentations": rows(ClarificationPresentation),
             "copies": rows(ClarificationCopy),
             "consumptions": rows(ClarificationConsumption),
+            "sends": rows(ClarificationSend),
+            "deliveries": rows(ClarificationDelivery),
+            "ingresses": rows(ClarificationIngress),
         }
 
     def _load(self, session: Session, stream_id: str) -> _Loaded | None:
@@ -862,6 +973,7 @@ class ClarificationStore:
         are read again before they are called damage.
         """
         row = session.get(ClarificationStream, stream_id, populate_existing=True)
+        version = None if row is None else row.state_version
         history = self._history(session, stream_id)
         if row is None:
             if not any(history.values()):
@@ -883,7 +995,17 @@ class ClarificationStore:
             raise ClarificationIntegrityError(
                 stream_id, "history.ahead", f"rows go past the stream row (revision {row.revision}, counts {seen[2:]})",
             )
-        return self._checked(row, history)
+        # Counts catch loss; version also fences changed attempts/representatives
+        # that do not change a count or revision between these separate SELECTs.
+        from temper_ai.clarifications.delivery_store import (
+            check_delivery_history,
+            check_read_version,
+        )
+
+        check_read_version(session, stream_id, version)
+        loaded = self._checked(row, history)
+        check_delivery_history(self, session, loaded, history)
+        return loaded
 
     def _checked(self, row: ClarificationStream, history: dict[str, list[Any]]) -> _Loaded:
         stream_id = row.stream_id

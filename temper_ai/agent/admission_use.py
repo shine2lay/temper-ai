@@ -129,7 +129,43 @@ class CandidateUse:
         self.closure = codec.closure(self.descriptor, tuple(
             codec.raw_record(canonical_bytes(r)) for r in immutable["raw_records"]))
         self.graph_sha256 = immutable["effective_graph_sha256"]
-        self.dispatch = DispatchIdentity(self.descriptor.value()["execution_uuid"],
+        # The expected side is a pure function of the immutable admitted bytes, so
+        # it is decoded once here. Re-decoding the whole descriptor on every
+        # per-node check made a run cubic in its graph size (#208 D2). Only
+        # immutable values are kept (FrozenJSON, bytes, str, tuples), never a
+        # shared mapping; every check still re-reads the ACTUAL objects.
+        expected = self.descriptor.value()
+        self._execution_uuid: str = expected["execution_uuid"]
+        self._workspace_path: str = expected["workspace_path"]
+        self._inputs_wire = expected["metadata_inputs_json"].encode()
+        self._graph_wire = canonical_bytes(expected["graph"])
+        self._workflow_json = FrozenJSON(expected["graph"]["workflow_json"].encode())
+        position_at: dict[tuple[str, ...], str] = {}
+        prepared: dict[tuple[str, ...], list[str]] = {}
+        self._root_policy: dict[str, FrozenJSON | None] = {}
+        for p in expected["positions"]:
+            position_at.setdefault(tuple(p["node_path"]), p["position_id"])
+            prepared.setdefault(tuple(p["preparation_path"]), []).append(p["position_id"])
+            policy = p["root_policy"]
+            self._root_policy.setdefault(
+                p["position_id"], None if policy is None else FrozenJSON(canonical_bytes(policy)))
+        self._prepared = {path: tuple(ids) for path, ids in prepared.items()}
+        # path -> (node_json, factory config_json, factory class_name, position_id)
+        self._expected: dict[tuple[str, ...], tuple[FrozenJSON, FrozenJSON | None, str | None, str | None]] = {}
+        for n in expected["graph"]["nodes"]:
+            factory = n["factory"]
+            self._expected.setdefault(tuple(n["path"]), (
+                FrozenJSON(n["node_json"].encode()),
+                FrozenJSON(factory["config_json"].encode()) if factory else None,
+                factory["class_name"] if factory else None,
+                position_at.get(tuple(n["path"]))))
+        self._scripts: dict[tuple[str, ...], tuple[bytes, str, bytes]] = {}
+        for s in expected["scripts"]:
+            self._scripts.setdefault(tuple(s["node_path"]), (
+                s["template_utf8"].encode(), s["template_sha256"], s["variables_json"].encode()))
+        # Readiness belongs to the CURRENT record, which checkpointed() replaces.
+        self._ready: tuple[object, dict[str, Any], dict[str, RootReadiness | None]] = (None, {}, {})
+        self.dispatch = DispatchIdentity(self._execution_uuid,
                                          value["dispatch"]["dispatch_nonce"],
                                          value["dispatch"]["running_attempt"])
         self.projection, self.transport, self.workflow = projection, transport, workflow
@@ -140,20 +176,30 @@ class CandidateUse:
         self._lock = RLock()
 
     def binding(self, path: tuple[str, ...]) -> CandidateInvocationBinding:
-        d = self.descriptor.value()
-        node = next((n for n in d["graph"]["nodes"] if tuple(n["path"]) == path), None)
-        if node is None:
+        try:
+            expected = self._expected.get(path)
+        except TypeError:  # unhashable: equals no admitted path
+            expected = None
+        if expected is None:
             refuse(RefusalCode.GRAPH)
-        position = next((p for p in d["positions"] if tuple(p["node_path"]) == path), None)
-        ready = next((r for r in self.record.value()["readiness"]
-                      if position is not None and r["position_id"] == position["position_id"]), None)
+        node_json, agent_json, _, position_id = expected
         return CandidateInvocationBinding(
-            self.descriptor, self.closure, self.graph_sha256, self.dispatch, path,
-            position["position_id"] if position else None,
-            FrozenJSON(node["node_json"].encode()),
-            FrozenJSON(node["factory"]["config_json"].encode()) if node["factory"] else None,
-            self.codec.readiness(canonical_bytes(ready)) if ready else None,
+            self.descriptor, self.closure, self.graph_sha256, self.dispatch, path, position_id,
+            node_json, agent_json, self._readiness(position_id) if position_id is not None else None,
         )
+
+    def _readiness(self, position_id: str) -> RootReadiness | None:
+        current = self.record
+        record, found, typed = self._ready
+        if record is not current:
+            found, typed = {}, {}
+            for r in current.value()["readiness"]:
+                found.setdefault(r["position_id"], r)
+            self._ready = (current, found, typed)
+        if position_id not in typed:
+            ready = found.get(position_id)
+            typed[position_id] = self.codec.readiness(canonical_bytes(ready)) if ready else None
+        return typed[position_id]
 
     def check_binding(self, binding: CandidateInvocationBinding) -> None:
         if type(binding) is not CandidateInvocationBinding or binding != self.binding(binding.node_path):
@@ -163,15 +209,14 @@ class CandidateUse:
                       *, parent: bool = False) -> None:
         self.check_binding(binding)
         expected_path = binding.node_path[:-1] if parent else binding.node_path
-        d = self.descriptor.value()
-        if (context.admission != binding or context.run_id != d["execution_uuid"]
+        if (context.admission != binding or context.run_id != self._execution_uuid
                 or context.node_path != ".".join(expected_path)
-                or context.workspace_path != d["workspace_path"]):
+                or context.workspace_path != self._workspace_path):
             refuse(RefusalCode.POSITION)
 
     def check_graph(self, *, binding: CandidateInvocationBinding, actual_graph: FrozenJSON) -> None:
         self.check_binding(binding)
-        if (actual_graph.wire != canonical_bytes(self.descriptor.value()["graph"])
+        if (actual_graph.wire != self._graph_wire
                 or digest(DigestDomain.GRAPH, actual_graph.wire) != self.graph_sha256):
             refuse(RefusalCode.GRAPH)
 
@@ -221,19 +266,18 @@ class CandidateUse:
         if (initial_outputs is not None or resume_metadata is not None
                 or getattr(context, "restore", None) is not None or getattr(context, "run_only", None) is not None):
             refuse(RefusalCode.MODE)
-        d = self.descriptor.value()
-        if context.run_id != d["execution_uuid"] or context.workspace_path != d["workspace_path"]:
+        if context.run_id != self._execution_uuid or context.workspace_path != self._workspace_path:
             refuse(RefusalCode.POSITION)
         if self._nodes is None:
             if context.node_path or not is_workflow:
                 refuse(RefusalCode.GRAPH)
-            if canonical_bytes(input_data) != d["metadata_inputs_json"].encode():
+            if canonical_bytes(input_data) != self._inputs_wire:
                 refuse(RefusalCode.PROTECTED)
             self._nodes = nodes
         elif not context.node_path or is_workflow:
             refuse(RefusalCode.MODE)
         objects = self._walk(self._nodes)
-        self._metadata(self.workflow, FrozenJSON(d["graph"]["workflow_json"].encode()))
+        self._metadata(self.workflow, self._workflow_json)
         actual = self.projection.graph(self.workflow, self._nodes)
         self.check_graph(binding=binding, actual_graph=actual)
         if self._objects and any(objects.get(p) is not n for p, n in self._objects.items()):
@@ -269,7 +313,7 @@ class CandidateUse:
         parent_path = tuple(context.node_path.split(".")) if context.node_path else ()
         if parent_path and current.node_path not in (parent_path, path):
             refuse(RefusalCode.POSITION)
-        if context.run_id != self.dispatch.execution_uuid or context.workspace_path != self.descriptor.value()["workspace_path"]:
+        if context.run_id != self.dispatch.execution_uuid or context.workspace_path != self._workspace_path:
             refuse(RefusalCode.POSITION)
         return binding
 
@@ -302,8 +346,7 @@ class CandidateUse:
         expected_class = {"script": ScriptAgent, "single_call": SingleCallAgent}.get(node.agent_config.get("type"))
         if factory is not create_agent or agent_class is not expected_class or expected_class is None:
             refuse(RefusalCode.FIELDS)
-        expected = next(n for n in self.descriptor.value()["graph"]["nodes"] if tuple(n["path"]) == binding.node_path)
-        if expected["factory"]["class_name"] != f"{expected_class.__module__}.{expected_class.__name__}":
+        if self._expected[binding.node_path][2] != f"{expected_class.__module__}.{expected_class.__name__}":
             refuse(RefusalCode.FIELDS)
         if binding.expected_agent is None:
             refuse(RefusalCode.FIELDS)
@@ -330,11 +373,11 @@ class CandidateUse:
 
     def check_script(self, *, binding: CandidateInvocationBinding, template: bytes, variables: FrozenJSON) -> None:
         self.check_binding(binding)
-        script = next((s for s in self.descriptor.value()["scripts"] if tuple(s["node_path"]) == binding.node_path), None)
+        script = self._scripts.get(binding.node_path)
         if (script is None or type(template) is not bytes
-                or script["template_utf8"].encode() != template
-                or hashlib.sha256(template).hexdigest() != script["template_sha256"]
-                or variables.wire != script["variables_json"].encode()):
+                or script[0] != template
+                or hashlib.sha256(template).hexdigest() != script[1]
+                or variables.wire != script[2]):
             refuse(RefusalCode.FIELDS)
 
     def script_inputs(self, agent: Any, context: ExecutionContext, template: object, variables: dict) -> dict:
@@ -355,7 +398,7 @@ class CandidateUse:
 
     def returned(self, node: Any, context: ExecutionContext, result: NodeResult) -> None:
         binding = self.before_node(node, context)
-        if any(tuple(p["preparation_path"]) == binding.node_path for p in self.descriptor.value()["positions"]):
+        if binding.node_path in self._prepared:
             # Only the scheduler calls here with the actual returned NodeResult.
             with self._lock:
                 if binding.node_path in self._results:
@@ -364,8 +407,8 @@ class CandidateUse:
 
     def checkpointed(self, node: Any, context: ExecutionContext, result: NodeResult) -> None:
         binding = self.before_node(node, context)
-        positions = [p for p in self.descriptor.value()["positions"] if tuple(p["preparation_path"]) == binding.node_path]
-        if not positions or result.status is not Status.COMPLETED:
+        position_ids = self._prepared.get(binding.node_path, ())
+        if not position_ids or result.status is not Status.COMPLETED:
             return
         with self._lock:
             saved = self._results.get(binding.node_path)
@@ -378,7 +421,7 @@ class CandidateUse:
                 verified = self.transport.verify_preparation(binding, result, context.checkpoint_service, transaction=transaction)
                 if (type(verified) is not VerifiedPreparation or verified.result is not result
                         or type(verified.receipts) is not tuple
-                        or sorted(r.value()["position_id"] for r in verified.receipts) != sorted(p["position_id"] for p in positions)):
+                        or sorted(r.value()["position_id"] for r in verified.receipts) != sorted(position_ids)):
                     refuse(RefusalCode.READINESS)
                 for receipt in verified.receipts:
                     receipt = self.codec.readiness(receipt.wire)
@@ -428,8 +471,10 @@ class CandidateUse:
             if receipt is None or receipt.value() not in checked.value()["readiness"]:
                 refuse(RefusalCode.READINESS)
             ready = receipt.value()
-            position = next(p for p in self.descriptor.value()["positions"] if p["position_id"] == binding.position_id)
-            policy = position["root_policy"]
+            if binding.position_id is None:
+                refuse(RefusalCode.POSITION)
+            policy_json = self._root_policy.get(binding.position_id)
+            policy = None if policy_json is None else policy_json.value()
             if (not ready["durable"] or policy is None or os.geteuid() != policy["worker_euid"]
                     or stat_identity(policy["path"], root.fd).wire != canonical_bytes(ready["root"])
                     or not stat.S_ISDIR(os.fstat(root.fd).st_mode)

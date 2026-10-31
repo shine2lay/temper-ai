@@ -20,6 +20,7 @@ from temper_ai.config.admission_contract import (
     RESERVED_KEY,
     AdmissionRecord,
     AdmissionRefused,
+    CandidateInvocationBinding,
     ContractCodec,
     DescriptorAuthority,
     FrozenJSON,
@@ -90,7 +91,10 @@ def submit_candidate(*, descriptor_wire: bytes, caller: Caller | None,
             or request.wire != d["request_options_json"].encode("utf-8")
             or (execution_id is not None and execution_id != d["execution_uuid"])):
         raise AdmissionRefused(RefusalCode.PROTECTED)
-    with get_session() as session:
+    # One explicitly begun transaction: T1's raw capture refuses a session that has
+    # not begun (it reads inside the caller's transaction), and capture + install
+    # must commit or roll back together.
+    with get_session() as session, session.begin():
         admission = bindings.prepare(descriptor, request=request, transaction=session)
         # prepare cannot substitute another descriptor, even if its factory bound
         # another transport authority by mistake.
@@ -371,6 +375,31 @@ class DbAdmissionTransport:
         transaction.flush()
         logger.info("Candidate admission readiness bound (compare-once)")
         return after
+
+    def current_generation(self, binding: CandidateInvocationBinding,
+                           action: Callable[[AdmissionRecord, object], T]) -> T:
+        """Run T3's use-site action on the locked, verified CURRENT record.
+
+        The run row stays locked for the whole action, and the action gets the
+        record held under that lock plus the same transaction, so readiness binds
+        and native claims compare against what is stored, never a stale copy. The
+        binding must name this exact running generation. An exception rolls back
+        metadata; it never undoes a filesystem claim the action already made.
+        """
+        if type(binding) is not CandidateInvocationBinding:
+            raise AdmissionRefused(RefusalCode.TYPE)
+        with get_session() as session:
+            _, held = self._locked_record(session, binding.dispatch.execution_uuid)
+            value = held.value()
+            immutable, dispatch = value["immutable"], value["dispatch"]
+            if (dispatch["phase"] != "running"
+                    or binding.dispatch.dispatch_nonce != dispatch["dispatch_nonce"]
+                    or binding.dispatch.running_attempt != dispatch["running_attempt"]
+                    or binding.descriptor.wire != immutable["descriptor_json"].encode("utf-8")
+                    or binding.closure.sha256 != immutable["raw_closure_sha256"]
+                    or binding.graph_sha256 != immutable["effective_graph_sha256"]):
+                raise AdmissionRefused(RefusalCode.GENERATION)
+            return action(held, session)
 
     def claim_if_current(self, current: AdmissionRecord, claim: Callable[[], T]) -> T:
         """Hold row fence through native EXCLUSIVE CLAIM ONLY; never a network send.

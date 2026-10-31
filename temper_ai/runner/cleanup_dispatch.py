@@ -1,7 +1,8 @@
 """End a held clean-ups wait and queue the work that follows it, in one commit.
 
-Two callers end a wait this way: a cleanup pass releasing it (Give up, the deadline), and a
-fork taking it over. Either both writes land or neither does.
+Callers end a wait this way: a cleanup pass releasing it (Give up, the deadline), the same
+release on an in-process server (which queues nothing), and a fork taking it over. Either
+every write lands or none does.
 """
 
 from __future__ import annotations
@@ -69,6 +70,24 @@ def queue_held_cleanups(execution_id: str, *, by: str,
     if ended is not None:
         logger.info("%s: released its held clean-ups with admitted work (by %s, paths=%s)",
                     execution_id, by, paths)
+    return ended
+
+
+def release_held_cleanups(execution_id: str, *, by: str,
+                          refuse_held: Callable[[dict], None] | None = None) -> dict | None:
+    """End the wait and queue nothing: an in-process server leaves the clean-ups to the
+    run's own box. ``refuse_held`` sees the ended hold inside the transaction, as in
+    queue_held_cleanups: whatever it raises keeps the wait as it was. Returns the released
+    hold, or None when it was not waiting.
+    """
+    def refuse_only(session: Session, ended: dict | None) -> None:
+        if ended is not None and refuse_held is not None:
+            refuse_held(ended)
+
+    ended = _end_hold_then_queue(execution_id, "released", by, refuse_only)
+    if ended is not None:
+        logger.info("%s: the wait on its clean-ups ended (released, by %s); nothing queued",
+                    execution_id, by)
     return ended
 
 

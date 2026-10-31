@@ -257,3 +257,69 @@ def test_the_refusal_code_mapping_has_a_bite(cleanup_rig, monkeypatch, caplog):
         test_late_candidate_change_before_cleanup_queue_keeps_the_hold(
             cleanup_rig, monkeypatch, "deadline", "row", "seam-entry", "unsupported_mode", caplog)
 
+
+# D9: an in-process server (the default mode) ends the wait and queues nothing, so the
+# queueing seam above never sees its release. The same in-transaction check must hold there.
+
+
+@pytest.fixture
+def inprocess_rig(cleanup_rig, monkeypatch):
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    monkeypatch.delenv("TEMPER_LANE", raising=False)
+    return cleanup_rig
+
+
+@pytest.mark.parametrize("entry", ["api", "deadline"])
+def test_inprocess_ordinary_cleanup_releases_and_queues_nothing(inprocess_rig, entry):
+    """Clean twin first: an ordinary in-process wait is released as before, nothing queued."""
+    rig = inprocess_rig
+    before = _seed(rig, "ordinary")
+    run_before = _row_fingerprint()
+    reply = _call(rig, entry)
+    if reply is not None:
+        assert reply.status_code == 200
+        assert reply.json() == {"execution_id": EXECUTION, "status": "queued", "cleanups": ["teardown"]}
+    ended = _hold_state(EXECUTION)
+    assert ended["status"] == "released"
+    assert ended["ended_by"] == ("give_up" if entry == "api" else "deadline")
+    assert ended["ended_at"] is not None
+    assert {key: value for key, value in ended.items() if key not in {"status", "ended_at", "ended_by"}} == {
+        key: value for key, value in before.items() if key not in {"status", "ended_at", "ended_by"}
+    }
+    assert rig.queued == []
+    assert _row_fingerprint() == run_before
+    assert holds.waiting(EXECUTION) is None
+    assert holds.due() == []
+
+
+@pytest.mark.parametrize("entry", ["api", "deadline"])
+@pytest.mark.parametrize("kind,code", [
+    ("admitted", "unsupported_mode"),
+    ("null-slot", "unsupported_mode"),
+    ("designated", "admission_required"),
+])
+def test_inprocess_candidate_refusal_preserves_the_entire_waiting_hold(
+    inprocess_rig, entry, kind, code, caplog,
+):
+    test_candidate_refusal_preserves_the_entire_waiting_hold(inprocess_rig, entry, kind, code, caplog)
+
+
+@pytest.mark.parametrize("entry", ["api", "deadline"])
+def test_inprocess_late_designation_after_the_hold_end_keeps_the_hold(
+    inprocess_rig, monkeypatch, entry, caplog,
+):
+    """Designation lands after the hold is ended inside the transaction: an early read of
+    the hold would miss it; the in-transaction check refuses and rolls the end back."""
+    test_late_candidate_change_before_cleanup_queue_keeps_the_hold(
+        inprocess_rig, monkeypatch, entry, "designation", "after-hold-end", "admission_required", caplog)
+
+
+@pytest.mark.parametrize("entry", ["api", "deadline"])
+def test_the_inprocess_designation_check_has_a_bite(inprocess_rig, monkeypatch, entry, caplog):
+    """Drop the held-workflow check from the in-process release: a designated hold is released."""
+    _mutate(monkeypatch, cleanup_dispatch, "release_held_cleanups", "refuse_held(ended)", "None")
+    with pytest.raises(AssertionError):
+        test_candidate_refusal_preserves_the_entire_waiting_hold(
+            inprocess_rig, entry, "designated", "admission_required", caplog)
+    assert _hold_state(EXECUTION)["status"] == "released" and inprocess_rig.queued == []
+

@@ -26,9 +26,10 @@ disclosure finding within its stated source-review scope. Architecture neverthel
 found that a refused cleanup can lose its waiting obligation (F1). D7 below
 reproduces it and repairs it on the shared cleanup transaction that #228 landed
 (`369d1af0`); the branch was rebased onto that master. D8 adds the fork takeover
-repair Architecture's #375 assigned to this work (FWS375-FORK-TAKEOVER). Both
-were reproduced failing first on the rebased tree and pass after the repair, with
-a bite for each guard. Old green checks are not a pass for the repaired head or
+repair Architecture's #375 assigned to this work (FWS375-FORK-TAKEOVER). D9 closes
+the in-process branch of the same cleanup callers, which the rebind had left without
+the held-workflow check. Each was reproduced failing first on the rebased tree and
+passes after the repair, with a bite for each guard. Old green checks are not a pass for the repaired head or
 permission to land: it needs the normal exact-head gates, Architecture's focused
 re-review and Security's applicable delta review.
 
@@ -105,13 +106,17 @@ head, not evidence that the additional D7 controls or changed-head checks pass.
 The composed branch is `temper-208-admission-v1`: the seven commits above
 cherry-picked in that order onto current master, then V1's composition and
 follow-up repair commits carrying the test file, this document and the edits listed
-below. Each delivered cherry-pick's patch-id is
-identical to the delivered commit's, so the pieces arrived unchanged. The #192
-contract was not on master before this branch; it lands with it. Master moved
-several times while V1 was built; each time the branch was rebased and the
-patch-ids checked again. The last rebase (2026-10-31) put it on `369d1af0`, which
-carries #228's shared cleanup transaction; the adaptations that rebase needed are
-listed under [Rebind adaptations](#rebind-adaptations-onto-228). The exact base, head and tree are recorded with the land
+below. The #192 contract was not on master before this branch; it lands with it.
+Master moved several times while V1 was built; each time the branch was rebased and
+the patch-ids checked again. Until the last rebase every delivered cherry-pick's
+patch-id matched the delivered commit's. On 2026-10-31 the branch was rebased onto
+`369d1af0`, which carries #228's shared cleanup transaction. That rebase changed T2's
+patch where T2 meets that transaction in `api/routes.py` and `runner/queue.py`; the
+other six delivered commits still match their delivered patch-ids. The resolutions and the test
+adaptations are listed under [Rebind adaptations](#rebind-adaptations-onto-228).
+Master then moved once more, to `58311511`, which changes only two EPD test files (a
+fix for a test race with Git's background maintenance, the one failure hosted CI
+showed on the previous head). The rebase onto it changed no patch. The exact base, head and tree are recorded with the land
 request, not here, because this document is part of the commit it describes.
 
 ## Owned by V1
@@ -441,8 +446,9 @@ refusal and the sweeper logged it as an unexplained error.
   deadline sweeper logs that 409 and leaves the wait for its next sweep.
 
 T2's early fences (`_release_cleanups` and the start of `_queue_cleanup_pass`) are
-kept: they refuse before any write, also for holds with no paths and in-process
-mode, where nothing is queued.
+kept: they refuse a protected run row before any write, in every mode. The held
+workflow is checked inside the release, including for holds with no paths; D9 does
+the same for the in-process branch, where nothing is queued.
 
 **Result: hit.** All 14 controls pass. Bites: dropping the `refuse_held` call
 releases a designated hold for both callers (2 cases); dropping the refusal's 409
@@ -494,9 +500,64 @@ and in the Pi lane, stale holds, and the WORKSPACE_DIR agreement between server 
 worker. A refused fork still leaves the checkpoints it copied under its own unused
 id, as any refused fork queue did before.
 
+### D9: the rebind left the in-process cleanup branch without the held-workflow check (fixed)
+
+**Evidence.** Delivered T2 refused a cleanup pass at the start of
+`_queue_cleanup_pass` by the held workflow, in every execution mode. #228 made that
+function take the run id, so the rebind kept T2's entry fence for the run row only,
+and D7 moved the held-workflow check into `queue_held_cleanups`' transaction. The
+in-process branch (the default mode, no Pi lane) never reaches that seam: it ended
+the wait with `holds.end` and no check. On an in-process server, Give up or the
+deadline therefore released a designated legacy hold. Found in self-review of the
+rebased T2 patch, before review.
+
+**Hypothesis H-V1-INPROCESS-CLEANUP-1.** End the in-process wait through the same
+shared transaction with the same check, queueing nothing. Expected: a designated
+in-process hold, through Give up or the deadline, is refused with
+`admission_required`, keeps every field and stays due for the next sweep; a
+designation that lands after the hold is ended inside the transaction is refused the
+same way; an ordinary in-process wait is released as before, nothing queued. A
+released or changed designated hold, or a changed ordinary twin, proves it wrong.
+
+**Failing first.** 12 in-process cases were added to D7's file (10 controls and 2
+bite cases), reusing its rig and test bodies. On `96f263bf`'s production source the selected file ran **23 passed, 4
+failed**, with the 2 bite cases deselected: designated Give up returned 200, not 409;
+the designated deadline sweep logged no refusal; both late-designation cases did
+the same. The ordinary twins and the admitted/null-slot cases passed: the row fence
+already refuses them before any write.
+
+**The repair.** `cleanup_dispatch.release_held_cleanups` ends the wait through
+`_end_hold_then_queue` with a step that only refuses, and the in-process branch calls
+it with `_refuse_designated_hold` under `_queue_refusals_as_http`. It is the third
+caller of the one transaction, beside the cleanup pass and the fork.
+
+**Result: hit.** All 12 cases pass, with D7's file, the writer scan and #228's
+ordinary in-process twin (`test_cleanup_non_dispatch_cases_keep_existing_behavior`):
+119 passed. Bite: dropping the refusal from `release_held_cleanups` releases a
+designated hold through both Give up and the deadline (2 cases). Side effect, stated
+plainly: a database error while ending an in-process wait now raises (500, or the
+sweeper's log) instead of reading as "not holding any clean-ups", as #228 already made
+the queueing branch do.
+
 ### Rebind adaptations onto #228
 
-The rebase onto `369d1af0` needed these test changes; none weakens a check:
+T2's source met #228's in four places. Each resolution keeps both changes, with
+T2's fence before any write:
+
+- `_queue_run`: #228's unsafe workspace stays a 400 and T2's refusal stays a 409
+  with its code (both now said by `_queue_refusals_as_http`, D7).
+- `_queue_cleanup_pass`: #228 made it take the run id and release the hold inside
+  its own transaction. T2's entry fence there still refuses a protected run row
+  before any write. The held workflow, which T2 read from the already-ended hold, is
+  checked inside the release transaction instead: D7 for the queueing branch, D9 for
+  the in-process branch.
+- `_start_resume`: T2's fence comes first, then #228's hold handling for both
+  branches, unchanged.
+- `queue_run_in`: #228's workspace check runs before T2's reserved-extra and
+  protected-row refusals. Both refuse before any write; with both faults present,
+  the 400 now comes before the 409.
+
+The rebase also needed these test changes; none weakens a check:
 
 - T2's `test_actual_entries_refuse_reserved_row_before_legacy_loading`
   (`cleanup-execution`) calls `_queue_cleanup_pass(EXECUTION, by="deadline")`: #228
@@ -669,7 +730,7 @@ Every expected outcome below is the matrix's own text; no expected value was tak
 from the engine or from A1's compiler. Codes are the contract's fixed refusal codes.
 "Before any row is read" means the contract refused the wire, so the capture never
 started. Results below describe the reviewed `1111627c` composition. The repaired
-head (D7, D8, the rebase onto `369d1af0`) renews them through the normal full
+head (D7, D8, D9, the rebases onto `369d1af0` and `58311511`) renews them through the normal full
 gate and the hosted checks; it does not inherit these passes.
 
 | Case | Expected (matrix) | Controls and code | Result |
@@ -752,6 +813,11 @@ V1 records this gap rather than inventing a registry, a key or an authority.
 - New behaviour reaches a run only when its row carries the reserved
   `config_admission` slot **and** the caller injected bindings. No ordinary run has
   either, so ordinary runs are unchanged; the ordinary suite must pass on the same head.
+- Two repairs change ordinary paths. A fork now takes its source's waiting
+  clean-ups over in the same commit that queues it: a failed takeover queues no
+  fork, and a wait that ended while the fork was being set up refuses it with 409
+  (D8). A database error while ending an in-process wait now reads as an error
+  rather than as "not holding any clean-ups" (D9).
 - The opt-in path supports only the external-db-fresh mode; every other mode refuses.
 - There is no SQL schema migration, but candidate admissions create protected
   stored metadata. Rollback must retain every admission record and consumed claim,

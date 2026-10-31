@@ -45,7 +45,9 @@ def _inspect_json(**overrides) -> str:
     info = {
         "Config": {
             "Image": "temper-ai-worker",
-            "Env": ["TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1", "PATH=/usr/bin"],
+            # A declaration, not permission inferred from the row's requested workspace.
+            "Env": ["TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1", "PATH=/usr/bin",
+                    "WORKSPACE_DIR=/tmp"],
         },
         "HostConfig": {"ExtraHosts": ["host.docker.internal:host-gateway"]},
         "Mounts": [
@@ -113,7 +115,7 @@ def _spawner(docker: FakeDocker, workspace_path: str | None, **kwargs) -> Docker
         template_container="worker-self",
         workspace_lookup=lambda _eid: workspace_path,
         run=docker,
-        **{"box_env": lambda: LISTED, **kwargs},
+        **{"box_env": lambda: LISTED, "worker_view": WorkerView(None), **kwargs},
     )
 
 
@@ -173,7 +175,7 @@ class TestRunContainer:
         env = ["PATH=/usr/bin", "GITHUB_APP_ID=1234", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak",
                "GITHUB_APP_WEBHOOK_SECRET=whsec", "GITHUB_APP_CLIENT_SECRET=cs"]
         info = json.loads(_inspect_json())[0]
-        info["Config"]["Env"] = env
+        info["Config"]["Env"] = [*env, "WORKSPACE_DIR=/tmp"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert set(_envs(_run_cmd(docker))) == {
@@ -182,7 +184,8 @@ class TestRunContainer:
     def test_github_app_s_key_stays_out_even_when_inheriting(self, workspace, monkeypatch):
         monkeypatch.setenv("TEMPER_BOX_ENV", "inherit")
         info = json.loads(_inspect_json())[0]
-        info["Config"]["Env"] = ["PATH=/usr/bin", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak"]
+        info["Config"]["Env"] = ["PATH=/usr/bin", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak",
+                                 "WORKSPACE_DIR=/tmp"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert not any(e.startswith("GITHUB_APP_PRIVATE_KEY=") for e in _envs(_run_cmd(docker)))
@@ -194,7 +197,7 @@ class TestRunContainer:
         monkeypatch.setenv("TEMPER_BOX_ENV", mode)
         info = json.loads(_inspect_json())[0]
         info["Config"]["Env"] = ["PATH=/usr/bin", "TEMPER_PI_AGENT=1",
-                                 "TEMPER_PI_BOX_CONFIG=/home/x/pi/box.json"]
+                                 "TEMPER_PI_BOX_CONFIG=/home/x/pi/box.json", "WORKSPACE_DIR=/tmp"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert not any(e.startswith("TEMPER_PI_") for e in _envs(_run_cmd(docker)))
@@ -275,7 +278,8 @@ class TestRunContainer:
     def test_the_template_is_read_again_for_every_run(self, workspace):
         """A template container recreated with a new key or image passes it
         to the next run, without restarting the worker."""
-        recreated = _inspect_json(Config={"Image": "temper-ai-server:new", "Env": ["KEY=new"]})
+        recreated = _inspect_json(Config={"Image": "temper-ai-server:new",
+                                          "Env": ["KEY=new", "WORKSPACE_DIR=/tmp"]})
         docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), ""), (0, recreated, "")]})
         spawner = _spawner(docker, str(workspace))
         spawner.spawn("exec-1")
@@ -343,7 +347,7 @@ def _with_env(env: list[str]) -> str:
 SERVER_ENV = [
     "PATH=/usr/bin", "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1",
     "SLACK_BOT_TOKEN=xoxb-fake", "TELEGRAM_BOT_TOKEN=tg-fake", "INTERNAL_API_TOKEN=it-fake",
-    "TEMPER_RUN_CONTAINER=temper-ai-server-1",
+    "TEMPER_RUN_CONTAINER=temper-ai-server-1", "WORKSPACE_DIR=/tmp",
 ]
 
 
@@ -398,7 +402,7 @@ class TestBoxEnvAllowList:
         assert envs == {
             "PATH=/usr/bin", "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1",
             "SLACK_BOT_TOKEN=xoxb-fake", "TELEGRAM_BOT_TOKEN=tg-fake", "INTERNAL_API_TOKEN=it-fake",
-            "TEMPER_BOX_ENV=inherit", "TEMPER_RUN_CONTAINER=temper-run-exec-1",
+            "TEMPER_BOX_ENV=inherit", "TEMPER_RUN_CONTAINER=temper-run-exec-1", "WORKSPACE_DIR=/tmp",
         }
         assert any(r.levelno == logging.WARNING and "inherit" in r.getMessage() for r in caplog.records)
 
@@ -413,7 +417,7 @@ class TestBoxEnvAllowList:
         monkeypatch.delenv("TEMPER_CONFIG_DIR", raising=False)
         docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
         DockerSpawner(template_container="worker-self", workspace_lookup=lambda _e: str(workspace),
-                      run=docker).spawn("exec-1")
+                      run=docker, worker_view=WorkerView(None)).spawn("exec-1")
         names = {e.split("=", 1)[0] for e in _envs(_run_cmd(docker))}
         assert {"PATH", "TEMPER_DATABASE_URL", "TEMPER_RUN_CONTAINER"} <= names
         assert not {"SLACK_BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "INTERNAL_API_TOKEN"} & names

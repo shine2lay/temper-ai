@@ -60,6 +60,16 @@ from temper_ai.pi_agent.pins import TAG_RE, file_sha256, tree_sha256
 from temper_ai.pi_agent.rpc import Rpc
 from temper_ai.pi_agent.search_tools import PINS as SEARCH_PINS
 from temper_ai.pi_agent.search_tools import search_tool_problems
+from temper_ai.spawner.allowed_mounts import (
+    Bind,
+    MountPolicy,
+    MountRefused,
+    check_bind_sources,
+    check_launch,
+)
+from temper_ai.spawner.allowed_mounts import (
+    inside_roots as inside_roots,
+)
 
 ASSETS = Path(__file__).parent / "assets"
 PROBE_DIR = ASSETS / "temper-box"
@@ -398,14 +408,6 @@ class BoxConfig:
     @property
     def sockets(self) -> Path:
         return Path(self.socket_root or f"/run/user/{os.getuid()}/temper-pi")
-
-
-def inside_roots(path: str | os.PathLike[str], roots: Sequence[str]) -> bool:
-    """True when ``path``, links resolved, is one of ``roots`` or inside one."""
-    if not path or not os.path.isabs(path):
-        return False
-    real = Path(os.path.realpath(path))
-    return any(real.is_relative_to(os.path.realpath(root)) for root in roots if root)
 
 
 CLI_REL = "pi/dist/bundle/cli.js"
@@ -946,8 +948,8 @@ class WorkerBox:
             shutil.rmtree(tmp, ignore_errors=True)
         return dst
 
-    def mounts(self) -> list[tuple[str, str, bool]]:
-        """(source, target, writable)."""
+    def _bind_declarations(self) -> tuple[Bind, ...]:
+        """Fixed targets/modes from config and sealed copies, independent of final argv."""
         assert self.sock_dir is not None
         assets = self._assets_copy().resolve()
         mounts = [
@@ -966,7 +968,11 @@ class WorkerBox:
         if self.cfg.mode == "rehearsal" and ca_pem:
             mounts.append((str(Path(ca_pem).resolve()),
                            "/box-ca/ca.pem", False))
-        return mounts
+        return tuple(Bind(src, dst, not writable) for src, dst, writable in mounts)
+
+    def mounts(self) -> list[tuple[str, str, bool]]:
+        """Compatibility API: (source, target, writable), from the config declarations."""
+        return [(b.source, b.target, not b.read_only) for b in self._bind_declarations()]
 
     def env(self) -> dict[str, str]:
         env = {
@@ -1028,13 +1034,12 @@ class WorkerBox:
         """Every bind source inside the box config's roots (SW-44), whenever roots are set. In
         the Pi lane they always are: its preflight refuses a run before any box without them
         (runner/pi_preflight.py)."""
-        if not self.cfg.roots:
-            return
-        outside = sorted(dst for src, dst, _w in mounts if not inside_roots(src, self.cfg.roots))
-        if outside:
+        try:
+            check_bind_sources(mounts, self.cfg.roots)
+        except MountRefused as exc:
             raise BoxError("bind_source_outside_roots",
                            "the box would bind a host folder outside the Pi roots (for "
-                           + ", ".join(outside) + "); the box was not created")
+                           + ", ".join(exc.targets) + "); the box was not created") from None
 
     def _docker(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess:
         env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
@@ -1130,7 +1135,19 @@ class WorkerBox:
             (self.pdir / "state" / stale).unlink(missing_ok=True)
         self._write_agent_dir()
         self._open_sockets()
-        made = self._docker(*self.create_args(command)[1:])
+        # Pi's roots are identity-mapped host paths in pi-worker. Empty roots retain the
+        # historical standalone compatibility, not source-root protection; live preflight
+        # still requires them. Freeze config declarations before the argv builder runs.
+        policy = MountPolicy(fixed=self._bind_declarations(),
+                             source_roots=tuple(self.cfg.roots) if self.cfg.roots else None)
+        args = self.create_args(command)
+        try:
+            check_launch(args, policy, site="pi_create")
+        except MountRefused as exc:
+            code = ("bind_source_outside_roots" if exc.category == "source_outside_roots"
+                    else "bind_launch_refused")
+            raise BoxError(code, str(exc)) from None
+        made = self._docker(*args[1:])
         if made.returncode != 0:
             raise BoxError("box_create_failed", "the worker container could not be created")
         self.created = True

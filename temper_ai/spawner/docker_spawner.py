@@ -117,6 +117,13 @@ from temper_ai.spawner import (
     box_seal,
     box_view,
 )
+from temper_ai.spawner.allowed_mounts import (
+    Bind,
+    MountPolicy,
+    MountRefused,
+    RootBind,
+    check_launch,
+)
 from temper_ai.spawner.base import Spawner, SpawnerBusy, SpawnerError
 from temper_ai.spawner.box_profile import BoxProfileError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
@@ -760,8 +767,9 @@ class DockerSpawner(Spawner):
             login_file_origin(self.inherited_mounts(template), self._login_file)))
         record = self._legacy_record(execution_id, workspace_path, template, env, settings)
         extra = box_profile.env_for(record["doc"]) if record else None
+        policy = self._legacy_bind_policy(workspace_path, template)
         cmd = self.run_command(execution_id, workspace_path, template, env, extra_env=extra)
-        result = self._docker_run(cmd)
+        result = self._launch_container(cmd, policy, site="legacy")
         return self._handle(execution_id, result, self._image_override or template.image, record)
 
     def _wait_for_old_box_to_go(self, execution_id: str) -> None:
@@ -986,6 +994,9 @@ class DockerSpawner(Spawner):
             )
             record = box_profile.record_for(doc, previous)
             box_env += [f"{k}={v}" for k, v in box_profile.env_for(doc).items()]
+            # Snapshot the pinned grants, not the serializer's eventual arguments.
+            policy = MountPolicy(fixed=tuple(Bind(g.source, g.target, g.read_only)
+                                             for g in plan.grants))
             cmd = self.sealed_command(execution_id, template, box_env, plan, interpreter)
             leaked = secrets_in_command(cmd, delivered)
             if leaked:
@@ -995,7 +1006,7 @@ class DockerSpawner(Spawner):
                 )
             self._store.save(execution_id, record, previous.generation if previous else None)
             logger.info("Run container %s: %s", name, box_profile.summary(doc))
-            result = self._docker_run(cmd)
+            result = self._launch_container(cmd, policy, site="sealed")
         if oneshot and result.returncode == 0:
             record = self._deliver(execution_id, doc, record, delivered, template.user,
                                    interpreter)
@@ -1099,13 +1110,8 @@ class DockerSpawner(Spawner):
             if numeric:
                 ids = (int(numeric.group(1)), int(numeric.group(2)))
             else:
-                result = self._docker_run([
-                    self._docker, "run", "--rm", "--network", "none", "--read-only",
-                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-                    "--label", "temper.role=probe", "--user", template.user,
-                    "--entrypoint", interpreter, template.image_id,
-                    "-I", "-S", "-c", "import os; print(os.getuid(), os.getgid())",
-                ])
+                cmd = self._uid_probe_command(template, interpreter)
+                result = self._launch_container(cmd, MountPolicy(), site="uid_probe")
                 found = re.fullmatch(r"\s*(\d+) (\d+)\s*", result.stdout or "")
                 if result.returncode != 0 or not found:
                     raise BoxProfileError(
@@ -1117,6 +1123,16 @@ class DockerSpawner(Spawner):
                 raise BoxProfileError("a oneshot box's user is root; refused")
             self._box_ids_seen[key] = ids
         return self._box_ids_seen[key]
+
+    def _uid_probe_command(self, template: Template, interpreter: str) -> list[str]:
+        """Image-only uid lookup: no host mounts or inherited template arguments."""
+        return [
+            self._docker, "run", "--rm", "--network", "none", "--read-only",
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--label", "temper.role=probe", "--user", template.user,
+            "--entrypoint", interpreter, template.image_id,
+            "-I", "-S", "-c", "import os; print(os.getuid(), os.getgid())",
+        ]
 
     def _engine_check(self, plan: box_seal.SealPlan, view: box_seal.WorkerView) -> dict:
         """Refuse code that starts programs from places the gate hasn't classified (G11).
@@ -1378,6 +1394,34 @@ class DockerSpawner(Spawner):
                                        main_repo_roots=self.main_repo_roots(template))
         return _claude_homes(inherited), mounts
 
+    def _legacy_bind_policy(self, workspace_path: str, template: Template) -> MountPolicy:
+        """Independent template/config declarations; .git selects, never grants permission."""
+        inherited = tuple(self.inherited_mounts(template))
+        fixed = tuple(Bind(m.source, m.target, m.read_only) for m in inherited)
+        if not workspace_path:
+            return MountPolicy(fixed=fixed)
+        workspace_dir = template.env_value("WORKSPACE_DIR")
+        roots = self.main_repo_roots(template)
+        workspace_roots = (workspace_dir,) if workspace_dir else ()
+        view = self._worker_view()
+
+        def own_workspace(bind: Bind) -> bool:
+            return (bind.source == workspace_path and bind.target == bind.source
+                    and not bind.read_only
+                    and box_seal._inside(bind.source, workspace_dir or ""))
+
+        def main_repository(bind: Bind) -> bool:
+            if bind.target != bind.source or bind.read_only:
+                return False
+            # Preserve E7's lexical-root, no-symlink and backlink checks as a separate
+            # validation. The RootBind fence above it uses only config, never this .git.
+            return bind.source == checked_main_repo(workspace_path, inherited, workspace_dir, roots)
+
+        return MountPolicy(fixed=fixed, rooted=(
+            RootBind(workspace_roots, own_workspace, view.canonical_host_path),
+            RootBind(workspace_roots + roots, main_repository, view.canonical_host_path),
+        ))
+
     def run_command(
         self, execution_id: str, workspace_path: str, template: Template,
         env: BoxEnvSplit | None = None, extra_env: dict[str, str] | None = None,
@@ -1427,6 +1471,17 @@ class DockerSpawner(Spawner):
         return limits
 
     # -- Plumbing -------------------------------------------------------------
+
+    def _launch_container(self, cmd: list[str], policy: MountPolicy, *,
+                          site: str) -> subprocess.CompletedProcess:
+        """Last check before run/create; inspection and existing-container exec bypass none."""
+        try:
+            check_launch(cmd, policy, site=site)
+        except MountRefused as exc:
+            logger.warning("Container bind refused: site=%s category=%s", site, exc.category)
+            error = SpawnerError if site == "legacy" else BoxProfileError
+            raise error(str(exc)) from None
+        return self._docker_run(cmd)
 
     @staticmethod
     def _name_for(handle: ProcessHandle) -> str:

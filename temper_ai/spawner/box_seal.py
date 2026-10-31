@@ -110,6 +110,73 @@ class WorkerView:
             f"{host_path} is not visible to the worker, so it can't be pinned for a sealed box",
         )
 
+    def canonical_host_path(self, host_path: str) -> str:
+        """Resolve links in Docker's host namespace, not in the worker's namespace.
+
+        Inspected bind roots are namespace anchors: their host ancestors are not visible
+        here. Below an anchor, read each link through this worker's mapping, interpret its
+        text as a HOST path, then map again. Absolute worker-only links, hidden paths and
+        mount-shadowed views fail closed. This does not pin links or prove host ancestors.
+        """
+        if self.binds is None:
+            return os.path.realpath(host_path)
+        binds = self.binds
+
+        def visible_path(current: str) -> str:
+            match = next(((s, t) for s, t in binds
+                          if current == s or current.startswith(s.rstrip("/") + "/")), None)
+            if match is None:
+                raise ValueError("host path is not visible in the worker's bind mapping")
+            source, target = match
+            if os.path.realpath(target) != target:
+                raise ValueError("worker bind anchor is not a plain path")
+            suffix = current[len(source):].lstrip("/")
+            local = os.path.join(target, suffix) if suffix else target
+            # A nested worker mount may hide the host object we wanted to inspect.
+            visible = next(((s, t) for s, t in sorted(binds, key=lambda b: -len(b[1]))
+                            if local == t or local.startswith(t.rstrip("/") + "/")), None)
+            if visible is None or os.path.normpath(os.path.join(
+                visible[0], local[len(visible[1]):].lstrip("/")
+            )) != current:
+                raise ValueError("host path is shadowed in the worker")
+            return local
+
+        pending = host_path
+        links = 0
+        while True:
+            source = next((s for s, _ in binds
+                           if pending == s or pending.startswith(s.rstrip("/") + "/")), None)
+            if source is None:
+                raise ValueError("host path is not visible in the worker's bind mapping")
+            parts = Path(pending).relative_to(source).parts
+            current = source
+            anchor = os.lstat(visible_path(current))
+            if parts and not stat.S_ISDIR(anchor.st_mode):
+                raise ValueError("host path traverses a non-directory anchor")
+            redirected = False
+            for index, part in enumerate(parts):
+                if part == "..":
+                    # Resolve the preceding component BEFORE applying parent traversal.
+                    current = os.path.dirname(current)
+                    continue
+                current = os.path.join(current, part)
+                local = visible_path(current)
+                status = os.lstat(local)
+                if stat.S_ISLNK(status.st_mode):
+                    links += 1
+                    if links > 40:  # Linux's symlink traversal limit, not a workflow limit.
+                        raise ValueError("host path has too many symbolic links")
+                    link = os.readlink(local)
+                    linked = link if os.path.isabs(link) else os.path.join(os.path.dirname(current), link)
+                    pending = os.path.join(linked, *parts[index + 1:])
+                    redirected = True
+                    break
+                if index < len(parts) - 1 and not stat.S_ISDIR(status.st_mode):
+                    raise ValueError("host path traverses a non-directory")
+            if not redirected:
+                visible_path(current)
+                return current
+
 
 # -- pinning ---------------------------------------------------------------------------------
 

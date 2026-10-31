@@ -98,6 +98,22 @@ checker launch neither delete them nor promise secure erasure. The script log
 stores output, not its environment. No broader retention/destruction rule or
 blanket log scrubber is introduced. Existing checker outputs are unchanged.
 
+The inline envelope is an ordinary run input, so it is kept wherever run inputs
+are kept, not only in the run row (`WorkflowRun.inputs`) and its events. Two
+further places, both true before this transport existed:
+
+- **Held clean-ups.** When a stopped run holds clean-ups, `holds.record` copies
+  its inputs into `CleanupHold.inputs` (`temper_ai/runner/models.py`), and a
+  cleanup pass replays them. Same class and retention as the run row.
+- **Server log on a failed database write.** The engine does not set
+  SQLAlchemy's `hide_parameters`, so if writing a run row or hold row fails,
+  the exception text can include the start and end of a bound input value. The
+  hold sweeper logs such errors with `exc_info`, and API 500s log the traceback.
+  Part of an inline reading can therefore reach the server log. Security rated
+  this low (A09:2025 / CWE-532); the engine fix belongs to Temper.
+
+The authority below must cover these places too.
+
 The trusted operator must already have authority for the exact reading AND its
 ordinary workflow input/event storage boundary. A path or digest grants no
 read authority. Source approval is not real-input consent. If that boundary is

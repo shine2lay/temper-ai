@@ -230,7 +230,7 @@ OTHER_WRITERS: dict[tuple[str, str, str, str], tuple[int, str]] = {
     ("temper_ai/observability/recorder.py", "decide_event_in", "values", "status"): (1, "Event CAS; P14 checks callers"),
     ("temper_ai/pi_agent/turn.py", "run_turn", "attribute", "status"): (3, "TurnOutcome"),
     ("temper_ai/runner/holds.py", "record", "attribute", "status"): (1, "CleanupHold, not WorkflowRun"),
-    ("temper_ai/runner/holds.py", "end", "attribute", "status"): (1, "CleanupHold, not WorkflowRun"),
+    ("temper_ai/runner/holds.py", "end_in", "values", "status"): (1, "CleanupHold waiting CAS, not WorkflowRun"),
     (QUEUE, "AlreadyQueued.__init__", "attribute", "status"): (1, "exception's observed status"),
     ("temper_ai/stage/executor.py", "_execute_single_node", "attribute", "status"): (2, "NodeResult"),
     ("temper_ai/stage/executor.py", "_handle_loop", "attribute", "status"): (1, "NodeResult"),
@@ -309,10 +309,11 @@ CALLERS = {
     "_end_row_in": [(PARKED, "cancel_parked")],
     "_mark_status": [("temper_ai/spawner/reaper.py", f"Reaper.{scope}") for scope in
                      ("_let_go_parked", "_mark_orphaned", "_honor_cancel", "_end_unstarted", "_end_unstarted")],
-    "queue_run_in": [(QUEUE, "queue_run"), (PARKED, "claim_and_queue"), (PARKED, "claim_and_requeue_row")],
+    "queue_run_in": [(QUEUE, "queue_run"), (PARKED, "claim_and_queue"), (PARKED, "claim_and_requeue_row"),
+                     ("temper_ai/runner/cleanup_dispatch.py", "queue_held_cleanups")],
     "queue_run": [(ROUTES, "_queue_run"), (LANE, "resume_in_the_lane")],
     "_queue_run": [(ROUTES, scope) for scope in
-                   ("_start_run_external", "_queue_cleanup_pass", "_fork_run", "_start_resume")],
+                   ("_start_run_external", "_fork_run", "_start_resume")],
 }
 
 

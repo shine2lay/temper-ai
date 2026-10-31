@@ -265,19 +265,19 @@ def test_a_worktree_named_through_a_symlinked_workspace_path_still_mounts(instal
     name the workspace through a symlink: that is still this workspace."""
     main = repository(install.workspaces / "repos" / "proj")
     worktree(main, install.run_a)
-    link = install.root / "linked-run-a"
+    link = install.workspaces / "linked-run-a"
     link.symlink_to(install.run_a)
-    assert mounts(install, link) == [rw(link), rw(main)]
+    assert mounts(install, link) == [Mount(str(install.run_a), str(link), read_only=False), rw(main)]
 
 
 def test_a_back_link_spelled_as_the_row_spells_the_workspace_names_it(install):
     """A back-link that keeps the symlinked spelling (a relative one, worktree.useRelativePaths,
     is read from the record, so it names the workspace the way its path was given)."""
     main = repository(install.workspaces / "repos" / "proj")
-    link = install.root / "linked-run-a"
+    link = install.workspaces / "linked-run-a"
     link.symlink_to(install.run_a)
     plant(install.run_a, str(lay_record(main, "run-a", f"{link}/.git")))
-    assert mounts(install, link) == [rw(link), rw(main)]
+    assert mounts(install, link) == [Mount(str(install.run_a), str(link), read_only=False), rw(main)]
 
 
 @pytest.mark.parametrize("value", ["relative/path", "/srv/a::/srv/b", "/", "/srv/a/../b", "/srv/a/"])

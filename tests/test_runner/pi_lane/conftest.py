@@ -57,6 +57,7 @@ def srv(tmp_path, request, monkeypatch):
     state = sup.install_app_state()
     ws = tmp_path / "ws"
     ws.mkdir()
+    monkeypatch.setenv("WORKSPACE_DIR", str(ws.parent))
     yield SimpleNamespace(url=url, client=TestClient(app), state=state, tmp=tmp_path, ws=ws)
     if url.startswith("sqlite"):
         reset_database()

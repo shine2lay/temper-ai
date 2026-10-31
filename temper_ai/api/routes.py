@@ -73,6 +73,7 @@ from temper_ai.runner.resume import (
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
 from temper_ai.shared.types import ExecutionContext
+from temper_ai.spawner.box_seal import WorkspacePathRefused
 from temper_ai.stage.exceptions import (
     CancelFlag,
     ReplacedByLaterAttempt,
@@ -405,14 +406,17 @@ def _queue_run(
     to run again (``rerun``), or the only paths a pass may run (``only``).
     A resumed run keeps its row: a finished one goes back to queued. One
     that is still queued or running is refused, so a run never has two
-    boxes. (runner/queue.py does it; this says a refusal as a 409.) ``lane``: the run's
-    lane from the loaded workflow, or KEEP_LANE to keep the row's own mark.
+    boxes. (runner/queue.py does it; this says an already-queued refusal as 409,
+    an unsafe workspace as 400.) ``lane``: the run's lane from the loaded workflow,
+    or KEEP_LANE to keep the row's own mark.
     """
     try:
         queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
                   lane=lane)
     except AlreadyQueued as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except WorkspacePathRefused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _row_lane(execution_id: str) -> str | None:
@@ -954,21 +958,18 @@ def _release_cleanups(execution_id: str) -> dict:
     run = get_workflow_execution(execution_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
-    ended = holds.end(execution_id, "released", by="give_up")
+    ended = _queue_cleanup_pass(execution_id, by="give_up")
     if ended is None:
         raise HTTPException(status_code=409,
                             detail="This run is not holding any clean-ups")
-    _queue_cleanup_pass(ended)
     return {"execution_id": execution_id, "status": "queued",
             "cleanups": [c.get("path") for c in ended["cleanups"]]}
 
 
-def _queue_cleanup_pass(hold: dict) -> None:
-    """Start the run once more, in its own box, to run only the clean-ups it was holding."""
-    execution_id = hold["execution_id"]
-    paths = [str(c.get("path")) for c in hold.get("cleanups", []) if c.get("path")]
-    if not paths:
-        return
+def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
+    """Release a wait only with admitted cleanup work; share Give up and deadline dispatch."""
+    from temper_ai.runner.cleanup_dispatch import queue_held_cleanups
+
     mode = _execution_mode()
     # A Pi run's clean-ups are the Pi lane's too: queued with the row's own mark (KEEP_LANE)
     # and never started here.
@@ -976,9 +977,18 @@ def _queue_cleanup_pass(hold: dict) -> None:
     if mode == "inprocess" and not pi_lane:
         logger.info("%s: its held clean-ups are for its box to run; this server runs in "
                     "process, so they are left alone", execution_id)
-        return
-    _queue_run(execution_id, hold["workflow_name"], hold.get("workspace_path") or None,
-               hold.get("inputs") or {}, start="cleanup", extra={"only": paths})
+        return holds.end(execution_id, "released", by=by)
+    try:
+        ended = queue_held_cleanups(execution_id, by=by)
+    except AlreadyQueued as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except WorkspacePathRefused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if ended is None:
+        return None
+    paths = [str(c["path"]) for c in ended["cleanups"] if c.get("path")]
+    if not paths:
+        return ended
     if mode == "subprocess" and not pi_lane:
         # External mode has a watcher that picks the queued row up; here the server is the
         # one that starts boxes, so it starts this one itself.
@@ -992,6 +1002,7 @@ def _queue_cleanup_pass(hold: dict) -> None:
                 detail="Could not start a box to run the held clean-ups",
             ) from None
     logger.info("%s: running its held clean-ups now (%s)", execution_id, ", ".join(paths))
+    return ended
 
 
 @router.post("/api/runs/{execution_id}/resume", response_model=RunResponse)
@@ -1078,12 +1089,16 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         if claimed is None:
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     try:
-        return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc,
-                             restored_outputs, parked_attempt=parked)
+        response = _start_resume(execution_id, body, result, nodes, config, checkpoint_svc,
+                                 restored_outputs, parked_attempt=parked)
     except BaseException:
         if claimed is not None:
             resume_claim.release(execution_id, claimed)
         raise
+    if parked is None and response.status == "queued":
+        # Admission committed: a later hold error cannot release this successor's claim.
+        holds.take_over(execution_id, by=execution_id)
+    return response
 
 
 def _caller_label() -> str:
@@ -1104,10 +1119,7 @@ def _start_resume(
     parked_attempt: dict | None = None,
 ) -> RunResponse:
     """Start the resumed attempt, claiming a parked one atomically before taking its holds."""
-    # Non-parked Resume keeps its existing claim and hold behaviour. A parked Resume must
-    # win its atomic claim below before touching any hold (a losing read may predate cancel).
-    if parked_attempt is None:
-        holds.take_over(execution_id, by=execution_id)
+    # Both branches must admit the successor before consuming its cleanup hold.
     stopped_at = _stopped_at(result)
 
     logger.info(
@@ -1152,6 +1164,8 @@ def _start_resume(
                                     detail=f"Execution '{execution_id}' is already being carried on") from exc
             except AlreadyQueued as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except WorkspacePathRefused as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             # The claim and re-queue committed: never release it if this or anything after
             # it fails. Its queued row carries it on, or the reaper ends it.
             holds.take_over(execution_id, by=execution_id)
@@ -1166,7 +1180,7 @@ def _start_resume(
         if not won:
             raise HTTPException(status_code=409,
                                 detail=f"Execution '{execution_id}' is carried on in its box")
-        holds.take_over(execution_id, by=execution_id)
+    holds.take_over(execution_id, by=execution_id)
 
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
@@ -1305,7 +1319,6 @@ def _fork_run(body: ForkRequest):
     pi_lane = _for_the_pi_lane(lane)
     if _execution_mode() != "external" and not pi_lane:
         _refuse_unboxed("a fork in the server's own process")
-    holds.take_over(body.source_execution_id, by=new_execution_id)
 
     if _execution_mode() == "external" or pi_lane:
         # The checkpoints are already copied under the new id; its box
@@ -1313,8 +1326,10 @@ def _fork_run(body: ForkRequest):
         _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
         _queue_run(new_execution_id, config.name, body.workspace_path,
                    inputs, start="fork", lane=lane)
+        holds.take_over(body.source_execution_id, by=new_execution_id)
         return RunResponse(execution_id=new_execution_id, status="queued")
 
+    holds.take_over(body.source_execution_id, by=new_execution_id)
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
 

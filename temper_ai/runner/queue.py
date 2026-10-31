@@ -11,6 +11,7 @@ claimed only by the Pi lane, whichever way it got here.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from temper_ai.runner.lanes import (
@@ -98,6 +99,11 @@ def queue_run_in(
     from sqlmodel import select
 
     from temper_ai.runner.models import WorkflowRun
+    from temper_ai.spawner.box_seal import legacy_workspace_path
+
+    # Before any row mutation, including re-queues in a caller's transaction.
+    # The worker checks again at spawn: a symlink can change while queued.
+    legacy_workspace_path(workspace_path, os.environ.get("WORKSPACE_DIR"))
 
     metadata: dict = {"start": start} if start else {}
     # Only the worker writes a run's box profile record (spawner/box_profile.py) and the Pi

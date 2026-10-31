@@ -34,10 +34,11 @@ import stat
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
+from temper_ai.spawner.base import SpawnerError
 from temper_ai.spawner.box_profile import BoxProfileError, tree_digest
 
 DOCKER_SOCKET = "/var/run/docker.sock"
@@ -283,7 +284,7 @@ def plan_sealed(
                 plan.sources["claude"] = {"from": "bind", "path": f"{source}/{newest}",
                                           "version": newest, "digest": file_digest(fd)}
         if workspace_path:
-            fd = plan.grant(view, _workspace(workspace_path, workspace_dir), workspace_path,
+            fd = plan.grant(view, workspace_in_tree(workspace_path, workspace_dir), workspace_path,
                             read_only=False, kind="workspace")
             _no_outside_repo(fd, workspace_path)
         for target in data_targets:
@@ -313,22 +314,73 @@ def plan_sealed(
     return plan
 
 
-def _workspace(workspace_path: str, workspace_dir: str | None) -> str:
-    """The run's workspace as a host path inside WORKSPACE_DIR, or BoxProfileError."""
+def workspace_in_tree(
+    workspace_path: str, workspace_dir: str | None, *, resolve: bool = False,
+    alias_mounts: Iterable[tuple[str, str]] | None = (),
+) -> str:
+    """A plain strict descendant of WORKSPACE_DIR, or BoxProfileError.
+
+    The sealed form is unchanged: host spelling only; SealPlan pins it without
+    following symlinks. ``resolve`` is the legacy variant: check the spelling AND
+    its resolved path in this process, and return that resolved bind source.
+    Only the workspace tree's verified /app/workspaces alias is accepted there.
+    ``alias_mounts`` names inherited (host source, box target) binds; None at the
+    queue means verify the server's alias by filesystem identity instead.
+    """
+    original = workspace_path
+    kind = "legacy" if resolve else "sealed"
     if _inside(workspace_path, WORKSPACES_ALIAS):
-        raise BoxProfileError(
-            f"the run's workspace {workspace_path} is the /app/workspaces alias of the shared "
-            "tree; a sealed box needs its host path inside WORKSPACE_DIR",
-        )
+        alias = False
+        if resolve and workspace_dir:
+            if alias_mounts is None:
+                try:
+                    alias = os.path.samefile(WORKSPACES_ALIAS, workspace_dir)
+                except OSError:
+                    pass  # an absent/unreadable alias proves no mapping
+            else:
+                alias = (workspace_dir, WORKSPACES_ALIAS) in alias_mounts
+        if not alias:
+            raise BoxProfileError(
+                f"the run's workspace {workspace_path} is the /app/workspaces alias of the shared "
+                f"tree; a {kind} box needs its host path inside WORKSPACE_DIR",
+            )
+        workspace_path = cast(str, workspace_dir) + workspace_path[len(WORKSPACES_ALIAS):]
     if not workspace_dir or not _plain(workspace_dir):
-        raise BoxProfileError("the template has no WORKSPACE_DIR, so no workspace can be sealed")
-    if not _plain(workspace_path) or workspace_path == workspace_dir or not _inside(
-            workspace_path, workspace_dir):
-        raise BoxProfileError(
-            f"the run's workspace {workspace_path} is not a folder inside WORKSPACE_DIR "
-            f"({workspace_dir}); a sealed box gets only its own folder there",
-        )
-    return workspace_path
+        raise BoxProfileError(f"the template has no WORKSPACE_DIR, so no workspace can be {kind}")
+    paths = [(workspace_path, workspace_dir)]
+    if resolve:
+        paths.append((str(Path(workspace_path).resolve()), str(Path(workspace_dir).resolve())))
+    for path, root in paths:
+        if not _plain(path) or path == root or not _inside(path, root):
+            raise BoxProfileError(
+                f"the run's workspace {original} is not a folder inside WORKSPACE_DIR "
+                f"({workspace_dir}); a {kind} box gets only its own folder there",
+            )
+        if resolve and any(c in path for c in '\"\''):
+            raise BoxProfileError(f"workspace {original!r} has an unsafe mount path {path!r} (no quotes)")
+    return paths[-1][0]
+
+
+class WorkspacePathRefused(SpawnerError):
+    """A run's workspace cannot be admitted or mounted; the API reports HTTP 400."""
+
+
+def legacy_workspace_path(
+    workspace_path: str | None, workspace_dir: str | None, *,
+    alias_mounts: Iterable[tuple[str, str]] | None = None,
+) -> str:
+    """The checked, resolved source for a legacy workspace; empty means automatic creation.
+
+    A containment check, not a pinned-bind guarantee: the worker checks again at
+    spawn, and a later path swap remains the legacy check-to-bind race.
+    """
+    if not workspace_path:
+        return ""
+    try:
+        return workspace_in_tree(workspace_path, workspace_dir, resolve=True,
+                                 alias_mounts=alias_mounts)
+    except (BoxProfileError, OSError, RuntimeError, ValueError) as exc:
+        raise WorkspacePathRefused(f"Workspace {workspace_path!r} refused: {exc}") from exc
 
 
 def read_gitdir(path: str, *, dir_fd: int | None = None, regular_only: bool = False,

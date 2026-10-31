@@ -57,10 +57,11 @@ _QUEUE_RUN_IN = queue.queue_run_in
 
 
 @pytest.fixture(autouse=True)
-def _shared_database(request, tmp_path):
+def _shared_database(request, tmp_path, monkeypatch):
     """Postgres in the database tier; otherwise a SQLite file, which threads can share."""
     from tests.conftest import TEST_DATABASE_URL
 
+    monkeypatch.setenv("WORKSPACE_DIR", "/workspaces")
     if request.node.stash.get(TEST_DATABASE_URL, "").startswith("sqlite"):
         reset_database()
         init_database(f"sqlite:///{tmp_path / 'runs.db'}")
@@ -131,7 +132,7 @@ def _row(run: str, status: str, *, handle: str | None = None, lane: str | None =
     ended = status not in ("queued", "running", WAITING)
     with get_session() as session:
         session.add(WorkflowRun(
-            execution_id=run, workflow_name="wf", workspace_path="/ws", inputs={"topic": "t"},
+            execution_id=run, workflow_name="wf", workspace_path="/workspaces/ws", inputs={"topic": "t"},
             status=status, spawner_kind="docker" if handle else None, spawner_handle=handle,
             spawner_metadata=mark_lane(dict(KEPT), lane), attempts=1,
             completed_at=at("10:31:00") if ended else None))
@@ -184,7 +185,7 @@ def _at_the_split(monkeypatch, then: Callable[[str], None]) -> None:
 
 def _claim(module: ModuleType, path: str, attempt: dict) -> None:
     if path == "api":
-        module.claim_and_queue(attempt, "wf", "/ws", {"topic": "t"}, start="resume",
+        module.claim_and_queue(attempt, "wf", "/workspaces/ws", {"topic": "t"}, start="resume",
                                extra={"rerun": []}, lane=KEEP_LANE)
     else:
         module.claim_and_requeue_row(attempt, start="resume", extra={"rerun": []})
@@ -232,7 +233,7 @@ def test_t1_each_claim_lands_whole_in_one_commit_and_only_its_winner_takes_over(
     _row(run, "orphaned", handle="box-h")
     unclaimed = _state(run)
     with _writes_and_commits() as writes:
-        parked.claim_and_queue(a1, "wf", "/ws2", {"topic": "again"}, start="resume",
+        parked.claim_and_queue(a1, "wf", "/workspaces/ws2", {"topic": "again"}, start="resume",
                                extra={"rerun": ["talk"]}, lane=KEEP_LANE)
     assert at_split == [(run, UNCLAIMED_ORPHAN)]  # at the split, nothing shows yet
     first_commit = writes.index("COMMIT")
@@ -243,14 +244,15 @@ def test_t1_each_claim_lands_whole_in_one_commit_and_only_its_winner_takes_over(
     assert state["event"]["data"]["parked"] == {**PARKED_NOTE, "carried_on_at": claimed_at.isoformat()}
     assert state["event"]["timestamp"] == unclaimed["event"]["timestamp"]  # still its start time
     row = state["row"]
-    assert (row["workflow_name"], row["workspace_path"], row["inputs"]) == ("wf", "/ws2", {"topic": "again"})
+    assert (row["workflow_name"], row["workspace_path"], row["inputs"]) == (
+        "wf", "/workspaces/ws2", {"topic": "again"})
     assert (row["spawner_kind"], row["spawner_handle"]) == (None, None)
     assert row["spawner_metadata"] == {**KEPT, "start": "resume", "rerun": ["talk"], LANE_KEY: PI_LANE}
 
     # A second asker holding the same read: refused, and nothing written.
     before = _state(run)
     with pytest.raises(AlreadyCarriedOn):
-        parked.claim_and_queue(a1, "wf", "/ws", None, start="resume", extra=None, lane=KEEP_LANE)
+        parked.claim_and_queue(a1, "wf", "/workspaces/ws", None, start="resume", extra=None, lane=KEEP_LANE)
     assert _state(run) == before
 
     # The worker's: the reaper let the box go (row waiting). queue_resume claims and
@@ -272,7 +274,7 @@ def test_t1_each_claim_lands_whole_in_one_commit_and_only_its_winner_takes_over(
     # The API's Resume of a run with no row inserts it, queued.
     run = "run-t1-new"
     a1 = _attempt(run)
-    parked.claim_and_queue(a1, "wf", "/ws", None, start="resume", extra=None, lane=PI_LANE)
+    parked.claim_and_queue(a1, "wf", "/workspaces/ws", None, start="resume", extra=None, lane=PI_LANE)
     assert _seen(run) == _claimed(claimed_at)
     assert _state(run)["row"]["spawner_metadata"] == {"start": "resume", LANE_KEY: PI_LANE}
 
@@ -360,7 +362,7 @@ def _delayed(module: ModuleType, variant: str) -> tuple[str | None, bool]:
     a1 = _attempt(run)  # what the delayed claimant read
     if variant == "claimed-first":
         _row(run, WAITING)
-        parked.claim_and_queue(get_event(a1["id"]) or {}, "wf", "/ws", None, start="resume",
+        parked.claim_and_queue(get_event(a1["id"]) or {}, "wf", "/workspaces/ws", None, start="resume",
                                extra=None, lane=KEEP_LANE)
     elif variant == "cancelled-first":
         _row(run, WAITING)
@@ -722,7 +724,7 @@ def _resume_reply(module: ModuleType, run: str, **body) -> tuple[int, str]:
 
 
 def _hold(run: str) -> None:
-    holds.record(run, workflow_name="wf", workspace_path="/ws", inputs={"topic": "t"},
+    holds.record(run, workflow_name="wf", workspace_path="/workspaces/ws", inputs={"topic": "t"},
                  held=[{"path": "cleanup"}], deadline=at("11:00:00"))
 
 
@@ -740,17 +742,29 @@ def test_t8_resume_queues_atomically_then_takes_the_hold_and_keeps_its_api_reply
     _attempt(run)
     _row(run, "orphaned", handle="old-box")
     _hold(run)
-    assert _resume_reply(rig.routes, run, workspace_path="/resumed", rerun=["talk"]) == (200, "queued")
+    assert _resume_reply(rig.routes, run, workspace_path="/workspaces/resumed", rerun=["talk"]) == (200, "queued")
     assert _seen(run) == _claimed(K9["K9a"])
     assert rig.took == [(run, _claimed(K9["K9a"]))]
     assert _hold_state(run)["status"] == "taken_over"
     row = _state(run)["row"]
     assert (row["workflow_name"], row["workspace_path"], row["inputs"]) == (
-        "wf", "/resumed", {"topic": "default-topic"})
+        "wf", "/workspaces/resumed", {"topic": "default-topic"})
     assert row["spawner_metadata"] == {**KEPT, "start": "resume", "rerun": ["talk"], LANE_KEY: PI_LANE}
     assert row["spawner_kind"] is None and row["spawner_handle"] is None
     assert _resume_reply(rig.routes, run) == (409, f"Execution '{run}' is already running")
     assert len(rig.took) == 1 and rig.released == rig.starts == []
+
+
+def test_unsafe_parked_resume_is_400_and_preserves_claim_row_and_cleanup(resume_rig):
+    run = "workspace-refused-resume"
+    _attempt(run)
+    _row(run, "orphaned", handle="old-box")
+    _hold(run)
+    before, hold_before = _state(run), _hold_state(run)
+    status, detail = _resume_reply(resume_rig.routes, run, workspace_path="/outside")
+    assert status == 400 and "'/outside'" in detail
+    assert _state(run) == before and _hold_state(run) == hold_before
+    assert resume_rig.took == resume_rig.released == resume_rig.starts == []
 
 
 IN_PROCESS_ROWS = ("orphaned", WAITING, "queued", "running", "completed", "failed", "cancelled")
@@ -822,7 +836,7 @@ def test_t7_a_no_row_failure_other_than_thread_start_never_releases(failure, res
 
 @pytest.mark.parametrize("mode", ["external", "inprocess"])
 def test_non_parked_resume_keeps_its_claim_hold_and_error_release(mode, resume_rig, monkeypatch):
-    """The separate resume_claim path stays separate, including its exception release."""
+    """Pre-admission failure releases the claim; admitted work keeps its claim on later errors."""
     from temper_ai.runner import resume_claim
 
     rig = resume_rig
@@ -833,13 +847,20 @@ def test_non_parked_resume_keeps_its_claim_hold_and_error_release(mode, resume_r
     rig.hold_error = _Stalled("hold failed")
     with pytest.raises(_Stalled, match="hold failed"):
         rig.routes._resume_run(run)
-    assert resume_claim._read(run) is None  # the non-parked exception path still gives it back
     assert rig.released == rig.starts == []
     assert _state(run)["event"]["status"] == "interrupted"
     rig.hold_error = None
-    assert _resume_reply(rig.routes, run) == (200, "queued" if mode == "external" else "resuming")
-    assert resume_claim._read(run) is not None
-    assert _hold_state(run)["status"] == "taken_over"
+    if mode == "external":
+        assert _state(run)["row"]["status"] == "queued"
+        assert resume_claim._read(run) is not None
+        assert _hold_state(run)["status"] == "waiting"
+        # A hold-writer fault after commit never admits a second successor.
+        assert _resume_reply(rig.routes, run)[0] == 409
+    else:
+        assert resume_claim._read(run) is None
+        assert _resume_reply(rig.routes, run) == (200, "resuming")
+        assert resume_claim._read(run) is not None
+        assert _hold_state(run)["status"] == "taken_over"
 
 
 HOLD_CASES = ("winner", "cancel-first", "superseded", "busy", "queue-error", "post-commit-error", "sweep")
@@ -876,10 +897,8 @@ def _holds_answer(module: ModuleType, rig, case: str, monkeypatch) -> dict:
         def sweep(eid):
             due = [h for h in holds.due(now=K9["K9a"]) if h["execution_id"] == eid]
             assert len(due) == 1
-            ended = holds.end(eid, "released", by="deadline")
-            assert ended is not None
             try:
-                module._queue_cleanup_pass(ended)
+                module._queue_cleanup_pass(eid, by="deadline")
             except HTTPException as exc:
                 cleanup.append((exc.status_code, exc.detail))
         rig.before_take = sweep
@@ -906,7 +925,7 @@ def _holds_known(module: ModuleType, case: str) -> dict:
         seen = {"attempt": CANCELLED, "carried_on_at": None, "row": "cancelled"}
     return {"reply": replies.get(case, (200, "queued")), "seen": claimed if won else seen,
             "takeovers": [(run, claimed)] if won else [],
-            "hold": "released" if case == "sweep" else "taken_over" if case == "winner" else "waiting",
+            "hold": "taken_over" if case in ("winner", "sweep") else "waiting",
             "releases": [], "starts": [],
             "cleanup": [(409, f"Execution '{run}' is already queued")] if case == "sweep" else []}
 

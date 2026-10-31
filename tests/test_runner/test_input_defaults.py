@@ -52,6 +52,7 @@ def api(tmp_path, request, monkeypatch):
     monkeypatch.setenv("TEMPER_DATABASE_URL", url)
     monkeypatch.setenv("TEMPER_LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
     state = AppState(config_store=ConfigStore(), graph_loader=_loader(), llm_providers={},
                      memory_service=MemoryService(InMemoryStore()))
     init_app_state(state)

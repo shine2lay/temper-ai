@@ -414,14 +414,18 @@ def workspace_mounts(workspace_path: str, covered: Iterable[Mount] = (), *,
     need a mount is MainRepoRefused.
     """
     covered = list(covered)
+    source = box_seal.legacy_workspace_path(
+        workspace_path, workspace_dir,
+        alias_mounts=[(m.source, m.target) for m in covered],
+    )
     workspace = Path(workspace_path)
     inside = _inside_any(workspace, covered)
-    if not inside and not workspace.is_dir():
+    if not Path(source).is_dir():
         raise SpawnerError(
             f"Workspace {workspace_path!r} is not a directory on this host — "
             "the run container needs it bind-mounted at the same path",
         )
-    mounts = [] if inside else [Mount(str(workspace), str(workspace), read_only=False)]
+    mounts = [] if inside else [Mount(source, str(workspace), read_only=False)]
     main_repo = (checked_main_repo(workspace_path, covered, workspace_dir, main_repo_roots)
                  if workspace.is_dir() else None)
     if main_repo is not None:
@@ -880,7 +884,7 @@ class DockerSpawner(Spawner):
             record = box_profile.record_for(doc, previous)
             self._store.save(execution_id, record,
                              previous.generation if previous else None)
-        except MainRepoRefused:
+        except (MainRepoRefused, box_seal.WorkspacePathRefused):
             raise  # no box at all, not a box without a profile
         except Exception as exc:  # noqa: BLE001 - as before: the box starts without one
             logger.warning("Run container %s: no box profile (%s); it starts without one",
@@ -1383,6 +1387,7 @@ class DockerSpawner(Spawner):
         env: BoxEnvSplit | None = None, extra_env: dict[str, str] | None = None,
     ) -> list[str]:
         """A legacy box's `docker run` (``extra_env``: its profile's variables)."""
+        homes, mounts = self.legacy_mounts(workspace_path, template)
         name = container_name(execution_id)
         cmd = [
             self._docker, "run", "--detach", "--rm", "--init",
@@ -1402,7 +1407,6 @@ class DockerSpawner(Spawner):
         cmd += ["--env", f"{box_env_list.RUN_CONTAINER_ENV}={name}"]
         for key, value in (extra_env or {}).items():
             cmd += ["--env", f"{key}={value}"]
-        homes, mounts = self.legacy_mounts(workspace_path, template)
         for home in homes:
             # Writable by whichever user the image runs as (the template may be
             # another container than this one); the box is that user's alone.

@@ -69,6 +69,7 @@ def main(raw: str) -> int:
     # The team settings' account slots and their room figures, beside the private database.
     from pathlib import Path
 
+    mp.setenv("WORKSPACE_DIR", str(Path(args["workspace"]).parent))
     ls.give_accounts(mp, Path(url.removeprefix("sqlite:///")).parent / "settings")
     guard = sup.NetGuard().install(mp)
     init_database(url)

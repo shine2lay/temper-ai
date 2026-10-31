@@ -106,6 +106,39 @@ worker never opens the file; docker binds it.
 - Sealed boxes get no login file, with the setting or without
   ([Sealed boxes](#sealed-boxes-bs1)).
 
+## A run's workspace path
+
+A supplied `workspace_path` must name a plain absolute path strictly inside
+`WORKSPACE_DIR`, never the shared tree itself. The queue checks before writing a
+run row (including resumes, forks and clean-ups); the API reports HTTP 400 with
+the refused path. Empty or absent paths remain allowed: the server allocates the
+workspace. An unset `WORKSPACE_DIR` permits only that automatic case.
+
+Before building a legacy box's Docker command, the worker checks again using the
+template's `WORKSPACE_DIR` and the filesystem it can see. Both the submitted path
+and its resolved source must be strict descendants. A prefix sibling, an escape
+through a symlink, a comma or either quote is refused with `WorkspacePathRefused`
+(a `SpawnerError`), not passed to Docker's unescaped `--mount` CSV. The legacy bind
+uses the checked resolved source at the submitted target. An in-tree symlink is
+allowed only when its resolved source also passes; a later swap of a source or
+ancestor remains the check-to-bind race described below.
+
+Legacy runs may also use descendants of `/app/workspaces` when it is the same
+workspace tree: the server verifies the alias by filesystem identity at queue
+time, and the worker requires an inherited bind from `WORKSPACE_DIR` to that
+alias at spawn time. The alias itself is refused, as are other inherited folders:
+an existing mount is not permission to name any of its contents as a workspace.
+Historical runs naming the shared root or outside folders must be adapted before
+resuming; existing rows are not rewritten or moved by this check. A refused
+boxed resume, fork or lane recovery leaves its waiting cleanup hold intact.
+Give up and the deadline sweeper release a hold and queue its cleanup pass in
+one transaction: a workspace refusal leaves the same hold and deadline waiting,
+so later sweeps still see it. No unsafe workspace is dispatched automatically.
+Successful admissions retain their normal cleanup ownership and lane.
+
+Sealed boxes retain their existing stricter rules: host paths only, no alias,
+and pinned paths rather than following symlinks ([Sealed boxes](#sealed-boxes-bs1)).
+
 ## A worktree's main repository
 
 A run whose workspace is a `git worktree` needs its main repository too: the

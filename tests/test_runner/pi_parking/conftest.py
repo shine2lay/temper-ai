@@ -101,6 +101,7 @@ def pw_run(tmp_path, request, monkeypatch, _no_network):
     box_json = sup.make_box_config(tmp_path / "box")
     monkeypatch.setenv("TEMPER_DATABASE_URL", url)
     monkeypatch.setenv("TEMPER_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
     monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(box_json))
     monkeypatch.setattr(executor_mod, "GATE_POLL_SECONDS", 0.02)

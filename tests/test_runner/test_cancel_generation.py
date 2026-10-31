@@ -691,7 +691,8 @@ def test_claim_and_cancel_take_the_same_lock_order_and_exactly_one_wins(
     def ask(action: str) -> None:
         try:
             if action == "claim":
-                parked.claim_and_queue(a1, "wf", "/ws", None, start="resume", extra=None, lane=KEEP_LANE)
+                parked.claim_and_queue(a1, "wf", "/workspaces/ws", None,
+                                       start="resume", extra=None, lane=KEEP_LANE)
                 outcome[action] = "claimed"
             else:
                 outcome[action] = "cancelled" if parked.cancel_parked(run, judged=_judged()) else "refused"

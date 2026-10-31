@@ -9,7 +9,12 @@ import os
 
 import pytest
 
-from temper_ai.spawner.docker_spawner import MAIN_REPO_ROOTS_ENV, workspace_mounts
+from temper_ai.spawner.box_seal import WorkspacePathRefused
+from temper_ai.spawner.docker_spawner import (
+    MAIN_REPO_ROOTS_ENV,
+    checked_main_repo,
+    workspace_mounts,
+)
 from tests.test_spawner.box_fixtures import Install, MemoryStore, box_user
 from tests.test_spawner.test_main_repo_guard import (
     TemplateDocker,
@@ -53,9 +58,13 @@ def test_an_unrelated_explicit_root_still_spawns_with_both_mounts(install, monke
 
 
 def test_an_explicit_repository_still_works_without_a_workspace_dir(install):
+    """The main-repository guard needs no WORKSPACE_DIR for an explicit root. A legacy box
+    without one refuses an explicit workspace before that guard runs (F-WS)."""
     main = repository(install.root / "independent")
     ws = worktree(main, install.run_a)
-    assert workspace_mounts(str(ws), main_repo_roots=[str(main)]) == [rw(ws), rw(main)]
+    assert checked_main_repo(str(ws), [], None, [str(main)]) == str(main)
+    with pytest.raises(WorkspacePathRefused):
+        workspace_mounts(str(ws), main_repo_roots=[str(main)])
 
 
 @pytest.mark.parametrize("where", ["checkout", "higher ancestor"])
@@ -97,6 +106,7 @@ def test_an_ancestor_or_equal_root_cannot_hide_behind_another_spelling(checkout_
         alias = install.root / "shared-alias"
         alias.symlink_to(install.workspaces, target_is_directory=True)
         shared = str(alias)
+        ws = alias / ws.name  # spelled under WORKSPACE_DIR as set, as the server spells it
     plant(ws, named)
     assert_refused(lambda: workspace_mounts(str(ws), workspace_dir=shared, main_repo_roots=[root]),
                    ws, os.path.normpath(os.path.join(ws, named)),
@@ -110,9 +120,11 @@ def test_a_lexical_ancestor_is_still_refused_when_the_shared_root_is_a_link(inst
     shared = main / "workspaces"
     shared.symlink_to(install.workspaces, target_is_directory=True)
     ws = worktree(main, install.run_a)
-    assert_refused(lambda: workspace_mounts(str(ws), workspace_dir=str(shared),
+    spelled = shared / ws.name  # under WORKSPACE_DIR as set, as the server spells it
+    assert_refused(lambda: workspace_mounts(str(spelled), workspace_dir=str(shared),
                                             main_repo_roots=[str(main)]),
-                   ws, str(record_of(ws)), "whose repository is WORKSPACE_DIR itself or contains it")
+                   spelled, str(record_of(ws)),
+                   "whose repository is WORKSPACE_DIR itself or contains it")
 
 
 def test_a_similar_prefix_is_not_an_ancestor(install):

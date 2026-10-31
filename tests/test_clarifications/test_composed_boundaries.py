@@ -74,7 +74,9 @@ def fresh_import():
         [sys.executable, "-c", FRESH_IMPORT, json.dumps(OPERATIONAL_SPIES), json.dumps(LIBRARY)],
         cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=120,
     )
-    assert done.returncode == 0, f"fresh import exited {done.returncode}"
+    # Security F1: assert on a plain int, so pytest's explanation never shows the child's output.
+    code = done.returncode
+    assert code == 0, f"fresh import exited {code}"
     return json.loads(done.stdout.splitlines()[-1])
 
 

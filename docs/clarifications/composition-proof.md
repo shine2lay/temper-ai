@@ -87,6 +87,20 @@ interpreter (spies installed before any library module loads) imports the
 whole library. A bite in which `ClarificationEdge` construction calls getMe and
 getUpdates must fail that named V20 assertion.
 
+What these zeros mean, and don't (Security's delta review, O5 and O6):
+
+- The spies count a call and then make the real one. They detect contact; they
+  don't prevent it.
+- The zeros cover the patched paths only: sync httpx `Client.send`, the
+  default-engine getters, `TelegramClient` construction, notify/inbox
+  registration, `get_me` and `get_updates`. "Operationally off" is zero contact
+  through these paths, not a global no-network proof.
+- A failed fresh import reports only its exit code (Security F1). The test
+  asserts on a plain integer, so pytest's explanation never carries the
+  child's stdout or stderr into a CI log or JUnit file. A bite feeds a failed
+  synthetic child with a canary in both streams and requires the canary to
+  stay out of the failure text.
+
 | Test module | Vectors |
 | --- | --- |
 | `test_caller_integration.py` | V01 combined flow |

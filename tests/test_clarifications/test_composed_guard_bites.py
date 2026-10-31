@@ -1,6 +1,8 @@
 """Named guard mutations exercise actual composed stores, never recording ports."""
 
+import subprocess
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -234,6 +236,22 @@ def test_V20_unused_construction_has_a_provider_contact_bite(db, monkeypatch, co
     else:
         boundaries.assert_operationally_off(rig, expected)
     assert rig.effects == [] and rig.ordinary == []
+
+
+def test_V20_fresh_import_failure_reports_only_its_exit_code(monkeypatch):
+    """Security F1: a failed child's output never reaches the assertion text, CI log or JUnit."""
+    canary = "M4E-F1-SYNTHETIC-CANARY"
+
+    def failed_child(args, **_options):
+        return subprocess.CompletedProcess(args, 3, stdout=canary + "-stdout\n", stderr=canary + "-stderr")
+
+    # Only fresh_import's own name is replaced; the subprocess module itself is untouched.
+    monkeypatch.setattr(boundaries, "subprocess", SimpleNamespace(run=failed_child))
+    with pytest.raises(AssertionError) as caught:
+        boundaries.fresh_import()
+    text = str(caught.value)
+    assert "fresh import exited 3" in text
+    assert canary not in text, "fresh-import failure text carries the child's output"
 
 
 @pytest.mark.parametrize("early_offset", (False, True), ids=("control", "early_offset_mutant"))

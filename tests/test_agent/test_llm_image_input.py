@@ -82,23 +82,39 @@ def assert_private(*values):
                 raise AssertionError("private content leaked to metadata")
 
 
-def response_events(answer=ANSWER, stop="end_turn", terminal=True, tool=False):
+ORDINARY, NO_USAGE = object(), object()  # usage as every test so far sent it; no usage key at all
+
+
+def event_list(answer=ANSWER, stop="end_turn", terminal=True, tool=False, *, start_usage=ORDINARY,
+               delta_usage=ORDINARY):
+    message = {"id": "msg_FAKEimage", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+               "content": [], "stop_reason": None, "stop_sequence": None}
+    if start_usage is not NO_USAGE:
+        message["usage"] = {"input_tokens": 10, "output_tokens": 0} if start_usage is ORDINARY else start_usage
+    delta = {"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": None}}
+    if delta_usage is not NO_USAGE:
+        delta["usage"] = {"output_tokens": 5} if delta_usage is ORDINARY else delta_usage
     events = [
-        {"type": "message_start", "message": {"id": "msg_FAKEimage", "type": "message",
-         "role": "assistant", "model": "claude-opus-5-5", "content": [], "stop_reason": None,
-         "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 0}}},
+        {"type": "message_start", "message": message},
         {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
         {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": answer}},
         {"type": "content_block_stop", "index": 0},
-        {"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": None},
-         "usage": {"output_tokens": 5}},
+        delta,
     ]
     if tool:
         events[1] = {"type": "content_block_start", "index": 0,
                      "content_block": {"type": "tool_use", "id": "tool_FAKE", "name": "Bash", "input": {}}}
     if terminal:
         events.append({"type": "message_stop"})
+    return events
+
+
+def encode(events):
     return "".join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events).encode()
+
+
+def response_events(answer=ANSWER, stop="end_turn", terminal=True, tool=False, **usage):
+    return encode(event_list(answer, stop, terminal, tool, **usage))
 
 
 def rig(monkeypatch, *, payload=None, status=200, on_send=None, refuse_temperature=False, temperatures=None):
@@ -449,3 +465,236 @@ def test_explicit_temperature_is_sent_once_unchanged(monkeypatch, where, refuses
         assert node_result.status == Status.COMPLETED
     assert learned == {"claude-opus-5-5"}
     assert_private(rows, outcome.metadata, outcome.error)
+
+
+# Usage never costs the answer (#221). Anthropic adds usage fields over time, and
+# #194's third live attempt lost a whole answer to one the pinned SDK does not
+# model: our own check refused it as "image_input: strict_parser". Usage
+# describes the answer; a shape we cannot read is recorded, never 0.
+
+UNMODELLED_DELTA = {"output_tokens": 5, "service_tier": "standard", "inference_geo": "us",
+                    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}
+# How those fields are recorded: plain values as they are, an object as its type and length.
+UNMODELLED_DELTA_RECORD = {"service_tier": "standard", "inference_geo": "us",
+                           "cache_creation": {"type": "object", "length": 2}}
+NULL_USAGE = dict.fromkeys(single_send.USAGE_COUNTERS)
+CALL_COUNTERS = ("prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens", "cache_write_tokens")
+
+
+def image_run(monkeypatch, payload):
+    """One image call through the real agent node, the native SDK and offline HTTP."""
+    ctx, _, counts, _, rows, _, _ = rig(monkeypatch, payload=payload)
+    monkeypatch.setattr(LLMAgent, "_ask_for_valid_json", deny)
+    monkeypatch.setattr("temper_ai.stage.agent_node.time.sleep", deny)
+    node_result = AgentNode(NodeConfig(name="image"), config()).run({"task": TEXT, "screenshot": PNG}, ctx)
+    outcome = node_result.agent_results[0] if node_result.agent_results else node_result
+    safe_error = outcome.error if outcome.error and outcome.error.startswith("image_input:") else "redacted"
+    call_ends = [kwargs["data"] for args, kwargs in rows
+                 if args[0] in (EventType.LLM_CALL_COMPLETED, EventType.LLM_CALL_FAILED)]
+    agent_ends = [kwargs["data"] for args, kwargs in rows
+                  if args[0] in (EventType.AGENT_COMPLETED, EventType.AGENT_FAILED)]
+    assert counts["send"] == counts["hook"] == counts["close"] == 1 and outcome.llm_calls == 1
+    assert len(call_ends) == len(agent_ends) == 1
+    assert_private(rows, outcome.metadata, outcome.error)
+    return node_result.status, outcome, safe_error, call_ends[0], agent_ends[0]
+
+
+def usage_row(call_end):
+    """The usage row the usage writer derives from this call's end event."""
+    from datetime import UTC, datetime
+
+    from temper_ai.observability.usage_rows import extract
+    return extract(EventType.LLM_CALL_COMPLETED.value, call_end,
+                   {"event_id": "event-end", "execution_id": "FAKE-run", "parent_id": "event-agent"},
+                   datetime(2026, 10, 29, tzinfo=UTC))
+
+
+def test_unmodelled_usage_fields_keep_the_answer_counters_and_a_recorded_fault(monkeypatch):
+    """FIRST: fields the pinned SDK does not model, on both usage events. The
+    answer is kept, the counters are read as always, the fields are recorded."""
+    status, outcome, safe_error, call_end, agent_end = image_run(monkeypatch, response_events(
+        start_usage={"input_tokens": 10, "output_tokens": 1, "brand_new_counter": 3}, delta_usage=UNMODELLED_DELTA))
+    # Before #221 this was #194's refusal: "image_input: strict_parser (SingleSendError)".
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.structured_output == {"verdict": "ok"}
+    assert outcome.metadata["usage"] == {"input_tokens": 10, "output_tokens": 5, "total_tokens": None,
+                                         "cache_read_input_tokens": None, "cache_creation_input_tokens": None}
+    assert (call_end["prompt_tokens"], call_end["completion_tokens"]) == (10, 5)
+    assert call_end["cost_basis"] == "list_price_estimate" and call_end["cost_usd"] > 0
+    fault = {"reason": "unmodelled", "unmodelled": {"message_start.usage": {"brand_new_counter": 3},
+                                                    "message_delta.usage": UNMODELLED_DELTA_RECORD}}
+    assert call_end["usage_fault"] == agent_end["usage_fault"] == fault
+    row = usage_row(call_end)
+    assert (row.prompt_tokens, row.completion_tokens) == (10, 5) and "usage-missing" not in row.fault_codes
+
+
+def test_unmodelled_message_delta_usage_alone_keeps_the_answer(monkeypatch):
+    """#194 attempt 3's shape: the pinned MessageDeltaUsage models five fields."""
+    status, outcome, safe_error, call_end, _ = image_run(monkeypatch, response_events(delta_usage=UNMODELLED_DELTA))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.structured_output == {"verdict": "ok"}
+    assert (call_end["prompt_tokens"], call_end["completion_tokens"]) == (10, 5)
+    assert call_end["usage_fault"] == {"reason": "unmodelled",
+                                       "unmodelled": {"message_delta.usage": UNMODELLED_DELTA_RECORD}}
+
+
+def test_absent_usage_is_null_with_a_fault_and_the_answer_kept(monkeypatch):
+    status, outcome, safe_error, call_end, _ = image_run(
+        monkeypatch, response_events(start_usage=NO_USAGE, delta_usage=NO_USAGE))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.structured_output == {"verdict": "ok"}
+    assert outcome.metadata["usage"] == NULL_USAGE
+    # cost_usd keeps AgentResult's legacy 0.0 aggregate as before; the call's own record says unknown.
+    assert all(call_end[key] is None for key in CALL_COUNTERS) and call_end["cost_basis"] == "unknown"
+    assert call_end["usage_fault"] == {"reason": "absent"}
+    assert "usage-missing" in usage_row(call_end).fault_codes.split(",")
+
+
+@pytest.mark.parametrize(("start", "delta", "unreadable"), [
+    (ORDINARY, {"output_tokens": -1}, ["output_tokens"]),
+    (ORDINARY, {"output_tokens": "abc"}, ["output_tokens"]),
+    (ORDINARY, {"output_tokens": 1.5}, ["output_tokens"]),
+    (ORDINARY, {"output_tokens": None}, ["output_tokens"]),
+    ({"input_tokens": "abc", "output_tokens": 0}, ORDINARY, ["input_tokens"]),
+    ({"input_tokens": 10, "output_tokens": 0, "cache_read_input_tokens": -2}, ORDINARY, ["cache_read_input_tokens"]),
+    ([1, 2], ORDINARY, ["message_start.usage"]),
+    (ORDINARY, "weird", ["message_delta.usage"]),
+    (NO_USAGE, ORDINARY, ["message_start.usage"]),
+    (ORDINARY, NO_USAGE, ["message_delta.usage"]),
+    (ORDINARY, None, ["message_delta.usage"]),
+], ids=["negative", "text", "fraction", "null-output", "text-input", "negative-cache", "start-not-object",
+        "delta-not-object", "start-missing", "delta-missing", "delta-null"])
+def test_unreadable_usage_is_null_with_a_named_fault_and_the_answer_kept(monkeypatch, start, delta, unreadable):
+    """A counter we model, of the wrong type, is still never taken as a number."""
+    status, outcome, safe_error, call_end, _ = image_run(
+        monkeypatch, response_events(start_usage=start, delta_usage=delta))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.structured_output == {"verdict": "ok"}
+    assert outcome.metadata["usage"] == NULL_USAGE
+    assert all(call_end[key] is None for key in CALL_COUNTERS) and call_end["cost_basis"] == "unknown"
+    assert call_end["usage_fault"] == {"reason": "unreadable", "unreadable": unreadable}
+    assert "usage-missing" in usage_row(call_end).fault_codes.split(",")
+
+
+@pytest.mark.parametrize(("start", "delta", "usage"), [
+    (ORDINARY, ORDINARY, {"input_tokens": 10, "output_tokens": 5, "total_tokens": None,
+                          "cache_read_input_tokens": None, "cache_creation_input_tokens": None}),
+    ({"input_tokens": 10, "output_tokens": 1, "cache_read_input_tokens": 2, "cache_creation_input_tokens": 0},
+     {"output_tokens": 5, "input_tokens": 12, "cache_read_input_tokens": None},
+     {"input_tokens": 12, "output_tokens": 5, "total_tokens": None,
+      "cache_read_input_tokens": 2, "cache_creation_input_tokens": 0}),
+], ids=["plain", "cache-and-delta-merge"])
+def test_ordinary_usage_reads_exactly_as_before(monkeypatch, start, delta, usage):
+    """Passes unchanged on the code before #221: nobody's accounting moves."""
+    status, outcome, safe_error, call_end, agent_end = image_run(
+        monkeypatch, response_events(start_usage=start, delta_usage=delta))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert list(outcome.metadata["usage"].items()) == list(usage.items())
+    assert [call_end[key] for key in CALL_COUNTERS] == [usage["input_tokens"], usage["output_tokens"], None,
+                                                       usage["cache_read_input_tokens"],
+                                                       usage["cache_creation_input_tokens"]]
+    assert "usage_fault" not in call_end and "usage_fault" not in agent_end
+
+
+def test_unreadable_wins_over_unmodelled_and_both_are_recorded(monkeypatch):
+    status, outcome, safe_error, call_end, _ = image_run(
+        monkeypatch, response_events(delta_usage={"output_tokens": "abc", "service_tier": "standard"}))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.metadata["usage"] == NULL_USAGE
+    assert call_end["usage_fault"] == {"reason": "unreadable", "unreadable": ["output_tokens"],
+                                       "unmodelled": {"message_delta.usage": {"service_tier": "standard"}}}
+
+
+def test_a_repeated_message_start_changes_nothing_as_before(monkeypatch):
+    """Only the first message_start counts, as in the SDK's accumulator before #221."""
+    events = event_list()
+    repeat = json.loads(json.dumps(events[0]))
+    repeat["message"]["usage"] = {"input_tokens": 99, "output_tokens": 0}
+    events.insert(1, repeat)
+    status, outcome, safe_error, call_end, _ = image_run(monkeypatch, encode(events))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert (call_end["prompt_tokens"], call_end["completion_tokens"]) == (10, 5) and "usage_fault" not in call_end
+
+
+def test_an_unreadable_usage_is_named_once_however_often_it_arrives(monkeypatch):
+    events = event_list(delta_usage="weird")
+    events.insert(4, dict(events[4]))
+    assert [event["type"] for event in events].count("message_delta") == 2
+    status, outcome, safe_error, call_end, _ = image_run(monkeypatch, encode(events))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert call_end["usage_fault"] == {"reason": "unreadable", "unreadable": ["message_delta.usage"]}
+
+
+def test_usage_reader_failure_is_a_recorded_fault_never_a_lost_answer(monkeypatch):
+    from temper_ai.llm.providers import anthropic as anthropic_provider
+
+    def broken(*_):
+        raise RuntimeError("synthetic reader failure")
+    monkeypatch.setattr(anthropic_provider, "_read_single_send_usage", broken)
+    status, outcome, safe_error, call_end, _ = image_run(monkeypatch, response_events())
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert outcome.structured_output == {"verdict": "ok"} and outcome.metadata["usage"] == NULL_USAGE
+    assert call_end["usage_fault"] == {"reason": "unreadable", "unreadable": ["reader"]}
+
+
+@pytest.mark.parametrize(("fields", "count"), [({f"field_{n}": n for n in range(400)}, 400),
+                                               ({"odd": float("nan")}, 1)], ids=["too-large", "not-json"])
+def test_unmodelled_values_too_large_or_not_json_are_only_counted(monkeypatch, fields, count):
+    """What reaches the call's events stays small and storable; the fault still counts."""
+    status, outcome, safe_error, call_end, _ = image_run(
+        monkeypatch, response_events(delta_usage={"output_tokens": 5, **fields}))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert (call_end["prompt_tokens"], call_end["completion_tokens"]) == (10, 5)
+    assert call_end["usage_fault"] == {"reason": "unmodelled", "unmodelled_count": {"message_delta.usage": count}}
+
+
+@pytest.mark.parametrize(("fields", "record"), [
+    ({"tier": "priority", "flag": True, "gone": None, "ratio": 1.5, "count": 7},
+     {"tier": "priority", "flag": True, "gone": None, "ratio": 1.5, "count": 7}),
+    ({"note": "a" * 64}, {"note": "a" * 64}),
+    ({"note": "a" * 65}, {"note": {"type": "string", "length": 65}}),
+    ({"split": [1, 2, 3]}, {"split": {"type": "array", "length": 3}}),
+    ({"detail": {"tokens": 1}}, {"detail": {"type": "object", "length": 1}}),
+], ids=["plain-values", "string-at-limit", "string-past-limit", "array", "object"])
+def test_unmodelled_values_are_kept_only_when_plain(monkeypatch, fields, record):
+    """We know nothing about an unmodelled field, so only a plain value reaches the
+    call's events: null, a boolean, a number or a short string. Anything else is
+    recorded as its JSON type and length."""
+    status, outcome, safe_error, call_end, _ = image_run(
+        monkeypatch, response_events(delta_usage={"output_tokens": 5, **fields}))
+    assert status == Status.COMPLETED, f"synthetic status: {safe_error}"
+    assert (call_end["prompt_tokens"], call_end["completion_tokens"]) == (10, 5)
+    assert call_end["usage_fault"] == {"reason": "unmodelled", "unmodelled": {"message_delta.usage": record}}
+
+
+def test_an_unmodelled_value_that_is_not_json_keeps_the_counters():
+    """No JSON reply can hold such a value, only an object made in process; the
+    counters are still read and the field is still counted, never a reader fault."""
+    from temper_ai.llm.providers import anthropic as anthropic_provider
+    start = anthropic.types.Usage(input_tokens=10, output_tokens=1)
+    delta = anthropic.types.MessageDeltaUsage(output_tokens=5, odd={1, 2})
+    assert delta.model_extra == {"odd": {1, 2}}
+    usage, fault = anthropic_provider._single_send_usage_never_raises(start, [delta])
+    assert usage == {**NULL_USAGE, "input_tokens": 10, "output_tokens": 5}
+    assert fault == {"reason": "unmodelled", "unmodelled_count": {"message_delta.usage": 1}}
+
+
+def test_stream_without_message_delta_invents_no_output_count(monkeypatch):
+    """No message_delta: no stop reason (the answer is partial) and no output count, not message_start's 0."""
+    events = [event for event in event_list() if event["type"] != "message_delta"]
+    status, outcome, _, call_end, _ = image_run(monkeypatch, encode(events))
+    assert status == Status.FAILED and outcome.error == "image_input: partial (SingleSendError)"
+    assert all(call_end[key] is None for key in CALL_COUNTERS)
+    assert call_end["usage_fault"] == {"reason": "unreadable", "unreadable": ["message_delta.usage"]}
+
+
+@pytest.mark.parametrize("case", ["block-before-message-start", "delta-of-unstarted-block", "stop-of-unstarted-block"])
+def test_answer_events_out_of_order_fail_partial_with_one_send(monkeypatch, case):
+    """The order checks the SDK's accumulator made, kept now that raw events are read."""
+    events = event_list()
+    if case == "block-before-message-start":
+        events[0], events[1] = events[1], events[0]
+    else:
+        events[2 if case == "delta-of-unstarted-block" else 3]["index"] = 1
+    status, outcome, _, _, _ = image_run(monkeypatch, encode(events))
+    assert status == Status.FAILED and outcome.error == "image_input: partial (SingleSendError)"

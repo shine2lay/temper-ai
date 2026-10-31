@@ -257,6 +257,11 @@ class LLMAgent(AgentABC):
                     if response is not None:
                         usage.update((response.raw_response or {}).get("usage", {}))
                         metadata["finish_reason"] = response.finish_reason
+                        # A usage shape the provider could not fully read: kept
+                        # on this call's own events, so it is counted, not lost.
+                        usage_fault = (response.raw_response or {}).get("usage_fault")
+                        if usage_fault is not None:
+                            metadata["usage_fault"] = usage_fault
                     metadata.update(usage=usage, cost_basis="unknown", latency_ms=None)
                     if response is not None:
                         prompt, completion = usage["input_tokens"], usage["output_tokens"]

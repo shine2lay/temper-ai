@@ -387,6 +387,10 @@ class _Attempt:
         if self.response is not None:
             meta = self.response.raw_response or {}
             try:
+                # Usage is what this harness measures: a usage the provider could
+                # not fully read (it kept the answer) still fails the attempt.
+                if meta.get("usage_fault") is not None:
+                    raise ss.SingleSendError("strict_parser")
                 self.usage = ss.reported_usage(meta.get("usage"), codex=self.fixed.get("family") == "B")
             except ss.SingleSendError:
                 self.usage = ss.reported_usage(None, codex=self.fixed.get("family") == "B")

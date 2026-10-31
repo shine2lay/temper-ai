@@ -156,7 +156,9 @@ whole totals**, never add or subtract a subset. This conservative full-input pri
 requires the later workflow to verify publicly that cached input costs no more
 than base input. Unreported counters/splits stay null, never invented zeros.
 Malformed/extra usage fields or invalid subsets give FAILED `strict_parser` with
-UNKNOWN usage and cost. A known but unpriced category (Anthropic cache counters
+UNKNOWN usage and cost. (The Anthropic provider itself keeps the answer and
+reports such a usage as `usage_fault`; usage is what this harness measures, so
+here the attempt still fails.) A known but unpriced category (Anthropic cache counters
 > 0) keeps COMPLETED and exact KNOWN usage with no failure reason, but UNKNOWN
 cost; it does not pretend the parser failed. Premium cache writes, although never
 requested, could exceed the reserved base-rate exposure: that reservation is then

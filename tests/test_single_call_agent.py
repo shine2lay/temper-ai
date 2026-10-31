@@ -1529,6 +1529,27 @@ def test_anthropic_malformed_usage_fails_without_losing_answer_or_resending(tmp_
     assert_schema(attempt)
 
 
+@pytest.mark.parametrize("shape", ["start-unmodelled", "absent"])
+def test_anthropic_usage_fault_still_fails_this_harness_with_the_answer_kept(tmp_path, monkeypatch, shape):
+    """The provider keeps the answer and reports the usage fault (#221); usage is
+    what this harness measures, so the attempt still fails strict_parser."""
+    cfg = fixture_config(tmp_path)
+    start = b'"usage": {"input_tokens": 10, "output_tokens": 0}'
+    data = anthropic_events()
+    if shape == "start-unmodelled":
+        data = data.replace(start, b'"usage": {"input_tokens": 10, "output_tokens": 0, "unexpected": 0}')
+    else:
+        data = data.replace(b', ' + start, b"").replace(b', "usage": {"output_tokens": 5}', b"")
+        assert b"usage" not in data
+    provider = fake_anthropic(monkeypatch, lambda request: httpx.Response(200, content=data, headers={"content-type": "text/event-stream"}))
+    result, attempt, call, _ = run_slot(cfg, provider)
+    assert result.status == Status.FAILED and attempt["failure_reasons"] == ["strict_parser"]
+    assert attempt["usage_state"] == attempt["cost_state"] == "UNKNOWN"
+    assert attempt["transmissions"] == provider._test_request_starts == 1
+    assert call["response_id"] == "msg_FAKE137" and Path(call["raw_path"]).read_bytes() == ANSWER.encode()
+    assert_schema(attempt)
+
+
 @pytest.mark.parametrize("case", ["currency", "currency-missing", "model", "rate", "counter", "extra", "split",
                                   "float-rounds", "decimal-rounds"])
 def test_price_recomputation_refuses_missing_unpriced_or_malformed_inputs(case):

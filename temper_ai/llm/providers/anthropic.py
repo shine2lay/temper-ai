@@ -786,47 +786,56 @@ class AnthropicLLM(BaseLLM):
                     # Explicit close belongs to the bounded, privacy-scoped worker,
                     # not a potentially blocking context-manager exit on this thread.
                     control.own(lambda: manager.__exit__(None, None, None))
-                    stopped = False
-                    for event in stream:
+                    # The answer and its usage are read apart: nothing about usage
+                    # may cost the answer (#221). So the raw events are read, not
+                    # `stream`: the SDK's accumulator behind it raises on a usage
+                    # shape it does not expect, before the stop reason arrives.
+                    # The request is unchanged. The two order checks below are
+                    # the ones that accumulator made.
+                    started = stopped = False
+                    blocks: set[Any] = set()
+                    response_id = stop_reason = start_usage = None
+                    delta_usages: list[Any] = []
+                    for event in stream._raw_stream:  # pinned SDK; tests drive the real one
                         control.check()  # SDK-visible events; watchdog covers filtered pings/silence.
                         kind = getattr(event, "type", None)
-                        event_usage = (getattr(getattr(event, "message", None), "usage", None) if kind == "message_start"
-                                       else getattr(event, "usage", None) if kind == "message_delta" else None)
                         if kind == "message_start":
-                            response.raw_response = {"response_id": ss.safe_response_id(getattr(event.message, "id", None))}
-                        if event_usage is not None and getattr(event_usage, "model_extra", None):
-                            raise ss.SingleSendError("strict_parser", response=response)
-                        if kind == "content_block_start":
+                            if not started:  # a repeat changes nothing, as in that accumulator
+                                message = getattr(event, "message", None)
+                                response_id = ss.safe_response_id(getattr(message, "id", None))
+                                start_usage = getattr(message, "usage", None)
+                                response.raw_response = {"response_id": response_id}
+                                started = True
+                        elif not started:
+                            raise ss.SingleSendError("partial", response=response)
+                        elif kind == "content_block_start":
                             block = getattr(event, "content_block", None)
                             if getattr(block, "type", None) not in ("text", "thinking", "redacted_thinking"):
                                 raise ss.SingleSendError("partial", response=response)
-                        if kind == "content_block_delta":
+                            blocks.add(getattr(event, "index", None))
+                        elif kind in ("content_block_delta", "content_block_stop") and getattr(event, "index", None) not in blocks:
+                            raise ss.SingleSendError("partial", response=response)
+                        elif kind == "content_block_delta":
                             delta = getattr(event, "delta", None)
                             if delta is not None and getattr(delta, "type", None) == "text_delta":
                                 text.append(delta.text)
                                 response.content = "".join(text)
-                        if kind == "message_stop":
+                        elif kind == "message_delta":
+                            stop_reason = getattr(getattr(event, "delta", None), "stop_reason", None)
+                            delta_usages.append(getattr(event, "usage", None))
+                        elif kind == "message_stop":
                             stopped = True
                     control.check()
                     if not stopped:
                         raise ss.SingleSendError("partial", response=response)
-                    final = stream.get_final_message()
-                    usage = final.usage
-                    stop = final.stop_reason if final.stop_reason in ("end_turn", "stop_sequence", "max_tokens", "tool_use", "pause_turn", "refusal") else None
+                    usage, usage_fault = _single_send_usage_never_raises(start_usage, delta_usages)
+                    stop = stop_reason if stop_reason in ("end_turn", "stop_sequence", "max_tokens", "tool_use", "pause_turn", "refusal") else None
+                    response.prompt_tokens = usage["input_tokens"]
+                    response.completion_tokens = usage["output_tokens"]
                     response.finish_reason = stop
-                    response.raw_response = {"response_id": ss.safe_response_id(final.id), "terminal_complete": stopped}
-                    if getattr(usage, "model_extra", None):
-                        raise ss.SingleSendError("strict_parser", response=response)
-                    reported = ss.reported_usage({"input_tokens": getattr(usage, "input_tokens", None),
-                                "output_tokens": getattr(usage, "output_tokens", None),
-                                "total_tokens": None,
-                                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
-                                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None)})
-                    response.prompt_tokens = reported["input_tokens"]
-                    response.completion_tokens = reported["output_tokens"]
-                    response.finish_reason = stop
-                    response.raw_response = {"response_id": ss.safe_response_id(final.id), "usage": reported,
-                                             "terminal_complete": stopped}
+                    response.raw_response = {"response_id": response_id, "usage": usage, "terminal_complete": stopped}
+                    if usage_fault is not None:
+                        response.raw_response["usage_fault"] = usage_fault
                     if stop == "max_tokens":
                         raise ss.SingleSendError("truncation", response=response)
                     if stop not in ("end_turn", "stop_sequence"):
@@ -1032,3 +1041,104 @@ def _parse_response(response: Any, model: str, latency_ms: int | None = None) ->
         tool_calls=tool_calls if tool_calls else None,
         reasoning="\n\n".join(thinking_parts) or None,
     )
+
+
+# Single-send usage (#221). Usage describes the answer; it never decides
+# whether the answer is kept. Anthropic adds usage fields over time (the pinned
+# SDK's MessageDeltaUsage models five), and one such field cost a whole
+# single-send answer (#194, attempt 3).
+_SINGLE_SEND_COUNTERS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+# Every message reports these two, so a null one is a shape we cannot read.
+# The cache counters may be null: not reported.
+_REQUIRED_COUNTERS = ("input_tokens", "output_tokens")
+# Unmodelled fields are kept with their values up to this size; past it, or
+# when not storable JSON, only how many arrived where.
+_UNMODELLED_RECORD_BYTES = 4096
+# A string value of an unmodelled field is kept up to this length; past it, only
+# its type and length (a service tier or a region fits, free text does not).
+_UNMODELLED_TEXT_CHARS = 64
+
+
+def _single_send_usage_never_raises(start: Any, deltas: list[Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """The usage of one single-send answer, and what was wrong with it. Never raises.
+
+    `start` is message_start's usage; `deltas` holds each message_delta's.
+    The usage always has the five single-send counters, and one we do not have
+    is None, never 0. The fault is None for a clean read, otherwise a
+    content-free record with a reason: "unmodelled" (fields the pinned SDK does
+    not model: the counters are still read and the fields are recorded),
+    "unreadable" (a usage object or counter we cannot read: every counter is
+    None and `unreadable` names what) or "absent" (no usage at all: every
+    counter is None). A failure of this reader itself is an unreadable usage
+    too, never a lost answer.
+    """
+    from temper_ai.llm.single_send import USAGE_COUNTERS
+    try:
+        return _read_single_send_usage(start, deltas)
+    except Exception:  # noqa: BLE001 - accounting must never cost the answer
+        return {key: None for key in USAGE_COUNTERS}, {"reason": "unreadable", "unreadable": ["reader"]}
+
+
+def _read_single_send_usage(start: Any, deltas: list[Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    from pydantic import BaseModel
+
+    from temper_ai.llm import single_send as ss
+    usage = {key: None for key in ss.USAGE_COUNTERS}
+    if start is None and all(delta is None for delta in deltas):
+        return usage, {"reason": "absent"}
+    unreadable: list[str] = [] if deltas else ["message_delta.usage"]
+    unmodelled: dict[str, dict[str, Any]] = {}
+    for where, value in [("message_start.usage", start), *(("message_delta.usage", delta) for delta in deltas)]:
+        if not isinstance(value, BaseModel):
+            if where not in unreadable:  # missing on one side, or not an object: nothing to merge
+                unreadable.append(where)
+        elif value.model_extra:
+            unmodelled.setdefault(where, {}).update(value.model_extra)
+    if not unreadable:
+        # The pinned SDK's own merge (anthropic/lib/streaming/_messages.py,
+        # accumulate_event), so an ordinary usage reads exactly as it always did.
+        merged = {key: getattr(start, key, None) for key in _SINGLE_SEND_COUNTERS}
+        for delta in deltas:
+            merged["output_tokens"] = getattr(delta, "output_tokens", None)
+            for key in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+                if getattr(delta, key, None) is not None:
+                    merged[key] = getattr(delta, key)
+        unreadable = [key for key, count in merged.items()
+                      if (count is None and key in _REQUIRED_COUNTERS) or (count is not None and ss.counter(count) is None)]
+        if not unreadable:
+            usage = ss.reported_usage({**merged, "total_tokens": None})
+    fault: dict[str, Any] | None = {"reason": "unreadable", "unreadable": unreadable} if unreadable else None
+    if unmodelled:
+        fault = fault or {"reason": "unmodelled"}
+        fault.update(_unmodelled_record(unmodelled))
+    return usage, fault
+
+
+def _unmodelled_record(unmodelled: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Unmodelled usage fields, each value as _unmodelled_value records it; only counts when too large or not storable JSON."""
+    kept = {where: {field: _unmodelled_value(value) for field, value in fields.items()}
+            for where, fields in unmodelled.items()}
+    try:
+        size = len(json.dumps(kept, allow_nan=False).encode())
+    except (TypeError, ValueError):  # not JSON at all, or NaN: still never a reason to lose the counters
+        size = None
+    if size is not None and size <= _UNMODELLED_RECORD_BYTES:
+        return {"unmodelled": kept}
+    return {"unmodelled_count": {where: len(fields) for where, fields in unmodelled.items()}}
+
+
+def _unmodelled_value(value: Any) -> Any:
+    """How one unmodelled usage field's value is recorded.
+
+    By definition we do not know what such a field holds, so its value is kept
+    only when it is null, a boolean, a number or a string of at most
+    _UNMODELLED_TEXT_CHARS characters. An object, an array or a longer string
+    is recorded as its JSON type and length alone. JSON-parsed usage holds
+    nothing else; anything that is not JSON fails the record's own check.
+    """
+    if isinstance(value, str) and len(value) <= _UNMODELLED_TEXT_CHARS:
+        return value
+    for kind, name in ((dict, "object"), (list, "array"), (str, "string")):
+        if isinstance(value, kind):
+            return {"type": name, "length": len(value)}
+    return value

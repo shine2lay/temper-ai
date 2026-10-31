@@ -161,16 +161,81 @@ def test_closure_extra_missing_cycle_and_schema_controls():
 
 
 def test_literal_raw_clean_types_and_script_exception():
-    raw = literals()[0]
+    raw, _, d = literals()
     prep = raw[("stage", "group")]["stage"]["nodes"][0]
     prep.update({"gate": False, "max_loops": 1, "temperature": 0.5,
-                 "timeout_seconds": None, "renamed_from": "old", "undoes": ["old"],
-                 "memory": {"literal": [True, 1, 1.0, None, "plain"]}})
+                 "timeout_seconds": None, "renamed_from": "old", "undoes": ["old"]})
+    # Generic JSON is valid metadata, not permission to enable raw memory.
+    d["metadata_inputs_json"] = text({"label": "synthetic", "literal": [True, 1, 1.0, None, "plain"]})
     raw[("agent", "caller")]["agent"]["single_call"].update({"temperature": 1, "cost_cap_usd": "1.25", "thinking": {"type": "disabled"}})
-    raw_check(assemble(raw))
+    raw_check(assemble(raw, d))
     # No global value rule: ordinary config still accepts a literal syntactic token.
     raw[("agent", "caller")]["agent"]["single_call"]["token"] = "ordinary-explicit-label"
-    raw_check(assemble(raw))
+    raw_check(assemble(raw, d))
+
+
+@pytest.mark.parametrize("scope", ["nested-node", "stage", "ref-override", "workflow", "defaults", "agent"])
+@pytest.mark.parametrize("key,value", [
+    pytest.param("tools", None, id="tools-null"),
+    pytest.param("tools", [], id="tools-empty"),
+    pytest.param("tools", ["bash"], id="tools-nonempty"),
+    pytest.param("memory", None, id="memory-null"),
+    pytest.param("memory", {}, id="memory-empty"),
+    pytest.param("memory", {"literal": [True, 1, 1.0, None, "plain"]}, id="memory-nonempty"),
+    pytest.param("fallback", None, id="fallback-null"),
+    pytest.param("fallback", [], id="fallback-empty-list"),
+    pytest.param("fallback", {}, id="fallback-empty-object"),
+    pytest.param("fallback", [{"model": "other"}], id="fallback-nonempty"),
+])
+def test_raw_profile_presence_refuses_before_snapshot_loading(monkeypatch, scope, key, value):
+    """V14: approved raw bytes cannot authorize a prohibited profile setting.
+
+    Expected codes are declared by scope: existing closed-field rejection remains
+    FIELDS; recognized node/workflow memory and node tools are profile SCHEMA.
+    No resolved graph comparison, expansion or agent validation may do this job.
+    """
+    raw = literals()[0]
+    workflow = raw[("workflow", "sample")]["workflow"]
+    scopes = {"nested-node": raw[("stage", "group")]["stage"]["nodes"][0],
+              "stage": raw[("stage", "group")]["stage"],
+              "ref-override": workflow["nodes"][0], "workflow": workflow,
+              "agent": raw[("agent", "preparer")]["agent"]}
+    target = workflow.setdefault("defaults", {}) if scope == "defaults" else scopes[scope]
+    target[key] = deepcopy(value)
+    known = (scope in {"nested-node", "stage", "ref-override"} and key in {"tools", "memory"}
+             or scope == "workflow" and key == "memory")
+    code = RefusalCode.SCHEMA if known else RefusalCode.FIELDS
+    case = assemble(raw)
+    with pytest.raises(AdmissionRefused) as exc:
+        raw_check(case)
+    assert exc.value.code == code
+    def forbidden(*args, **kwargs):
+        pytest.fail("profile refusal happened after snapshot loader entry")
+    monkeypatch.setattr(candidate._SnapshotLoader, "load_workflow", forbidden)
+    with pytest.raises(AdmissionRefused) as exc:
+        resolve(case)
+    assert exc.value.code == code
+
+
+@pytest.mark.parametrize("target,code", [
+    pytest.param("prepare", RefusalCode.SCHEMA, id="real-loop"),
+    pytest.param("", RefusalCode.SCHEMA, id="empty-loop-target"),
+    pytest.param("../other", RefusalCode.SCHEMA, id="malformed-loop-target"),
+    pytest.param([], RefusalCode.TYPE, id="wrong-loop-target-type"),
+])
+def test_raw_profile_loop_refuses_before_snapshot_loading(monkeypatch, target, code):
+    raw = literals()[0]
+    raw[("stage", "group")]["stage"]["nodes"][1].update(loop_to=target, max_loops=2)
+    case = assemble(raw)
+    with pytest.raises(AdmissionRefused) as exc:
+        raw_check(case)
+    assert exc.value.code == code
+    def forbidden(*args, **kwargs):
+        pytest.fail("loop refusal happened after snapshot loader entry")
+    monkeypatch.setattr(candidate._SnapshotLoader, "load_workflow", forbidden)
+    with pytest.raises(AdmissionRefused) as exc:
+        resolve(case)
+    assert exc.value.code == code
 
 
 def change_script(d, template):

@@ -60,6 +60,8 @@ def _create_pg_engine(url: str, pool_size: int) -> Engine:
         pool_pre_ping=True,
         poolclass=QueuePool,
         echo=False,
+        # Error text and logs never carry bound values: they can hold a run's inputs (CWE-532).
+        hide_parameters=True,
     )
 
     # Every time temper stores carries UTC (temper_ai/shared/clock.py), and
@@ -87,6 +89,8 @@ def _create_sqlite_engine(url: str) -> Engine:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool if is_memory else NullPool,
         echo=False,
+        # Error text and logs never carry bound values: they can hold a run's inputs (CWE-532).
+        hide_parameters=True,
     )
 
     @event.listens_for(engine, "connect")

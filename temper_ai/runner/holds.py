@@ -17,7 +17,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -138,28 +141,38 @@ def end(execution_id: str, status: str, by: str) -> dict | None:
     Ending is a single step in the database, so two things ending the same wait at once -- the
     deadline coming round while someone presses Give up -- cannot both start the clean-ups.
     """
-    from sqlmodel import select
-
     from temper_ai.database import get_session
-    from temper_ai.runner.models import CleanupHold
     try:
         with get_session() as session:
-            row = session.exec(
-                select(CleanupHold).where(CleanupHold.execution_id == execution_id),
-            ).first()
-            if row is None or row.status != "waiting":
-                return None
-            row.status = status
-            row.ended_at = datetime.now(UTC)
-            row.ended_by = by
-            session.add(row)
-            session.flush()
-            out = as_dict(row)
-        logger.info("%s: the wait on its clean-ups ended (%s, by %s)", execution_id, status, by)
+            out = end_in(session, execution_id, status, by)
+        if out is not None:
+            logger.info("%s: the wait on its clean-ups ended (%s, by %s)", execution_id, status, by)
         return out
     except Exception:
         logger.error("Could not end the wait on the clean-ups of %s", execution_id, exc_info=True)
         return None
+
+
+def end_in(session: Session, execution_id: str, status: str, by: str) -> dict | None:
+    """End a still-waiting hold in the caller's transaction, without committing.
+
+    The conditional UPDATE selects one winner even when Give up and the deadline
+    arrive together. Cleanup dispatch uses this with queue_run_in: refusal rolls
+    both back rather than restoring an old hold over another actor's decision.
+    """
+    from sqlalchemy import update
+    from sqlmodel import col
+
+    from temper_ai.runner.models import CleanupHold
+
+    row = session.execute(
+        update(CleanupHold)
+        .where(col(CleanupHold.execution_id) == execution_id,
+               col(CleanupHold.status) == "waiting")
+        .values(status=status, ended_at=datetime.now(UTC), ended_by=by)
+        .returning(CleanupHold),
+    ).scalar_one_or_none()
+    return as_dict(row) if row is not None else None
 
 
 def take_over(execution_id: str, by: str) -> dict | None:

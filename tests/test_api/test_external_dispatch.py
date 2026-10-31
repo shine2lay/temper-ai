@@ -19,6 +19,7 @@ from temper_ai.runner.models import WorkflowRun
 @pytest.fixture
 def isolated_db(tmp_path, monkeypatch):
     db_path = tmp_path / "external_test.db"
+    monkeypatch.setenv("WORKSPACE_DIR", "/tmp")
     monkeypatch.setenv("TEMPER_DATABASE_URL", f"sqlite:///{db_path}")
     reset_database()
     init_database(f"sqlite:///{db_path}")

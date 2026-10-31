@@ -117,7 +117,10 @@ def run_threads(eid: str) -> list[threading.Thread]:
 
 def wait_parked(state, eid: str, n_attempts: int = 1, timeout: float = 20.0) -> dict:
     """Wait until attempt ``n_attempts`` has let go at an approval and no thread holds the run.
-    While one does, each poll asks only that, in memory (sup.wait_ended says why)."""
+    While one does, readiness asks only that, in memory (sup.wait_ended says why). The run's
+    newest event is probed separately about once a second and once more at inactivity expiry.
+    Observed progress restarts the ``timeout`` count; a slow active run is not mistaken for a
+    stopped one. sup.wait_for documents the cooperative deadlines and extension cap."""
     def ready():
         if eid in state.running or run_threads(eid):
             return None
@@ -127,14 +130,16 @@ def wait_parked(state, eid: str, n_attempts: int = 1, timeout: float = 20.0) -> 
         if eid in state.running or run_threads(eid):
             return None
         return a[-1]
-    return sup.wait_for(ready, timeout, what=f"attempt {n_attempts} of {eid} to let go")
+    return sup.wait_for(ready, timeout, what=f"attempt {n_attempts} of {eid} to let go",
+                        progress=lambda: sup.newest_event_id(eid))
 
 
 def wait_ended(eid: str, n_attempts: int, timeout: float = 20.0) -> list[dict]:
     """Wait until attempt ``n_attempts`` has finished (completed, failed or cancelled) and the
     thread that ran it has let go. The attempt row ends before that thread leaves the server's
     running runs, so a Resume sent in between is refused as already running (409). While the
-    server holds the run, each poll asks only that, in memory (sup.wait_ended says why)."""
+    server holds the run, readiness asks only that, in memory (sup.wait_ended says why). The
+    event-progress probe and cooperative deadlines are the same as wait_parked's."""
     def ended():
         if sup.run_held(eid):
             return None
@@ -142,7 +147,8 @@ def wait_ended(eid: str, n_attempts: int, timeout: float = 20.0) -> list[dict]:
         if len(a) >= n_attempts and a[-1]["status"] in ("completed", "failed", "cancelled"):
             return None if sup.run_held(eid) else a
         return None
-    return sup.wait_for(ended, timeout, what=f"attempt {n_attempts} of {eid} to end")
+    return sup.wait_for(ended, timeout, what=f"attempt {n_attempts} of {eid} to end",
+                        progress=lambda: sup.newest_event_id(eid))
 
 
 def open_gate(client, eid: str, name: str, timeout: float = 20.0) -> dict:

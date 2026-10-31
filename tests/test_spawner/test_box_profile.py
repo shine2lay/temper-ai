@@ -304,6 +304,7 @@ def test_check_row_never_stops_a_legacy_box_for_its_profile():
 @pytest.fixture
 def isolated_db(tmp_path, monkeypatch):
     db_path = tmp_path / "profile.db"
+    monkeypatch.setenv("WORKSPACE_DIR", "/w")
     monkeypatch.setenv("TEMPER_DATABASE_URL", f"sqlite:///{db_path}")
     reset_database()
     init_database(f"sqlite:///{db_path}")

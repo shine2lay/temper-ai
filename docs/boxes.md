@@ -106,6 +106,39 @@ worker never opens the file; docker binds it.
 - Sealed boxes get no login file, with the setting or without
   ([Sealed boxes](#sealed-boxes-bs1)).
 
+## A run's workspace path
+
+A supplied `workspace_path` must name a plain absolute path strictly inside
+`WORKSPACE_DIR`, never the shared tree itself. The queue checks before writing a
+run row (including resumes, forks and clean-ups); the API reports HTTP 400 with
+the refused path. Empty or absent paths remain allowed: the server allocates the
+workspace. An unset `WORKSPACE_DIR` permits only that automatic case.
+
+Before building a legacy box's Docker command, the worker checks again using the
+template's `WORKSPACE_DIR` and the filesystem it can see. Both the submitted path
+and its resolved source must be strict descendants. A prefix sibling, an escape
+through a symlink, a comma or either quote is refused with `WorkspacePathRefused`
+(a `SpawnerError`), not passed to Docker's unescaped `--mount` CSV. The legacy bind
+uses the checked resolved source at the submitted target. An in-tree symlink is
+allowed only when its resolved source also passes; a later swap of a source or
+ancestor remains the check-to-bind race described below.
+
+Legacy runs may also use descendants of `/app/workspaces` when it is the same
+workspace tree: the server verifies the alias by filesystem identity at queue
+time, and the worker requires an inherited bind from `WORKSPACE_DIR` to that
+alias at spawn time. The alias itself is refused, as are other inherited folders:
+an existing mount is not permission to name any of its contents as a workspace.
+Historical runs naming the shared root or outside folders must be adapted before
+resuming; existing rows are not rewritten or moved by this check. A refused
+boxed resume, fork or lane recovery leaves its waiting cleanup hold intact.
+Give up and the deadline sweeper release a hold and queue its cleanup pass in
+one transaction: a workspace refusal leaves the same hold and deadline waiting,
+so later sweeps still see it. No unsafe workspace is dispatched automatically.
+Successful admissions retain their normal cleanup ownership and lane.
+
+Sealed boxes retain their existing stricter rules: host paths only, no alias,
+and pinned paths rather than following symlinks ([Sealed boxes](#sealed-boxes-bs1)).
+
 ## A worktree's main repository
 
 A run whose workspace is a `git worktree` needs its main repository too: the
@@ -117,10 +150,13 @@ only for a real worktree (`checked_main_repo()` in
 - the `.git` file names a worktree record, `<main>/.git/worktrees/<name>`, and
   `<main>` holds no comma or quote (docker would read the rest of its `--mount`
   argument as more options, such as another source);
-- `<main>` is inside `WORKSPACE_DIR` (never `WORKSPACE_DIR` itself), or inside a
-  folder of the worker's `TEMPER_DOCKER_MAIN_REPO_ROOTS` (`:`-separated host paths;
-  unset or empty: the install's checkout, the folder the template's `/app/configs`
-  comes from; set it to `WORKSPACE_DIR`'s path to allow nothing more);
+- `<main>` is strictly inside `WORKSPACE_DIR`, or inside a folder explicitly named
+  in the worker's `TEMPER_DOCKER_MAIN_REPO_ROOTS` (`:`-separated host paths; unset or
+  empty: no extra roots). The install's checkout is **not** implicitly allowed;
+- `<main>` must never be `WORKSPACE_DIR` itself or contain it, even when explicitly
+  named in that setting. Both normalized and resolved paths are checked, so naming
+  a symlink to the checkout or to the shared root does not evade the refusal. A
+  checkout containing the shared tree cannot be added as a main-repository mount;
 - no symlink lies between that folder and the record, and the record is a folder
   the worker can see;
 - the record's back-link file, `<record>/gitdir`, which `git worktree add` writes,
@@ -135,10 +171,13 @@ the record is inside the workspace or inside a mount the box already has (with
 `TEMPER_DOCKER_WORKSPACES=all`, the whole workspaces tree). A moved worktree fails
 the back-link check: `git worktree repair` in it fixes the link.
 
-- The worker checks with what it can see, so a worktree of a repository it has no
-  view of is refused. The worker `docker-compose.yml` sets up has the checkout's
-  `temper_ai/`, `configs/` and workspaces tree, not its `.git`: there, a worktree of
-  the checkout itself is refused, though the checkout is an allowed folder.
+- The worker checks with what it can see, so an otherwise allowed repository's
+  worktree is refused if its record is invisible. The shared-tree/ancestor refusal
+  does not depend on missing visibility: it holds even if a worker can read the
+  checkout's `.git`.
+- This guard controls only an **additional** main-repository mount. It does not
+  remove or narrow inherited mounts; a record already covered by one still adds
+  nothing. This change alone does not make legacy boxes isolated.
 - The worker reads the setting once, when it starts. A value that isn't absolute
   and plain, or is `/`, keeps the worker from starting (`Watcher won't start:
   TEMPER_DOCKER_MAIN_REPO_ROOTS=...`).
@@ -174,13 +213,6 @@ What temper cannot close by itself yet, handed to Architecture:
   still going in another box could swap a folder on the way for a symlink. That
   holds for the workspace itself as much as for a worktree's main repository;
   sealed boxes bind pinned paths instead.
-- The default main-repository root, the install's checkout, holds `WORKSPACE_DIR`
-  and `.env`. A worker that could see the checkout's `.git` at its host path would
-  give a real worktree of the checkout the whole checkout read-write, `.env` and
-  every run's workspace with it (under `TEMPER_DOCKER_WORKSPACES=own` too). The
-  worker `docker-compose.yml` sets up can't see it, so nothing is mounted today.
-  Give no worker that view until a main repository that is `WORKSPACE_DIR` or holds
-  it is refused.
 - Built, switched off: a one-shot delivery into a non-dumpable runner
   (`TEMPER_BOX_SECRET_BOOTSTRAP=oneshot`, below), which closes the `/proc` read.
   Still under consideration: a separate user for agent tools; a database role per

@@ -704,15 +704,68 @@ def attempts(eid: str) -> list[dict]:
     return events(eid, event_type="workflow.started")
 
 
+def newest_event_id(eid: str) -> str | None:
+    """The id of the run's newest event (None before its first). It changes each time the run
+    records one, so a wait can tell a run that is still moving from one that has stopped
+    (wait_for's ``progress``)."""
+    from temper_ai.observability.recorder import get_events
+
+    newest = get_events(execution_id=eid, limit=1, newest_first=True)
+    return newest[0]["id"] if newest else None
+
+
+#: Regular progress-probe interval; inactivity expiry makes one final query, possibly sooner.
+#: The probe reads the database, and polling it 50 times a second took CPU from the run's own
+#: threads under the gate's load (#113).
+PROGRESS_EVERY = 1.0
+#: Progress may extend the initial deadline only this far from the start. Current opted-in
+#: callers use 20/30 s; an explicit initial timeout above this cap remains unchanged. Polling
+#: is cooperative: synchronous callbacks are not interrupted. For the current callers this
+#: leaves room under the local/Postgres gate's 120 s per-test limit (#225).
+PROGRESS_CAP = 100.0
+
+
 def wait_for(fn: Callable[[], Any], timeout: float = 20.0, every: float = 0.02,
-             what: str = "condition") -> Any:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        value = fn()
-        if value:
-            return value
+             what: str = "condition", progress: Callable[[], Any] | None = None) -> Any:
+    """Poll ``fn`` every ``every`` seconds until it returns something truthy, and return that.
+
+    Without ``progress`` the initial deadline is ``timeout`` seconds after the start. With it,
+    a changed probe value (such as newest_event_id) restarts the inactivity count when observed,
+    extending that deadline no further than PROGRESS_CAP seconds from the start. An explicit
+    initial timeout above that cap is retained. Normal probes run about once a second; expiry
+    reconciles pending progress before refusing, but never past the cap. A stopped run fails
+    about ``timeout`` seconds after its last observed move. These are cooperative deadlines,
+    not wall bounds that can interrupt a slow readiness/progress callback (#225)."""
+    start = time.monotonic()
+    end = start + timeout
+    seen = progress() if progress is not None else None
+    asked = moved_at = start
+    while True:
+        expired = time.monotonic() >= end
+        if expired:
+            if progress is None or time.monotonic() >= start + PROGRESS_CAP:
+                break
+        else:
+            value = fn()
+            if value:
+                return value
+        # A new event can arrive after the last scheduled probe, just before expiry. Ask once
+        # more before refusing; readiness is polled again only if that progress buys time.
+        if progress is not None and (expired or time.monotonic() - asked >= PROGRESS_EVERY):
+            asked = time.monotonic()
+            latest = progress()
+            if latest != seen:
+                seen, moved_at = latest, asked
+                end = max(end, min(moved_at + timeout, start + PROGRESS_CAP))
+        if expired and time.monotonic() >= end:
+            break
         time.sleep(every)
-    raise AssertionError(f"timed out waiting for {what}")
+    if progress is None:
+        raise AssertionError(f"timed out waiting for {what}")
+    waited = time.monotonic() - start
+    why = (f"still moving after {waited:.0f} s" if moved_at + timeout > end
+           else f"no progress for {timeout:g} s, {waited:.0f} s in all")
+    raise AssertionError(f"timed out waiting for {what} ({why})")
 
 
 def wait_ended(eid: str, n_attempts: int = 1, timeout: float = 20.0) -> list[dict]:

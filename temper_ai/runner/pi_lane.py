@@ -665,12 +665,14 @@ def resume_in_the_lane(execution_id: str) -> None:
             if row is None:
                 raise LookupError(f"no row for {execution_id}")
             name, workspace, inputs = row.workflow_name, row.workspace_path, row.inputs
-        holds.take_over(execution_id, by=execution_id)
         queue_run(execution_id, name, workspace, inputs or {}, start="resume",
                   extra={"rerun": []})
     except BaseException:
         resume_claim.release(execution_id, token)
         raise
+    # Only admitted work owns the cleanup. A later takeover error must not put
+    # back the claim of a successor that is already queued.
+    holds.take_over(execution_id, by=execution_id)
 
 
 # --- lane-status: for temper-deploy (Systems rm-a8af8c68) ------------------------------------

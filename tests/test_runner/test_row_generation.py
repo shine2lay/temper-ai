@@ -55,10 +55,11 @@ from temper_ai.runner.row_generation import RowGeneration, end_row_if_same_gener
 
 
 @pytest.fixture(autouse=True)
-def _shared_database(request, tmp_path):
+def _shared_database(request, tmp_path, monkeypatch):
     """Postgres in the database tier; otherwise a SQLite file, which threads can share."""
     from tests.conftest import TEST_DATABASE_URL
 
+    monkeypatch.setenv("WORKSPACE_DIR", "/workspaces")
     if request.node.stash.get(TEST_DATABASE_URL, "").startswith("sqlite"):
         reset_database()
         init_database(f"sqlite:///{tmp_path / 'runs.db'}")
@@ -302,7 +303,7 @@ def _put_ended_run(execution_id: str) -> None:
     """A run whose box ended it: failed(1), the worker's records and lane mark in place."""
     with get_session() as session:
         session.add(WorkflowRun(
-            execution_id=execution_id, workflow_name="wf", workspace_path="/ws",
+            execution_id=execution_id, workflow_name="wf", workspace_path="/workspaces/ws",
             status="failed", attempts=1, spawner_kind=DOCKER, spawner_handle=H,
             spawner_metadata=mark_lane({**KEPT, "container_id": C1}, "pi"),
         ))
@@ -334,7 +335,7 @@ def test_a_claim_its_requeue_and_a_fenced_end_each_land_as_one_decision():
     with deciding_events() as session:
         won, event = decide_event_in(session, attempt, expect=(WAITING,), status=CARRIED_ON,
                                      data={"carried_on_by": "owner"})
-        queue_run_in(session, run, "wf", "/ws", {"x": 1}, start="resume")
+        queue_run_in(session, run, "wf", "/workspaces/ws", {"x": 1}, start="resume")
     assert won
     assert event["status"] == CARRIED_ON
     assert event["data"] == {"attempt": 1, "carried_on_by": "owner"}
@@ -370,10 +371,10 @@ def test_a_claim_its_requeue_and_a_fenced_end_each_land_as_one_decision():
     won, event = decide_event(other, expect=(WAITING,), status=CARRIED_ON)
     assert not won and event["status"] == CANCELLED
     assert decide_event("no-such-event", expect=(WAITING,), status=CANCELLED) == (False, None)
-    queue_run(run, "wf", "/ws", None, start="fork")
+    queue_run(run, "wf", "/workspaces/ws", None, start="fork")
     assert _row(run)["status"] == "queued"
     with pytest.raises(AlreadyQueued) as refused:
-        queue_run(run, "wf", "/ws", None)
+        queue_run(run, "wf", "/workspaces/ws", None)
     assert refused.value.status == "queued"
 
 
@@ -568,7 +569,7 @@ def test_a_decision_that_loses_leaves_the_transaction_as_it_was():
         assert (event["status"], event["data"]) == (CANCELLED, {"by": "owner"})
         assert decide_event_in(session, "no-such-event", expect=(WAITING,),
                                status=CARRIED_ON) == (False, None)
-        queue_run_in(session, run, "wf", "/ws", None)
+        queue_run_in(session, run, "wf", "/workspaces/ws", None)
     assert get_event(attempt)["status"] == CANCELLED
     assert _row(run)["status"] == "queued"
 
@@ -579,7 +580,7 @@ def test_a_refused_requeue_rolls_its_decision_back():
     attempt = _waiting_attempt(run)
     with pytest.raises(AlreadyQueued) as refused, deciding_events() as session:
         assert decide_event_in(session, attempt, expect=(WAITING,), status=CARRIED_ON)[0]
-        queue_run_in(session, run, "wf", "/ws", None, start="resume")
+        queue_run_in(session, run, "wf", "/workspaces/ws", None, start="resume")
     assert refused.value.status == "running"
     assert get_event(attempt)["status"] == WAITING
     assert _row(run)["status"] == "running"
@@ -660,9 +661,9 @@ def _requeue_after_a_stale_read(module: ModuleType, run: str) -> str:
     with deciding_events() as session:
         read = session.get(WorkflowRun, run)  # the caller read the row and holds it...
         assert read.status == "failed"
-        queue_run(run, "wf", "/ws", None, start="resume")  # ...meanwhile another re-queue
+        queue_run(run, "wf", "/workspaces/ws", None, start="resume")  # ...meanwhile another re-queue
         try:
-            module.queue_run_in(session, run, "wf", "/ws", None, start="fork")
+            module.queue_run_in(session, run, "wf", "/workspaces/ws", None, start="fork")
         except module.AlreadyQueued as refused:
             return refused.status
     return "requeued again"
@@ -737,7 +738,7 @@ def _two_claims(module: ModuleType, lock: _WatchedLock, run: str) -> dict:
             with deciding_events() as session:
                 won, _ = decide_event_in(session, attempt, expect=(WAITING,), status=CARRIED_ON)
                 assert won
-                module.queue_run_in(session, run, "wf", "/ws", None, start="resume",
+                module.queue_run_in(session, run, "wf", "/workspaces/ws", None, start="resume",
                                     extra={"by": who})
                 if who == "first":
                     session.flush()  # its re-queue written, not committed, while it waits

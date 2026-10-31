@@ -7,6 +7,7 @@ so with :func:`as_the_pi_lane`.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -178,9 +179,10 @@ def make_row(execution_id: str, workflow: str = "lane_pi", *, status: str = "que
     from temper_ai.runner.models import WorkflowRun
 
     fields.setdefault("inputs", {})
+    fields.setdefault("workspace_path", str(Path(os.environ.get("WORKSPACE_DIR", "/tmp")) / "ws"))
     with get_session() as session:
         session.add(WorkflowRun(
-            execution_id=execution_id, workflow_name=workflow, workspace_path="/tmp/ws",
+            execution_id=execution_id, workflow_name=workflow,
             status=status, spawner_kind=spawner_kind, spawner_handle=handle,
             spawner_metadata=mark_lane(metadata or {}, PI_LANE if pi else None), **fields))
 

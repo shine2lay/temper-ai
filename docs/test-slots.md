@@ -147,6 +147,25 @@ Admission happens once, at the start. It can't stop work that starts later:
 pi-web-ui's checks, chats' own runs, containers. The log's pressure fields are
 there to tell such a case from a real failure.
 
+Nor can it help a suite that ran anyway. In #225 (2026-10-30), one such full
+suite timed out in a Team run's first parking wait, before installing the
+invalid config the test was meant to check. That attempt's CPU allocation
+was not recorded: its cause is not proved. Separately, controlled runs at
+15 % of one core reproduced the same phase failure: about 4 CPU-seconds of
+work took 31–40 s while events kept arriving. This demonstrates sensitivity
+to constrained CPU, not the original run's CPU share or the cause of other
+Pi-run failures.
+
+The waits in `tests/test_runner/pi_parking` (`wait_parked`, `wait_ended`)
+now use observed event progress. A new event restarts the inactivity count
+(20 s by default; current explicit callers use 30 s). Normal probes run
+about once a second; inactivity expiry checks once more for a late event.
+Progress can extend the deadline up to 100 s from the start. Explicit
+initial timeouts above 100 s would be retained; no current caller uses one.
+These are cooperative polls, not an interruptible wall bound: slow callbacks
+can overrun a deadline. A stopped run normally fails about its timeout after
+its last observed event, saying "no progress".
+
 ## How it was proven
 
 `tests/test_scripts/test_test_slot.py` has a stage test for each rule above,

@@ -39,13 +39,14 @@ def _box_env_list_mode(monkeypatch):
     monkeypatch.delenv("TEMPER_BOX_LOGIN_FILE", raising=False)
 
 
-def _inspect_json(**overrides) -> str:
+def _inspect_json(*, workspace_dir: str | None = None, **overrides) -> str:
     """What `docker inspect <worker>` returns for a worker brought up with
     the compose file plus the host-docker overlay."""
     info = {
         "Config": {
             "Image": "temper-ai-worker",
-            "Env": ["TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1", "PATH=/usr/bin"],
+            "Env": ["TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1", "PATH=/usr/bin",
+                    f"WORKSPACE_DIR={workspace_dir or os.environ.get('WORKSPACE_DIR', WORKSPACES)}"],
         },
         "HostConfig": {"ExtraHosts": ["host.docker.internal:host-gateway"]},
         "Mounts": [
@@ -60,6 +61,8 @@ def _inspect_json(**overrides) -> str:
         "NetworkSettings": {"Networks": {"temper-ai_default": {}}},
     }
     info.update(overrides)
+    if not any(value.startswith("WORKSPACE_DIR=") for value in info["Config"]["Env"]):
+        info["Config"]["Env"].append(f"WORKSPACE_DIR={workspace_dir or os.environ.get('WORKSPACE_DIR', WORKSPACES)}")
     return json.dumps([info])
 
 
@@ -102,9 +105,10 @@ def name_conflict(name: str) -> str:
 
 
 @pytest.fixture
-def workspace(tmp_path):
+def workspace(tmp_path, monkeypatch):
     ws = tmp_path / "workspaces" / "run-a"
     ws.mkdir(parents=True)
+    monkeypatch.setenv("WORKSPACE_DIR", str(ws.parent))
     return ws
 
 
@@ -173,7 +177,7 @@ class TestRunContainer:
         env = ["PATH=/usr/bin", "GITHUB_APP_ID=1234", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak",
                "GITHUB_APP_WEBHOOK_SECRET=whsec", "GITHUB_APP_CLIENT_SECRET=cs"]
         info = json.loads(_inspect_json())[0]
-        info["Config"]["Env"] = env
+        info["Config"]["Env"] = [*env, f"WORKSPACE_DIR={workspace.parent}"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert set(_envs(_run_cmd(docker))) == {
@@ -182,7 +186,8 @@ class TestRunContainer:
     def test_github_app_s_key_stays_out_even_when_inheriting(self, workspace, monkeypatch):
         monkeypatch.setenv("TEMPER_BOX_ENV", "inherit")
         info = json.loads(_inspect_json())[0]
-        info["Config"]["Env"] = ["PATH=/usr/bin", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak"]
+        info["Config"]["Env"] = ["PATH=/usr/bin", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak",
+                                  f"WORKSPACE_DIR={workspace.parent}"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert not any(e.startswith("GITHUB_APP_PRIVATE_KEY=") for e in _envs(_run_cmd(docker)))
@@ -194,7 +199,8 @@ class TestRunContainer:
         monkeypatch.setenv("TEMPER_BOX_ENV", mode)
         info = json.loads(_inspect_json())[0]
         info["Config"]["Env"] = ["PATH=/usr/bin", "TEMPER_PI_AGENT=1",
-                                 "TEMPER_PI_BOX_CONFIG=/home/x/pi/box.json"]
+                                 "TEMPER_PI_BOX_CONFIG=/home/x/pi/box.json",
+                                 f"WORKSPACE_DIR={workspace.parent}"]
         docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert not any(e.startswith("TEMPER_PI_") for e in _envs(_run_cmd(docker)))
@@ -336,7 +342,7 @@ class TestRunContainer:
 
 def _with_env(env: list[str]) -> str:
     info = json.loads(_inspect_json())[0]
-    info["Config"]["Env"] = env
+    info["Config"]["Env"] = [*env, f"WORKSPACE_DIR={os.environ.get('WORKSPACE_DIR', WORKSPACES)}"]
     return json.dumps([info])
 
 
@@ -399,6 +405,7 @@ class TestBoxEnvAllowList:
             "PATH=/usr/bin", "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1",
             "SLACK_BOT_TOKEN=xoxb-fake", "TELEGRAM_BOT_TOKEN=tg-fake", "INTERNAL_API_TOKEN=it-fake",
             "TEMPER_BOX_ENV=inherit", "TEMPER_RUN_CONTAINER=temper-run-exec-1",
+            f"WORKSPACE_DIR={workspace.parent}",
         }
         assert any(r.levelno == logging.WARNING and "inherit" in r.getMessage() for r in caplog.records)
 
@@ -427,7 +434,7 @@ class TestAllWorkspaces:
     def _server_like(tmp_path) -> tuple[str, str]:
         host = tmp_path / "workspaces"
         (host / "repos").mkdir(parents=True)
-        info = _inspect_json(Mounts=[
+        info = _inspect_json(workspace_dir=str(host), Mounts=[
             {"Type": "bind", "Source": "/src/temper_ai", "Destination": "/app/temper_ai", "RW": False},
             {"Type": "bind", "Source": str(host), "Destination": "/app/workspaces", "RW": True},
             {"Type": "bind", "Source": str(host), "Destination": str(host), "RW": True},
@@ -448,11 +455,11 @@ class TestAllWorkspaces:
         assert not any(f"target={host}/repos" in m for m in mounts)
 
     def test_a_workspace_named_by_its_path_in_the_container_is_fine(self, tmp_path, monkeypatch):
-        """Many runs name /app/workspaces itself, which is no host path."""
+        """An alias descendant is allowed; the shared alias itself is no run workspace."""
         monkeypatch.setenv("TEMPER_DOCKER_WORKSPACES", "all")
         _host, info = self._server_like(tmp_path)
         docker = FakeDocker(answers={"inspect": [(0, info, "")]})
-        _spawner(docker, "/app/workspaces").spawn("exec-1")
+        _spawner(docker, "/app/workspaces/repos").spawn("exec-1")
         assert len(docker.commands("run")) == 1
 
     def test_own_is_the_default_and_keeps_runs_apart(self, tmp_path):
@@ -469,7 +476,8 @@ class TestAllWorkspaces:
 
 class TestWorkspaceMounts:
     def test_plain_directory(self, workspace):
-        assert workspace_mounts(str(workspace)) == [Mount(str(workspace), str(workspace), read_only=False)]
+        assert workspace_mounts(str(workspace), workspace_dir=str(workspace.parent)) == [
+            Mount(str(workspace), str(workspace), read_only=False)]
 
     def test_a_git_worktree_brings_its_main_repository(self, tmp_path):
         # Laid out as `git worktree add` lays it out, back-link included; which worktrees
@@ -482,7 +490,8 @@ class TestWorkspaceMounts:
         (wt / ".git").write_text(f"gitdir: {record}\n")
         (record / "gitdir").write_text(f"{wt}/.git\n")
 
-        mounts = workspace_mounts(str(wt), main_repo_roots=[str(tmp_path / "repos")])
+        mounts = workspace_mounts(str(wt), workspace_dir=str(tmp_path),
+                                  main_repo_roots=[str(tmp_path / "repos")])
         assert mounts == [
             Mount(str(wt), str(wt), read_only=False),
             Mount(str(main), str(main), read_only=False),
@@ -500,17 +509,18 @@ class TestWorkspaceMounts:
         wt.mkdir()
         (wt / ".git").write_text(f"gitdir: {record}\n")
         (record / "gitdir").write_text(f"{wt}/.git\n")
-        mounts = workspace_mounts(str(wt), main_repo_roots=[str(main)])
+        mounts = workspace_mounts(str(wt), workspace_dir=str(tmp_path), main_repo_roots=[str(main)])
         assert mounts[0] == Mount(str(wt), str(wt), read_only=False)
         assert Mount(str(main), str(main), read_only=False) in mounts
 
     def test_a_normal_git_checkout_is_just_itself(self, workspace):
         (workspace / ".git").mkdir()
-        assert workspace_mounts(str(workspace)) == [Mount(str(workspace), str(workspace), read_only=False)]
+        assert workspace_mounts(str(workspace), workspace_dir=str(workspace.parent)) == [
+            Mount(str(workspace), str(workspace), read_only=False)]
 
     def test_a_missing_workspace_is_a_spawn_error_not_a_root_owned_directory(self, tmp_path):
         with pytest.raises(SpawnerError, match="is not a directory on this host"):
-            workspace_mounts(str(tmp_path / "nope"))
+            workspace_mounts(str(tmp_path / "nope"), workspace_dir=str(tmp_path))
 
 
 # --- Liveness and kill ------------------------------------------------------
@@ -660,7 +670,7 @@ CURRENT = box_launches.classify_all(box_launches.ConfigIndex.of(box_launches.FsT
 
 def _masters_run_command(spawner: DockerSpawner, execution_id: str, workspace_path: str,
                          template: Template) -> list[str]:
-    """master 65f908a3's DockerSpawner.run_command, kept verbatim: the launch before BS1."""
+    """master 65f908a3's launch before BS1 (the workspace helper now requires its root)."""
     name = container_name(execution_id)
     cmd = [
         "docker", "run", "--detach", "--rm", "--init",
@@ -685,7 +695,8 @@ def _masters_run_command(spawner: DockerSpawner, execution_id: str, workspace_pa
     for mount in inherited:
         cmd += ["--mount", mount.to_arg()]
     if workspace_path:
-        for mount in workspace_mounts(workspace_path, covered=inherited):
+        for mount in workspace_mounts(workspace_path, covered=inherited,
+                                      workspace_dir=template.env_value("WORKSPACE_DIR")):
             cmd += ["--mount", mount.to_arg()]
     cmd += spawner._resource_limits()
     cmd.append(template.image)

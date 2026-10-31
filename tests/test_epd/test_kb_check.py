@@ -23,8 +23,10 @@ SPEC.loader.exec_module(kb_check)
 
 
 def git(root: Path, *args: str) -> bytes:
+    # A detached maintenance child can still change .git after this call returns,
+    # racing callers' complete no-write baseline snapshots.
     return subprocess.run(
-        ["git", "-C", str(root), "-c", "user.name=KB test", "-c",
+        ["git", "-C", str(root), "-c", "maintenance.auto=false", "-c", "user.name=KB test", "-c",
          "user.email=kb@example.invalid", "-c", "commit.gpgsign=false", *args],
         capture_output=True, check=True,
     ).stdout

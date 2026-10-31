@@ -29,13 +29,11 @@ def _sweep() -> None:
     from temper_ai.runner import holds
     for hold in holds.due():
         execution_id = hold["execution_id"]
-        ended = holds.end(execution_id, "released", by="deadline")
-        if ended is None:  # someone got there first (Give up, or a resume taking over)
-            continue
-        logger.info("%s: the wait on its clean-ups has run out; running them now", execution_id)
         try:
             from temper_ai.api.routes import _queue_cleanup_pass
-            _queue_cleanup_pass(ended)
+            ended = _queue_cleanup_pass(execution_id, by="deadline")
+            if ended is not None:
+                logger.info("%s: admitted its held clean-ups after the deadline", execution_id)
         except Exception:
             logger.error("%s: could not start its held clean-ups", execution_id, exc_info=True)
 

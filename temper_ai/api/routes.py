@@ -1069,7 +1069,10 @@ def _refuse_designated_hold(hold: dict) -> None:
 
 def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
     """Release a wait only with admitted cleanup work; share Give up and deadline dispatch."""
-    from temper_ai.runner.cleanup_dispatch import queue_held_cleanups
+    from temper_ai.runner.cleanup_dispatch import (
+        queue_held_cleanups,
+        release_held_cleanups,
+    )
 
     _refuse_candidate_entry(execution_id)
     mode = _execution_mode()
@@ -1079,7 +1082,9 @@ def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
     if mode == "inprocess" and not pi_lane:
         logger.info("%s: its held clean-ups are for its box to run; this server runs in "
                     "process, so they are left alone", execution_id)
-        return holds.end(execution_id, "released", by=by)
+        # The same in-transaction check as the queueing branch: a refusal keeps the wait.
+        with _queue_refusals_as_http():
+            return release_held_cleanups(execution_id, by=by, refuse_held=_refuse_designated_hold)
     with _queue_refusals_as_http():
         ended = queue_held_cleanups(execution_id, by=by, refuse_held=_refuse_designated_hold)
     if ended is None:

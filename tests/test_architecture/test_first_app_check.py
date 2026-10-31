@@ -643,6 +643,8 @@ def run_agent(monkeypatch, tmp_path, **given):
         return subprocess.CompletedProcess(cmd, 0, stdout='{"verdict": "STUB"}\n', stderr="")
 
     monkeypatch.setattr(subprocess, "run", run)
+    # Map the installed /app import directory to the exact source under test; the helper itself is real.
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
     monkeypatch.chdir(tmp_path)
     (tmp_path / "check").mkdir(exist_ok=True)
     try:
@@ -696,13 +698,16 @@ def test_without_w1_before_the_command_line_is_todays_exactly(monkeypatch, tmp_p
 
 
 @pytest.mark.parametrize("value", [W1_REF, "\n" + W1_REF + "\n"], ids=["plain", "with-newlines"])
-def test_controls_p3_with_w1_before_adds_the_flag_once_with_that_value(monkeypatch, tmp_path, value):
+def test_controls_p3_with_w1_before_adds_the_flag_once_with_that_value(monkeypatch, tmp_path, capsys, value):
     cmd, how, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w1_before=value)
     assert refusal is None
     assert cmd == [sys.executable, "-u", BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check",
                    "--w1-before", value]
     assert cmd.count("--w1-before") == 1
     assert how == {"capture_output": True, "text": True, "timeout": 3500}
+    assert json.loads(capsys.readouterr().out) == {
+        "verdict": "STUB", "status": "completed", "exit_code": 0, "workspace": str(tmp_path),
+        "summary_path": "check/controls.json", "journey": "p3"}
 
 
 @pytest.mark.parametrize("case", ["live", "live-p3-profile", "live-first-profile", "controls", "controls_shared"])
@@ -751,4 +756,7 @@ def test_configs_take_w1_before_as_an_optional_input():
     flow = yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
     assert flow["inputs"]["w1_before"] == {"type": "string", "required": False}
     assert flow["nodes"][0]["input_map"]["w1_before"] == "input.w1_before"
-    assert 'os.environ.get("{{ w1_before | env }}")' in agent["script_template"]
+    assert 'w1_before_env = "{{ w1_before | env }}"' in agent["script_template"]
+    assert 'os.environ.get(w1_before_env)' in agent["script_template"]
+    # Each |env evaluation allocates a fresh slot, so name it once and remove that same slot for inline input.
+    assert agent["script_template"].count("{{ w1_before | env }}") == 1

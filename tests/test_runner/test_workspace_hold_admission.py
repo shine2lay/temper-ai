@@ -282,16 +282,14 @@ def test_early_hold_commits_have_a_bite(client, resume_rig, monkeypatch, action)
     if action == "resume":
         _mutate(monkeypatch, routes, "_resume_run", "        response = _start_resume(",
                 "        holds.take_over(execution_id, by=execution_id)\n        response = _start_resume(")
-    elif action == "fork":
-        _mutate(monkeypatch, routes, "_fork_run", "        _queue_run(new_execution_id,",
-                "        holds.take_over(body.source_execution_id, by=new_execution_id)\n        _queue_run(new_execution_id,")
     elif action == "lane":
         _mutate(monkeypatch, pi_lane, "resume_in_the_lane", "        queue_run(execution_id,",
                 "        holds.take_over(execution_id, by=execution_id)\n        queue_run(execution_id,")
     else:
-        _mutate(monkeypatch, cleanup_dispatch, "queue_held_cleanups",
-                'holds.end_in(session, execution_id, "released", by)',
-                'holds.end(execution_id, "released", by)')
+        # Fork takeover and cleanup release share the one hold-then-queue transaction (#208).
+        _mutate(monkeypatch, cleanup_dispatch, "_end_hold_then_queue",
+                "holds.end_in(session, execution_id, status, by)",
+                "holds.end(execution_id, status, by)")
     with pytest.raises(AssertionError, match="REFUSED-HOLD"):
         _assert_case(client, resume_rig, action, False)
 

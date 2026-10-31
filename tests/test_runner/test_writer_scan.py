@@ -319,10 +319,11 @@ CALLERS = {
     "_mark_status": [("temper_ai/spawner/reaper.py", f"Reaper.{scope}") for scope in
                      ("_let_go_parked", "_mark_orphaned", "_honor_cancel", "_end_unstarted", "_end_unstarted")],
     "queue_run_in": [(QUEUE, "queue_run"), (PARKED, "claim_and_queue"), (PARKED, "claim_and_requeue_row"),
-                     ("temper_ai/runner/cleanup_dispatch.py", "queue_held_cleanups")],
+                     ("temper_ai/runner/cleanup_dispatch.py", "queue_held_cleanups.queue_cleanup_pass"),
+                     ("temper_ai/runner/cleanup_dispatch.py", "queue_fork_taking_over.queue_fork")],
     "queue_run": [(ROUTES, "_queue_run"), (LANE, "resume_in_the_lane")],
     "_queue_run": [(ROUTES, scope) for scope in
-                   ("_start_run_external", "_fork_run", "_start_resume")],
+                   ("_start_run_external", "_start_resume")],
 }
 
 

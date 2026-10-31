@@ -480,12 +480,21 @@ def _queue_run(
     an unsafe workspace as 400.) ``lane``: the run's lane from the loaded workflow,
     or KEEP_LANE to keep the row's own mark.
     """
-    from temper_ai.config.admission_contract import AdmissionRefused
-
-    try:
+    with _queue_refusals_as_http():
         queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
                   lane=lane)
-    except AlreadyQueued as exc:
+
+
+@contextmanager
+def _queue_refusals_as_http():
+    """Say a refused queue write as HTTP: already queued, a candidate refusal or a source
+    hold ended under a fork as 409 (the refusal's code), an unsafe workspace as 400."""
+    from temper_ai.config.admission_contract import AdmissionRefused
+    from temper_ai.runner.cleanup_dispatch import HoldNoLongerWaiting
+
+    try:
+        yield
+    except (AlreadyQueued, HoldNoLongerWaiting) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkspacePathRefused as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1048,6 +1057,16 @@ def _release_cleanups(execution_id: str) -> dict:
             "cleanups": [c.get("path") for c in ended["cleanups"]]}
 
 
+def _refuse_designated_hold(hold: dict) -> None:
+    """Inside the release transaction: clean-ups held for a designated workflow are the
+    candidate path's, never a legacy cleanup pass's, even when the row carries another name.
+    Raising rolls the release back (the row's own slot is fenced by the queue write)."""
+    from temper_ai.runner.admission import is_designated, refuse_legacy_entry
+
+    refuse_legacy_entry(designated_candidate=is_designated(
+        str(hold.get("workflow_name") or ""), _candidate_bindings()))
+
+
 def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
     """Release a wait only with admitted cleanup work; share Give up and deadline dispatch."""
     from temper_ai.runner.cleanup_dispatch import queue_held_cleanups
@@ -1061,12 +1080,8 @@ def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
         logger.info("%s: its held clean-ups are for its box to run; this server runs in "
                     "process, so they are left alone", execution_id)
         return holds.end(execution_id, "released", by=by)
-    try:
-        ended = queue_held_cleanups(execution_id, by=by)
-    except AlreadyQueued as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except WorkspacePathRefused as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with _queue_refusals_as_http():
+        ended = queue_held_cleanups(execution_id, by=by, refuse_held=_refuse_designated_hold)
     if ended is None:
         return None
     paths = [str(c["path"]) for c in ended["cleanups"] if c.get("path")]
@@ -1369,6 +1384,8 @@ def _fork_run(body: ForkRequest):
     the fork point, then continues independently.
     """
     _refuse_candidate_entry(body.source_execution_id, body.workflow)
+    # Read before anything else: a wait that ends while the fork is prepared refuses it.
+    source_was_holding = holds.waiting(body.source_execution_id) is not None
     new_execution_id = str(uuid.uuid4())
 
     try:
@@ -1411,9 +1428,11 @@ def _fork_run(body: ForkRequest):
         # The checkpoints are already copied under the new id; its box
         # restores them (temper run-workflow).
         _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
-        _queue_run(new_execution_id, config.name, body.workspace_path,
-                   inputs, start="fork", lane=lane)
-        holds.take_over(body.source_execution_id, by=new_execution_id)
+        from temper_ai.runner.cleanup_dispatch import queue_fork_taking_over
+        with _queue_refusals_as_http():
+            queue_fork_taking_over(body.source_execution_id, new_execution_id, config.name,
+                                   body.workspace_path, inputs, lane=lane,
+                                   source_was_holding=source_was_holding)
         return RunResponse(execution_id=new_execution_id, status="queued")
 
     holds.take_over(body.source_execution_id, by=new_execution_id)

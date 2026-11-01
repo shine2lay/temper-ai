@@ -250,6 +250,13 @@ def main() -> None:
     # F28: --debug flag sets logging to DEBUG
     log_level = logging.DEBUG if getattr(args, 'debug', False) else logging.WARNING
     logging.basicConfig(level=log_level, format="%(levelname)s %(name)s: %(message)s" if log_level == logging.DEBUG else "%(message)s")
+    # Database errors' row values stay out of every log line. Imported here, like everything
+    # but the standard library, so a oneshot box's runner runs nothing before its delivery.
+    from temper_ai.shared.database_values_log_filter import (
+        install_database_values_log_filter,
+    )
+
+    install_database_values_log_filter()
 
     # F17: auto-load .env file if present
     _load_dotenv()
@@ -315,6 +322,8 @@ def main() -> None:
                 stream=sys.stdout,
                 force=True,
             )
+            # force=True replaced the root's handler, and its filter with it.
+            install_database_values_log_filter()
         from temper_ai.cli.watch_queue import cmd_watch_queue
         sys.exit(cmd_watch_queue(args))
     else:

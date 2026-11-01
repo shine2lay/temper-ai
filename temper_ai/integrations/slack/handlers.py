@@ -49,6 +49,7 @@ from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
 from temper_ai.integrations.slack.config import ConfigWatcher
 from temper_ai.integrations.slack.ops import OpsError, TemperOps
 from temper_ai.integrations.slack.picker import Picker, conversation_text
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ class Handler:
         try:
             self.handle(event.payload)
         except Exception as exc:
-            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error = error_line_without_database_values(exc)
             raise
         self.handled += 1
         return f"handled {describe(event.payload)}"
@@ -170,7 +171,7 @@ class Handler:
             self.handle(envelope)
             self.handled += 1
         except Exception as exc:  # noqa: BLE001 - one bad envelope must not kill the pool thread
-            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error = error_line_without_database_values(exc)
             logger.exception("Slack: handling a %s envelope failed", envelope.get("type"))
 
     def handle(self, envelope: dict[str, Any]) -> None:

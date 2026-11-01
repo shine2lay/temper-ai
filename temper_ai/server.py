@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -27,6 +28,7 @@ from temper_ai.api.docs import router as docs_router
 from temper_ai.api.events import router as events_router
 from temper_ai.api.github_tokens import router as github_tokens_router
 from temper_ai.api.hooks import router as hooks_router
+from temper_ai.api.http_error_reply import http_error_without_database_values
 from temper_ai.api.pools import router as pools_router
 from temper_ai.api.routes import ProblemRefusal, init_app_state, problem_response
 from temper_ai.api.routes import router as api_router
@@ -43,6 +45,9 @@ from temper_ai.memory.base import MemoryStoreBase
 # Import runner so its WorkflowRun SQLModel registers with metadata before
 # init_database calls create_all_tables. Phase 0 of worker_protocol_v1.
 from temper_ai.runner import WorkflowRun  # noqa: F401  (side-effect import)
+from temper_ai.shared.database_values_log_filter import (
+    install_database_values_log_filter,
+)
 
 # Configure logging so our module loggers output to stdout. Called at import
 # time so loggers created by subsequent imports pick up the handler; kept
@@ -52,6 +57,9 @@ logging.basicConfig(
     format="%(levelname)s %(name)s: %(message)s",
     stream=sys.stdout,
 )
+# Database errors' row values stay out of every log line: the filter goes on the root's
+# handler and on uvicorn's, which uvicorn set up before it imported this module.
+install_database_values_log_filter()
 
 logger = logging.getLogger(__name__)
 
@@ -533,6 +541,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 # -- Include routers --
 # A refusal whose body is {"problem": <text>} (the cancel reason's limit, M3 E13).
 app.add_exception_handler(ProblemRefusal, problem_response)
+# Every other HTTPException: FastAPI's own reply, with database values withheld from its
+# detail when the error it was raised from is a database error (api/http_error_reply.py).
+app.add_exception_handler(StarletteHTTPException, http_error_without_database_values)
 app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)

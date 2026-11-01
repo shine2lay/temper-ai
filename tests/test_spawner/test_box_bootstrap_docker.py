@@ -195,6 +195,8 @@ def _code_tree(install: Install, main: str | None = None) -> None:
         "integrations/__init__.py": "",
         "integrations/github/__init__.py": "",
         "integrations/github/secret.py": "def take():\n    pass\n",
+        "shared/__init__.py": "",
+        "shared/database_values_log_filter.py": "def install_database_values_log_filter():\n    pass\n",
         "spawner/__init__.py": "",
         **{f"cli/{name}.py": STUB_PARSER
            for name in ("linear", "github", "slack", "telegram", "notion", "events", "check",

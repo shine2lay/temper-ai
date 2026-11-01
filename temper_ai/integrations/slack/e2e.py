@@ -34,6 +34,7 @@ import httpx
 from temper_ai.integrations.slack import blocks, fakes
 from temper_ai.integrations.slack.client import SlackClient
 from temper_ai.integrations.slack.config import channel_problem
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 PROBE = "notify_probe"
 CHECKS = ("ask", "mention", "form", "approve", "reject", "stop")
@@ -393,7 +394,7 @@ class Tester:
             except (E2EError, ValueError, httpx.HTTPError) as exc:
                 result = Result(name, False, self.clock() - start, str(exc))
             except Exception as exc:  # noqa: BLE001 - one broken check must not hide the others
-                result = Result(name, False, self.clock() - start, f"{type(exc).__name__}: {exc}")
+                result = Result(name, False, self.clock() - start, error_line_without_database_values(exc))
             result.cost_usd = self.cost(result.runs)
             self.say(line(result))
             results.append(result)

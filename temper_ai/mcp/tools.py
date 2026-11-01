@@ -21,6 +21,11 @@ from typing import Any
 
 import anyio
 
+from temper_ai.shared.database_error_text import (
+    text_without_database_values,
+    withhold_database_values_in_body,
+)
+
 # Default ceiling for any single free-text field we hand back. Generous
 # enough to read an answer, small enough that a surprise never costs more
 # than a few thousand tokens.
@@ -293,7 +298,7 @@ class TemperTools:
                 # Say so rather than dropping it: a workflow silently
                 # missing from the list is worse than one marked broken.
                 workflows.append(
-                    {"name": name, "summary": f"(config could not be read: {exc})"}
+                    {"name": name, "summary": f"(config could not be read: {text_without_database_values(exc)})"}
                 )
                 continue
             body = raw.get("workflow", raw)
@@ -508,7 +513,7 @@ class TemperTools:
                 exclude_type_prefixes=() if event_type else (SCRIPT_LOG_PREFIX,),
             )
         except Exception as exc:
-            return {"error": f"could not read events: {exc}"}
+            return {"error": f"could not read events: {text_without_database_values(exc)}"}
 
         if not events:
             return {
@@ -715,7 +720,7 @@ class TemperTools:
         try:
             return self._routes.approve_gate(execution_id, node_name, body)
         except HTTPException as exc:
-            detail = exc.detail
+            detail = withhold_database_values_in_body(exc.detail, exc)
             if isinstance(detail, dict):
                 return {**detail, "error": str(detail.get("message") or detail), "status": exc.status_code}
             return {"error": str(detail), "status": exc.status_code}

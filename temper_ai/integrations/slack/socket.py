@@ -30,6 +30,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from temper_ai.shared.database_error_text import error_line_without_database_values
+
 logger = logging.getLogger(__name__)
 
 BACKOFF_S = (1, 2, 5, 10, 30, 60)
@@ -87,7 +89,7 @@ class SocketMode:
                 clean = self.run_once()
                 failures = 0 if clean else failures + 1
             except Exception as exc:  # noqa: BLE001 - network, auth, Slack: back off and try again
-                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.last_error = error_line_without_database_values(exc)
                 failures += 1
                 logger.warning("Slack socket: %s", self.last_error)
             finally:

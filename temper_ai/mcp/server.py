@@ -12,15 +12,22 @@ for a tool and what it costs, because that is all the model sees.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
+from collections.abc import Iterator
 from typing import Any
 
 import anyio
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
 from temper_ai.mcp.tools import DEFAULT_MAX_CHARS, TemperTools
+from temper_ai.shared.database_error_text import (
+    carries_database_error,
+    text_without_database_values,
+)
 
 # The SDK rejects requests whose Host header is not in this list, which is
 # what stops a malicious web page from driving a local MCP server through
@@ -91,6 +98,23 @@ def _run_as(caller, call):
         return call()
 
 
+@contextlib.contextmanager
+def _database_errors_as_safe_tool_errors() -> Iterator[None]:
+    """Re-raise a tool's error that carries a database error as that error's safe text.
+
+    A tool's error goes back to the agent as its text (FastMCP's "Error
+    executing tool"), so one that quotes a database error is re-raised as a
+    ToolError holding the safe text (shared/database_error_text.py), chained
+    to it. Any other error passes through unchanged.
+    """
+    try:
+        yield
+    except Exception as exc:
+        if not carries_database_error(exc):
+            raise
+        raise ToolError(text_without_database_values(exc)) from exc
+
+
 async def _off_loop(fn, *args, **kwargs):
     """Run a blocking tool body on a worker thread, as whoever sent the call.
 
@@ -98,10 +122,12 @@ async def _off_loop(fn, *args, **kwargs):
     database read here would otherwise stall the dashboard, the API and
     other agents for as long as it took. The caller is bound on the thread
     so a tool that changes something meets the same guard as its route.
+    A database error's values never reach the agent's error text.
     """
     caller = _caller_of_this_call(getattr(fn, "__name__", "tool"))
     call = functools.partial(fn, *args, **kwargs)
-    return await anyio.to_thread.run_sync(functools.partial(_run_as, caller, call))
+    with _database_errors_as_safe_tool_errors():
+        return await anyio.to_thread.run_sync(functools.partial(_run_as, caller, call))
 
 
 def build_server() -> FastMCP:
@@ -200,7 +226,8 @@ def build_server() -> FastMCP:
         Returns early with timed_out=true if the run is still going when the
         timeout expires — call again to keep waiting.
         """
-        return await tools.wait_for_run(execution_id, timeout_seconds=timeout_seconds)
+        with _database_errors_as_safe_tool_errors():
+            return await tools.wait_for_run(execution_id, timeout_seconds=timeout_seconds)
 
     @mcp.tool()
     async def get_run(execution_id: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:

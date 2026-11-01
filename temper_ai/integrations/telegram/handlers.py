@@ -47,6 +47,7 @@ from temper_ai.integrations.telegram.client import TelegramClient, TelegramError
 from temper_ai.integrations.telegram.config import ConfigWatcher
 from temper_ai.integrations.telegram.render import clip, esc
 from temper_ai.integrations.telegram.sender import TelegramSender, split_ref
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ class Handler:
         try:
             self.handle(event.payload)
         except Exception as exc:
-            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error = error_line_without_database_values(exc)
             raise
         self.handled += 1
         return f"handled {describe(event.payload)[0]}"
@@ -157,7 +158,7 @@ class Handler:
             self.handle(update)
             self.handled += 1
         except Exception as exc:  # noqa: BLE001 - one bad update must not kill the pool thread
-            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error = error_line_without_database_values(exc)
             logger.exception("Telegram: handling update %s failed", update.get("update_id"))
 
     def handle(self, update: dict[str, Any]) -> None:

@@ -36,6 +36,7 @@ from typing import Any
 from temper_ai.api.caller import acting_as
 from temper_ai.integrations.inbox import store
 from temper_ai.integrations.inbox.store import Event
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +309,7 @@ class Sweeper:
                 self.sweep_once()
                 self.last_error = None
             except Exception as exc:  # noqa: BLE001 - keep sweeping (e.g. the database blinked)
-                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.last_error = error_line_without_database_values(exc)
                 logger.exception("Inbox: sweep failed")
             if self._stop.wait(self.interval_s):
                 return

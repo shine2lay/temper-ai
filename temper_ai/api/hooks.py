@@ -44,6 +44,10 @@ from fastapi.responses import JSONResponse
 
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.inbox import store as inbox_store
+from temper_ai.shared.database_error_text import (
+    text_without_database_values,
+    withhold_database_values,
+)
 from temper_ai.triggers import github, linear
 from temper_ai.triggers.rules import Trigger, load_triggers, render_inputs
 
@@ -200,7 +204,7 @@ def dispatch(
         _dispatch(event, record, config_dir)
     except Exception as exc:  # noqa: BLE001 - recorded, and the inbox tries again
         logger.exception("Linear delivery %s failed", record.get("delivery"))
-        record["outcome"] = f"error: {exc}"
+        record["outcome"] = f"error: {text_without_database_values(exc)}"
     logger.info(
         "Linear delivery %s (%s %s): %s",
         record.get("delivery"), record.get("type"), record.get("action"), record["outcome"],
@@ -226,7 +230,7 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
             linear.enrich(event)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not read the issue of Linear comment %s: %s", record.get("delivery"), exc)
-            record["outcome"] = f"skipped: could not read the comment's issue ({exc})"
+            record["outcome"] = f"skipped: could not read the comment's issue ({text_without_database_values(exc)})"
             return
 
     matched: list[Trigger] = []
@@ -273,9 +277,9 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
                     _issue_runs[key] = response.execution_id
             entry["execution_id"] = response.execution_id
         except HTTPException as exc:
-            entry["error"] = str(exc.detail)
+            entry["error"] = withhold_database_values(str(exc.detail), exc)
         except Exception as exc:  # noqa: BLE001 - one rule failing must not stop the others
-            entry["error"] = str(exc)
+            entry["error"] = text_without_database_values(exc)
         record["runs"].append(entry)
 
     started = [r for r in record["runs"] if "execution_id" in r]
@@ -327,7 +331,7 @@ def _drop_own_changes(event: dict[str, Any], matched: list[Trigger]) -> str | No
             reason = "ignored: temper's own change"
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not ask Linear who temper's app user is: %s", exc)
-        reason = f"skipped: could not ask Linear who temper's app user is ({exc})"
+        reason = f"skipped: could not ask Linear who temper's app user is ({text_without_database_values(exc)})"
     if reason is None:
         return None
     matched[:] = [t for t in matched if not t.ignore_self]
@@ -560,7 +564,7 @@ def github_dispatch(
         _github_dispatch(event_name, payload, record, config_dir)
     except Exception as exc:  # noqa: BLE001 - recorded, and the inbox tries again
         logger.exception("GitHub delivery %s failed", record.get("delivery"))
-        record["outcome"] = f"error: {exc}"
+        record["outcome"] = f"error: {text_without_database_values(exc)}"
     logger.info("GitHub delivery %s (%s.%s %s): %s", record.get("delivery"), event_name,
                 payload.get("action"), github.subject_of(event_name, payload), record["outcome"])
     return record
@@ -626,9 +630,9 @@ def _github_dispatch(
             entry["execution_id"] = response.execution_id
             started = True
         except HTTPException as exc:
-            entry["error"] = str(exc.detail)
+            entry["error"] = withhold_database_values(str(exc.detail), exc)
         except Exception as exc:  # noqa: BLE001 - one rule failing must not stop the others
-            entry["error"] = str(exc)
+            entry["error"] = text_without_database_values(exc)
         record["runs"].append(entry)
     record["outcome"] = _summary(record["runs"])
 

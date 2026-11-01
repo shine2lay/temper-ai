@@ -21,6 +21,7 @@ from temper_ai.api.caller import require_caller_may
 from temper_ai.config import ConfigStore
 from temper_ai.config.helpers import ConfigNotFoundError
 from temper_ai.config.importer import TRIAL_PREFIX
+from temper_ai.shared.database_error_text import text_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +197,7 @@ def validate_config(config_type: str, body: ConfigBody):
             _store().put("__validate_temp", config_type, body.config)
             loader.load_workflow("__validate_temp")
         except Exception as exc:  # noqa: BLE001
-            errors.append(str(exc))
+            errors.append(text_without_database_values(exc))
         finally:
             _store().delete("__validate_temp", config_type)
 

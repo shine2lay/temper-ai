@@ -7,6 +7,11 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    # The database's own log keeps no row values: terse leaves out each error's
+    # DETAIL, HINT and CONTEXT ("Failing row contains (...)", "Key (...)=(...)"),
+    # and panic stops it logging the failing statement, which carries the
+    # literal values. See docs/database-error-text.md, with the undo.
+    command: ["postgres", "-c", "log_error_verbosity=terse", "-c", "log_min_error_statement=panic"]
     environment:
       POSTGRES_DB: temper_ai
       POSTGRES_USER: temper_ai

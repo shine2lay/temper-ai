@@ -14,6 +14,7 @@ from typing import Any
 from temper_ai.integrations.notify import store
 from temper_ai.integrations.notify.loop import Notifier
 from temper_ai.integrations.notify.notice import Decision, Sender
+from temper_ai.shared.database_error_text import text_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def status() -> dict[str, Any]:
     try:
         counts = store.counts()
     except Exception as exc:  # noqa: BLE001
-        counts = {"error": str(exc)}  # type: ignore[dict-item]
+        counts = {"error": text_without_database_values(exc)}  # type: ignore[dict-item]
     return {
         "running": True,
         "senders": sorted(n.senders),

@@ -65,6 +65,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
+from temper_ai.shared.database_error_text import withhold_database_values
 from temper_ai.triggers.cron import Cron, CronError, parse_duration, zone
 from temper_ai.triggers.rules import (
     Trigger,
@@ -450,8 +451,10 @@ class Scheduler:
         except Exception as exc:  # noqa: BLE001
             detail = str(getattr(exc, "detail", None) or exc)
             settle(fire_id, "failed", detail)
-            decision.update(outcome="failed", detail=detail)
-            logger.warning("Trigger %s could not start %s: %s", p.trigger.name, p.trigger.workflow, detail)
+            # The stored detail stays whole; the reply and the log line get a database error's safe text.
+            shown = withhold_database_values(detail, exc)
+            decision.update(outcome="failed", detail=shown)
+            logger.warning("Trigger %s could not start %s: %s", p.trigger.name, p.trigger.workflow, shown)
         return decision
 
     def _skip(self, p: Plan, key: str, reason: str) -> dict[str, Any] | None:

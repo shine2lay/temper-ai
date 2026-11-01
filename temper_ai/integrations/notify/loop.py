@@ -46,6 +46,10 @@ from temper_ai.integrations.notify.config import (
 )
 from temper_ai.integrations.notify.notice import Copy, Decision, Notice, Sender
 from temper_ai.runner import quiet
+from temper_ai.shared.database_error_text import (
+    error_line_without_database_values,
+    text_without_database_values,
+)
 from temper_ai.stage.gate import REPLACED, WAITING, gate_path
 
 logger = logging.getLogger(__name__)
@@ -187,7 +191,7 @@ class Notifier:
             try:
                 self.tick()
             except Exception as exc:  # noqa: BLE001 - the loop must outlive one bad tick
-                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.last_error = error_line_without_database_values(exc)
                 logger.exception("notify: tick failed")
             self._stop.wait(self.tick_s)
 
@@ -313,7 +317,7 @@ class Notifier:
                     out += step()
                 except Exception as exc:  # noqa: BLE001 - one kind must not stop the others
                     logger.warning("notify: %s check failed: %s", name, exc, exc_info=True)
-                    self.last_error = f"{name}: {exc}"
+                    self.last_error = f"{name}: {text_without_database_values(exc)}"
             self.last_tick_at = now.isoformat(timespec="seconds")
             return out
 
@@ -372,7 +376,7 @@ class Notifier:
             store.mark(copy.id, "failed", detail=f"{type(exc).__name__}: {exc}")
             logger.warning("notify: could not send the %s notice for %s to %s %s: %s", copy.kind,
                            copy.execution_id[:8], copy.via, copy.target, exc)
-            return {**result, "error": str(exc)}
+            return {**result, "error": text_without_database_values(exc)}
         store.mark(copy.id, "sent", ref=ref)
         self.sent += 1
         logger.info("notify: %s notice for %s %s -> %s %s", copy.kind, notice.workflow, copy.execution_id[:8],
@@ -501,7 +505,7 @@ class Notifier:
             store.mark(copy.id, "failed", detail=f"{type(exc).__name__}: {exc}")
             logger.warning("notify: could not send the team alert for %s to %s %s: %s",
                            copy.execution_id[:8], copy.via, copy.target, exc)
-            return {**result, "error": str(exc)}
+            return {**result, "error": text_without_database_values(exc)}
         if not ref.partition(":")[2]:
             store.mark(copy.id, "failed", ref=ref or None, detail="not confirmed: no message came back")
             logger.warning("notify: %s did not confirm the team alert for %s", copy.via, copy.execution_id[:8])

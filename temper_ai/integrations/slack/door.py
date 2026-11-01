@@ -58,6 +58,7 @@ from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.slack.client import TEST_TRIGGER, SlackClient, SlackError
 from temper_ai.integrations.slack.config import channel_problem
 from temper_ai.integrations.slack.handlers import SOURCE, describe, inbox_key
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +342,7 @@ def show(fake_id: str, fakes: Fakes | None = None) -> dict[str, Any] | None:
             event = store.get(fake.event_id)
             out["event"] = event.brief() if event else None
         except Exception as exc:  # noqa: BLE001 - the rest is still worth showing
-            out["event"] = {"error": f"{type(exc).__name__}: {exc}"}
+            out["event"] = {"error": error_line_without_database_values(exc)}
     return out
 
 

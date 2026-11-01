@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from temper_ai.shared.database_error_text import withhold_database_values
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,10 +28,11 @@ class OpsError(RuntimeError):
 
 
 def _detail(exc: Exception) -> str:
+    """What a Slack or Telegram reply says about ``exc``: a database error's values withheld."""
     detail = getattr(exc, "detail", None)
     if isinstance(detail, dict) and detail.get("message"):
-        return str(detail["message"])
-    return str(detail or exc)
+        return withhold_database_values(str(detail["message"]), exc)
+    return withhold_database_values(str(detail or exc), exc)
 
 
 class TemperOps:

@@ -41,6 +41,7 @@ from temper_ai.api.caller import (
     record_action,
     require_caller_may,
 )
+from temper_ai.shared.database_error_text import withhold_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -707,8 +708,9 @@ def _finish_start(ledger: Any, row: dict, caller: Any, *, notes: list[dict],
         else:
             team_trials.undo(ledger, row)
             if exc.status_code in (400, 422):
+                text = withhold_database_values(str(exc.detail), exc)
                 raise TeamRefusal(400, {"problems": [{"field": None,
-                                                      "text": str(exc.detail)}],
+                                                      "text": text}],
                                         "notes": notes}) from exc
             raise
     except Exception:

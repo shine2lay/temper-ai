@@ -24,6 +24,7 @@ from typing import Any
 
 from temper_ai.integrations.telegram import store
 from temper_ai.integrations.telegram.client import TelegramClient, TelegramError
+from temper_ai.shared.database_error_text import error_line_without_database_values
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class Poller:
                     self._sleep(backoff)
                     backoff = min(backoff * 2, 60.0)
             except Exception as exc:  # noqa: BLE001 - keep polling whatever happens
-                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.last_error = error_line_without_database_values(exc)
                 logger.exception("Telegram: polling failed")
                 self._sleep(backoff)
                 backoff = min(backoff * 2, 60.0)

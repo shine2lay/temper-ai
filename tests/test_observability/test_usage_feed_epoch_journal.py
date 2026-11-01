@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from threading import Event
@@ -287,11 +289,27 @@ except JournalError as error:
 '''
 
 
+# A failing assert, its message or a raised exception must never carry what the
+# child printed or its argv (CWE-532): pytest's rewriting prints assert operands,
+# its report prints helper arguments' repr, and TimeoutExpired's text holds argv.
+# So asserts see only ints, bools and these closed labels.
+_MUTEX_LINES = ("ATTEMPT", "entered", "epoch-host-busy")
+
+
+class _MutexChild(subprocess.Popen):
+    def __repr__(self):
+        return "<mutex child>"  # Popen's own repr starts with argv
+
+
+def _child_said(child, line):
+    return child.stdout.readline() == f"{line}\n"
+
+
 @contextmanager
 def _mutex_child(store, head, source=SOURCE, *, code=_MUTEX_CHILD, pass_fds=()):
     command = [sys.executable, "-c", code, str(store.path), source, str(head.sequence), head.checksum]
-    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True, pass_fds=pass_fds) as child:
+    with _MutexChild(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                     stderr=subprocess.PIPE, text=True, pass_fds=pass_fds) as child:
         try:
             yield child
         finally:
@@ -305,10 +323,18 @@ def _mutex_child(store, head, source=SOURCE, *, code=_MUTEX_CHILD, pass_fds=()):
 def _expect_mutex_result(child, expected):
     # Imports and construction are startup, bounded by pytest's existing overall
     # watchdog (also bounds cleanup), not the three-second lock-result watchdog.
-    assert child.stdout.readline() == "READY\n", "mutex child did not reach READY"
-    out, err = child.communicate(input="GO\n", timeout=3)
-    assert child.returncode == 0 and not err, "mutex child exited with an error"
-    assert out.splitlines() == ["ATTEMPT", expected], "mutex child returned wrong result"
+    assert _child_said(child, "READY"), "mutex child did not reach READY"
+    try:
+        out, err = child.communicate(input="GO\n", timeout=3)
+    except subprocess.TimeoutExpired as expired:
+        seen = {b"ATTEMPT\n": "after ATTEMPT", None: "before ATTEMPT"}.get(expired.output, "after other output")
+        # from None: the report must not chain the TimeoutExpired, whose text is argv.
+        raise pytest.fail.Exception(
+            f"mutex child gave no lock result within the {expired.timeout} s watchdog {seen}") from None
+    exit_code, wrote_stderr = child.returncode, bool(err)
+    said = [line if line in _MUTEX_LINES else "other" for line in out.splitlines()]
+    assert exit_code == 0 and not wrote_stderr, "mutex child exited with an error"
+    assert said == ["ATTEMPT", expected], "mutex child returned wrong result"
 
 
 def _assert_child_closed(child):
@@ -340,7 +366,7 @@ def test_mutex_child_startup_is_outside_the_lock_result_watchdog(store, monkeypa
         # Close/kill the child BEFORE joining a worker blocked on its READY pipe.
         with ThreadPoolExecutor(max_workers=1) as pool:
             with store.locked(head), _mutex_child(store, head, code=code, pass_fds=(gate.fileno(),)) as child:
-                assert child.stdout.readline() == "SPAWNED\n"
+                assert _child_said(child, "SPAWNED")
                 started, ready = Event(), Event()
                 readline, communicate = child.stdout.readline, child.communicate
 
@@ -380,10 +406,10 @@ def test_mutex_child_post_ready_hang_still_times_out_and_is_reaped(store):
     code = _MUTEX_CHILD.replace('print("ATTEMPT", flush=True)',
                                'print("ATTEMPT", flush=True)\nimport signal\nsignal.pause()')
     with store.locked(head):
-        with pytest.raises(subprocess.TimeoutExpired) as error:
+        expected = "^mutex child gave no lock result within the 3 s watchdog after ATTEMPT$"
+        with pytest.raises(pytest.fail.Exception, match=expected):
             with _mutex_child(store, head, code=code) as child:
                 _expect_mutex_result(child, "epoch-host-busy")
-        assert error.value.timeout == 3 and error.value.output == b"ATTEMPT\n"
         _assert_child_closed(child)
 
 
@@ -413,6 +439,44 @@ def test_mutex_child_protocol_and_result_failures_close_every_pipe(store, old, n
         with _mutex_child(store, head, code=_MUTEX_CHILD.replace(old, new)) as child:
             _expect_mutex_result(child, "entered")
     _assert_child_closed(child)
+
+
+# Canaries sit after an allowed word or line, so a looser match (prefix, contains,
+# filter instead of map) keeps them visible or lets the fault pass, and fails here.
+_CANARY_FAULTS = {  # fault: (child line replaced, replacement, failure it must give)
+    "not-ready": ('print("READY", flush=True)',
+                  'print("READY {stdout}", flush=True); print("{stderr}", file=sys.stderr, flush=True)',
+                  "did not reach READY"),
+    "wrong-result": ('print("entered")', 'print("entered {stdout}")', "returned wrong result"),
+    "extra-line": ('print("entered")', 'print("entered"); print("{stdout}")', "returned wrong result"),
+    "stderr": ('print("entered")', 'print("entered"); print("{stdout}"); print("{stderr}", file=sys.stderr)',
+               "exited with an error"),
+    "exit": ('print("entered")', 'print("{stdout}"); print("{stderr}", file=sys.stderr); sys.exit(7)',
+             "exited with an error"),
+    "post-ready-hang": ('print("ATTEMPT", flush=True)',
+                        'print("ATTEMPT", flush=True); print("{stdout}", flush=True); '
+                        'print("{stderr}", file=sys.stderr, flush=True)\nimport signal\nsignal.pause()',
+                        "within the 3 s watchdog after other output"),
+}
+
+
+@pytest.mark.parametrize("fault", list(_CANARY_FAULTS))
+def test_mutex_child_failure_text_carries_no_child_output_or_argv(store, fault):
+    head = initialize(store)
+    # Fresh tokens, so no source line shown in the report can contain them.
+    canary = {stream: f"{stream}-canary-{uuid.uuid4().hex}" for stream in ("stdout", "stderr", "argv")}
+    old, new, failure = _CANARY_FAULTS[fault]
+    code = f"# {canary['argv']}\n" + _MUTEX_CHILD.replace(old, new.format(**canary))
+    with pytest.raises((AssertionError, pytest.fail.Exception), match=failure) as error:
+        with _mutex_child(store, head, code=code) as child:
+            _expect_mutex_result(child, "entered")
+    _assert_child_closed(child)
+    # The text pytest reports: message, frames with their arguments, chained exceptions.
+    text = str(error.value) + str(error.getrepr(funcargs=True, style="long", chain=True))
+    leaked = sorted(stream for stream, token in canary.items() if token in text)
+    # Popen's own repr, whatever the class is named: "<Name: returncode: N args: [argv...]>".
+    shows_process_repr = re.search(r"<\w+: returncode: ", text) is not None
+    assert leaked == [] and not shows_process_repr
 
 
 def test_inode_change_has_real_bite(store, tmp_path, monkeypatch):

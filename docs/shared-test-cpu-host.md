@@ -106,7 +106,8 @@ already placed itself, and a worker that restarted would cut its channel to it.
 
 The entry can only place what starts after it. Honestly, that is:
 
-- **Hook**: the `bash` that runs the hook, and one
+- **Hook**: git itself, which starts the hook; the `bash` that runs it; the
+  `dirname` and `basename` that find the hook's own path; and one
   `python3 tests/machine_slot.py placement` (standard library only, no temper
   import) with its launcher query. Everything after runs inside.
 - **pytest**: the interpreter, pytest's own start-up and plugins (xdist,

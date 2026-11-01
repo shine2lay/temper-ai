@@ -62,6 +62,8 @@ def node_case(code, engine='chromium', **kw):
     harness = harness.replace('  async goto(url) {', '  async close() { this.closed = true; }\n  async goto(url) {')
     harness = harness.replace('  browser() { return browser; }',
                               '  pages() { return this.items.filter(p => !p.closed); }\n  browser() { return browser; }')
+    harness = harness.replace('  contexts: () => contexts.slice(),',
+                              '  contexts: () => contexts.slice(), isConnected: () => true,')
     harness = harness.replace('contexts.length - 1', 'contexts.filter(c => c !== rootCtx).length')
     harness = harness.replace("if (input.fault === 'close')", "if (input.fault === 'close' && !this.isRoot)")
     proc = subprocess.run(['node', '-e', harness], input=json.dumps(payload), text=True,
@@ -262,7 +264,7 @@ class Page extends EventEmitter {
   async close(options) {
     sequence.push('page-close:' + this.ctx.name + ':' + options.runBeforeUnload);
     if (this.ctx.name === 'guard') {
-      if (input.fault === 'guard_alive') return;
+      if (['guard_alive', 'carrier_target_closed_page_live'].includes(input.fault)) return;
       if (input.fault === 'guard_error') throw new Error('fixed guard close failure');
       if (input.fault === 'guard_event') this.ctx.emit('request', {method: () => 'GET', url: () => input.url,
         resourceType: () => 'script', isNavigationRequest: () => false});
@@ -289,6 +291,23 @@ class Context extends EventEmitter {
     if (this.name === 'guard') {
       if (input.fault === 'carrier_context_error') throw new Error('fixed carrier context close failure');
       if (['carrier_context_alive', 'guard_alive'].includes(input.fault)) return;
+      if (input.fault === 'carrier_target_closed_still_present')
+        throw new Error('browserContext.close: Target page, context or browser has been closed');
+      if (['carrier_target_closed_page_live', 'carrier_target_closed_tracked_page_live'].includes(input.fault)) {
+        contexts.length = 0;
+        throw new Error('browserContext.close: Target page, context or browser has been closed');
+      }
+      if (input.fault === 'carrier_target_closed_other_error') {
+        this.items.forEach(p => { p.closed = true; });
+        contexts.length = 0;
+        throw new Error('fixed carrier context close failure');
+      }
+      if (['carrier_target_closed', 'carrier_target_closed_extra_context',
+           'carrier_target_closed_disconnected'].includes(input.fault)) {
+        this.items.forEach(p => { p.closed = true; });
+        contexts.length = 0;
+        throw new Error('browserContext.close: Target page, context or browser has been closed');
+      }
     }
     if (this.name === 'A' && ['F1', 'F2', 'F3', 'F4'].includes(input.fault) &&
         (this.calls === 1 || ['F2', 'F3'].includes(input.fault)))
@@ -297,13 +316,19 @@ class Context extends EventEmitter {
     if (contexts.includes(this)) contexts.splice(contexts.indexOf(this), 1);
   }
 }
-const browser = {contexts: () => contexts.slice()};
+const browser = {contexts: () => contexts.slice(),
+  isConnected: () => input.fault !== 'carrier_target_closed_disconnected'};
 const rootCtx = new Context('guard');
 const root = new Page(rootCtx); rootCtx.items.push(root);
 if (input.fault === 'untracked') rootCtx.items.push(new Page(rootCtx));
-if (input.fault === 'other_context') { const c = new Context('unknown'); c.items.push(new Page(c)); }
+if (['other_context', 'carrier_target_closed_extra_context'].includes(input.fault)) {
+  const c = new Context('unknown'); c.items.push(new Page(c));
+}
 (async () => {
   await eval('(async (page) => { const browser = page.context().browser();' + input.observers + `
+    if (input.fault === 'carrier_target_closed_tracked_page_live') {
+      const extra = new Page(rootCtx); rootCtx.items.push(extra); rootCtx.emit('page', extra);
+    }
     const drain = p3.drain;
     p3.drain = () => { sequence.push('drain'); return drain(); };
     for (const name of ['A', 'B']) {
@@ -1260,3 +1285,118 @@ def test_cancellation_or_malformed_probe_cannot_skip_fallback(monkeypatch, fault
     assert r['log']['requests'][0]['url'] == EXACT
     if fault != 'outer_cancel':
         assert latch.blocked
+
+
+# #390 (R2): when carrier.ctx.close() raises Playwright's target-closed error after closing the carrier page,
+# cleanup confirms only when all post-checks hold; any failed check or other error stays incomplete + recreation.
+R2_TWINS = {
+    'carrier_target_closed_extra_context': ('other contexts still live', ALREADY_CLOSED),
+    'carrier_target_closed_disconnected': ('browser disconnected', ALREADY_CLOSED),
+    'carrier_target_closed_other_error': ('guard context close raised', 'fixed carrier context close failure'),
+    'carrier_target_closed_page_live': ('guard page still live', ALREADY_CLOSED),
+    'carrier_target_closed_tracked_page_live': ('guard context has live pages', ALREADY_CLOSED),
+    'carrier_target_closed_still_present': ('guard context still live', ALREADY_CLOSED),
+}
+
+
+@pytest.mark.usefixtures('chromium_ab')
+def test_r2_carrier_target_closed_confirmed_when_all_post_checks_hold(monkeypatch, tmp_path):
+    data = r1_close_case('carrier_target_closed')
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R2', target())), g.StopLatch()
+    r['sessions']['chromium']['url'] = 'fake:affected-chromium-service'
+
+    async def call(session, code):
+        assert not session.browser_closes and code == p3.CLOSE
+        return data['result']
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R2', latch))
+    p3.finish(r, tmp_path)
+    c = r['cleanup']['chromium']
+    assert s.browser_closes == 1 and c['confirmed'] is True and not latch.blocked
+    assert_w1_pending(r)
+    assert c['journal'] == {'status': 'complete', 'reasons': [],
+                            'boundary': 'terminal CLOSE; subsequent MCP browser_close is unobserved'}
+    assert c['close_call'] == 'returned' and c['close_steps'] == [] and c['errors'] == []
+    assert not r.get('cleanup_unconfirmed') and not r.get('mcp_service_recreation_required')
+    ctx = c['contexts']
+    assert ctx['browser_connected'] is True and ctx['guard_page_closed'] is True
+    assert ctx['guard_context_closed'] is True and ctx['other_contexts_left'] == 0
+    assert ctx['guard_context_close'] == 'target-closed-accepted'
+    want_err = {'step': 'guard-context-close', 'error': 'Error: ' + ALREADY_CLOSED,
+                'error_name': 'Error', 'error_message': ALREADY_CLOSED}
+    assert ctx['guard_context_close_error'] == want_err
+    receipt = json.loads((tmp_path / 'receipt.json').read_text())
+    assert receipt['cleanup']['chromium']['contexts']['guard_context_close_error'] == want_err
+    assert not receipt.get('cleanup_unconfirmed')
+
+
+@pytest.mark.usefixtures('chromium_ab')
+@pytest.mark.parametrize(('fault', 'expected'), sorted(R2_TWINS.items()))
+def test_r2_carrier_target_closed_twins_stay_incomplete_and_require_recreation(monkeypatch, tmp_path, fault, expected):
+    reason, message = expected
+    data = r1_close_case(fault)
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R2', target())), g.StopLatch()
+    r['sessions']['chromium']['url'] = 'fake:affected-chromium-service'
+
+    async def call(session, code):
+        assert not session.browser_closes and code == p3.CLOSE
+        return data['result']
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R2', latch))
+    p3.finish(r, tmp_path)
+    c = r['cleanup']['chromium']
+    assert s.browser_closes == 1 and r['verdict'] == 'BLOCKED' and r['exit_code'] == 3
+    assert not c['confirmed'] and latch.blocked
+    assert c['journal']['status'] == 'incomplete'
+    assert ('terminal observation not established: ' + reason) in c['journal']['reasons']
+    assert 'terminal observation not established: guard context close raised' in c['journal']['reasons']
+    assert c['contexts']['guard_context_close'] == 'raised'
+    assert 'guard_context_close_error' not in c['contexts']
+    step = {'scope': 'carrier', 'context': None, 'step': 'guard-context-close',
+            'error_name': 'Error', 'error_message': message}
+    assert c['close_steps'] == [step]
+    assert r['cleanup_unconfirmed'] == [{
+        'section': 'cleanup', 'phase': 'chromium', 'service': 'fake:affected-chromium-service',
+        'close_call': 'returned', 'browser_close': 'ok', 'failed_steps': [step],
+        'recreation': p3.UNCONFIRMED_RECREATION}]
+
+
+@pytest.mark.usefixtures('chromium_ab')
+def test_r2_no_journal_fallback_keeps_target_closed_error_incomplete(monkeypatch, tmp_path):
+    no_journal_node = r"""
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+let pageClosed = false, ctxClosed = false;
+const browser = {contexts: () => ctxClosed ? [] : [ctx], isConnected: () => true};
+const ctx = {browser: () => browser, close: async () => {
+  ctxClosed = true;
+  throw new Error('browserContext.close: Target page, context or browser has been closed');
+}};
+const page = {context: () => ctx, isClosed: () => pageClosed, close: async () => { pageClosed = true; }};
+(async () => {
+  const result = await eval('(' + input.close + ')')(page);
+  console.log(JSON.stringify(result));
+})().catch(e => { console.error(String(e)); process.exitCode = 1; });
+"""
+    proc = subprocess.run(['node', '-e', no_journal_node], input=json.dumps({'close': p3.CLOSE}),
+                          text=True, capture_output=True, timeout=10)
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)
+    assert result['journal']['status'] == 'incomplete' and result['untracked'] is True
+    assert result['errors'] == [{'step': 'guard-context-close', 'error': 'Error: ' + ALREADY_CLOSED,
+                                 'error_name': 'Error', 'error_message': ALREADY_CLOSED}]
+    s, r, latch = FakeTransport('chromium'), passing(p3.new_receipt('R2', target())), g.StopLatch()
+    r['sessions']['chromium']['url'] = 'fake:affected-chromium-service'
+
+    async def call(session, code):
+        assert not session.browser_closes and code == p3.CLOSE
+        return result
+
+    monkeypatch.setattr(p3, '_call', call)
+    asyncio.run(p3.cleanup(s, r, 'chromium', 'R2', latch))
+    p3.finish(r, tmp_path)
+    assert not r['cleanup']['chromium']['confirmed'] and r['verdict'] == 'BLOCKED'
+    assert r['cleanup_unconfirmed'][0]['failed_steps'] == [ALREADY_CLOSED_STEP]
+

@@ -246,18 +246,38 @@ OBSERVERS = r"""
       if (terminal) {
         try { pages(carrier); await page.close({runBeforeUnload: false}); }
         catch (e) { fail(out.errors, 'guard-page-close', e); reasons.push('guard page close raised'); }
-        try { await carrier.ctx.close(); }
-        catch (e) { fail(out.errors, 'guard-context-close', e); reasons.push('guard context close raised'); }
+        // #390: in --isolated mode, carrier.ctx is the MCP session context; its server close event makes
+        // BrowserBackend dispose the session connection before the close RPC response arrives, which clears
+        // browser.contexts() and rejects carrier.ctx.close() with Playwright's target-closed error. Read other
+        // open contexts before carrier.ctx.close() and accept that exact error only when the post-check is clean.
+        let otherBefore = 0, closeErr = null;
+        try { otherBefore = browser.contexts().filter(c => c !== carrier.ctx).length; }
+        catch (e) { fail(out.errors, 'terminal-state', e); reasons.push('terminal state unreadable'); }
+        try { await carrier.ctx.close(); out.guard_context_close = 'returned'; }
+        catch (e) { closeErr = e; }
         try {
+          out.browser_connected = browser.isConnected();
           out.guard_page_closed = page.isClosed();
           out.guard_context_closed = !browser.contexts().includes(carrier.ctx);
+          if (!out.browser_connected) reasons.push('browser disconnected');
           if (!out.guard_context_closed) reasons.push('guard context still live');
           if (!out.guard_page_closed) reasons.push('guard page still live');
           if (pages(carrier).some(pg => !pg.isClosed())) reasons.push('guard context has live pages');
-          out.other_contexts_left = browser.contexts().length;
+          out.other_contexts_left = Math.max(otherBefore, browser.contexts().filter(c => c !== carrier.ctx).length);
           if (out.other_contexts_left) reasons.push('other contexts still live');
         } catch (e) { fail(out.errors, 'terminal-state', e); reasons.push('terminal state unreadable'); }
         if (out.untracked) reasons.push('untracked page');
+        if (closeErr) {
+          const p = errorParts(closeErr);
+          if (!reasons.length && p.error_name === 'Error'
+              && p.error_message === 'browserContext.close: Target page, context or browser has been closed') {
+            out.guard_context_close = 'target-closed-accepted';
+            out.guard_context_close_error = {step: 'guard-context-close', error: String(closeErr), ...p};
+          } else {
+            out.guard_context_close = 'raised';
+            fail(out.errors, 'guard-context-close', closeErr); reasons.push('guard context close raised');
+          }
+        }
         out.journal = {status: reasons.length ? 'incomplete' : 'complete',
           reasons: reasons.map(x => 'terminal observation not established: ' + x),
           boundary: 'terminal CLOSE; subsequent MCP browser_close is unobserved'};

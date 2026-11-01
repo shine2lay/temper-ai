@@ -29,9 +29,16 @@ reproduces it and repairs it on the shared cleanup transaction that #228 landed
 repair Architecture's #375 assigned to this work (FWS375-FORK-TAKEOVER). D9 closes
 the in-process branch of the same cleanup callers, which the rebind had left without
 the held-workflow check. Each was reproduced failing first on the rebased tree and
-passes after the repair, with a bite for each guard. Old green checks are not a pass for the repaired head or
-permission to land: it needs the normal exact-head gates, Architecture's focused
-re-review and Security's applicable delta review.
+passes after the repair, with a bite for each guard.
+
+The next reviewed head, `ea4b389e` (D7-D9), passed the full local gate and all eight
+hosted checks (CI 41239392803). Architecture's source review of it (#384) found one
+must-fix, M1 REF-NAME-TAKEOVER: fork and resume checked the request's workflow name,
+not the name the workflow loads as, so a designated workflow requested under another
+name could end its source's waiting clean-ups for a successor refused later. D10
+reproduces and repairs it. Old green checks are not a pass for the repaired head or
+permission to land: it needs the normal exact-head gates, Architecture's delta
+review and Security's applicable delta review.
 
 ### Reviewed-head test accounting
 
@@ -539,6 +546,60 @@ plainly: a database error while ending an in-process wait now raises (500, or th
 sweeper's log) instead of reading as "not holding any clean-ups", as #228 already made
 the queueing branch do.
 
+### D10: fork and resume checked the requested name, not the loaded one (fixed)
+
+**Evidence.** Architecture's #384 source review of `ea4b389e`, must-fix M1
+REF-NAME-TAKEOVER. The fork and resume fences asked whether the *request's* workflow
+name is designated. The route then loads the config: the loader drops a folder part
+(`team/W` reads the key `W`), and Studio stores any config under any key. The
+successor is queued and run under the loaded config's own name, which only the worker
+and the run thread check. So with a designated workflow requested under another name,
+the source's hold was ended as `taken_over` and the successor was refused afterwards:
+the held clean-ups were lost. The designation exists only on this branch, so this
+cannot happen in production at `ea4b389e`, but it is this patch's defect.
+
+**Hypothesis H-M1-LOADED-NAME-1.** Refuse by the loaded name (`config.name`) before
+any hold is ended, keeping the request-name checks. Expected: a designated config
+forked or resumed under another name (a folder part, a Studio key, or for resume the
+recorded name) gets 409 `admission_required` with the hold equal field by field to
+before, nothing queued, no takeover and no thread; a designation that lands after the
+first check is refused the same way; the ordinary twins are unchanged. A lost or
+changed hold, a changed twin or a guard whose removal fails nothing proves it wrong.
+
+**Failing first.** New file `tests/test_runner/test_successor_loaded_name_admission.py`:
+the real router, Studio router, config store and loader on a throwaway database, T2's
+test-only designation, FWS-HOLD-1's seeds; no box, thread, provider or model starts.
+On `ea4b389e`'s source, with the bite cases deselected: **25 failed, 18 passed**.
+Every designated control (6 fork, 12 resume, 7 windows) failed at its hold check with
+the hold `taken_over`; all 18 ordinary twins passed.
+
+**The repair.** One helper, `_refuse_designated_successor(config)`, reuses
+`_refuse_candidate_entry` on the loaded name at every place a successor ends a hold:
+
+- right after the config loads in `_fork_run` and `_resume_run`;
+- inside `queue_fork_taking_over`'s one hold-then-queue transaction, before anything
+  is queued (a new `refuse_successor` step, as `refuse_held` is for a cleanup pass), so
+  a refusal there rolls the ended hold back;
+- before the in-process fork's takeover, before the in-process resume's no-row claim,
+  and before each queued resume's own-commit takeover.
+
+The queued resumes still commit their queue before their takeover (the pre-existing
+#375 late-takeover shape, not changed here): a designation landing in that window
+keeps the hold and leaves the queued row, which the worker refuses under the same
+designation. The queued fork records its fork metadata before its transaction, as it
+did before (pre-existing).
+
+**Result: hit.** All 52 cases pass: 25 designated controls, 18 ordinary twins and 9
+bites. Each guard dropped alone fails a control: every loaded-name refusal dropped
+loses the hold for both a fork and a resume; the fork's load check alone (the refused
+fork had recorded its metadata), the resume's load check alone (the refused resume had
+queued), the in-transaction fork step, the in-process fork takeover check, and each of
+the three resume takeover checks (the hold is lost). With the neighbouring fork-hold,
+workspace-hold, cleanup-admission, parked-claim, transport and integration files: 439
+passed. The shared test helper `_mutate` gained a `live_globals` option, so a mutant
+reads the module's own globals and a window's later patch still reaches it; existing
+callers keep the copied namespace.
+
 ### Rebind adaptations onto #228
 
 T2's source met #228's in four places. Each resolution keeps both changes, with
@@ -730,7 +791,7 @@ Every expected outcome below is the matrix's own text; no expected value was tak
 from the engine or from A1's compiler. Codes are the contract's fixed refusal codes.
 "Before any row is read" means the contract refused the wire, so the capture never
 started. Results below describe the reviewed `1111627c` composition. The repaired
-head (D7, D8, D9, the rebases onto `369d1af0` and `58311511`) renews them through the normal full
+head (D7-D10, the rebases onto `369d1af0` and `58311511`) renews them through the normal full
 gate and the hosted checks; it does not inherit these passes.
 
 | Case | Expected (matrix) | Controls and code | Result |
@@ -818,6 +879,8 @@ V1 records this gap rather than inventing a registry, a key or an authority.
   fork, and a wait that ended while the fork was being set up refuses it with 409
   (D8). A database error while ending an in-process wait now reads as an error
   rather than as "not holding any clean-ups" (D9).
+- Fork and resume also check the name the workflow loads as (D10). Without a
+  designation, which no production run has, this refuses nothing.
 - The opt-in path supports only the external-db-fresh mode; every other mode refuses.
 - There is no SQL schema migration, but candidate admissions create protected
   stored metadata. Rollback must retain every admission record and consumed claim,

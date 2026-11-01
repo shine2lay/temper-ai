@@ -93,7 +93,8 @@ def release_held_cleanups(execution_id: str, *, by: str,
 
 def queue_fork_taking_over(source_execution_id: str, fork_execution_id: str,
                            workflow_name: str, workspace_path: str | None, inputs: dict | None,
-                           *, lane: Any, source_was_holding: bool) -> dict | None:
+                           *, lane: Any, source_was_holding: bool,
+                           refuse_successor: Callable[[], None] | None = None) -> dict | None:
     """Queue a fork and take its source's held clean-ups over in one commit, hold first.
 
     A fork is a new execution id, so the busy-row refusal that guards a same-id successor
@@ -101,9 +102,13 @@ def queue_fork_taking_over(source_execution_id: str, fork_execution_id: str,
     or a wait ended in between would run the source's clean-ups under the fork. Returns the
     hold taken over, or None when the source holds nothing (the fork is queued as before).
     ``source_was_holding``: the source was holding when the fork began; if that wait has
-    ended since, raises HoldNoLongerWaiting and queues nothing.
+    ended since, raises HoldNoLongerWaiting and queues nothing. ``refuse_successor`` runs
+    inside the transaction once the hold is ended, before anything is queued (as
+    ``refuse_held`` does for a cleanup pass): whatever it raises keeps the hold as it was.
     """
     def queue_fork(session: Session, taken: dict | None) -> None:
+        if refuse_successor is not None:
+            refuse_successor()
         if taken is None and source_was_holding:
             raise HoldNoLongerWaiting(source_execution_id)
         queue.queue_run_in(session, fork_execution_id, workflow_name, workspace_path, inputs,

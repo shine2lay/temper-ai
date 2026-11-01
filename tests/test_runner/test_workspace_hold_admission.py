@@ -269,11 +269,20 @@ def test_cleanup_non_dispatch_cases_keep_existing_behavior(client, resume_rig, m
     assert _hold_state(run)["status"] == "released"
 
 
-def _mutate(monkeypatch, module, name, old, new):
+def _mutate(monkeypatch, module, name, old, new, *, live_globals=False):
+    """Swap ``name`` for its source with ``old`` replaced. ``live_globals``: the mutant reads
+    the module's own globals, so a test's later monkeypatch of another module name reaches it
+    (by default it reads a copy taken now)."""
     source = inspect.getsource(getattr(module, name))
     assert source.count(old) == 1
+    code = compile(source.replace(old, new), "<FWS hold ordering removed>", "exec")
+    if live_globals:
+        defined: dict = {}
+        exec(code, vars(module), defined)
+        monkeypatch.setattr(module, name, defined[name])
+        return
     namespace = dict(vars(module))
-    exec(compile(source.replace(old, new), "<FWS hold ordering removed>", "exec"), namespace)
+    exec(code, namespace)
     monkeypatch.setattr(module, name, namespace[name])
 
 

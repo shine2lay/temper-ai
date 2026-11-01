@@ -53,9 +53,10 @@ selection, pytest or the dashboard checks, is ask for that answer:
   the hook carries on where it is.
 - **outside**: it prints `Entering the shared test CPU...` and replaces
   itself with `test-cpu exec --quiet -- bash <hook>` (through
-  `machine_slot.py enter`, which asks once more), so the same hook, with
-  the same arguments, runs again from the top inside the slice. Every phase and
-  every process it starts runs inside.
+  `machine_slot.py enter --after-outside`, which asks once more), so the same
+  hook, with the same arguments, runs again from the top inside the slice.
+  Every phase and every process it starts runs inside. `--after-outside` tells
+  `enter` the hook was just told outside, for the loop guard below.
 - **can't be known or made**: it prints the reason and `Can't enter the shared
   test CPU (above). Commit aborted.`, and exits 125 before any phase. A refusal
   by the launcher itself prints the launcher's reason and exits 125.
@@ -97,20 +98,21 @@ already placed itself, and a worker that restarted would cut its channel to it.
   runs without taking another, so a nested run never waits for its own slot.
 - **Loop guard**: a restart records `TEMPER_TEST_CPU_RESTART=<pid>:<start
   time>` of the process that restarted, and so does `machine_slot.py enter`
-  when it is told inside and runs its command in place. If the run still comes
-  back outside while that process is the run itself (an exec in place keeps
-  pid and start time) or one of its ancestors, it stops with 125 instead of
-  restarting again. This bounds a launcher alternating outside/inside. A
+  when it runs its command in place after being told inside, or, started with
+  `--after-outside` (as the hook does once it has heard outside), after any
+  answer but outside. If the run still comes back outside while that process
+  is the run itself (an exec in place keeps pid and start time) or one of its
+  ancestors, it stops with 125 instead of restarting again. This bounds a
+  launcher alternating outside/inside, and one alternating outside/inactive:
+  the hook stops with 125 after three launcher queries, before any phase. A
   leftover record from an unrelated process, or from an earlier process that
-  had the same pid, is ignored. An inactive host claims no placement and leaves
-  no record.
-
-A synthetic launcher alternating outside/inactive can still loop: `enter`
-runs in place without a record on the inactive answer. Temper's 20-second
-probe did not exit on either version: 75 queries on the new path, 86 on the
-old path. This residual is carried to Ops' G/H preparation;
-it does not block landing inactive or add an activation gate. No actual
-installed launcher is claimed to produce that sequence.
+  had the same pid, is ignored.
+- **Only outside reads the record**: a policy switched off between the hook's
+  question and `enter`'s, and left off, runs every phase. Switched on again
+  before that commit ends, a run under the hook that then hears outside stops
+  with 125; commit again. A plain `enter` or pytest's own entry told inactive
+  claims no placement and leaves no record. With no policy the hook never
+  reaches `enter`, so nothing is recorded.
 
 125 always means the run couldn't be placed; it is never a test result.
 
@@ -121,8 +123,8 @@ The entry can only place what starts after it. Honestly, that is:
 - **Hook**: git itself, which starts the hook; the `bash` that runs it; the
   `dirname` and `basename` that find the hook's own path; and
   `python3 tests/machine_slot.py placement` with its launcher query (when
-  outside, also `machine_slot.py enter` with one more), standard library only,
-  no temper import. Everything after runs inside.
+  outside, also `machine_slot.py enter --after-outside` with one more),
+  standard library only, no temper import. Everything after runs inside.
 - **pytest**: the interpreter, pytest's own start-up and plugins (xdist,
   timeout, asyncio, pytest-benchmark, which runs `git rev-parse --git-dir`
   while its options load) and the root conftest's imports (`temper_ai.database`,
@@ -150,15 +152,19 @@ loop guard. It exits 125 when the placement can't be known or made. When it
 runs the command itself, it exits 127 or 126 if the command isn't found or
 can't run; once it has handed the command to the launcher, those codes are
 the launcher's. The conftest then finds itself inside (and in a slot) and
-carries on.
+carries on. The hook's `enter --after-outside -- <command...>` is for a caller
+that was just told outside (Loop guard above); by hand, use plain `enter --`.
+Any other form prints the usage line and exits 2.
 
 ## Checked by, and what isn't proven
 
 `tests/test_shared_test_cpu_entry.py` holds the fixed cases: the host's
 answer, the conftest entry, the whole hook and real pytest runs against a fake
 launcher whose slice is real process ancestry (so clearing the environment
-can't fake "inside"), and a nested run through the real `wt` in a scratch pool
-of one slot. `tests/test_machine_slot.py` holds the inactive answers.
+can't fake "inside"), or that answers from a script (one that contradicts
+itself, or a policy switched off and left off), and a nested run through the
+real `wt` in a scratch pool of one slot. `tests/test_machine_slot.py` holds
+the inactive answers.
 
 Placement by the real launcher and kernel is not exercised here: with no
 policy installed, that proof belongs to the host's setup (Ops).

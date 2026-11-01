@@ -327,6 +327,17 @@ def test_restart_record_only_matters_outside(entry, where):
     assert entry.attempts == []
 
 
+@pytest.mark.parametrize(("workers", "attempts"), [(None, []), ("auto", [("wt", WT, "1", None)])],
+                         ids=["serial", "parallel"])
+def test_inactive_pytest_entry_records_nothing(entry, workers, attempts):
+    # Told inactive, pytest's own entry claims no placement: it runs as with no policy (a parallel run
+    # restarts into wt's pool) and leaves no loop record, neither at its exec nor after. Only the hook's
+    # enter --after-outside records on inactive.
+    entry.where = "inactive"
+    enter(workers)
+    assert entry.attempts == attempts and RESTART not in entry.environ
+
+
 def test_host_that_cant_be_read_stops_every_run(entry):
     entry.where = machine_slot.HostEntryError("policy there, launcher not")
     for workers in (*PARALLEL, *SERIAL):
@@ -404,6 +415,34 @@ def test_script_enter_inside_that_cant_record_itself_runs_nothing(entry, capsys,
     assert capsys.readouterr().err == "shared test CPU: can't read this run's own start time for the loop guard (no /proc)\n"
 
 
+@pytest.mark.parametrize("where", ["inactive", "inside"])
+def test_script_enter_after_outside_records_itself_on_any_run_in_place(entry, where):
+    # The hook starts enter this way once it has heard outside. If enter then runs the hook in place,
+    # even on an inactive answer, the hook's next "outside" finds this record and stops with 125.
+    # Plain enter told inactive leaves none (test_script_enter_elsewhere_runs_the_command_where_it_is).
+    entry.where = where
+    with pytest.raises(Restart):
+        machine_slot.main(["enter", "--after-outside", "--", "/bin/bash", "hook", "a b"])
+    assert entry.attempts == [("/bin/bash", ["/bin/bash", "hook", "a b"], None, OWN)]
+
+
+def test_script_enter_after_outside_told_outside_becomes_the_launcher(entry):
+    with pytest.raises(Restart):
+        machine_slot.main(["enter", "--after-outside", "--", "/bin/bash", "hook", "a b"])
+    assert entry.attempts == [(LAUNCHER, [LAUNCHER, "exec", "--quiet", "--", "/bin/bash", "hook", "a b"], None, OWN)]
+
+
+def test_script_enter_after_outside_that_cant_record_itself_runs_nothing(entry, capsys, monkeypatch):
+    def unreadable(pid):
+        raise OSError("no /proc")
+
+    entry.where = "inactive"
+    monkeypatch.setattr(machine_slot, "_process", unreadable)
+    assert machine_slot.main(["enter", "--after-outside", "--", "/bin/bash"]) == 125
+    assert entry.attempts == [] and entry.environ == {}
+    assert capsys.readouterr().err == "shared test CPU: can't read this run's own start time for the loop guard (no /proc)\n"
+
+
 @pytest.mark.parametrize(("fail", "code"), [(FileNotFoundError("gone"), 127), (PermissionError("denied"), 126)],
                          ids=["not-found", "not-executable"])
 def test_script_enter_elsewhere_that_cant_start_gives_the_shells_code(entry, capsys, fail, code):
@@ -427,10 +466,29 @@ def test_script_enter_failure_is_125(entry, capsys):
     assert "couldn't restart under" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("argv", [[], ["placement", "x"], ["enter", "--"], ["enter", "bash"], ["other"]])
+@pytest.mark.parametrize("argv", [[], ["placement", "x"], ["enter", "--"], ["enter", "bash"], ["other"],
+                                  ["enter", "--after-outside", "--"], ["enter", "--after-outside", "bash"],
+                                  ["enter", "--after-outside", "--after-outside", "--", "bash"],
+                                  ["enter", "--unknown", "--", "bash"],
+                                  ["enter", "--after-outside-extra", "--", "/bin/bash"],
+                                  ["enter", "--after-outside=1", "--", "/bin/bash"]])
 def test_script_usage(entry, capsys, argv):
     assert machine_slot.main(argv) == 2
     assert entry.attempts == []
+
+
+def test_script_enter_after_separator_treats_flag_as_command(entry):
+    # After --, even the option's exact spelling is a command name, not an entry option.
+    entry.where = "inactive"
+    with pytest.raises(Restart):
+        machine_slot.main(["enter", "--", "--after-outside", "/bin/bash"])
+    assert entry.attempts == [("--after-outside", ["--after-outside", "/bin/bash"], None, None)]
+    assert RESTART not in entry.environ
+
+
+def test_script_usage_names_the_flag(entry, capsys):
+    assert machine_slot.main(["enter", "--unknown", "--", "bash"]) == 2
+    assert capsys.readouterr().err == "usage: machine_slot.py placement | machine_slot.py enter [--after-outside] -- <command...>\n"
 
 
 # ─── A fake host: its slice is real process ancestry ────────────────────────
@@ -489,12 +547,17 @@ if args == ["membership", "--json"]:
         print(json.dumps({"error": "cgroup-unreadable"}))
         sys.exit(1)
     placed = mode == "enabled" and fakehost.inside()
-    if host.get("membership") == "alternate":
-        # A launcher that contradicts itself: outside, inside, outside, ... whatever the slice says.
+    if "answers" in host:
+        # A scripted launcher, whatever the slice says: one answer per query, in turn. "cycle" goes round
+        # again (a launcher that contradicts itself); otherwise the last answer holds (a policy switched
+        # off and left off).
         with open(os.path.join(fakehost.DIR, "answers"), "a+") as f:
             f.seek(0)
-            placed = len(f.read()) % 2 == 1
+            seen = len(f.read())
             f.write("x")
+        answers = host["answers"]
+        said = answers[seen % len(answers)] if host.get("cycle") else answers[min(seen, len(answers) - 1)]
+        mode, placed = ("inactive", False) if said == "inactive" else ("enabled", said == "inside")
     print(json.dumps({"cgroup": "/fake", "mode": mode, "slice": "testcpu.slice", "inside": placed, "parentOk": True}))
     sys.exit(0 if placed else 1)
 if args[:1] == ["exec"] and "--" in args:
@@ -706,11 +769,47 @@ def test_hook_with_a_long_staged_list_keeps_every_phase(host):
 def test_hook_whose_launcher_contradicts_itself_stops_with_125(host):
     # The hook hears outside, enter hears inside and runs it in place, the hook hears outside again:
     # enter's record stops it there instead of handing it back and forth without end.
-    host.install("enabled", membership="alternate")
+    host.install("enabled", answers=["outside", "inside"], cycle=True)
     ran = run_hook(host, timeout=30)
     assert ran.code == 125
     assert split(host.calls()) == ([("membership", False)] * 3, [])
     assert (ran.said("Commit aborted"), ran.warned("yet still outside")) == (True, 1)
+
+
+def test_hook_whose_launcher_flips_between_outside_and_inactive_stops_with_125(host):
+    # The hook hears outside and starts enter --after-outside; enter hears inactive and runs the hook in
+    # place, recording itself all the same; the hook hears outside again and stops on that record
+    # instead of handing itself back and forth (Temper #256's N1b: no exit within 20 s before).
+    host.install("enabled", answers=["outside", "inactive"], cycle=True)
+    ran = run_hook(host, timeout=20)
+    assert ran.code == 125
+    assert split(host.calls()) == ([("membership", False)] * 3, [])
+    assert (ran.said("Commit aborted"), ran.warned("yet still outside")) == (True, 1)
+
+
+@pytest.mark.parametrize("then", ["inactive", "inside"], ids=["switched-off", "inside"])
+def test_hook_told_outside_once_then_a_steady_answer_runs_every_phase(host, then):
+    # The record counts only when the answer is outside: a policy switched off between the hook's
+    # question and enter's, and left off, runs every phase, as does a launcher that settles on inside.
+    # (Scripted answers leave the fake slice alone, so the phases show as unplaced.)
+    host.install("enabled", answers=["outside", then])
+    ran = run_hook(host)
+    assert ran.code == 0
+    assert split(host.calls()) == ([("membership", False)] * 3, [(*phase, False) for phase in phases(host.repo)])
+    assert (ran.said("Entering the shared test CPU..."), ran.warned("shared test CPU: ")) == (True, 0)
+
+
+@pytest.mark.parametrize(("flag", "code", "stopped"), [(["--after-outside"], 125, 1), ([], 0, 0)], ids=["after-outside", "plain"])
+def test_run_under_enter_that_hears_outside_later_stops_only_after_outside(host, flag, code, stopped):
+    # A policy switched off between the hook's question and enter's, then on again before the commit
+    # ends: under enter --after-outside, a run that then hears outside stops with 125; plain enter told
+    # inactive left no record, so the same run just hears outside. The shell keeps the run a child.
+    host.install("enabled", answers=["inactive", "outside"])
+    script = str(host.repo / "tests/machine_slot.py")
+    argv = ["python3", script, "enter", *flag, "--", "bash", "-c", 'python3 "$0" placement; exit $?', script]
+    ran = Ran(argv, cwd=host.repo, env=environment(host), timeout=60)
+    assert (ran.code, ran.warned("yet still outside"), ran.said("outside")) == (code, stopped, not stopped)
+    assert split(host.calls()) == ([("membership", False)] * 2, [])
 
 
 @pytest.mark.parametrize("cdpath", [".:/nonexistent", "/nonexistent:."])
@@ -830,6 +929,17 @@ def test_serial_pytest_restarted_in_place_yet_outside_stops_after_one_restart(ho
     assert ran.code == 125
     assert ran.warned("yet still outside") > 0
     assert kinds(contract(host.calls())) == [("membership", False), ("exec", False), ("membership", False)]
+
+
+@pytest.mark.parametrize("then", ["inactive", "inside"])
+@pytest.mark.parametrize(("args", "restart"), [((), "exec"), (("-n", "2"), "wt")], ids=["serial", "parallel"])
+def test_pytest_whose_launcher_contradicts_itself_restarts_once_then_runs(host, then, args, restart):
+    # After its one restart pytest runs on any answer but outside: serially with no second restart, in
+    # parallel stopped by wt's marker. Bounded without the hook's --after-outside.
+    host.install("enabled", answers=["outside", then], cycle=True)
+    ran = run_pytest(host, *args, timeout=60)
+    assert (ran.code, ran.said("1 passed")) == (0, True)
+    assert kinds(contract(host.calls())) == [("membership", False), (restart, False), ("membership", True), ("probe", True)]
 
 
 def test_parallel_pytest_outside_goes_through_wt_and_workers_stay_put(host):

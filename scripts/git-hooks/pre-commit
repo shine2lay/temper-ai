@@ -37,7 +37,9 @@ if ! placement="$(python3 "$HOST_ENTRY" placement)"; then
 fi
 if [ "$placement" = outside ]; then
     echo "Entering the shared test CPU..."
-    exec python3 "$HOST_ENTRY" enter -- "$BASH" "$HOOK" "$@"
+    # --after-outside: if enter then runs the hook here after all (told inside, or inactive), it
+    # leaves a record, so a launcher that keeps flipping stops it with 125 instead of a loop.
+    exec python3 "$HOST_ENTRY" enter --after-outside -- "$BASH" "$HOOK" "$@"
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

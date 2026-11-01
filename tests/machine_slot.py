@@ -16,7 +16,9 @@ With no policy installed (today) or an inactive one, both work exactly as before
 As a script, for the pre-commit hook before it does anything else and for commands started by hand:
 ``machine_slot.py placement`` prints inactive, inside or outside; ``machine_slot.py enter --
 <command...>`` becomes the command where the host wants it (through the launcher when outside,
-directly otherwise). Both exit 125 when the placement can't be known or made.
+directly otherwise). Both exit 125 when the placement can't be known or made. A caller that was
+just told outside (the hook) adds ``--after-outside`` before ``--``, so a launcher that answers
+outside, then inactive, then outside again stops it with 125 instead of starting it over and over.
 """
 
 import json
@@ -218,26 +220,39 @@ def _run_here(command: list[str]) -> int:
         return 127 if isinstance(exc, FileNotFoundError) else 126
 
 
+def _enter_arguments(argv: list[str]) -> tuple[list[str], bool] | None:
+    """(command, after_outside) of ``enter [--after-outside] -- <command...>``; None for anything else."""
+    for after_outside, head in ((False, ["enter", "--"]), (True, ["enter", "--after-outside", "--"])):
+        if argv[:len(head)] == head and len(argv) > len(head):
+            return argv[len(head):], after_outside
+    return None
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv == ["placement"]:
             print(entry_placement())
             return 0
-        if len(argv) > 2 and argv[:2] == ["enter", "--"]:
+        enter = _enter_arguments(argv)
+        if enter is not None:
+            command, after_outside = enter
             # Asked first, so one command works with no policy, inside the slice and outside it.
             where = entry_placement()
-            if where == "inside":
+            if where == "inside" or (where == "inactive" and after_outside):
                 # Told it's placed: the same record a restart leaves, so if this command (the same
                 # process after the exec) or anything under it hears outside after all, it stops
-                # with 125 instead of handing itself back and forth. Inactive claims no placement.
+                # with 125 instead of handing itself back and forth. Inactive claims no placement, so
+                # plain enter records nothing then; but a caller that was just told outside (the
+                # hook, with --after-outside) would hear outside again and start enter again, round
+                # and round, so that run records itself too.
                 _record_self()
             if where != "outside":
-                return _run_here(argv[2:])
-            _restart([TEST_CPU, "exec", "--quiet", "--", *argv[2:]], marker=False, record=True)
+                return _run_here(command)
+            _restart([TEST_CPU, "exec", "--quiet", "--", *command], marker=False, record=True)
     except HostEntryError as exc:
         print(f"shared test CPU: {exc}", file=sys.stderr)
         return EXIT_PLACEMENT
-    print("usage: machine_slot.py placement | machine_slot.py enter -- <command...>", file=sys.stderr)
+    print("usage: machine_slot.py placement | machine_slot.py enter [--after-outside] -- <command...>", file=sys.stderr)
     return 2
 
 

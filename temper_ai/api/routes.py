@@ -239,6 +239,17 @@ def _refuse_candidate_entry(execution_id: str | None = None, workflow: str | Non
         raise HTTPException(status_code=409, detail=exc.code.value) from None
 
 
+def _refuse_designated_successor(config: Any) -> None:
+    """Refuse (409) a fork or resume whose workflow is designated under the name it loads as.
+
+    The request's name can differ from the loaded config's own name (a folder part is
+    dropped; Studio stores any config under any key), and the successor is queued and run
+    under the loaded name. Checked before the source's held clean-ups are ended, so a
+    successor refused later never takes them over.
+    """
+    _refuse_candidate_entry(workflow=config.name)
+
+
 def _refuse_reserved_row(row) -> None:
     """Refuse (409, row untouched) rather than let a legacy writer drop the slot."""
     from temper_ai.config.admission_contract import AdmissionRefused
@@ -1153,6 +1164,7 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         nodes, config = _state().graph_loader.load_workflow(workflow_name)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _refuse_designated_successor(config)
 
     pi_run = is_pi_workflow(nodes)
     if not pi_run and (result.get("status") in {"queued", "running", "waiting"}
@@ -1202,6 +1214,8 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         raise
     if parked is None and response.status == "queued":
         # Admission committed: a later hold error cannot release this successor's claim.
+        # A workflow designated since keeps the hold; the worker refuses the queued row.
+        _refuse_designated_successor(config)
         holds.take_over(execution_id, by=execution_id)
     return response
 
@@ -1273,10 +1287,14 @@ def _start_resume(
             except WorkspacePathRefused as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             # The claim and re-queue committed: never release it if this or anything after
-            # it fails. Its queued row carries it on, or the reaper ends it.
+            # it fails. Its queued row carries it on, or the reaper ends it. A workflow
+            # designated since keeps the hold; the worker refuses the queued row.
+            _refuse_designated_successor(config)
             holds.take_over(execution_id, by=execution_id)
         return RunResponse(execution_id=execution_id, status="queued")
 
+    # Before the no-row claim and the takeover: a refusal leaves neither claimed nor ended.
+    _refuse_designated_successor(config)
     if parked_attempt is not None:
         try:
             won = pi_parked.claim_without_box_row(parked_attempt)
@@ -1410,6 +1428,7 @@ def _fork_run(body: ForkRequest):
         nodes, config = _state().graph_loader.load_workflow(body.workflow)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _refuse_designated_successor(config)
 
     # Each declared default in place of an input the fork leaves out (stage/input_defaults.py).
     inputs = fill_input_defaults(getattr(config, "inputs", None), body.inputs)
@@ -1437,9 +1456,11 @@ def _fork_run(body: ForkRequest):
         with _queue_refusals_as_http():
             queue_fork_taking_over(body.source_execution_id, new_execution_id, config.name,
                                    body.workspace_path, inputs, lane=lane,
-                                   source_was_holding=source_was_holding)
+                                   source_was_holding=source_was_holding,
+                                   refuse_successor=lambda: _refuse_designated_successor(config))
         return RunResponse(execution_id=new_execution_id, status="queued")
 
+    _refuse_designated_successor(config)
     holds.take_over(body.source_execution_id, by=new_execution_id)
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)

@@ -6,9 +6,28 @@ import pytest
 
 from temper_ai.database.locate import (
     DatabaseNotFound,
+    _looks_like_temper,
     compose_url,
     resolve_host_database_url,
 )
+
+
+def test_host_probe_names_the_installed_driver_before_connecting(monkeypatch):
+    import sqlalchemy as sa
+
+    seen = []
+    class BeforeConnection(Exception):
+        pass
+
+    def build(url, **kwargs):
+        seen.append(sa.engine.make_url(url).drivername)
+        raise BeforeConnection
+
+    monkeypatch.setattr(sa, "create_engine", build)
+    # The original probe, saved before conftest guards the module attribute.
+    with pytest.raises(BeforeConnection):
+        _looks_like_temper("postgresql://u:p@db.invalid/temper_test")
+    assert seen == ["postgresql+psycopg2"]
 
 
 def test_inside_the_container_compose_url_is_used():

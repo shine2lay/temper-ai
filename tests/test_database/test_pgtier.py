@@ -86,6 +86,37 @@ class TestItRefusesARealDatabase:
         assert pgtier.check_url(url) == url
 
 
+@pytest.mark.parametrize("operation", [pgtier._create_schema, pgtier._drop_schema])
+def test_schema_engines_name_the_installed_driver(monkeypatch, operation):
+    import sqlalchemy as sa
+
+    seen = []
+    class BeforeConnection(Exception):
+        pass
+
+    def build(url, **kwargs):
+        seen.append(sa.engine.make_url(url).drivername)
+        raise BeforeConnection
+
+    monkeypatch.setattr(sa, "create_engine", build)
+    with pytest.raises(BeforeConnection):
+        operation("postgresql://u:p@db.invalid/temper_test", "tier_p123_master")
+    assert seen == ["postgresql+psycopg2"]
+
+
+def test_tier_url_names_driver_and_keeps_schema_options(monkeypatch):
+    import sqlalchemy as sa
+
+    schema = "tier_p123_master"
+    monkeypatch.setattr(pgtier, "_worker_schema_ready", {schema})
+    for prefix in ("postgresql", "postgres"):
+        raw = f"{prefix}://u:p%40ss@db.invalid/temper_test?sslmode=require"
+        url = sa.engine.make_url(pgtier._with_schema(raw, schema))
+        assert url.drivername == "postgresql+psycopg2"
+        assert url.password == "p@ss"
+        assert dict(url.query) == {"sslmode": "require", "options": f"-csearch_path={schema}"}
+
+
 class TestWhatIsInTheTier:
     @pytest.mark.parametrize("path", [
         "tests/test_database/test_engine.py",

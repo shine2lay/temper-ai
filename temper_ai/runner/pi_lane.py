@@ -692,7 +692,9 @@ def status_engine(url: str | None = None) -> Any:
         raise LaneStatusError("no database is configured (TEMPER_DATABASE_URL)")
     if url.startswith("sqlite"):
         return sa.create_engine(url, poolclass=NullPool)
-    return sa.create_engine(url, poolclass=NullPool, connect_args={"connect_timeout": 5})
+    from temper_ai.database.engine import with_psycopg2_driver
+
+    return sa.create_engine(with_psycopg2_driver(url), poolclass=NullPool, connect_args={"connect_timeout": 5})
 
 
 def lane_status(engine: Any) -> dict[str, Any]:

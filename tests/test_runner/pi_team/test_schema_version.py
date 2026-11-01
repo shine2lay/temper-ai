@@ -19,6 +19,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.pool import NullPool
 
+from temper_ai.database.engine import with_psycopg2_driver
 from temper_ai.pi_agent import ledger as ledger_module
 from temper_ai.pi_agent.ledger import (
     SCHEMA_LOCK_KEY,
@@ -48,7 +49,7 @@ def fresh(db_url, tmp_path):
         yield engine
         engine.dispose()
         return
-    base = check_url(os.environ[TIER_ENV].strip())
+    base = with_psycopg2_driver(check_url(os.environ[TIER_ENV].strip()))
     schema = f"{schema_name()}_v{uuid.uuid4().hex[:8]}"
     admin = sa.create_engine(base, poolclass=NullPool)
     with admin.begin() as conn:

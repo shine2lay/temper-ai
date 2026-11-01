@@ -35,6 +35,8 @@ from urllib.parse import urlparse
 
 import pytest
 
+from temper_ai.database.engine import with_psycopg2_driver
+
 TIER_ENV = "TEMPER_TEST_DATABASE_URL"
 
 #: Test files and folders that talk to the database. Paths are matched against
@@ -137,14 +139,14 @@ def _with_schema(url: str, schema: str) -> str:
         _create_schema(url, schema)
         _worker_schema_ready.add(schema)
     joiner = "&" if "?" in url else "?"
-    return f"{url}{joiner}options=-csearch_path%3D{schema}"
+    return f"{with_psycopg2_driver(url)}{joiner}options=-csearch_path%3D{schema}"
 
 
 def _create_schema(url: str, schema: str) -> None:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
 
-    engine = create_engine(url, poolclass=NullPool)
+    engine = create_engine(with_psycopg2_driver(url), poolclass=NullPool)
     try:
         with engine.connect() as conn:
             names = conn.execute(text("SELECT nspname FROM pg_namespace WHERE nspname LIKE 'tier_p%'")).scalars()
@@ -164,7 +166,7 @@ def _drop_schema(url: str, schema: str) -> None:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
 
-    engine = create_engine(url, poolclass=NullPool)
+    engine = create_engine(with_psycopg2_driver(url), poolclass=NullPool)
     try:
         with engine.begin() as conn:
             conn.execute(text("SET LOCAL lock_timeout = '5s'"))

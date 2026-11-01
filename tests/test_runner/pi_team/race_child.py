@@ -16,6 +16,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from temper_ai.database.engine import with_psycopg2_driver
 from temper_ai.pi_agent.ledger import Ledger
 
 
@@ -24,7 +25,7 @@ def _engine(url: str) -> sa.Engine:
         from temper_ai.database.engine import create_test_engine
 
         return create_test_engine(url)
-    return sa.create_engine(url, poolclass=sa.pool.NullPool)
+    return sa.create_engine(with_psycopg2_driver(url), poolclass=sa.pool.NullPool)
 
 
 def _gone(name: str) -> dict:

@@ -32,7 +32,8 @@ import sqlalchemy as sa
 from temper_ai.database import get_database
 tables = sorted(sa.inspect(get_database().engine).get_table_names())
 from temper_ai.server import app
-routes = sorted(f"{sorted(getattr(r, 'methods', None) or [])} {r.path}" for r in app.routes)
+from tests.route_inventory import route_inventory
+routes = sorted(f"{methods} {path}" for path, methods in route_inventory(app))
 from temper_ai.stage import topology
 try:
     agent.create_agent({"name": "talk", "type": "pi", "role": "scout"})
@@ -83,7 +84,8 @@ def _probe(tmp_path, switch: str | None) -> dict:
     url = f"sqlite:///{tmp_path / f'switch-{switch}.db'}"
     out = subprocess.run([sys.executable, "-c", PROBE, url], cwd=WORKTREE, env=env,
                          capture_output=True, text=True, timeout=180)
-    assert out.returncode == 0, out.stderr[-3000:]
+    code = out.returncode
+    assert code == 0, "switch probe failed"
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 

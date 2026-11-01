@@ -404,8 +404,9 @@ from temper_ai.database import init_database
 init_database(sys.argv[1])
 from temper_ai.server import app
 import temper_ai.cli.watch_queue
+from tests.route_inventory import route_inventory
 print(json.dumps({
-    "team_routes": sorted(r.path for r in app.routes if r.path.startswith("/api/team")),
+    "team_routes": sorted(path for path, _ in route_inventory(app) if path.startswith("/api/team")),
     "view": "temper_ai.shared.pi_lane_view" in sys.modules,
 }))
 """
@@ -418,5 +419,6 @@ def test_switched_off_nothing_imports_the_view_and_there_is_no_team_api(tmp_path
                 "TEMPER_LOG_DIR": str(tmp_path / "logs")})
     out = subprocess.run([sys.executable, "-c", OFF_PROBE, f"sqlite:///{tmp_path / 'off.db'}"],
                          cwd=WORKTREE, env=env, capture_output=True, text=True, timeout=180)
-    assert out.returncode == 0, out.stderr[-3000:]
+    code = out.returncode
+    assert code == 0, "switch-off probe failed"
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {"team_routes": [], "view": False}

@@ -2142,8 +2142,8 @@ memory = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.8" },
-    { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.8" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.8,<0.98" },
+    { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.8,<0.98" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "cryptography", specifier = ">=42.0,<47.0" },
     { name = "fastapi", specifier = ">=0.115.0" },

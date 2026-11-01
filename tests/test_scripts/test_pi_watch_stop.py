@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "pi_watch_stop.py"
 KEY = "watch-stop-test-key-0123456789abcdef"
 FAST = ["--poll", "0.05", "--reread", "0.2", "--retry-every", "0.05", "--retry-for", "0.3"]
@@ -109,11 +111,13 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
     since = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=5)
     processes: list[subprocess.Popen[bytes]] = []
 
-    def start(folder: Path, run: str, log: Path, *extra: str) -> subprocess.Popen[bytes]:
+    def start(folder: Path, run: str, log: Path, *extra: str,
+              clocked_retry: bool = False) -> subprocess.Popen[bytes]:
         folder.mkdir(parents=True, exist_ok=True)
+        launcher = [str(Path(__file__).with_name("watch_stop_clock.py"))] if clocked_retry else []
         with log.open("wb") as out:
             proc = subprocess.Popen(
-                [sys.executable, str(SCRIPT), "--records", str(folder), "--run", run,
+                [sys.executable, *launcher, str(SCRIPT), "--records", str(folder), "--run", run,
                  "--since", _stamp(since), "--key-file", str(key_file),
                  "--server", f"http://127.0.0.1:{server.server_port}",
                  "--systemctl", str(systemctl), *FAST, *extra],
@@ -227,10 +231,12 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
         calls.clear()
         state.write_text("activating\n", encoding="utf-8")
         quiet = tmp_path / "quiet"
-        code, text = finish(start(quiet, "down", tmp_path / "quiet.log", "--watch-grace", "0.5"),
-                            tmp_path / "quiet.log")
-        assert code == 1, text
-        assert len(calls) >= 2, text
+        # Retry count is about loop behavior, not how many HTTP roundtrips the
+        # host can fit in 0.3 seconds. Reader/grace/HTTP still run for real.
+        code, text = finish(start(quiet, "down", tmp_path / "quiet.log", "--watch-grace", "0.5",
+                                  clocked_retry=True), tmp_path / "quiet.log")
+        assert code == 1, "watch-stop must report cancellation failure"
+        assert len(calls) >= 2, "watch-stop must retry within its logical budget"
         assert {c["body"]["reason"] for c in calls} == {
             "Security watch COULD NOT CHECK: watch security-trial-watch: "
             "watch unit activating for over 0.5 s"}
@@ -342,3 +348,33 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
             proc.wait(timeout=5)
         server.shutdown()
         server.server_close()
+
+
+@pytest.mark.parametrize("response_seconds", [0.0, 0.38])
+def test_cancel_retries_only_while_budget_remains(monkeypatch, response_seconds):
+    from tests.test_scripts.watch_stop_clock import RetryClock, load_watch_stop
+
+    watch = load_watch_stop(SCRIPT)
+    clock = RetryClock()
+    calls = []
+
+    def slow_failure(*args, timeout):
+        calls.append(timeout)
+        # Reproduce the measured first-response duration, without a real sleep.
+        clock.sleep(response_seconds)
+        if response_seconds >= 0.3:
+            assert len(calls) == 1, "deadline must prevent a second send"
+        return 503, "unavailable"
+
+    monkeypatch.setattr(watch, "time", clock)
+    monkeypatch.setattr(watch, "post_cancel", slow_failure)
+    finding = watch.Finding("COULD NOT CHECK", "watch", "test-watch", "unavailable", "test-watch")
+    code = watch.cancel("http://127.0.0.1:1", "down", KEY, finding,
+                        retry_every=0.05, retry_for=0.3)
+    assert code == 1
+    assert calls[0] == 0.3
+    if response_seconds >= 0.3:
+        assert calls == [0.3]
+    else:
+        assert len(calls) >= 2, "watch-stop must retry within its logical budget"
+        assert all(0 < timeout <= 0.3 for timeout in calls)

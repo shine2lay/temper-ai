@@ -945,12 +945,19 @@ def test_pending_capture_boundary_guards_bite(monkeypatch, guard):
         assert_pending_capture_boundary(monkeypatch, boundary, different=guard != "capture-return", event_id=event_id)
 
 
-def test_projection_utc_comparison_bites(monkeypatch):
+@pytest.mark.parametrize("field", ["event_at", "occurred_at"])
+def test_projection_utc_comparison_bites(monkeypatch, field):
     record()
     snapshot = rows()[0]
     candidate = usage.UsageCallRow(**snapshot.model_dump())
     candidate.event_at = as_utc(candidate.event_at)
     candidate.occurred_at = as_utc(candidate.occurred_at) if candidate.occurred_at else None
+    # Adapters may return aware or naive UTC. Exercise the legacy naive case
+    # explicitly, rather than relying on the installed adapter's representation.
+    aware = getattr(candidate, field)
+    assert aware is not None and aware.tzinfo is not None
+    setattr(snapshot, field, aware.replace(tzinfo=None))
+    assert getattr(snapshot, field).tzinfo is None
     def check():
         assert usage._same_projection(snapshot, candidate)
     check()

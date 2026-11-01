@@ -42,7 +42,9 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = [
-    "anthropic>=0.8",
+    # Lift after the provider supports credential profiles without post-admission file
+    # discovery and the newest SDK constructor/client contract, with offline safety proofs.
+    "anthropic>=0.8,<0.98",
 ]
 gemini = [
     "google-genai>=1.0",
@@ -53,7 +55,9 @@ memory = [
 dev = [
     # Exercise real SDK request/retry behavior with offline counting transports.
     # Already locked by the optional runtime extra; normal installs stay optional.
-    "anthropic>=0.8",
+    # Lift after the provider supports credential profiles without post-admission file
+    # discovery and the newest SDK constructor/client contract, with offline safety proofs.
+    "anthropic>=0.8,<0.98",
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.1",

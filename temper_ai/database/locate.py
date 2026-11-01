@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from temper_ai.database.engine import TEMPER_DATABASE_URL_ENV
+from temper_ai.database.engine import TEMPER_DATABASE_URL_ENV, with_psycopg2_driver
 
 # docker-compose.yml publishes temper's Postgres on ${POSTGRES_PORT:-5433}.
 COMPOSE_PORT_DEFAULT = "5433"
@@ -48,7 +48,7 @@ def in_container() -> bool:
 def _looks_like_temper(url: str) -> bool:
     from sqlalchemy import create_engine, inspect
 
-    engine = create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
+    engine = create_engine(with_psycopg2_driver(url), pool_pre_ping=True, connect_args={"connect_timeout": 5})
     try:
         return inspect(engine).has_table(MARKER_TABLE)
     finally:

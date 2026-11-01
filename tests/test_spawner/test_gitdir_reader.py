@@ -121,9 +121,11 @@ def test_sealed_type_errors_are_not_swallowed_and_legacy_does_not_stat(tmp_path,
 
     fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        monkeypatch.setattr(box_seal.os, "fstat", unstattable)
-        assert _gitdir_named(str(tmp_path)) == ".own"
-        with pytest.raises(OSError, match="synthetic stat failure"):
-            box_seal._no_outside_repo(fd, str(tmp_path))
+        # pytest's FD capture also calls fstat; restore it before leaving this call.
+        with monkeypatch.context() as patch:
+            patch.setattr(box_seal.os, "fstat", unstattable)
+            assert _gitdir_named(str(tmp_path)) == ".own"
+            with pytest.raises(OSError, match="synthetic stat failure"):
+                box_seal._no_outside_repo(fd, str(tmp_path))
     finally:
         os.close(fd)

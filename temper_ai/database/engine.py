@@ -9,9 +9,10 @@ Tests can pass explicit SQLite URLs for isolation.
 
 import logging
 import os
+from typing import TypeVar
 
 from sqlalchemy import event
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import URL, Engine
 from sqlalchemy.pool import NullPool, QueuePool, StaticPool
 from sqlmodel import create_engine
 
@@ -27,6 +28,26 @@ _PG_POOL_OVERFLOW_MULTIPLIER = 2
 def get_database_url() -> str:
     """Return the configured database URL from env or default."""
     return os.getenv(TEMPER_DATABASE_URL_ENV, DEFAULT_DATABASE_URL)
+
+
+_DatabaseURL = TypeVar("_DatabaseURL", str, URL)
+
+
+def with_psycopg2_driver(url: _DatabaseURL) -> _DatabaseURL:
+    """Name our installed driver for bare Postgres URLs; preserve explicit drivers.
+
+    SQLAlchemy 2.1 changed its default to psycopg (v3). Temper uses psycopg2
+    on both SQLAlchemy versions. Keep strings byte-for-byte after the scheme:
+    rendering a URL through str() would replace its password with asterisks.
+    """
+    if isinstance(url, URL):
+        if url.drivername in ("postgresql", "postgres"):
+            return url.set(drivername="postgresql+psycopg2")
+        return url
+    scheme, separator, rest = url.partition("://")
+    if separator and scheme in ("postgresql", "postgres"):
+        return f"postgresql+psycopg2://{rest}"
+    return url
 
 
 def create_app_engine(
@@ -54,7 +75,7 @@ def create_test_engine(database_url: str = "sqlite:///:memory:") -> Engine:
 
 def _create_pg_engine(url: str, pool_size: int) -> Engine:
     engine: Engine = create_engine(
-        url,
+        with_psycopg2_driver(url),
         pool_size=pool_size,
         max_overflow=pool_size * _PG_POOL_OVERFLOW_MULTIPLIER,
         pool_pre_ping=True,

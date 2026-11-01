@@ -643,9 +643,12 @@ def test_private_fd_and_content_binding_guards(tmp_path, monkeypatch, bad):
             if value.st_mode & 0o170000 == 0o100000:
                 return SimpleNamespace(st_mode=value.st_mode, st_uid=value.st_uid, st_nlink=2)
             return value
-        monkeypatch.setattr(os, "fstat", hardlink)
     provider = fake_anthropic(monkeypatch, lambda request: (sent.append(1), httpx.Response(500))[1])
-    result, _, _, _ = run_slot(cfg, provider)
+    # Only the tested operation sees the stub, not pytest's FD capture at call-end.
+    with monkeypatch.context() as patch:
+        if bad == "nlink":
+            patch.setattr(os, "fstat", hardlink)
+        result, _, _, _ = run_slot(cfg, provider)
     assert not sent and result.status == Status.FAILED
 
 

@@ -1421,6 +1421,7 @@ class Selftest:
         self.node = shutil.which(node) or node
         self.journald = journald
         self.results: list[bool] = []
+        self.procs: list[subprocess.Popen[bytes]] = []
         self.tmp = Path(tempfile.mkdtemp(prefix="tph-"))  # mode 0700, short enough for a socket
         self.tag = f"{NAME}-selftest-{os.getpid()}-{uuid.uuid4().hex[:6]}"
         self.canary = "SELFTEST-CANARY-" + uuid.uuid4().hex
@@ -1464,7 +1465,9 @@ class Selftest:
         if self.journald:
             argv = ["systemd-cat", "-t", self.tag, "--", *argv]
         with open(self.log_file, "ab") as out:
-            return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out)
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out)
+        self.procs.append(proc)
+        return proc
 
     def helper_log(self) -> str:
         if not self.journald:
@@ -1491,7 +1494,17 @@ class Selftest:
     def run(self) -> int:
         try:
             self.phases()
+        except Exception as exc:
+            self.check(False, f"unexpected error: {type(exc).__name__}: {exc}")
         finally:
+            for proc in self.procs:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=5)
             passed = bool(self.results) and all(self.results)
             print(f"selftest: {'PASS' if passed else 'FAIL'} ({sum(self.results)}/{len(self.results)} checks)")
             if passed:
@@ -1506,21 +1519,26 @@ class Selftest:
         before = self.auth_state()
         proc = self.start(config, "config")
         deadline = time.monotonic() + 30
-        while not os.path.exists(sock) and proc.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if not self.check(os.path.exists(sock), f"socket: the helper serves {sock}"):
+        answer: str | None = None
+        while proc.poll() is None and time.monotonic() < deadline:
+            try:
+                answer = ask(sock, "status")
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                time.sleep(0.05)
+        if not self.check(os.path.exists(sock) and answer is not None, f"socket: the helper serves {sock}"):
             proc.terminate()
             proc.wait(timeout=30)
             print(self.helper_log())
             return
-        requests = 0
+        assert answer is not None
+        requests = 1
 
         def asked(line: str) -> str:
             nonlocal requests
             requests += 1
             return ask(sock, line)
 
-        answer = asked("status")
         words = _json_object(answer[3:]) if answer.startswith("ok ") else None
         self.check(words is not None, "status: the socket answers 'ok <json>'")
         words = words or {}

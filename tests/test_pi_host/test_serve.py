@@ -4,16 +4,20 @@ its stop, and where a login may and may not end up.  Also ``check``, ``ask`` and
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
 from .support import (
     BASE,
+    BRIDGE,
     NODE,
     OTHER,
     PI_VERSION,
@@ -240,3 +244,113 @@ def test_selftest_passes():
     assert done.returncode == 0, done.stdout
     assert "FAIL" not in done.stdout
     assert done.stdout.rstrip().splitlines()[-1].startswith("selftest: PASS (")
+
+
+@pytest.mark.timeout(120)
+def test_selftest_waits_for_accepting_socket(monkeypatch, capsys):
+    """If the socket file appears before listen() completes, selftest retries ConnectionRefusedError."""
+    real_ask = tph.ask
+    refused = 0
+
+    def ask_with_bind_to_listen_window(socket_path: str, request: str, timeout: float = 60.0) -> str:
+        nonlocal refused
+        if request == "status" and os.path.exists(socket_path) and refused < 3:
+            refused += 1
+            raise ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")
+        return real_ask(socket_path, request, timeout=timeout)
+
+    monkeypatch.setattr(tph, "ask", ask_with_bind_to_listen_window)
+    st = tph.Selftest(str(BRIDGE), NODE, False)
+    try:
+        code = st.run()
+        out = capsys.readouterr().out
+        assert code == 0
+        assert refused == 3
+        assert "FAIL" not in out
+        assert out.rstrip().splitlines()[-1] == "selftest: PASS (22/22 checks)"
+        assert not st.tmp.exists()
+    finally:
+        for proc in getattr(st, "procs", ()):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+        shutil.rmtree(st.tmp, ignore_errors=True)
+
+    real_monotonic = time.monotonic
+    offset = 0.0
+
+    def refused_past_deadline(socket_path: str, request: str, timeout: float = 60.0) -> str:
+        nonlocal offset
+        if os.path.exists(socket_path):
+            offset = 35.0
+            raise ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")
+        return real_ask(socket_path, request, timeout=timeout)
+
+    monkeypatch.setattr(tph.time, "monotonic", lambda: real_monotonic() + offset)
+    monkeypatch.setattr(tph, "ask", refused_past_deadline)
+    st2 = tph.Selftest(str(BRIDGE), NODE, False)
+    try:
+        code2 = st2.run()
+        out2 = capsys.readouterr().out
+        assert code2 == 1
+        assert st2.results == [False]
+        assert f"FAIL socket: the helper serves {st2.tmp / 'sock' / 'helper.sock'}" in out2
+        assert "selftest: FAIL (0/1 checks)" in out2
+        assert st2.tmp.exists()
+        rc2 = st2.procs[0].poll()
+        assert rc2 is not None
+    finally:
+        for proc in getattr(st2, "procs", ()):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+        shutil.rmtree(st2.tmp, ignore_errors=True)
+
+
+@pytest.mark.timeout(60)
+def test_selftest_exception_fails_and_stops_helper(monkeypatch, capsys):
+    """An unhandled error in phases() after an initial PASS records FAIL, keeps tmp and stops the helper."""
+    real_ask = tph.ask
+    st = tph.Selftest(str(BRIDGE), NODE, False)
+    observed_pids: list[int] = []
+
+    def crash_after_status(socket_path: str, request: str, timeout: float = 60.0) -> str:
+        if request.startswith("token "):
+            n_procs = len(st.procs)
+            rc0 = st.procs[0].poll() if n_procs else 0
+            assert n_procs == 1 and rc0 is None
+            helper_pid = st.procs[0].pid
+            bridge_pids = children(helper_pid)
+            assert len(bridge_pids) == 1
+            observed_pids.extend([helper_pid, *bridge_pids])
+            raise RuntimeError("boom in phases")
+        return real_ask(socket_path, request, timeout=timeout)
+
+    monkeypatch.setattr(tph, "ask", crash_after_status)
+    try:
+        code = st.run()
+        out = capsys.readouterr().out
+        assert code == 1
+        assert len(observed_pids) == 2
+        assert st.results[0] is True
+        assert st.results[-1] is False
+        assert f"PASS socket: the helper serves {st.tmp / 'sock' / 'helper.sock'}" in out
+        assert "FAIL unexpected error: RuntimeError: boom in phases" in out
+        assert "selftest: FAIL (6/7 checks)" in out
+        assert f"selftest: kept {st.tmp} (stub data only)" in out
+        assert st.tmp.exists()
+        rc = st.procs[0].poll()
+        assert rc is not None
+        for pid in observed_pids:
+            assert not os.path.exists(f"/proc/{pid}")
+    finally:
+        for proc in getattr(st, "procs", ()):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+        for pid in observed_pids:
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+        shutil.rmtree(st.tmp, ignore_errors=True)

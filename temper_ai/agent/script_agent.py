@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import sys
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from jinja2 import BaseLoader, StrictUndefined, Undefined, UndefinedError
@@ -37,6 +39,23 @@ def _run_key_env(context: ExecutionContext) -> dict[str, str]:
 
 
 logger = logging.getLogger(__name__)
+
+#: How long a script may run when its config does not say (``timeout_seconds``).
+DEFAULT_TIMEOUT_SECONDS = 30
+
+
+def declared_timeout_seconds(config: Mapping[str, Any]) -> float:
+    """The agent's ``timeout_seconds``, or 30: how long its script runs before it is killed.
+
+    Honoured as declared, with no ceiling: the Bash kill and the executor's wait both take it in
+    full (tools/bash.py time_limit). Any finite number of seconds above 0; anything else raises
+    ValueError naming the setting, where it used to kill the script at once or end in a TypeError.
+    """
+    raw = config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or raw <= 0:
+        raise ValueError(f"script agent '{config.get('name')}': timeout_seconds must be a finite "
+                         f"number of seconds above 0 (got {raw!r})")
+    return raw
 
 
 #: One `{{ ... }}` interpolation. Quoted strings inside the expression are consumed whole so a `}}`
@@ -359,7 +378,7 @@ class ScriptAgent(AgentABC):
                     self.name, sorted(set(undefined_refs)),
                 )
 
-            timeout = self.config.get("timeout_seconds", 30)
+            timeout = declared_timeout_seconds(self.config)
             workspace = render_vars.get("workspace_path")
             # `env` carries the interpolated values; `command` carries only the author's script.
             # TEMPER_PYTHON is the interpreter temper itself runs on, with its
@@ -482,7 +501,7 @@ class ScriptAgent(AgentABC):
                         "type": "script",
                         "name": self.name,
                         "script_template": self.config.get("script_template", "")[:2000],
-                        "timeout_seconds": self.config.get("timeout_seconds", 30),
+                        "timeout_seconds": self.config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
                         **({"log_max_bytes": self.config["log_max_bytes"]}
                            if "log_max_bytes" in self.config else {}),
                     }
@@ -524,10 +543,11 @@ class ScriptAgent(AgentABC):
         errors = super().validate_config()
         if not self.config.get("script_template"):
             errors.append("ScriptAgent requires 'script_template' in config")
-        try:
-            log_limit(self.config)
-        except ValueError as exc:
-            errors.append(str(exc))
+        for check in (log_limit, declared_timeout_seconds):
+            try:
+                check(self.config)
+            except ValueError as exc:
+                errors.append(str(exc))
         return errors
 
 

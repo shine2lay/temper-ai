@@ -893,7 +893,8 @@ class AgentsSection(DocSection):
         elif name == "script":
             lines.append('  script_template: |        # Jinja2 bash template')
             lines.append('    echo "Hello {{ name }}"')
-            lines.append("  timeout_seconds: 30")
+            lines.append("  timeout_seconds: 30       # Seconds before it is killed (the default); any number "
+                         "above 0, honoured in full, no ceiling")
             lines.append("  log_max_bytes: 10000000   # Saved output per attempt, UTF-8 bytes (the default)")
 
         lines.append("```")

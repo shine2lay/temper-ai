@@ -10,7 +10,8 @@ Security:
 - Commands run in a subprocess with a clean environment
 - workspace_root config constrains the working directory
 - Configurable command allowlist (default: common safe commands)
-- Timeout enforcement (default 30s, max 600s)
+- Timeout enforcement: a model's call default 30s, max 600s; a script agent's own command
+  the timeout_seconds its config declares, with no ceiling (see time_limit)
 
 - **Modifies state:** Yes
 

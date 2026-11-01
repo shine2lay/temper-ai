@@ -4,7 +4,8 @@ Security:
 - Commands run in a subprocess with a clean environment
 - workspace_root config constrains the working directory
 - Configurable command allowlist (default: common safe commands)
-- Timeout enforcement (default 30s, max 600s)
+- Timeout enforcement: a model's call default 30s, max 600s; a script agent's own command
+  the timeout_seconds its config declares, with no ceiling (see time_limit)
 """
 
 import codecs
@@ -17,7 +18,7 @@ import shlex
 import signal
 import subprocess  # noqa: B404
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 from temper_ai.shared.agent_env import env_for_agent_tool
@@ -54,12 +55,8 @@ _DEFAULT_ALLOWED_COMMANDS = [
 ]
 
 _DEFAULT_TIMEOUT = 30
+# The most a model's call may ask for. A script agent's own command is not held to it: see time_limit.
 _MAX_TIMEOUT = 600
-# An author's script -- a script agent, whose command is its config's and never a
-# model's (`_skip_allowlist`) -- may run a repository's whole test suite, which
-# does not fit in ten minutes. Models keep the 600 s cap: llm_agent strips every
-# `_` parameter from a model's calls, so a model cannot claim this one.
-_SCRIPT_MAX_TIMEOUT = 3600
 _MAX_OUTPUT_SIZE = 256_000  # 256KB
 # Compaction (tools/_output_compaction.py) cuts output to about 40,000 characters, for a model's
 # context. A script agent's output is read by code instead: its last JSON is the node's structured
@@ -67,6 +64,24 @@ _MAX_OUTPUT_SIZE = 256_000  # 256KB
 # whole of it, up to _MAX_OUTPUT_SIZE. Compacted, the EPD plan stage's hand-off (epd_plan_docs, about
 # 130,000 characters of JSON on one line) was cut at 40,050 and never parsed, so its lead ran
 # without the pitch, the design, the knowledge core or its own draft (2026-09-25).
+
+
+def time_limit(params: Mapping[str, Any], asked: float | None = None) -> float:
+    """How long this call may run, in seconds: the one rule for both the kill of Bash's subprocess
+    and the executor's wait around the call (tools/executor.py adds its grace to it).
+
+    ``asked`` is what the call asks for: by default its own ``timeout``, else 30. A model's call
+    gets at most 600 s of it. A script agent's call gets all of it, with no ceiling: its command
+    and its time are its author's, the ``timeout_seconds`` its config declares (checked in
+    agent/script_agent.py), and the author's YAML is the limit. A repository's whole test suite
+    does not fit in ten minutes, and a whole controls_p3 browser check takes over an hour. A call
+    says it is a script agent's with ``_skip_allowlist``, which a model cannot send: llm_agent
+    drops every ``_`` parameter from a model's calls.
+    """
+    script = isinstance(params, Mapping) and bool(params.get("_skip_allowlist"))
+    if asked is None:
+        asked = params.get("timeout", _DEFAULT_TIMEOUT)
+    return asked if script else min(asked, _MAX_TIMEOUT)
 
 
 class Bash(BaseTool):
@@ -98,8 +113,7 @@ class Bash(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         command = params.get("command", "")
-        cap = _SCRIPT_MAX_TIMEOUT if params.get("_skip_allowlist", False) else _MAX_TIMEOUT
-        timeout = min(params.get("timeout", _DEFAULT_TIMEOUT), cap)
+        timeout = time_limit(params)
 
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")
@@ -131,6 +145,7 @@ class Bash(BaseTool):
             extra_env=params.get("env") or None,
             cancel_event=self.cancel_event,
             output_sink=sink if callable(sink) else None,
+            script=bool(skip_allowlist),
         )
 
 
@@ -273,15 +288,19 @@ def command_heads(command: str) -> list[str]:
 
 def _run_subprocess(
     command: str,
-    timeout: int,
+    timeout: float,
     cwd: str | None,
     compact: bool = True,
     max_output_chars: int = DEFAULT_MAX_CHARS,
     extra_env: dict[str, str] | None = None,
     cancel_event: Any = None,
     output_sink: "OutputSink | None" = None,
+    script: bool = False,
 ) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult.
+
+    ``script``: the command is a script agent's own, so a timeout's error tells its author to
+    declare a longer timeout_seconds rather than to ask for one of at most 600 s.
 
     The command runs in its own process group, and a timeout kills the group:
     the shell, and everything the shell started. Killing only the shell (what
@@ -307,7 +326,8 @@ def _run_subprocess(
     except Exception as e:
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
     if output_sink is not None:
-        return _run_streaming(proc, command, timeout, compact, max_output_chars, cancel_event, output_sink)
+        return _run_streaming(proc, command, timeout, compact, max_output_chars, cancel_event, output_sink,
+                              script=script)
     try:
         out, err = _wait(proc, timeout, cancel_event)
     except _Cancelled:
@@ -315,7 +335,7 @@ def _run_subprocess(
         return ToolResult(success=False, result="", error=_CANCELLED_ERROR)
     except subprocess.TimeoutExpired:
         _kill_group(proc)
-        return ToolResult(success=False, result="", error=_timeout_error(timeout))
+        return ToolResult(success=False, result="", error=_timeout_error(timeout, script=script))
     except Exception as e:
         _kill_group(proc)
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
@@ -328,10 +348,12 @@ _CANCELLED_ERROR = (
 )
 
 
-def _timeout_error(timeout: float) -> str:
+def _timeout_error(timeout: float, script: bool = False) -> str:
+    longer = ("Declare a longer timeout_seconds in the script agent's config" if script
+              else f"Ask for a longer timeout (up to {_MAX_TIMEOUT}s)")
     return (
         f"Command timed out after {timeout}s and was killed, with everything it started. "
-        f"Ask for a longer timeout (up to {_MAX_TIMEOUT}s), or, to leave a server running, "
+        f"{longer}, or, to leave a server running, "
         "start it with its output redirected (`cmd > log 2>&1 &`) so this call can return."
     )
 
@@ -452,6 +474,7 @@ def _run_streaming(
     max_output_chars: int,
     cancel_event: Any,
     output_sink: OutputSink,
+    script: bool = False,
 ) -> ToolResult:
     """`_run_subprocess` for a caller that watches the output as it is written.
 
@@ -478,7 +501,7 @@ def _run_streaming(
             _signal_group(proc)
             _drain(selector, streams, sink, time.monotonic() + _DRAIN_AFTER_KILL_S)
             _reap(proc)
-            error = _CANCELLED_ERROR if stop == "cancelled" else _timeout_error(timeout)
+            error = _CANCELLED_ERROR if stop == "cancelled" else _timeout_error(timeout, script=script)
             return ToolResult(success=False, result="", error=error, metadata={"stopped": stop})
         for _, text in streams.values():
             text.feed(b"", final=True)

@@ -48,8 +48,8 @@ agent:
   version: 2
   type: script
   # The script keeps its own budget (BUDGET, below) inside this, so it prints its
-  # verdict even when a suite hangs. The ceiling for a script agent is 3600 s
-  # (tools/bash.py _SCRIPT_MAX_TIMEOUT).
+  # verdict even when a suite hangs. A script agent gets the timeout_seconds it
+  # declares, with no ceiling (tools/bash.py time_limit).
   timeout_seconds: 3000
   # TEMPER_PYTHON is the interpreter temper runs on (set by the script agent), which
   # has PyYAML; the image's python3 does not. No dollar-brace default here: the config

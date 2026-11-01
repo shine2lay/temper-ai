@@ -39,7 +39,7 @@ agent:
   type: "script"
   script_template: |        # Jinja2 bash template
     echo "Hello {{ name }}"
-  timeout_seconds: 30
+  timeout_seconds: 30       # Seconds before it is killed (the default); any number above 0, honoured in full, no ceiling
   log_max_bytes: 10000000   # Saved output per attempt, UTF-8 bytes (the default)
 ```
 

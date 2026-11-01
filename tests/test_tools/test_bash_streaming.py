@@ -98,7 +98,8 @@ def test_a_timeout_still_hands_over_what_was_printed_and_kills_everything(tmp_pa
     pieces: list[tuple[str, bytes]] = []
     r = _run(f"echo before; echo trouble >&2; (sleep 2; touch {mark}) & sleep 10",
              sink=lambda s, d: pieces.append((s, d)), timeout=1)
-    assert (r.success, r.result, r.error) == (False, "", _timeout_error(1))
+    # A script agent's own command (`_skip_allowlist`): the error names its config's timeout_seconds.
+    assert (r.success, r.result, r.error) == (False, "", _timeout_error(1, script=True))
     assert r.metadata == {"stopped": "timeout"}
     assert sorted(pieces) == [("stderr", b"trouble\n"), ("stdout", b"before\n")]
     time.sleep(2.5)

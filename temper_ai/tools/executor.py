@@ -43,14 +43,11 @@ from typing import Any
 
 from temper_ai.observability import EventType, record
 from temper_ai.tools.base import BaseTool, ToolResult
+from temper_ai.tools.bash import time_limit
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
-_MAX_TIMEOUT = 600
-# A script agent's own command (`_skip_allowlist`, never a model's -- llm_agent strips
-# `_` parameters from model calls) may run for as long as tools/bash.py allows it.
-_SCRIPT_MAX_TIMEOUT = 3600
 # One pool per run, shared by every node of it. A build's judges run side by side
 # (review, deploy + QA, security, and the test step, which holds a worker for the
 # length of a test suite); four left the next call queued behind them.
@@ -204,7 +201,7 @@ class ToolExecutor:
         *,
         allowed_tools: Container[str],
         workspace: str | None = None,
-        timeout: int | None = None,
+        timeout: float | None = None,
         context: dict[str, Any] | None = None,
     ) -> ToolResult:
         """Execute a tool by name, if the caller declared it.
@@ -240,7 +237,8 @@ class ToolExecutor:
                 key: a caller cannot get a weaker guarantee by holding a
                 different object or by omitting a key — there is one entry
                 point and it does not run without an answer.
-            timeout: Execution timeout in seconds. Uses default if not specified.
+            timeout: Execution timeout in seconds. Uses default if not specified. A model's
+                call gets at most 600 s; a script agent's own command all it asks (time_limit).
             context: Optional observability context with parent_id, execution_id,
                 and agent_name (named in the refusal when a tool is not declared).
 
@@ -328,10 +326,11 @@ class ToolExecutor:
         # running in a pool worker. Three of those and two `sleep`s filled the
         # run's four workers, and the implementer's `echo hi` timed out behind
         # them; its `git commit` was still queued when the node gave up.
+        # How much of what it asks for a call gets is the same rule Bash kills by (time_limit):
+        # a model's call at most 600 s, a script agent's own command all its config declares.
         own = _own_timeout(tool, params)
         asked = timeout or own or self.default_timeout
-        cap = _SCRIPT_MAX_TIMEOUT if isinstance(params, dict) and params.get("_skip_allowlist") else _MAX_TIMEOUT
-        effective_timeout = min(asked, cap) + (_OWN_TIMEOUT_GRACE if own else 0)
+        effective_timeout = time_limit(params, asked) + (_OWN_TIMEOUT_GRACE if own else 0)
         return self._execute_with_timeout(tool, tool_name, params, effective_timeout, parent_id, execution_id)
 
     def _evaluate_safety_policies(
@@ -470,7 +469,7 @@ class ToolExecutor:
         tool: BaseTool,
         tool_name: str,
         params: dict[str, Any],
-        timeout: int,
+        timeout: float,
         parent_id: str | None,
         execution_id: str | None,
     ) -> ToolResult:

@@ -139,12 +139,20 @@ def entry_placement() -> str:
     return where
 
 
+def _record_self() -> None:
+    """Leave this process's "pid:start" for the loop guard (entry_placement)."""
+    try:
+        os.environ[RESTART] = _process(os.getpid())[0]
+    except (OSError, ValueError, IndexError) as exc:
+        raise HostEntryError(f"can't read this run's own start time for the loop guard ({_one_line(exc)})") from None
+
+
 def _restart(argv: list[str], *, marker: bool, record: bool) -> None:
     """Become ``argv``; on failure put the environment back and raise HostEntryError."""
     saved = {name: os.environ.get(name) for name in (MARKER, RESTART)}
     try:
         if record:
-            os.environ[RESTART] = _process(os.getpid())[0]
+            _record_self()
         if marker:
             os.environ[MARKER] = "1"
         os.execvp(argv[0], argv)
@@ -217,7 +225,13 @@ def main(argv: list[str]) -> int:
             return 0
         if len(argv) > 2 and argv[:2] == ["enter", "--"]:
             # Asked first, so one command works with no policy, inside the slice and outside it.
-            if entry_placement() != "outside":
+            where = entry_placement()
+            if where == "inside":
+                # Told it's placed: the same record a restart leaves, so if this command (the same
+                # process after the exec) or anything under it hears outside after all, it stops
+                # with 125 instead of handing itself back and forth. Inactive claims no placement.
+                _record_self()
+            if where != "outside":
                 return _run_here(argv[2:])
             _restart([TEST_CPU, "exec", "--quiet", "--", *argv[2:]], marker=False, record=True)
     except HostEntryError as exc:

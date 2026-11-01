@@ -303,8 +303,10 @@ def test_own_restart_run_in_place_still_outside_fails(entry):
     assert entry.attempts == []
 
 
-def test_restart_record_of_no_parent_is_ignored(entry):
-    entry.environ[RESTART] = "5:5"
+@pytest.mark.parametrize("record", ["5:5", "4242:1"], ids=["unrelated", "own-pid-other-start"])
+def test_restart_record_of_no_parent_is_ignored(entry, record):
+    # Another process that had this pid has another start time: its record isn't this run's.
+    entry.environ[RESTART] = record
     assert enter(None)
     assert entry.attempts == [(LAUNCHER, PLACE, None, OWN)]
 
@@ -382,12 +384,24 @@ def test_script_enter_outside_becomes_the_launcher(entry):
     assert entry.attempts == [(LAUNCHER, [LAUNCHER, "exec", "--quiet", "--", "/bin/bash", "hook", "a b"], None, OWN)]
 
 
-@pytest.mark.parametrize("where", ["inactive", "inside"])
-def test_script_enter_elsewhere_runs_the_command_where_it_is(entry, where):
+@pytest.mark.parametrize(("where", "record"), [("inactive", None), ("inside", OWN)])
+def test_script_enter_elsewhere_runs_the_command_where_it_is(entry, where, record):
+    # Told inside, it leaves its own record, so the command can't come back outside and loop.
     entry.where = where
     with pytest.raises(Restart):
         machine_slot.main(["enter", "--", "/bin/bash", "hook", "a b"])
-    assert entry.attempts == [("/bin/bash", ["/bin/bash", "hook", "a b"], None, None)]
+    assert entry.attempts == [("/bin/bash", ["/bin/bash", "hook", "a b"], None, record)]
+
+
+def test_script_enter_inside_that_cant_record_itself_runs_nothing(entry, capsys, monkeypatch):
+    def unreadable(pid):
+        raise OSError("no /proc")
+
+    entry.where = "inside"
+    monkeypatch.setattr(machine_slot, "_process", unreadable)
+    assert machine_slot.main(["enter", "--", "/bin/bash"]) == 125
+    assert entry.attempts == [] and entry.environ == {}
+    assert capsys.readouterr().err == "shared test CPU: can't read this run's own start time for the loop guard (no /proc)\n"
 
 
 @pytest.mark.parametrize(("fail", "code"), [(FileNotFoundError("gone"), 127), (PermissionError("denied"), 126)],
@@ -475,6 +489,12 @@ if args == ["membership", "--json"]:
         print(json.dumps({"error": "cgroup-unreadable"}))
         sys.exit(1)
     placed = mode == "enabled" and fakehost.inside()
+    if host.get("membership") == "alternate":
+        # A launcher that contradicts itself: outside, inside, outside, ... whatever the slice says.
+        with open(os.path.join(fakehost.DIR, "answers"), "a+") as f:
+            f.seek(0)
+            placed = len(f.read()) % 2 == 1
+            f.write("x")
     print(json.dumps({"cgroup": "/fake", "mode": mode, "slice": "testcpu.slice", "inside": placed, "parentOk": True}))
     sys.exit(0 if placed else 1)
 if args[:1] == ["exec"] and "--" in args:
@@ -508,7 +528,8 @@ if args == ["rev-parse", "--show-toplevel"]:
 elif args == ["rev-parse", "--local-env-vars"]:
     print("GIT_DIR\nGIT_INDEX_FILE")
 elif args[:2] == ["diff", "--cached"]:
-    staged = ["temper_ai/tools/registry.py", "temper_ai/database/models.py", "frontend/src/app.ts"]
+    unrelated = [f"notes/n{i:05d}.md" for i in range(fakehost.host().get("unrelated", 0))]
+    staged = ["temper_ai/tools/registry.py", "temper_ai/database/models.py", *unrelated, "frontend/src/app.ts"]
     print("\n".join(p for p in staged if args[-2:] != ["--", "frontend/*"] or p.startswith("frontend/")))
 '''
 
@@ -592,19 +613,22 @@ def clean(env, argv):
 class Ran:
     """A finished child as these tests' asserts see it: its exit code, and fixed questions about what
     it said. Its output and argv stay in here (CWE-532): a failure's text shows an assert's operands
-    and a frame's arguments by repr, and a TimeoutExpired's text is the child's argv."""
+    and a frame's arguments by repr, and a TimeoutExpired's or a failed start's traceback shows the
+    child's argv and environment. A child that hangs or can't start has no exit code."""
 
     def __init__(self, argv, *, timeout, **options):
-        self._timeout = timeout
+        self.code, self._out, self._err = None, "", ""
         try:
             done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **options)
         except subprocess.TimeoutExpired:
-            self.code, self._out, self._err = None, "", ""
+            self._why = f"no exit within {timeout} s"
+        except OSError:
+            self._why = "couldn't start"
         else:
             self.code, self._out, self._err = done.returncode, done.stdout, done.stderr
 
     def __repr__(self):
-        return f"<ran: exit {self.code}>" if self.code is not None else f"<ran: no exit within {self._timeout} s>"
+        return f"<ran: exit {self.code}>" if self.code is not None else f"<ran: {self._why}>"
 
     def said(self, text):
         """Whether its stdout holds ``text``."""
@@ -668,6 +692,25 @@ def test_hook_without_an_enabled_policy_runs_the_original_phases_unplaced(host, 
     assert launcher == ([] if mode == "absent" else [("membership", False)])
     assert rest == [(*phase, False) for phase in phases(host.repo)]
     assert (ran.said("shared test CPU"), ran.warned("shared test CPU")) == (False, 0)
+
+
+def test_hook_with_a_long_staged_list_keeps_every_phase(host):
+    # grep -q stops at its first match: fed by a pipe under pipefail, the writer's SIGPIPE on a list
+    # longer than the pipe holds would read as "no match" and drop the docs and Postgres phases.
+    host.install("absent", unrelated=20000)
+    ran = run_hook(host)
+    assert ran.code == 0
+    assert split(host.calls()) == ([], [(*phase, False) for phase in phases(host.repo)])
+
+
+def test_hook_whose_launcher_contradicts_itself_stops_with_125(host):
+    # The hook hears outside, enter hears inside and runs it in place, the hook hears outside again:
+    # enter's record stops it there instead of handing it back and forth without end.
+    host.install("enabled", membership="alternate")
+    ran = run_hook(host, timeout=30)
+    assert ran.code == 125
+    assert split(host.calls()) == ([("membership", False)] * 3, [])
+    assert (ran.said("Commit aborted"), ran.warned("yet still outside")) == (True, 1)
 
 
 @pytest.mark.parametrize("cdpath", [".:/nonexistent", "/nonexistent:."])
@@ -875,17 +918,25 @@ def _warned_once(ran):
     assert ran.warned("wt slot: machine slot 1 of 1") == 1
 
 
-@pytest.mark.parametrize(("check", "sleep"), [
-    (_exited_cleanly, 0), (_said_passed, 0), (_warned_once, 0), (_exited_cleanly, 30),
-], ids=["exit", "said", "warned", "timed-out"])
-def test_failure_text_carries_no_child_output_or_argv(check, sleep):
+@pytest.mark.parametrize(("check", "child"), [
+    (_exited_cleanly, "exits"), (_said_passed, "exits"), (_warned_once, "exits"), (_exited_cleanly, "hangs"),
+    (_exited_cleanly, "missing"),
+], ids=["exit", "said", "warned", "timed-out", "cant-start"])
+def test_failure_text_carries_no_child_output_or_argv(request, monkeypatch, check, child):
     # Fresh tokens, so no source line shown in the report can hold them.
-    canary = {stream: f"{stream}-canary-{uuid.uuid4().hex}" for stream in ("stdout", "stderr", "argv")}
+    canary = {stream: f"{stream}-canary-{uuid.uuid4().hex}" for stream in ("stdout", "stderr", "argv", "env")}
     code = (f"import sys, time; print({canary['stdout']!r}, flush=True); "
-            f"print({canary['stderr']!r}, file=sys.stderr, flush=True); time.sleep({sleep}); sys.exit(3)")
-    ran = Ran([sys.executable, "-c", code, canary["argv"]], timeout=3)
-    with pytest.raises(AssertionError) as failed:
-        check(ran)
-    # The text pytest reports: the message, each frame with its arguments, chained exceptions.
-    text = str(failed.value) + str(failed.getrepr(funcargs=True, style="long", chain=True))
+            f"print({canary['stderr']!r}, file=sys.stderr, flush=True); "
+            f"time.sleep({30 if child == 'hangs' else 0}); sys.exit(3)")
+    program = f"/nonexistent/{canary['argv']}" if child == "missing" else sys.executable
+    ran = Ran([program, "-c", code, canary["argv"]], timeout=3, env={**os.environ, "CANARY": canary["env"]})
+    # Below verbosity 2 pytest shortens an assert's operands (and below 3 a frame's arguments): check
+    # the longest text it can show. Only around the check, so this test's own report is unchanged.
+    with monkeypatch.context() as verbose:
+        verbose.setattr(request.config.option, "verbose", 3)
+        with pytest.raises(AssertionError) as failed:
+            check(ran)
+        # The text pytest reports: the message, each frame with its arguments, chained exceptions.
+        text = str(failed.value) + str(failed.getrepr(funcargs=True, style="long", chain=True,
+                                                      truncate_args=False, truncate_locals=False))
     assert sorted(stream for stream, token in canary.items() if token in text) == []

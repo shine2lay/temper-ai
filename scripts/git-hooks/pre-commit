@@ -59,7 +59,9 @@ RELEVANT_PATHS=(
 
 docs_needed=false
 for path in "${RELEVANT_PATHS[@]}"; do
-    if git diff --cached --name-only | grep -q "^${path}"; then
+    # A here-string, not a pipe: grep -q stops at its first match, and under pipefail the
+    # producer's SIGPIPE on a long list would read as "no match".
+    if grep -q "^${path}" <<< "$(git diff --cached --name-only)"; then
         docs_needed=true
         break
     fi
@@ -184,7 +186,8 @@ elif [ "$wants_pg" = "auto" ]; then
             changed_paths="$(git diff --name-only --diff-filter=ACM "$base_ref" HEAD || true)"
         fi
     fi
-    if printf '%s\n' "$changed_paths" | grep -qE "$DB_PATHS"; then
+    # A here-string, as in the docs loop: a pipe into grep -q can drop this phase on a long list.
+    if grep -qE "$DB_PATHS" <<< "$changed_paths"; then
         wants_pg=1
     else
         wants_pg=0

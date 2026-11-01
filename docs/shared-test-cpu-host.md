@@ -96,11 +96,14 @@ already placed itself, and a worker that restarted would cut its channel to it.
 - **Machine slots** are wt's: `wt slot` finds the slot an ancestor holds and
   runs without taking another, so a nested run never waits for its own slot.
 - **Loop guard**: a restart records `TEMPER_TEST_CPU_RESTART=<pid>:<start
-  time>` of the process that restarted. If the restarted run still comes back
-  outside while that process is the run itself (a launcher that ran it in
-  place) or one of its ancestors, it stops with 125 instead of restarting
-  again. A leftover record from an unrelated process is
-  ignored.
+  time>` of the process that restarted, and so does `machine_slot.py enter`
+  when it is told inside and runs its command in place. If the run still comes
+  back outside while that process is the run itself (an exec in place keeps
+  pid and start time) or one of its ancestors, it stops with 125 instead of
+  restarting again; a launcher whose answers contradict each other can't hand
+  a run back and forth. A leftover record from an unrelated process, or from
+  an earlier process that had the same pid, is ignored. An inactive host claims
+  no placement and leaves no record.
 
 125 always means the run couldn't be placed; it is never a test result.
 
@@ -136,9 +139,11 @@ wt slot -- uv run pytest tests/ -n auto
 
 `enter` asks first. With no policy or an inactive one, or already inside, it
 runs the command where it is; outside, it hands it to the launcher with the
-loop guard. It exits 125 when the placement can't be known or made, and 127
-or 126 when the command isn't found or can't run. The conftest then finds
-itself inside (and in a slot) and carries on.
+loop guard. It exits 125 when the placement can't be known or made. When it
+runs the command itself, it exits 127 or 126 if the command isn't found or
+can't run; once it has handed the command to the launcher, those codes are
+the launcher's. The conftest then finds itself inside (and in a slot) and
+carries on.
 
 ## Checked by, and what isn't proven
 

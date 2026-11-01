@@ -100,10 +100,17 @@ already placed itself, and a worker that restarted would cut its channel to it.
   when it is told inside and runs its command in place. If the run still comes
   back outside while that process is the run itself (an exec in place keeps
   pid and start time) or one of its ancestors, it stops with 125 instead of
-  restarting again; a launcher whose answers contradict each other can't hand
-  a run back and forth. A leftover record from an unrelated process, or from
-  an earlier process that had the same pid, is ignored. An inactive host claims
-  no placement and leaves no record.
+  restarting again. This bounds a launcher alternating outside/inside. A
+  leftover record from an unrelated process, or from an earlier process that
+  had the same pid, is ignored. An inactive host claims no placement and leaves
+  no record.
+
+A synthetic launcher alternating outside/inactive can still loop: `enter`
+runs in place without a record on the inactive answer. Temper's 20-second
+probe did not exit on either version: 75 queries on the new path, 86 on the
+old path. This residual is carried to Ops' G/H preparation;
+it does not block landing inactive or add an activation gate. No actual
+installed launcher is claimed to produce that sequence.
 
 125 always means the run couldn't be placed; it is never a test result.
 

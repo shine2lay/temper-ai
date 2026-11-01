@@ -7,8 +7,11 @@
 #     scripts/test-selection.toml (-m "not heavy", --timeout=120), through the
 #     same machine pool as heavy runs started by hand (docs/testing.md)
 #
-# tests/conftest.py enters `wt slot` before starting pytest's workers. Inside
-# a land's check it reuses the land's slot; it never waits for its own slot.
+# Once the host's test-CPU policy is enabled, the whole hook runs inside the
+# machine's one shared test-CPU allowance; it enters it before anything else
+# (docs/shared-test-cpu-host.md). tests/conftest.py enters `wt slot` before
+# starting pytest's workers. Inside a land's check it reuses the land's slot;
+# it never waits for its own slot.
 #
 # There is no bypass. `--no-verify` exists, but a commit that needs it is a
 # commit that breaks the build for everyone else; fix the cause instead.
@@ -17,6 +20,23 @@
 # or: git config core.hooksPath scripts/git-hooks
 
 set -euo pipefail
+
+# ─── Shared test CPU, before anything else ────────────────────────────────
+# With the host's policy enabled, every phase below runs inside the shared
+# test CPU: outside it, the whole hook starts again inside it through Ops'
+# test-cpu launcher. Inside it already (a land's checks, an outer entry), or
+# with no policy or an inactive one, the hook carries on as always. When the
+# placement can't be known or made, it stops with 125 before any phase runs.
+HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+HOST_ENTRY="$(dirname "$HOOK")/../../tests/machine_slot.py"
+if ! placement="$(python3 "$HOST_ENTRY" placement)"; then
+    echo -e "\033[0;31m✗\033[0m Can't enter the shared test CPU (above). Commit aborted."
+    exit 125
+fi
+if [ "$placement" = outside ]; then
+    echo "Entering the shared test CPU..."
+    exec python3 "$HOST_ENTRY" enter -- "$BASH" "$HOOK" "$@"
+fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"

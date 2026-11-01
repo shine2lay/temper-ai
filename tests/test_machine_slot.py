@@ -1,4 +1,8 @@
-"""Known answers for the entry to wt's pool, without implementing or testing another pool."""
+"""Known answers for the entry to wt's pool, without implementing or testing another pool.
+
+These are the answers with no test-CPU policy, or an inactive one; the `restart` fixture pins that
+host answer. tests/test_shared_test_cpu_entry.py holds the answers for an enabled host.
+"""
 
 import json
 import os
@@ -26,6 +30,7 @@ def restart(monkeypatch):
     # pytest sets PYTEST_CURRENT_TEST again at the call phase. Isolate the
     # module's environment, rather than briefly clearing pytest's real one.
     environ = {}
+    monkeypatch.setattr(machine_slot, "entry_placement", lambda: "inactive")
     monkeypatch.setattr(machine_slot.shutil, "which", lambda name: "/fake/wt" if name == "wt" else None)
     attempts = []
 

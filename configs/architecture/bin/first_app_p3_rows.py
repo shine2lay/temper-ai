@@ -808,7 +808,7 @@ ROWS_JS = r"""
     const match = (url) => url.origin === ORIGIN && url.pathname.startsWith('/api/items');
     const handler = async (route) => {
       if (route.request().method() !== method || holdStart !== null) return route.fallback();
-      holdStart = Date.now(); await new Promise(res => setTimeout(res, a.hold_ms)); holdEnd = Date.now();
+      holdStart = Date.now(); await p.waitForTimeout(a.hold_ms); holdEnd = Date.now();
       try { await route.fallback(); } catch (e) { r.continue_error = String(e && e.message || e).slice(0, 200); }
     };
     await p.route(match, handler);

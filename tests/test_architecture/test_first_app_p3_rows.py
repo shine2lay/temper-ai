@@ -376,6 +376,14 @@ def test_browser_code_has_no_shims_and_types_exact_code_points():
     assert re.search(r"T\.\w+", js)  # texts come from TEXT, not literals in the browser code
 
 
+def test_browser_code_names_no_node_globals():
+    # H-125-HOLD-TIMER-1: browser_run_code_unsafe runs this code without Node's globals (run eb5ae095 stopped at
+    # V3-DEL: "ReferenceError: setTimeout is not defined"); waits go through page.waitForTimeout.
+    js = kit.ROWS_JS + kit.ROW_JS
+    for banned in ("setTimeout", "setInterval", "setImmediate", "require(", "process.", "Buffer"):
+        assert banned not in js, banned
+
+
 def test_judges_never_raise_on_garbage():
     for rid in [r["id"] for r in kit.ROWS if not r.get("host")]:
         for res in ({}, {"acts": "x", "obs": []}, {"acts": [None, 3, {"measure_kind": "held"}], "obs": {"A": 1}},
@@ -397,9 +405,6 @@ const p3 = {log: {requests: []}, users: {}};
 new Function('p3', 'T', 'ORIGIN', 't', input.rows_js)(p3, T, ORIGIN, t);
 const pageRoutes = [];
 let current = null; const held = [];
-const realSetTimeout = setTimeout;
-globalThis.setTimeout = (fn, ms, ...rest) => { if (ms === input.hold_ms && current) held.push(current);
-  return realSetTimeout(fn, ms, ...rest); };
 const contextRoutes = [
   {match: () => true, handler: (route) => { current.seen_by_context = true; return route.fallback(); }},
   {match: (url) => (url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== ORIGIN,
@@ -433,6 +438,8 @@ const page = {
   unroute: async (match, handler) => { const k = pageRoutes.findIndex(r => r.match === match && r.handler === handler);
     if (k >= 0) pageRoutes.splice(k, 1); },
   getByRole: () => locator(), locator: () => locator(),
+  waitForTimeout: (ms) => { if (ms === input.hold_ms && current) held.push(current);
+    return new Promise(res => setTimeout(res, ms)); },
 };
 const u = {name: 'A', p: page, touch: false};
 (async () => {

@@ -7,6 +7,9 @@
   the fake launcher placed, and everything below it), every phase recorded with where it ran.
 - Real pytest runs through the copied conftest, the same fake host and a fake wt.
 - A nested run through this host's real wt, in a scratch pool of one slot.
+
+A child these tests start is only ever seen as a `Ran`: its exit code and fixed questions about
+what it said, never its output or argv, so none of it can reach a failure's text.
 """
 
 import json
@@ -15,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,8 +37,9 @@ OUTER = (*SKIP_VARS, RESTART, "PYTEST_ADDOPTS", "TEMPER_TEST_DATABASE_URL", "PRE
          "PRECOMMIT_PYTEST_WORKERS", "PYTEST_XDIST_AUTO_NUM_WORKERS")
 
 
-def test_launcher_and_policy_are_the_contracts_fixed_paths():
-    assert (machine_slot.TEST_CPU, machine_slot.POLICY, machine_slot.EXIT_PLACEMENT) == (LAUNCHER, POLICY, 125)
+def test_launcher_policy_exit_and_query_time_are_fixed():
+    fixed = (machine_slot.TEST_CPU, machine_slot.POLICY, machine_slot.EXIT_PLACEMENT, machine_slot.QUERY_SECONDS)
+    assert fixed == (LAUNCHER, POLICY, 125, 60)
 
 
 # ─── Host answer ─────────────────────────────────────────────────────────────
@@ -55,9 +60,9 @@ def paths(tmp_path, monkeypatch, request):
 
 
 def answer(path, out, code=0, sleep=0):
-    """A fixed stand-in for the installed launcher: one answer, one exit code."""
+    """A fixed stand-in for the installed launcher: one answer (printf %b: \\0377 is a raw byte), one exit code."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = f"exec sleep {sleep}\n" if sleep else f"printf '%s' '{out}'\nexit {code}\n"
+    body = f"exec sleep {sleep}\n" if sleep else f"printf '%b' '{out}'\nexit {code}\n"
     path.write_text(f"#!/bin/sh\n{body}")
     path.chmod(0o755)
 
@@ -135,8 +140,9 @@ def test_launcher_answer(paths, out, code, expected):
     ('{"cgroup":"/u","mode":"on","inside":false}', 1),
     ('{"cgroup":"/u","mode":"inactive","inside":false}', 2),
     ('{"cgroup":"/u","mode":"inactive","inside":false}', 125),
+    ('{"cgroup":"/u","mode":"enabled","inside":false}\\0377', 1),
 ], ids=["invalid", "error", "malformed", "empty", "not-an-object", "exit0-outside", "exit1-inside",
-        "no-inside", "unknown-mode", "usage-exit", "placement-exit"])
+        "no-inside", "unknown-mode", "usage-exit", "placement-exit", "invalid-utf8"])
 def test_unusable_launcher_answer_fails(paths, out, code):
     answer(paths.cli, out, code)
     with pytest.raises(machine_slot.HostEntryError):
@@ -289,6 +295,14 @@ def test_own_restart_still_outside_fails_instead_of_looping(entry):
     assert entry.attempts == []
 
 
+def test_own_restart_run_in_place_still_outside_fails(entry):
+    # A launcher may exec its command in place: the restarted run is then the restarting process.
+    entry.environ[RESTART] = OWN
+    with pytest.raises(machine_slot.HostEntryError, match="yet still outside"):
+        enter(None)
+    assert entry.attempts == []
+
+
 def test_restart_record_of_no_parent_is_ignored(entry):
     entry.environ[RESTART] = "5:5"
     assert enter(None)
@@ -362,10 +376,34 @@ def test_script_placement_failure_is_125(entry, capsys):
     assert out.out == "" and out.err.startswith("shared test CPU: restarted by 1:1")
 
 
-def test_script_enter_becomes_the_launcher(entry):
+def test_script_enter_outside_becomes_the_launcher(entry):
     with pytest.raises(Restart):
         machine_slot.main(["enter", "--", "/bin/bash", "hook", "a b"])
     assert entry.attempts == [(LAUNCHER, [LAUNCHER, "exec", "--quiet", "--", "/bin/bash", "hook", "a b"], None, OWN)]
+
+
+@pytest.mark.parametrize("where", ["inactive", "inside"])
+def test_script_enter_elsewhere_runs_the_command_where_it_is(entry, where):
+    entry.where = where
+    with pytest.raises(Restart):
+        machine_slot.main(["enter", "--", "/bin/bash", "hook", "a b"])
+    assert entry.attempts == [("/bin/bash", ["/bin/bash", "hook", "a b"], None, None)]
+
+
+@pytest.mark.parametrize(("fail", "code"), [(FileNotFoundError("gone"), 127), (PermissionError("denied"), 126)],
+                         ids=["not-found", "not-executable"])
+def test_script_enter_elsewhere_that_cant_start_gives_the_shells_code(entry, capsys, fail, code):
+    entry.where, entry.fail = "inactive", fail
+    assert machine_slot.main(["enter", "--", "/bin/missing"]) == code
+    assert capsys.readouterr().err == f"shared test CPU: couldn't run /bin/missing ({fail})\n"
+    assert entry.environ == {}
+
+
+def test_script_enter_that_cant_be_placed_runs_nothing(entry, capsys):
+    entry.where = machine_slot.HostEntryError("policy there, launcher not")
+    assert machine_slot.main(["enter", "--", "/bin/bash"]) == 125
+    assert entry.attempts == []
+    assert capsys.readouterr().err == "shared test CPU: policy there, launcher not\n"
 
 
 def test_script_enter_failure_is_125(entry, capsys):
@@ -551,6 +589,32 @@ def clean(env, argv):
     return ["env", "-i", *(f"{k}={env[k]}" for k in ("PATH", "PYTHONPATH", "HOME") if k in env), *argv]
 
 
+class Ran:
+    """A finished child as these tests' asserts see it: its exit code, and fixed questions about what
+    it said. Its output and argv stay in here (CWE-532): a failure's text shows an assert's operands
+    and a frame's arguments by repr, and a TimeoutExpired's text is the child's argv."""
+
+    def __init__(self, argv, *, timeout, **options):
+        self._timeout = timeout
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **options)
+        except subprocess.TimeoutExpired:
+            self.code, self._out, self._err = None, "", ""
+        else:
+            self.code, self._out, self._err = done.returncode, done.stdout, done.stderr
+
+    def __repr__(self):
+        return f"<ran: exit {self.code}>" if self.code is not None else f"<ran: no exit within {self._timeout} s>"
+
+    def said(self, text):
+        """Whether its stdout holds ``text``."""
+        return text in self._out
+
+    def warned(self, text):
+        """How many times its stderr holds ``text``."""
+        return self._err.count(text)
+
+
 # ─── The whole pre-commit hook ───────────────────────────────────────────────
 
 
@@ -576,14 +640,16 @@ def phases(repo):
     ]
 
 
-def run_hook(h, *, placed=False, clean_env=False, timeout=120):
+def run_hook(h, *, placed=False, clean_env=False, relative=False, extra=None, timeout=120):
     env = environment(h)
-    argv = ["bash", str(h.repo / "scripts/git-hooks/pre-commit")]
+    env.update(extra or {})
+    hook = "scripts/git-hooks/pre-commit"
+    argv = ["bash", hook if relative else str(h.repo / hook)]
     if clean_env:
         argv = clean(env, argv)
     if placed:
         argv = [str(h.cli), "exec", "--", *argv]
-    return subprocess.run(argv, cwd=h.repo, env=env, capture_output=True, text=True, timeout=timeout)
+    return Ran(argv, cwd=h.repo, env=env, timeout=timeout)
 
 
 def split(calls):
@@ -596,32 +662,44 @@ def split(calls):
 @pytest.mark.parametrize("mode", ["absent", "inactive"])
 def test_hook_without_an_enabled_policy_runs_the_original_phases_unplaced(host, mode):
     host.install(mode)
-    done = run_hook(host)
-    assert done.returncode == 0, done.stdout + done.stderr
+    ran = run_hook(host)
+    assert ran.code == 0
     launcher, rest = split(host.calls())
     assert launcher == ([] if mode == "absent" else [("membership", False)])
     assert rest == [(*phase, False) for phase in phases(host.repo)]
-    assert "shared test CPU" not in done.stdout + done.stderr
+    assert (ran.said("shared test CPU"), ran.warned("shared test CPU")) == (False, 0)
+
+
+@pytest.mark.parametrize("cdpath", [".:/nonexistent", "/nonexistent:."])
+def test_hook_by_its_relative_path_under_an_exported_cdpath_is_unchanged(host, cdpath):
+    # git starts it as scripts/git-hooks/pre-commit (core.hooksPath is relative). With a CDPATH entry
+    # that matches, a bare cd prints where it went, which must not end up in the hook's own path.
+    host.install("absent")
+    ran = run_hook(host, relative=True, extra={"CDPATH": cdpath})
+    assert ran.code == 0
+    assert split(host.calls()) == ([], [(*phase, False) for phase in phases(host.repo)])
 
 
 def test_hook_outside_restarts_whole_inside_before_any_phase(host):
     host.install("enabled")
-    done = run_hook(host)
-    assert done.returncode == 0, done.stdout + done.stderr
+    ran = run_hook(host)
+    assert ran.code == 0
     calls = host.calls()
-    assert [(c["kind"], c["inside"]) for c in calls[:3]] == [("membership", False), ("exec", False), ("membership", True)]
-    shell, hook = calls[1]["argv"][3:]
-    assert calls[1]["argv"][:3] == ["exec", "--quiet", "--"] and Path(shell).name == "bash"
+    # The hook asks, then `machine_slot.py enter` asks again before it hands over to the launcher.
+    assert [(c["kind"], c["inside"]) for c in calls[:4]] == [
+        ("membership", False), ("membership", False), ("exec", False), ("membership", True)]
+    shell, hook = calls[2]["argv"][3:]
+    assert calls[2]["argv"][:3] == ["exec", "--quiet", "--"] and Path(shell).name == "bash"
     assert hook == str(host.repo / "scripts/git-hooks/pre-commit")
-    assert split(calls[3:]) == ([], [(*phase, True) for phase in phases(host.repo)])
-    assert "Entering the shared test CPU..." in done.stdout
+    assert split(calls[4:]) == ([], [(*phase, True) for phase in phases(host.repo)])
+    assert ran.said("Entering the shared test CPU...")
 
 
 @pytest.mark.parametrize("clean_env", [False, True], ids=["inherited", "env-i"])
 def test_hook_inside_runs_in_place(host, clean_env):
     host.install("enabled")
-    done = run_hook(host, placed=True, clean_env=clean_env)
-    assert done.returncode == 0, done.stdout + done.stderr
+    ran = run_hook(host, placed=True, clean_env=clean_env)
+    assert ran.code == 0
     launcher, rest = split(host.calls())
     assert launcher == [("exec", False), ("membership", True)]
     assert rest == [(*phase, True) for phase in phases(host.repo)]
@@ -631,8 +709,8 @@ def test_hook_inside_runs_in_place(host, clean_env):
     ("policy-without-launcher", []),
     ("invalid", [("membership", False)]),
     ("unreadable", [("membership", False)]),
-    ("refused", [("membership", False), ("exec", False)]),
-    ("still-outside", [("membership", False), ("exec", False), ("membership", False)]),
+    ("refused", [("membership", False), ("membership", False), ("exec", False)]),
+    ("still-outside", [("membership", False), ("membership", False), ("exec", False), ("membership", False)]),
 ])
 def test_hook_that_cant_be_placed_stops_with_125_before_any_phase(host, setup, launcher_calls):
     if setup == "policy-without-launcher":
@@ -644,22 +722,22 @@ def test_hook_that_cant_be_placed_stops_with_125_before_any_phase(host, setup, l
     else:
         host.install("enabled", **{"unreadable": {"membership": "error"}, "refused": {"exec": "refuse"},
                                    "still-outside": {"exec": "noplace"}}[setup])
-    done = run_hook(host, timeout=60)
-    assert done.returncode == 125, done.stdout + done.stderr
+    ran = run_hook(host, timeout=60)
+    assert ran.code == 125
     assert split(host.calls()) == (launcher_calls, [])
     if setup == "refused":
         # The hook has already handed itself over to the launcher, which says why on its own.
-        assert "Entering the shared test CPU..." in done.stdout and "Commit aborted" not in done.stdout
-        assert "test-cpu: placement refused (fake)" in done.stderr and "shared test CPU: " not in done.stderr
+        assert (ran.said("Entering the shared test CPU..."), ran.said("Commit aborted")) == (True, False)
+        assert (ran.warned("test-cpu: placement refused (fake)"), ran.warned("shared test CPU: ")) == (1, 0)
     else:
-        assert "Commit aborted" in done.stdout
-        assert done.stderr.count("shared test CPU: ") == 1
+        assert ran.said("Commit aborted")
+        assert ran.warned("shared test CPU: ") == 1
 
 
 # ─── Real pytest runs through the copied conftest ────────────────────────────
 
 
-def run_pytest(h, *args, path=None, extra=None, placed=False, clean_env=False, outer=None):
+def run_pytest(h, *args, path=None, extra=None, placed=False, clean_env=False, outer=None, timeout=180):
     env = environment(h, path=path)
     env.update(extra or {})
     argv = outer or [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_probe.py", *args]
@@ -667,7 +745,7 @@ def run_pytest(h, *args, path=None, extra=None, placed=False, clean_env=False, o
         argv = clean(env, argv)
     if placed:
         argv = [str(h.cli), "exec", "--", *argv]
-    return subprocess.run(argv, cwd=h.repo, env=env, capture_output=True, text=True, timeout=180)
+    return Ran(argv, cwd=h.repo, env=env, timeout=timeout)
 
 
 def contract(calls):
@@ -682,10 +760,10 @@ def kinds(calls):
 
 def test_pytest_without_a_policy_is_unchanged(host):
     host.install("absent")
-    done = run_pytest(host)
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
-    done = run_pytest(host, "-n", "2")
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
+    ran = run_pytest(host)
+    assert (ran.code, ran.said("1 passed")) == (0, True)
+    ran = run_pytest(host, "-n", "2")
+    assert (ran.code, ran.said("1 passed")) == (0, True)
     calls = contract(host.calls())
     assert kinds(calls) == [("probe", False), ("wt", False), ("probe", False)]
     assert calls[1]["marker"] == "1" and calls[2]["worker"] in ("gw0", "gw1")
@@ -693,18 +771,28 @@ def test_pytest_without_a_policy_is_unchanged(host):
 
 def test_serial_pytest_outside_is_placed(host):
     host.install("enabled")
-    done = run_pytest(host)
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
+    ran = run_pytest(host)
+    assert (ran.code, ran.said("1 passed")) == (0, True)
     calls = contract(host.calls())
     assert kinds(calls) == [("membership", False), ("exec", False), ("membership", True), ("probe", True)]
     assert calls[1]["argv"][:4] == ["exec", "--quiet", "--", sys.executable]
     assert calls[3]["worker"] is None
 
 
+def test_serial_pytest_restarted_in_place_yet_outside_stops_after_one_restart(host):
+    # This launcher execs its command in place without placing it, so the restarted run is the very
+    # process that restarted: the loop guard must count it, not only its parents.
+    host.install("enabled", exec="noplace")
+    ran = run_pytest(host, timeout=60)
+    assert ran.code == 125
+    assert ran.warned("yet still outside") > 0
+    assert kinds(contract(host.calls())) == [("membership", False), ("exec", False), ("membership", False)]
+
+
 def test_parallel_pytest_outside_goes_through_wt_and_workers_stay_put(host):
     host.install("enabled")
-    done = run_pytest(host, "-n", "2")
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
+    ran = run_pytest(host, "-n", "2")
+    assert (ran.code, ran.said("1 passed")) == (0, True)
     calls = contract(host.calls())
     assert kinds(calls) == [("membership", False), ("wt", False), ("membership", True), ("probe", True)]
     assert calls[3]["worker"] in ("gw0", "gw1") and calls[3]["marker"] == "1"
@@ -712,8 +800,8 @@ def test_parallel_pytest_outside_goes_through_wt_and_workers_stay_put(host):
 
 def test_ci_pytest_on_an_enabled_host_is_placed_not_skipped(host):
     host.install("enabled")
-    done = run_pytest(host, "-n", "2", extra={"CI": "1"})
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
+    ran = run_pytest(host, "-n", "2", extra={"CI": "1"})
+    assert (ran.code, ran.said("1 passed")) == (0, True)
     calls = contract(host.calls())
     assert kinds(calls) == [("membership", False), ("exec", False), ("membership", True), ("probe", True)]
     assert calls[3]["worker"] in ("gw0", "gw1") and calls[3]["marker"] is None
@@ -721,8 +809,8 @@ def test_ci_pytest_on_an_enabled_host_is_placed_not_skipped(host):
 
 def test_clean_env_nested_pytest_inside_takes_no_second_placement(host):
     host.install("enabled")
-    done = run_pytest(host, "-n", "2", placed=True, clean_env=True)
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
+    ran = run_pytest(host, "-n", "2", placed=True, clean_env=True)
+    assert (ran.code, ran.said("1 passed")) == (0, True)
     calls = contract(host.calls())
     assert kinds(calls) == [("exec", False), ("membership", True), ("wt", True), ("membership", True), ("probe", True)]
 
@@ -730,18 +818,18 @@ def test_clean_env_nested_pytest_inside_takes_no_second_placement(host):
 def test_parallel_pytest_without_wt_on_an_enabled_host_fails_visibly(host):
     host.install("enabled")
     path = os.pathsep.join(d for d in os.environ["PATH"].split(os.pathsep) if not os.path.exists(os.path.join(d, "wt")))
-    done = run_pytest(host, "-n", "2", path=path)
-    assert done.returncode == 125, done.stdout + done.stderr
-    assert "temper pytest: wt is not on PATH" in done.stderr
+    ran = run_pytest(host, "-n", "2", path=path)
+    assert ran.code == 125
+    assert ran.warned("temper pytest: wt is not on PATH") > 0
     assert kinds(contract(host.calls())) == [("membership", False)]
 
 
 def test_pytest_with_a_launcher_that_cant_run_fails_visibly(host):
     host.install("enabled")
     host.cli.chmod(0o644)
-    done = run_pytest(host)
-    assert done.returncode == 125, done.stdout + done.stderr
-    assert "is not an executable file" in done.stderr
+    ran = run_pytest(host)
+    assert ran.code == 125
+    assert ran.warned("is not an executable file") > 0
     assert contract(host.calls()) == []
 
 
@@ -758,15 +846,46 @@ def test_nested_run_through_real_wt_never_waits_for_its_own_slot(host, tmp_path,
     config.write_text("land_slots: 1\nslot_wait_minutes: 1\n")
     command = [shutil.which("wt"), "slot", "--", sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                "tests/test_probe.py", "-n", "2"]
-    done = run_pytest(host, path=os.environ["PATH"], extra={"WT_LAND_SLOTS_DIR": str(pool), "WT_CONFIG": str(config)},
-                      outer=command, placed=mode == "enabled")
-    assert done.returncode == 0 and "1 passed" in done.stdout, done.stdout + done.stderr
-    assert done.stderr.count("wt slot: machine slot 1 of 1") == 1, done.stderr
-    assert done.stderr.count("wt slot: already inside machine slot 1 ") == 1, done.stderr
-    assert "Waiting up to" not in done.stderr and "no machine slot came free" not in done.stderr
+    ran = run_pytest(host, path=os.environ["PATH"], extra={"WT_LAND_SLOTS_DIR": str(pool), "WT_CONFIG": str(config)},
+                     outer=command, placed=mode == "enabled")
+    assert (ran.code, ran.said("1 passed")) == (0, True)
+    assert ran.warned("wt slot: machine slot 1 of 1") == 1
+    assert ran.warned("wt slot: already inside machine slot 1 ") == 1
+    assert (ran.warned("Waiting up to"), ran.warned("no machine slot came free")) == (0, 0)
     calls = contract(host.calls())
     expected = [("probe", False)] if mode == "absent" else [("exec", False), ("membership", True), ("membership", True), ("probe", True)]
     assert kinds(calls) == expected
     assert calls[-1]["marker"] == "1" and calls[-1]["worker"] in ("gw0", "gw1")
     assert sorted(p.name for p in pool.iterdir() if p.name.startswith("slot-")) == []
     assert sorted(pool.glob("waiting/*.json")) == []
+
+
+# ─── A failure's text holds nothing a child said ─────────────────────────────
+
+
+def _exited_cleanly(ran):
+    assert ran.code == 0
+
+
+def _said_passed(ran):
+    assert (ran.code, ran.said("1 passed")) == (0, True)
+
+
+def _warned_once(ran):
+    assert ran.warned("wt slot: machine slot 1 of 1") == 1
+
+
+@pytest.mark.parametrize(("check", "sleep"), [
+    (_exited_cleanly, 0), (_said_passed, 0), (_warned_once, 0), (_exited_cleanly, 30),
+], ids=["exit", "said", "warned", "timed-out"])
+def test_failure_text_carries_no_child_output_or_argv(check, sleep):
+    # Fresh tokens, so no source line shown in the report can hold them.
+    canary = {stream: f"{stream}-canary-{uuid.uuid4().hex}" for stream in ("stdout", "stderr", "argv")}
+    code = (f"import sys, time; print({canary['stdout']!r}, flush=True); "
+            f"print({canary['stderr']!r}, file=sys.stderr, flush=True); time.sleep({sleep}); sys.exit(3)")
+    ran = Ran([sys.executable, "-c", code, canary["argv"]], timeout=3)
+    with pytest.raises(AssertionError) as failed:
+        check(ran)
+    # The text pytest reports: the message, each frame with its arguments, chained exceptions.
+    text = str(failed.value) + str(failed.getrepr(funcargs=True, style="long", chain=True))
+    assert sorted(stream for stream, token in canary.items() if token in text) == []

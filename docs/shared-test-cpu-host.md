@@ -52,7 +52,8 @@ selection, pytest or the dashboard checks, is ask for that answer:
 - **inactive or inside** (a `wt land` check, an outer entry, a nested hook):
   the hook carries on where it is.
 - **outside**: it prints `Entering the shared test CPU...` and replaces
-  itself with `test-cpu exec --quiet -- bash <hook>`, so the same hook, with
+  itself with `test-cpu exec --quiet -- bash <hook>` (through
+  `machine_slot.py enter`, which asks once more), so the same hook, with
   the same arguments, runs again from the top inside the slice. Every phase and
   every process it starts runs inside.
 - **can't be known or made**: it prints the reason and `Can't enter the shared
@@ -74,7 +75,7 @@ collection and before any xdist worker starts:
 | inside | serial, or marked | runs where it is |
 | outside | parallel, unmarked | restarts under `wt slot`, which places and admits it |
 | outside | serial, or marked | restarts under `test-cpu exec --quiet` |
-| inside or outside | parallel, `wt` not on PATH | stops with 125: put wt on PATH or run without `-n` |
+| inside or outside | parallel, unmarked, `wt` not on PATH | stops with 125: put wt on PATH or run without `-n` |
 | any but inactive | a restart that can't start | stops with 125, environment put back |
 
 "Marked" means any of `CI`, `GITHUB_ACTIONS`, `PYTEST_CURRENT_TEST`,
@@ -96,8 +97,9 @@ already placed itself, and a worker that restarted would cut its channel to it.
   runs without taking another, so a nested run never waits for its own slot.
 - **Loop guard**: a restart records `TEMPER_TEST_CPU_RESTART=<pid>:<start
   time>` of the process that restarted. If the restarted run still comes back
-  outside while that process is one of its ancestors, it stops with 125
-  instead of restarting again. A leftover record from an unrelated process is
+  outside while that process is the run itself (a launcher that ran it in
+  place) or one of its ancestors, it stops with 125 instead of restarting
+  again. A leftover record from an unrelated process is
   ignored.
 
 125 always means the run couldn't be placed; it is never a test result.
@@ -107,9 +109,10 @@ already placed itself, and a worker that restarted would cut its channel to it.
 The entry can only place what starts after it. Honestly, that is:
 
 - **Hook**: git itself, which starts the hook; the `bash` that runs it; the
-  `dirname` and `basename` that find the hook's own path; and one
-  `python3 tests/machine_slot.py placement` (standard library only, no temper
-  import) with its launcher query. Everything after runs inside.
+  `dirname` and `basename` that find the hook's own path; and
+  `python3 tests/machine_slot.py placement` with its launcher query (when
+  outside, also `machine_slot.py enter` with one more), standard library only,
+  no temper import. Everything after runs inside.
 - **pytest**: the interpreter, pytest's own start-up and plugins (xdist,
   timeout, asyncio, pytest-benchmark, which runs `git rev-parse --git-dir`
   while its options load) and the root conftest's imports (`temper_ai.database`,
@@ -123,15 +126,19 @@ The entry can only place what starts after it. Honestly, that is:
 For those, or to keep start-up inside too, start the command inside yourself:
 
 ```bash
-# any command, placed
-/usr/local/libexec/test-cpu/bin/test-cpu exec -- uv run pytest tests/test_x.py
-# a parallel run: a machine slot and placement in one
-wt slot -- uv run pytest tests/ -n auto
-# from this repository, with the loop guard
+# from this repository: placed when the host wants it, run directly otherwise (today too)
 python3 tests/machine_slot.py enter -- uv run python scripts/some_check.py
+# a parallel run: a machine slot, and placement once the policy is on
+wt slot -- uv run pytest tests/ -n auto
+# the launcher itself, once Ops has installed it (it isn't there today)
+/usr/local/libexec/test-cpu/bin/test-cpu exec -- uv run pytest tests/test_x.py
 ```
 
-The conftest then finds itself inside (and in a slot) and carries on.
+`enter` asks first. With no policy or an inactive one, or already inside, it
+runs the command where it is; outside, it hands it to the launcher with the
+loop guard. It exits 125 when the placement can't be known or made, and 127
+or 126 when the command isn't found or can't run. The conftest then finds
+itself inside (and in a slot) and carries on.
 
 ## Checked by, and what isn't proven
 

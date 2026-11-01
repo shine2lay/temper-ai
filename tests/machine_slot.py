@@ -13,9 +13,10 @@ Two jobs, one decision per run (docs/shared-test-cpu-host.md):
 
 With no policy installed (today) or an inactive one, both work exactly as before.
 
-As a script, for the pre-commit hook before it does anything else: ``machine_slot.py placement``
-prints inactive, inside or outside; ``machine_slot.py enter -- <command...>`` becomes the launcher
-running the command. Both exit 125 when the placement can't be known or made.
+As a script, for the pre-commit hook before it does anything else and for commands started by hand:
+``machine_slot.py placement`` prints inactive, inside or outside; ``machine_slot.py enter --
+<command...>`` becomes the command where the host wants it (through the launcher when outside,
+directly otherwise). Both exit 125 when the placement can't be known or made.
 """
 
 import json
@@ -33,7 +34,8 @@ _SKIP = ("PYTEST_XDIST_WORKER", "PYTEST_CURRENT_TEST", "CI", "GITHUB_ACTIONS", M
 TEST_CPU = "/usr/local/libexec/test-cpu/bin/test-cpu"
 POLICY = "/etc/agent-tools/test-cpu.json"
 # "pid:start" of the process that restarted this run to place it. Only a guard against a loop: it
-# counts only while that process is still one of this run's ancestors.
+# counts only while that process is this run itself (a launcher that ran it in place) or one of its
+# ancestors.
 RESTART = "TEMPER_TEST_CPU_RESTART"
 QUERY_SECONDS = 60
 EXIT_PLACEMENT = 125
@@ -85,7 +87,8 @@ def host_placement() -> str:
     try:
         done = subprocess.run([TEST_CPU, "membership", "--json"], stdin=subprocess.DEVNULL,
                               capture_output=True, text=True, timeout=QUERY_SECONDS)
-    except (OSError, subprocess.SubprocessError) as exc:
+    # ValueError: an answer that isn't text (UnicodeDecodeError) can't be read either.
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
         raise HostEntryError(f"{asked}: {_one_line(exc)}") from None
     said = f"{asked} said {_one_line(done.stdout)[:200]!r} {_one_line(done.stderr)[:200]!r}, exit {done.returncode}"
     try:
@@ -128,7 +131,7 @@ def entry_placement() -> str:
     if where != "outside" or record is None:
         return where
     try:
-        restarted = record in _ancestors()
+        restarted = record == _process(os.getpid())[0] or record in _ancestors()
     except (OSError, ValueError, IndexError) as exc:
         raise HostEntryError(f"{RESTART}={record} is set and this run's parents can't be read ({_one_line(exc)})") from None
     if restarted:
@@ -198,12 +201,24 @@ def enter_machine_slot(workers: int | str | None) -> None:
         _restart([TEST_CPU, "exec", "--quiet", "--", *command], marker=False, record=True)
 
 
+def _run_here(command: list[str]) -> int:
+    """Become ``command`` where this process already is; a shell's 127 or 126 if it can't start."""
+    try:
+        os.execvp(command[0], command)
+    except OSError as exc:
+        print(f"shared test CPU: couldn't run {command[0]} ({_one_line(exc)})", file=sys.stderr)
+        return 127 if isinstance(exc, FileNotFoundError) else 126
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv == ["placement"]:
             print(entry_placement())
             return 0
         if len(argv) > 2 and argv[:2] == ["enter", "--"]:
+            # Asked first, so one command works with no policy, inside the slice and outside it.
+            if entry_placement() != "outside":
+                return _run_here(argv[2:])
             _restart([TEST_CPU, "exec", "--quiet", "--", *argv[2:]], marker=False, record=True)
     except HostEntryError as exc:
         print(f"shared test CPU: {exc}", file=sys.stderr)

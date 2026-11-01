@@ -90,6 +90,7 @@ def costs(monkeypatch):
     return starts
 
 
+@pytest.mark.heavy
 def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finishes(
         led, box, run_id, tmp_path, monkeypatch, costs):
     # Both the member's question and the check-in get an answer; either may come first.

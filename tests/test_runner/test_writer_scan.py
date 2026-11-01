@@ -550,6 +550,7 @@ SCOPE_BITES = [(p, s, e, "T9-R2 writer scope", "t9") for p, s, e in ROW_SCOPES] 
      ("claim_and_queue", "claim_and_requeue_row", "claim_without_box_row")]
 
 
+@pytest.mark.heavy
 @pytest.mark.parametrize(("path", "scope", "expression", "error", "check"), SCOPE_BITES,
                          ids=[f"scope-{p.split('/')[-1]}-{s}-{i}" for i, (p, s, *_rest) in enumerate(SCOPE_BITES)])
 def test_each_writer_scope_removal_bites(assembled, path, scope, expression, error, check):
@@ -596,6 +597,7 @@ def test_each_writer_scope_removal_bites(assembled, path, scope, expression, err
     ("P14-release-guard", ROUTES, "if parked_attempt is not None:\n            _state().running.pop", "if True:\n            _state().running.pop", "p14", "release requires its no-row attempt"),
     ("P14-release-wider-except", ROUTES, "        thread.start()\n    except BaseException:", "        thread.start()\n        work_after_start()\n    except BaseException:", "p14", "may only handle thread.start failure"),
 ])
+@pytest.mark.heavy
 def test_source_mutations_bite(assembled, case, path, old, new, check, error):
     sources, original = assembled
     assert old in sources[path], f"{case}: mutation did not touch source"

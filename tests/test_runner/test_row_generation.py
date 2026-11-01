@@ -441,6 +441,7 @@ def _mutant(module: ModuleType, mutations: list[tuple[str, str]], monkeypatch) -
     return mutant
 
 
+@pytest.mark.heavy
 @pytest.mark.parametrize("bite", list(BITES))
 def test_each_fence_guard_has_a_bite(bite, monkeypatch, caplog):
     caplog.set_level(logging.WARNING)

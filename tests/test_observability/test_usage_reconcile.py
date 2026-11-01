@@ -1869,6 +1869,7 @@ CENSUS_BITES = {  # bite: file, its text, the text with a bypass or a missing ga
 }
 
 
+@pytest.mark.heavy
 @pytest.mark.parametrize("bite", sorted(CENSUS_BITES))
 def test_cutover_census_bites(bite):
     path, before, after = CENSUS_BITES[bite]

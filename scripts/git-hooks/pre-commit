@@ -1,10 +1,11 @@
 #!/bin/bash
 # Pre-commit hook — runs the same checks as .github/workflows/ci.yml so CI
-# failures surface locally before push. Scope matches CI exactly:
+# failures surface locally before push. Scope matches CI:
 #   - ruff check .                (whole project)
 #   - mypy temper_ai/             (whole package)
-#   - pytest tests/ --timeout=120 (full suite), through the same machine pool
-#     as heavy runs started by hand (docs/testing.md)
+#   - pytest on the test files scripts/select_tests.py picks from
+#     scripts/test-selection.toml (-m "not heavy", --timeout=120), through the
+#     same machine pool as heavy runs started by hand (docs/testing.md)
 #
 # tests/conftest.py enters `wt slot` before starting pytest's workers. Inside
 # a land's check it reuses the land's slot; it never waits for its own slot.
@@ -97,13 +98,50 @@ if ! uv run --quiet mypy temper_ai/ --ignore-missing-imports 2>&1; then
 fi
 echo -e "$PASS mypy passed."
 
-# ─── 4. pytest (full suite — matches CI) ──────────────────────────────────
+# ─── 4. Which tests this change can affect ────────────────────────────────
 # No -x. Stopping at the first failure meant a commit told you about one
 # broken test, you fixed it, and the next run told you about the next.
 # -n auto lets wt's check_workers default apply. Keep the hook's explicit
 # override; otherwise leave the caller's PYTEST_XDIST_AUTO_NUM_WORKERS alone.
 if [ -n "${PRECOMMIT_PYTEST_WORKERS:-}" ]; then
     export PYTEST_XDIST_AUTO_NUM_WORKERS="$PRECOMMIT_PYTEST_WORKERS"
+fi
+
+# scripts/select_tests.py reads the staged diff during `git commit` and the
+# branch diff against master when `wt land` re-runs the hook after a rebase,
+# from the same scripts/test-selection.toml rules GitHub CI uses. Heavy
+# mutation sweeps (-m heavy) run in nightly.yml on master. If the selector
+# fails, fall back to the full suite and the dashboard checks.
+run_python="all"
+pytest_targets=("tests/")
+run_frontend=false
+if [ -f "$REPO_ROOT/scripts/select_tests.py" ]; then
+    if selection="$(python3 "$REPO_ROOT/scripts/select_tests.py" --explain)"; then
+        run_python="none"
+        pytest_targets=()
+        while IFS= read -r line; do
+            case "$line" in
+                "python all")
+                    run_python="all"
+                    pytest_targets=("tests/")
+                    ;;
+                "python none")
+                    run_python="none"
+                    pytest_targets=()
+                    ;;
+                "python "*)
+                    run_python="some"
+                    read -r -a pytest_targets <<< "${line#python }"
+                    ;;
+                frontend)
+                    run_frontend=true
+                    ;;
+            esac
+        done <<< "$selection"
+    else
+        echo -e "$WARN select_tests.py failed — running the full test suite and dashboard checks."
+        run_frontend=true
+    fi
 fi
 
 # ─── 4a. The database tier ────────────────────────────────────────────────
@@ -114,8 +152,17 @@ fi
 # PRECOMMIT_PG=1 to force.
 DB_PATHS='^(temper_ai/(database|checkpoint|observability|runner|memory|triggers)/|temper_ai/integrations/(inbox|notify|slack|telegram)|temper_ai/.*models\.py|temper_ai/shared/clock\.py|tests/(conftest|pgtier)\.py|alembic/)'
 wants_pg="${PRECOMMIT_PG:-auto}"
-if [ "$wants_pg" = "auto" ]; then
-    if git diff --cached --name-only --diff-filter=ACM | grep -qE "$DB_PATHS"; then
+if [ "$run_python" = "none" ]; then
+    wants_pg=0
+elif [ "$wants_pg" = "auto" ]; then
+    changed_paths="$(git diff --cached --name-only --diff-filter=ACM || true)"
+    if [ -z "$changed_paths" ]; then
+        base_ref="$(git merge-base HEAD refs/heads/master 2>/dev/null || git merge-base HEAD origin/master 2>/dev/null || true)"
+        if [ -n "$base_ref" ]; then
+            changed_paths="$(git diff --name-only --diff-filter=ACM "$base_ref" HEAD || true)"
+        fi
+    fi
+    if printf '%s\n' "$changed_paths" | grep -qE "$DB_PATHS"; then
         wants_pg=1
     else
         wants_pg=0
@@ -138,30 +185,34 @@ if [ "$wants_pg" = "1" ]; then
     fi
 fi
 
-echo "Running pytest..."
-# The tests run without the variables git gives a hook to point it at the
-# repository being committed (GIT_DIR, GIT_INDEX_FILE, ...: the list is
-# `git rev-parse --local-env-vars`). A test that makes a throwaway repo in a temp
-# dir would run its git commands with them. From the main checkout GIT_DIR is the
-# relative `.git`, which happens to resolve inside the temp dir; from a linked
-# worktree it is an absolute path, so the test's `git init`, `git config` and
-# `git commit` land in this repository: core.bare set, the branch being committed
-# moved to the test's commits.
-# Keep wt's stderr live while retaining the tail of pytest's stdout.
-# shellcheck disable=SC2046  (word splitting is intentional)
-if ! (unset $(git rev-parse --local-env-vars); uv run --quiet pytest tests/ --timeout=120 -q --no-header -n auto) | tail -40; then
-    echo ""
-    echo -e "$FAIL pytest failed."
-    exit 1
+if [ "$run_python" = "none" ]; then
+    echo -e "$PASS No Python tests affected — skipping pytest."
+else
+    echo "Running pytest (${#pytest_targets[@]} target(s))..."
+    # The tests run without the variables git gives a hook to point it at the
+    # repository being committed (GIT_DIR, GIT_INDEX_FILE, ...: the list is
+    # `git rev-parse --local-env-vars`). A test that makes a throwaway repo in a temp
+    # dir would run its git commands with them. From the main checkout GIT_DIR is the
+    # relative `.git`, which happens to resolve inside the temp dir; from a linked
+    # worktree it is an absolute path, so the test's `git init`, `git config` and
+    # `git commit` land in this repository: core.bare set, the branch being committed
+    # moved to the test's commits.
+    # Keep wt's stderr live while retaining the tail of pytest's stdout.
+    # shellcheck disable=SC2046  (word splitting is intentional)
+    if ! (unset $(git rev-parse --local-env-vars); uv run --quiet pytest "${pytest_targets[@]}" -m "not heavy" --timeout=120 -q --no-header -n auto) | tail -40; then
+        echo ""
+        echo -e "$FAIL pytest failed."
+        exit 1
+    fi
+    echo -e "$PASS pytest passed."
 fi
-echo -e "$PASS pytest passed."
 
 # ─── 5. The dashboard ─────────────────────────────────────────────────────
 # Its type check and unit tests, when the commit touches it. They ran only
 # on GitHub, so a type error or a broken component test was found after the
 # push rather than before it.
 STAGED_FE=$(git diff --cached --name-only --diff-filter=ACM -- 'frontend/*' || true)
-if [ -n "$STAGED_FE" ]; then
+if [ "$run_frontend" = true ] || [ -n "$STAGED_FE" ]; then
     if [ ! -d frontend/node_modules ]; then
         echo -e "$WARN frontend/ changed but node_modules is missing — run 'npm ci' in frontend/."
         echo "  Skipping the dashboard checks; GitHub will still run them."

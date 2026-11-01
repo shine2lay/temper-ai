@@ -25,6 +25,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which tests and checks this change can affect (scripts/select_tests.py,
+  # scripts/test-selection.toml; docs/testing.md). The pre-commit hook calls
+  # the same selector. A job the selector leaves out is skipped and reports
+  # success, so the required check names stay as they are; if this job fails,
+  # its outputs are empty (neither 'none' nor 'false') and everything runs.
+  select:
+    name: select
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.pick.outputs.python }}
+      python_tests: ${{ steps.pick.outputs.python_tests }}
+      frontend: ${{ steps.pick.outputs.frontend }}
+      e2e: ${{ steps.pick.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pick the tests this change needs
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base="origin/$PR_BASE"
+          elif [ "$REF" = "refs/heads/master" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            base="$BEFORE"
+          else
+            base="origin/master"
+          fi
+          python3 scripts/select_tests.py --base "$base" --head HEAD --explain --github-output "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -47,6 +81,8 @@ jobs:
 
   test:
     name: tests (python ${{ matrix.python-version }})
+    needs: select
+    if: ${{ !cancelled() && needs.select.outputs.python != 'none' }}
     runs-on: ubuntu-latest
     strategy:
       # Off, deliberately. With fail-fast on, 3.11 failing cancelled 3.12
@@ -74,9 +110,12 @@ jobs:
 
       # No -x. Stopping at the first failure hid every other one, so each red
       # run told you about a single test and you found the next only after
-      # fixing that. -n auto: the runners have 2-4 cores.
+      # fixing that. -n auto: the runners have 2-4 cores. Heavy mutation sweeps
+      # and full-config replays (-m heavy) run in nightly.yml on master.
       - name: Run the tests
-        run: uv run pytest tests/ --timeout=60 -n auto --junitxml=junit.xml
+        env:
+          PYTHON_TESTS: ${{ needs.select.outputs.python_tests }}
+        run: uv run pytest ${PYTHON_TESTS:-tests/} -m "not heavy" --timeout=60 -n auto --junitxml=junit.xml
 
       - name: Summarise
         if: always()
@@ -96,6 +135,8 @@ jobs:
     # tests that touch the database against a real one. (The workflow started
     # a Postgres before this and no test ever connected to it.)
     name: tests (postgres)
+    needs: select
+    if: ${{ !cancelled() && needs.select.outputs.python != 'none' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -129,7 +170,8 @@ jobs:
       - name: Run the tests, with the database tier on Postgres
         env:
           TEMPER_TEST_DATABASE_URL: postgresql://temper_ai:test@127.0.0.1:5432/temper_ai_test
-        run: uv run pytest tests/ --timeout=120 -n auto --junitxml=junit-pg.xml
+          PYTHON_TESTS: ${{ needs.select.outputs.python_tests }}
+        run: uv run pytest ${PYTHON_TESTS:-tests/} -m "not heavy" --timeout=120 -n auto --junitxml=junit-pg.xml
 
       - name: Summarise
         if: always()
@@ -145,6 +187,8 @@ jobs:
   frontend:
     # The dashboard had no CI at all: its unit tests had been failing for
     # months and type errors could land unnoticed.
+    needs: select
+    if: ${{ !cancelled() && needs.select.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -173,6 +217,8 @@ jobs:
     # (frontend/playwright.server-free.config.ts). The live dashboard is looked
     # at by temper-ci after every deploy (docs/ci-gate.md). The job keeps its
     # name: master's branch protection and `wt land` wait for it.
+    needs: select
+    if: ${{ !cancelled() && needs.select.outputs.e2e != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

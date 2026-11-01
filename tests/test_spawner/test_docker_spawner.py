@@ -877,6 +877,7 @@ def test_port_conflict_is_not_an_old_box_wait(old_box_start):
     assert not isinstance(refused.value, SpawnerBusy)
 
 
+@pytest.mark.heavy
 @pytest.mark.parametrize("launch", CURRENT, ids=[launch.workflow for launch in CURRENT])
 def test_g11_replay_of_every_current_launch(launch, real_configs, monkeypatch):
     """Legacy: master's command plus the profile, byte for byte. Sealed: its class decides."""

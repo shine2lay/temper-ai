@@ -143,7 +143,7 @@ def test_hook_runs_auto_and_only_sets_workers_when_requested(tmp_path, override,
     assert done.returncode == 0, done.stdout + done.stderr
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     pytest_calls = [(args, workers) for args, workers in calls if "pytest" in args]
-    assert pytest_calls == [(["run", "--quiet", "pytest", "tests/", "--timeout=120", "-q", "--no-header", "-n", "auto"], expected)]
+    assert pytest_calls == [(["run", "--quiet", "pytest", "tests/", "-m", "not heavy", "--timeout=120", "-q", "--no-header", "-n", "auto"], expected)]
 
 
 def test_real_pytest_restarts_once_through_fake_wt(tmp_path):

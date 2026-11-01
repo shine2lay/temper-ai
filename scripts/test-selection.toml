@@ -1,0 +1,121 @@
+# Which tests a change runs. scripts/select_tests.py reads this file; the pre-commit hook (which
+# `wt land` also runs as temper-ai's check) and GitHub CI (.github/workflows/ci.yml) both call it, so
+# they pick the same tests. docs/testing.md explains it.
+#
+# Each changed file takes the FIRST rule below whose paths match it, top to bottom. A file that matches
+# no rule runs everything: unknown means everything. A rule's parts:
+#
+#   full              every test, the frontend checks and the browser tests
+#   graph             the Python test files that depend on the changed file: they import it, run it,
+#                     name it, or read its folder (scripts/dependency_graph.py). A deleted file: the
+#                     files that still name it, and what depends on them.
+#   package-tests     every test under tests/test_<name>/ for a change in temper_ai/<name>/ or
+#                     configs/<name>/, when that folder exists: the tests written for that package
+#   folder-tests      every test under the changed file's own top folder in tests/ (tests/<folder>/)
+#   tests:<path>      that test file, or every test under that folder
+#   frontend          the dashboard's type check, unit tests and build
+#   e2e               the browser tests (ci.yml job e2e)
+#
+# ruff and mypy run for every change; they take seconds. An empty change runs everything.
+#
+# `hubs` are files the graph does not follow through: tests/conftest.py imports most of temper_ai for its
+# autouse fixtures, so through it every module would reach every test. A change to a hub runs
+# everything (rule "test hubs").
+#
+# Patterns: `*` and `?` stay inside one folder, `**` crosses folders, `**/` may also match nothing.
+# A test that starts reading a file no rule or graph edge connects it to needs a rule here ABOVE the
+# rule that would otherwise skip it; the nightly run (nightly.yml), which runs everything, is the
+# backstop that finds a missing one.
+
+version = 1
+hubs = ["tests/conftest.py", "tests/pgtier.py", "tests/machine_slot.py"]
+
+[[rule]]
+name = "selection"
+why = "the selector, its rules and the entry points that run the checks decide what every change runs"
+paths = [
+  "scripts/select_tests.py",
+  "scripts/dependency_graph.py",
+  "scripts/test-selection.toml",
+  "scripts/git-hooks/**",
+  "scripts/install-git-hooks.sh",
+  "scripts/test-postgres.sh",
+  "scripts/show_versions.py",
+  ".github/**",
+]
+parts = ["full"]
+
+[[rule]]
+name = "dependencies"
+why = "a dependency, toolchain or pytest setting changes what every test runs on"
+paths = ["pyproject.toml", "uv.lock", ".python-version"]
+parts = ["full"]
+
+[[rule]]
+name = "test hubs"
+why = "every test loads them: the root conftest's autouse fixtures, the database tier, the slot hook, the test package"
+paths = ["tests/conftest.py", "tests/pgtier.py", "tests/machine_slot.py", "tests/__init__.py"]
+parts = ["full"]
+
+[[rule]]
+name = "test file"
+why = "a test file runs itself and any test that imports it"
+paths = ["tests/**/test_*.py", "tests/**/*_test.py"]
+parts = ["graph"]
+
+[[rule]]
+name = "test plumbing and data"
+why = "conftests, helpers, fixtures and recorded data serve the tests of their folder and any test that names them"
+paths = ["tests/**"]
+parts = ["graph", "folder-tests"]
+
+[[rule]]
+name = "engine"
+why = "temper_ai runs in the tests that import it, and its package has a test folder of its own"
+paths = ["temper_ai/**"]
+parts = ["graph", "package-tests"]
+
+[[rule]]
+name = "configs"
+why = "workflows, agents, scripts and their data run in the tests that name them or read their folders"
+paths = ["configs/**"]
+parts = ["graph", "package-tests"]
+
+[[rule]]
+name = "browser test plumbing"
+why = "the e2e job serves the built pages with these, splits the shards and reads the list of server-free specs"
+paths = ["scripts/e2e_static_server.py", "scripts/e2e_shards.py", "scripts/e2e-repeat.sh", "scripts/junit_summary.py"]
+parts = ["graph", "e2e"]
+
+[[rule]]
+name = "scripts"
+why = "tests run, import or read the scripts they check"
+paths = ["scripts/**"]
+parts = ["graph"]
+
+[[rule]]
+name = "frontend"
+why = "the dashboard's own checks, the browser tests, and the Python tests that read its files"
+paths = ["frontend/**"]
+parts = ["frontend", "e2e", "graph"]
+
+[[rule]]
+name = "docs and project files"
+why = "only the tests that name them read them (generated reference pages, the README, the Dockerfile)"
+paths = [
+  "docs/**",
+  ".claude/**",
+  "docker/**",
+  "**/*.md",
+  "LICENSE",
+  "NOTICE",
+  "llms.txt",
+  "Makefile",
+  "Dockerfile",
+  "docker-compose*.yml",
+  "entrypoint.sh",
+  ".dockerignore",
+  ".env.example",
+  ".gitignore",
+]
+parts = ["graph"]

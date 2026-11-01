@@ -224,6 +224,44 @@ has the steps). It is run by hand, never by the gate. The gate runs only
 `tests/test_pi_rehearsal/`, which checks the rig's pure parts with no Docker
 and no model.
 
+### Which tests a commit runs
+
+Not every change can reach every test. `scripts/select_tests.py` reads the
+rules in `scripts/test-selection.toml` and builds a dependency graph of the
+repository (`scripts/dependency_graph.py`) from Python imports, dotted
+`importlib` / `monkeypatch` targets, `configs/` workflow and agent references,
+and literal paths named in source and tests:
+
+```bash
+python3 scripts/select_tests.py --explain                  # staged diff (or branch vs master)
+python3 scripts/select_tests.py --base origin/master --explain
+python3 scripts/select_tests.py --files temper_ai/mcp/server.py --explain
+```
+
+The pre-commit hook and GitHub's `select` job call the same script:
+
+- **Shared plumbing** (`pyproject.toml`, `uv.lock`, `tests/conftest.py`,
+  `tests/pgtier.py`, `tests/machine_slot.py`, `scripts/git-hooks/pre-commit`,
+  `.github/workflows/ci.yml`, or the selector itself) and **any path no rule
+  names** run the whole Python suite, the dashboard checks and the browser
+  tests. An empty or unreadable diff also runs everything.
+- **Engine, config, script and test changes** run the tests in the touched
+  package (`temper_ai/<pkg>/` → `tests/test_<pkg>/`) plus every test reachable
+  through the dependency graph, stopping at the root hub fixtures
+  (`tests/conftest.py`, `tests/pgtier.py`, `tests/machine_slot.py`) so a change
+  to one module does not pull in unrelated packages' tests merely because the
+  shared test harness imports them.
+- **Dashboard changes** (`frontend/**`) run the dashboard type check, unit
+  tests and browser tests (`e2e`), and skip pytest unless a Python test reads
+  one of the changed files.
+- **Documentation** (`docs/**`, `README.md`, `.temper/**`) runs only the Python
+  tests that read the changed file (`docs/departments.md`, `docs/ci-gate.md`,
+  and so on); a doc no test reads skips pytest, the dashboard checks and the
+  browser tests.
+- **Heavy sweeps** (`@pytest.mark.heavy`: full-suite subprocess mutation checks
+  and all-config replays) are left out of the per-commit gate (`-m "not heavy"`)
+  and run every night in `nightly.yml` (`full-and-heavy`) on `master`.
+
 ## Flaky tests
 
 **A flaky test is a broken test.** It is fixed, never skipped, never deleted,

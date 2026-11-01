@@ -699,6 +699,7 @@ def _mutant(module: ModuleType, mutations: list[tuple[str, str]], monkeypatch) -
     return mutant
 
 
+@pytest.mark.heavy
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("bite", list(BITES))
 def test_each_guard_has_a_bite(bite, caplog, monkeypatch):

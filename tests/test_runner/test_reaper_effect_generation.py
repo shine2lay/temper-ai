@@ -548,6 +548,7 @@ def mutant(module, edits, monkeypatch):
     return bitten
 
 
+@pytest.mark.heavy
 @pytest.mark.parametrize("bite", list(BITES))
 def test_effect_guard_exact_mutation_bites(bite, monkeypatch):
     module, edits, expected = BITES[bite]

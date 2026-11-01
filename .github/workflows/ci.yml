@@ -18,11 +18,11 @@ on:
 env:
   UV_FROZEN: "1"
 
-# One run per branch: a second push while the first is still going cancels
-# it, because nobody is waiting on a commit that has already been replaced.
+# Superseded branch checks can stop. Each landed master commit instead gets
+# its own full-suite backstop, not cancelled/replaced by the next master push.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   # Which tests and checks this change can affect (scripts/select_tests.py,
@@ -49,17 +49,20 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          BEFORE: ${{ github.event.before }}
           PR_BASE: ${{ github.base_ref }}
         run: |
-          if [ "$EVENT" = pull_request ]; then
-            base="origin/$PR_BASE"
-          elif [ "$REF" = "refs/heads/master" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            base="$BEFORE"
+          # A landed master commit always gets the full non-heavy suite.
+          # This is the post-land backstop; nightly additionally runs heavy.
+          if [ "$EVENT" = push ] && [ "$REF" = "refs/heads/master" ]; then
+            python3 scripts/select_tests.py --full --head HEAD --explain --github-output "$GITHUB_OUTPUT"
           else
-            base="origin/master"
+            if [ "$EVENT" = pull_request ]; then
+              base="origin/$PR_BASE"
+            else
+              base="origin/master"
+            fi
+            python3 scripts/select_tests.py --base "$base" --head HEAD --explain --github-output "$GITHUB_OUTPUT"
           fi
-          python3 scripts/select_tests.py --base "$base" --head HEAD --explain --github-output "$GITHUB_OUTPUT"
 
   lint:
     needs: select

@@ -18,9 +18,9 @@
 #
 # ruff and mypy run for every change; they take seconds. An empty change runs everything.
 #
-# `hubs` are files the graph does not follow through: tests/conftest.py imports most of temper_ai for its
-# autouse fixtures, so through it every module would reach every test. A change to a hub runs
-# everything (rule "test hubs").
+# `hubs` name shared test plumbing: changing one, or deleting a file it still needs, runs everything.
+# They are NOT traversal stops. Conftests resolve requested/autouse fixture uses; pgtier and other
+# helpers keep ordinary imports. Every dependency of an autouse fixture reaches its entire scope.
 #
 # Patterns: `*` and `?` stay inside one folder, `**` crosses folders, `**/` may also match nothing.
 # A test that starts reading a file no rule or graph edge connects it to needs a rule here ABOVE the
@@ -36,6 +36,7 @@ why = "the selector, its rules and the entry points that run the checks decide w
 paths = [
   "scripts/select_tests.py",
   "scripts/dependency_graph.py",
+  "scripts/pytest_fixtures.py",
   "scripts/test-selection.toml",
   "scripts/git-hooks/**",
   "scripts/install-git-hooks.sh",

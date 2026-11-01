@@ -5,7 +5,7 @@ Known-answer cases:
 - docs-only: an unreferenced doc runs no Python test, no frontend and no e2e; a doc a test
   reads runs only that test
 - single-module change: an engine module runs its package tests and what imports or monkeypatches
-  it, without fanning out through tests/conftest.py or tests/pgtier.py to unrelated tests
+  it; unused optional fixture bodies do not fan out, while autouse/collection dependencies do
 - config and fixture data: YAML `agent:`/`ref:`/`workflow:` keys and script paths reach their
   tests, while YAML comments, prompts (`system_prompt`, `task_template`, `description`) and
   mentions inside JSON data files do not create false edges; an engine module naming a config
@@ -44,7 +44,7 @@ RULES = st.load_rules((ROOT / st.RULES_PATH).read_text())
 
 
 # A miniature temper-ai tree with the real shapes that matter: two engine packages, two test
-# folders, a root conftest hub that imports both packages, a subfolder conftest, configs with
+# folders, a root conftest with unused optional fixtures, a subfolder conftest, configs with
 # prompts and comments, fixture JSON files, docs and frontend files.
 TREE: dict[str, str] = {
     "scripts/test-selection.toml": (ROOT / st.RULES_PATH).read_text(),
@@ -96,9 +96,16 @@ TREE: dict[str, str] = {
     ),
     "tests/__init__.py": "",
     "tests/conftest.py": (
-        "import temper_ai.tools.web_fetch\n"
-        "import temper_ai.mcp.server\n"
-        "import temper_ai.api.routes\n"
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def optional_tools():\n"
+        "    import temper_ai.tools.web_fetch\n"
+        "@pytest.fixture\n"
+        "def optional_mcp():\n"
+        "    import temper_ai.mcp.server\n"
+        "@pytest.fixture\n"
+        "def optional_api():\n"
+        "    import temper_ai.api.routes\n"
     ),
     "tests/pgtier.py": "import temper_ai.shared.clock\n",
     "tests/machine_slot.py": "MARKER = 'TEMPER_PYTEST_MACHINE_SLOT'\n",
@@ -172,8 +179,8 @@ def test_docs_and_single_module_and_config_selection():
     assert referenced_doc.tests == {"tests/test_epd/test_departments_doc.py"}
     assert not referenced_doc.frontend and not referenced_doc.e2e
 
-    # 2. Single-module change: reaches direct importers, monkeypatch targets and package tests,
-    #    and stops at tests/conftest.py and tests/pgtier.py instead of pulling in test_mcp or test_api.
+    # 2. Single-module change: reaches direct importers, monkeypatch targets and package tests.
+    #    Optional fixture bodies not requested by these tests do not make them consumers.
     web_fetch = _select([st.Change("temper_ai/tools/web_fetch.py")])
     assert web_fetch.python == "some"
     assert web_fetch.tests == {
@@ -237,6 +244,7 @@ def test_docs_and_single_module_and_config_selection():
     "tests/__init__.py",
     "scripts/select_tests.py",
     "scripts/dependency_graph.py",
+    "scripts/pytest_fixtures.py",
     "scripts/test-selection.toml",
     "scripts/git-hooks/pre-commit",
     "scripts/test-postgres.sh",
@@ -279,8 +287,9 @@ def test_empty_diff_batch_union_and_deleted_files():
     assert not deleted_script.everything
     assert deleted_script.tests == {"tests/test_scripts/test_roamee.py"}
 
-    # Deleted file still imported by a hub (tests/conftest.py) runs everything.
+    # Deleted file imported during conftest collection runs everything.
     without_mcp = {k: v for k, v in TREE.items() if k != "temper_ai/mcp/server.py"}
+    without_mcp["tests/conftest.py"] += "\nimport temper_ai.mcp.server\n"
     deleted_hub_dep = _select([st.Change("temper_ai/mcp/server.py", deleted=True)], without_mcp)
     assert deleted_hub_dep.everything
 
@@ -347,6 +356,16 @@ def test_git_modes_cli_outputs_and_error_exits(tmp_path: Path):
     assert staged.returncode == 0, staged.stderr
     assert staged.stdout.splitlines() == ["tests/test_scripts/test_roamee.py"]
 
+    # Explicit master post-land backstop ignores even a docs-only file set.
+    full = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/select_tests.py"),
+         "--repo", str(repo), "--full", "--files", "docs/guide.md", "--format", "json"],
+        capture_output=True, text=True, check=False,
+    )
+    assert full.returncode == 0
+    answer = json.loads(full.stdout)
+    assert answer["python"] == "all" and answer["frontend"] and answer["e2e"]
+
     # Bad commit ref or broken TOML rules fail loudly with exit code 2.
     bad_ref = subprocess.run(
         [sys.executable, str(ROOT / "scripts/select_tests.py"),
@@ -398,4 +417,47 @@ def test_live_repo_hook_ci_and_heavy_tier_wiring():
         "tests/test_spawner/test_docker_spawner.py",
     ):
         assert "@pytest.mark.heavy" in (ROOT / rel).read_text(), rel
+
+
+def test_dynamic_import_hotspot_in_changed_file_runs_everything_while_untouched_hotspot_narrows():
+    tree = dict(TREE)
+    tree["temper_ai/runner/pi_lane.py"] = (
+        "import importlib\n"
+        "def preload(name: str):\n"
+        "    return importlib.import_module(name)\n"
+    )
+    # Changing the dynamic-import hotspot itself falls back to the full suite.
+    hotspot_sel = _select([st.Change("temper_ai/runner/pi_lane.py")], tree)
+    assert hotspot_sel.everything and hotspot_sel.python == "all"
+    assert any("dynamic import target" in r for r in hotspot_sel.reasons)
+
+    # Changing an unrelated module while the hotspot exists untouched in the tree still narrows.
+    unrelated_sel = _select([st.Change("scripts/roamee_reader.py")], tree)
+    assert not unrelated_sel.everything
+    assert unrelated_sel.tests == {"tests/test_scripts/test_roamee.py"}
+
+
+def test_transitive_folder_reader_does_not_cascade_from_intermediate_test_file():
+    tree = dict(TREE)
+    # test_departments_doc reads docs/departments.md; test_scanner reads the folder "tests/test_epd".
+    # Changing docs/departments.md must select test_departments_doc, NOT cascade through
+    # test_departments_doc's folder to test_scanner or pgtier string lists.
+    tree["tests/test_runner/test_scanner.py"] = (
+        "from pathlib import Path\n"
+        "SCAN = Path('tests/test_epd')\n"
+        "def test_scan():\n"
+        "    assert SCAN.name == 'test_epd'\n"
+    )
+    tree["tests/pgtier.py"] = (
+        "import pytest\n"
+        "PG_TESTS = ('tests/test_epd/', 'tests/test_epd/test_departments_doc.py')\n"
+        "@pytest.fixture(autouse=True)\n"
+        "def _auto_pg():\n"
+        "    return None\n"
+    )
+    tree["tests/conftest.py"] = 'pytest_plugins = ("tests.pgtier",)\n'
+    sel = _select([st.Change("docs/departments.md")], tree)
+    assert not sel.everything
+    assert sel.tests == {"tests/test_epd/test_departments_doc.py"}
+
 

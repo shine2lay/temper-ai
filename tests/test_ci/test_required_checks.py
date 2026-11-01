@@ -81,14 +81,15 @@ def test_ci_runs_on_every_branch_so_a_land_has_something_to_wait_for():
         "ci.yml must run on a push to every branch, or wt land waits for nothing"
 
 
-def test_a_newer_push_cancels_the_older_one():
-    """Two pushes a minute apart should not both hold a runner: the older
-    answer is about code nobody is landing any more."""
+def test_newer_branch_push_cancels_older_but_master_backstops_are_independent():
+    """Branches supersede their own checks; every landed master commit keeps
+    its full-suite backstop, including while a newer master commit is checked."""
     text = CI_YML.read_text(encoding="utf-8")
-    assert "cancel-in-progress: true" in text
+    assert "cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}" in text
     group = re.search(r"group: (.+)", text)
-    assert group and "github.ref" in group.group(1), \
-        "the concurrency group has to be per branch, or one branch cancels another's checks"
+    assert group and group.group(1) == (
+        "ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}"
+    ), "master backstops must be per SHA; branches must remain isolated by ref"
 
 
 @pytest.mark.skipif(not WT_YAML.exists(), reason="agent-tools is not checked out here")

@@ -21,9 +21,10 @@ A file depends on another when it imports it, runs it, or names it:
                  os.path.join(...) and the fixed start of an f-string count as one literal.
   conftest.py    a test depends on every conftest.py and __init__.py in its folder and above.
 
-Hubs are where following stops (scripts/test-selection.toml names them: tests/conftest.py and
-tests/pgtier.py). The root conftest imports most of temper_ai for its autouse fixtures, so through it
-every module would look like a dependency of every test. A change to a hub itself runs the whole suite.
+Conftests are fixture-use aware (pytest_fixtures.py): collection hooks and module-level expressions
+apply to their scope; fixture bodies apply to tests requesting them, including transitive and autouse
+fixtures. Helpers such as tests/pgtier.py retain ordinary imports. No hub silently stops traversal.
+A change to root test plumbing itself still runs the whole suite.
 
 Reading a file's references (extract_references) is separate from resolving them against one tree
 (RepoIndex), so a replay over many commits reads each file version once.
@@ -39,6 +40,8 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
+from pytest_fixtures import FixtureModule, fixture_uses, parse_fixtures
+
 TEST_ROOT = "tests"
 CONFIG_ROOT = "configs"
 # Folders whose files are never read for references: nothing in them runs in the Python tests.
@@ -48,6 +51,7 @@ FANOUT = 8  # a name matching more files than this says nothing about which one 
 MIN_STEM = 6  # shorter bare names ("config", "run") are too common to mean one file
 # Calls whose first argument is a module name: importlib.import_module("kb_refresh"), runpy.run_module(...)
 IMPORT_CALLS = {"import_module", "__import__", "run_module", "find_spec"}
+DYNAMIC_IMPORT_CALLS = IMPORT_CALLS | {"spec_from_file_location"}
 TOKEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*[A-Za-z0-9_]")
 # A config's YAML: keys whose values are prose for a model or a reader, and keys that load another config
 PROSE_KEYS = {"system_prompt", "task_template", "description", "why", "about"}
@@ -124,6 +128,9 @@ class References:
     imports: tuple[Import, ...] = ()
     literals: frozenset[str] = frozenset()  # strings and joined path literals
     imported_by_name: frozenset[str] = frozenset()  # import_module("x") and the like
+    fixtures: FixtureModule | None = None
+    invalid_python: bool = False
+    dynamic_import: bool = False
 
 
 def extract_references(path: str, text: str) -> References:
@@ -137,10 +144,18 @@ def extract_references(path: str, text: str) -> References:
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
-        return References(literals=frozenset(TOKEN.findall(text)))
+        return References(literals=frozenset(TOKEN.findall(text)), invalid_python=True)
+    refs = _python_references(tree)
+    fixtures = parse_fixtures(tree, _python_references) if path.startswith(TEST_ROOT + "/") else None
+    return References(refs.imports, refs.literals, refs.imported_by_name, fixtures, dynamic_import=refs.dynamic_import)
+
+
+def _python_references(tree: ast.AST) -> References:
+    """The same reference reader for whole files and fixture/import slices."""
     imports: list[Import] = []
     literals: set[str] = set()
     by_name: set[str] = set()
+    dynamic_import = False
     inner_joins: set[int] = set()  # BinOp nodes that are the left side of a longer constant path join
     # one breadth-first walk: a `/` chain's outer node is met before the inner ones it marks
     for node in ast.walk(tree):
@@ -167,6 +182,8 @@ def extract_references(path: str, text: str) -> References:
             name = _call_name(node.func)
             if name in IMPORT_CALLS and node.args and _is_text(node.args[0]):
                 by_name.add(node.args[0].value.strip())  # type: ignore[attr-defined]
+            elif name in DYNAMIC_IMPORT_CALLS and node.args and not _is_text(node.args[0]):  # type: ignore[attr-defined]
+                dynamic_import = True
             if name == "join" and len(node.args) > 1:
                 parts = [a.value for a in node.args if _is_text(a)]
                 if len(parts) > 1:
@@ -175,7 +192,7 @@ def extract_references(path: str, text: str) -> References:
             start = _fixed_start(node)  # type: ignore[arg-type]
             if "/" in start:
                 literals.add(start.rsplit("/", 1)[0])
-    return References(tuple(imports), frozenset(literals), frozenset(by_name))
+    return References(tuple(imports), frozenset(literals), frozenset(by_name), dynamic_import=dynamic_import)
 
 
 def config_words(text: str) -> set[str]:
@@ -230,6 +247,13 @@ def _joined_path(node: ast.BinOp) -> str:
         current = current.left
     if _is_text(current):  # "configs" / "agents"
         parts.append(current.value.strip("/"))  # type: ignore[attr-defined]
+    elif (
+        isinstance(current, ast.Call)
+        and _call_name(current.func) == "Path"
+        and current.args
+        and _is_text(current.args[0])
+    ):
+        parts.append(current.args[0].value.strip("/"))  # type: ignore[attr-defined]
     return "/".join(reversed([p for p in parts if p]))
 
 
@@ -344,18 +368,22 @@ class DependencyGraph:
     # at). It reaches those modules' package tests, not everything that imports them: the engine is
     # generic code, and a test that runs a particular config names it itself.
     engine_reads: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    fixture_uncertainty: set[str] = field(default_factory=set)
+    dynamic_import_files: set[str] = field(default_factory=set)
+    plugin_collection: dict[str, str] = field(default_factory=dict)  # source -> collection-only node
 
     @property
     def tests(self) -> set[str]:
         return {p for p in self.index.files if is_test_file(p)}
 
-    def direct_dependents(self, path: str) -> set[str]:
-        """Files that import, run or name `path`, or read a folder holding it."""
+    def direct_dependents(self, path: str, *, include_folders: bool = True) -> set[str]:
+        """Files that import, run or name `path`, or (for a changed file) read a folder holding it."""
         found = set(self.dependents.get(path, ()))
-        folder = path.rpartition("/")[0]
-        while folder:
-            found |= self.folder_readers.get(folder, set())
-            folder = folder.rpartition("/")[0]
+        if include_folders:
+            folder = path.rpartition("/")[0]
+            while folder:
+                found |= self.folder_readers.get(folder, set())
+                folder = folder.rpartition("/")[0]
         found.discard(path)
         return found
 
@@ -393,21 +421,23 @@ class DependencyGraph:
                 found.update(self.index.package_tests(user))
         return found
 
-    def tests_reaching(self, changed: Iterable[str], hubs: Iterable[str] = ()) -> dict[str, list[str]]:
-        """Each test that depends on a changed file, directly or through other files, with one chain
-        from the changed file to it. Following stops at hubs: their own dependents are not reached."""
-        stop = set(hubs)
+    def tests_reaching(self, changed: Iterable[str]) -> dict[str, list[str]]:
+        """Each test depending on a changed file, with one dependency chain. No hub suppression."""
         via: dict[str, list[str]] = {}
         queue: deque[str] = deque()
+        starts: set[str] = set()
         for path in changed:
             if path not in via:
+                starts.add(path)
                 via[path] = [path]
                 queue.append(path)
+                if path in self.plugin_collection:
+                    node = self.plugin_collection[path]
+                    via[node] = [path, node]
+                    queue.append(node)
         while queue:
             path = queue.popleft()
-            if path in stop and via[path] != [path]:
-                continue
-            for dependent in self.direct_dependents(path):
+            for dependent in self.direct_dependents(path, include_folders=(path in starts)):
                 if dependent not in via:
                     via[dependent] = [*via[path], dependent]
                     queue.append(dependent)
@@ -428,6 +458,12 @@ def build_graph(files: Iterable[str], references: Mapping[str, References]) -> D
                     and p.rsplit("/", 1)[-1] in ("conftest.py", "__init__.py")]
     for path in index.files:
         refs = references.get(path)
+        if refs and (refs.invalid_python or (refs.fixtures and refs.fixtures.uncertain)):
+            graph.fixture_uncertainty.add(path)
+        if refs and refs.dynamic_import and not is_test_file(path):
+            graph.dynamic_import_files.add(path)
+        if refs and path.endswith("/conftest.py") and refs.fixtures:
+            refs = refs.fixtures.collection
         depends = _resolve(path, refs, index, graph) if refs else set()
         if refs:
             graph.literals[path] = refs.literals
@@ -437,7 +473,63 @@ def build_graph(files: Iterable[str], references: Mapping[str, References]) -> D
         graph.depends_on[path] = depends
         for target in depends:
             graph.dependents[target].add(path)
+    _add_fixture_dependencies(graph, references)
+    _add_plugin_dependencies(graph, references)
     return graph
+
+
+def _add_fixture_dependencies(graph: DependencyGraph, references: Mapping[str, References]) -> None:
+    modules = {p: refs.fixtures for p, refs in references.items() if refs.fixtures is not None}
+    # A fixture may serve hundreds of tests. Resolve its source references once.
+    resolved: dict[tuple[str, int], tuple[set[str], DependencyGraph]] = {}
+    for test, uses in fixture_uses(graph.index, modules, graph.tests).items():
+        for path, fixture in uses:
+            key = (path, id(fixture))
+            if key not in resolved:
+                scratch = DependencyGraph(graph.index)
+                dependencies = _resolve(path, fixture.references, graph.index, scratch)
+                resolved[key] = dependencies, scratch
+            dependencies, scratch = resolved[key]
+            for dependency in dependencies:
+                if dependency != test:
+                    graph.depends_on[test].add(dependency)
+                    graph.dependents[dependency].add(test)
+            graph.wanted_modules[test].update(scratch.wanted_modules.get(path, ()))
+            graph.literals[test] = graph.literals.get(test, frozenset()) | fixture.references.literals
+            for folder in scratch.folder_readers:
+                graph.folder_readers[folder].add(test)
+
+
+def _add_plugin_dependencies(graph: DependencyGraph, references: Mapping[str, References]) -> None:
+    modules = {p: refs.fixtures for p, refs in references.items() if refs.fixtures is not None}
+    loads: dict[str, set[str]] = defaultdict(set)
+    for user, info in modules.items():
+        for plugin in info.plugins:
+            graph.wanted_modules[user].add(plugin)  # also retains deleted-plugin dependencies
+            loads[user].update(graph.index.module_files(plugin))
+    for sources in loads.values():
+        for source in sources:
+            if source in modules:
+                graph.plugin_collection[source] = source + "::pytest-collection"
+    for source, node in graph.plugin_collection.items():
+        scratch = DependencyGraph(graph.index)
+        refs = modules[source].collection
+        dependencies = _resolve(source, refs, graph.index, scratch)
+        graph.depends_on[node] = dependencies
+        for dependency in dependencies:
+            graph.dependents[dependency].add(node)
+        graph.wanted_modules[node].update(scratch.wanted_modules.get(source, ()))
+        graph.literals[node] = refs.literals
+        for folder in scratch.folder_readers:
+            graph.folder_readers[folder].add(node)
+    for user, sources in loads.items():
+        consumer = graph.plugin_collection.get(user, user)
+        for source in sources:
+            # Outside tests/ there is no fixture slice: retain the complete
+            # ordinary graph, also for a plugin loaded by another plugin.
+            node = graph.plugin_collection.get(source, source)
+            graph.depends_on[consumer].add(node)
+            graph.dependents[node].add(consumer)
 
 
 def _resolve(path: str, refs: References, index: RepoIndex, graph: DependencyGraph) -> set[str]:
@@ -474,7 +566,10 @@ def _resolve(path: str, refs: References, index: RepoIndex, graph: DependencyGra
                 depends |= index.module_files(piece)
         if reads_folders and "/" in literal:
             folder = index.named_folder(literal)
-            if folder:
+            if folder and (
+                is_test_file(path)
+                or (folder != TEST_ROOT and not folder.startswith(TEST_ROOT + "/test_"))
+            ):
                 graph.folder_readers[folder].add(path)
     return depends
 

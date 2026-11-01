@@ -3,7 +3,7 @@
 
 One job: a change -> the tests and checks to run. The pre-commit hook (scripts/git-hooks/pre-commit,
 which `wt land` also runs as temper-ai's check) and GitHub CI (.github/workflows/ci.yml) both call it,
-so they pick the same tests. docs/test-selection.md explains the rules. Stdlib only (Python 3.11+ for
+so they pick the same tests. docs/testing.md explains the rules. Stdlib only (Python 3.11+ for
 tomllib), so it runs before `uv sync` and in a bare CI job.
 
 What the change is:
@@ -299,6 +299,15 @@ def _add_folder(selection: Selection, tests: list[str], folder: str | None, part
 def _follow_graph(selection: Selection, graph: DependencyGraph, starts: dict[str, str],
                   deleted: set[str], hubs: Iterable[str]) -> None:
     hubs = set(hubs)
+    if graph.fixture_uncertainty:
+        selection.run_everything("cannot resolve Python/fixture dependencies in "
+                                 + ", ".join(sorted(graph.fixture_uncertainty)))
+        return
+    dynamic_starts = sorted(set(starts) & graph.dynamic_import_files)
+    if dynamic_starts:
+        selection.run_everything("dynamic import target cannot be narrowed statically in "
+                                 + ", ".join(dynamic_starts))
+        return
     origins: dict[str, str] = {}
     for path in starts:
         if path in deleted:
@@ -312,7 +321,7 @@ def _follow_graph(selection: Selection, graph: DependencyGraph, starts: dict[str
     if hub_namers:
         selection.run_everything(f"{', '.join(hub_namers)} names the deleted {origins[hub_namers[0]]}")
         return
-    reached = graph.tests_reaching(origins, hubs)
+    reached = graph.tests_reaching(origins)
     selection.tests.update(reached)
     by_origin: dict[str, list[str]] = {}
     for test, chain in reached.items():
@@ -420,6 +429,7 @@ def graph_of(git: Git, head: str, files: set[str]) -> DependencyGraph:
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pick the temper-ai tests and checks a change needs.")
     parser.add_argument("--staged", action="store_true", help="the staged files, read from the index")
+    parser.add_argument("--full", action="store_true", help="full post-land backstop, regardless of the diff")
     parser.add_argument("--base", default=None, help="what the change goes onto (default master)")
     parser.add_argument("--head", default="HEAD", help="the change (default HEAD)")
     parser.add_argument("--files", nargs="+", help="use these changed paths instead of a diff")
@@ -462,6 +472,10 @@ def run(args: argparse.Namespace) -> tuple[Selection, str]:
         if rules_text is None:
             raise SelectionError(f"{RULES_PATH} is not in {label}")
     rules = load_rules(rules_text)
+    if args.full:
+        selection = Selection()
+        selection.run_everything("explicit full-suite backstop")
+        return selection, f"select_tests: {label}, full-suite backstop"
     files = git.files(head)
     fork = ""
     if args.files:

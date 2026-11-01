@@ -9,9 +9,9 @@ from tests.test_shared_test_cpu_entry import Ran
 
 ROOT = Path(__file__).resolve().parents[2]
 INFRA = (
-    "scripts/select_tests.py", "scripts/dependency_graph.py", "scripts/test-selection.toml",
-    "scripts/check_host_contracts.py", "scripts/host_contract_pytest.py", "scripts/show_versions.py",
-    "scripts/git-hooks/pre-commit", "tests/machine_slot.py", "pyproject.toml", "uv.lock",
+    "scripts/select_tests.py", "scripts/dependency_graph.py", "scripts/pytest_fixtures.py",
+    "scripts/test-selection.toml", "scripts/check_host_contracts.py", "scripts/host_contract_pytest.py",
+    "scripts/show_versions.py", "scripts/git-hooks/pre-commit", "tests/machine_slot.py", "pyproject.toml", "uv.lock",
 )
 PACKAGE = "def value() -> int:\n    return 42\n"
 TEST = '''import sys

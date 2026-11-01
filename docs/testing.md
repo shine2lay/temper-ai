@@ -6,9 +6,10 @@ And where to look when something is red.
 
 | Where | What runs | When |
 | --- | --- | --- |
-| Your machine, before each commit | ruff · mypy · the whole Python suite · the dashboard's checks (when it changed) · the Postgres tier (when stored data changed) | `git commit` |
-| GitHub, on every push and PR | the same, on Python 3.11 **and** 3.12, plus the Postgres tier and the browser tests that need no temper | push |
-| GitHub, nightly at 03:17 UTC | the newest library versions · the Python suite three times · those browser tests three times | `schedule`, or by hand |
+| Your machine, before each commit | ruff · mypy · selected non-heavy Python tests · affected dashboard checks · Postgres instead of SQLite when stored data changed | `git commit` |
+| GitHub, on branch pushes and PRs | the selected tests on Python 3.11 **and** 3.12 and the Postgres tier · affected dashboard/browser checks | push, PR |
+| GitHub, on every master push | full non-heavy Python suite on both versions and the Postgres tier · dashboard and browser checks | post-land backstop |
+| GitHub, nightly at 03:17 UTC | locked full+heavy suite · newest library versions · Python suite three times · browser tests three times | `schedule`, or by hand |
 | Your machine, every 10 minutes | reads GitHub's results and DMs you on Slack when they change | a user timer |
 
 All three install from **`uv.lock`**. That is the point of the arrangement:
@@ -243,7 +244,8 @@ Not every change can reach every test. `scripts/select_tests.py` reads the
 rules in `scripts/test-selection.toml` and builds a dependency graph of the
 repository (`scripts/dependency_graph.py`) from Python imports, dotted
 `importlib` / `monkeypatch` targets, `configs/` workflow and agent references,
-and literal paths named in source and tests:
+and literal paths named in source and tests. `scripts/pytest_fixtures.py`
+resolves fixture uses without importing application code:
 
 ```bash
 python3 scripts/select_tests.py --explain                  # staged diff (or branch vs master)
@@ -260,10 +262,16 @@ The pre-commit hook and GitHub's `select` job call the same script:
   tests. An empty or unreadable diff also runs everything.
 - **Engine, config, script and test changes** run the tests in the touched
   package (`temper_ai/<pkg>/` → `tests/test_<pkg>/`) plus every test reachable
-  through the dependency graph, stopping at the root hub fixtures
-  (`tests/conftest.py`, `tests/pgtier.py`, `tests/machine_slot.py`) so a change
-  to one module does not pull in unrelated packages' tests merely because the
-  shared test harness imports them.
+  through the dependency graph. There are no hub traversal stops. Requested
+  fixtures include their prerequisite fixtures; autouse fixtures apply to every
+  test in their scope. Collection hooks, top-level conftest imports and other
+  import-time expressions also apply to the entire scope. An unused optional
+  fixture's body does not apply to tests that never request it. Helpers such as
+  `tests/pgtier.py` retain ordinary import edges. Dynamic fixture requests,
+  non-constant dynamic imports (`importlib.import_module(var)`, `__import__(var)`,
+  `runpy.run_module(var)`, `find_spec(var)`, `spec_from_file_location(...)`) in
+  a changed non-test Python file, or Python that cannot be parsed fall back to
+  everything, not a missing edge.
 - **Dashboard changes** (`frontend/**`) run the dashboard type check, unit
   tests and browser tests (`e2e`), and skip pytest unless a Python test reads
   one of the changed files.
@@ -274,6 +282,22 @@ The pre-commit hook and GitHub's `select` job call the same script:
 - **Heavy sweeps** (`@pytest.mark.heavy`: full-suite subprocess mutation checks
   and all-config replays) are left out of the per-commit gate (`-m "not heavy"`)
   and run every night in `nightly.yml` (`full-and-heavy`) on `master`.
+- **Every master push** calls the same selector with `--full`, independently
+  of its diff. This post-land backstop runs the full non-heavy Python suite,
+  dashboard and browser checks. A later master push does not cancel it. The
+  nightly additionally includes heavy tests; neither is evidence that a skipped
+  test was executed in an earlier branch gate.
+- **Selector contract** (`dr-786672016410`): per-commit checks are a fast risk
+  filter targeting zero omitted change-caused regressions in the pre-commit
+  tier, with conservative full-suite fallback whenever impact cannot be
+  narrowed safely; post-land `master` full runs and nightly `full-and-heavy`
+  runs remain mandatory backstops that surface and track any escaped failure.
+
+Fixture dependency answers, executed clean/injected-fault miniature repositories
+for every rule and dependency mechanism, and CI event routing are tested under
+`tests/test_scripts/`.
+These are static selection checks, not a claim to have reproduced historical
+failures or recovered missing logs.
 
 #### Pure host-contract package
 

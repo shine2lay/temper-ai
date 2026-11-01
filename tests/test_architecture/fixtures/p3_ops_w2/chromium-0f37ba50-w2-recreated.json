@@ -1,0 +1,39 @@
+{
+  "basis": {
+    "confirmed_by": "Security rm-903888c3",
+    "projection": "/home/shinelay/kept-from-tmp/2026-10-25/w2-chromium-projection/PROJECTION.txt",
+    "projection_sha256": "628e47c9eca73c2776718ea36508b93fe944848f370349d0971bbab896d56f9d"
+  },
+  "fields": {
+    "cap_add": [],
+    "cap_drop": [
+      "ALL"
+    ],
+    "image": "sha256:af28706f6b8e7a5833b1d7491c4b9a4e42e4ab68ba034c6d2fe92ea427e59034",
+    "mounts": [
+      "/tmp/browser-output:bind"
+    ],
+    "networks": [
+      "temper-ai_default"
+    ],
+    "ports": {
+      "8931/tcp": [
+        "127.0.0.1:8931"
+      ]
+    },
+    "privileged": false,
+    "running": true,
+    "security_opt": [
+      "no-new-privileges:true"
+    ],
+    "user": "node"
+  },
+  "id": "0f37ba501b68bc1e3e2648364379a9fe36d4ab903502bb90b3a3766645c1b828",
+  "limits": "same-UID actors and in-container changes are not detected",
+  "restart_count": 0,
+  "review": null,
+  "schema": "chromium-w2/1",
+  "started_at": "2026-11-01T01:50:57.182968735Z",
+  "taken_at": "2026-11-01T01:50:58.357624Z",
+  "verdict": "MATCH"
+}

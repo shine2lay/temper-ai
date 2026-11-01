@@ -1,0 +1,63 @@
+{
+  "basis": {
+    "hardening_review": "/home/shinelay/security-lab/hardening-124/REVIEW.md",
+    "method_path": "/home/shinelay/security-lab/webkit-w2-method-651/DISPOSITION.md",
+    "method_ref": "rm-2d397b26",
+    "webkit_review": "/home/shinelay/security-lab/webkit-123/REVIEW.md"
+  },
+  "endpoint": {
+    "alias": "playwright-mcp-webkit",
+    "count": 1,
+    "holders": [
+      "01331b2a661dd5874e643df409e35388d4282eb43553cff16ce4f19140a0cff1"
+    ],
+    "network": "temper-ai_default"
+  },
+  "engine": "webkit",
+  "fields": {
+    "cap_add": null,
+    "cap_drop": [
+      "ALL"
+    ],
+    "image": "sha256:b01cb863d9b2ecbdc2b05751a67ee5263978892897557cc98108c48ac9f7a00f",
+    "mount_count": 0,
+    "networks": [
+      "temper-ai_default"
+    ],
+    "paused": false,
+    "ports": {},
+    "privileged": false,
+    "restarting": false,
+    "running": true,
+    "security_opt": [
+      "no-new-privileges:true"
+    ],
+    "user": "node"
+  },
+  "id": "01331b2a661dd5874e643df409e35388d4282eb43553cff16ce4f19140a0cff1",
+  "limits": "same-UID actors and in-container changes are not detected; readings are endpoint samples, not continuous monitoring; no browser-sandbox or network-isolation claim; MATCH does not release other P3 conditions",
+  "marker_bound": {
+    "authority_ref": "/home/shinelay/kept-from-tmp/2026-10-30/architecture-webkit-marker-bound/DECISION-18.md",
+    "engine": "webkit",
+    "input_sha256": "21ae86296b45b92960ab4b22f13f3150d0d2402e23efd09d28a248c0b1bca0b9",
+    "kind": "admitted-upper-bound",
+    "network": "temper-ai_default",
+    "not_before": "2026-10-30T11:03:48.814827037Z",
+    "not_before_ns": "1793358228814827037",
+    "old_id": "b4b8ea4720e5a4b75f044313e46927f9d5a1c75fd60d149d5c425ab22a73519c",
+    "schema": "webkit-w2-marker-bound/1",
+    "service": "playwright-mcp-webkit"
+  },
+  "observation_started_at": "2026-10-30T16:05:10.750791Z",
+  "process_evidence": {
+    "input_sha256": null,
+    "method_ref": "rm-2d397b26",
+    "observation": null,
+    "route": "fields-only-substitution"
+  },
+  "restart_count": 0,
+  "schema": "webkit-w2/1",
+  "started_at": "2026-10-30T16:04:51.816616109Z",
+  "taken_at": "2026-10-30T16:05:15.114939Z",
+  "verdict": "MATCH"
+}

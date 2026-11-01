@@ -46,12 +46,21 @@ workflow:
     envelope. The operator needs authority for that boundary; base64/private modes grant none.
     See docs/p3-w1-input.md. Optional w1_input_staging is non-content identity/mode metadata only,
     absent/null for legacy input; it authenticates neither the caller nor custody.
+    w2_recreation (mode=controls_p3 only, #125) names Ops' W2 recreation evidence for a browser
+    service whose last P3 use needs recreation (a failed teardown or a run without a final receipt):
+    one JSON object as text, {service URL: {path, sha256, before: {path, sha256}}}, the new
+    container's W2 MATCH receipt (chromium-w2/1, webkit-w2/1) and the replaced container's reading
+    (chromium-reading/1, webkit-reading/1); W1 admission checks it (--w2-recreation). The same inline
+    variant as w1_before, each record exactly {data_base64, sha256} (16384-byte bound), stages exact
+    bytes at check/w2-input/<service>-after.json and -before.json; same limits and retention as
+    w1_before (docs/p3-w1-input.md). Left out, nothing changes; any other mode refuses it.
     Start it with a workspace_path: an existing folder under workspaces/ the run's box may write
     (the receipt, summary, screenshot and log land in its check/ folder).
   inputs:
     mode: {type: string, required: true}      # controls | live | controls_shared | controls_p3
     profile: {type: string, required: false}  # live only; left out = the first app, exactly as before
     w1_before: {type: string, required: false}  # controls_p3 only; left out = WebKit rows NOT RUN, as before
+    w2_recreation: {type: string, required: false}  # controls_p3 only; left out = no W2 evidence, as before
   outputs:
     mode: check.structured.mode
     verdict: check.structured.verdict
@@ -72,6 +81,7 @@ workflow:
     list_equal_after_restart: check.structured.list_equal_after_restart
     cleanup_confirmed: check.structured.cleanup_confirmed
     w1_input_staging: check.structured.w1_input_staging
+    w2_input_staging: check.structured.w2_input_staging
 
   nodes:
     - name: check
@@ -81,3 +91,4 @@ workflow:
         mode: input.mode
         profile: input.profile
         w1_before: input.w1_before
+        w2_recreation: input.w2_recreation

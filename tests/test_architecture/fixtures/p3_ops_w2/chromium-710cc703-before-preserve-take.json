@@ -1,0 +1,23 @@
+{
+  "endpoint": {
+    "alias": "playwright-mcp",
+    "count": 1,
+    "holders": [
+      "710cc7033c8d0c9d02dbc49e2a2110cbda6b192b86c12de33bc4e630bb08d408"
+    ],
+    "network": "temper-ai_default"
+  },
+  "id": "710cc7033c8d0c9d02dbc49e2a2110cbda6b192b86c12de33bc4e630bb08d408",
+  "image": "sha256:af28706f6b8e7a5833b1d7491c4b9a4e42e4ab68ba034c6d2fe92ea427e59034",
+  "limits": "same-UID actors and in-container changes are not detected",
+  "networks": [
+    "temper-ai_default"
+  ],
+  "reason": null,
+  "restart_count": 0,
+  "running": true,
+  "schema": "chromium-reading/1",
+  "started_at": "2026-10-30T15:57:56.732827158Z",
+  "status": "OK",
+  "taken_at": "2026-11-01T01:49:22.461840Z"
+}

@@ -291,7 +291,27 @@ def read_regular(path: pathlib.Path, cap: int, where: str) -> bytes:
         raise Refused(f"{where}: unreadable ({exc.__class__.__name__}: {exc})") from exc
 
 
-def _record(ref: dict, where: str) -> dict:
+# Ops' own producer files (agent-tools ops-host/chromium_reading.py), read as they are (#125 H-125-W2IN-1): the new
+# container's W2 receipt (verdict MATCH) and the replaced container's plain reading. Each schema family names the one
+# compose service it may stand for.
+OPS_W2_SCHEMAS = {"chromium-w2/1": "playwright-mcp", "webkit-w2/1": "playwright-mcp-webkit"}
+OPS_READING_SCHEMAS = {"chromium-reading/1": "playwright-mcp", "webkit-reading/1": "playwright-mcp-webkit"}
+
+
+def _schema(rec: dict) -> str | None:
+    """A record's schema name; anything that is not text (a list, an object) is no schema at all."""
+    schema = rec.get("schema")
+    return schema if isinstance(schema, str) else None
+
+
+def _instant(value, where: str):
+    try:
+        return hc.instant(value, where)
+    except hc.Blocked as exc:
+        raise Refused(str(exc)) from exc
+
+
+def _record(ref: dict, where: str, kind: str, ops_schemas: dict) -> dict:
     """One W2 record at the path the caller named. Its refusals say only the check and what the caller named:
     never why the read failed (absent, folder, fifo, link, too big, the OS error), the file's own sha256 or its
     JSON error. Anything more would tell whoever starts a run whether any path on the box exists, its type, and
@@ -308,20 +328,65 @@ def _record(ref: dict, where: str) -> dict:
         rec = json.loads(data)
     except ValueError:  # UnicodeDecodeError, JSONDecodeError, and the int-digit limit's plain ValueError
         raise Refused(f"{where}: not JSON") from None
-    if not isinstance(rec, dict) or not isinstance(rec.get("containers"), dict):
-        raise Refused(f"{where}: not a recreation record (#124 shape: mode, at, containers)")
+    if not isinstance(rec, dict) or not (isinstance(rec.get("containers"), dict) or _schema(rec) in ops_schemas):
+        raise Refused(f"{where}: not a {kind} (#124 shape: mode, at, containers; or Ops' "
+                      f"{', '.join(sorted(ops_schemas))})")
     return rec
+
+
+def _identity(c, svc: str, where: str, running) -> dict:
+    if not isinstance(c, dict) or not (isinstance(c.get("id"), str) and HEX64.fullmatch(c["id"])):
+        raise Refused(f"{where}: no full container id for {svc}")
+    started = _instant(c.get("started_at"), where + ".started_at")
+    return {"id": c["id"], "started_at": c["started_at"], "started": started, "running": running}
 
 
 def _container(rec: dict, svc: str, where: str) -> dict:
     c = rec["containers"].get(svc)
-    if not isinstance(c, dict) or not (isinstance(c.get("id"), str) and HEX64.fullmatch(c["id"])):
-        raise Refused(f"{where}: no full container id for {svc}")
-    try:
-        started = hc.instant(c.get("started_at"), where + ".started_at")
-    except hc.Blocked as exc:
-        raise Refused(str(exc)) from exc
-    return {"id": c["id"], "started_at": c["started_at"], "started": started, "running": c.get("running")}
+    return _identity(c, svc, where, c.get("running") if isinstance(c, dict) else None)
+
+
+def _after(rec: dict, svc: str) -> dict:
+    """The new container, from the #124 after record or from Ops' W2 MATCH receipt for exactly this service."""
+    where = "W2 recreation receipt"
+    schema = _schema(rec)
+    if schema not in OPS_W2_SCHEMAS:
+        if rec.get("mode") != "after":
+            raise Refused("W2 recreation receipt is not an after-recreation record")
+        return _container(rec, svc, where)
+    endpoint = rec.get("endpoint")
+    if OPS_W2_SCHEMAS[schema] != svc or (schema == "webkit-w2/1" and (
+            rec.get("engine") != "webkit" or not isinstance(endpoint, dict) or endpoint.get("alias") != svc)):
+        raise Refused(f"{where}: {schema} is not a receipt for {svc}")
+    if rec.get("verdict") != "MATCH":
+        raise Refused(f"{where}: verdict is not MATCH ({rec.get('verdict')!r})")
+    if type(rec.get("restart_count")) is not int or rec["restart_count"] != 0:
+        raise Refused(f"{where}: restart_count is not 0")
+    fields = rec.get("fields")
+    return _identity(rec, svc, where, fields.get("running") if isinstance(fields, dict) else None)
+
+
+def _before(rec: dict, svc: str, failed: dict) -> dict:
+    """The replaced container, from the #124 before record or from Ops' plain reading of exactly this service, taken
+    no earlier than the failing receipt (or marker) it answers."""
+    where = "W2 before-recreation record"
+    schema = _schema(rec)
+    if schema in OPS_READING_SCHEMAS:
+        endpoint = rec.get("endpoint")
+        if OPS_READING_SCHEMAS[schema] != svc or not isinstance(endpoint, dict) or endpoint.get("alias") != svc:
+            raise Refused(f"{where}: {schema} is not a reading of {svc}")
+        if rec.get("status") != "OK":
+            raise Refused(f"{where}: status is not OK ({rec.get('status')!r})")
+        at = _instant(rec.get("taken_at"), where + " taken_at")
+    else:
+        if rec.get("mode") != "before":
+            raise Refused("W2 before-recreation record is not a before record")
+        at = _instant(rec.get("at"), where + " at")
+    if not at >= failed["finished"]:
+        raise Refused("W2 before-recreation record was taken before the failing receipt finished")
+    if schema in OPS_READING_SCHEMAS:
+        return _identity(rec, svc, where, rec.get("running"))
+    return _container(rec, svc, where)
 
 
 def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> dict:
@@ -334,10 +399,8 @@ def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> d
     if problems:
         raise Refused("; ".join(problems))
     svc = service_name(url)
-    after_rec = _record(ref, "W2 recreation receipt")
-    if after_rec.get("mode") != "after":
-        raise Refused("W2 recreation receipt is not an after-recreation record")
-    new = _container(after_rec, svc, "W2 recreation receipt")
+    after_rec = _record(ref, "W2 recreation receipt", "recreation record", OPS_W2_SCHEMAS)
+    new = _after(after_rec, svc)
     if new["running"] is not True:
         raise Refused(f"W2 recreation receipt: {svc} is not running")
     if not new["started"] > failed["finished"]:
@@ -347,22 +410,21 @@ def _w2(ref, url: str, failed: dict, w1_before: dict | None, need_w1: bool) -> d
     evidence = {"after": {"path": ref["path"], "sha256": ref["sha256"], "container_id": new["id"],
                           "started_at": new["started_at"]}}
     if "before" in ref:
-        before_rec = _record(ref["before"], "W2 before-recreation record")
-        if before_rec.get("mode") != "before":
-            raise Refused("W2 before-recreation record is not a before record")
-        try:
-            at = hc.instant(before_rec.get("at"), "W2 before-recreation record at")
-        except hc.Blocked as exc:
-            raise Refused(str(exc)) from exc
-        if not at >= failed["finished"]:
-            raise Refused("W2 before-recreation record was taken before the failing receipt finished")
-        prior = _container(before_rec, svc, "W2 before-recreation record")
+        before_rec = _record(ref["before"], "W2 before-recreation record", "before-recreation record",
+                             OPS_READING_SCHEMAS)
+        prior = _before(before_rec, svc, failed)
         old.add(prior["id"])
         evidence["before"] = {"path": ref["before"]["path"], "sha256": ref["before"]["sha256"],
                               "container_id": prior["id"]}
     if not old:
         raise Refused(f"no recorded container id for {svc} at the failing receipt (no W1 reading there and no "
                       "W2 before-recreation record): a new container cannot be shown")
+    if _schema(after_rec) == "webkit-w2/1":
+        # Ops bound its WebKit verdict to one replaced container: it must be one this admission knows was used.
+        bound = after_rec.get("marker_bound")
+        if not isinstance(bound, dict) or not isinstance(bound.get("old_id"), str) or bound["old_id"] not in old:
+            raise Refused("W2 recreation receipt: marker_bound.old_id is not the replaced container "
+                          f"({sorted(old)})")
     if new["id"] in old:
         raise Refused(f"W2 recreation receipt: {svc} has the same container id {new['id']} (not recreated)")
     if need_w1:

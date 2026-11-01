@@ -587,7 +587,8 @@ def test_configs_pass_the_profile():
     flow = yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
     assert flow["inputs"]["profile"] == {"type": "string", "required": False}
     assert flow["nodes"][0]["input_map"] == {"mode": "input.mode", "profile": "input.profile",
-                                             "w1_before": "input.w1_before"}
+                                             "w1_before": "input.w1_before",
+                                             "w2_recreation": "input.w2_recreation"}
     template = agent["script_template"]
     assert 'os.environ.get("{{ profile | env }}")' in template and 'cmd += ["--profile", profile]' in template
     assert "architecture/fixtures/first_app_reworded/" in (root / "docs" / "departments.md").read_text()
@@ -672,7 +673,7 @@ TODAY = {
     "controls_shared": ({"mode": "controls_shared"},
                         [BOX_BIN + "first_app_check.py", "--mode", "controls_shared", "--out", "check"], 3500),
     "controls_p3": ({"mode": "controls_p3"},
-                    [BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check"], 3500),
+                    [BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check"], 7500),
     "live": ({"mode": "live"}, [BOX_BIN + "first_app_check.py", "--mode", "live", "--out", "check"], 840),
     "live-first-profile": ({"mode": "live", "profile": FIRST_PROFILE},
                            [BOX_BIN + "first_app_check.py", "--mode", "live", "--out", "check", "--profile",
@@ -682,7 +683,7 @@ TODAY = {
                              SHARED_PROFILE], 3500),
     "live-p3-profile": ({"mode": "live", "profile": P3_PROFILE},
                         [BOX_BIN + "first_app_p3.py", "--mode", "live", "--out", "check", "--profile", P3_PROFILE],
-                        3500),
+                        7500),
 }
 
 
@@ -704,7 +705,7 @@ def test_controls_p3_with_w1_before_adds_the_flag_once_with_that_value(monkeypat
     assert cmd == [sys.executable, "-u", BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check",
                    "--w1-before", value]
     assert cmd.count("--w1-before") == 1
-    assert how == {"capture_output": True, "text": True, "timeout": 3500}
+    assert how == {"capture_output": True, "text": True, "timeout": 7500}
     assert json.loads(capsys.readouterr().out) == {
         "verdict": "STUB", "status": "completed", "exit_code": 0, "workspace": str(tmp_path),
         "summary_path": "check/controls.json", "journey": "p3"}
@@ -760,3 +761,125 @@ def test_configs_take_w1_before_as_an_optional_input():
     assert 'os.environ.get(w1_before_env)' in agent["script_template"]
     # Each |env evaluation allocates a fresh slot, so name it once and remove that same slot for inline input.
     assert agent["script_template"].count("{{ w1_before | env }}") == 1
+
+
+# --- time budget and w2_recreation (#125 H-125-TIME-1, H-125-W2IN-1) -----------------------------------------------
+# Run p125-p3-controls-5 was killed inside case 16 of 18 by the P3 subprocess timeout (3500 s); its 15 cases took
+# 3374.8 s, so all 18 need about 3906 s. The agent now declares 7800 s and gives a P3 run 7500 s; the shared journey
+# and the first app keep 3500 s and 840 s (TODAY above pins every command line's timeout).
+
+def test_the_agent_declares_7800_seconds_and_each_journey_keeps_its_own_limit():
+    import yaml
+    root = SCRIPT.parents[3]
+    agent = yaml.safe_load((root / "configs/architecture/agents/first_app_check.yaml").read_text())["agent"]
+    assert agent["timeout_seconds"] == 7800
+    assert {case: TODAY[case][2] for case in TODAY} == {
+        "controls": 840, "controls_shared": 3500, "controls_p3": 7500, "live": 840, "live-first-profile": 840,
+        "live-shared-profile": 3500, "live-p3-profile": 7500}
+    # The checker's own limit ends before the agent's, so the agent still writes run.log and its result line.
+    assert max(t for _, _, t in TODAY.values()) < agent["timeout_seconds"]
+
+
+CR_URL, WK_URL = "http://playwright-mcp:8931/mcp", "http://playwright-mcp-webkit:8931/mcp"
+OPS_W2 = SCRIPT.parents[3] / "tests/test_architecture/fixtures/p3_ops_w2"
+W2_REF = json.dumps({CR_URL: {"path": "/nonexistent/cr-after.json", "sha256": "0" * 64}})
+
+
+def w2_envelope(name):
+    import base64
+    import hashlib
+    data = (OPS_W2 / name).read_bytes()
+    return {"data_base64": base64.b64encode(data).decode(), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def w2_inline():
+    return json.dumps({
+        CR_URL: {**w2_envelope("chromium-0f37ba50-w2-recreated.json"),
+                 "before": w2_envelope("chromium-710cc703-before-preserve-take.json")},
+        WK_URL: {**w2_envelope("webkit-01331b2a-w2-recreated.json"),
+                 "before": w2_envelope("webkit-b4b8ea47-before-preserve-take.json")}})
+
+
+def test_controls_p3_with_a_w2_reference_adds_the_flag_once_untouched(monkeypatch, tmp_path, capsys):
+    cmd, how, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w1_before=W1_REF, w2_recreation=W2_REF)
+    assert refusal is None
+    assert cmd == [sys.executable, "-u", BOX_BIN + "first_app_p3.py", "--mode", "controls_p3", "--out", "check",
+                   "--w1-before", W1_REF, "--w2-recreation", W2_REF]
+    assert how["timeout"] == 7500
+    out = json.loads(capsys.readouterr().out)
+    assert "w2_input_staging" not in out and not (tmp_path / "check" / "w2-input").exists()
+
+
+@pytest.mark.parametrize("case", ["live", "live-p3-profile", "live-first-profile", "controls", "controls_shared"])
+def test_w2_recreation_with_any_other_mode_is_refused_before_the_checker_starts(monkeypatch, tmp_path, case):
+    given = TODAY[case][0]
+    for value in (W2_REF, w2_inline()):
+        cmd, _, refusal = run_agent(monkeypatch, tmp_path, **given, w2_recreation=value)
+        assert cmd is None and refusal == (
+            f"first_app_check: w2_recreation is for mode=controls_p3, not {given['mode']}; a live profile names its "
+            "W2 evidence itself (w2_recreation)")
+        assert not (tmp_path / "check" / "w2-input").exists()
+
+
+def test_inline_w2_stages_the_exact_bytes_and_the_checker_admits_its_references(monkeypatch, tmp_path, capsys):
+    import hashlib
+    import stat
+    text = w2_inline()
+    cmd, _, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w2_recreation=text)
+    assert refusal is None and cmd.count("--w2-recreation") == 1
+    refs = json.loads(cmd[cmd.index("--w2-recreation") + 1])
+    stage = tmp_path / "check" / "w2-input"
+    assert stat.S_IMODE(stage.stat().st_mode) == 0o700
+    names = {CR_URL: ("playwright-mcp", "chromium-0f37ba50-w2-recreated.json",
+                      "chromium-710cc703-before-preserve-take.json"),
+             WK_URL: ("playwright-mcp-webkit", "webkit-01331b2a-w2-recreated.json",
+                      "webkit-b4b8ea47-before-preserve-take.json")}
+    for url, (svc, after, before) in names.items():
+        for ref, staged, source in ((refs[url], stage / f"{svc}-after.json", after),
+                                    (refs[url]["before"], stage / f"{svc}-before.json", before)):
+            assert ref["path"] == str(staged) and staged.read_bytes() == (OPS_W2 / source).read_bytes()
+            assert ref["sha256"] == hashlib.sha256(staged.read_bytes()).hexdigest()
+            assert stat.S_IMODE(staged.stat().st_mode) == 0o600
+    # The checker's own parser takes the staged references as they are.
+    assert first_app_p3().admission.w2_problems(refs) == []
+    out = json.loads(capsys.readouterr().out)
+    assert out["w2_input_staging"][CR_URL]["after"]["path"] == refs[CR_URL]["path"]
+    assert out["w2_input_staging"][WK_URL]["before"]["file_mode"] == "0600"
+    assert "data_base64" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("change, words", [
+    (lambda o: o[CR_URL].update(sha256="0" * 64), "inline W2 does not match the supplied SHA256"),
+    (lambda o: o[CR_URL]["before"].update(extra=1), "inline W2 needs exactly data_base64 and sha256"),
+    (lambda o: o.update({"http://other:8931/mcp": o.pop(CR_URL)}), "not a P3 browser service"),
+    (lambda o: o.update({WK_URL: {"path": "/x.json", "sha256": "0" * 64}}), "every service inline"),
+    (lambda o: o[CR_URL].update(data_base64="A" * 21848), "exceeds the record size bound"),
+    # Admission looks evidence up by the checker's exact URL: a variant of it is refused before staging.
+    (lambda o: o.update({"http://playwright-mcp:8931/mcp/": o.pop(CR_URL)}), "not a P3 browser service"),
+    (lambda o: o[CR_URL].update(before=[o[CR_URL]["before"]]), "needs exactly data_base64 and sha256"),
+    (lambda o: o[CR_URL].update(data_base64=1), "needs base64 text"),
+], ids=["sha256", "extra-key", "unknown-service", "mixed", "too-big", "url-variant", "before-list",
+        "base64-number"])
+def test_bad_inline_w2_refuses_before_anything_is_staged_or_started(monkeypatch, tmp_path, change, words):
+    obj = json.loads(w2_inline())
+    change(obj)
+    cmd, _, refusal = run_agent(monkeypatch, tmp_path, mode="controls_p3", w2_recreation=json.dumps(obj))
+    assert cmd is None and refusal.startswith("first_app_check: inline W2") and words in refusal, refusal
+    assert not (tmp_path / "check" / "w2-input").exists()
+
+
+def test_inline_w2_urls_are_the_checkers_own_service_urls(monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import first_app_p3_w2_input as w2_input
+    assert set(w2_input.SERVICE_URLS) == {CR_URL, WK_URL} == {first_app_p3().WEBKIT_URL, CR_URL}
+    assert f'ap.add_argument("--browser", default="{CR_URL}"' in (SCRIPT.parent / "first_app_p3.py").read_text()
+
+
+def test_configs_take_w2_recreation_as_an_optional_input():
+    import yaml
+    root = SCRIPT.parents[3]
+    agent = yaml.safe_load((root / "configs/architecture/agents/first_app_check.yaml").read_text())["agent"]
+    flow = yaml.safe_load((root / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
+    assert flow["inputs"]["w2_recreation"] == {"type": "string", "required": False}
+    assert flow["outputs"]["w2_input_staging"] == "check.structured.w2_input_staging"
+    assert agent["script_template"].count("{{ w2_recreation | env }}") == 1

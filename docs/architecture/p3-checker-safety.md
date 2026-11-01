@@ -220,12 +220,37 @@ it lists mcp_service_recreation_required for the service (an "unknown MCP servic
 against every service that receipt used), the service is refused: BLOCKED, with no MCP call.
 
 The one way in is Ops' W2 recreation evidence, named by path and sha256 (live: the profile's optional
-w2_recreation key; controls: --w2-recreation, the same JSON {service URL: {path, sha256[, before]}}).
+w2_recreation key; controls: --w2-recreation, the same JSON {service URL: {path, sha256[, before]}};
+through the workflow: its controls_p3-only w2_recreation input, below).
 The after record (#124 shape: mode "after", containers keyed by the compose service name, which is the
 URL's host) must hash to the named sha256, show the service running with a full container id that
 differs from the old one (from the failing receipt's own checked W1 before-reading, w1.before.id, or
 the optional before record, taken after that receipt finished) and a StartedAt later than the failing
-receipt's finished_at. For WebKit, this run's checked W1 before-reading (DECISION-11, below) must
+receipt's finished_at.
+
+Ops' own producer files are read as they are (#125 H-125-W2IN-1; agent-tools ops-host/chromium_reading.py):
+- after: the new container's W2 receipt, chromium-w2/1 for playwright-mcp or webkit-w2/1 for
+  playwright-mcp-webkit (a schema family names exactly one service; webkit-w2/1 also needs engine "webkit"
+  and endpoint.alias equal to the service), verdict "MATCH" (never CARRIES, DO-NOT-RUN or UNREADABLE),
+  restart_count the integer 0, fields.running true, a full id and started_at. A webkit-w2/1 receipt's
+  marker_bound.old_id must be one of the old container ids this admission knows (Ops bound its verdict to
+  that replaced container).
+- before: the replaced container's plain reading, chromium-reading/1 or webkit-reading/1 of exactly that
+  service (endpoint.alias), status "OK", a full id; taken_at plays the #124 record's at.
+The two shapes may be mixed. Any other schema, or a schema that is not text, is "not a recreation
+record" / "not a before-recreation record"; a field of the wrong JSON type is refused by the check that
+reads it, never a reader error. A started marker carries no W1 reading, so after a marker the before record is what shows a new
+container; without it the service stays BLOCKED ("a new container cannot be shown").
+
+The workflow passes the evidence as its w2_recreation input (controls_p3 only; any other mode refuses it),
+either as the reference JSON above, forwarded untouched, or inline: each record as exactly {data_base64,
+sha256} (before nested the same way), every service inline or none, keyed by exactly the checker's own
+service URL (http://playwright-mcp:8931/mcp, http://playwright-mcp-webkit:8931/mcp; admission looks the
+evidence up by that text), at most 16384 bytes per record, staged
+once, 0600, at check/w2-input/<service>-after.json and -before.json under the run's own identity
+(first_app_p3_w2_input.py, the same envelope and staging code as w1_before's inline variant). The box
+user cannot read Ops' 0600 operator-owned files, which is why the bytes travel inline. The same privacy,
+retention and authority limits as the inline W1 input apply (docs/p3-w1-input.md). For WebKit, this run's checked W1 before-reading (DECISION-11, below) must
 also be that new container (same full id and StartedAt, running). The reference is evidence checked
 byte for byte, not an override: there is no skip flag, no store of its own, and the checker gets no
 network or docker access for it.

@@ -82,6 +82,18 @@ The existing writer's mode-setting applies only to its own newly created file.
 Partial evidence remains after failure. The reference then goes through the
 unchanged W1 loader, schema/engine/freshness gate, history admission and stop rules.
 
+The same envelope check and private staging carry the controls_p3-only
+`w2_recreation` input (#125 H-125-W2IN-1, `first_app_p3_w2_input.py`):
+`{service URL: {data_base64, sha256, before: {data_base64, sha256}}}`, every
+service inline or none, keyed by exactly the checker's own service URL
+(`http://playwright-mcp:8931/mcp`, `http://playwright-mcp-webkit:8931/mcp`),
+at most 16384 decoded bytes per record (four records
+still fit one environment string), all records decoded and checked before any is
+staged, staged at `check/w2-input/<service>-after.json` and `-before.json`.
+Reference JSON is forwarded untouched as `--w2-recreation`. Successful inline
+staging adds optional output `w2_input_staging` ({service URL: {after, before}},
+each with the metadata fields below). W1 diagnostics and behavior are unchanged.
+
 Successful inline staging adds optional workflow output `w1_input_staging`:
 fixed absolute `path`, supplied `sha256`, `process_uid`, `process_gid`, observed
 `file_uid`, `file_gid`, and `file_mode`. It is absent/null for legacy calls. All
@@ -112,7 +124,9 @@ further places, both true before this transport existed:
   Part of an inline reading can therefore reach the server log. Security rated
   this low (A09:2025 / CWE-532); the engine fix belongs to Temper.
 
-The authority below must cover these places too.
+The authority below must cover these places too. Inline W2 records (Ops' W2
+receipts and container readings: container ids, images, StartedAt, mounts,
+networks) take exactly the same places and need the same authority.
 
 The trusted operator must already have authority for the exact reading AND its
 ordinary workflow input/event storage boundary. A path or digest grants no

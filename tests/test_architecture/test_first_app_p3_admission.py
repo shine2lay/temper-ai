@@ -668,3 +668,166 @@ def test_a6_the_units_own_marker_is_not_an_earlier_run(tmp_path):
     marker(root, 'r0')  # an earlier unit that ended without a receipt is still held
     assert adm.admit(root, WK, need_w1=True, own_marker=str(own))['status'] == 'BLOCKED'
     assert adm.STARTED_MARKER == MARKER
+
+
+# ---- #125 H-125-W2IN-1: Ops' own W2 receipts and readings are the evidence admission reads ----
+# Byte copies of the producer's real files (agent-tools ops-host/chromium_reading.py, written by Temper #249 and
+# #226): fixtures/p3_ops_w2/. The after record is the new container's W2 MATCH receipt (chromium-w2/1, webkit-w2/1);
+# the before record is the old container's plain reading (chromium-reading/1, webkit-reading/1).
+
+OPS = Path(__file__).resolve().parent / 'fixtures' / 'p3_ops_w2'
+OPS_FILES = {CR: ('chromium-0f37ba50-w2-recreated.json', 'chromium-710cc703-before-preserve-take.json'),
+             WK: ('webkit-01331b2a-w2-recreated.json', 'webkit-b4b8ea47-before-preserve-take.json')}
+# Each pair's marker: earlier than the old container's before reading, which is earlier than the new start.
+OPS_MARKED = {CR: '2026-11-01T00:12:18.727+00:00', WK: '2026-10-30T11:03:48.814+00:00'}
+OPS_NEW = {CR: '0f37ba501b68bc1e3e2648364379a9fe36d4ab903502bb90b3a3766645c1b828',
+           WK: '01331b2a661dd5874e643df409e35388d4282eb43553cff16ce4f19140a0cff1'}
+OPS_OLD = {CR: '710cc7033c8d0c9d02dbc49e2a2110cbda6b192b86c12de33bc4e630bb08d408',
+           WK: 'b4b8ea4720e5a4b75f044313e46927f9d5a1c75fd60d149d5c425ab22a73519c'}
+
+
+def ops_json(url, which):
+    return json.loads((OPS / OPS_FILES[url][which]).read_bytes())
+
+
+def ops_ref(tmp_path, url, which, change=None):
+    """{path, sha256} of the real file (change None: its exact bytes) or of a changed copy of it."""
+    if change is None:
+        data = (OPS / OPS_FILES[url][which]).read_bytes()
+    else:
+        rec = ops_json(url, which)
+        change(rec)
+        data = json.dumps(rec).encode()
+    path = tmp_path / f'{which}-{OPS_FILES[url][which]}'
+    path.write_bytes(data)
+    return {'path': str(path), 'sha256': hashlib.sha256(data).hexdigest()}
+
+
+def ops_w2(tmp_path, url, after=None, before=None, with_before=True):
+    ref = ops_ref(tmp_path, url, 0, after)
+    if with_before:
+        ref['before'] = ops_ref(tmp_path, url, 1, before)
+    return {url: ref}
+
+
+def ops_w1():
+    """The checked W1 before-reading of the recreated WebKit container (the W2 receipt's own id and start)."""
+    rec = ops_json(WK, 0)
+    return w1(cid=rec['id'], started=rec['started_at'])
+
+
+def ops_root(tmp_path, url):
+    root = root_of(tmp_path)
+    marker(root, 'r1', at=OPS_MARKED[url], case='P3-PLANT-REDIRECT')
+    return root
+
+
+@pytest.mark.parametrize('url', [CR, WK], ids=['chromium', 'webkit'])
+def test_w2in_the_producers_own_receipts_admit_after_a_marker(tmp_path, url):
+    root = ops_root(tmp_path, url)
+    assert adm.admit(root, url, need_w1=url == WK, w1_before=ops_w1() if url == WK else None)['status'] == 'BLOCKED'
+    w2 = ops_w2(tmp_path, url)
+    got = adm.admit(root, url, w2=w2, need_w1=url == WK, w1_before=ops_w1() if url == WK else None)
+    assert got['status'] == 'ADMITTED' and got['recreation_required'], got
+    assert got['w2']['after'] == {'path': w2[url]['path'], 'sha256': w2[url]['sha256'], 'container_id': OPS_NEW[url],
+                                  'started_at': ops_json(url, 0)['started_at']}
+    assert got['w2']['before'] == {'path': w2[url]['before']['path'], 'sha256': w2[url]['before']['sha256'],
+                                   'container_id': OPS_OLD[url]}
+    # Without the old container's reading a marker use has no old id: a new container cannot be shown.
+    alone = adm.admit(root, url, w2=ops_w2(tmp_path, url, with_before=False), need_w1=url == WK,
+                      w1_before=ops_w1() if url == WK else None)
+    assert alone['status'] == 'BLOCKED' and 'a new container cannot be shown' in alone['reasons'][0], alone
+
+
+def _set(path, value):
+    def change(rec):
+        *parents, last = path
+        for key in parents:
+            rec = rec[key]
+        rec[last] = value
+    return change
+
+
+def _drop(key):
+    return lambda rec: rec.pop(key)
+
+
+# (service, which record, change, the refusal's words)
+OPS_BAD = {
+    'after-verdict-do-not-run': (CR, 0, _set(['verdict'], 'DO-NOT-RUN'), 'verdict is not MATCH'),
+    'after-verdict-carries': (WK, 0, _set(['verdict'], 'CARRIES'), 'verdict is not MATCH'),
+    'after-no-verdict': (CR, 0, _drop('verdict'), 'verdict is not MATCH'),
+    'after-restarted': (CR, 0, _set(['restart_count'], 1), 'restart_count is not 0'),
+    'after-restart-true': (WK, 0, _set(['restart_count'], True), 'restart_count is not 0'),
+    'after-not-running': (WK, 0, _set(['fields', 'running'], False), 'is not running'),
+    'after-no-fields': (CR, 0, _drop('fields'), 'is not running'),
+    'after-other-engine': (WK, 0, _set(['engine'], 'chromium'), 'is not a receipt for playwright-mcp-webkit'),
+    'after-other-alias': (WK, 0, _set(['endpoint', 'alias'], 'playwright-mcp'),
+                          'is not a receipt for playwright-mcp-webkit'),
+    'after-short-id': (CR, 0, _set(['id'], '0f37ba501b68'), 'no full container id for playwright-mcp'),
+    'after-bad-start': (CR, 0, _set(['started_at'], '2026-11-01 01:50:57'), 'started_at'),
+    'after-unknown-schema': (CR, 0, _set(['schema'], 'chromium-w2/2'), 'not a recreation record'),
+    'after-marker-old-id-other': (WK, 0, _set(['marker_bound', 'old_id'], 'c' * 64),
+                                  'marker_bound.old_id is not the replaced container'),
+    'after-no-marker-bound': (WK, 0, _drop('marker_bound'), 'marker_bound.old_id is not the replaced container'),
+    'after-same-as-old': (CR, 0, _set(['id'], OPS_OLD[CR]), 'same container id'),
+    'after-started-before-marker': (CR, 0, _set(['started_at'], '2026-11-01T00:12:18.726999999Z'),
+                                    'is not later than'),
+    'before-status-unknown': (CR, 1, _set(['status'], 'UNKNOWN'), 'status is not OK'),
+    'before-other-alias': (WK, 1, _set(['endpoint', 'alias'], 'playwright-mcp'),
+                           'is not a reading of playwright-mcp-webkit'),
+    'before-taken-before-marker': (CR, 1, _set(['taken_at'], '2026-11-01T00:12:18.726000Z'),
+                                   'taken before the failing receipt finished'),
+    'before-no-taken-at': (WK, 1, _drop('taken_at'), 'taken_at'),
+    'before-short-id': (WK, 1, _set(['id'], 'b4b8ea47'), 'no full container id for playwright-mcp-webkit'),
+    'before-unknown-schema': (CR, 1, _set(['schema'], 'chromium-reading/2'), 'not a before-recreation record'),
+    # Schema-invalid values (checklist 13): usable refusals, never a reader error.
+    'after-schema-list': (CR, 0, _set(['schema'], ['chromium-w2/1']), 'not a recreation record'),
+    'before-schema-object': (WK, 1, _set(['schema'], {'webkit-reading/1': 1}), 'not a before-recreation record'),
+    'after-fields-list': (CR, 0, _set(['fields'], ['running']), 'is not running'),
+    'after-endpoint-text': (WK, 0, _set(['endpoint'], 'playwright-mcp-webkit'),
+                            'is not a receipt for playwright-mcp-webkit'),
+    'after-restart-text': (CR, 0, _set(['restart_count'], '0'), 'restart_count is not 0'),
+    'before-taken-at-number': (CR, 1, _set(['taken_at'], 1793532515), 'taken_at'),
+    'after-marker-bound-list': (WK, 0, _set(['marker_bound'], [OPS_OLD[WK]]),
+                                'marker_bound.old_id is not the replaced container'),
+    'after-old-id-list': (WK, 0, _set(['marker_bound', 'old_id'], [OPS_OLD[WK]]),
+                          'marker_bound.old_id is not the replaced container'),
+}
+
+
+@pytest.mark.parametrize('case', sorted(OPS_BAD))
+def test_w2in_each_bad_twin_of_the_producers_receipts_blocks(tmp_path, case):
+    url, which, change, words = OPS_BAD[case]
+    root = ops_root(tmp_path, url)
+    w2 = ops_w2(tmp_path, url, **({'after': change} if which == 0 else {'before': change}))
+    got = adm.admit(root, url, w2=w2, need_w1=url == WK, w1_before=ops_w1() if url == WK else None)
+    assert got['status'] == 'BLOCKED' and words in got['reasons'][0], got
+
+
+def test_w2in_a_receipt_for_the_other_service_blocks(tmp_path):
+    """Chromium's W2 pair named for the WebKit service (and the other way round) never admits it."""
+    for url, other in ((WK, CR), (CR, WK)):
+        root = ops_root(tmp_path / url.split('//')[1].split(':')[0], url)
+        w2 = {url: ops_w2(tmp_path, other)[other]}
+        got = adm.admit(root, url, w2=w2, need_w1=url == WK, w1_before=ops_w1() if url == WK else None)
+        assert got['status'] == 'BLOCKED' and 'is not a receipt for ' + url.split('//')[1].split(':')[0] in \
+            got['reasons'][0], got
+
+
+def test_w2in_webkit_still_needs_its_w1_before_reading_to_be_the_new_container(tmp_path):
+    root = ops_root(tmp_path, WK)
+    w2 = ops_w2(tmp_path, WK)
+    for bad in (None, w1(cid='d' * 64, started=ops_json(WK, 0)['started_at']), w1(cid=OPS_NEW[WK])):
+        got = adm.admit(root, WK, w2=w2, w1_before=bad, need_w1=True)
+        assert got['status'] == 'BLOCKED' and 'W1 before-reading' in got['reasons'][0], got
+
+
+def test_w2in_the_124_shape_still_admits_and_mixes_with_an_ops_reading(tmp_path):
+    """The older #124 record keeps working; an Ops reading of the old container may be its before record."""
+    root = root_of(tmp_path)
+    marker(root, 'r1', at='2026-11-01T00:12:18.727+00:00')
+    after = w2_record(tmp_path, cid=OPS_NEW[CR], started='2026-11-01T01:50:57.182968735Z', name='cr-after.json',
+                      svc='playwright-mcp')
+    got = adm.admit(root, CR, w2={CR: {**after, 'before': ops_ref(tmp_path, CR, 1)}})
+    assert got['status'] == 'ADMITTED' and got['w2']['before']['container_id'] == OPS_OLD[CR], got

@@ -1,0 +1,25 @@
+{
+  "endpoint": {
+    "alias": "playwright-mcp-webkit",
+    "count": 1,
+    "holders": [
+      "b4b8ea4720e5a4b75f044313e46927f9d5a1c75fd60d149d5c425ab22a73519c"
+    ],
+    "network": "temper-ai_default"
+  },
+  "id": "b4b8ea4720e5a4b75f044313e46927f9d5a1c75fd60d149d5c425ab22a73519c",
+  "image": "sha256:b01cb863d9b2ecbdc2b05751a67ee5263978892897557cc98108c48ac9f7a00f",
+  "limits": "same-UID actors and in-container changes are not detected; readings are endpoint samples, not continuous monitoring",
+  "networks": [
+    "temper-ai_default"
+  ],
+  "paused": false,
+  "reason": null,
+  "restart_count": 0,
+  "restarting": false,
+  "running": true,
+  "schema": "webkit-reading/1",
+  "started_at": "2026-10-20T19:51:36.763227153Z",
+  "status": "OK",
+  "taken_at": "2026-10-30T15:50:13.320197Z"
+}

@@ -39,7 +39,14 @@
 #     {data_base64, sha256} stages exact bytes at check/w1-input/before.json as the run identity, then uses the
 #     unchanged W1 reader. Ordinary workflow input/events RETAIN the envelope; this is not secret transport.
 #     See docs/p3-w1-input.md for authority, collision and retention limits.
-#   mode=live with a profile holding "journey_p3": the served build. Up to 3500 s.
+#     Input w2_recreation (controls_p3 only; one JSON object as text, {service URL: {path, sha256, before}}) names
+#     Ops' W2 recreation evidence for a service whose last P3 use needs recreation, and goes to first_app_p3.py as
+#     --w2-recreation, which W1 admission checks; any other mode refuses it (a live profile names its own
+#     w2_recreation). Inline variant (#125 H-125-W2IN-1): each record as exactly {data_base64, sha256} (before
+#     too) stages exact bytes at check/w2-input/<service>-after.json / -before.json, as w1_before does; same limits.
+#   mode=live with a profile holding "journey_p3": the served build.
+# Time: a P3 run gets 7500 s (its 18 control cases need about 3906 s: 15 took 3375 s in p125-p3-controls-5), the shared journey
+# 3500 s, the first app 840 s; the agent declares 7800 s (the engine applies min(declared, its own cap)).
 # Writes check/ in the workspace: receipt.json + summary.md (+ after-reload.png for the first app), or one folder per
 # control plus controls.json. A FAIL, REFUSED or BLOCKED verdict is a result, not a step failure: the step
 # fails only when the checker gives no result at all.
@@ -48,7 +55,7 @@ agent:
   name: first_app_check
   version: 1
   type: script
-  timeout_seconds: 3600
+  timeout_seconds: 7800
   script_template: |
     #!/bin/sh
     set -e
@@ -67,6 +74,8 @@ agent:
     profile = os.environ.get("{{ profile | env }}") or ""
     w1_before_env = "{{ w1_before | env }}"
     w1_before = os.environ.get(w1_before_env) or ""
+    w2_recreation_env = "{{ w2_recreation | env }}"
+    w2_recreation = os.environ.get(w2_recreation_env) or ""
     if mode not in ("controls", "live", "controls_shared", "controls_p3"):
         raise SystemExit("first_app_check needs mode = controls, live, controls_shared or controls_p3, got %r" % mode)
     if profile.strip() and mode != "live":
@@ -74,6 +83,9 @@ agent:
     if w1_before.strip() and mode != "controls_p3":
         raise SystemExit("first_app_check: w1_before is for mode=controls_p3, not %s; a live profile names its W1 "
                          "before-reading itself (w1_before)" % mode)
+    if w2_recreation.strip() and mode != "controls_p3":
+        raise SystemExit("first_app_check: w2_recreation is for mode=controls_p3, not %s; a live profile names its "
+                         "W2 evidence itself (w2_recreation)" % mode)
     try:
         p3 = mode == "controls_p3" or "journey_p3" in json.loads(profile)
     except (ValueError, TypeError):
@@ -96,11 +108,22 @@ agent:
             # Only the inline slot: no environment enumeration, copy or legacy behavior change.
             os.environ.pop(w1_before_env, None)
         cmd += ["--w1-before", w1_before]
+    w2_input_staging = None
+    if w2_recreation.strip() and mode == "controls_p3":
+        sys.path.insert(0, "/app/configs/architecture/bin")
+        from first_app_p3_w2_input import Refused as W2Refused, prepare as w2_prepare
+        try:
+            w2_recreation, w2_input_staging = w2_prepare(w2_recreation, pathlib.Path.cwd())
+        except W2Refused as exc:
+            raise SystemExit("first_app_check: " + str(exc)) from None
+        if w2_input_staging is not None:
+            os.environ.pop(w2_recreation_env, None)
+        cmd += ["--w2-recreation", w2_recreation]
     try:
         shared = mode == "controls_shared" or "journey" in json.loads(profile)
     except (ValueError, TypeError):
         shared = False
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=3500 if shared or p3 else 840)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=7500 if p3 else 3500 if shared else 840)
     log = [x for x in res.stdout.strip().splitlines() if not x.startswith("{")]
     sys.stderr.write("\n".join(log)[-40000:] + "\n" + res.stderr[-20000:])
     with open("check/run.log", "w", encoding="utf-8") as f:
@@ -114,5 +137,7 @@ agent:
     out.setdefault("journey", "p3" if p3 else "shared" if shared else "first_app")
     if w1_input_staging is not None:
         out["w1_input_staging"] = w1_input_staging
+    if w2_input_staging is not None:
+        out["w2_input_staging"] = w2_input_staging
     print(json.dumps(out))
     PYEOF

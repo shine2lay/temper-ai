@@ -140,7 +140,9 @@ def test_agent_routes_controls_p3_and_journey_p3_to_the_new_script():
     tpl = agent["script_template"]
     assert "/app/configs/architecture/bin/first_app_p3.py" in tpl and "/app/configs/architecture/bin/first_app_check.py" in tpl
     assert '"controls_p3"' in tpl and '"journey_p3" in json.loads(profile)' in tpl
-    assert "timeout=3500 if shared or p3 else 840" in tpl and "${" not in tpl
+    # #125 H-125-TIME-1: a P3 run gets its own 7500 s, inside the agent's declared 7800 s; the others keep theirs.
+    assert "timeout=7500 if p3 else 3500 if shared else 840" in tpl and "${" not in tpl
+    assert agent["timeout_seconds"] == 7800
     flow = yaml.safe_load((ROOT / "configs/architecture/workflows/first_app_check.yaml").read_text())["workflow"]
     assert "controls_p3" in flow["inputs"]["mode"].get("description", "") or "controls_p3" in \
         (ROOT / "configs/architecture/workflows/first_app_check.yaml").read_text()

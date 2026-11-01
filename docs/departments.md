@@ -530,6 +530,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `architecture/bin/first_app_p3_admission.py` | library (W1 admission: refuses a browser service an earlier receipt said needs recreation) |
 | `architecture/bin/first_app_p3_w1.py` | library and script (WebKit W1 from two plain container readings, DECISION-11: the pre-check before the first WebKit call, and finalize, which writes the W1 record) |
 | `architecture/bin/first_app_p3_w1_input.py` | transport (run-owned create-once W1 staging; existing validator unchanged; [input and retention contract](p3-w1-input.md)) |
+| `architecture/bin/first_app_p3_w2_input.py` | transport (run-owned create-once staging of Ops' W2 recreation records for controls_p3's w2_recreation input; W1 admission checks them; same [contract](p3-w1-input.md)) |
 | `architecture/bin/first_app_p3_host.py` | library (host rows: #126 writes the request, P5 judges the receipt; never counted) |
 | `architecture/bin/ops_host_client.py` | library (stdlib-only, build-bound Ops request/receipt client; pure host verdicts) |
 | `architecture/fixtures/p3_app/` | checker controls (synthetic Project-3-style page, with its plants) |

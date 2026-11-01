@@ -454,9 +454,13 @@ def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def held_problems(ms: dict, op: str, item: str, where: str, busy_live: bool) -> tuple[list[str], list[str]]:
+def held_problems(ms: dict, op: str, item: str, where: str, busy_live: bool,
+                  timing: bool = True) -> tuple[list[str], list[str]]:
     """V3-PEND/V3-BUSY: one held write. Measured, never assumed: hold, press-to-visible, poll gaps, counts.
-    Returns (FAIL reasons, BLOCKED reasons): a measurement that is not good enough is BLOCKED, not an app fault."""
+    timing=False is V3-DEL's confirm (QA: "Confirm sends exactly one DELETE then Deleting…"): the busy text
+    must show while held and exactly one request go out; within 1000 ms, aria-busy and the status position are
+    V3-PEND's (H-125-POLL-1). Returns (FAIL reasons, BLOCKED reasons): a measurement that is not good enough is
+    BLOCKED, not an app fault."""
     out, blocked = [], []
     if not isinstance(ms, dict) or not ms:
         return [], [f"{where}: {op} not measured"]
@@ -468,6 +472,12 @@ def held_problems(ms: dict, op: str, item: str, where: str, busy_live: bool) -> 
         blocked.append(f"{where}: {op} polls up to {ms.get('max_poll_gap_ms')} ms apart, planned at most {POLL_MS}")
     busy = {"add": TEXT["m13"], "tick": TEXT["m19"], "untick": TEXT["m19"], "confirm": TEXT["m20"]}[op]
     v = ms.get("visible_ms")
+    if not timing:
+        if v is None:
+            out.append(f"{where}: {op}: never showed {busy!r} while the request was held")
+        if ms.get("requests") != 1:
+            out.append(f"{where}: {op}: {ms.get('requests')} requests for one action and one repeat, expected exactly 1")
+        return out, blocked
     if v is None or v > VISIBLE_WITHIN_MS:
         out.append(f"{where}: {op}: {busy!r} visible after {v} ms, expected within {VISIBLE_WITHIN_MS} ms")
     if op != "add":
@@ -663,7 +673,8 @@ def _judge(row: dict, res: dict, engine: str, served_html: str | None, where: st
             want = AFTER_J9 + [["Return book", "Ben", False]] if a is acts[3] else AFTER_J9
             reasons += rows_problems(ms, want, where + " A after reload")
         elif kind == "held" or a.get("do") == "held":
-            fails, blocks = held_problems(ms, a.get("op"), item, where, bool(a.get("watch_live")))
+            fails, blocks = held_problems(ms, a.get("op"), item, where, bool(a.get("watch_live")),
+                                          timing=rid != "V3-DEL")
             reasons += fails
             blocked += blocks
         elif kind == "m9":
@@ -756,7 +767,8 @@ ROWS_JS = r"""
   const fill = (tpl, item) => tpl.replace('{item}', item);
   p3.sent = (from, u, method) => p3.log.requests.slice(from).filter(r => r.ctx === u.name && r.method === method
     && pathOf(r.url).startsWith('/api/items')).length;
-  p3.press = async (u, loc) => { if (u.touch) await loc.tap({timeout: 5000}); else await loc.click({timeout: 5000}); };
+  p3.press = async (u, loc, opts) => { const o = Object.assign({timeout: 5000}, opts || {});
+    if (u.touch) await loc.tap(o); else await loc.click(o); };
   p3.typeInto = async (u, loc, text, clear) => { await p3.press(u, loc); await loc.focus();
     if (clear) await loc.fill(''); if (text) await u.p.keyboard.insertText(text); };
   const isFocused = async (loc) => (await loc.count()) === 1 && await loc.evaluate(e => e === document.activeElement);
@@ -820,35 +832,69 @@ ROWS_JS = r"""
       else loc = await one(role(u, 'checkbox', a.item), 'checkbox ' + a.item);
       if (a.watch_live) await p.evaluate(() => { if (window.__p3live) window.__p3live.rec.length = 0; });
       const from = p3.log.requests.length;
-      const t0 = Date.now(); let last = t0; let gap = 0; let repeated = false;
-      await p3.press(u, loc);
-      while (Date.now() - t0 < a.hold_ms + 2000) {
-        const s = await p.evaluate(({op, item, busyText}) => {
-          const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
-          const vis = (e) => !!e && (e.checkVisibility ? e.checkVisibility({opacityProperty: true, visibilityProperty: true})
-            : e.getClientRects().length > 0);
+      // H-125-POLL-1: the page samples itself (window timer every 20 ms plus a MutationObserver, performance.now()
+      // times), so an MCP round trip or a slow press can never open an unseen window. Observation only, no shim.
+      // Security rm-db0631b7 I1: the state lives in a closure; the page gets one read function, non-writable and
+      // non-configurable, under a per-hold random name, and only the checker's random token stops it.
+      const rnd = () => Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      const name = '__p3held_' + rnd(); const token = rnd();
+      await p.evaluate(({op, item, busyText, name, token}) => {
+        const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+        const vis = (e) => !!e && (e.checkVisibility ? e.checkVisibility({opacityProperty: true, visibilityProperty: true})
+          : e.getClientRects().length > 0);
+        const look = () => {
           if (op === 'add') { const b = document.querySelectorAll('#add-button');
             return {visible: b.length === 1 && vis(b[0]) && norm(b[0].textContent) === busyText}; }
           const li = [...document.querySelectorAll('li')].find(li => { const cb = li.querySelector('input[type=checkbox]');
             return cb && cb.labels && [...cb.labels].some(l => l.textContent === item); });
-          if (!li) return {visible: false, gone: true};
+          if (!li) return {visible: false};
           const st = li.querySelector('.item-status'); const by = li.querySelector('.item-by-name');
           const busy = li.closest('[aria-busy="true"]') !== null || li.querySelector('[aria-busy="true"]') !== null;
           return {visible: !!st && vis(st) && norm(st.textContent) === busyText, aria_busy: busy,
             after_attribution: !!(st && by && (by.compareDocumentPosition(st) & Node.DOCUMENT_POSITION_FOLLOWING))};
-        }, {op: a.op, item: a.item, busyText});
-        const now = Date.now(); gap = Math.max(gap, now - last); last = now; r.polls++;
-        if (s.aria_busy && holdEnd === null) r.aria_busy = true;
-        if (s.visible && r.visible_ms === null) { r.visible_ms = now - t0; r.after_attribution = s.after_attribution; }
-        if (!repeated && (r.visible_ms !== null || now - t0 > 1500)) {
-          repeated = true;   // the same control again while held: Enter for Add, a press for the others
-          if (a.op === 'add') await p.keyboard.press('Enter'); else await p3.press(u, loc).catch(() => {});
-          last = Date.now();
+        };
+        const keys = ['pointerdown', 'touchstart', 'mousedown', 'keydown'];
+        const s = {installed_at: performance.now(), press_at: null, last: null, gap: 0, samples: 0, visible_at: null,
+          aria_busy: false, after_attribution: null, stopped: false};
+        s.last = s.installed_at;
+        const onPress = (ev) => { if (s.press_at === null && ev.isTrusted) s.press_at = performance.now(); };
+        s.sample = () => { if (s.stopped) return; const now = performance.now();
+          s.gap = Math.max(s.gap, now - s.last); s.last = now; s.samples++;
+          const o = look(); if (o.aria_busy) s.aria_busy = true;
+          if (o.visible && s.visible_at === null) { s.visible_at = now; s.after_attribution = o.after_attribution; } };
+        s.timer = window.setInterval(s.sample, 20);
+        s.mo = new MutationObserver(s.sample);
+        s.mo.observe(document.documentElement, {subtree: true, childList: true, characterData: true, attributes: true});
+        for (const k of keys) window.addEventListener(k, onPress, {capture: true});
+        const stop = () => { s.sample(); s.stopped = true; window.clearInterval(s.timer); s.mo.disconnect();
+          for (const k of keys) window.removeEventListener(k, onPress, {capture: true}); };
+        const read = (t) => { if (t === token && !s.stopped) stop();
+          const from = s.press_at !== null ? s.press_at : s.installed_at;
+          return {visible_ms: s.visible_at === null ? null : Math.round(s.visible_at - from), gap: Math.ceil(s.gap),
+            samples: s.samples, aria_busy: s.aria_busy, after_attribution: s.after_attribution,
+            press_from: s.press_at !== null ? 'event' : 'install', stopped: s.stopped}; };
+        Object.defineProperty(window, name, {value: read, writable: false, configurable: false, enumerable: false});
+      }, {op: a.op, item: a.item, busyText, name, token});
+      const seen = () => p.evaluate((n) => { const f = window[n]; return typeof f === 'function' && f().visible_ms !== null; },
+        name);
+      const t0 = Date.now(); let repeated = false;
+      await p3.press(u, loc);
+      while (Date.now() - t0 < a.hold_ms + 2000) {
+        await p.waitForTimeout(100);
+        if (!repeated && (await seen() || Date.now() - t0 > 1500)) {
+          repeated = true;   // the same control again while held: Enter for Add, a press for the others. The control
+          // is busy (aria-disabled), so force skips only Playwright's actionability wait; it is still a real tap/click.
+          if (a.op === 'add') await p.keyboard.press('Enter');
+          else await p3.press(u, loc, {force: true, timeout: 1000}).catch(() => {});
         }
         if (holdEnd !== null && repeated) break;
-        await p.waitForTimeout(40);
       }
-      r.max_poll_gap_ms = gap;
+      const smp = await p.evaluate(({n, t}) => { const f = window[n]; return typeof f === 'function' ? f(t) : null; },
+        {n: name, t: token});
+      if (!smp || smp.stopped !== true) throw new Error('the page sampler is gone (the page navigated during the hold)');
+      r.visible_ms = smp.visible_ms; r.after_attribution = smp.after_attribution; r.aria_busy = smp.aria_busy;
+      r.polls = smp.samples; r.press_from = smp.press_from;
+      r.max_poll_gap_ms = smp.gap;
       r.hold_ms = holdStart !== null && holdEnd !== null ? holdEnd - holdStart : null;
       r.settle = await p3.settle(u);
       r.requests = p3.sent(from, u, method);

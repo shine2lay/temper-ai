@@ -300,6 +300,15 @@ def test_control_status_ok_wrong_not_run_and_uncalibrated():
     r = receipt()
     r["traffic_gate"]["engines"]["webkit"] = "NOT CHECKED"
     assert p3.control_status(case["P3-CLEAN"], r)[0] == "WRONG"  # a clean PASS needs the engine's gate PASS
+    # H-125-POLL-1 (4), run 584eac8a: J-1 measured PASS but carried WebKit's native page error, which stopped the
+    # engine there. That is J-1's FAIL, not "NOT RUN at J-2".
+    r = receipt()
+    r["steps"] = [s for s in r["steps"] if not (s["engine"] == "webkit" and s["id"] != "J-1")]
+    [j1] = [s for s in r["steps"] if s["engine"] == "webkit"]
+    j1["traffic"] = ["page error: ReferenceError: Can't find variable: requestIdleCallback"]
+    r["traffic_gate"]["engines"]["webkit"] = "FAIL"
+    assert p3.engine_got(r, "webkit") == ("FAIL", "J-1")
+    assert p3.control_status(case["P3-IDLE-CALLBACK"], r)[0] == "OK"
 
 
 # ---------------------------------------------------------------- gate plants: exact matching and G5
@@ -399,7 +408,33 @@ def test_g5q_a_plant_miss_is_wrong_and_a_gap_is_named_never_ok(monkeypatch):
     assert p3.control_status(clean, _plant_receipt("plant_beacon", "MISS", "MISS"))[0] == "OK"
     monkeypatch.setattr(p3, "G5_BLIND_SPOTS", {"beacon": "a Security record (test only)"})
     status, got = p3.control_status(case, _plant_receipt("plant_beacon", "caught", "MISS"))
-    assert status == "OK" and got["g5_blind_spot"] == {"kind": "beacon", "named_by": "a Security record (test only)"}
+    assert status == "OK" and got["g5_blind_spot"] == {"kind": "beacon", "engines": {
+        "chromium": "a Security record (test only)", "webkit": "a Security record (test only)"}}
+
+
+def test_g5_prefetch_is_a_webkit_blind_spot_only_when_that_run_measured_it_unsupported():
+    # Security rm-db0631b7: conditional, measured per run: page_mark "unsupported" AND gate_events 0 AND abort 0.
+    # Run 584eac8a's WebKit prefetch result was exactly that; a supported mark is judged normally.
+    case = {c["case"]: c for c in p3.CONTROLS}["P3-PLANT-PREFETCH"]
+    unsupported = {"result": "not exercised", "gate_events": 0, "abort_witness": 0, "page_mark": "unsupported"}
+
+    def receipt_with(webkit):
+        r = _plant_receipt("plant_prefetch", "caught", "caught")
+        r["gate_plant_result"]["engines"]["webkit"] = webkit
+        return r
+
+    status, got = p3.control_status(case, receipt_with(dict(unsupported)))
+    assert status == "OK" and "gap" not in got
+    assert got["g5_blind_spot"] == {"kind": "prefetch", "engines": {
+        "webkit": "Security rm-db0631b7: WebKit rel=prefetch unsupported in this run"}}
+    for change in ({"page_mark": None}, {"page_mark": "sent"}, {"gate_events": 1}, {"abort_witness": 1}):
+        assert p3.control_status(case, receipt_with({**unsupported, **change}))[0] == "NOT EXERCISED", change
+    assert p3.control_status(case, receipt_with({**unsupported, "result": "MISS"}))[0] == "WRONG"
+    assert p3.g5_blind_spot("chromium", "prefetch", unsupported) is None  # WebKit only
+    beacon = {c["case"]: c for c in p3.CONTROLS}["P3-PLANT-BEACON"]
+    r = _plant_receipt("plant_beacon", "caught", "caught")
+    r["gate_plant_result"]["engines"]["webkit"] = dict(unsupported)
+    assert p3.control_status(beacon, r)[0] == "NOT EXERCISED"  # only the kind Security named
 
 
 def test_g5q_full_qualification_needs_every_plant_kind_caught_on_every_engine_that_ran(monkeypatch, tmp_path):
@@ -438,6 +473,8 @@ def test_g5q_full_qualification_needs_every_plant_kind_caught_on_every_engine_th
     monkeypatch.setattr(p3, "G5_BLIND_SPOTS", {"beacon": "a Security record (test only)"})
     code, s = run("blind", g5={"chromium": "caught", "webkit": "MISS"})
     assert code == 0 and s["full_qualification"] and s["g5_blind_spots"] == {"beacon": "a Security record (test only)"}
+    assert s["g5_blind_spots_when_measured"] == {
+        "webkit:prefetch": "Security rm-db0631b7: WebKit rel=prefetch unsupported in this run"}
 
 
 # ---------------------------------------------------------------- the controls' fixture server

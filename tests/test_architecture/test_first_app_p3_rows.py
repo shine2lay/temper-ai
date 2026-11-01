@@ -262,6 +262,40 @@ def test_late_busy_text_fails_and_a_short_hold_is_blocked_not_pass():
     assert any("exactly 1" in x for x in _fail("V3-PEND", res)["reasons"])
 
 
+def test_v3_del_judges_one_delete_then_deleting_and_leaves_the_one_second_timing_to_v3_pend():
+    # H-125-POLL-1 (3): QA's V3-DEL pass is "Confirm sends exactly one DELETE then Deleting…"; within 1000 ms,
+    # aria-busy and the status position are V3-PEND's. A late busy text passes V3-DEL and fails V3-PEND.
+    res = good("V3-DEL")
+    held_act = [a for a in res["acts"] if a["measure_kind"] == "held"][0]
+    held_act["measure"].update(visible_ms=2000, aria_busy=False, after_attribution=False)
+    assert kit.judge(kit.ROW["V3-DEL"], res, "webkit", SERVED)["status"] == "PASS"
+    held_act["measure"]["visible_ms"] = None
+    assert any("never showed" in x for x in _fail("V3-DEL", res, "webkit")["reasons"])
+    res = good("V3-DEL")
+    [a for a in res["acts"] if a["measure_kind"] == "held"][0]["measure"]["requests"] = 2
+    assert any("exactly 1" in x for x in _fail("V3-DEL", res)["reasons"])
+    res = good("V3-DEL")
+    [a for a in res["acts"] if a["measure_kind"] == "held"][0]["measure"]["max_poll_gap_ms"] = kit.POLL_MS + 1
+    assert any("apart" in x for x in _blocked("V3-DEL", res)["reasons"])
+    res = good("V3-PEND")
+    [a for a in res["acts"] if a["measure_kind"] == "held"][3]["measure"]["visible_ms"] = 2000
+    assert any("within 1000 ms" in x for x in _fail("V3-PEND", res)["reasons"])
+
+
+def test_held_writes_sample_in_the_page_and_never_wait_on_a_busy_control():
+    # H-125-POLL-1 (1)+(2): run 584eac8a's MCP-side polls ran 102-123 ms apart, and the repeat press on the
+    # aria-disabled "Yes, delete" waited Playwright's 5 s actionability timeout while `last = Date.now()` hid it.
+    body = kit.ROWS_JS[kit.ROWS_JS.index("p3.held = async"):]
+    body = body[:body.index("\n  };\n")]
+    assert "window.setInterval(" in body and "MutationObserver" in body and "performance.now()" in body
+    assert "last = Date.now()" not in body and "max_poll_gap_ms = gap" not in body
+    assert "force: true" in body
+    # Security rm-db0631b7 I1: the sampler's state is closure-held; the page sees one read function under a per-hold
+    # random name, non-writable and non-configurable, and only the checker's token stops it.
+    assert "Object.defineProperty(window, name, {value: read, writable: false, configurable: false" in body
+    assert "window.__p3held" not in body and "Math.random()" in body and "t === token" in body
+
+
 def test_busy_announcements_must_come_in_order_from_a_region_that_predates_them():
     res = good("V3-BUSY")
     a = [x for x in res["acts"] if x["measure_kind"] == "held"][0]
@@ -379,8 +413,11 @@ def test_browser_code_has_no_shims_and_types_exact_code_points():
 def test_browser_code_names_no_node_globals():
     # H-125-HOLD-TIMER-1: browser_run_code_unsafe runs this code without Node's globals (run eb5ae095 stopped at
     # V3-DEL: "ReferenceError: setTimeout is not defined"); waits go through page.waitForTimeout.
+    # H-125-POLL-1: page-side timers are allowed only as window.<timer>, which can only run in the page.
     js = kit.ROWS_JS + kit.ROW_JS
-    for banned in ("setTimeout", "setInterval", "setImmediate", "require(", "process.", "Buffer"):
+    for banned in ("setTimeout", "setInterval", "clearInterval", "setImmediate"):
+        assert not re.search(r"(?<![\w.])" + banned + r"\b", js), banned
+    for banned in ("require(", "process.", "Buffer"):
         assert banned not in js, banned
 
 

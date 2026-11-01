@@ -98,6 +98,24 @@ REDIRECT_LOCATION = "https://redirect.invalid/r"
 # Security #105 G5-Q: plant kinds Security has named a blind spot, as {kind: the Security record that names it}. None
 # is named (DECISION-10 section 3). DNS-only lookups are a stated residual, not a plant kind.
 G5_BLIND_SPOTS: dict[str, str] = {}
+# Security rm-db0631b7 (2026-11-01): a blind spot only for that engine and only when that run measured it: the page
+# marked the feature "unsupported" (feature detect) AND the gate saw 0 events AND the abort route 0. Then the app
+# cannot use the feature there either; the row status is kept and it is noted. A supported mark is judged normally.
+G5_CONDITIONAL_BLIND_SPOTS: dict[tuple[str, str], str] = {
+    ("webkit", "prefetch"): "Security rm-db0631b7: WebKit rel=prefetch unsupported in this run",
+}
+
+
+def g5_blind_spot(engine: str, kind: str, measured) -> str | None:
+    """The Security record that makes this engine's result for this plant kind a blind spot, or None."""
+    if kind in G5_BLIND_SPOTS:
+        return G5_BLIND_SPOTS[kind]
+    named = G5_CONDITIONAL_BLIND_SPOTS.get((engine, kind))
+    if named and isinstance(measured, dict) and measured.get("result") == "not exercised" and \
+            measured.get("page_mark") == "unsupported" and measured.get("gate_events") == 0 and \
+            measured.get("abort_witness") == 0:
+        return named
+    return None
 
 # ---------------------------------------------------------------- engines and contexts
 
@@ -1578,6 +1596,8 @@ def engine_got(r: dict, engine: str) -> tuple:
         status = w1.measured(s)
         if status not in ("PASS", "UNQUALIFIED"):
             return status, s["id"]
+        if s.get("traffic"):  # H-125-POLL-1: a page error or off-origin finding stops the engine at this row
+            return "FAIL", s["id"]
     if [s["id"] for s in steps] != ROW_IDS[engine]:
         return "NOT RUN", None
     return CLEAN
@@ -1586,6 +1606,16 @@ def engine_got(r: dict, engine: str) -> tuple:
 def _g5_result(engines, engine: str):
     v = engines.get(engine) if isinstance(engines, dict) else None
     return v.get("result") if isinstance(v, dict) else None
+
+
+def _only_page_errors_at(r: dict, engine: str, row: str) -> bool:
+    """An expected row FAIL whose catch is the page's own error (WebKit's missing requestIdleCallback) makes the
+    engine's gate FAIL too; that is the catch, not an off-origin finding. True only when every finding of the
+    engine is a page error on that row (H-125-POLL-1 (4))."""
+    if any(engine_of(p) == engine and found for p, found in (r.get("phase_findings") or {}).items()):
+        return False
+    found = [(s["id"], x) for s in r.get("steps") or [] if s.get("engine") == engine for x in s.get("traffic") or []]
+    return bool(found) and all(sid == row and x.startswith("page error: ") for sid, x in found)
 
 
 def control_status(case: dict, r: dict) -> tuple[str, dict]:
@@ -1603,9 +1633,8 @@ def control_status(case: dict, r: dict) -> tuple[str, dict]:
     gates = r["traffic_gate"]["engines"]
     states = []
     plant = GATE_PLANTS.get(case.get("variant")) if case.get("plant") else None
-    blind = G5_BLIND_SPOTS.get(plant["kind"]) if plant else None
     g5 = ((r.get("gate_plant_result") or {}).get("engines") or {}) if plant else {}
-    gaps = {}
+    gaps, blinds = {}, {}
     for e in ENGINES:
         sess = (r.get("sessions") or {}).get(e) or {}
         g = got[e] = list(engine_got(r, e))
@@ -1618,20 +1647,25 @@ def control_status(case: dict, r: dict) -> tuple[str, dict]:
                 (sess.get("engine_facts") or {}).get("idle_callback") == "function":
             states.append("UNCALIBRATED")  # native WebKit has requestIdleCallback: the plant cannot fail here
             continue
-        ok = g == want and (gates[e] == "PASS" if want[0] == "PASS" else gates[e] != "FAIL")
+        ok = g == want and (gates[e] == "PASS" if want[0] == "PASS"
+                            else gates[e] != "FAIL" or _only_page_errors_at(r, e, want[1]))
         states.append("OK" if ok else "WRONG")
         if plant:
             result = _g5_result(g5, e)
             got.setdefault("g5", {})[e] = result
-            if blind is not None or result == "caught":
+            blind = g5_blind_spot(e, plant["kind"], g5.get(e) if isinstance(g5, dict) else None)
+            if blind is not None:
+                blinds[e] = blind
+                continue
+            if result == "caught":
                 continue
             if result == "MISS":
                 states.append("WRONG")  # the page sent it (or the abort route saw it) and the gate did not
             else:
                 states.append("NOT EXERCISED")
                 gaps[e] = result or "no G5 result recorded"
-    if blind is not None:
-        got["g5_blind_spot"] = {"kind": plant["kind"], "named_by": blind}
+    if blinds:
+        got["g5_blind_spot"] = {"kind": plant["kind"], "engines": blinds}
     if gaps:
         got["gap"] = {"plant": case.get("variant"), "kind": plant["kind"], "engines": gaps,
                       "why": f"G5 coverage gap: the {plant['kind']} plant was not exercised on {', '.join(gaps)} "
@@ -1654,7 +1688,8 @@ def g5_qualification(results: list) -> tuple[bool, list[str]]:
         if kind in G5_BLIND_SPOTS:
             continue
         engines = ((by_case.get(c["case"]) or {}).get("gate_plant") or {}).get("engines") or {}
-        ran = {e: _g5_result(engines, e) for e in ENGINES if _g5_result(engines, e) != "NOT RUN"}
+        ran = {e: _g5_result(engines, e) for e in ENGINES if _g5_result(engines, e) != "NOT RUN"
+               and g5_blind_spot(e, kind, engines.get(e)) is None}
         if not ran or any(x != "caught" for x in ran.values()):
             gaps.append(f"{c['case']} ({kind}): " + (", ".join(f"{e} {x}" for e, x in ran.items())
                                                      or "no engine ran it"))
@@ -1793,6 +1828,9 @@ async def controls(args, out: pathlib.Path) -> int:
                       "on_count": {"all_ok": measured_ok, "full_qualification": measured_full}
                       if provisional else None},
                "g5_gaps": g5_gaps, "g5_blind_spots": dict(G5_BLIND_SPOTS),
+               "g5_blind_spots_when_measured": {f"{e}:{k}": v for (e, k), v in G5_CONDITIONAL_BLIND_SPOTS.items()},
+               "g5_blind_spots_applied": {x["case"]: x["got"]["g5_blind_spot"] for x in results
+                                          if isinstance(x.get("got"), dict) and x["got"].get("g5_blind_spot")},
                "selection_error": "empty/unmatched selection" if invalid or not selected else None,
                "counts": counts, "g5": g5,
                "not_reached": [c["case"] for c in selected if c["case"] not in {x["case"] for x in results}],

@@ -136,6 +136,11 @@ class Bash(BaseTool):
         # so a model's own Bash calls never take the streaming path. It travels with the call, not
         # on this (shared) tool, so two scripts running at once cannot write into each other's log.
         sink = params.get("_output_sink")
+        p3_adapter = params.get("_p3_launch_adapter") or self.config.get("p3_launch_adapter")
+        p3_protected = bool(
+            params.get("_p3_protected_launch", False)
+            or self.config.get("p3_protected_launch", False)
+        )
         return _run_subprocess(
             command,
             timeout,
@@ -146,6 +151,8 @@ class Bash(BaseTool):
             cancel_event=self.cancel_event,
             output_sink=sink if callable(sink) else None,
             script=bool(skip_allowlist),
+            p3_launch_adapter=p3_adapter,
+            p3_protected_launch=p3_protected,
         )
 
 
@@ -296,6 +303,8 @@ def _run_subprocess(
     cancel_event: Any = None,
     output_sink: "OutputSink | None" = None,
     script: bool = False,
+    p3_launch_adapter: Any = None,
+    p3_protected_launch: bool = False,
 ) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult.
 
@@ -312,6 +321,37 @@ def _run_subprocess(
     every piece is handed to the sink as it arrives (see `_run_streaming`);
     the result is built exactly as it is without one.
     """
+    registered_child_key: Any = None
+    if p3_protected_launch or p3_launch_adapter is not None:
+        from temper_ai.p3_authority.contract import Refusal
+        from temper_ai.p3_authority.launch_adapters import (
+            BashChildLaunchAdapter,
+            refuse_missing_launch_provider,
+        )
+
+        if not isinstance(p3_launch_adapter, BashChildLaunchAdapter):
+            refusal = refuse_missing_launch_provider(boundary="C_PRE_EXECUTION")
+            return ToolResult(
+                success=False,
+                result="",
+                error=f"P3 protected launch refused [{refusal.code.value}]",
+                metadata={
+                    "p3_refusal_code": refusal.code.value,
+                    "p3_refusal_phase": refusal.phase.value,
+                },
+            )
+        pre_res = p3_launch_adapter.before_spawn()
+        if isinstance(pre_res, Refusal):
+            return ToolResult(
+                success=False,
+                result="",
+                error=f"P3 protected launch refused [{pre_res.code.value}]",
+                metadata={
+                    "p3_refusal_code": pre_res.code.value,
+                    "p3_refusal_phase": pre_res.phase.value,
+                },
+            )
+
     try:
         proc = subprocess.Popen(
             command,
@@ -325,20 +365,94 @@ def _run_subprocess(
         )
     except Exception as e:
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+
+    if p3_launch_adapter is not None:
+        from temper_ai.p3_authority.contract import Refusal
+
+        spawn_res = p3_launch_adapter.on_spawned(os_pid=proc.pid)
+        if isinstance(spawn_res, Refusal):
+            _kill_group(proc)
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+            p3_launch_adapter.on_terminated(
+                child_key=None,
+                os_pid=proc.pid,
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                aborted=True,
+                stop_reason="registration_refused",
+            )
+            return ToolResult(
+                success=False,
+                result="",
+                error=f"P3 child registration refused [{spawn_res.code.value}]",
+                metadata={
+                    "p3_refusal_code": spawn_res.code.value,
+                    "p3_refusal_phase": spawn_res.phase.value,
+                    "aborted_pid": proc.pid,
+                },
+            )
+        registered_child_key = spawn_res.data.key
+
     if output_sink is not None:
-        return _run_streaming(proc, command, timeout, compact, max_output_chars, cancel_event, output_sink,
-                              script=script)
+        res = _run_streaming(proc, command, timeout, compact, max_output_chars, cancel_event, output_sink,
+                             script=script)
+        if p3_launch_adapter is not None:
+            stopped = (res.metadata or {}).get("stopped")
+            p3_launch_adapter.on_terminated(
+                child_key=registered_child_key,
+                os_pid=proc.pid,
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                aborted=bool(stopped),
+                stop_reason=str(stopped) if stopped else None,
+            )
+        return res
     try:
         out, err = _wait(proc, timeout, cancel_event)
     except _Cancelled:
         _kill_group(proc)
+        if p3_launch_adapter is not None:
+            p3_launch_adapter.on_terminated(
+                child_key=registered_child_key,
+                os_pid=proc.pid,
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                aborted=True,
+                stop_reason="cancelled",
+            )
         return ToolResult(success=False, result="", error=_CANCELLED_ERROR)
     except subprocess.TimeoutExpired:
         _kill_group(proc)
+        if p3_launch_adapter is not None:
+            p3_launch_adapter.on_terminated(
+                child_key=registered_child_key,
+                os_pid=proc.pid,
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                aborted=True,
+                stop_reason="timeout",
+            )
         return ToolResult(success=False, result="", error=_timeout_error(timeout, script=script))
     except Exception as e:
         _kill_group(proc)
+        if p3_launch_adapter is not None:
+            p3_launch_adapter.on_terminated(
+                child_key=registered_child_key,
+                os_pid=proc.pid,
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                aborted=True,
+                stop_reason=type(e).__name__,
+            )
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+    if p3_launch_adapter is not None:
+        p3_launch_adapter.on_terminated(
+            child_key=registered_child_key,
+            os_pid=proc.pid,
+            returncode=proc.returncode if proc.returncode is not None else 0,
+            aborted=False,
+            stop_reason=None,
+        )
     return _finish(command, _Completed(out or "", err or "", proc.returncode), compact, max_output_chars)
 
 

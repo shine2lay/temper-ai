@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 def bootstrap_runner_context_from_env(
     *,
     config_dir: str | Path | None = None,
+    worker_observation: object | None = None,
+    protected_bootstrap: bool = False,
 ) -> RunnerContext:
     """Reconstruct a RunnerContext suitable for execute_workflow().
 
@@ -55,44 +57,78 @@ def bootstrap_runner_context_from_env(
     from temper_ai.spawner import box_bootstrap
     box_bootstrap.require_received()
 
-    # Database — reuse server's resolution. init_database is idempotent so
-    # the spawner can call this even when the server already opened the DB.
-    from temper_ai.database import init_database
-    db_url = os.environ.get(
-        "TEMPER_DATABASE_URL",
-        os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db"),
-    )
-    init_database(db_url)
-    logger.info(
-        "Worker DB connected: %s",
-        db_url.split("@")[-1] if "@" in db_url else db_url,
-    )
-
-    # LLM providers + memory — borrow server's initializers so the worker
-    # picks up the exact same env-driven setup the server uses (no drift).
-    from temper_ai.server import _init_llm_providers, _init_memory_service
-    llm_providers = _init_llm_providers()
-    memory_service = _init_memory_service()
-
-    # Config store + graph loader — fresh per worker. The server has its
-    # own; loading the same YAMLs here means the worker can resolve any
-    # workflow name the server can. Cheap (file reads + dataclass parsing).
-    config_store = ConfigStore()
-    graph_loader = GraphLoader(config_store)
     from temper_ai.spawner import box_guard
-    if box_guard.active() is not None:
-        # A sealed box reads its configs from its checked files only (box_guard.py),
-        # and writes none of them into the database.
-        logger.info("Sealed box: configs come from the run's classified launch only")
-    else:
-        _load_configs_into_store(config_store, config_dir)
 
-    return RunnerContext(
-        config_store=config_store,
-        graph_loader=graph_loader,
-        llm_providers=llm_providers,
-        memory_service=memory_service,
-    )
+    if protected_bootstrap or worker_observation is not None:
+        from temper_ai.p3_authority.contract import Refusal
+        from temper_ai.p3_authority.launch_adapters import (
+            P3ObservationRefusedError,
+            RunnerBootstrapObservationHook,
+            refuse_missing_launch_provider,
+        )
+
+        if not isinstance(worker_observation, RunnerBootstrapObservationHook):
+            raise P3ObservationRefusedError(
+                refuse_missing_launch_provider(boundary="B_PRE_REQUEST")
+            )
+        obs_res = worker_observation.on_runner_context_bootstrapped(
+            execution_id=os.environ.get("TEMPER_EXECUTION_ID", ""),
+        )
+        if isinstance(obs_res, Refusal):
+            raise P3ObservationRefusedError(obs_res)
+
+    try:
+        # Database — reuse server's resolution. init_database is idempotent so
+        # the spawner can call this even when the server already opened the DB.
+        from temper_ai.database import init_database
+        db_url = os.environ.get(
+            "TEMPER_DATABASE_URL",
+            os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db"),
+        )
+        init_database(db_url)
+        logger.info(
+            "Worker DB connected: %s",
+            db_url.split("@")[-1] if "@" in db_url else db_url,
+        )
+
+        # LLM providers + memory — borrow server's initializers so the worker
+        # picks up the exact same env-driven setup the server uses (no drift).
+        from temper_ai.server import _init_llm_providers, _init_memory_service
+        llm_providers = _init_llm_providers()
+        memory_service = _init_memory_service()
+
+        # Config store + graph loader — fresh per worker. The server has its
+        # own; loading the same YAMLs here means the worker can resolve any
+        # workflow name the server can. Cheap (file reads + dataclass parsing).
+        config_store = ConfigStore()
+        graph_loader = GraphLoader(config_store)
+        if box_guard.active() is not None:
+            # A sealed box reads its configs from its checked files only (box_guard.py),
+            # and writes none of them into the database.
+            logger.info("Sealed box: configs come from the run's classified launch only")
+        else:
+            _load_configs_into_store(config_store, config_dir)
+
+        ctx = RunnerContext(
+            config_store=config_store,
+            graph_loader=graph_loader,
+            llm_providers=llm_providers,
+            memory_service=memory_service,
+        )
+    except Exception as exc:
+        if worker_observation is not None and hasattr(
+            worker_observation, "after_runner_bootstrap_failed"
+        ):
+            worker_observation.after_runner_bootstrap_failed(
+                reason=type(exc).__name__,
+            )
+        raise
+
+    if worker_observation is not None and hasattr(
+        worker_observation, "after_runner_bootstrap"
+    ):
+        worker_observation.after_runner_bootstrap()
+    return ctx
 
 
 def _load_configs_into_store(

@@ -106,6 +106,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from temper_ai.integrations.github import secret as github_secret
 from temper_ai.shared import box_env as box_env_list
@@ -707,8 +708,12 @@ class DockerSpawner(Spawner):
         delivery_limits: Mapping[str, int] | None = None,
         login_file: str | None = None,
         main_repo_roots: str | None = None,
+        launch_observer: Any | None = None,
+        protected_launch: bool = False,
     ) -> None:
         self._docker = docker_bin
+        self._launch_observer = launch_observer
+        self._protected_launch = bool(protected_launch)
         # The legacy boxes' login file (None: TEMPER_BOX_LOGIN_FILE, read once, here).
         self._login_file = login_file_setting(
             login_file if login_file is not None else os.environ.get(LOGIN_FILE_ENV))
@@ -744,7 +749,33 @@ class DockerSpawner(Spawner):
 
     # -- Spawner contract -----------------------------------------------------
 
-    def spawn(self, execution_id: str) -> ProcessHandle:
+    def spawn(
+        self,
+        execution_id: str,
+        *,
+        protected_launch: bool | None = None,
+        launch_observer: Any | None = None,
+    ) -> ProcessHandle:
+        observer = self._launch_observer if launch_observer is None else launch_observer
+        use_protected = (
+            self._protected_launch if protected_launch is None else bool(protected_launch)
+        )
+        if use_protected or observer is not None:
+            from temper_ai.p3_authority.contract import Refusal
+            from temper_ai.p3_authority.launch_adapters import (
+                DockerLaunchObservationAdapter,
+                P3ObservationRefusedError,
+                refuse_missing_launch_provider,
+            )
+
+            if not isinstance(observer, DockerLaunchObservationAdapter):
+                raise P3ObservationRefusedError(
+                    refuse_missing_launch_provider(boundary="A_PRE_CREATE")
+                )
+            pre_res = observer.before_container_create(execution_id=execution_id)
+            if isinstance(pre_res, Refusal):
+                raise P3ObservationRefusedError(pre_res)
+
         workspace_path = self._workspace_lookup(execution_id)
         if workspace_path is None:
             raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
@@ -765,7 +796,14 @@ class DockerSpawner(Spawner):
                 name, len(env.dropped), ", ".join(env.dropped),
             )
         if settings[box_profile.BOUNDARY_ENV] == box_profile.SEALED:
-            return self._spawn_sealed(execution_id, workspace_path, template, env, settings)
+            return self._spawn_sealed(
+                execution_id,
+                workspace_path,
+                template,
+                env,
+                settings,
+                observer=observer,
+            )
 
         logger.info("Run container %s: %s", name, _said(
             login_file_origin(self.inherited_mounts(template), self._login_file)))
@@ -774,7 +812,15 @@ class DockerSpawner(Spawner):
         policy = self._legacy_bind_policy(workspace_path, template)
         cmd = self.run_command(execution_id, workspace_path, template, env, extra_env=extra)
         result = self._launch_container(cmd, policy, site="legacy")
-        return self._handle(execution_id, result, self._image_override or template.image, record)
+        try:
+            handle = self._handle(execution_id, result, self._image_override or template.image, record)
+        except Exception:
+            if observer is not None:
+                observer.on_spawn_cleanup(name)
+            raise
+        if observer is not None:
+            self._after_observed_handle(execution_id, name, handle, observer)
+        return handle
 
     def _wait_for_old_box_to_go(self, execution_id: str) -> None:
         """One look, no sleep: the watcher puts a busy run back unclaimed.
@@ -835,6 +881,26 @@ class DockerSpawner(Spawner):
             # because some callers replace spawner_metadata with the handle's (api/routes.py).
             metadata[box_profile.METADATA_KEY] = record
         return ProcessHandle(kind=SpawnerKind.docker, handle=name, metadata=metadata)
+
+    def _after_observed_handle(
+        self,
+        execution_id: str,
+        name: str,
+        handle: ProcessHandle,
+        observer: Any,
+    ) -> None:
+        from temper_ai.p3_authority.contract import Refusal
+        from temper_ai.p3_authority.launch_adapters import P3ObservationRefusedError
+
+        container_id = str((handle.metadata or {}).get("container_id") or "")
+        post_res = observer.after_container_start(
+            execution_id=execution_id,
+            container_id=container_id,
+        )
+        if isinstance(post_res, Refusal):
+            self._docker_run([self._docker, "kill", name])
+            observer.on_spawn_cleanup(container_id or name)
+            raise P3ObservationRefusedError(post_res)
 
     # -- Box profiles ---------------------------------------------------------
 
@@ -903,7 +969,8 @@ class DockerSpawner(Spawner):
         return record
 
     def _spawn_sealed(self, execution_id: str, workspace_path: str, template: Template,
-                      env: BoxEnvSplit, settings: dict[str, str]) -> ProcessHandle:
+                      env: BoxEnvSplit, settings: dict[str, str], *,
+                      observer: Any | None = None) -> ProcessHandle:
         """A sealed box (BS1): checked, planned, pinned, profiled and stored, then started."""
         name = container_name(execution_id)
         oneshot = settings[box_profile.BOOTSTRAP_ENV] == box_bootstrap.ONESHOT
@@ -1013,13 +1080,21 @@ class DockerSpawner(Spawner):
             result = self._launch_container(cmd, policy, site="sealed")
         if oneshot and result.returncode == 0:
             record = self._deliver(execution_id, doc, record, delivered, template.user,
-                                   interpreter)
-        return self._handle(execution_id, result, template.image_id, record)
+                                   interpreter, observer=observer)
+        try:
+            handle = self._handle(execution_id, result, template.image_id, record)
+        except Exception:
+            if observer is not None:
+                observer.on_spawn_cleanup(name)
+            raise
+        if observer is not None:
+            self._after_observed_handle(execution_id, name, handle, observer)
+        return handle
 
     # -- BS2: one-shot delivery -------------------------------------------------
 
     def _deliver(self, execution_id: str, doc: dict, record: dict, values: Mapping[str, str],
-                 user: str, interpreter: str) -> dict:
+                 user: str, interpreter: str, *, observer: Any | None = None) -> dict:
         """Hand the started box its secrets once; the record with the delivery's state.
 
         The envelope goes to the writer's stdin (docker exec -i) and nowhere else; it is
@@ -1060,6 +1135,8 @@ class DockerSpawner(Spawner):
         self._docker_run([self._docker, "kill", name])
         self._record_delivery(execution_id, record, {**state, "state": "revoked",
                                                      "why": f"{status.get('state')}: {reason}"})
+        if observer is not None:
+            observer.on_spawn_cleanup(name)
         raise SpawnerError(
             f"the box's one-shot secret delivery failed ({status.get('state')}: {reason}); "
             "the box was stopped and the delivery revoked",

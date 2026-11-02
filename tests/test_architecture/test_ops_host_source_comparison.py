@@ -454,7 +454,7 @@ def test_verified_byte_binding_mutant_is_killed(monkeypatch):
     bad = dataclasses.replace(clean, verified=dataclasses.replace(clean.verified, observed_bytes=content("other-observed-bytes")))
     check_answer(clean, "MATCH")
     check_answer(bad, "REFUSED", "OBSERVER_ORIGIN")
-    install_mutation(monkeypatch, api, "compare_loaded_source", "elif supplied != actual:", "elif False:")
+    install_mutation(monkeypatch, api, "compare_loaded_source", "elif supplied != input_identity:", "elif False:")
     with pytest.raises(AssertionError):
         check_answer(bad, "REFUSED", "OBSERVER_ORIGIN")
     check_answer(clean, "MATCH")

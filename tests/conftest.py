@@ -6,6 +6,9 @@ from temper_ai.database import init_database, locate, reset_database
 from temper_ai.tools.executor import ToolExecutor
 from tests.machine_slot import EXIT_PLACEMENT, HostEntryError, enter_machine_slot
 from tests.pgtier import database_tier_url, truncate_everything
+from tests.worker_defaults import (
+    pytest_xdist_auto_num_workers as pytest_xdist_auto_num_workers,
+)
 
 # The database this test got, so the guard below can hand back the same one.
 TEST_DATABASE_URL = pytest.StashKey[str]()

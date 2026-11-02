@@ -21,7 +21,7 @@ Run everything through `uv`:
 
 ```bash
 uv sync --frozen --extra dev      # exactly uv.lock, nothing newer
-uv run pytest tests/              # in that environment
+uv run pytest tests/ -n auto      # local worker policy, in that environment
 uv run python scripts/show_versions.py --check
 ```
 
@@ -46,8 +46,8 @@ versions used are in the log rather than assumed.
 
 ### The Python suite
 
-`uv run pytest tests/` — about 3,500 tests in roughly 20 seconds at `-n 8`.
-Each test gets a fresh in-memory SQLite.
+`uv run pytest tests/ -n auto` uses the local worker policy described below.
+Each test gets a fresh in-memory SQLite. Omit `-n` for a serial diagnostic.
 
 #### The shared machine pool
 
@@ -65,6 +65,14 @@ prevents another restart. An explicit `-n 8` stays 8, and the caller's
 `PYTEST_XDIST_AUTO_NUM_WORKERS` is left alone. The hook uses `-n auto`; its
 `PRECOMMIT_PYTEST_WORKERS` override, when set, is exported as
 `PYTEST_XDIST_AUTO_NUM_WORKERS` before pytest starts.
+
+Local auto counts consume `PYTEST_XDIST_AUTO_NUM_WORKERS`, then
+`WT_CHECK_WORKERS`, then default to **10**. Shared launcher settings still
+win (including 6 during rollout); this repo does not activate a new shared
+default. CI keeps xdist's original worker policy. Explicit counts, serial
+runs, `--pdb` and `--maxprocesses` stay authoritative. See
+[local-test-workers.md](local-test-workers.md) for precedence, malformed
+inputs, compatibility checks and the Vitest adapter.
 
 Single-process runs (no `-n`, or `-n 0`) start immediately without wrapping.
 So do xdist workers (`PYTEST_XDIST_WORKER`), pytest subprocesses inside a test
@@ -118,7 +126,7 @@ what happened with the time-zone bug below.
 So the tests that store things also run against a real Postgres:
 
 ```bash
-TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n 8
+TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n auto
 ```
 
 `url` starts the test Postgres if it is not up (port 5455, everything in
@@ -161,7 +169,7 @@ A long or heavy run can have a container of its own, by name and port:
 
 ```bash
 export TEMPER_TEST_PG_NAME=temper-test-postgres-mine TEMPER_TEST_PG_PORT=5481
-TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n 8
+TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n auto
 scripts/test-postgres.sh down                    # it is yours alone: remove it after
 ```
 
@@ -180,10 +188,15 @@ to it when a new test starts storing something.
 ```bash
 cd frontend
 npx tsc -b          # types
-npx vitest run      # unit tests
+npx vitest run      # local env/shared setting, else 10 workers
 npm run build && npm run e2e
                     # the browser tests that need no temper, as GitHub runs them
 ```
+
+Vitest's local worker precedence is CLI/serial diagnostics, then
+`VITEST_MAX_WORKERS`, then `WT_CHECK_WORKERS`, then 10. For one worker use
+`--maxWorkers=1` or `--no-file-parallelism`, not 0. CI and all Playwright
+configurations (including live-browser serial cases) are unchanged.
 
 No temper is started for the browser tests, here or on GitHub: AGENTS.md
 rule 15 allows no copy of Temper but the live one (temper-dev), and a browser
@@ -342,8 +355,8 @@ journalctl --user -u temper-ci-watch -n 50
 
 ```bash
 uv sync --frozen --extra dev                      # the same versions GitHub had
-uv run pytest tests/ --timeout=120 -n 8           # the same command
-TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n 8
+uv run pytest tests/ --timeout=120 -n auto        # keep local worker policy
+TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n auto
 ```
 
 If it passes here and fails there, the difference is the environment, and

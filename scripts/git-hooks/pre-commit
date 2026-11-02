@@ -127,8 +127,10 @@ echo -e "$PASS mypy passed."
 # ─── 4. Which tests this change can affect ────────────────────────────────
 # No -x. Stopping at the first failure meant a commit told you about one
 # broken test, you fixed it, and the next run told you about the next.
-# -n auto lets wt's check_workers default apply. Keep the hook's explicit
-# override; otherwise leave the caller's PYTEST_XDIST_AUTO_NUM_WORKERS alone.
+# -n auto consumes the existing worker env, then WT_CHECK_WORKERS, then the
+# local default of 10 (tests/worker_defaults.py); CI keeps xdist's behavior.
+# Keep the hook's explicit override, including 0 for serial diagnostics;
+# otherwise leave the caller's PYTEST_XDIST_AUTO_NUM_WORKERS alone.
 if [ -n "${PRECOMMIT_PYTEST_WORKERS:-}" ]; then
     export PYTEST_XDIST_AUTO_NUM_WORKERS="$PRECOMMIT_PYTEST_WORKERS"
 fi

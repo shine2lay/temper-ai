@@ -120,7 +120,8 @@ def test_conftest_calls_entry_early(monkeypatch):
 
 @pytest.mark.parametrize(("override", "caller", "expected"), [
     (None, None, None), ("4", None, "4"), (None, "2", "2"), ("4", "2", "4"),
-], ids=["default", "override", "caller", "override-wins"])
+    ("2", None, "2"), (None, "6", "6"), ("2", "6", "2"), ("0", "6", "0"),
+], ids=["default", "override", "caller", "override-wins", "two", "inherited", "two-wins-six", "serial"])
 def test_hook_runs_auto_and_only_sets_workers_when_requested(tmp_path, override, caller, expected):
     tools = tmp_path / "bin"
     tools.mkdir()
@@ -153,7 +154,7 @@ def test_hook_runs_auto_and_only_sets_workers_when_requested(tmp_path, override,
 
 def test_real_pytest_restarts_once_through_fake_wt(tmp_path):
     # Use the real conftest, not a reconstructed hook: disconnecting its call must fail this test.
-    for relative in ("tests/__init__.py", "tests/conftest.py", "tests/pgtier.py", "tests/machine_slot.py"):
+    for relative in ("tests/__init__.py", "tests/conftest.py", "tests/pgtier.py", "tests/machine_slot.py", "tests/worker_defaults.py"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, target)

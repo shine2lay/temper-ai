@@ -4,6 +4,7 @@ import path from 'path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { localTestWorkers } from './testWorkers'
 
 // The fonts are under the SIL Open Font License 1.1, which asks that the
 // licence travel with them. Each licence text kept next to the fonts
@@ -27,7 +28,7 @@ function fontLicences(): Plugin {
 
 export default defineConfig({
   base: '/app/',
-  plugins: [react(), tailwindcss(), fontLicences()],
+  plugins: [react(), tailwindcss(), fontLicences(), localTestWorkers()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

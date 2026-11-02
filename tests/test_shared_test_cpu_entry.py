@@ -637,7 +637,7 @@ def host(tmp_path):
     (repo / "scripts/git-hooks").mkdir(parents=True)
     (repo / "scripts/git-hooks/pre-commit").write_text((ROOT / "scripts/git-hooks/pre-commit").read_text())
     entry_copy(repo / "tests/machine_slot.py", h)
-    for relative in ("tests/__init__.py", "tests/conftest.py", "tests/pgtier.py"):
+    for relative in ("tests/__init__.py", "tests/conftest.py", "tests/pgtier.py", "tests/worker_defaults.py"):
         (repo / relative).write_text((ROOT / relative).read_text())
     (repo / "pytest.ini").write_text("[pytest]\n")
     (repo / "tests/test_probe.py").write_text(

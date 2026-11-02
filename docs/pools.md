@@ -72,6 +72,53 @@ restart is needed. A value that isn't a share of a week (above 0 and at most 1) 
 
 Labels and times only, never a token.
 
+## Unregistered private native attempts
+
+`temper_ai.llm.private_pool.invoke_private_pool` is an **unused capability**, not
+an agent mode or a registered profile. It selects from the native Anthropic OAuth
+pool with the real `TokenPool.pick`, including a one-slot pool. An empty,
+unavailable or non-OAuth pool refuses: an API key, named token lookup, CLI or
+another provider is not a substitute. Existing named-image and ordinary calls
+keep their existing behavior.
+
+The entry requires A's `PrivateLease`, `PrivateContextService` and `MediaCapability`,
+an invocation id, cancellation/deadline, a `NativePrivateMedia`, and two mandatory
+integration callbacks. `guard()` must perform the normal `LLM_CALL` policy check
+and current custody/cancellation/expiry fences; `account(outcome)` must pair normal
+per-attempt call/usage recording using only the closed `AttemptOutcome` metadata.
+There is no default successful policy, accounting, reservation or persistence
+implementation. The later runtime integration owns these bindings and result-schema
+validation/publication; this capability enables none of them.
+
+Each possible HTTP send first obtains a durable, exactly matching reservation.
+The attempt uses the same `send_native_once` reader and `SingleSendControl` as the
+legacy named wrapper, with SDK retries and redirects disabled. Only a **fully
+consumed pre-stream HTTP refusal** permits a next attempt, after durable refusal
+persistence and accounting:
+
+| Status | Next action |
+|---|---|
+| 429 | Existing model cooldown, then real pool pick |
+| 401 / 403 | Exclude this credential for this invocation only, then pick |
+| 529 | Existing exponential backoff with jitter, same credential |
+| 400 / 413 | Terminal configuration / platform-limit failure |
+
+`TokenPool.pick(..., exclude=frozenset(...))` is optional; its default selection,
+weekly preference and cooldown behavior are unchanged. On exhaustion, the safe
+receipt includes the picker's earliest existing reset when known; it never probes
+an allowance or invents a reset. No retry-count quota is
+added. Every attempt and overload wait rechecks the supplied policy and the
+existing deadline/cancellation fences. The existing five-second cleanup margin
+still applies.
+
+A lost reservation reply, uncertain cleanup, failed refusal persistence/accounting,
+partial stream or SSE error after HTTP 200 never triggers another send. A terminal
+invalid JSON object likewise never regenerates. Usage remains nullable; unknown
+usage names/values, response ids, private text, hashes, request bodies and raw
+exceptions are excluded from the private outcome. Every returned private result
+must stay on the explicit private boundary, never generic events/checkpoints.
+No production capability limits or entitlement are inferred; see [media limits](image-inputs.md#unused-private-zero-or-many-capability).
+
 A pick the line moved logs one warning naming the account it skipped and that account's figure,
 for example:
 

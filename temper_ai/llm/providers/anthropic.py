@@ -457,6 +457,12 @@ class AnthropicLLM(BaseLLM):
         pooled = [n.token for n in named]
         self._pool = (TokenPool(name="anthropic-oauth", tokens=pooled, labels=[n.label for n in named])
                       if len(pooled) > 1 else None)
+        # Explicit private mode must use the real picker even with one slot.
+        # Keep legacy singleton/named behavior intact; never synthesize a pool
+        # from api_key, a named-token lookup or a credential outside this list.
+        self._private_pool = self._pool if self._pool is not None else (
+            TokenPool(name="anthropic-oauth", tokens=pooled, labels=[n.label for n in named]) if pooled else None)
+
         # What `token:` may name: each token's account, and its variable.
         self._named: dict[str, NamedToken] = {}
         for n in named:
@@ -774,75 +780,14 @@ class AnthropicLLM(BaseLLM):
                     raise ss.SingleSendError("auth")
                 self.check_token(token)
                 body = self._build_single_send_kwargs(messages, **kwargs)
-                text: list[str] = []
+                from temper_ai.llm.native_attempt import (
+                    NativeObservation,
+                    send_native_once,
+                )
 
                 def run(shared: Any) -> LLMResponse:
-                    nonlocal response
-                    owned = ss.new_http_client(control)
-                    control.own(owned.close)
-                    client = shared.with_options(max_retries=0, timeout=control.remaining(), http_client=owned)
-                    manager = client.messages.stream(**body)
-                    stream = manager.__enter__()
-                    # Explicit close belongs to the bounded, privacy-scoped worker,
-                    # not a potentially blocking context-manager exit on this thread.
-                    control.own(lambda: manager.__exit__(None, None, None))
-                    # The answer and its usage are read apart: nothing about usage
-                    # may cost the answer (#221). So the raw events are read, not
-                    # `stream`: the SDK's accumulator behind it raises on a usage
-                    # shape it does not expect, before the stop reason arrives.
-                    # The request is unchanged. The two order checks below are
-                    # the ones that accumulator made.
-                    started = stopped = False
-                    blocks: set[Any] = set()
-                    response_id = stop_reason = start_usage = None
-                    delta_usages: list[Any] = []
-                    for event in stream._raw_stream:  # pinned SDK; tests drive the real one
-                        control.check()  # SDK-visible events; watchdog covers filtered pings/silence.
-                        kind = getattr(event, "type", None)
-                        if kind == "message_start":
-                            if not started:  # a repeat changes nothing, as in that accumulator
-                                message = getattr(event, "message", None)
-                                response_id = ss.safe_response_id(getattr(message, "id", None))
-                                start_usage = getattr(message, "usage", None)
-                                response.raw_response = {"response_id": response_id}
-                                started = True
-                        elif not started:
-                            raise ss.SingleSendError("partial", response=response)
-                        elif kind == "content_block_start":
-                            block = getattr(event, "content_block", None)
-                            if getattr(block, "type", None) not in ("text", "thinking", "redacted_thinking"):
-                                raise ss.SingleSendError("partial", response=response)
-                            blocks.add(getattr(event, "index", None))
-                        elif kind in ("content_block_delta", "content_block_stop") and getattr(event, "index", None) not in blocks:
-                            raise ss.SingleSendError("partial", response=response)
-                        elif kind == "content_block_delta":
-                            delta = getattr(event, "delta", None)
-                            if delta is not None and getattr(delta, "type", None) == "text_delta":
-                                text.append(delta.text)
-                                response.content = "".join(text)
-                        elif kind == "message_delta":
-                            stop_reason = getattr(getattr(event, "delta", None), "stop_reason", None)
-                            delta_usages.append(getattr(event, "usage", None))
-                        elif kind == "message_stop":
-                            stopped = True
-                    control.check()
-                    if not stopped:
-                        raise ss.SingleSendError("partial", response=response)
-                    usage, usage_fault = _single_send_usage_never_raises(start_usage, delta_usages)
-                    stop = stop_reason if stop_reason in ("end_turn", "stop_sequence", "max_tokens", "tool_use", "pause_turn", "refusal") else None
-                    response.prompt_tokens = usage["input_tokens"]
-                    response.completion_tokens = usage["output_tokens"]
-                    response.finish_reason = stop
-                    response.raw_response = {"response_id": response_id, "usage": usage, "terminal_complete": stopped}
-                    if usage_fault is not None:
-                        response.raw_response["usage_fault"] = usage_fault
-                    if stop == "max_tokens":
-                        raise ss.SingleSendError("truncation", response=response)
-                    if stop not in ("end_turn", "stop_sequence"):
-                        raise ss.SingleSendError("partial", response=response)
-                    # A truly empty final answer is still one answer, never re-asked.
-                    response.content = "".join(text)
-                    return response
+                    return send_native_once(shared, body, control, response, NativeObservation(),
+                                            _single_send_usage_never_raises)
 
                 response = self._call_pinned(token, run, body["model"], single_send=True)
             except Exception as exc:  # noqa: BLE001 - copy only safe facts, erase prose/chain

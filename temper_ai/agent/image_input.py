@@ -225,7 +225,7 @@ def _png_dimensions(raw: bytes, check: Callable[[], None] | None = None) -> tupl
     return width, height
 
 
-def _inline_png(value: Any, check: Callable[[], None] | None = None) -> InlinePNG:
+def parse_inline_png(value: Any, check: Callable[[], None] | None = None) -> InlinePNG:
     if check is not None:
         check()
     if type(value) is not str or not value:
@@ -247,12 +247,22 @@ def extract_image_input(config: dict, input_data: dict, check: Callable[[], None
         raise _bad_png()
     if set(input_data) & {"_strategy_context", "other_agents", "workspace_path", "memories"}:
         raise ValueError("image_input refuses ambient strategy/history/workspace/memory input")
-    image = _inline_png(input_data.get(key), check)
+    image = parse_inline_png(input_data.get(key), check)
     return image, image.redact({k: v for k, v in input_data.items() if k != key})
 
 
 def image_request_metadata(raw: bytes, check: Callable[[], None] | None = None) -> dict[str, Any]:
-    """Closed image-mode wire projection; single_call's parser stays text-only."""
+    """Legacy named image mode still requires exactly one PNG."""
+    return _png_request_metadata(raw, check, exactly_one=True)
+
+
+def native_media_request_metadata(raw: bytes, check: Callable[[], None] | None = None) -> dict[str, Any]:
+    """Explicit 0..N PNG variant; does not relax the named image wrapper."""
+    return _png_request_metadata(raw, check, exactly_one=False)
+
+
+def _png_request_metadata(raw: bytes, check: Callable[[], None] | None, *, exactly_one: bool) -> dict[str, Any]:
+    """Shared closed wire projection; single_call's parser stays text-only."""
     try:
         body = json.loads(raw)
         if (not isinstance(body, dict) or type(body.get("model")) is not str or not body["model"].strip()
@@ -275,10 +285,10 @@ def image_request_metadata(raw: bytes, check: Callable[[], None] | None = None) 
                 if (not isinstance(source, dict) or set(source) != {"type", "media_type", "data"}
                         or source["type"] != "base64" or source["media_type"] != "image/png"):
                     raise SingleSendError("strict_parser")
-                images.append(_inline_png(source["data"], check).metadata)
+                images.append(parse_inline_png(source["data"], check).metadata)
             else:
                 texts.append(block)
-        if len(images) != 1 or not any(isinstance(b.get("text"), str) and b["text"].strip() for b in texts):
+        if (exactly_one and len(images) != 1) or not any(isinstance(b.get("text"), str) and b["text"].strip() for b in texts):
             raise SingleSendError("strict_parser")
         text_body = {**body, "messages": [{**message, "content": texts}]}
         result = request_metadata(json.dumps(text_body).encode())

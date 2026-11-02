@@ -78,6 +78,45 @@ Do not print/echo the attachment, place it in a template, or use a model to read
 
 A workflow may intentionally invoke the node again on a later execution; at-most-one-send applies to **this invocation**, not a deduplication service across deliberate workflow retries/resumes.
 
+## Unused private zero-or-many capability
+
+The separate, unregistered `NativePrivateMedia` in `temper_ai.agent.private_media`
+accepts zero or more PNGs through A's private contracts. It reuses
+`parse_inline_png` and the closed wire parser in `temper_ai.agent.image_input`;
+`image_request_metadata` still requires exactly one PNG. This does **not** add an
+image list to the named `image_input` agent or enable `private_call` dispatch.
+
+Its caller must supply a versioned `MediaCapability` with explicit provider/model,
+profile/revision, source kind, image count, per-image bytes/dimensions and total
+serialized-request bytes. No production profile or numeric defaults ship here.
+Missing/malformed facts fail unavailable. Synthetic P2 values work only with an
+explicit test opt-in and are not provider facts. An authoritative profile's source
+and revision must be backed by static provider documentation by its installer;
+no runtime quota/entitlement/model probe fills gaps. A's present media contract
+has no model-context-token field, so this implementation does not claim a local
+model-context-token-limit check.
+
+Selected attachments must all be available, canonical PNGs with matching declared
+bytes/dimensions and unique references/association positions. Their exact ordered
+byte sequence must match the native image blocks. The integrating app renderer
+owns the meaning of message/attachment associations; the adapter preserves its
+user text and images exactly through OAuth shaping. It neither retrieves nor
+crops, downscales, collages or drops selections.
+
+Limits are checked on prepared attachments, the shaped request, and the actual
+HTTP-serialized bytes (including base64, text, OAuth system framing and JSON
+encoding). The real final request must equal the prepared snapshot; SDK/transport
+changes cannot silently add fields. The private control emits no body hashes or
+input-part metadata. Temperature remains absent unless explicitly provided;
+unsupported settings are terminal rather than stripped and retried.
+
+Only fixed offline fixtures qualify this unused capability. The final locked
+Anthropic SDK's `_raw_stream` is shared with named mode and tested using real SDK
+event objects over fake HTTP; no real model, credential or live quota is contacted.
+The native reader depends on that SDK-internal attribute, so a future SDK update
+must re-run the legacy and private stream tests. End-to-end custody, application
+schema parity, policy/accounting wiring and activation remain separate work.
+
 ## What is proven
 
 The dedicated offline tests use fixed synthetic PNGs, the real opt-in agent/native provider path, a fake named OAuth credential and a counting HTTP transport. They check attachment structure in-process using metadata/boolean assertions, one initiated send, refused unsafe configurations/input, cancellation/cleanup, policy veto, safe projections and preserved legacy behavior. They make **no real model call** and inspect no real image or credential.

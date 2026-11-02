@@ -269,7 +269,8 @@ class TokenPool:
             pending = [u for t in self.tokens if (u := self._blocked_until(t, family)) > now]
         return min(pending) if pending else None
 
-    def pick(self, sticky_key: str | None = None, model: str | None = None) -> str:
+    def pick(self, sticky_key: str | None = None, model: str | None = None, *,
+             exclude: frozenset[str] = frozenset()) -> str:
         """The token this call should use.
 
         The sticky key's slot when it is available and under the week line
@@ -279,10 +280,12 @@ class TokenPool:
         on one account (a cooled favourite must not stall an entire run).
         `PoolExhausted` when none is available. Availability is per model: a
         slot spent on one model family is still the right slot for another.
+        Explicit invocation-only exclusions do not mutate global cooldowns or
+        weekly usage. With none, the legacy preference/selection is unchanged.
         """
         if not self.tokens:
             raise PoolExhausted(0, None)
-        available = self.available(model)
+        available = [token for token in self.available(model) if token not in exclude]
         if not available:
             raise PoolExhausted(len(self.tokens), self.soonest_reset(model))
 

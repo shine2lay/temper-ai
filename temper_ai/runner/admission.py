@@ -231,6 +231,9 @@ class DbAdmissionTransport:
                  installation: InstallationVerifier | None = None,
                  preparation: PreparationVerifier | None = None,
                  worker_identity: Callable[[], str] | None = None):
+        from temper_ai.config.candidate_admission import memoize_codec
+
+        memoize_codec(codec)
         self.codec = codec
         self.authority = authority
         self.current_source = current_source
@@ -238,26 +241,36 @@ class DbAdmissionTransport:
         self.preparation = preparation
         self.worker_identity = worker_identity
 
+    def _checked_parts(self, wire: bytes):
+        from temper_ai.config.candidate_admission import validated_record_parts
+
+        parts = validated_record_parts(self.codec, wire, self.authority)
+        require_source(parts.descriptor, self.current_source())
+        require_custody(parts.descriptor)
+        return parts
+
     def _checked(self, record: AdmissionRecord) -> AdmissionRecord:
         if type(record) is not AdmissionRecord:
             raise AdmissionRefused(RefusalCode.TYPE)
-        checked = self.codec.record(record.wire, self.authority)
-        descriptor = self.codec.descriptor(
-            checked.value()["immutable"]["descriptor_json"].encode("utf-8"), self.authority,
-        )
-        require_source(descriptor, self.current_source())
-        require_custody(descriptor)
-        return checked
+        return self._checked_parts(record.wire).record
 
     def _descriptor(self, record: AdmissionRecord) -> dict[str, Any]:
+        from temper_ai.config.candidate_admission import _PURE_CODEC_CACHE
+
+        schema_bytes = getattr(self.codec, "_schema_bytes", None)
+        if type(schema_bytes) is bytes:
+            hit = _PURE_CODEC_CACHE.get(("record_parts", schema_bytes, self.authority, record.wire))
+            if hit is not None:
+                return copy.deepcopy(hit.descriptor_dict)
         return decode_canonical(record.value()["immutable"]["descriptor_json"].encode("utf-8"))
 
     def _row_record(self, row: WorkflowRun | None) -> AdmissionRecord:
         if row is None or not has_admission(row.spawner_metadata):
             raise AdmissionRefused(RefusalCode.MISSING)
-        record = self._checked(AdmissionRecord(canonical_bytes(row.spawner_metadata[RESERVED_KEY])))
-        descriptor = self._descriptor(record)
-        dispatch = record.value()["dispatch"]
+        parts = self._checked_parts(canonical_bytes(row.spawner_metadata[RESERVED_KEY]))
+        record = parts.record
+        descriptor = parts.descriptor_dict
+        dispatch = parts.dispatch_dict
         if (row.execution_id != descriptor["execution_uuid"]
                 or row.workflow_name != descriptor["workflow_name"]
                 or row.workspace_path != descriptor["workspace_path"]
@@ -351,24 +364,35 @@ class DbAdmissionTransport:
     def bind_root_readiness(self, current: AdmissionRecord, receipt: RootReadiness, *,
                             verified_preparation: object, transaction: object) -> AdmissionRecord:
         transaction = require_session(transaction)
-        before = self._checked(current)
+        if type(current) is not AdmissionRecord:
+            raise AdmissionRefused(RefusalCode.TYPE)
+        before_parts = self._checked_parts(current.wire)
         if type(receipt) is not RootReadiness:
             raise AdmissionRefused(RefusalCode.TYPE)
         receipt = self.codec.readiness(receipt.wire)
-        row, held = self._locked_record(transaction, self._descriptor(before)["execution_uuid"])
+        row, held = self._locked_record(transaction, before_parts.descriptor_dict["execution_uuid"])
+        held_parts = self._checked_parts(held.wire)
         # Other positions may have completed since the caller's snapshot. Only their
         # readiness may differ; merge while locked, preserving every one of them.
-        b, h = before.value(), held.value()
-        if canonical_bytes({k: v for k, v in b.items() if k != "readiness"}) != canonical_bytes(
-                {k: v for k, v in h.items() if k != "readiness"}):
+        if before_parts.non_readiness_wire != held_parts.non_readiness_wire:
             raise AdmissionRefused(RefusalCode.GENERATION)
         if (self.preparation is None or self.preparation.verify_preparation(
                 held, receipt, verified_preparation, transaction=transaction) is not True):
             raise AdmissionRefused(RefusalCode.READINESS)
-        proposal = held.value()
-        if not any(r["position_id"] == receipt.value()["position_id"] for r in proposal["readiness"]):
-            proposal["readiness"].append(receipt.value())
-        after = self._checked(AdmissionRecord(canonical_bytes(proposal)))
+        r_val = decode_canonical(receipt.wire)
+        if not any(r["position_id"] == r_val["position_id"] for r in held_parts.readiness_list):
+            new_readiness = [*held_parts.readiness_list, r_val]
+            if held.wire.endswith(b',"readiness":[]}'):
+                after_wire = held.wire[:-2] + receipt.wire + b"]}"
+            elif held.wire.endswith(b"]}"):
+                after_wire = held.wire[:-2] + b"," + receipt.wire + b"]}"
+            else:
+                after_wire = canonical_bytes({**held_parts.base_dict, "readiness": new_readiness})
+        else:
+            new_readiness = list(held_parts.readiness_list)
+            after_wire = held.wire
+        after_parts = self._checked_parts(after_wire)
+        after = after_parts.record
         check_readiness_transition(held, after, receipt)
         row.spawner_metadata = {**row.spawner_metadata, RESERVED_KEY: after.value()}
         transaction.add(row)
@@ -390,8 +414,8 @@ class DbAdmissionTransport:
             raise AdmissionRefused(RefusalCode.TYPE)
         with get_session() as session:
             _, held = self._locked_record(session, binding.dispatch.execution_uuid)
-            value = held.value()
-            immutable, dispatch = value["immutable"], value["dispatch"]
+            held_parts = self._checked_parts(held.wire)
+            immutable, dispatch = held_parts.immutable_dict, held_parts.dispatch_dict
             if (dispatch["phase"] != "running"
                     or binding.dispatch.dispatch_nonce != dispatch["dispatch_nonce"]
                     or binding.dispatch.running_attempt != dispatch["running_attempt"]

@@ -119,6 +119,9 @@ class CandidateUse:
     def __init__(self, *, codec: ContractCodec, record: AdmissionRecord,
                  authority: DescriptorAuthority, projection: ActualProjection,
                  transport: ProtectedUseTransport, workflow: WorkflowConfig) -> None:
+        from temper_ai.config.candidate_admission import memoize_codec
+
+        memoize_codec(codec)
         self.codec, self.authority = codec, authority
         self.record = codec.record(record.wire, authority)
         value = self.record.value()
@@ -139,7 +142,13 @@ class CandidateUse:
         self._workspace_path: str = expected["workspace_path"]
         self._inputs_wire = expected["metadata_inputs_json"].encode()
         self._graph_wire = canonical_bytes(expected["graph"])
+        self._graph_wire_sha256 = digest(DigestDomain.GRAPH, self._graph_wire)
         self._workflow_json = FrozenJSON(expected["graph"]["workflow_json"].encode())
+        self._expected_known_fields: dict[bytes, tuple[bool, Any]] = {}
+        self._record_summaries: dict[
+            tuple[DescriptorAuthority, bytes],
+            tuple[str, bytes, tuple[bytes, ...], frozenset[bytes]],
+        ] = {}
         position_at: dict[tuple[str, ...], str] = {}
         prepared: dict[tuple[str, ...], list[str]] = {}
         self._root_policy: dict[str, FrozenJSON | None] = {}
@@ -189,16 +198,19 @@ class CandidateUse:
         )
 
     def _readiness(self, position_id: str) -> RootReadiness | None:
+        from temper_ai.config.candidate_admission import validated_record_parts
+
         current = self.record
         record, found, typed = self._ready
         if record is not current:
             found, typed = {}, {}
-            for r in current.value()["readiness"]:
-                found.setdefault(r["position_id"], r)
+            parts = validated_record_parts(self.codec, current.wire, self.authority)
+            for r, r_wire in zip(parts.readiness_list, parts.readiness_wire_tuple, strict=True):
+                found.setdefault(r["position_id"], r_wire)
             self._ready = (current, found, typed)
         if position_id not in typed:
-            ready = found.get(position_id)
-            typed[position_id] = self.codec.readiness(canonical_bytes(ready)) if ready else None
+            ready_wire = found.get(position_id)
+            typed[position_id] = self.codec.readiness(ready_wire) if ready_wire else None
         return typed[position_id]
 
     def check_binding(self, binding: CandidateInvocationBinding) -> None:
@@ -216,18 +228,28 @@ class CandidateUse:
 
     def check_graph(self, *, binding: CandidateInvocationBinding, actual_graph: FrozenJSON) -> None:
         self.check_binding(binding)
-        if (actual_graph.wire != self._graph_wire
-                or digest(DigestDomain.GRAPH, actual_graph.wire) != self.graph_sha256):
+        actual_sha256 = (
+            self._graph_wire_sha256
+            if actual_graph.wire == self._graph_wire
+            else digest(DigestDomain.GRAPH, actual_graph.wire)
+        )
+        if actual_graph.wire != self._graph_wire or actual_sha256 != self.graph_sha256:
             refuse(RefusalCode.GRAPH)
 
     def _metadata(self, actual: object, expected: FrozenJSON) -> None:
         values = actual if type(actual) is dict else vars(actual)
+        cached = self._expected_known_fields.get(expected.wire)
+        if cached is None:
+            ev = expected.value()
+            cached = ("_KNOWN_FIELDS" in ev, ev.get("_KNOWN_FIELDS"))
+            self._expected_known_fields[expected.wire] = cached
+        has_known, expected_known = cached
         if "_KNOWN_FIELDS" in values:
             members = values["_KNOWN_FIELDS"]
             if (type(members) is not frozenset or any(type(v) is not str for v in members)
-                    or sorted(members) != expected.value().get("_KNOWN_FIELDS")):
+                   or sorted(members) != expected_known):
                 refuse(RefusalCode.FIELDS)
-        elif "_KNOWN_FIELDS" in expected.value():
+        elif has_known:
             refuse(RefusalCode.FIELDS)
 
     def _walk(self, nodes: list[Any], prefix: tuple[str, ...] = ()) -> dict[tuple[str, ...], Any]:
@@ -430,21 +452,50 @@ class CandidateUse:
                         refuse(RefusalCode.READINESS)
                     after = self.transport.bind_root_readiness(current, receipt,
                                                                verified_preparation=verified, transaction=transaction)
-                    after = self.codec.record(after.wire, self.authority)
+                    after = self._check_record(after.wire)
                     check_readiness_transition(current, after, receipt)
                     current = after
                 return current
             # Local readiness advances only after the protected transaction commits.
             self.record = self.transport.current_generation(binding, bind)
 
+    def _check_record(self, wire: bytes) -> AdmissionRecord:
+        from temper_ai.config.candidate_admission import validated_record_parts
+
+        parts = validated_record_parts(self.codec, wire, self.authority)
+        self._record_summaries[(self.authority, parts.record.wire)] = (
+            parts.immutable_sha256,
+            parts.dispatch_wire,
+            parts.readiness_wire_tuple,
+            parts.readiness_wires,
+        )
+        return parts.record
+
+    def _record_summary(self, record: AdmissionRecord) -> tuple[str, bytes, tuple[bytes, ...], frozenset[bytes]]:
+        key = (self.authority, record.wire)
+        summary = self._record_summaries.get(key)
+        if summary is None:
+            from temper_ai.config.candidate_admission import validated_record_parts
+
+            parts = validated_record_parts(self.codec, record.wire, self.authority)
+            summary = (
+                parts.immutable_sha256,
+                parts.dispatch_wire,
+                parts.readiness_wire_tuple,
+                parts.readiness_wires,
+            )
+            self._record_summaries[key] = summary
+        return summary
+
     def _current(self, current: AdmissionRecord) -> AdmissionRecord:
-        checked = self.codec.record(current.wire, self.authority)
-        a, b = checked.value(), self.record.value()
-        if a["immutable_sha256"] != b["immutable_sha256"] or canonical_bytes(a["dispatch"]) != canonical_bytes(b["dispatch"]):
+        checked = self._check_record(current.wire)
+        a_imm, a_disp, _, a_ready_set = self._record_summary(checked)
+        b_imm, b_disp, b_ready_seq, _ = self._record_summary(self.record)
+        if a_imm != b_imm or a_disp != b_disp:
             refuse(RefusalCode.GENERATION)
         # No stale/regressed or replaced readiness; other positions may have advanced.
-        for receipt in b["readiness"]:
-            if receipt not in a["readiness"]:
+        for receipt_wire in b_ready_seq:
+            if receipt_wire not in a_ready_set:
                 refuse(RefusalCode.READINESS)
         return checked
 
@@ -468,7 +519,13 @@ class CandidateUse:
             checked = self._current(current)
             self.check_context(binding, actual_context)
             receipt = binding.readiness
-            if receipt is None or receipt.value() not in checked.value()["readiness"]:
+            summary = self._record_summaries.get((self.authority, checked.wire))
+            ready_set = (
+                summary[3]
+                if summary is not None
+                else frozenset(canonical_bytes(r) for r in checked.value()["readiness"])
+            )
+            if receipt is None or receipt.wire not in ready_set:
                 refuse(RefusalCode.READINESS)
             ready = receipt.value()
             if binding.position_id is None:

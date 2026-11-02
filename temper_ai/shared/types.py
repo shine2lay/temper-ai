@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from temper_ai.agent.admission_use import CandidateUse
     from temper_ai.config.admission_contract import CandidateInvocationBinding
+    from temper_ai.private_context.contracts import PrivateExecution
 
 
 class Status(StrEnum):
@@ -134,6 +135,9 @@ class ExecutionContext:
     # agents take the ordinary path (docs/candidate-admission-use-sites.md).
     admission_hooks: CandidateUse | None = None
     admission_required: bool = False
+    # Inert private service/principal seam. Never a lease, body or draft; E owns
+    # runtime wiring. Ordinary contexts leave this unset (no behavior change).
+    private_context: PrivateExecution | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.admission is not None or self.admission_hooks is not None \

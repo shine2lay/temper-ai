@@ -46,6 +46,30 @@ class RunGithubKey(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class RunPrivateKey(SQLModel, table=True):
+    """Additive scoped-worker-key schema; no private content or raw credential.
+
+    One current key per execution. C1's fence joins replacement/revocation to
+    generation/lifecycle changes. Old servers ignore this separate table.
+    """
+
+    __tablename__ = "run_private_keys"
+
+    execution_id: str = Field(primary_key=True)
+    token_hash: str = Field(index=True, unique=True)
+    owner_principal: str
+    namespace: str
+    profile: str
+    profile_revision: str
+    workflow_name: str
+    workflow_revision: str
+    node_path: str
+    use: str
+    runner_generation: int
+    expires_at: datetime
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class GuardSeen(SQLModel, table=True):
     """Who has changed things through the API, kept across restarts.
 

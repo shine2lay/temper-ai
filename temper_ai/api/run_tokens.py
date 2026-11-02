@@ -58,8 +58,11 @@ class RunKeyKind:
     # Where it opens the door when the server asks a token on every route (TEMPER_API_TOKEN,
     # api/auth.py): path prefixes, or () for every path.
     paths: tuple[str, ...] = ()
+    exact_paths: bool = False
 
     def opens(self, path: str) -> bool:
+        if self.exact_paths:
+            return path in self.paths
         return not self.paths or any(path.startswith(p) for p in self.paths)
 
 
@@ -68,7 +71,15 @@ STARTS_RUNS = RunKeyKind("starts runs", "trun_", "run_tokens", BOX_ACTIONS)
 # /api/github/repos); nothing else.
 GITHUB_TOKENS = RunKeyKind("GitHub tokens", RUN_GITHUB_KEY_PREFIX, "run_github_keys", GITHUB_TOKEN_ACTIONS,
                            paths=("/api/github/",))
-KINDS = (STARTS_RUNS, GITHUB_TOKENS)
+# A private key opens only these exact POST operations. The private handler
+# verifies method, live generation and complete scope; this kind never names a
+# generic Caller, even with the generic guard off.
+PRIVATE_CONTEXT = RunKeyKind(
+    "private context", "tpriv_", "run_private_keys", frozenset(),
+    paths=tuple("/api/private-worker/" + operation for operation in (
+        "acquire", "validate", "reserve", "publish", "finish", "release")), exact_paths=True,
+)
+KINDS = (STARTS_RUNS, GITHUB_TOKENS, PRIVATE_CONTEXT)
 
 ENV_NAME = "TEMPER_RUN_TOKEN"  # noqa: S105 - a variable name, not a secret
 KEY_PREFIX = STARTS_RUNS.prefix
@@ -83,9 +94,16 @@ def _digest(raw: str) -> str:
 
 
 def _model(kind: RunKeyKind):
-    from temper_ai.api.guard_models import RunGithubKey, RunToken
+    from temper_ai.api.guard_models import RunGithubKey, RunPrivateKey, RunToken
 
-    return RunGithubKey if kind is GITHUB_TOKENS else RunToken
+    # Explicit mapping: a new/forged kind must never fall back to start-key authority.
+    if kind is STARTS_RUNS:
+        return RunToken
+    if kind is GITHUB_TOKENS:
+        return RunGithubKey
+    if kind is PRIVATE_CONTEXT:
+        return RunPrivateKey
+    raise ValueError("unknown run key kind")
 
 
 def open_for_run(execution_id: str, workflow_name: str = "", kind: RunKeyKind = STARTS_RUNS) -> str | None:
@@ -98,6 +116,14 @@ def open_for_run(execution_id: str, workflow_name: str = "", kind: RunKeyKind = 
     """
     from temper_ai.database.session import get_session
 
+    if kind is PRIVATE_CONTEXT:
+        # Private keys need the authoritative bootstrap fence/transaction and
+        # after-commit exposure, never this legacy best-effort key writer.
+        from temper_ai.private_context.errors import (
+            PrivateDraftErrorCode,
+            PrivateDraftFailure,
+        )
+        raise PrivateDraftFailure(PrivateDraftErrorCode.CONTEXT_UNAVAILABLE)
     model = _model(kind)
     raw = kind.prefix + secrets.token_urlsafe(32)
     try:
@@ -120,6 +146,10 @@ def open_for_run(execution_id: str, workflow_name: str = "", kind: RunKeyKind = 
 
 def close_for_run(execution_id: str, kind: RunKeyKind = STARTS_RUNS) -> None:
     """The run's process is done with its key of ``kind``: forget the key and drop its hash."""
+    if kind is PRIVATE_CONTEXT:
+        from temper_ai.api.private_worker_keys import close_private_key
+        close_private_key(execution_id)
+        return
     with _lock:
         had = _held.pop((kind.table, execution_id), None)
     if had is None:
@@ -159,7 +189,9 @@ def identify_run_key(presented: str | None) -> tuple[str, RunKeyKind] | None:
     somehow outlived the run's process.
     """
     kind = next((k for k in KINDS if presented and presented.startswith(k.prefix)), None)
-    if kind is None or not presented:
+    if kind is None or kind is PRIVATE_CONTEXT or not presented:
+        # Private credentials cannot be promoted to a generic box identity. Their
+        # exact scope/current generation is verified only by private_worker_keys.
         return None
     from sqlmodel import select
 

@@ -30,6 +30,8 @@ from temper_ai.api.github_tokens import router as github_tokens_router
 from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.http_error_reply import http_error_without_database_values
 from temper_ai.api.pools import router as pools_router
+from temper_ai.api.private_contexts import create_private_router
+from temper_ai.api.private_workers import create_worker_router
 from temper_ai.api.routes import ProblemRefusal, init_app_state, problem_response
 from temper_ai.api.routes import router as api_router
 from temper_ai.api.slack_test import router as slack_test_router
@@ -41,6 +43,7 @@ from temper_ai.database import init_database, reset_database
 from temper_ai.mcp import build_server as _build_mcp_server
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.memory.base import MemoryStoreBase
+from temper_ai.private_context.runtime import get_private_boundary
 
 # Import runner so its WorkflowRun SQLModel registers with metadata before
 # init_database calls create_all_tables. Phase 0 of worker_protocol_v1.
@@ -545,6 +548,10 @@ app.add_exception_handler(ProblemRefusal, problem_response)
 # detail when the error it was raised from is a database error (api/http_error_reply.py).
 app.add_exception_handler(StarletteHTTPException, http_error_without_database_values)
 app.include_router(api_router)
+# Route registration confers no authority; E supplies the separately configured
+# composition. Missing service/profile/keys refuse before private body decoding.
+app.include_router(create_private_router(lambda request: get_private_boundary()))
+app.include_router(create_worker_router(lambda request: get_private_boundary()))
 app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)

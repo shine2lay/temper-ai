@@ -33,6 +33,11 @@ from temper_ai.api.data_service import (
     list_workflow_executions,
     newest_attempt,
 )
+from temper_ai.api.private_run_routes import (
+    PrivateForkRoute,
+    PrivateLifecycleRoute,
+    PrivateStartRoute,
+)
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
@@ -185,7 +190,6 @@ def _register_run_tools(run_tool_executor: ToolExecutor, nodes) -> None:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.post("/api/runs", response_model=RunResponse)
 def start_run(body: RunRequest):
     """Start a workflow execution.
 
@@ -202,6 +206,11 @@ def start_run(body: RunRequest):
     _note_event_run(body.workflow, response.execution_id)
     record_action(response.execution_id, "start", caller, workflow=body.workflow)
     return response
+
+
+# Private inputs use a closed pre-decoder; ordinary request/response behavior stays.
+router.add_api_route("/api/runs", start_run, methods=["POST"], response_model=RunResponse,
+                     route_class_override=PrivateStartRoute)
 
 
 def _note_event_run(workflow: str, execution_id: str) -> None:
@@ -228,7 +237,11 @@ def _candidate_bindings() -> CandidateBindings | None:
     return vars(state).get("candidate_bindings")
 
 
-def _refuse_candidate_entry(execution_id: str | None = None, workflow: str | None = None) -> None:
+def _refuse_candidate_entry(execution_id: str | None = None, workflow: str | None = None,
+                            inputs: dict | None = None) -> None:
+    from temper_ai.runner.private_context_binding import refuse_private_legacy
+
+    refuse_private_legacy(execution_id, workflow, inputs)
     from temper_ai.config.admission_contract import AdmissionRefused
     from temper_ai.runner.admission import is_designated, refuse_legacy_entry
 
@@ -263,6 +276,15 @@ def _refuse_reserved_row(row) -> None:
 
 def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunResponse:
     """Start legacy runs by name; opted-in candidates use only a protected snapshot."""
+    from temper_ai.runner.private_context_binding import (
+        private_start_requested,
+        submit_private_start,
+    )
+
+    if private_start_requested(body.workflow, body.inputs):
+        chosen = submit_private_start(body.model_dump(exclude_unset=True),
+                                      mode=_execution_mode(), execution_id=execution_id)
+        return RunResponse(execution_id=chosen, status="queued")
     from temper_ai.config.admission_contract import (
         SUPPORTED_MODE,
         AdmissionRefused,
@@ -445,6 +467,7 @@ def _start_run_external(
     _refuse_candidate_entry(execution_id, body.workflow)
     if body.admission is not None:
         raise HTTPException(status_code=409, detail="unsupported_mode")
+    _refuse_candidate_entry(workflow=config.name, inputs=body.inputs)
     _queue_run(execution_id, config.name, body.workspace_path, body.inputs, lane=lane)
     return RunResponse(execution_id=execution_id, status="queued")
 
@@ -573,6 +596,7 @@ def _start_run_subprocess(
     _refuse_candidate_entry(execution_id, body.workflow)
     if body.admission is not None:
         raise HTTPException(status_code=409, detail="unsupported_mode")
+    _refuse_candidate_entry(workflow=config.name, inputs=body.inputs)
     with get_session() as session:
         session.add(WorkflowRun(
             execution_id=execution_id,
@@ -836,7 +860,6 @@ class CancelRequest(BaseModel):
     reason: str = ""
 
 
-@router.post("/api/runs/{execution_id}/cancel")
 def cancel_run(execution_id: str, body: CancelRequest | None = None):
     """Cancel a running workflow execution (who asked is kept with the run). The reason is at
     most ``STOP_REASON_MAX_CHARS`` characters: a longer one is refused (400 ``{problem}``)
@@ -910,6 +933,18 @@ def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
     was answered, the same way an approval does, and ``GET .../decisions``
     can list the two side by side.
     """
+    from temper_ai.runner.private_context_binding import (
+        private_lifecycle,
+        private_run_requested,
+    )
+
+    if private_run_requested(execution_id):
+        private_lifecycle(execution_id, "cancel", body.model_dump(exclude_unset=True) if body else {},
+                          mode=_execution_mode())
+        cancel_event = _state().running.get(execution_id)
+        if cancel_event is not None:
+            cancel_event.set()
+        return {"status": "cancelling", "execution_id": execution_id}
     reason = (body.reason if body else "").strip()
     rejected: dict[str, Any] = {"gate_status": REJECTED, "gate_decided_at": _now_iso(), **_gate_who(caller)}
     if reason:
@@ -1119,7 +1154,6 @@ def _queue_cleanup_pass(execution_id: str, *, by: str) -> dict | None:
     return ended
 
 
-@router.post("/api/runs/{execution_id}/resume", response_model=RunResponse)
 def resume_run(execution_id: str, body: ResumeRequest | None = None):
     """Resume a workflow from its last checkpoint (who asked is kept with the run)."""
     caller = require_caller_may("resume", run_id=execution_id)
@@ -1136,6 +1170,15 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     and continues from where it left off. Uses current agent/workflow
     configs (not the configs at crash time).
     """
+    from temper_ai.runner.private_context_binding import (
+        private_lifecycle,
+        private_run_requested,
+    )
+
+    if private_run_requested(execution_id):
+        private_lifecycle(execution_id, "resume", body.model_dump(exclude_unset=True) if body else {},
+                          mode=_execution_mode())
+        return RunResponse(execution_id=execution_id, status="queued")
     body = body or ResumeRequest()
     _refuse_candidate_entry(execution_id, body.workflow)
 
@@ -1390,7 +1433,6 @@ def _start_resume(
     return RunResponse(execution_id=execution_id, status="resuming")
 
 
-@router.post("/api/runs/fork", response_model=RunResponse)
 def fork_run(body: ForkRequest):
     """Fork a new execution from a checkpoint of another (who asked is kept with the new run)."""
     caller = require_caller_may("fork", run_id=body.source_execution_id)
@@ -1400,13 +1442,21 @@ def fork_run(body: ForkRequest):
     return response
 
 
+router.add_api_route("/api/runs/{execution_id}/cancel", cancel_run, methods=["POST"],
+                     route_class_override=PrivateLifecycleRoute)
+router.add_api_route("/api/runs/{execution_id}/resume", resume_run, methods=["POST"],
+                     response_model=RunResponse, route_class_override=PrivateLifecycleRoute)
+router.add_api_route("/api/runs/fork", fork_run, methods=["POST"],
+                     response_model=RunResponse, route_class_override=PrivateForkRoute)
+
+
 def _fork_run(body: ForkRequest):
     """Fork a new execution from a specific checkpoint in another execution.
 
     Creates a new execution_id that shares history with the source up to
     the fork point, then continues independently.
     """
-    _refuse_candidate_entry(body.source_execution_id, body.workflow)
+    _refuse_candidate_entry(body.source_execution_id, body.workflow, body.inputs)
     # Read before anything else: a wait that ends while the fork is prepared refuses it.
     source_was_holding = holds.waiting(body.source_execution_id) is not None
     new_execution_id = str(uuid.uuid4())
@@ -2021,13 +2071,13 @@ def _run_key_if(starts_runs: bool, execution_id: str, workflow_name: str):
 def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None,
                   *, starts_runs: bool = False):
     """Run a workflow in a background thread."""
-    _refuse_candidate_entry(execution_id, workflow_name)
+    _refuse_candidate_entry(execution_id, workflow_name, inputs)
     with _run_key_if(starts_runs, execution_id, workflow_name):
         _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs)
 
 
 def _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
-    _refuse_candidate_entry(execution_id, workflow_name)
+    _refuse_candidate_entry(execution_id, workflow_name, inputs)
     stood_down = False
     try:
         logger.info("Starting workflow '%s' (execution: %s)", workflow_name, execution_id)
@@ -2058,7 +2108,7 @@ def _run_workflow_with_checkpoints(
     starts_runs: bool = False,
 ):
     """Run a workflow with pre-populated node_outputs from checkpoints (see below)."""
-    _refuse_candidate_entry(execution_id, workflow_name)
+    _refuse_candidate_entry(execution_id, workflow_name, inputs)
     with _run_key_if(starts_runs, execution_id, workflow_name):
         _run_workflow_with_checkpoints_now(
             nodes, inputs, context, workflow_name, execution_id, restored_outputs,
@@ -2076,7 +2126,7 @@ def _run_workflow_with_checkpoints_now(
     event so the view can identify the new attempt as a resume of a prior
     workflow event (instead of inferring from event count).
     """
-    _refuse_candidate_entry(execution_id, workflow_name)
+    _refuse_candidate_entry(execution_id, workflow_name, inputs)
     stood_down = False
     try:
         logger.info(

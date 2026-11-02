@@ -1,11 +1,27 @@
 # Who may change things: the write guard
 
-Anyone who can reach temper's server can read it. Changing something (starting
+Ordinary read routes follow the server's shared-token setting; the private
+context namespace has a separate mandatory named-key/scope boundary (below).
+Changing something (starting
 a run, answering a wait, cancelling, resuming, forking, cleaning up, writing a
 config) can be made to need a named key, and every such action records who did
 it. Run boxes can reach the server too (on the compose network and through any
 proxy the host has), so no network rule would fence them; a key they never get
 does.
+
+## Private context exception
+
+The dormant `/api/private-contexts` boundary always requires a verified named
+header key and configured namespace/profile rights, even when the ordinary guard
+is off or recording. Shared tokens, browser Origin, loopback, query/cookies and
+constructed Caller objects are not private authority. No production profile or
+private service is installed by merely registering its routes.
+
+The separate process-held private worker key opens only exact worker operations;
+it grants no ordinary API power and never goes to script/tool environments.
+Missing private key storage fails closed rather than using a start-run key table.
+See [Private context HTTP and process boundary](private-context-api.md) for
+composition requirements, strict errors, transaction ownership and remaining joins.
 
 ## Modes
 

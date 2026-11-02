@@ -115,6 +115,9 @@ def execute_workflow(
         registry, ws_manager.cleanup) is intentionally NOT done here so the
         runner stays decoupled from the route handler's bookkeeping.
     """
+    from temper_ai.runner.private_context_binding import refuse_private_legacy
+
+    refuse_private_legacy(execution_id, workflow_name, inputs)
     from temper_ai.config.admission_contract import (
         SUPPORTED_MODE,
         AdmissionRefused,

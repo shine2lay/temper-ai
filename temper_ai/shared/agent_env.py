@@ -112,10 +112,11 @@ def env_for_agent_tool(
         # inherited secrets and removed. This is how script agents pass data to a script:
         # a value in the environment is data the shell will never parse as code.
         env.update({str(k): str(v) for k, v in extra.items()})
-    return _without_run_github_key(env)
+    return _without_process_keys(env)
 
 
-def _without_run_github_key(env: dict[str, str]) -> dict[str, str]:
-    """``env`` minus a run's GitHub-token key, by its name or by its look, wherever it came from."""
-    return {k: v for k, v in env.items()
-            if k != box_env.RUN_GITHUB_KEY_ENV and not v.startswith(box_env.RUN_GITHUB_KEY_PREFIX)}
+def _without_process_keys(env: dict[str, str]) -> dict[str, str]:
+    """Process-only GitHub/private credentials never reach tools, even explicit extras."""
+    names = {box_env.RUN_GITHUB_KEY_ENV, box_env.RUN_PRIVATE_KEY_ENV}
+    prefixes = (box_env.RUN_GITHUB_KEY_PREFIX, box_env.RUN_PRIVATE_KEY_PREFIX)
+    return {k: v for k, v in env.items() if k not in names and not v.startswith(prefixes)}

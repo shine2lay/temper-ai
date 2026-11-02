@@ -101,7 +101,10 @@ def queue_run_in(
 
     from temper_ai.runner.admission import refuse_legacy_row, refuse_reserved_extra
     from temper_ai.runner.models import WorkflowRun
+    from temper_ai.runner.private_context_binding import check_private_queue_in
     from temper_ai.spawner.box_seal import legacy_workspace_path
+
+    check_private_queue_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra)
 
     # Before any row mutation, including re-queues in a caller's transaction.
     # The worker checks again at spawn: a symlink can change while queued.
@@ -120,6 +123,9 @@ def queue_run_in(
         select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)
         .with_for_update().execution_options(populate_existing=True),
     ).first()
+    # Recheck the refreshed, locked row as well: an ordinary pre-lock observation
+    # must not authorize overwriting a private marker installed by another writer.
+    check_private_queue_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra)
     # Admitted rows are installed already queued by the typed transport. They never
     # re-enter through legacy resume/retry/cleanup, even after a rename.
     refuse_legacy_row(row)

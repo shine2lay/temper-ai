@@ -16,7 +16,8 @@ import hmac
 import json
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,48 @@ def identify_caller_name(presented: str | None, source: str) -> str | None:
     return None
 
 
+def strict_header_key(scope: Mapping[str, Any]) -> str | None:
+    """Private authority accepts one unambiguous header, never URL/cookie credentials."""
+    credentials = [(key.lower(), value) for key, value in (scope.get("headers") or [])
+                   if key.lower() in {b"authorization", b"x-temper-token"}]
+    if len(credentials) != 1:
+        return None
+    kind, raw = credentials[0]
+    try:
+        value = raw.decode("ascii")
+    except UnicodeDecodeError:
+        return None
+    if kind == b"authorization":
+        scheme, separator, value = value.partition(" ")
+        if scheme.lower() != "bearer" or separator != " ":
+            return None
+    if not value or any(ord(char) <= 32 or ord(char) >= 127 for char in value):
+        return None
+    return value
+
+
+def identify_verified_named_key(presented: str | None) -> str | None:
+    """Existing named-key lookup, excluding shared/run/reserved identities explicitly.
+
+    Unlike identify_caller_name, this never treats a network address as identity.
+    A key also equal to the shared token is not private authority, regardless of
+    which named-key source would otherwise take precedence.
+    """
+    from temper_ai.api.api_keys import NAME_RE, RESERVED_NAMES, RESERVED_PREFIXES
+    from temper_ai.api.run_tokens import is_run_key
+
+    if not presented or not presented.isascii() or is_run_key(presented):
+        return None
+    shared = configured_token()
+    if shared is not None and hmac.compare_digest(presented, shared):
+        return None
+    name = identify_caller_name(presented, "private-header")
+    if (name is None or not NAME_RE.fullmatch(name) or name in RESERVED_NAMES
+            or name.startswith(RESERVED_PREFIXES)):
+        return None
+    return name
+
+
 class CallerMiddleware:
     """Work out who sent each request and bind it for the request (api/caller.py).
 
@@ -261,14 +304,20 @@ class CallerMiddleware:
             await self.app(scope, receive, send)
             return
         from temper_ai.api.caller import Caller, bound, clean_request_id
+        from temper_ai.api.private_identity import bound_verified_named_key
+        from temper_ai.api.private_responses import is_private_path
 
+        private = is_private_path(str(scope.get("path", "")))
+        private_key = strict_header_key(scope)
         client = scope.get("client")
         source = str(client[0]) if client else "unknown"
         method = str(scope.get("method", "")).upper()
         presented = _write_key(scope)
         name: str | None = None
         may: frozenset[str] | None = None
-        if method not in _READ_METHODS:
+        if private:
+            name = identify_verified_named_key(private_key)
+        elif method not in _READ_METHODS:
             name = identify_caller_name(presented, source)
             if name is None and presented:
                 from temper_ai.api.run_tokens import identify_run_key, is_run_key
@@ -284,8 +333,8 @@ class CallerMiddleware:
         caller = Caller(
             name=name,
             source=source,
-            request_id=clean_request_id(_header(headers, b"x-request-id")),
-            via=f"{method} {scope.get('path', '')}",
+            request_id=clean_request_id(None if private else _header(headers, b"x-request-id")),
+            via="private" if private else f"{method} {scope.get('path', '')}",
             # A hint for record mode only (the dashboard without its key); never vouches.
             from_browser=name is None and _header(headers, b"sec-fetch-mode") is not None,
             may=may,
@@ -293,7 +342,7 @@ class CallerMiddleware:
             same_origin=_same_origin(headers),
         )
         scope[SCOPE_CALLER_KEY] = caller
-        with bound(caller):
+        with bound(caller), bound_verified_named_key(caller, private_key):
             await self.app(scope, receive, send)
 
 
@@ -305,6 +354,29 @@ class TokenAuthMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        from temper_ai.api.private_responses import is_private_path, private_failure
+        from temper_ai.api.run_tokens import PRIVATE_CONTEXT
+        from temper_ai.private_context.errors import PrivateDraftErrorCode
+
+        # Private worker credentials have no generic power, even with auth/guard
+        # off or record. Exact path AND method; prefix/contains matches are unsafe.
+        offered = _presented_token(scope)
+        if offered and offered.startswith(PRIVATE_CONTEXT.prefix):
+            if (scope.get("type") != "http" or scope.get("method") != "POST"
+                    or not PRIVATE_CONTEXT.opens(scope.get("path", ""))):
+                if scope.get("type") == "websocket":
+                    await send({"type": "websocket.close", "code": 4401})
+                else:
+                    await private_failure(PrivateDraftErrorCode.SCOPE_DENIED)(scope, receive, send)
+                return
+
+        # Private handlers perform mandatory credential+scope checks before receive;
+        # the generic gate must not substitute a shared token, redirect or default
+        # failure for that boundary. Unregistered private routes expose no service.
+        if scope.get("type") == "http" and is_private_path(scope.get("path", "")):
             await self.app(scope, receive, send)
             return
 

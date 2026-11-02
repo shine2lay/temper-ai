@@ -147,6 +147,18 @@ def cmd_run_workflow(args: argparse.Namespace, *,
             init_database(os.environ.get("TEMPER_DATABASE_URL",
                           os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db")))
         early_row = _load_run_row(execution_id)
+        # No generic bootstrap, checkpoint restore, tools, or model for a private
+        # row. E joins the concrete authenticated executor; no legacy fallback.
+        from temper_ai.private_context.errors import PrivateDraftFailure
+        from temper_ai.runner.private_context_binding import refuse_private_legacy
+
+        try:
+            refuse_private_legacy(execution_id,
+                                  early_row["workflow_name"] if early_row else None,
+                                  early_row.get("inputs") if early_row else None)
+        except PrivateDraftFailure:
+            print("private execution unavailable", file=sys.stderr)
+            return BOX_REFUSED_EXIT
         if early_row is not None and has_admission(early_row.get("spawner_metadata")):
             if candidate_bindings is None or (box_doc or {}).get("boundary") == "sealed":
                 raise AdmissionRefused(RefusalCode.MODE)

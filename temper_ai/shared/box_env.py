@@ -64,12 +64,16 @@ PI_ONLY = frozenset({"TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE",
 #: process (shared/agent_env.py).
 RUN_GITHUB_KEY_ENV = "TEMPER_RUN_GITHUB_KEY"
 RUN_GITHUB_KEY_PREFIX = "tghk_"
+# Private credentials have no environment transport at all; these are defensive
+# denials should a future caller accidentally put one in an explicit tool env.
+RUN_PRIVATE_KEY_ENV = "TEMPER_RUN_PRIVATE_KEY"
+RUN_PRIVATE_KEY_PREFIX = "tpriv_"
 
 #: Never handed to an agent tool process, listed or not.
 NEVER_FOR_AGENT_TOOLS = frozenset({
     "TEMPER_DATABASE_URL", "DATABASE_URL", "TEMPER_SECRET_KEY",
     "TEMPER_REDIS_URL", "REDIS_URL", "TEMPER_HOST_DATABASE_URL",
-    RUN_GITHUB_KEY_ENV,
+    RUN_GITHUB_KEY_ENV, RUN_PRIVATE_KEY_ENV,
 }) | SERVER_ONLY
 #: A name ending like this holds a secret: the box's process may hold it, its tools may not.
 SECRET_SUFFIXES = ("_KEY", "_TOKEN", "_TOKENS", "_SECRET", "_PASSWORD", "_CREDENTIALS")

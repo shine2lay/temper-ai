@@ -32,6 +32,7 @@ WATCH = "temper_ai/cli/watch_queue.py"
 ROUTES = "temper_ai/api/routes.py"
 GENERATION = "temper_ai/runner/row_generation.py"
 LANE = "temper_ai/runner/pi_lane.py"
+PRIVATE = "temper_ai/runner/private_context_binding.py"
 
 
 @dataclass(frozen=True, order=True)
@@ -170,6 +171,9 @@ def _writes(modules: dict[str, Module]) -> Counter[Site]:
 # Actual run-row writes. The value is the safety argument, not a permission to add
 # another write in that function: multiplicities and fields must match exactly.
 RUN_WRITERS: dict[tuple[str, str, str, tuple[str, ...]], str] = {
+    (PRIVATE, "private_lifecycle.effect", "attribute", ("status",)):
+        "C1-owned fence + caller Session; exact scope/generation, locked current row; cancel only queued/unclaimed. "
+        "C2 fakes prove orchestration, E must prove concrete C1 composition. No configured source by default.",
     (ROUTES, "_start_run_subprocess", "insert", tuple(sorted(FIELDS))):
         "Fresh dispatch insert before spawn; attempts default 0. Unique execution id.",
     (ROUTES, "_start_run_subprocess", "attribute", ("status", "spawner_kind", "spawner_handle", "spawner_metadata")):
@@ -306,8 +310,11 @@ def _require(mod: Module, scope: str, expression: str, check: str) -> None:
         target = target.value
     wanted = ast.dump(target)
     count = sum(ast.dump(n) == wanted for n in ast.walk(mod.function(scope)))
-    needed = 2 if (mod.path, scope, expression) == (
-        GENERATION, "_queued_dispatch", "col(WorkflowRun.spawner_handle) == judged.handle") else 1
+    needed = 2 if (mod.path, scope, expression) in {
+        (GENERATION, "_queued_dispatch", "col(WorkflowRun.spawner_handle) == judged.handle"),
+        (PRIVATE, "private_lifecycle.effect", "action == 'cancel'"),
+        (QUEUE, "queue_run_in", "check_private_queue_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra)"),
+    } else 1
     assert count >= needed, f"{check}: {mod.path}:{scope}: missing {expression} ({count}/{needed})"
 
 
@@ -319,6 +326,7 @@ CALLERS = {
     "_mark_status": [("temper_ai/spawner/reaper.py", f"Reaper.{scope}") for scope in
                      ("_let_go_parked", "_mark_orphaned", "_honor_cancel", "_end_unstarted", "_end_unstarted")],
     "queue_run_in": [(QUEUE, "queue_run"), (PARKED, "claim_and_queue"), (PARKED, "claim_and_requeue_row"),
+                     (PRIVATE, "_queue_in"),
                      ("temper_ai/runner/cleanup_dispatch.py", "queue_held_cleanups.queue_cleanup_pass"),
                      ("temper_ai/runner/cleanup_dispatch.py", "queue_fork_taking_over.queue_fork")],
     "queue_run": [(ROUTES, "_queue_run"), (LANE, "resume_in_the_lane")],
@@ -355,6 +363,21 @@ ROW_SCOPES = [
     (GENERATION, "_queued_dispatch", "col(WorkflowRun.spawner_handle) == judged.handle"),
     (GENERATION, "_queued_dispatch", "_ROW_CONTAINER_ID == judged.container_id"),
     (QUEUE, "queue_run_in", "row.status in ('queued', 'running')"),
+    (QUEUE, "queue_run_in", "check_private_queue_in(session, execution_id, workflow_name, workspace_path, inputs, start, extra)"),
+    (PRIVATE, "private_lifecycle", "boundary.composition.lifecycle_in(session, caller, execution_id, action, effect)"),
+    (PRIVATE, "private_lifecycle.effect", "given is not session"),
+    (PRIVATE, "private_lifecycle.effect", "binding.execution_id != execution_id"),
+    (PRIVATE, "private_lifecycle.effect", "any(getattr(binding, name) != getattr(previous, name) for name in stable)"),
+    (PRIVATE, "private_lifecycle.effect", "binding.runner_generation != previous.runner_generation + 1"),
+    (PRIVATE, "private_lifecycle.effect", "binding.runner_generation != previous.runner_generation"),
+    (PRIVATE, "private_lifecycle.effect", "not binding.revoked"),
+    (PRIVATE, "private_lifecycle.effect", "select(WorkflowRun).where(WorkflowRun.execution_id == execution_id).with_for_update().execution_options(populate_existing=True)"),
+    (PRIVATE, "private_lifecycle.effect", "row.workflow_name != binding.workflow"),
+    (PRIVATE, "private_lifecycle.effect", "wanted.context_ref != binding.context_ref"),
+    (PRIVATE, "private_lifecycle.effect", "wanted.context_version != binding.context_version"),
+    (PRIVATE, "private_lifecycle.effect", "action == 'cancel'"),
+    (PRIVATE, "private_lifecycle.effect", "row.status == 'queued'"),
+    (PRIVATE, "private_lifecycle.effect", "row.spawner_kind is None"),
 ]
 
 

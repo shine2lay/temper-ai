@@ -1,7 +1,7 @@
 """Local xdist auto-worker policy; admission and placement stay in machine_slot."""
 
 import os
-import warnings
+import re
 
 import pytest
 
@@ -15,9 +15,8 @@ def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
     if hasattr(config, "workerinput") or os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
         return None
     inherited = os.environ.get("WT_CHECK_WORKERS")
-    if inherited:
-        try:
-            return int(inherited)
-        except ValueError:
-            warnings.warn("WT_CHECK_WORKERS is not an integer; using the local default.", stacklevel=2)
-    return 10
+    if inherited is None:
+        return 10
+    if not re.fullmatch(r"[0-9]+", inherited):
+        raise pytest.UsageError("WT_CHECK_WORKERS must be a nonnegative whole-number count; unset it for the local default.")
+    return int(inherited)

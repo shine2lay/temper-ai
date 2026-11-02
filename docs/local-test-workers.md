@@ -33,10 +33,19 @@ Playwright configurations, especially serial live-browser cases, are unchanged.
 Malformed existing runner env inputs keep the runner's handling: xdist
 warns and discovers CPUs for a non-integer; Vitest uses `parseInt` (a wholly
 non-numeric value resolves to `NaN`, leaving its pool's native fallback).
-For the newly consumed `WT_CHECK_WORKERS`, Python warns and uses 10 if it
-is not an integer; Vitest uses the same `parseInt` as its existing env.
-Empty values fall through. `0` is supported by pytest as serial, not by
-Vitest as a serial request. Use valid positive counts for shared settings.
+The newly consumed `WT_CHECK_WORKERS` must contain only decimal digits:
+Python accepts nonnegative integers (`0` means serial); Vitest accepts positive
+integers exactly representable by JavaScript. Missing shared input uses the
+supported default. Present empty, malformed, fractional, signed or negative
+shared input fails with an actionable error that never prints its value,
+before test collection or worker test bodies run. Empty runner-specific values
+still fall through to shared input/default, as before.
+
+Validation applies only when shared input is used: CLI/serial settings and
+nonempty runner-specific env overrides still win, even over invalid shared
+input. Remote CI ignores shared input as before. Vitest's existing plugin
+checks the final resolved value after CLI/serial merging, before test startup;
+it does not replace native parsing of `VITEST_MAX_WORKERS`.
 
 ## Hypothesis and checks
 
@@ -57,7 +66,15 @@ Pre-change inspection at `bfef9a61`, using the locked runners:
 
 Known-answer checks use the real xdist parser/hook resolution and real
 Vitest config loading, not text searches for a default. They cover local,
-CLI/diagnostic, inherited, malformed and remote settings. Existing machine
+CLI/diagnostic, inherited, malformed and remote settings. Disposable synthetic
+tests prove invalid shared input stops before collection/bodies; clean controls
+prove those sentinels would run. The fixtures are removed after each check.
+
+Validation correction hypothesis: loose shared-input parsing can silently use
+an unintended worker count. Whole-value validation at the existing seams
+should reject consumed invalid input without breaking ignored input or native
+overrides. A test body running on invalid input, a raw value in the error, or
+changed CLI/remote resolution falsifies this correction. Existing machine
 slot and outside/inactive fail-closed tests retain their assertions. CI
 workflow and browser config files are not edited; all eight required gates
 remain. These are compatibility checks, not a throughput claim or proof

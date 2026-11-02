@@ -85,6 +85,28 @@ def test_combined_composition_queue_retry_bootstrap_handles_and_lifecycle(harnes
     ipd1.require(len(h.rows(PrivateInvocationRow)) == 1)
 
 
+@pytest.mark.parametrize("revoked", [False, True])
+def test_retry_checks_actual_run_revocation_before_admission(harness, revoked):
+    h = harness
+    c = composition(h)
+    receipt, binding = h.bound()
+    h.change(revoked=revoked)
+    ipd1.require(not h.rows(PrivateContextRow)[0].revoked)
+    calls = []
+    def retry():
+        with Session(h.engine) as session, session.begin():
+            return c.bind_and_queue_in(session, h.caller, receipt.context_ref, 1,
+                                       str(uuid4()), "profile-v1",
+                                       lambda session, execution: calls.append(execution))
+    if revoked:
+        refused(retry, Code.CANCELLED)
+    else:
+        admitted = retry()
+        ipd1.require(not admitted.created and admitted.binding == binding)
+    ipd1.require(not calls and h.rows(SyntheticAuthorityRow)[0].queued == 0)
+    ipd1.require(len(h.rows(PrivateContextRow)) == 1)
+
+
 def test_concurrent_new_retry_queues_exactly_once(harness, monkeypatch):
     h = harness
     c = composition(h)

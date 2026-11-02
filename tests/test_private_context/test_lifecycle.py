@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from temper_ai.private_context.migration import TABLES, install_metadata
 from temper_ai.private_context.models import (
+    PrivateAttemptRow,
     PrivateContextRow,
     PrivateInvocationRow,
     PrivateRefusalRow,
@@ -49,6 +50,32 @@ def test_restart_never_recovers_private_payload_or_resends(harness, phase, code)
     refused(lambda: h.service.reserve_send(lease, invocation, str(uuid4()), 1), Code.SCOPE_DENIED)
     ipd1.require(not h.service.mailbox.contexts and not h.service.mailbox.results)
     ipd1.require(len(h.rows(PrivateInvocationRow)) == (0 if phase == "registered" else 1))
+
+
+@pytest.mark.parametrize("http_status", [401, 403, 429, 529])
+@pytest.mark.parametrize("first", ["status", "resolve"])
+def test_refused_send_restart_reports_context_loss_in_either_read_order(harness, http_status, first):
+    h = harness
+    receipt, _ = h.bound()
+    lease = h.lease()
+    invocation = str(uuid4())
+    reservation = h.service.reserve_send(lease, invocation, str(uuid4()), 0)
+    h.service.finish_attempt(reservation, outcome("http_refused", http_status))
+    restart(h)
+    if first == "resolve":
+        refused(lambda: h.lease(), Code.CONTEXT_LOST)
+    status = h.status(receipt)
+    ipd1.require(status.state == "lost" and status.failure.code == Code.CONTEXT_LOST)
+    ipd1.require(status.failure.transmission == "refused")
+    refused(lambda: h.lease(), Code.CONTEXT_LOST)
+    refused(lambda: h.service.register(h.caller, h.context()), Code.CONTEXT_LOST)
+    refused(lambda: h.service.replace(h.caller,
+            ContextRead(context_ref=receipt.context_ref, context_version=1),
+            h.context(application_attempt_id="replacement")), Code.SEND_AMBIGUOUS)
+    refused(lambda: h.service.reserve_send(lease, invocation, str(uuid4()), 1), Code.SCOPE_DENIED)
+    ipd1.require(len(h.rows(PrivateInvocationRow)) == len(h.rows(PrivateAttemptRow)) == 1)
+    ipd1.require(h.rows(PrivateInvocationRow)[0].state == "refused")
+    ipd1.require(not h.service.mailbox.contexts and not h.service.mailbox.results)
 
 
 def test_explicit_replacement_only_before_any_reservation(harness):

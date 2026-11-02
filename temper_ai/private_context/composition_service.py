@@ -94,7 +94,8 @@ class PrivateContextComposition:
             if row.execution_id is not None:
                 # Exact authorized retry, including ready/lost send history. No
                 # callback, second run, dispatch or fresh payload is authorized.
-                service._bound_run(session, caller, row)
+                run = service._bound_run(session, caller, row)
+                live(row, service.clock(), run)
                 return BindingAdmission(service.store.binding_in(session, row), False)
             service.mailbox.context(row.context_ref)
             other = session.exec(select(PrivateContextRow).where(

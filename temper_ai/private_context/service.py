@@ -342,7 +342,12 @@ class PrivateContextService:
                     row.state, row.failure_code = "lost", Code.RESULT_LOST.value
                 elif row.context_ref not in self.mailbox.contexts and row.state != "ready":
                     invocation = session.get(PrivateInvocationRow, row.execution_id) if row.execution_id else None
-                    code = Code.SEND_AMBIGUOUS if invocation and invocation.state in {"reserved", "ambiguous"} else Code.RESULT_LOST if invocation else Code.CONTEXT_LOST
+                    if invocation is None or invocation.state == "refused":
+                        code = Code.CONTEXT_LOST
+                    elif invocation.state == "complete":
+                        code = Code.RESULT_LOST
+                    else:
+                        code = Code.SEND_AMBIGUOUS
                     row.state, row.failure_code = "lost", code.value
                 if row.state in {"cancelled", "expired", "lost"}:
                     self.mailbox.drop(row.context_ref)

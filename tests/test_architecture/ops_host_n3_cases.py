@@ -230,3 +230,124 @@ def bad_twin(case_id, clean):
         expectation = replace(clean.expected, processes=tuple(required))
         clean = replace(clean, expected=expectation, verified=replace(clean.verified, expectation=identity(expectation)))
     return received(clean, replace(envelope, process_observations=tuple(processes)), observed_facts=case_id != "N3-08")
+
+
+# Architecture #441's independent B1/B2/B3 worlds, retained as permanent exports.
+# These transformations select invented service inputs; they confer no authority.
+def omit_collector(inputs, process_id):
+    process = next(p for p in inputs.observed.envelope.process_observations
+                   if p.instance.instance_id == process_id)
+    return replace(inputs, verified=replace(inputs.verified, facts=tuple(
+        fact for fact in inputs.verified.facts
+        if not (fact.purpose == "collector" and fact.ref == process.collector_ref))))
+
+
+def rename_child_last(inputs):
+    """Equivalent invented world, with the child sorting after the creator."""
+    def name(value):
+        return "z-child" if value == "child" else value
+
+    def instance(value):
+        return replace(value, instance_id=name(value.instance_id),
+                       parent_instance=name(value.parent_instance))
+
+    processes = tuple(replace(
+        p, instance=instance(p.instance),
+        events=tuple(replace(e, child_instance=name(e.child_instance)) for e in p.events),
+        checkpoint=replace(p.checkpoint, child_frontier=tuple(map(name, p.checkpoint.child_frontier))))
+        for p in inputs.observed.envelope.process_observations)
+    required = tuple(replace(
+        p, instance=instance(p.instance),
+        frontier=replace(p.frontier, instance_id=name(p.frontier.instance_id),
+                         child_frontier=tuple(map(name, p.frontier.child_frontier))))
+        for p in inputs.expected.processes)
+    expected = replace(inputs.expected, processes=required)
+    inputs = replace(inputs, expected=expected,
+                     verified=replace(inputs.verified, expectation=identity(expected)))
+    return received(inputs, replace(inputs.observed.envelope, process_observations=processes),
+                    observed_facts=True)
+
+
+def child_stream(inputs, case):
+    processes = list(inputs.observed.envelope.process_observations)
+    index = next(i for i, p in enumerate(processes) if p.instance.instance_id == "child")
+    child = processes[index]
+    events = list(child.events)
+    optional = next(n for n in inputs.reviewed.graph.nodes if n.id == "optional")
+    load = t.LoadEvent(0, "independent-load", "load", "optional", optional.content,
+                       "loader-v1", "bytes", None, ref("independent-load"))
+    second_end = replace(events[-1], event_id="independent-second-end",
+                         origin_ref=ref("independent-second-end"))
+    if case == "load-before-sole-end":
+        events.insert(-1, load)
+    elif case == "end-load-end":
+        events.extend((load, second_end))
+    elif case == "end-use-end":
+        events.extend((replace(load, kind="use"), second_end))
+    elif case == "end-load":
+        events.append(load)
+    elif case == "end-end":
+        events.append(second_end)
+    elif case == "missing-end":
+        events.pop()
+    events = tuple(replace(e, sequence=i) for i, e in enumerate(events))
+    cp = replace(child.checkpoint, last_sequence=len(events) - 1,
+                 last_event_id=events[-1].event_id, sealed=case != "unsealed")
+    processes[index] = replace(child, events=events, checkpoint=cp)
+    required = tuple(replace(p, frontier=replace(p.frontier, last_sequence=cp.last_sequence,
+                                                last_event_id=cp.last_event_id))
+                     if p.instance.instance_id == "child" else p
+                     for p in inputs.expected.processes)
+    expected = replace(inputs.expected, processes=required)
+    inputs = replace(inputs, expected=expected,
+                     verified=replace(inputs.verified, expectation=identity(expected)))
+    return received(inputs, replace(inputs.observed.envelope, process_observations=tuple(processes)),
+                    observed_facts=True)
+
+
+def separate_exec_instance(inputs):
+    """Select a fifth expected instance: same PID/birth, distinct exec and epoch."""
+    processes = list(inputs.observed.envelope.process_observations)
+    child = next(p for p in processes if p.instance.instance_id == "child")
+    parent_index = next(i for i, p in enumerate(processes) if p.instance.instance_id == "worker")
+    parent = processes[parent_index]
+    instance = replace(child.instance, instance_id="child-exec-2", exec_epoch=2)
+    events = tuple(replace(e, event_id="exec-2-" + str(i), origin_ref=ref("exec-2-event-" + str(i)))
+                   for i, e in enumerate(child.events[:-1]))
+    checkpoint = replace(child.checkpoint, epoch="epoch-exec-2", last_sequence=events[-1].sequence,
+                         last_event_id=events[-1].event_id, initial_state_ref=ref("initial-exec-2"),
+                         checkpoint_ref=ref("checkpoint-exec-2"))
+    new = replace(child, instance=instance, events=events, checkpoint=checkpoint,
+                  process_ref=ref("process-exec-2"), collector_ref=ref("collector-exec-2"), state="running")
+    spawn = t.LoadEvent(len(parent.events), "exec-2-child", "child", None, None,
+                        "trusted-launch", "bytes", instance.instance_id, ref("exec-2-child"))
+    parent_cp = replace(parent.checkpoint, child_frontier=("child", instance.instance_id),
+                        last_sequence=spawn.sequence, last_event_id=spawn.event_id)
+    processes[parent_index] = replace(parent, events=(*parent.events, spawn), checkpoint=parent_cp)
+    processes.append(new)
+    # Explicitly selected service frontiers for this fixed positive world.
+    frontier = t.ProcessFrontier(instance.instance_id, checkpoint.epoch, checkpoint.last_sequence,
+                                 checkpoint.last_event_id, (), checkpoint.checkpoint_ref)
+    required = tuple(replace(p, frontier=replace(p.frontier, child_frontier=parent_cp.child_frontier,
+                                                last_sequence=spawn.sequence, last_event_id=spawn.event_id))
+                     if p.instance.instance_id == "worker" else p for p in inputs.expected.processes)
+    expected = replace(inputs.expected, processes=(*required, t.ExpectedProcess("child", instance, frontier, COVERAGE)))
+    inputs = replace(inputs, expected=expected,
+                     verified=replace(inputs.verified, expectation=identity(expected)))
+    return received(inputs, replace(inputs.observed.envelope, process_observations=tuple(processes)),
+                    observed_facts=True)
+
+
+def select_synthetic_graph(inputs, review_reference):
+    """Select exact synthetic graph bytes, keeping the independently required review."""
+    graph = replace(inputs.reviewed.graph, completeness_review_ref=review_reference)
+    graph_identity = identity(graph)
+    graph_ref = replace(inputs.expected.reviewed_graph, content=graph_identity)
+    envelope = replace(inputs.observed.envelope, reviewed_graph=graph_ref)
+    expected = replace(inputs.expected, reviewed_graph=graph_ref)
+    verified = replace(inputs.verified, reviewed_bytes=graph_identity,
+                       observed_bytes=identity(envelope), expectation=identity(expected),
+                       facts=witnesses(graph, envelope.process_observations))
+    return replace(inputs, reviewed=t.ReviewedSourceGraph(graph, graph_identity),
+                   observed=t.LoadedClosureEnvelope(envelope, identity(envelope)),
+                   expected=expected, verified=verified)

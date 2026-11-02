@@ -1,7 +1,8 @@
 # P3 N3 pure source comparison
 
-Status: source candidate checks passed, not yet reviewed/landed; disabled data only. Systems #71; source base
-5334255e18ef3630c9f63e894f7e986bd7049322 after the ordinary base rebase;
+Status: three requested repairs pass focused controls; awaiting new source review,
+not accepted/landed; disabled data only. Systems #71; source base
+5daae63e3bd4a49931d4355e29dfdc8b189526dd after the repair's ordinary base rebase;
 initial source base was 786e6711ac0cb0662567443ac23f504dfeaee778.
 Claim N/A: cwd-local; isolation =
 /home/shinelay/temper-ai-systems-task-71, branch systems-task-71.
@@ -90,6 +91,48 @@ marker exposes the same annotations to installed consumers; it does not provide
 distribution metadata or claim the future joined wheel test. Subsequent rebase
 onto 5334255e changes no component bytes; the normal hook still must pass on the
 final candidate. Native qualification remains unchanged.
+
+## Independent review and repair hypotheses
+
+Architecture #441 reviewed 6188086b against 5334255e on 2026-11-01. The original
+1,949 cases passed, but its fifteen independent controls produced twelve passes
+and three failures. H-N3-IMPLEMENTATION-1 is falsified at that head: an invented,
+authenticated end/load/end history returned MATCH; two additional cases confused
+missing evidence with contradictions. The review is SOURCE CHANGES, not acceptance.
+Its immutable packet is
+`architecture-dept/reviews/p3-source-comparison-71-6188086b/REVIEW.md` plus binding.json.
+
+- H-N3-LOCAL-6: `_check_process` sees a shared gap set, so an unrelated missing
+  child collector downgrades a complete creator's missing required load to UNKNOWN
+  when the child sorts first. Check each process with its own Findings before
+  merging both sets; never subtract shared sets. Expect REFUSED with both reasons
+  for unrelated gaps regardless of identity order, but UNKNOWN for the creator's
+  own incomplete history. Falsifier: any ordering dependence, lost repeated gap,
+  suppressed contradiction or own-incomplete REFUSED.
+- H-N3-LIFECYCLE-7: the last-event check allows end/load/end with matching origins
+  and a fresh expected frontier. Require any end to occur exactly once, at the
+  end of its instance's history. Expect PROCESS_INSTANCE refusal for repeated or
+  nonfinal ends, MATCH for a load before the sole end and separate legitimate
+  exec instances, and UNKNOWN for missing/unsealed history. Falsifier: the bad
+  sequence matches, a missing history becomes a contradiction, or a valid separate
+  instance is rejected. A single-guard mutation must revive the bad sequence.
+- H-N3-REVIEW-8: unconditional equality treats an absent completeness reference as
+  a contrary one. Separate absence from equality without relaxing graph/transport
+  identity checks. Expect missing reference/proof UNKNOWN; present contrary
+  reference/claim REFUSED; unchanged clean case MATCH. Falsifier: an absent
+  reference still refuses, a contrary reference ceases to refuse, or different
+  graph/transport bytes pass. Guard mutations must fail the intended oracle.
+
+Permanent controls reuse Architecture's labelled invented-world transformations
+and the existing test-only witness encoder; no production issuer or second corpus
+is introduced. Results: H-N3-LOCAL-6, H-N3-LIFECYCLE-7 and H-N3-REVIEW-8 are
+source-candidate HITs on 2026-11-01: the completed repaired batch passed all
+1,974 cases in 71.06 seconds (CPython 3.13.15), including 25 permanent repair
+controls and every unchanged legacy test. All four new guard mutations were
+killed while their clean controls remained MATCH. Explicit package mypy (eight
+modules) and package/facade/test lint passed. The batch used the required machine
+slot, waited 16 seconds, and ran once. Normal commit/land checks and a new
+Architecture-reviewed anchor remain required; no native HIT is asserted.
 
 Authority: Architecture T3-ADOPTION.md, Temper T3 INTERFACE.md §§6/8, Systems N3
 CONTRACT.md. All N unresolved; four rows UNQUALIFIED; P5 UNTRUSTED;
@@ -277,6 +320,11 @@ answers are fixed independently; test-only witnesses model an invented world,
 never real authority. The runner is `test_ops_host_source_comparison.py`; it
 includes closed grammar, raw identity, missing provider, purity, immutability,
 chronology, terminated child, gap precedence and targeted mutation controls.
+`test_ops_host_source_comparison_regressions.py` permanently retains Architecture
+#441's B1/B2/B3 twins, repeated-local-gap control, terminal ordering variants,
+separately expected exec instance, graph-transport identity and four repair-guard
+mutations. Their labelled transformations live with the existing case exports;
+there is no dependency on an external review directory at test time.
 Existing R2/R1/R5 suites and all their assertions remain unchanged.
 
 Canonical registration belongs to QA's actual `ops-host-compat-corpus/1` seam.

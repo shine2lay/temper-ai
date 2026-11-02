@@ -262,6 +262,59 @@ The pre-commit hook and GitHub's `select` job call the same script:
   and all-config replays) are left out of the per-commit gate (`-m "not heavy"`)
   and run every night in `nightly.yml` (`full-and-heavy`) on `master`.
 
+#### Pure host-contract package
+
+One explicit leaf route exists, not a general source-only exemption. Every
+changed path must be inside `p3_host_contracts/` or
+`tests/test_p3_host_contracts/`, or exactly `docs/p3-host-contracts.md`.
+The selector emits `route host-contracts`; it does not build or read the
+application dependency graph for this route. Any mixed change runs **all**
+ordinary checks. Empty, unsafe or unknown changes and shared infrastructure
+(including this route's scripts, rules, tests and CI) retain full checks.
+Renames are examined as deletion plus addition, so both sides count. Symlinks
+and submodules are not accepted in the leaf. Missing package or test files
+cannot qualify, and pytest's zero-collection exit remains a failure.
+
+The **ordinary pre-commit hook**, with no opt-in flag, keeps shared-CPU
+placement, syncs the locked environment, then calls
+`scripts/check_host_contracts.py`. That script reclassifies the actual diff,
+snapshots tracked supplier blobs from the index (or checked commit) into a
+temporary directory and runs real locked ruff, mypy and pytest. Even a
+**documentation-only** change checks the entire package and all its tests.
+Unstaged and untracked source/fixtures cannot change what it checks.
+
+`scripts/show_versions.py --check --tools` requires each lint/type/test tool
+at its locked version, using distribution metadata without application imports.
+Ruff checks the package and its tests with the tracked project configuration;
+mypy checks the package with missing imports rejected and site packages
+excluded. Pytest uses a separate configuration, explicit locked xdist/timeout
+plugins, no plugin autoload, no application/root-test conftest and an isolated
+import path. Its infrastructure conftest reuses `tests/machine_slot.py` for
+the ordinary `-n auto` admission/placement behavior, including nested runs.
+The copied admission code is unchanged. It reads host placement policy as
+usual; isolation does not bypass machine controls. Supplier-local fixtures
+and conftests are included and tested.
+
+CI consumes the same selector's **resolved merge-base** and reclassifies it
+for each leaf phase. Existing `lint`, `typecheck`, and both Python test jobs
+run real checks; only this exact leaf skips the application Postgres job,
+dashboard and browser jobs. A failed/missing selection runs ordinary checks.
+Required job names do not change. `--phase` on the runner only splits these
+CI jobs; the ordinary hook always runs all three phases.
+
+Integrate routing infrastructure through normal git first. A branch that
+contains both an unlanded routing patch and supplier changes is **mixed**
+against `origin/master` and must run full CI. An isolated staged commit does
+not waive that branch-wide gate. Only when infrastructure is already in the
+comparison base can a supplier-only branch qualify for leaf CI. Do not
+change hooks, base refs or pass a skip flag to manufacture a pure diff.
+
+This is a source-check boundary, **not a hostile-code sandbox, permission to
+read private data, runtime qualification or supplier acceptance**. Checks
+still execute reviewed supplier Python as the test user. Synthetic hook tests
+prove the route, imports, diagnostics and failure propagation; recording-tool
+phase tests prove dispatch only, never a full-suite pass.
+
 ## Flaky tests
 
 **A flaky test is a broken test.** It is fixed, never skipped, never deleted,

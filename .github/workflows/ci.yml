@@ -34,6 +34,8 @@ jobs:
     name: select
     runs-on: ubuntu-latest
     outputs:
+      route: ${{ steps.pick.outputs.route }}
+      base: ${{ steps.pick.outputs.base }}
       python: ${{ steps.pick.outputs.python }}
       python_tests: ${{ steps.pick.outputs.python_tests }}
       frontend: ${{ steps.pick.outputs.frontend }}
@@ -60,24 +62,42 @@ jobs:
           python3 scripts/select_tests.py --base "$base" --head HEAD --explain --github-output "$GITHUB_OUTPUT"
 
   lint:
+    needs: select
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
-      - run: uv run ruff check .
+      - if: needs.select.outputs.route != 'host-contracts'
+        run: uv run ruff check .
+      - if: needs.select.outputs.route == 'host-contracts'
+        env:
+          CHECK_BASE: ${{ needs.select.outputs.base }}
+        run: uv run python scripts/check_host_contracts.py --base "$CHECK_BASE" --head HEAD --phase lint
 
   typecheck:
+    needs: select
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
-      - run: uv run mypy temper_ai/ --ignore-missing-imports
+      - if: needs.select.outputs.route != 'host-contracts'
+        run: uv run mypy temper_ai/ --ignore-missing-imports
+      - if: needs.select.outputs.route == 'host-contracts'
+        env:
+          CHECK_BASE: ${{ needs.select.outputs.base }}
+        run: uv run python scripts/check_host_contracts.py --base "$CHECK_BASE" --head HEAD --phase type
 
   test:
     name: tests (python ${{ matrix.python-version }})
@@ -93,6 +113,8 @@ jobs:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -113,9 +135,16 @@ jobs:
       # fixing that. -n auto: the runners have 2-4 cores. Heavy mutation sweeps
       # and full-config replays (-m heavy) run in nightly.yml on master.
       - name: Run the tests
+        if: needs.select.outputs.route != 'host-contracts'
         env:
           PYTHON_TESTS: ${{ needs.select.outputs.python_tests }}
         run: uv run pytest ${PYTHON_TESTS:-tests/} -m "not heavy" --timeout=60 -n auto --junitxml=junit.xml
+
+      - name: Run isolated host-contract tests
+        if: needs.select.outputs.route == 'host-contracts'
+        env:
+          CHECK_BASE: ${{ needs.select.outputs.base }}
+        run: uv run python scripts/check_host_contracts.py --base "$CHECK_BASE" --head HEAD --phase test --junitxml junit.xml
 
       - name: Summarise
         if: always()
@@ -136,7 +165,9 @@ jobs:
     # a Postgres before this and no test ever connected to it.)
     name: tests (postgres)
     needs: select
-    if: ${{ !cancelled() && needs.select.outputs.python != 'none' }}
+    # Only the exact pure leaf skips this application/database job. Failed or
+    # missing selection still runs it, with the ordinary full fallback.
+    if: ${{ !cancelled() && needs.select.outputs.python != 'none' && needs.select.outputs.route != 'host-contracts' }}
     runs-on: ubuntu-latest
     services:
       postgres:

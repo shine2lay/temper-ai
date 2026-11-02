@@ -325,6 +325,8 @@ def test_git_modes_cli_outputs_and_error_exits(tmp_path: Path):
     assert payload["frontend"] is True and payload["e2e"] is True
     assert "select_tests: base" in done.stderr
     assert gh_out.read_text().splitlines() == [
+        "route=ordinary",
+        f"base={st.Git(repo).commit('master')}",
         "python=some",
         "python_tests=tests/test_epd/test_departments_doc.py",
         "frontend=true",

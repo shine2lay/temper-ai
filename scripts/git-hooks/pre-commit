@@ -49,6 +49,88 @@ PASS="\033[0;32m✓\033[0m"
 FAIL="\033[0;31m✗\033[0m"
 WARN="\033[0;33m!\033[0m"
 
+# Classify before any application-wide phase. Missing/failed/malformed selection
+# stays full; the isolated runner rechecks the diff rather than trusting a flag.
+select_checks() {
+run_python="all"
+pytest_targets=("tests/")
+run_frontend=true
+check_route="ordinary"
+if selection="$(python3 "$REPO_ROOT/scripts/select_tests.py" --explain)"; then
+    valid=true
+    seen_route=0
+    seen_python=0
+    selected_frontend=false
+    seen_frontend=0
+    seen_e2e=0
+    while IFS= read -r line; do
+        case "$line" in
+            "route ordinary"|"route host-contracts")
+                check_route="${line#route }"
+                seen_route=$((seen_route + 1))
+                ;;
+            "python "*)
+                seen_python=$((seen_python + 1))
+                case "${line#python }" in
+                    all) run_python=all; pytest_targets=("tests/") ;;
+                    none) run_python=none; pytest_targets=() ;;
+                    *)
+                        run_python=some
+                        read -r -a pytest_targets <<< "${line#python }"
+                        for target in "${pytest_targets[@]}"; do
+                            if [[ ! "$target" =~ ^tests/[a-zA-Z0-9_./-]+\.py$ ]] || [[ "$target" == *".."* ]]; then
+                                valid=false
+                            fi
+                        done
+                        [ "${#pytest_targets[@]}" -gt 0 ] || valid=false
+                        ;;
+                esac
+                ;;
+            frontend) selected_frontend=true; seen_frontend=$((seen_frontend + 1)) ;;
+            e2e) seen_e2e=$((seen_e2e + 1)) ;;
+            *) valid=false ;;
+        esac
+    done <<< "$selection"
+    if [ "$seen_frontend" -gt 1 ] || [ "$seen_e2e" -gt 1 ]; then
+        valid=false
+    fi
+    if [ "$run_python" = all ] && { [ "$seen_frontend" != 1 ] || [ "$seen_e2e" != 1 ]; }; then
+        valid=false
+    fi
+    if [ "$check_route" = host-contracts ]; then
+        if [ "$run_python" != some ] || [ "$seen_frontend" != 0 ] || [ "$seen_e2e" != 0 ]; then
+            valid=false
+        fi
+        for target in "${pytest_targets[@]}"; do
+            [[ "$target" == tests/test_p3_host_contracts/* ]] || valid=false
+        done
+    fi
+    if [ "$valid" = true ] && [ "$seen_route" = 1 ] && [ "$seen_python" = 1 ]; then
+        run_frontend="$selected_frontend"
+    else
+        check_route=ordinary
+        run_python=all
+        pytest_targets=("tests/")
+        echo -e "$WARN Invalid selection — running all checks."
+    fi
+else
+    echo -e "$WARN select_tests.py failed — running all checks."
+fi
+}
+select_checks
+
+if [ -n "${PRECOMMIT_PYTEST_WORKERS:-}" ]; then
+    export PYTEST_XDIST_AUTO_NUM_WORKERS="$PRECOMMIT_PYTEST_WORKERS"
+fi
+if [ "$check_route" = host-contracts ]; then
+    echo "Checking the isolated host-contract package..."
+    uv sync --frozen --extra dev --quiet
+    # shellcheck disable=SC2046
+    (unset $(git rev-parse --local-env-vars); uv run --quiet python scripts/check_host_contracts.py)
+    echo -e "$PASS All pre-commit checks passed (host contracts)."
+    exit 0
+fi
+
 # ─── 0. Docs regeneration (existing behavior) ─────────────────────────────
 RELEVANT_PATHS=(
     "temper_ai/tools/"
@@ -77,6 +159,7 @@ if [ "$docs_needed" = true ]; then
     fi
     git add "$REPO_ROOT/docs/reference/"
     echo -e "$PASS Docs regenerated and staged."
+    select_checks  # Generated docs are now part of the ordinary staged diff too.
 fi
 
 # ─── 1. The locked environment ────────────────────────────────────────────
@@ -133,42 +216,8 @@ if [ -n "${PRECOMMIT_PYTEST_WORKERS:-}" ]; then
     export PYTEST_XDIST_AUTO_NUM_WORKERS="$PRECOMMIT_PYTEST_WORKERS"
 fi
 
-# scripts/select_tests.py reads the staged diff during `git commit` and the
-# branch diff against master when `wt land` re-runs the hook after a rebase,
-# from the same scripts/test-selection.toml rules GitHub CI uses. Heavy
-# mutation sweeps (-m heavy) run in nightly.yml on master. If the selector
-# fails, fall back to the full suite and the dashboard checks.
-run_python="all"
-pytest_targets=("tests/")
-run_frontend=false
-if [ -f "$REPO_ROOT/scripts/select_tests.py" ]; then
-    if selection="$(python3 "$REPO_ROOT/scripts/select_tests.py" --explain)"; then
-        run_python="none"
-        pytest_targets=()
-        while IFS= read -r line; do
-            case "$line" in
-                "python all")
-                    run_python="all"
-                    pytest_targets=("tests/")
-                    ;;
-                "python none")
-                    run_python="none"
-                    pytest_targets=()
-                    ;;
-                "python "*)
-                    run_python="some"
-                    read -r -a pytest_targets <<< "${line#python }"
-                    ;;
-                frontend)
-                    run_frontend=true
-                    ;;
-            esac
-        done <<< "$selection"
-    else
-        echo -e "$WARN select_tests.py failed — running the full test suite and dashboard checks."
-        run_frontend=true
-    fi
-fi
+# The selection above uses the staged diff, or merge-base(master, HEAD)..HEAD
+# when no files are staged (wt's ordinary committed/rebased check).
 
 # ─── 4a. The database tier ────────────────────────────────────────────────
 # When the commit touches anything that stores something, the tests that

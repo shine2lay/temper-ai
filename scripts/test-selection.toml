@@ -41,6 +41,11 @@ paths = [
   "scripts/install-git-hooks.sh",
   "scripts/test-postgres.sh",
   "scripts/show_versions.py",
+  "scripts/check_host_contracts.py",
+  "scripts/host_contract_pytest.py",
+  "tests/test_scripts/test_host_contract_route.py",
+  "tests/test_scripts/test_host_contract_guards.py",
+  "tests/test_scripts/host_contract_fixture.py",
   ".github/**",
 ]
 parts = ["full"]
@@ -56,6 +61,14 @@ name = "test hubs"
 why = "every test loads them: the root conftest's autouse fixtures, the database tier, the slot hook, the test package"
 paths = ["tests/conftest.py", "tests/pgtier.py", "tests/machine_slot.py", "tests/__init__.py"]
 parts = ["full"]
+
+# An all-paths route, not an additive graph part: any mixed change runs everything.
+# The selector also pins these exact boundaries; widening this rule cannot admit another package.
+[[rule]]
+name = "pure host contracts"
+why = "the standalone host contract package has no application bootstrap; docs-only still runs its tests"
+paths = ["p3_host_contracts/**", "tests/test_p3_host_contracts/**", "docs/p3-host-contracts.md"]
+parts = ["host-contracts"]
 
 [[rule]]
 name = "test file"

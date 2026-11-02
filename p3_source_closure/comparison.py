@@ -107,6 +107,9 @@ def _check_process(process: t.ProcessObservation, required: t.ExpectedProcess,
         findings.unknown("COVERAGE_GAP")
     if process.state == "terminated" and (not events or events[-1].kind != "end"):
         findings.unknown("COVERAGE_GAP")
+    end_positions = tuple(i for i, event in enumerate(events) if event.kind == "end")
+    if end_positions and end_positions != (len(events) - 1,):
+        findings.refuse("PROCESS_INSTANCE")
     if process.state == "running" and any(e.kind == "end" for e in events):
         findings.refuse("PROCESS_INSTANCE")
     if any(e.kind in ("start", "exec") for e in events[1:]):
@@ -181,11 +184,12 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
     if verified.validity_checkpoint != expected.boundary.validity_checkpoint:
         findings.unknown("STALE_FRONTIER")
     if (envelope.reviewed_graph != expected.reviewed_graph or
-            envelope.reviewed_graph.content != reviewed.content or
-            graph.completeness_review_ref != expected.review_ref):
+            envelope.reviewed_graph.content != reviewed.content):
         findings.refuse("REVIEW_ORIGIN")
     if graph.completeness_review_ref is None:
         findings.unknown("COVERAGE_GAP")
+    elif graph.completeness_review_ref != expected.review_ref:
+        findings.refuse("REVIEW_ORIGIN")
     findings.origin(graph.completeness_review_ref, "review", graph, "REVIEW_ORIGIN")
     if envelope.binding != expected.binding or envelope.boundary != expected.boundary:
         findings.refuse("BINDING")
@@ -215,7 +219,12 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
             findings.unknown("COVERAGE_GAP")
     for key in sorted(required.keys() & actual.keys()):
         process = actual[key]
-        _check_process(process, required[key], graph, envelope, findings)
+        # Required-load completeness belongs to this process, not an earlier
+        # process or graph gap. Merge only after its classification is complete.
+        local = Findings(verified)
+        _check_process(process, required[key], graph, envelope, local)
+        findings.contradictions.update(local.contradictions)
+        findings.gaps.update(local.gaps)
         parent = process.instance.parent_instance
         if parent is not None:
             if parent not in actual or key not in actual[parent].checkpoint.child_frontier:

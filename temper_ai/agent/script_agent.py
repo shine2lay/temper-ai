@@ -533,6 +533,35 @@ class ScriptAgent(AgentABC):
                 "command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
                 "env": {**stash.env, "TEMPER_PYTHON": sys.executable, **_run_key_env(context)},
             }
+            from temper_ai.agent.admission_use import _declared_attribute
+
+            p3_adapter = _declared_attribute(context, "p3_launch_adapter") or self.config.get(
+                "p3_launch_adapter"
+            )
+            p3_protected = bool(
+                _declared_attribute(context, "p3_protected_launch", False)
+                or self.config.get("p3_protected_launch", False)
+            )
+            if p3_protected or p3_adapter is not None:
+                from temper_ai.p3_authority.contract import Refusal
+                from temper_ai.p3_authority.launch_adapters import (
+                    P3ObservationRefusedError,
+                    ScriptLaunchObservationAdapter,
+                    refuse_missing_launch_provider,
+                )
+
+                if not isinstance(p3_adapter, ScriptLaunchObservationAdapter):
+                    raise P3ObservationRefusedError(
+                        refuse_missing_launch_provider(boundary="C_PRE_EXECUTION")
+                    )
+                prep_res = p3_adapter.prepare_bash_kwargs(
+                    agent_name=self.name,
+                    run_id=str(context.run_id) if context.run_id else "",
+                    base_kwargs=params,
+                )
+                if isinstance(prep_res, Refusal):
+                    raise P3ObservationRefusedError(prep_res)
+                params = prep_res.data
             # The attempt's log: what the script prints, saved and sent to the dashboard while it
             # runs (agent/script_log.py). Only its output goes in it, never the script or its env.
             log = self._open_log(agent_event_id, context)

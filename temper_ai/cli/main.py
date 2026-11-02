@@ -25,22 +25,42 @@ logger = logging.getLogger(__name__)
 _BOX_PROFILE_ENV = "TEMPER_BOX_PROFILE"
 
 
-def take_box_delivery_first() -> None:
+def take_box_delivery_first(
+    *,
+    bootstrap_observer: object | None = None,
+    protected_bootstrap: bool = False,
+) -> None:
     """In a oneshot box, block until the runner has taken its one-shot delivery, or exit.
 
     Elsewhere (no box profile, or a box whose secrets are its environment) this returns
     at once. A refused delivery ends the process (exit 4) before a tool or a secret is
     used; the reason is fixed words, never a value (spawner/box_bootstrap.py).
     """
-    if not os.environ.get(_BOX_PROFILE_ENV):
-        return
-    from temper_ai.spawner import box_bootstrap
+    has_profile = bool(os.environ.get(_BOX_PROFILE_ENV))
+    if has_profile:
+        from temper_ai.spawner import box_bootstrap
 
-    try:
-        box_bootstrap.receive()
-    except box_bootstrap.DeliveryRefused as exc:
-        print(f"box refused: {exc}", file=sys.stderr)
-        sys.exit(box_bootstrap.REFUSED_EXIT)
+        try:
+            box_bootstrap.receive()
+        except box_bootstrap.DeliveryRefused as exc:
+            print(f"box refused: {exc}", file=sys.stderr)
+            sys.exit(box_bootstrap.REFUSED_EXIT)
+
+    if protected_bootstrap or bootstrap_observer is not None:
+        from temper_ai.p3_authority.contract import Refusal
+        from temper_ai.p3_authority.launch_adapters import (
+            EarlyBootstrapObservationHook,
+            P3ObservationRefusedError,
+            refuse_missing_launch_provider,
+        )
+
+        if not isinstance(bootstrap_observer, EarlyBootstrapObservationHook):
+            raise P3ObservationRefusedError(
+                refuse_missing_launch_provider(boundary="B_PRE_REQUEST")
+            )
+        obs_res = bootstrap_observer.on_delivery_taken(had_box_profile=has_profile)
+        if isinstance(obs_res, Refusal):
+            raise P3ObservationRefusedError(obs_res)
 
 
 def main() -> None:

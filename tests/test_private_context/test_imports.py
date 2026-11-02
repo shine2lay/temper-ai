@@ -1,11 +1,11 @@
 """Fresh import contact traps; no provider/model request or settings snapshots."""
 from __future__ import annotations
 
-import ast
 import os
 import sys
 from pathlib import Path
 
+from .import_guard import CONTRACT_MODULES, contract_imports_allowed
 from .ipd1 import require
 from .test_corpus import child_result
 
@@ -63,12 +63,8 @@ def test_fresh_contract_import_performs_no_infrastructure_contact() -> None:
 def test_contract_package_does_not_register_or_import_runtime_consumers() -> None:
     root = Path(__file__).resolve().parents[2]
     package = root / "temper_ai" / "private_context"
-    require({"__init__.py", "contracts.py", "errors.py", "private_json.py", "schema.py", "wire.py"} <= {path.name for path in package.glob("*.py")})
-    allowed_imports = {"__future__", "typing", "enum", "types", "json", "math", "datetime", "uuid", "pydantic", "jsonschema", "referencing"}
-    for path in package.glob("*.py"):
-        tree = ast.parse(path.read_text())
-        for node in tree.body:
-            if isinstance(node, ast.Import):
-                require(all(name.name.split(".")[0] in allowed_imports for name in node.names))
-            elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                require((node.module or "").split(".")[0] in allowed_imports)
+    # These six are A's inert contracts. Concrete layers have a separate fresh
+    # interpreter probe for EVERY discovered module (test_import_guard.py).
+    require({name + ".py" for name in CONTRACT_MODULES} <= {path.name for path in package.glob("*.py")})
+    for name in CONTRACT_MODULES:
+        require(contract_imports_allowed((package / (name + ".py")).read_text()))

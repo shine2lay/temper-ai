@@ -57,12 +57,14 @@ import sqlmodel
 import fastapi
 import pydantic_settings
 import pydantic.plugin._loader
+import jsonschema
+import referencing
 import temper_ai
 # Existing root/environment behavior is outside this probe and uses clean env.
 if scratch is not None:
     temper_ai.__path__.insert(0, scratch)
-# Load only A's inert contract modules before arming dependency-contact traps.
-from temper_ai.private_context import contracts, errors, private_json, schema, wire
+# Warm external dependencies only; even A can re-export an extension.
+# The first private_context package/target execution must occur below the traps.
 calls = []
 def denied(*args, **kwargs):
     calls.append(1)

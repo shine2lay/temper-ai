@@ -117,6 +117,22 @@ def test_inert_orm_types_and_dataclasses_remain_allowed(tmp_path):
     require(status == 0 and output == b"IMPORT_OK\n")
 
 
+@pytest.mark.parametrize("exporter", ["__init__", "contracts"])
+@pytest.mark.parametrize("contact", [False, True], ids=["inert", "environment-map"])
+def test_relative_reexport_is_guarded_on_first_execution(tmp_path, exporter, contact):
+    package = scratch_contracts(tmp_path)
+    source = "import os\nvalue = os.environ.get('SYNTHETIC_KEY')\n" if contact else "value = 1\n"
+    (package / "injected.py").write_text(source, encoding="utf-8")
+    path = package / (exporter + ".py")
+    path.write_text(path.read_text(encoding="utf-8") + "\nfrom .injected import value\n", encoding="utf-8")
+    # Import the exporting module first through the target's relative import.
+    # Old pre-arm A bootstrap executes/caches injected.py before the trap exists.
+    (package / "target.py").write_text("from .contracts import CallerPrincipal\nfrom .injected import value\n", encoding="utf-8")
+    require(extension_modules(package) == ("injected", "target"))
+    status, output = run_probe("target", tmp_path)
+    require(status == 0 and output == (b"BLOCKED\n" if contact else b"IMPORT_OK\n"))
+
+
 def test_missing_contract_file_fails_discovery(tmp_path):
     package = scratch_contracts(tmp_path)
     (package / "wire.py").unlink()

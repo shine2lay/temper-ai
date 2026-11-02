@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["temper_ai", "p3_source_closure", "p3_host_contracts"]
+
 [project]
 name = "temper-ai"
 version = "0.1.0"

@@ -25,11 +25,12 @@ from pathlib import Path
 
 # The ones whose differences have actually broken temper.
 WATCHED = ("sqlmodel", "sqlalchemy", "fastapi", "pydantic", "pytest", "alembic", "psycopg2-binary")
+CHECK_TOOLS = ("ruff", "mypy", "pytest", "pytest-xdist", "pytest-timeout")
 
 
-def installed() -> dict[str, str]:
+def installed(names: tuple[str, ...] = WATCHED) -> dict[str, str]:
     found = {}
-    for name in WATCHED:
+    for name in names:
         try:
             found[name] = version(name)
         except PackageNotFoundError:
@@ -37,7 +38,7 @@ def installed() -> dict[str, str]:
     return found
 
 
-def locked(lock: Path) -> dict[str, str]:
+def locked(lock: Path, names: tuple[str, ...] = WATCHED) -> dict[str, str]:
     """Versions from uv.lock, read without a TOML parser for 3.10 and below."""
     if not lock.exists():
         return {}
@@ -47,7 +48,7 @@ def locked(lock: Path) -> dict[str, str]:
         if match := re.match(r'^name = "([^"]+)"', line):
             name = match.group(1)
         elif match := re.match(r'^version = "([^"]+)"', line):
-            if name in WATCHED:
+            if name in names:
                 out[name] = match.group(1)
             name = None
     return out
@@ -56,17 +57,22 @@ def locked(lock: Path) -> dict[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail when a version is not the locked one")
+    parser.add_argument("--tools", action="store_true", help="require every isolated check tool at its locked version")
     parser.add_argument("--lock", type=Path, default=Path(__file__).resolve().parent.parent / "uv.lock")
     args = parser.parse_args()
 
-    have = installed()
+    names = CHECK_TOOLS if args.tools else WATCHED
+    have = installed(names)
     line = " · ".join([f"python {sys.version.split()[0]}"] + [f"{k} {v}" for k, v in have.items()])
     print(line)
 
     if not args.check:
         return 0
 
-    want = locked(args.lock)
+    want = locked(args.lock, names)
+    if args.tools and (set(have) != set(names) or set(want) != set(names)):
+        print("Missing required check tool or lock entry.", file=sys.stderr)
+        return 1
     wrong = {k: (v, want[k]) for k, v in have.items() if k in want and v != want[k]}
     if wrong:
         print("\nNot the locked versions:", file=sys.stderr)

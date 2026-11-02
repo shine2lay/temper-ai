@@ -54,7 +54,21 @@ from dependency_graph import (  # noqa: E402
 )
 
 RULES_PATH = "scripts/test-selection.toml"
-SIMPLE_PARTS = ("full", "graph", "package-tests", "folder-tests", "frontend", "e2e")
+HOST_CONTRACTS = "host-contracts"
+HOST_PACKAGE = "p3_host_contracts"
+HOST_TESTS = "tests/test_p3_host_contracts"
+HOST_DOC = "docs/p3-host-contracts.md"
+SIMPLE_PARTS = ("full", "graph", "package-tests", "folder-tests", "frontend", "e2e", HOST_CONTRACTS)
+SAFE_PATH = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
+
+
+def safe_path(path: str) -> bool:
+    return bool(SAFE_PATH.fullmatch(path)) and not ({".", ".."} & set(path.split("/")))
+
+
+def host_contract_path(path: str) -> bool:
+    """Exact supplier boundary, not a general source-only exemption."""
+    return safe_path(path) and (path == HOST_DOC or path.startswith((HOST_PACKAGE + "/", HOST_TESTS + "/")))
 NAMED_TESTS = re.compile(r"^tests:(tests(?:/[\w.-]+)*/?)$")
 INDEX = ":index"  # --head value meaning "the index", for --staged
 
@@ -166,8 +180,12 @@ class Selection:
     frontend: bool = False
     e2e: bool = False
     reasons: list[str] = field(default_factory=list)
+    route: str = "ordinary"
+    head: str = "HEAD"  # checked tree; INDEX during a staged check
+    base: str = ""  # resolved merge-base, for CI to repeat the same classification
 
     def run_everything(self, why: str) -> None:
+        self.route = "ordinary"
         self.everything = self.frontend = self.e2e = True
         self.reasons.append(f"everything: {why}")
 
@@ -183,16 +201,16 @@ class Selection:
 
     def lines(self) -> list[str]:
         python = "python " + (" ".join(sorted(self.tests)) if self.python == "some" else self.python)
-        return [python] + [part for part, wanted in (("frontend", self.frontend), ("e2e", self.e2e)) if wanted]
+        return [f"route {self.route}", python] + [part for part, wanted in (("frontend", self.frontend), ("e2e", self.e2e)) if wanted]
 
     def as_json(self) -> dict[str, object]:
-        return {"python": self.python, "python_tests": sorted(self.tests) if self.python == "some" else [],
+        return {"route": self.route, "python": self.python, "python_tests": sorted(self.tests) if self.python == "some" else [],
                 "frontend": self.frontend, "e2e": self.e2e, "reasons": self.reasons}
 
     def github_output(self) -> str:
         tests = " ".join(sorted(self.tests)) if self.python == "some" else ""
         flags = {"frontend": self.frontend, "e2e": self.e2e}
-        lines = [f"python={self.python}", f"python_tests={tests}"]
+        lines = [f"route={self.route}", f"base={self.base}", f"python={self.python}", f"python_tests={tests}"]
         lines += [f"{key}={'true' if value else 'false'}" for key, value in flags.items()]
         return "\n".join(lines) + "\n"
 
@@ -205,15 +223,34 @@ def select(changes: Sequence[Change], rules: Rules, files: Iterable[str],
     if not changes:
         selection.run_everything("nothing changed, so nothing narrows the check")
         return selection
+    if not all(safe_path(c.path) for c in changes):
+        selection.run_everything("unsafe changed path")
+        return selection
     tree = frozenset(files)
     tests_in_tree = sorted(p for p in tree if is_test_file(p))
+    host_changes = [c for c in changes if host_contract_path(c.path)]
+    if host_changes:
+        if len(host_changes) != len(changes):
+            selection.run_everything("host contracts mixed with other changes")
+        elif not all((r := rules.rule_for(c.path)) and r.parts == (HOST_CONTRACTS,) for c in changes):
+            selection.run_everything("host contracts lack their explicit rule")
+        elif (HOST_PACKAGE + "/__init__.py" not in tree
+              or not any(p.startswith(HOST_TESTS + "/") for p in tests_in_tree)):
+            selection.run_everything("host contract package or tests missing")
+        elif not all(safe_path(p) for p in tree if p.startswith((HOST_PACKAGE + "/", HOST_TESTS + "/"))):
+            selection.run_everything("unsafe host contract tree path")
+        else:
+            selection.route = HOST_CONTRACTS
+            selection.tests = {p for p in tests_in_tree if p.startswith(HOST_TESTS + "/")}
+            selection.reasons.append("exact host-contract-only change; always check the whole leaf, including docs-only")
+        return selection
     starts: dict[str, str] = {}  # where the graph starts -> the changed path it stands for
     for change in changes:
         rule = rules.rule_for(change.path)
         if rule is None:
             selection.run_everything(f"no rule matches {change.path} (unknown means everything)")
             return selection
-        if "full" in rule.parts:
+        if "full" in rule.parts or HOST_CONTRACTS in rule.parts:
             selection.run_everything(f"{change.path} matches {rule.name!r}: {rule.why}")
             return selection
         gone = " (deleted)" if change.deleted else ""
@@ -316,8 +353,12 @@ class Git:
         if done.returncode != 0:
             return None
         fields = done.stdout.decode().split("\0")
-        return [Change(path, deleted=status.startswith("D"))
-                for status, path in zip(fields[0::2], fields[1::2], strict=False) if status and path]
+        if fields.pop() != "" or len(fields) % 2:
+            raise SelectionError("malformed changed-path list")
+        pairs = list(zip(fields[0::2], fields[1::2], strict=True))
+        if any(status not in ("A", "M", "D", "T") or not path for status, path in pairs):
+            raise SelectionError("unsupported changed-path status")
+        return [Change(path, deleted=status == "D") for status, path in pairs]
 
     def files(self, head: str) -> set[str]:
         """Tracked paths of a commit, or of the index for INDEX."""
@@ -327,7 +368,24 @@ class Git:
             raise SelectionError(f"cannot list the files of {head}: {done.stderr.decode().strip()}")
         return {p for p in done.stdout.decode().split("\0") if p}
 
+    def regular_files(self, head: str, paths: Iterable[str]) -> bool:
+        """No symlinks, submodules or unresolved index stages in a checked leaf."""
+        args = ("ls-files", "--stage", "-z") if head == INDEX else ("ls-tree", "-r", "-z", head)
+        done = self._run(*args, "--", *paths)
+        if done.returncode:
+            raise SelectionError("cannot read checked file modes")
+        for row in done.stdout.split(b"\0"):
+            if not row:
+                continue
+            mode, _, stage = row.split(b"\t", 1)[0].split()
+            if mode not in (b"100644", b"100755") or (head == INDEX and stage != b"0"):
+                return False
+        return True
+
     def read(self, head: str, paths: Iterable[str]) -> dict[str, str]:
+        return {p: value.decode("utf-8", errors="replace") for p, value in self.blobs(head, paths).items()}
+
+    def blobs(self, head: str, paths: Iterable[str]) -> dict[str, bytes]:
         """Contents of `paths` at `head` (or in the index), read through one `git cat-file --batch`.
         A path that is not there (a submodule, say) is left out."""
         paths = list(paths)
@@ -345,7 +403,7 @@ class Git:
                 continue
             size = int(header[2])
             if header[1] == b"blob":
-                out[path] = data[header_end + 1 : header_end + 1 + size].decode("utf-8", errors="replace")
+                out[path] = data[header_end + 1 : header_end + 1 + size]
             pos = header_end + 1 + size + 1
         return out
 
@@ -405,6 +463,7 @@ def run(args: argparse.Namespace) -> tuple[Selection, str]:
             raise SelectionError(f"{RULES_PATH} is not in {label}")
     rules = load_rules(rules_text)
     files = git.files(head)
+    fork = ""
     if args.files:
         changes: list[Change] | None = [Change(p, deleted=p not in files) for p in args.files]
         header = f"select_tests: {label}, {len(args.files)} files given"
@@ -424,7 +483,11 @@ def run(args: argparse.Namespace) -> tuple[Selection, str]:
         selection = Selection()
         selection.run_everything(f"cannot diff {(args.base or 'refs/heads/master')!r} against {label}")
         return selection, header
-    return select(changes, rules, files, lambda: graph_of(git, head, files)), header
+    selection = select(changes, rules, files, lambda: graph_of(git, head, files))
+    if selection.route == HOST_CONTRACTS and not git.regular_files(head, (HOST_PACKAGE, HOST_TESTS, HOST_DOC)):
+        selection.run_everything("non-regular host contract files")
+    selection.head, selection.base = head, fork or ""
+    return selection, header
 
 
 def main(argv: Sequence[str] | None = None) -> int:

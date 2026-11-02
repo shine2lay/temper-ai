@@ -631,7 +631,7 @@ def host(tmp_path):
         program(bin_ / name, FAKE_TOOL, fake)
     program(bin_ / "git", FAKE_GIT, fake)
     program(repo / "scripts/generate_docs.py", FAKE_TOOL, fake)
-    program(repo / "scripts/select_tests.py", FAKE_TOOL + 'print("python tests/test_probe.py\\nfrontend")\n', fake)
+    program(repo / "scripts/select_tests.py", FAKE_TOOL + 'print("route ordinary\\npython tests/test_probe.py\\nfrontend")\n', fake)
     program(repo / "scripts/test-postgres.sh", FAKE_TOOL + 'print("postgresql://fake:fake@127.0.0.1:5999/fake")\n', fake)
     (repo / "frontend/node_modules").mkdir(parents=True)
     (repo / "scripts/git-hooks").mkdir(parents=True)
@@ -709,14 +709,15 @@ def phases(repo):
     """The original hook's phase vector for these staged paths: docs, PG, Python and the dashboard."""
     return [
         ("git", ["rev-parse", "--show-toplevel"]),
+        ("select_tests.py", ["--explain"]),
         ("git", ["diff", "--cached", "--name-only"]),
         ("generate_docs.py", []),
         ("git", ["add", f"{repo}/docs/reference/"]),
+        ("select_tests.py", ["--explain"]),
         ("uv", ["sync", "--frozen", "--extra", "dev", "--quiet"]),
         ("uv", ["run", "--quiet", "python", "scripts/show_versions.py", "--check"]),
         ("uv", ["run", "--quiet", "ruff", "check", "."]),
         ("uv", ["run", "--quiet", "mypy", "temper_ai/", "--ignore-missing-imports"]),
-        ("select_tests.py", ["--explain"]),
         ("git", ["diff", "--cached", "--name-only", "--diff-filter=ACM"]),
         ("test-postgres.sh", ["url"]),
         ("git", ["rev-parse", "--local-env-vars"]),

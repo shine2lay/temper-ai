@@ -1,0 +1,26 @@
+"""Independent opaque reference roles; these variables define no capabilities."""
+
+from typing import TypeVar
+
+SelectionT = TypeVar("SelectionT")
+WitnessT = TypeVar("WitnessT")
+AdmissionT = TypeVar("AdmissionT")
+ProcessT = TypeVar("ProcessT")
+BirthT = TypeVar("BirthT")
+ContainerT = TypeVar("ContainerT")
+RootObjectT = TypeVar("RootObjectT")
+SubjectT = TypeVar("SubjectT")
+TargetT = TypeVar("TargetT")
+GrantT = TypeVar("GrantT")
+IntervalT = TypeVar("IntervalT")
+FieldsT = TypeVar("FieldsT")
+EventRangeT = TypeVar("EventRangeT")
+DisarmT = TypeVar("DisarmT")
+WatchT = TypeVar("WatchT")
+ReviewedT = TypeVar("ReviewedT")
+ObservedT = TypeVar("ObservedT")
+ComparisonT = TypeVar("ComparisonT")
+SourceEpochT = TypeVar("SourceEpochT")
+ObservationEpochT = TypeVar("ObservationEpochT")
+CoverageT = TypeVar("CoverageT")
+GapT = TypeVar("GapT")

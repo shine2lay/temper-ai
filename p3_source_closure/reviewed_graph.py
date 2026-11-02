@@ -32,10 +32,10 @@ def validate_reviewed_graph(value: object) -> t.ReviewedSourceGraph:
     for node in graph.nodes:
         provenance = node.provenance
         if type(provenance) is t.GitProvenance:
-            repo = repositories.get(provenance.repository)
-            if repo is None or not repository_path(provenance.path):
+            repository = repositories.get(provenance.repository)
+            if repository is None or not repository_path(provenance.path):
                 _refuse("TARGET_BINDING_INVALID")
-            if not all(object_id(oid, repo.object_format) for oid in (provenance.commit, provenance.tree, provenance.object_id)):
+            if not all(object_id(oid, repository.object_format) for oid in (provenance.commit, provenance.tree, provenance.object_id)):
                 _refuse("TARGET_BINDING_INVALID")
             references(provenance.target_chain, nodes)
             if node.kind not in ("git_source", "resource"):
@@ -50,7 +50,7 @@ def validate_reviewed_graph(value: object) -> t.ReviewedSourceGraph:
             references((provenance.interpreter,), nodes)
             if node.kind != "cached_code":
                 _refuse("TARGET_BINDING_INVALID")
-        else:
+        elif type(provenance) is t.ArtifactProvenance:
             for refs in (provenance.sources, provenance.dependencies, (provenance.interpreter,)):
                 references(refs, nodes)
             if node.kind not in ("package", "interpreter", "stdlib", "native_binary", "resource"):

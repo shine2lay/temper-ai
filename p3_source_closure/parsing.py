@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import fields
 from types import UnionType
-from typing import Literal, get_args, get_origin, get_type_hints
+from typing import Literal, TypeVar, get_args, get_origin, get_type_hints
 
 from . import records as t
 from .validation import _refuse
@@ -16,6 +16,7 @@ from .validation import _refuse
 MAX_DOCUMENT = 16777216
 MAX_DEPTH = 32
 MAX_GRAPH = 65536
+RecordType = TypeVar("RecordType", bound=t.Record)
 
 
 def wire_name(cls: type, name: str) -> str:
@@ -91,11 +92,13 @@ def _decode(value: object, annotation: object, depth: int = 0) -> object:
     return value
 
 
-def decode_record(value: object, cls: type[t.Record]) -> t.Record:
+def decode_record(value: object, cls: type[RecordType]) -> RecordType:
     """Used for wire parsing and revalidation of public Python records."""
     result = _decode(value, cls)
-    refs = {}
-    pending = [result]
+    if not isinstance(result, cls):
+        _refuse("TARGET_BINDING_INVALID")
+    refs: dict[tuple[str, str, str], t.EvidenceRef] = {}
+    pending: list[object] = [result]
     while pending:
         item = pending.pop()
         if type(item) is t.EvidenceRef:
@@ -118,7 +121,7 @@ def _object_fields(pairs: list) -> dict:
     return values
 
 
-def document(value: object, cls: type[t.Record]) -> tuple[t.Record, t.ContentIdentity]:
+def document(value: object, cls: type[RecordType]) -> tuple[RecordType, t.ContentIdentity]:
     raw = value if type(value) is bytes else None
     valid = True
     if raw is not None:

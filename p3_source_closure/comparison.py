@@ -7,6 +7,8 @@ import, file access, collector, native verifier or production provider lives her
 
 from __future__ import annotations
 
+from typing import Literal
+
 from . import records as t
 from .loaded_envelope import check_boundary, validate_loaded_envelope
 from .parsing import claim_identity, decode_record, to_wire, unique
@@ -166,12 +168,15 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
     unique(tuple(p.instance.instance_id for p in expected.processes))
     findings = Findings(verified)
     graph, envelope = reviewed.graph, observed.envelope
-    for supplied, actual, reason in ((verified.reviewed_bytes, reviewed.content, "REVIEW_ORIGIN"),
-                                     (verified.observed_bytes, observed.content, "OBSERVER_ORIGIN"),
-                                     (verified.expectation, claim_identity(expected), "BINDING")):
+    input_bindings: tuple[tuple[t.ContentIdentity | None, t.ContentIdentity, t.Reason], ...] = (
+        (verified.reviewed_bytes, reviewed.content, "REVIEW_ORIGIN"),
+        (verified.observed_bytes, observed.content, "OBSERVER_ORIGIN"),
+        (verified.expectation, claim_identity(expected), "BINDING"),
+    )
+    for supplied, input_identity, reason in input_bindings:
         if supplied is None:
             findings.unknown(reason)
-        elif supplied != actual:
+        elif supplied != input_identity:
             findings.refuse(reason)
     if verified.validity_checkpoint != expected.boundary.validity_checkpoint:
         findings.unknown("STALE_FRONTIER")
@@ -224,7 +229,7 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
                 findings.unknown("CHILD_COVERAGE")
             elif actual[child].instance.parent_instance != key:
                 findings.refuse("CHILD_COVERAGE")
-    disposition = "REFUSED" if findings.contradictions else "UNKNOWN" if findings.gaps else "MATCH"
+    disposition: Literal["REFUSED", "UNKNOWN", "MATCH"] = "REFUSED" if findings.contradictions else "UNKNOWN" if findings.gaps else "MATCH"
     return t.SourceClosureComparison(disposition, tuple(sorted(findings.contradictions | findings.gaps)),
                                      expected.binding, expected.boundary, expected.reviewed_graph,
                                      tuple(sorted((p.frontier for p in expected.processes), key=lambda p: p.instance_id)) if disposition == "MATCH" else ())

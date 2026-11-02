@@ -1,7 +1,9 @@
 # P3 N3 pure source comparison
 
 Status: source candidate checks passed, not yet reviewed/landed; disabled data only. Systems #71; source base
-786e6711ac0cb0662567443ac23f504dfeaee778. Claim N/A: cwd-local; isolation =
+5334255e18ef3630c9f63e894f7e986bd7049322 after the ordinary base rebase;
+initial source base was 786e6711ac0cb0662567443ac23f504dfeaee778.
+Claim N/A: cwd-local; isolation =
 /home/shinelay/temper-ai-systems-task-71, branch systems-task-71.
 
 ## Hypothesis H-N3-IMPLEMENTATION-1
@@ -56,7 +58,7 @@ decoder across graph, observation and expectation records. Expect the same isola
 legacy call and unchanged carry tests to pass alongside canonical N3/facade
 identity and clean/bad cases for each new-schema atom. Falsifiers: any legacy blob
 change, runtime dependency retrofit, duplicate N3 implementation or omitted
-new-schema check. Result: source-candidate HIT only, 2026-11-01. Final focused
+new-schema check. Result: source-candidate HIT only, 2026-11-01. Focused v2
 run: 1,949 passed in 52.30 seconds (CPython 3.13.15), including every unchanged
 R2/R1/R5 carry test, N3-01..15, targeted single-guard mutations, canonical
 facade identity, isolated standalone legacy call and explicit missing-N3
@@ -71,6 +73,23 @@ candidate adds schema-type and inert-equality cases plus reference-identity and
 adopted epoch controls. They are covered by the completed 1,949-case v2 run,
 not by v1. The reference-identity check was also added after v1 started and is
 covered only by v2.
+
+H-N3-TYPING-5: the normal commit hook passed on 62ab8385, but it checks
+`temper_ai/`, not the new top-level package. Explicit package type checking found
+58 errors: reflection lost concrete record types, optional origin lookup and
+union branches were not narrowed, and local names conflated identity/process
+maps. Preserve runtime grammar and comparison semantics; represent the immutable
+base as a dataclass, make decoding generic with checked output types, and narrow
+locals explicitly. Expect zero package type errors and the same full focused
+carry/mutation results. Falsifier: type suppressions, weaker grammar, changed
+public record fields or changed comparison outcomes. Result: source-candidate
+HIT, explicit mypy reports no issues in all eight package modules; no type
+suppression was added. Completed v3 focused carry/mutation run: 1,949 passed in
+46.33 seconds (CPython 3.13.15), with package lint passing. An empty py.typed
+marker exposes the same annotations to installed consumers; it does not provide
+distribution metadata or claim the future joined wheel test. Subsequent rebase
+onto 5334255e changes no component bytes; the normal hook still must pass on the
+final candidate. Native qualification remains unchanged.
 
 Authority: Architecture T3-ADOPTION.md, Temper T3 INTERFACE.md §§6/8, Systems N3
 CONTRACT.md. All N unresolved; four rows UNQUALIFIED; P5 UNTRUSTED;

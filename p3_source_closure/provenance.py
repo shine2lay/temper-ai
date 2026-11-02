@@ -21,7 +21,7 @@ class Findings:
         self.gaps.add(reason)
 
     def origin(self, ref: t.EvidenceRef | None, purpose: t.Purpose, claim: object, reason: t.Reason) -> None:
-        actual = self.origins.get((ref, purpose))
+        actual = self.origins.get((ref, purpose)) if ref is not None else None
         if actual is None:
             self.unknown(reason)
         elif actual != claim_identity(claim):
@@ -54,7 +54,7 @@ def check_provenance(graph: t.SourceGraph, findings: Findings) -> None:
                 findings.unknown("CACHED_CODE")
             if node.content != p.executed:
                 findings.refuse("CACHED_CODE")
-        else:
+        elif type(p) is t.ArtifactProvenance:
             findings.origin(p.provenance_ref, "artifact", (node, tuple(nodes[key] for key in (*p.sources, *p.dependencies, p.interpreter))), "RUNTIME_PROVENANCE")
             if node.content != p.artifact:
                 findings.refuse("RUNTIME_PROVENANCE")

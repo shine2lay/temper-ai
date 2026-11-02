@@ -41,10 +41,9 @@ def _typed(value: object, annotation: object) -> bool:
     return type(value) is annotation
 
 
+@dataclass(frozen=True, slots=True, repr=False)
 class Record:
     """Strict built-in primitives; no mutable collections or subclass coercion."""
-
-    __slots__ = ()
 
     def __post_init__(self) -> None:
         hints = get_type_hints(type(self))

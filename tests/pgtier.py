@@ -55,6 +55,10 @@ TIER = (
     "tests/test_integrations/test_slack_handlers.py",
     "tests/test_triggers/",                       # trigger fires
     "tests/test_memory/",                         # memory rows
+    "tests/test_private_context/test_scope.py",   # private custody and exact authority
+    "tests/test_private_context/test_lifecycle.py",  # volatile loss, metadata migration
+    "tests/test_private_context/test_replay.py",  # real concurrent invocation schedules
+    "tests/test_private_context/test_service_composition.py",  # atomic queue/key composition
 )
 
 # temper's own live database, which no test may ever open.

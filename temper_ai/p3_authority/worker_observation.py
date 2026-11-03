@@ -57,6 +57,7 @@ from temper_ai.p3_authority.contract import (
     RefusalCode,
     Result,
     RetryKind,
+    RootBinding,
     RootObservation,
     RootObserver,
     RootScope,
@@ -136,6 +137,18 @@ class RootOwnerVsActorAssertion:
     actor_uid: int
     file_owner_principal: str
     file_owner_uid: int
+
+
+def actor_owns_root(assertion: RootOwnerVsActorAssertion) -> bool:
+    """Whether the acting process is the root's file owner (by UID or principal).
+
+    An actor that owns its root could change the root's rights itself, so owner and
+    actor must stay separate identities.
+    """
+    return (
+        assertion.actor_uid == assertion.file_owner_uid
+        or assertion.actor_principal == assertion.file_owner_principal
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -234,6 +247,33 @@ class WorkerRootObservationAdapter(RootObserver):
     ) -> None:
         self._provider = provider
         self._unpermitted_read_attempted = False
+        self._accepted_root_observations: dict[tuple[str, str], RootObservation] = {}
+        self._accepted_root_bindings: dict[tuple[str, str], RootBinding] = {}
+
+    def lookup_root_observation(
+        self,
+        *,
+        process_registration: str,
+        root_kind: str,
+    ) -> RootObservation | None:
+        """The root observation this adapter last accepted for the actor and root kind."""
+        return self._accepted_root_observations.get((process_registration, root_kind))
+
+    def lookup_root_binding(
+        self,
+        *,
+        selection_revision: str | None = None,
+        boundary: Boundary | None = None,
+        process_registration: str | None = None,
+        root_kind: str = "publication",
+    ) -> RootBinding | None:
+        """The root binding this adapter last accepted (any actor when none is named)."""
+        for (reg, kind), bind in self._accepted_root_bindings.items():
+            if kind == root_kind and (
+                process_registration is None or reg == process_registration
+            ):
+                return bind
+        return None
 
     def record_unpermitted_read_attempt(self) -> None:
         self._unpermitted_read_attempted = True
@@ -298,6 +338,9 @@ class WorkerRootObservationAdapter(RootObserver):
                 boundary,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
+        key = (actor_instance.process_registration, obs.root_kind)
+        self._accepted_root_observations[key] = obs
+        self._accepted_root_bindings[key] = obs.binding
         return res
 
     def verify_both_roots(
@@ -349,7 +392,14 @@ class WorkerRootObservationAdapter(RootObserver):
                 )
             if not assertion.actor_principal or not assertion.file_owner_principal:
                 return make_refusal(RefusalCode.ROOT_MISMATCH, boundary)
+            if actor_owns_root(assertion):
+                return make_refusal(RefusalCode.RIGHTS_MISSING, boundary)
 
+        reg = actor_instance.process_registration
+        self._accepted_root_observations[(reg, "publication")] = pub
+        self._accepted_root_bindings[(reg, "publication")] = pub.binding
+        self._accepted_root_observations[(reg, "host_evidence")] = host_ev
+        self._accepted_root_bindings[(reg, "host_evidence")] = host_ev.binding
         return AcceptedData(data=both, evidence=evidence)
 
 
@@ -390,6 +440,16 @@ class WorkerObservationAdapter(WorkerObserver):
     @property
     def root_observer(self) -> WorkerRootObservationAdapter:
         return self._root_observer
+
+    def lookup_worker_observation(
+        self,
+        *,
+        selection_revision: str,
+        boundary: Boundary | None = None,
+    ) -> WorkerObservation | None:
+        """The worker observation this adapter last accepted for the selection."""
+        session = self._sessions.get(selection_revision)
+        return session.last_observation if session is not None else None
 
     def record_unpermitted_read_attempt(self, selection_revision: str) -> None:
         """Poison a job selection when a caller attempts collection before permission."""

@@ -19,6 +19,8 @@ import pytest
 from sqlalchemy import event, func, select
 
 from temper_ai.api.caller import Caller
+from temper_ai.cli.run_workflow import _update_run_row
+from temper_ai.cli.watch_queue import _stamp_handle
 from temper_ai.config.admission_contract import (
     RESERVED_KEY,
     AdmissionRecord,
@@ -71,6 +73,9 @@ from temper_ai.runner.admission import (
     protect_ordinary_update,
 )
 from temper_ai.runner.models import WorkflowRun
+from temper_ai.runner.queue import queue_run
+from temper_ai.worker_proto import ProcessHandle as RunHandle
+from temper_ai.worker_proto import SpawnerKind
 from tests.test_p3_authority._composition_fixtures import (
     PROCESS_RUN,
     PROCESS_SUBMIT,
@@ -553,6 +558,43 @@ def test_dispatch_bind_keeps_the_selection_bytes(tmp_path: Path) -> None:
     row = _row()
     assert row is not None and row.status == "running"
     assert canonical_bytes(row.spawner_metadata[ADMISSION_SELECTION_KEY]) == before
+    binding = adm.source().binding_for(EXEC_UUID)
+    assert isinstance(binding, RunSelectionBinding)
+    _assert_binding_is_job(binding, adm.job, adm.entry.authority)
+
+
+def test_queue_spawn_and_worker_writers_never_move_or_rewrite_the_selection(tmp_path: Path) -> None:
+    """No re-queue, resume, fork, spawner or worker write rewrites it or plants it on another run."""
+    adm = Admission(tmp_path)
+    adm.submit()
+    row = _row()
+    assert row is not None
+    workflow, before = row.workflow_name, _stored_bytes()
+    stored = copy.deepcopy(row.spawner_metadata[ADMISSION_SELECTION_KEY])
+
+    for start in (None, "resume", "fork", "cleanup"):
+        with pytest.raises(AdmissionRefused):
+            queue_run(EXEC_UUID, workflow, None, {}, start=start)
+        assert _stored_bytes() == before
+
+    for start in (None, "resume", "fork"):
+        with pytest.raises(AdmissionRefused) as planted:
+            queue_run(OTHER_UUID, workflow, None, {}, start=start,
+                      extra={ADMISSION_SELECTION_KEY: stored})
+        assert planted.value.code is CandidateRefusalCode.PROTECTED
+        assert _row(OTHER_UUID) is None
+
+    with pytest.raises(AdmissionRefused):
+        _stamp_handle(EXEC_UUID, RunHandle(kind=SpawnerKind.subprocess, handle="worker:o2",
+                                           metadata={ADMISSION_SELECTION_KEY: stored}))
+    with pytest.raises(AdmissionRefused):
+        _update_run_row(EXEC_UUID, spawner_metadata={ADMISSION_SELECTION_KEY: stored})
+    assert _stored_bytes() == before
+
+    _stamp_handle(EXEC_UUID, RunHandle(kind=SpawnerKind.subprocess, handle="worker:o2",
+                                       metadata={"pid": 42}))
+    _update_run_row(EXEC_UUID, spawner_metadata={"observation": [1]})
+    assert canonical_bytes(_metadata()[ADMISSION_SELECTION_KEY]) == canonical_bytes(stored)
     binding = adm.source().binding_for(EXEC_UUID)
     assert isinstance(binding, RunSelectionBinding)
     _assert_binding_is_job(binding, adm.job, adm.entry.authority)

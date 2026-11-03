@@ -842,6 +842,80 @@ def test_declared_module_never_supplies_a_submodule_of_a_root_module(tmp_path: P
     assert edges == {("r.main", "r.pkg", "import"), ("r.main", "pkg-extra", "import")}
 
 
+def _one_repository_two_roots(repository: Path, commit: str) -> dict[str, object]:
+    return {
+        "repositories": (RepositorySpec("r", "temper", repository, commit),),
+        "entrypoints": (EntrypointSpec("e", "p", "r:r1/main.py", "main"),),
+        "process_profiles": (_profile("p", ("e",), (("r", "r1"), ("r", "r2"))),),
+        "declared_nodes": _runtime_inventory(),
+    }
+
+
+def test_namespace_portions_merge_in_root_order(tmp_path: Path) -> None:
+    commit = _commit_tree(
+        tmp_path / "r",
+        {
+            "r1/main.py": b"import ns.m\nimport ns.only2\n",
+            "r1/ns/m.py": b"WHERE = 'r1'\n",
+            "r2/ns/m.py": b"WHERE = 'r2'\n",
+            "r2/ns/only2.py": b"ONLY = 2\n",
+        },
+    )
+    reviewed = build_reviewed_source_graph(**_one_repository_two_roots(tmp_path / "r", commit))
+    edges = {(e.source, e.target, e.kind) for e in reviewed.graph.edges if e.source == "r.r1.main"}
+    assert edges == {("r.r1.main", "r.r1.ns.m", "import"), ("r.r1.main", "r.r2.ns.only2", "import")}
+    assert "r.r2.ns.m" not in {n.id for n in reviewed.graph.nodes}
+
+
+def test_regular_package_restricts_submodule_search(tmp_path: Path) -> None:
+    commit = _commit_tree(
+        tmp_path / "r",
+        {"r1/main.py": b"import p.sub\n", "r1/p/__init__.py": b"", "r2/p/sub.py": b"SUB = 2\n"},
+    )
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(**_one_repository_two_roots(tmp_path / "r", commit))
+    assert exc_info.value.code == "UNRESOLVED_CLOSURE"
+    assert exc_info.value.items == ("r:r1/main.py:1:unresolved_import:p.sub",)
+
+
+def test_symlink_or_gitlink_at_a_search_position_fails_loud(tmp_path: Path) -> None:
+    # Python follows a symlink or a checked-out gitlink, so r1's entry would win over r2's package.
+    repository = tmp_path / "r"
+    base = _commit_tree(
+        repository,
+        {
+            "r1/main.py": b"import sym\n",
+            "real/sym/__init__.py": b"WHERE = 'link target'\n",
+            "r2/sym/__init__.py": b"WHERE = 'r2'\n",
+            "r2/gl/__init__.py": b"WHERE = 'r2'\n",
+        },
+    )
+    (repository / "r1" / "sym").symlink_to("../real/sym")
+    _git(repository, "add", "r1/sym")
+    _git(repository, "commit", "-q", "-m", "symlink")
+    symlink_commit = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "update-index", "--add", "--cacheinfo", f"160000,{base},r1/gl")
+    (repository / "r1" / "main.py").write_bytes(b"import gl\n")
+    _git(repository, "add", "r1/main.py")
+    _git(repository, "commit", "-q", "-m", "gitlink")
+    gitlink_commit = _git(repository, "rev-parse", "HEAD")
+
+    for commit, expected in (
+        (symlink_commit, ("r:r1/main.py:1:unresolved_import:sym", "r:r1/sym:0:unsupported_git_entry:120000:blob")),
+        (gitlink_commit, ("r:r1/gl:0:unsupported_git_entry:160000:commit", "r:r1/main.py:1:unresolved_import:gl")),
+    ):
+        with pytest.raises(GraphBuildError) as exc_info:
+            build_reviewed_source_graph(**_one_repository_two_roots(repository, commit))
+        assert exc_info.value.code == "UNRESOLVED_CLOSURE"
+        assert exc_info.value.items == expected
+
+    # A root that binds before the link is reached never meets it.
+    spec = _one_repository_two_roots(repository, symlink_commit)
+    spec["process_profiles"] = (_profile("p", ("e",), (("r", "r2"), ("r", "r1"))),)
+    reviewed = build_reviewed_source_graph(**spec)
+    assert ("r.r1.main", "r.r2.sym", "import") in {(e.source, e.target, e.kind) for e in reviewed.graph.edges}
+
+
 def test_multi_repository_reads_only_committed_git_objects(tmp_path: Path) -> None:
     host, lib = _two_repositories(tmp_path)
     (tmp_path / "host" / "bin" / "helper.py").write_bytes(b"raise RuntimeError('dirty working tree')\n")

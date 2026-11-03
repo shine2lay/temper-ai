@@ -8,16 +8,22 @@ each search directory ``part/__init__.py`` (a regular package) wins, then
 portion, merged across roots in order. The first root holding a package or
 module wins, exactly as the first ``sys.path`` entry does; there is no other
 precedence. Declared modules (stdlib, installed packages, generated code) sit
-after the roots, like the later ``sys.path`` entries they come from: one is used
-for a name part no searched directory holds as a package or module, and it
-beats namespace portions there, as a later regular package does in PathFinder.
-Built from Git tree paths only, never from a working tree.
+after the roots, like the later ``sys.path`` entries they come from: at a name
+part no searched directory holds as a package or module, the longest declared
+name covering that part or a deeper one is used, before any namespace portion
+found there (a declared ``gns.x`` is chosen over a root's ``gns/x.py`` portion
+file, though Python would merge the portion and load that file). A declared name also supplies its own submodules (declared ``json`` covers
+``json.decoder``), so it may claim more than an installed package holds. Both
+are over-approximations: the comparator refuses a run that loads anything else.
+A symlink or gitlink at a search position is refused, not skipped: Python follows
+it, so the first root's entry would win, and the reviewed graph cannot name what
+it holds. Built from Git tree paths only, never from a working tree.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 ImportRoot = tuple[str, str]
 
@@ -38,20 +44,25 @@ def module_from_path(rel_path: str) -> tuple[str | None, str | None]:
 
 @dataclass(frozen=True, slots=True)
 class RepositoryTree:
-    """File and directory paths of one committed Git tree."""
+    """File and directory paths of one committed Git tree.
+
+    non_regular maps each entry that is not a regular file blob (symlink 120000,
+    gitlink 160000) to its (mode, object type).
+    """
 
     files: frozenset[str]
     directories: frozenset[str]
+    non_regular: Mapping[str, tuple[str, str]] = field(default_factory=dict)
 
     @classmethod
-    def from_paths(cls, paths: Iterable[str]) -> RepositoryTree:
+    def from_paths(cls, paths: Iterable[str], non_regular: Mapping[str, tuple[str, str]] | None = None) -> RepositoryTree:
         files = frozenset(paths)
         directories: set[str] = set()
         for path in files:
             parts = path.split("/")[:-1]
             for index in range(1, len(parts) + 1):
                 directories.add("/".join(parts[:index]))
-        return cls(files=files, directories=frozenset(directories))
+        return cls(files=files, directories=frozenset(directories), non_regular=dict(non_regular or {}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +84,16 @@ class Resolution:
 
     files: tuple[ResolvedModule, ...]
     declared_module: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class UnsupportedEntry:
+    """A symlink or gitlink at a search position: Python would follow it; the graph cannot review it."""
+
+    repository_id: str
+    path: str
+    mode: str
+    object_type: str
 
 
 def _join(directory: str, name: str) -> str:
@@ -131,8 +152,11 @@ class ModuleRootResolver:
                 return prefix
         return None
 
-    def resolve(self, module_name: str) -> Resolution | None:
-        """Return what ``import <module_name>`` binds; None when it binds nothing (ImportError)."""
+    def resolve(self, module_name: str) -> Resolution | UnsupportedEntry | None:
+        """Return what ``import <module_name>`` binds; None when it binds nothing (ImportError).
+
+        UnsupportedEntry when a searched position holds a symlink or gitlink before any binding.
+        """
         parts = module_name.split(".") if module_name else []
         if not parts or any(not part for part in parts):
             return None
@@ -148,6 +172,10 @@ class ModuleRootResolver:
             for repository_id, directory in search:
                 tree = self._trees[repository_id]
                 base = _join(directory, part)
+                for candidate in (base, f"{base}/__init__.py", f"{base}.py"):
+                    entry_kind = tree.non_regular.get(candidate)
+                    if entry_kind is not None:
+                        return UnsupportedEntry(repository_id, candidate, *entry_kind)
                 if f"{base}/__init__.py" in tree.files:
                     found = ResolvedModule(repository_id, f"{base}/__init__.py", name)
                     package_dir = (repository_id, base)
@@ -181,7 +209,7 @@ class ModuleRootResolver:
             if module_name is None:
                 continue
             resolution = self.resolve(module_name)
-            if resolution is None or resolution.declared_module is not None or not resolution.files:
+            if not isinstance(resolution, Resolution) or resolution.declared_module is not None or not resolution.files:
                 continue
             if resolution.files[-1].repository_id == repository_id and resolution.files[-1].path == path:
                 return module_name

@@ -27,6 +27,8 @@ from .import_roots import (
     ImportRoot,
     ModuleRootResolver,
     RepositoryTree,
+    Resolution,
+    UnsupportedEntry,
     import_root_problems,
     module_from_path,
 )
@@ -58,7 +60,12 @@ class GraphBuildError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class RepositorySpec:
-    """One repository at one commit; the same repository at two commits is two specs with distinct ids."""
+    """One repository at one commit; the same repository at two commits is two specs with distinct ids.
+
+    Node ids are "<id>.<module from the repository root>", unique per graph (NODE_ID_COLLISION
+    otherwise). An id may hold ".", so read a node's repository and path from its provenance,
+    never by splitting its id.
+    """
 
     id: str
     owner: RepositoryOwner
@@ -167,6 +174,10 @@ def _run_git(repo_dir: str, args: Sequence[str]) -> bytes:
     return bytes(proc.stdout)
 
 
+def _is_regular_file(entry: _GitTreeEntry) -> bool:
+    return entry.mode in ("100644", "100755") and entry.obj_type == "blob"
+
+
 def _module_from_path(rel_path: str) -> tuple[str | None, str | None]:
     return module_from_path(rel_path)
 
@@ -263,7 +274,7 @@ def _collect_module_ast_deps(
     error_path names the file in error items: its path, repository-qualified with several repositories.
     """
     rel_path = error_path
-    if entry.mode not in ("100644", "100755") or entry.obj_type != "blob":
+    if not _is_regular_file(entry):
         errors.append(f"{rel_path}:0:unsupported_git_entry:{entry.mode}:{entry.obj_type}")
         return (), ()
     if _ID_RE.fullmatch(source_id) is None:
@@ -422,6 +433,19 @@ class _ProfileRootsScope:
         self._git_node_ids = git_node_ids
         self._declared_by_id = declared_by_id
         self._declared_by_module = declared_by_module
+        self._unsupported: dict[str, None] = {}
+
+    def unsupported_entry_errors(self) -> tuple[str, ...]:
+        """Closure error items for symlinks and gitlinks an import met at a search position."""
+        return tuple(self._unsupported)
+
+    def _resolve(self, name: str) -> Resolution | None:
+        resolution = self._resolver.resolve(name)
+        if isinstance(resolution, UnsupportedEntry):
+            item = f"{resolution.repository_id}:{resolution.path}:0:unsupported_git_entry:{resolution.mode}:{resolution.object_type}"
+            self._unsupported[item] = None
+            return None
+        return resolution
 
     def package_for(self, node_id: str, module_name: str | None) -> str | None:
         if module_name is None:
@@ -431,7 +455,7 @@ class _ProfileRootsScope:
         return package or None
 
     def resolve_module(self, name: str) -> tuple[_Reach, ...] | None:
-        resolution = self._resolver.resolve(name)
+        resolution = self._resolve(name)
         if resolution is None:
             return None
         reaches = [
@@ -443,11 +467,11 @@ class _ProfileRootsScope:
         return tuple(reaches)
 
     def is_importable_module(self, name: str) -> bool:
-        resolution = self._resolver.resolve(name)
+        resolution = self._resolve(name)
         return resolution is not None and resolution.declared_module in (None, name)
 
     def resolve_dynamic_target(self, name: str) -> _Reach | None:
-        resolution = self._resolver.resolve(name)
+        resolution = self._resolve(name)
         if resolution is not None and resolution.declared_module is None and resolution.files:
             module = resolution.files[-1]
             if module.module_name == name:
@@ -654,7 +678,17 @@ def build_reviewed_source_graph(
             continue
         dynamic_map[(src_id, dst_id)] = dyn.condition_ref
 
-    trees = {repo_id: RepositoryTree.from_paths(repository.by_path) for repo_id, repository in loaded.items()} if not single_form else {}
+    trees = (
+        {
+            repo_id: RepositoryTree.from_paths(
+                repository.by_path,
+                {path: (entry.mode, entry.obj_type) for path, entry in repository.by_path.items() if not _is_regular_file(entry)},
+            )
+            for repo_id, repository in loaded.items()
+        }
+        if not single_form
+        else {}
+    )
     profiles_by_id: dict[str, ProcessProfileSpec] = {}
     for prof in process_profiles:
         if prof.id in profiles_by_id:
@@ -745,12 +779,13 @@ def build_reviewed_source_graph(
         raise GraphBuildError("INVALID_GRAPH_SPEC", config_errors)
 
     scopes: dict[str, _ImportScope] = {}
+    profile_scopes: list[_ProfileRootsScope] = []
     if single_form:
         single_scope = _RepositoryRootScope(single_repository, declared_by_id, declared_by_module)
         scopes = {prof_id: single_scope for prof_id in profiles_by_id}
     else:
         for prof_id, prof in profiles_by_id.items():
-            scopes[prof_id] = _ProfileRootsScope(
+            profile_scope = _ProfileRootsScope(
                 prof_id,
                 ModuleRootResolver(prof.module_path, trees, frozenset(declared_by_module)),
                 git_nodes,
@@ -758,6 +793,8 @@ def build_reviewed_source_graph(
                 declared_by_id,
                 declared_by_module,
             )
+            scopes[prof_id] = profile_scope
+            profile_scopes.append(profile_scope)
 
     blob_cache: dict[str, bytes] = {}
 
@@ -892,6 +929,8 @@ def build_reviewed_source_graph(
                     else:
                         enqueue(scope, scope.reach(interp_id))
 
+    for profile_scope in profile_scopes:
+        closure_errors.extend(profile_scope.unsupported_entry_errors())
     if closure_errors:
         raise GraphBuildError("UNRESOLVED_CLOSURE", closure_errors)
     if conflicts:

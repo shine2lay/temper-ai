@@ -64,7 +64,8 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   `ConditionRef` tuple, and `TrustedInstant` validity window (`at` taken solely
   from `snapshot.verified_at` using strict non-negative integer comparisons
   `not_before <= at < expires_at`). Empty process or peer identity strings never
-  compare equal (`"" == ""` refuses with `PEER_UNVERIFIED` / `SCOPE_MISMATCH`).
+  compare equal (`"" == ""` refuses with `PEER_UNVERIFIED` / `SCOPE_MISMATCH`,
+  and with `ROOT_MISMATCH` for an empty creator or parent process).
 - **Signed Ed25519 issuer and revocation verification (`issuer_verifier.py`)**:
   `Ed25519IssuerVerifier` (implements the `IssuerVerifier` port; the module holds
   no private key and no signing function) verifies CAJ-1 canonical envelopes
@@ -78,7 +79,9 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   `ConditionRef` against the closed `CONDITION_TABLE` (`CONDITIONS_UNMET` on
   unknown or unsatisfied conditions; the job's conditions must be an exact
   `tuple`, and `mode:external-db-fresh` holds only for a route that is the
-  exact str `external-db-fresh`, see `job_runs_supported_mode`). Every
+  exact str `external-db-fresh`, see `job_runs_supported_mode`; a condition's
+  id, revision and authority fields must be exact non-empty str, so a value that
+  only compares equal to a granted one refuses). Every
   `AnchorTable` and `AnchorEntry`
   field is required (no default clock domain, validity window or purposes) and
   the table is checked whole at construction, raising `AnchorTableInvalid`
@@ -103,8 +106,13 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   `pinned_peers` parameters while keeping all defaults `None` and
   `writes_enabled=False`. The issuer parts build an `Ed25519IssuerVerifier` and
   `pinned_peers` a `PinnedPeerVerifier`. The condition table cannot be passed:
-  `CONDITION_TABLE` and `CONDITION_PREDICATES` are read-only mappings, and
-  `Ed25519IssuerVerifier.condition_table` always returns `CONDITION_TABLE`; passing them with `issuer_verifier`,
+  `CONDITION_TABLE` and `CONDITION_PREDICATES` are read-only mappings, the
+  registry evaluates row C4 against `CONDITION_TABLE` itself whatever issuer
+  verifier is composed (it never reads a verifier's `condition_table`), and
+  `Ed25519IssuerVerifier.condition_table` always returns `CONDITION_TABLE`. A
+  caught exception in the verifiers is logged as one warning with its row id
+  and exception type only, never its message or value. Passing the issuer parts
+  or `pinned_peers` with `issuer_verifier`,
   `peer_verifier` or `registry` raises `ValueError` instead of ignoring one.
 - **Window creation binding**: `bind_created` accepts only Phase A
   `CurrentBinding` records (`A_PRE_CREATE` / `A_PRE_ARM`) whose creator process

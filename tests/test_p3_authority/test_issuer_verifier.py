@@ -19,10 +19,14 @@ Covers:
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -93,6 +97,7 @@ from temper_ai.p3_authority.service import compose_p3_authority
 from tests.test_p3_authority._composition_fixtures import (
     AUTHORITY_REF_1,
     AUTHORITY_REF_2,
+    CONDITION_1,
     DISPATCH_1,
     FakePeer,
     FakeProcessRef,
@@ -192,6 +197,74 @@ class _LookAlikeDispatchIdentity:
 
 _LookAlikeDispatchIdentity.__name__ = "DispatchIdentity"
 _LookAlikeDispatchIdentity.__qualname__ = "DispatchIdentity"
+
+
+@dataclass(frozen=True)
+class _LookAlikeAuthorityRef:
+    """Same fields and class name as ``AuthorityRef``, but not that type."""
+
+    issuer_id: str
+    record_id: str
+    authority_revision: str
+
+
+_LookAlikeAuthorityRef.__name__ = "AuthorityRef"
+_LookAlikeAuthorityRef.__qualname__ = "AuthorityRef"
+
+
+class _AuthorityRefSubclass(AuthorityRef):
+    """An ``AuthorityRef`` subclass that changes nothing."""
+
+
+class _EqualsAnyStr(str):
+    """A str subclass equal to every value (``!=`` always False) that hashes like
+    ``hash_as``: it finds a granted dict entry and passes any equality check."""
+
+    hash_as: str
+
+    def __new__(cls, value: str, *, hash_as: str) -> _EqualsAnyStr:
+        made = super().__new__(cls, value)
+        made.hash_as = hash_as
+        return made
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    def __hash__(self) -> int:
+        return hash(self.hash_as)
+
+
+class _EqualsAnyAuthority:
+    """Not an ``AuthorityRef``: ``AUTHORITY_REF_1``'s fields and hash, equal to everything."""
+
+    issuer_id = AUTHORITY_REF_1.issuer_id
+    record_id = AUTHORITY_REF_1.record_id
+    authority_revision = AUTHORITY_REF_1.authority_revision
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    def __hash__(self) -> int:
+        return hash(AUTHORITY_REF_1)
+
+
+class _EqualsAnyAuthorityRef(AuthorityRef):
+    """An ``AuthorityRef`` subclass with ``AUTHORITY_REF_1``'s hash, equal to everything."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    def __hash__(self) -> int:
+        return hash(AUTHORITY_REF_1)
 
 REF_1 = AuthorityRef(
     issuer_id=ISSUER_ID,
@@ -807,6 +880,42 @@ def test_n1_refusal_twins_i1_to_i12() -> None:
     ):
         _assert_refusal(
             verifier.verify(bad_ref, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),  # type: ignore[arg-type]
+            RefusalCode.AUTHORITY_UNBOUND,
+            RetryKind.NOT_APPLICABLE,
+        )
+
+    # I1 look-alikes: the record store holds the signed record under the look-alike
+    # key itself, so only I1's exact-type check stands between a ref of another
+    # class (same fields, or an AuthorityRef subclass) and an accepted authority.
+    for look_alike in (
+        _LookAlikeAuthorityRef(
+            issuer_id=REF_1.issuer_id,
+            record_id=REF_1.record_id,
+            authority_revision=REF_1.authority_revision,
+        ),
+        _AuthorityRefSubclass(
+            issuer_id=REF_1.issuer_id,
+            record_id=REF_1.record_id,
+            authority_revision=REF_1.authority_revision,
+        ),
+    ):
+        keyed_by_look_alike = Ed25519IssuerVerifier(
+            anchors=ANCHORS_1,
+            records=EnvelopeStore(
+                {look_alike: signed_envelope(KIND_AUTHORITY, AUTHORITY_RECORD_1)}
+            ),
+            statuses=EnvelopeStore(
+                {ISSUER_ID: signed_envelope(KIND_STATUS, STATUS_RECORD_1)}
+            ),
+        )
+        _assert_refusal(
+            keyed_by_look_alike.verify(
+                look_alike,  # type: ignore[arg-type]
+                PEER_1,
+                SUBJECT_1,
+                EFFECTS_1,
+                AT_5000,
+            ),
             RefusalCode.AUTHORITY_UNBOUND,
             RetryKind.NOT_APPLICABLE,
         )
@@ -1754,6 +1863,24 @@ def test_guard_bite_registry_enforces_snapshot_verified_at_condition_and_revocat
     )
     job_bare_str = replace(rig.running_job, conditions=(bare_str_cond,))
     assert evaluate_registry_conditions(job_bare_str, verified_map) == "C5"
+    # T-C5b look-alikes: an authority that is not an exact AuthorityRef but hashes
+    # like AUTHORITY_REF_1 and equals everything passes `in bound` and the verified
+    # conditions check, so only C5's exact-type clause refuses it.
+    for look_alike_authority in (
+        _EqualsAnyAuthority(),
+        _EqualsAnyAuthorityRef(
+            issuer_id=AUTHORITY_REF_1.issuer_id,
+            record_id=AUTHORITY_REF_1.record_id,
+            authority_revision=AUTHORITY_REF_1.authority_revision,
+        ),
+    ):
+        look_alike_cond = ConditionRef(
+            authority=look_alike_authority,  # type: ignore[arg-type]
+            condition_id="mode:external-db-fresh",
+            revision="1",
+        )
+        job_look_alike = replace(rig.running_job, conditions=(look_alike_cond,))
+        assert evaluate_registry_conditions(job_look_alike, verified_map) == "C5"
 
     # Exact types (N1-SPEC 5 table and row C5): the job holding the verified
     # conditions passes; the same conditions in a tuple subclass refuse C5; a
@@ -1871,6 +1998,130 @@ def test_guard_bite_registry_enforces_snapshot_verified_at_condition_and_revocat
         assert restamped.code is code
         assert restamped.retry_kind is RetryKind.NEW_BINDING_REQUIRED
         assert restamped.phase is phase
+
+
+def test_guard_bite_registry_conditions_compare_exact_str_fields_only() -> None:
+    """Guard bite (rows C4, C5): condition and authority field values must be exact str.
+
+    Each look-alike is a str subclass equal to everything with a granted value's
+    hash, so dict lookups, revision compares and membership all pass on ``==``; only
+    the exact-str checks refuse it. The exact-str twin of each case is accepted.
+    """
+    rig = make_populated_test_rig()
+    granted_id = CONDITION_1.condition_id
+    never_granted_id = _EqualsAnyStr("mode:never-granted", hash_as=granted_id)
+    stale_revision = _EqualsAnyStr("999", hash_as=CONDITION_1.revision)
+    assert never_granted_id == granted_id and stale_revision == CONDITION_1.revision
+    assert CONDITION_TABLE[granted_id] == CONDITION_1.revision
+
+    def _verified_map(*conditions: ConditionRef) -> dict[AuthorityRef, Any]:
+        verified = make_verified_authority(
+            subject=SUBJECT_1,
+            actors=(PEER_1.process,),
+            operations=EFFECTS_1,
+            conditions=conditions,
+        )
+        return {
+            rig.running_job.selector_issuer: verified,
+            AUTHORITY_REF_1: verified,
+            AUTHORITY_REF_2: verified,
+        }
+
+    good_job = replace(rig.running_job, conditions=(CONDITION_1,))
+    assert evaluate_registry_conditions(good_job, _verified_map(CONDITION_1)) is None
+
+    # C4: a verified condition whose id or revision is a look-alike.
+    for label, verified_cond in (
+        ("never-granted id", replace(CONDITION_1, condition_id=never_granted_id)),
+        ("stale revision", replace(CONDITION_1, revision=stale_revision)),
+    ):
+        result = evaluate_registry_conditions(good_job, _verified_map(verified_cond))
+        assert result == "C4", label
+
+    # C5: a job condition whose id, revision or authority field is a look-alike.
+    look_alike_authority = AuthorityRef(
+        issuer_id=_EqualsAnyStr("issuer:never-granted", hash_as=AUTHORITY_REF_1.issuer_id),
+        record_id=AUTHORITY_REF_1.record_id,
+        authority_revision=AUTHORITY_REF_1.authority_revision,
+    )
+    assert type(look_alike_authority) is AuthorityRef
+    assert look_alike_authority == AUTHORITY_REF_1
+    for label, job_cond in (
+        ("never-granted id", replace(CONDITION_1, condition_id=never_granted_id)),
+        ("stale revision", replace(CONDITION_1, revision=stale_revision)),
+        ("authority field", replace(CONDITION_1, authority=look_alike_authority)),
+    ):
+        job = replace(rig.running_job, conditions=(job_cond,))
+        result = evaluate_registry_conditions(job, _verified_map(CONDITION_1))
+        assert result == "C5", label
+
+
+class _ConditionsSettingIssuerVerifier:
+    """IssuerVerifier double without ``condition_table``: every accepted result
+    carries the given verified conditions."""
+
+    def __init__(
+        self, delegate: InMemoryIssuerVerifier, conditions: tuple[ConditionRef, ...]
+    ) -> None:
+        self._delegate = delegate
+        self._conditions = conditions
+
+    def verify(
+        self,
+        ref: AuthorityRef,
+        peer: Any,
+        subject: SelectedSubject,
+        effects: Any,
+        at: TrustedInstant,
+    ) -> Any:
+        result = self._delegate.verify(ref, peer, subject, effects, at)
+        if not isinstance(result, AcceptedData):
+            return result
+        return AcceptedData(
+            data=replace(result.data, conditions=self._conditions),
+            evidence=result.evidence,
+        )
+
+
+class _OwnTableIssuerVerifier(_ConditionsSettingIssuerVerifier):
+    """The same double, bringing its own condition table with a stale revision."""
+
+    condition_table = MappingProxyType({"mode:external-db-fresh": "999"})
+
+
+def test_guard_bite_registry_pins_condition_revisions_to_closed_condition_table() -> None:
+    """Guard bite (row C4, REVIEW S4): the registry pins revisions to CONDITION_TABLE
+    whatever issuer verifier is composed, never to a verifier's own table.
+
+    A verifier without ``condition_table`` must not skip the pin, and one with its
+    own table must not replace it: the stale revision refuses CONDITIONS_UNMET and
+    the table's revision is accepted, for both.
+    """
+    rig = make_populated_test_rig()
+    stale = replace(CONDITION_1, revision="999")
+    assert CONDITION_TABLE[CONDITION_1.condition_id] == CONDITION_1.revision != "999"
+    assert rig.pre_dispatch_job.conditions == (CONDITION_1,)
+    assert not hasattr(_ConditionsSettingIssuerVerifier, "condition_table")
+
+    for verifier_class in (_ConditionsSettingIssuerVerifier, _OwnTableIssuerVerifier):
+        for conditions, accepted in (
+            ((CONDITION_1,), True),
+            ((CONDITION_1, stale), False),
+        ):
+            registry = AuthorityRegistryService(
+                snapshot_provider=rig.publisher.reader(),
+                issuer_verifier=verifier_class(rig.issuer_verifier, conditions),  # type: ignore[arg-type]
+                peer_verifier=rig.peer_verifier,
+                history_provider=InMemoryRequestHistoryProvider(),
+            )
+            result = registry.for_submit(rig.peer_submit, "designated_v1")
+            case = (verifier_class.__name__, len(conditions))
+            if accepted:
+                assert isinstance(result, AcceptedData), case
+            else:
+                assert isinstance(result, Refusal), case
+                assert result.code is RefusalCode.CONDITIONS_UNMET, case
+                assert result.retry_kind is RetryKind.NOT_APPLICABLE, case
 
 
 def test_guard_bite_candidate_bindings_never_accepted_as_authority_and_file_filter_refused() -> (
@@ -2078,6 +2329,119 @@ def test_guard_bite_production_issuer_module_is_verify_only() -> None:
     ]
     assert PRODUCTION_TRUST_ANCHORS == ()
     assert PRODUCTION_ANCHOR_TABLE.entries == ()
+    assert _verify_only_problems(source) == []
+
+
+# Verify-only AST check (C2, REVIEW S2): the only cryptography names the issuer
+# module may import, and the words no name in it may hold.
+_VERIFY_ONLY_CRYPTOGRAPHY_IMPORTS = frozenset(
+    {
+        ("cryptography.exceptions", "InvalidSignature"),
+        ("cryptography.hazmat.primitives.asymmetric.ed25519", "Ed25519PublicKey"),
+    }
+)
+_SIGNING_KEY_WORDS = ("private", "secret", "generate")
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _identifier_words(name: str) -> list[str]:
+    """Split an identifier on underscores and camelCase into lower-case words."""
+    return [
+        word.lower()
+        for part in name.split("_")
+        for word in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", part)
+    ]
+
+
+def _verify_only_problems(source: str) -> list[str]:
+    """Name every import, identifier or name-like string in ``source`` that could
+    load, make or use a private key: an import outside the allow-list, a dynamic
+    import, a name holding private / secret / generate, or the word ``sign``."""
+    problems: list[str] = []
+    names: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in {"cryptography", "importlib"}:
+                    problems.append(f"import {alias.name}")
+                names.extend(filter(None, (alias.name, alias.asname)))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                if module.split(".")[0] == "importlib" or (
+                    module.split(".")[0] == "cryptography"
+                    and (module, alias.name) not in _VERIFY_ONLY_CRYPTOGRAPHY_IMPORTS
+                ):
+                    problems.append(f"from {module} import {alias.name}")
+                names.extend(filter(None, (module, alias.name, alias.asname)))
+        elif isinstance(node, ast.Name):
+            names.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.append(node.attr)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(node.name)
+        elif isinstance(node, ast.arg):
+            names.append(node.arg)
+        elif isinstance(node, ast.keyword) and node.arg:
+            names.append(node.arg)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if _IDENTIFIER.fullmatch(node.value):
+                names.append(node.value)
+    for name in names:
+        for dotted_part in name.split("."):
+            lowered = dotted_part.lower()
+            if dotted_part == "__import__":
+                problems.append("dynamic import __import__")
+            if any(word in lowered for word in _SIGNING_KEY_WORDS):
+                problems.append(f"key word in {dotted_part}")
+            if "sign" in _identifier_words(dotted_part):
+                problems.append(f"sign in {dotted_part}")
+    return sorted(set(problems))
+
+
+def test_verify_only_problems_flags_signing_helpers_under_any_name() -> None:
+    """The verify-only AST check refuses each way of signing, loading or making a
+    key that the old text check missed (mutant M7b), and passes verify-only code."""
+    verify_only = (
+        "from cryptography.exceptions import InvalidSignature\n"
+        "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey\n"
+        "ISSUER_SIGNATURE_LABEL = 'n1-signature'\n"
+        "def verify_signature(public_key, signature, message):\n"
+        "    Ed25519PublicKey.from_public_bytes(public_key).verify(signature, message)\n"
+    )
+    assert _verify_only_problems(verify_only) == []
+    signing_helpers = {
+        "pem private key loader (M7b)": (
+            "from cryptography.hazmat.primitives.serialization import load_pem_private_key\n"
+            "def _envelope_bytes(pem, message):\n"
+            "    return load_pem_private_key(pem, None).sign(message)\n"
+        ),
+        "sign call under another name": (
+            "def _envelope_bytes(key, message):\n    return key.sign(message)\n"
+        ),
+        "sign through getattr": (
+            "def _envelope_bytes(key, message):\n"
+            "    return getattr(key, 'sign')(message)\n"
+        ),
+        "key generation": (
+            "from cryptography.hazmat.primitives.asymmetric import ed25519\n"
+            "def _fresh_key():\n    return ed25519.Ed25519PrivateKey.generate()\n"
+        ),
+        "generate through an allowed import": (
+            "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey\n"
+            "def _fresh_key(cls):\n    return cls.generate()\n"
+        ),
+        "secret seed name": "def _load(secret_seed):\n    return secret_seed\n",
+        "dynamic import": (
+            "def _load(name):\n    return __import__(name)\n"
+        ),
+        "importlib": (
+            "import importlib\n"
+            "def _load(name):\n    return importlib.import_module(name)\n"
+        ),
+    }
+    for label, helper in signing_helpers.items():
+        assert _verify_only_problems(verify_only + helper), label
 
 
 def test_guard_bite_compose_refuses_conflicting_issuer_and_peer_inputs() -> None:
@@ -2518,3 +2882,204 @@ def test_guard_bite_verify_never_raises_on_odd_store_signature_subject_or_peer_i
         _RaisingEqualityPeer(),
     ):
         assert pinned.verify_peer(odd_peer) is False  # type: ignore[arg-type]
+
+
+# S7 (REVIEW S7): each broad catch logs its row id and exception type only. The
+# canary is raised inside every exception and must reach no log record or text.
+_LOG_CANARY = "n1-log-canary-5e0d71"
+
+
+class _RecordStoreCanaryError(RuntimeError):
+    pass
+
+
+class _StatusStoreCanaryError(OSError):
+    pass
+
+
+class _SignatureCanaryError(ValueError):
+    pass
+
+
+class _SubjectCanaryError(LookupError):
+    pass
+
+
+class _PeerCanaryError(ArithmeticError):
+    pass
+
+
+class _PeerEqualityCanaryError(TypeError):
+    pass
+
+
+class _CanarySubject:
+    @property
+    def subject_kind(self) -> str:
+        raise _SubjectCanaryError(_LOG_CANARY)
+
+
+class _CanaryProcessPeer:
+    peer_registration = PEER_1.peer_registration
+
+    @property
+    def process(self) -> object:
+        raise _PeerCanaryError(_LOG_CANARY)
+
+
+class _CanaryEqualityPeer:
+    peer_registration = PEER_1.peer_registration
+    process = PEER_1.process
+
+    def __eq__(self, other: object) -> bool:
+        raise _PeerEqualityCanaryError(_LOG_CANARY)
+
+    __hash__ = object.__hash__
+
+
+def test_guard_bite_broad_catches_log_row_and_exception_type_only(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Guard bite (REVIEW S7): each of the six broad catches logs exactly one
+    WARNING with its row id and the exception's type name, and never the
+    exception's value, message, repr or traceback. Refusals are unchanged.
+
+    Assertions print field names only, so a failing run cannot show the canary.
+    """
+    import temper_ai.p3_authority.issuer_verifier as issuer_module
+
+    caplog.set_level(logging.WARNING, logger=issuer_module.__name__)
+    authority_env = signed_envelope(KIND_AUTHORITY, AUTHORITY_RECORD_1)
+    status_env = signed_envelope(KIND_STATUS, STATUS_RECORD_1)
+
+    def _verifier(
+        records: EnvelopeStore | None = None, statuses: EnvelopeStore | None = None
+    ) -> Ed25519IssuerVerifier:
+        return Ed25519IssuerVerifier(
+            anchors=ANCHORS_1,
+            records=records or EnvelopeStore({REF_1: authority_env}),
+            statuses=statuses or EnvelopeStore({ISSUER_ID: status_env}),
+        )
+
+    real_key_class = issuer_module.Ed25519PublicKey
+
+    def _backend_failing_on(prefix: bytes) -> type:
+        class _FailingKeyClass:
+            @staticmethod
+            def from_public_bytes(data: bytes) -> object:
+                real_key = real_key_class.from_public_bytes(data)
+
+                class _Key:
+                    def verify(self, signature: bytes, message: bytes) -> None:
+                        if message.startswith(prefix):
+                            raise _SignatureCanaryError(_LOG_CANARY)
+                        real_key.verify(signature, message)
+
+                return _Key()
+
+        return _FailingKeyClass
+
+    def _verify(
+        verifier: Ed25519IssuerVerifier, *, peer: Any = PEER_1, subject: Any = SUBJECT_1
+    ) -> object:
+        return verifier.verify(REF_1, peer, subject, EFFECTS_1, AT_5000)
+
+    def _run_with_signature_backend(prefix: bytes) -> object:
+        verifier = _verifier()
+        with monkeypatch.context() as patch:
+            patch.setattr(issuer_module, "Ed25519PublicKey", _backend_failing_on(prefix))
+            return _verify(verifier)
+
+    cases: list[tuple[str, Callable[[], object], type[Exception], object]] = [
+        (
+            "I4",
+            lambda: _verify(
+                _verifier(
+                    records=_FailingEnvelopeStore(_RecordStoreCanaryError(_LOG_CANARY))
+                )
+            ),
+            _RecordStoreCanaryError,
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+        ),
+        (
+            "R1",
+            lambda: _verify(
+                _verifier(
+                    statuses=_FailingEnvelopeStore(_StatusStoreCanaryError(_LOG_CANARY))
+                )
+            ),
+            _StatusStoreCanaryError,
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+        ),
+        (
+            "I11/R4",
+            lambda: _run_with_signature_backend(domain_prefix(KIND_AUTHORITY)),
+            _SignatureCanaryError,
+            RefusalCode.ISSUER_UNVERIFIED,
+        ),
+        (
+            "I11/R4",
+            lambda: _run_with_signature_backend(domain_prefix(KIND_STATUS)),
+            _SignatureCanaryError,
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+        ),
+        (
+            "S1",
+            lambda: _verify(
+                _verifier(), subject=replace(SUBJECT_1, subject=_CanarySubject())
+            ),
+            _SubjectCanaryError,
+            RefusalCode.SUBJECT_MISMATCH,
+        ),
+        (
+            "P1",
+            lambda: _verify(_verifier(), peer=_CanaryProcessPeer()),
+            _PeerCanaryError,
+            RefusalCode.PEER_UNVERIFIED,
+        ),
+        (
+            "verify_peer",
+            lambda: PinnedPeerVerifier([PEER_1]).verify_peer(_CanaryEqualityPeer()),  # type: ignore[arg-type]
+            _PeerEqualityCanaryError,
+            False,
+        ),
+    ]
+    rows_logged: set[str] = set()
+    for row, run, error_type, expected in cases:
+        caplog.clear()
+        result = run()
+        if isinstance(expected, RefusalCode):
+            assert isinstance(result, Refusal), row
+            assert result.code is expected, row
+        else:
+            assert result is expected, row
+        records = [r for r in caplog.records if r.name == issuer_module.__name__]
+        leaked_fields = sorted(
+            name
+            for record in records
+            for name, value in vars(record).items()
+            if _LOG_CANARY in repr(value)
+        )
+        assert not leaked_fields, (row, "canary in record fields", leaked_fields)
+        canary_in_text = _LOG_CANARY in caplog.text
+        assert canary_in_text is False, (row, "canary in captured log text")
+        assert len(records) == 1, (row, "record count", len(records))
+        record = records[0]
+        expected_message = (
+            "P3 N1 verifier refused after an exception: "
+            f"row={row} exception_type={error_type.__name__}"
+        )
+        message_is_fixed_form = record.getMessage() == expected_message
+        assert message_is_fixed_form, (row, "message differs from the fixed form")
+        assert record.levelno == logging.WARNING, row
+        assert getattr(record, "p3_n1_row", None) == row, row
+        exception_type_field = getattr(record, "p3_n1_exception_type", None)
+        assert exception_type_field == error_type.__name__, row
+        no_traceback = (
+            record.exc_info is None
+            and record.exc_text is None
+            and record.stack_info is None
+        )
+        assert no_traceback, (row, "traceback attached")
+        rows_logged.add(row)
+    assert rows_logged == {"I4", "R1", "I11/R4", "S1", "P1", "verify_peer"}

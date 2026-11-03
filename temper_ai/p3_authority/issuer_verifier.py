@@ -14,6 +14,7 @@ owner consent C2 is granted, and ``compose_p3_authority()`` keeps
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
@@ -67,6 +68,8 @@ from temper_ai.p3_authority.references import (
     NativeProcessRef,
     NativeSubject,
 )
+
+logger = logging.getLogger(__name__)
 
 ISSUER_SIGNATURE_LABEL: Final[bytes] = b"temper-p3-issuer/v1"
 AUTHORITY_RECORD_KIND: Final[str] = "authority-record"
@@ -231,6 +234,21 @@ def public_key_problem(public_key: object) -> str | None:
     return None
 
 
+def _log_refusal_after_exception(row: str, exc: BaseException) -> None:
+    """Log one WARNING saying that ``row`` refused because an exception was caught.
+
+    Only the row id and the exception's type name are logged: never its value,
+    arguments, repr or traceback, which may carry record or peer data.
+    """
+    exception_type = type(exc).__name__
+    logger.warning(
+        "P3 N1 verifier refused after an exception: row=%s exception_type=%s",
+        row,
+        exception_type,
+        extra={"p3_n1_row": row, "p3_n1_exception_type": exception_type},
+    )
+
+
 def verify_ed25519_hex(public_hex: str, signature: bytes | str, message: bytes) -> bool:
     """Verify an Ed25519 signature under a 64-char lowercase hex public key.
 
@@ -255,7 +273,8 @@ def verify_ed25519_hex(public_hex: str, signature: bytes | str, message: bytes) 
         )
     except InvalidSignature:
         return False
-    except Exception:  # noqa: BLE001 - N1-SPEC 4.2: a signature-check error refuses, never raises
+    except Exception as exc:  # noqa: BLE001 - N1-SPEC 4.2: a signature-check error refuses, never raises
+        _log_refusal_after_exception("I11/R4", exc)
         return False
     return True
 
@@ -755,7 +774,13 @@ def evaluate_registry_conditions(
         if verified is None:
             return "C4"
         for cond in getattr(verified, "conditions", ()):
-            if type(cond) is not ConditionRef:
+            # Exact str id and revision: a str subclass that compares equal to
+            # anything never finds a predicate or matches the table's revision.
+            if (
+                type(cond) is not ConditionRef
+                or not is_text(cond.condition_id)
+                or not is_text(cond.revision)
+            ):
                 return "C4"
             predicate = predicates.get(cond.condition_id)
             if predicate is None:
@@ -774,6 +799,7 @@ def evaluate_registry_conditions(
         if (
             type(cond) is not ConditionRef
             or type(cond.authority) is not AuthorityRef
+            or not _condition_fields_are_exact_text(cond)
             or cond.authority not in bound
         ):
             return "C5"
@@ -781,6 +807,23 @@ def evaluate_registry_conditions(
         if verified is None or cond not in verified.conditions:
             return "C5"
     return None
+
+
+def _condition_fields_are_exact_text(cond: ConditionRef) -> bool:
+    """True iff the condition's id and revision and its authority's three fields are
+    non-empty exact str, so membership in the job's refs and in the verified
+    conditions compares real strings, never an object that only claims equality."""
+    authority = cond.authority
+    return all(
+        is_text(value)
+        for value in (
+            cond.condition_id,
+            cond.revision,
+            authority.issuer_id,
+            authority.record_id,
+            authority.authority_revision,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -840,7 +883,8 @@ class PinnedPeerVerifier:
                 return False
             expected = self._allowed.get(identity)
             return expected is not None and bool(expected == peer)
-        except Exception:  # noqa: BLE001 - an odd peer object is unverified, never an error
+        except Exception as exc:  # noqa: BLE001 - an odd peer object is unverified, never an error
+            _log_refusal_after_exception("verify_peer", exc)
             return False
 
 
@@ -923,7 +967,8 @@ class Ed25519IssuerVerifier:
     ) -> tuple[dict[str, object], str] | Refusal:
         try:
             stored = self._read_store(self.statuses, issuer_id)
-        except Exception:  # noqa: BLE001 - N1-SPEC 4.2: any status-store error is R1
+        except Exception as exc:  # noqa: BLE001 - N1-SPEC 4.2: any status-store error is R1
+            _log_refusal_after_exception("R1", exc)
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)  # R1
         if stored is None:
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)  # R1
@@ -998,7 +1043,8 @@ class Ed25519IssuerVerifier:
         # I4 / I5: Read signed authority record from store; any store error is I4
         try:
             stored = self._read_store(self.records, ref)
-        except Exception:  # noqa: BLE001 - N1-SPEC 4.2: verify never raises
+        except Exception as exc:  # noqa: BLE001 - N1-SPEC 4.2: verify never raises
+            _log_refusal_after_exception("I4", exc)
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)
         if stored is None:
             return _refusal(RefusalCode.AUTHORITY_UNBOUND)
@@ -1075,7 +1121,8 @@ class Ed25519IssuerVerifier:
         # is S1, never an exception out of verify (N1-SPEC 4.2).
         try:
             projected_bytes = canonical_bytes(project_subject(subject))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            _log_refusal_after_exception("S1", exc)
             return _refusal(RefusalCode.SUBJECT_MISMATCH)
         if projected_bytes != canonical_bytes(record["subject"]):
             return _refusal(RefusalCode.SUBJECT_MISMATCH)
@@ -1085,7 +1132,8 @@ class Ed25519IssuerVerifier:
             process: Any = getattr(peer, "process", None)
             registration = getattr(process, "process_registration", None)
             peer_registration = getattr(peer, "peer_registration", None)
-        except Exception:  # noqa: BLE001 - an odd peer object is P1, never an error
+        except Exception as exc:  # noqa: BLE001 - an odd peer object is P1, never an error
+            _log_refusal_after_exception("P1", exc)
             return _refusal(RefusalCode.PEER_UNVERIFIED)
         if not is_text(peer_registration) or not is_text(registration):
             return _refusal(RefusalCode.PEER_UNVERIFIED)

@@ -52,6 +52,7 @@ from temper_ai.p3_authority.contract import (
 )
 from temper_ai.p3_authority.issuer_verifier import (
     CONDITION_PREDICATES,
+    CONDITION_TABLE,
     evaluate_registry_conditions,
     is_text,
     parse_strict_instant_int,
@@ -593,12 +594,13 @@ class AuthorityRegistryService(P3AuthorityRegistry):
             verified_by_ref[auth_ref] = verified
             verified_list.append(verified)
 
-        cond_table = getattr(self._issuer_verifier, "condition_table", None)
+        # Row C4 pins revisions against the closed CONDITION_TABLE itself, whatever
+        # issuer verifier is composed; a verifier's own table is never read.
         if (
             evaluate_registry_conditions(
                 job,
                 verified_by_ref,
-                condition_table=cond_table,
+                condition_table=CONDITION_TABLE,
             )
             is not None
         ):

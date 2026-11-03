@@ -432,10 +432,12 @@ AUTHORITY_REF_2 = AuthorityRef(
     record_id="auth:grant-2",
     authority_revision="rev-1",
 )
+# Revision "1" is CONDITION_TABLE's revision for this id (N1-SPEC 5.5): the registry
+# pins row C4 to the closed table whatever issuer verifier is composed.
 CONDITION_1 = ConditionRef(
     authority=AUTHORITY_REF_1,
     condition_id="mode:external-db-fresh",
-    revision="cond-rev-1",
+    revision="1",
 )
 
 ALL_OPERATIONS: frozenset[SelectedOperation] = frozenset(

@@ -72,7 +72,27 @@ ANCHOR_PURPOSES: Final[frozenset[str]] = frozenset(
 ISSUER_AUTHORITY_SCHEMA: Final[str] = "p3-issuer-authority/1"
 ISSUER_REVOCATION_SCHEMA: Final[str] = "p3-issuer-revocation/1"
 ISSUER_VERIFICATION_PROFILE: Final[str] = "p3-issuer-ed25519/1"
-DEFAULT_CLOCK_DOMAIN: Final[str] = "monotonic:host-prod-1"
+
+# Clock domain of the production table while no production clock is chosen
+# (N1-SPEC r2 6.8, PLAN PRE-N2-CLOCK). A table that holds entries under it refuses
+# at construction, so pinning a live anchor has to name a clock that never repeats.
+PRODUCTION_CLOCK_DOMAIN_UNSET: Final[str] = "unset:production-clock-not-chosen"
+
+# Public-key rules of N1-SPEC r2 2.3: the field prime and the five y values of the
+# eight edwards25519 points of order 1, 2, 4 and 8 (spec 8.3; 32-byte little-endian
+# hex, sign bit 0). Matching on y covers both sign bits, because P and -P have the
+# same order.
+ED25519_FIELD_PRIME: Final[int] = 2**255 - 19
+ED25519_SMALL_ORDER_Y: Final[frozenset[int]] = frozenset(
+    int.from_bytes(bytes.fromhex(value), "little")
+    for value in (
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0100000000000000000000000000000000000000000000000000000000000000",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    )
+)
 
 CONDITION_TABLE: Final[dict[str, str]] = {
     "mode:external-db-fresh": "1",
@@ -176,9 +196,32 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def public_key_problem(public_key: object) -> str | None:
+    """Return why ``public_key`` may not be pinned (N1-SPEC r2 2.3), or None if it may.
+
+    ``public_key_encoding``: not 64 lowercase hex characters (32 raw bytes).
+    ``public_key_noncanonical``: its low 255 bits, read little-endian, are >= 2^255 - 19.
+    ``public_key_small_order``: one of the ten small-order encodings. ``cryptography``
+    loads those keys, and a signature with a small-order R and S = 0 then verifies
+    without any private key.
+    """
+    if type(public_key) is not str or _HEX64_RE.fullmatch(public_key) is None:
+        return "public_key_encoding"
+    y = int.from_bytes(bytes.fromhex(public_key), "little") & ((1 << 255) - 1)
+    if y >= ED25519_FIELD_PRIME:
+        return "public_key_noncanonical"
+    if y in ED25519_SMALL_ORDER_Y:
+        return "public_key_small_order"
+    return None
+
+
 def verify_ed25519_hex(public_hex: str, signature: bytes | str, message: bytes) -> bool:
-    """Verify an Ed25519 signature using a 64-char lowercase hex public key."""
-    if type(public_hex) is not str or _HEX64_RE.fullmatch(public_hex) is None:
+    """Verify an Ed25519 signature under a 64-char lowercase hex public key.
+
+    Returns False for a key ``public_key_problem`` refuses (bad encoding,
+    non-canonical or small order), whatever the signature.
+    """
+    if public_key_problem(public_hex) is not None:
         return False
     if type(signature) is str:
         if _HEX128_RE.fullmatch(signature) is None:
@@ -348,6 +391,7 @@ def _require_text(value: object) -> str:
 
 
 def project_native_subject(subject: object) -> dict[str, object]:
+    """Project a native subject (N1-SPEC 3.3): future, existing process or existing root."""
     kind = getattr(subject, "subject_kind", None)
     if type(kind) is str and kind == "future":
         return {
@@ -361,14 +405,6 @@ def project_native_subject(subject: object) -> dict[str, object]:
         is_process = hasattr(identity, "process_registration")
         is_root = any(hasattr(identity, name) for name in _ROOT_FIELDS)
         if is_process == is_root:
-            if type(identity) is str and is_text(identity):
-                proc_reg = getattr(subject, "process_registration", None)
-                fs_obj = getattr(subject, "filesystem_object", None)
-                if is_text(proc_reg) and fs_obj is None:
-                    return {
-                        "kind": "existing-process",
-                        "process_registration": proc_reg,
-                    }
             raise UnprojectableSubject(
                 "existing subject identity must be process or root"
             )
@@ -390,63 +426,41 @@ def project_native_subject(subject: object) -> dict[str, object]:
 
 
 def project_job(job: object) -> dict[str, object]:
-    if type(job) is PreDispatchJob or (
-        getattr(type(job), "__name__", "") == "PreDispatchJob"
-        and hasattr(job, "designated_workflow")
-        and not hasattr(job, "dispatch")
-    ):
+    """Project an exact ``PreDispatchJob``, or an exact ``JobKey`` over an exact
+    ``DispatchIdentity`` (N1-SPEC 3.3); a subclass or look-alike class refuses."""
+    if type(job) is PreDispatchJob:
         return {
             "kind": "pre-dispatch",
-            "execution_uuid": _require_text(getattr(job, "execution_uuid", None)),
-            "designated_workflow": _require_text(
-                getattr(job, "designated_workflow", None)
-            ),
-            "descriptor_digest": _require_text(getattr(job, "descriptor_digest", None)),
-            "job_revision": _require_text(getattr(job, "job_revision", None)),
+            "execution_uuid": _require_text(job.execution_uuid),
+            "designated_workflow": _require_text(job.designated_workflow),
+            "descriptor_digest": _require_text(job.descriptor_digest),
+            "job_revision": _require_text(job.job_revision),
         }
-    dispatch = getattr(job, "dispatch", None)
-    if (
-        type(job) is JobKey
-        or (
-            getattr(type(job), "__name__", "") == "JobKey"
-            and dispatch is not None
-            and not hasattr(job, "designated_workflow")
-        )
-    ) and (
-        type(dispatch) is DispatchIdentity
-        or getattr(type(dispatch), "__name__", "") == "DispatchIdentity"
-    ):
-        attempt = getattr(dispatch, "running_attempt", None)
+    if type(job) is JobKey and type(job.dispatch) is DispatchIdentity:
+        dispatch = job.dispatch
+        attempt = dispatch.running_attempt
         if type(attempt) is not int or attempt < 1:
             raise UnprojectableSubject("running_attempt must be int >= 1")
         return {
             "kind": "job-key",
             "dispatch": {
-                "execution_uuid": _require_text(
-                    getattr(dispatch, "execution_uuid", None)
-                ),
-                "dispatch_nonce": _require_text(
-                    getattr(dispatch, "dispatch_nonce", None)
-                ),
+                "execution_uuid": _require_text(dispatch.execution_uuid),
+                "dispatch_nonce": _require_text(dispatch.dispatch_nonce),
                 "running_attempt": attempt,
             },
-            "job_revision": _require_text(getattr(job, "job_revision", None)),
+            "job_revision": _require_text(job.job_revision),
         }
     raise UnprojectableSubject("unsupported job type")
 
 
 def project_subject(subject: object) -> dict[str, object]:
-    if (
-        type(subject) is not SelectedSubject
-        and getattr(type(subject), "__name__", "") != "SelectedSubject"
-    ):
+    """Project an exact ``SelectedSubject`` to its canonical N1 object (N1-SPEC 3.3)."""
+    if type(subject) is not SelectedSubject:
         raise UnprojectableSubject("subject must be SelectedSubject")
     return {
-        "job": project_job(getattr(subject, "job", None)),
-        "selection_revision": _require_text(
-            getattr(subject, "selection_revision", None)
-        ),
-        "subject": project_native_subject(getattr(subject, "subject", None)),
+        "job": project_job(subject.job),
+        "selection_revision": _require_text(subject.selection_revision),
+        "subject": project_native_subject(subject.subject),
     }
 
 
@@ -632,22 +646,24 @@ class AnchorTableInvalid(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class AnchorEntry:
-    """Pinned Ed25519 trust anchor entry for an issuer and key identifier."""
+    """Pinned Ed25519 trust anchor for one issuer key. Every field is required:
+    the validity window and purposes are always named, never defaulted."""
 
     issuer_id: str
     key_id: str
     public_key: str
-    valid_from: str = "0"
-    valid_until: str = "100000"
-    purposes: frozenset[str] = ANCHOR_PURPOSES
+    valid_from: str
+    valid_until: str
+    purposes: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
 class AnchorTable:
-    """Pinned trust-anchor table bound to a single trusted clock domain."""
+    """Pinned trust-anchor table bound to one clock domain whose readings never
+    repeat or go back (N1-SPEC r2 6.8). Both fields are required."""
 
-    clock_domain: str = DEFAULT_CLOCK_DOMAIN
-    entries: tuple[AnchorEntry, ...] = ()
+    clock_domain: str
+    entries: tuple[AnchorEntry, ...]
 
     def __post_init__(self) -> None:
         validate_anchor_table(self)
@@ -661,6 +677,8 @@ def validate_anchor_table(table: object) -> AnchorTable:
         raise AnchorTableInvalid("p3_issuer_anchor_table_invalid:clock_domain")
     if type(table.entries) is not tuple:
         raise AnchorTableInvalid("p3_issuer_anchor_table_invalid:entries_type")
+    if table.entries and table.clock_domain == PRODUCTION_CLOCK_DOMAIN_UNSET:
+        raise AnchorTableInvalid("p3_issuer_anchor_table_invalid:clock_domain_unset")
     seen: set[tuple[str, str]] = set()
     for entry in table.entries:
         if type(entry) is not AnchorEntry:
@@ -673,13 +691,9 @@ def validate_anchor_table(table: object) -> AnchorTable:
                 "p3_issuer_anchor_table_invalid:duplicate_issuer_key"
             )
         seen.add(pair)
-        if (
-            type(entry.public_key) is not str
-            or _HEX64_RE.fullmatch(entry.public_key) is None
-        ):
-            raise AnchorTableInvalid(
-                "p3_issuer_anchor_table_invalid:public_key_encoding"
-            )
+        key_problem = public_key_problem(entry.public_key)
+        if key_problem is not None:
+            raise AnchorTableInvalid(f"p3_issuer_anchor_table_invalid:{key_problem}")
         if not is_decimal(entry.valid_from) or not is_decimal(entry.valid_until):
             raise AnchorTableInvalid("p3_issuer_anchor_table_invalid:validity_encoding")
         if int(entry.valid_from) >= int(entry.valid_until):
@@ -693,10 +707,11 @@ def validate_anchor_table(table: object) -> AnchorTable:
     return table
 
 
-# Production trust-anchor table is empty at T5 until owner consent C2.
+# Production trust-anchor table is empty at T5 until owner consent C2; its clock
+# domain stays the unset placeholder until the production clock is chosen.
 PRODUCTION_TRUST_ANCHORS: Final[tuple[AnchorEntry, ...]] = ()
 PRODUCTION_ANCHOR_TABLE: Final[AnchorTable] = AnchorTable(
-    clock_domain=DEFAULT_CLOCK_DOMAIN,
+    clock_domain=PRODUCTION_CLOCK_DOMAIN_UNSET,
     entries=PRODUCTION_TRUST_ANCHORS,
 )
 
@@ -965,13 +980,8 @@ class Ed25519IssuerVerifier:
         at: TrustedInstant,
     ) -> Result[VerifiedAuthority]:
         # I1: AuthorityRef structural check (never caller candidate or non-AuthorityRef)
-        if (
-            type(ref) is not AuthorityRef
-            or getattr(type(ref), "__name__", "") != "AuthorityRef"
-            or not all(
-                is_text(v)
-                for v in (ref.issuer_id, ref.record_id, ref.authority_revision)
-            )
+        if type(ref) is not AuthorityRef or not all(
+            is_text(v) for v in (ref.issuer_id, ref.record_id, ref.authority_revision)
         ):
             return _refusal(RefusalCode.AUTHORITY_UNBOUND)
 
@@ -1224,7 +1234,8 @@ __all__ = [
     "AnchorTableInvalid",
     "CONDITION_PREDICATES",
     "CONDITION_TABLE",
-    "DEFAULT_CLOCK_DOMAIN",
+    "ED25519_FIELD_PRIME",
+    "ED25519_SMALL_ORDER_Y",
     "Ed25519IssuerVerifier",
     "EnvelopeStore",
     "ISSUER_AUTHORITY_SCHEMA",
@@ -1239,6 +1250,7 @@ __all__ = [
     "IssuerVerificationEvidence",
     "IssuerWitness",
     "PRODUCTION_ANCHOR_TABLE",
+    "PRODUCTION_CLOCK_DOMAIN_UNSET",
     "PRODUCTION_TRUST_ANCHORS",
     "PinnedPeerInvalid",
     "PinnedPeerVerifier",
@@ -1254,6 +1266,7 @@ __all__ = [
     "project_job",
     "project_native_subject",
     "project_subject",
+    "public_key_problem",
     "record_subject_to_native",
     "sha256_hex",
     "signed_domain_bytes",

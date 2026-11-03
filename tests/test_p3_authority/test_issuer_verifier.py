@@ -4,23 +4,29 @@ Covers:
 1. Combined happy path (bp-be8d76b9): RFC 8032 section 7.1 TEST 1 vector, CAJ-1 escape
    probe, exact N1-SPEC vector digests/lengths, direct ``Ed25519IssuerVerifier.verify()``,
    and end-to-end ``AuthorityRegistryService`` + ``compose_p3_authority()`` composition.
-2. Anchor-table fail-fast construction validation (all 10 ``AnchorTableInvalid`` reasons).
+2. Anchor-table fail-fast construction validation: rows K-OK, K-OK2 and K1-K13 of
+   N1-SPEC r2 2.3 (non-canonical and small-order keys included), each refusal with its
+   exact ``AnchorTableInvalid`` reason, and the unset production clock domain (6.8).
 3. Same-boundary refusal twins across I1-I12, R1-R7, W1, S1, P1-P2, E1-E2, C1-C5,
    and multi-fault precedence X1-X4.
 4. Guard bites: empty identity inequality (``"" == ""`` refused), strict integer-only
    instant comparisons, registry snapshot ``verified_at`` + condition evaluation,
-   ``P3CandidateBindings`` refused as authority, and ``| file`` filter refusal in P3.
+   ``P3CandidateBindings`` refused as authority, ``| file`` filter refusal in P3,
+   small-order and non-canonical keys never verifying a forged signature, and
+   subject projection accepting only the exact selection types.
 """
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from temper_ai.config.admission_contract import canonical_bytes
+from temper_ai.config.admission_contract import DispatchIdentity, canonical_bytes
 from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
 from temper_ai.p3_authority.contract import (
     AcceptedData,
@@ -28,6 +34,7 @@ from temper_ai.p3_authority.contract import (
     ConditionRef,
     JobKey,
     Phase,
+    PreDispatchJob,
     Refusal,
     RefusalCode,
     RetryKind,
@@ -37,12 +44,16 @@ from temper_ai.p3_authority.contract import (
     VerifiedAuthority,
 )
 from temper_ai.p3_authority.issuer_verifier import (
+    ANCHOR_PURPOSES,
     AUTHORITY_RECORD_KIND,
     CONDITION_TABLE,
+    ED25519_FIELD_PRIME,
+    ED25519_SMALL_ORDER_Y,
     ISSUER_AUTHORITY_SCHEMA,
     ISSUER_REVOCATION_SCHEMA,
     ISSUER_VERIFICATION_PROFILE,
     PRODUCTION_ANCHOR_TABLE,
+    PRODUCTION_CLOCK_DOMAIN_UNSET,
     PRODUCTION_TRUST_ANCHORS,
     REVOCATION_STATUS_KIND,
     AnchorEntry,
@@ -52,9 +63,12 @@ from temper_ai.p3_authority.issuer_verifier import (
     EnvelopeStore,
     PinnedPeerInvalid,
     PinnedPeerVerifier,
+    UnprojectableSubject,
     domain_prefix,
     evaluate_registry_conditions,
+    project_job,
     project_subject,
+    public_key_problem,
     sha256_hex,
     validate_anchor_table,
     verify_ed25519_hex,
@@ -140,14 +154,37 @@ def signed_envelope(
     return make_envelope(record, sign_record(kind, record, secret_key=secret_key))
 
 
+# RFC 8032 section 7.1 TEST SHA(abc): a valid key whose sign bit (top bit) is set.
+RFC8032_SHA_ABC_PUBLIC_KEY_HEX = (
+    "ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf"
+)
+RFC8032_SHA_ABC_SIGNATURE_HEX = (
+    "dc2a4459e7369633a52b1bf277839a00201009a3efbf3ecb69bea2186c26b589"
+    "09351fc9ac90b3ecfdfbc7c66431e0303dca179c138ac17ad9bef1177331a704"
+)
+# Spec 8.3 small-order y values (32-byte little-endian hex, sign bit 0), copied
+# from n1_vectors.out independently of the module's constant.
+SPEC_SMALL_ORDER_Y_HEX = (
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+)
+IDENTITY_POINT_HEX = "01" + "00" * 31
+
+
 @dataclass(frozen=True)
-class _VectorDispatchIdentity:
+class _LookAlikeDispatchIdentity:
+    """Same fields and class name as ``DispatchIdentity``, but not that type."""
+
     execution_uuid: str
     dispatch_nonce: str
     running_attempt: int
 
 
-_VectorDispatchIdentity.__name__ = "DispatchIdentity"
+_LookAlikeDispatchIdentity.__name__ = "DispatchIdentity"
+_LookAlikeDispatchIdentity.__qualname__ = "DispatchIdentity"
 
 REF_1 = AuthorityRef(
     issuer_id=ISSUER_ID,
@@ -155,14 +192,7 @@ REF_1 = AuthorityRef(
     authority_revision="auth-rev-1",
 )
 PEER_1 = FakePeer("peer:worker-test-1", FakeProcessRef("proc:worker-test-1"))
-JOB_KEY_1 = JobKey(
-    dispatch=_VectorDispatchIdentity(  # type: ignore[arg-type]
-        execution_uuid="exec-uuid-run-1",
-        dispatch_nonce="nonce-run-1",
-        running_attempt=1,
-    ),
-    job_revision="job-rev-run-1",
-)
+JOB_KEY_1 = JobKey(dispatch=DISPATCH_1, job_revision="job-rev-run-1")
 SUBJECT_1 = SelectedSubject(
     subject=FutureSubjectRecord(selected_scope_reference="scope:sel-run-1"),
     job=JOB_KEY_1,
@@ -185,6 +215,7 @@ ANCHORS_1 = AnchorTable(
             public_key=RFC8032_TEST1_PUBLIC_KEY_HEX,
             valid_from="0",
             valid_until="100000",
+            purposes=ANCHOR_PURPOSES,
         ),
     ),
 )
@@ -203,8 +234,8 @@ AUTHORITY_RECORD_1: dict[str, Any] = {
         "job": {
             "kind": "job-key",
             "dispatch": {
-                "execution_uuid": "exec-uuid-run-1",
-                "dispatch_nonce": "nonce-run-1",
+                "execution_uuid": DISPATCH_1.execution_uuid,
+                "dispatch_nonce": DISPATCH_1.dispatch_nonce,
                 "running_attempt": 1,
             },
             "job_revision": "job-rev-run-1",
@@ -503,6 +534,9 @@ def test_n1_combined_happy_path_rfc8032_vector_and_registry_composition() -> Non
                 issuer_id=sel_ref.issuer_id,
                 key_id=KEY_ID,
                 public_key=RFC8032_TEST1_PUBLIC_KEY_HEX,
+                valid_from="0",
+                valid_until="100000",
+                purposes=ANCHOR_PURPOSES,
             ),
             *(
                 ()
@@ -512,6 +546,9 @@ def test_n1_combined_happy_path_rfc8032_vector_and_registry_composition() -> Non
                         issuer_id=auth_ref.issuer_id,
                         key_id=KEY_ID,
                         public_key=RFC8032_TEST1_PUBLIC_KEY_HEX,
+                        valid_from="0",
+                        valid_until="100000",
+                        purposes=ANCHOR_PURPOSES,
                     ),
                 )
             ),
@@ -557,76 +594,117 @@ def test_n1_combined_happy_path_rfc8032_vector_and_registry_composition() -> Non
     )
 
 
+def _anchor_variant(**changes: Any) -> AnchorTable:
+    """``ANCHORS_1`` with its one entry changed (the spec script's ``anchor_variant``)."""
+    return AnchorTable(
+        clock_domain=CLOCK, entries=(replace(ANCHORS_1.entries[0], **changes),)
+    )
+
+
+def _assert_table_invalid(reason: str, build: Callable[[], object]) -> None:
+    """``build()`` raises ``AnchorTableInvalid`` with exactly this reason."""
+    with pytest.raises(AnchorTableInvalid) as raised:
+        build()
+    assert str(raised.value) == f"p3_issuer_anchor_table_invalid:{reason}"
+
+
+def _assert_entry_invalid(reason: str, **changes: Any) -> None:
+    """``ANCHORS_1`` with its entry changed raises exactly this reason."""
+    _assert_table_invalid(reason, lambda: _anchor_variant(**changes))
+
+
+def _key_hex(y: int, sign: int = 0) -> str:
+    """32-byte little-endian hex of ``y`` with the top (sign) bit set to ``sign``."""
+    return (y | sign << 255).to_bytes(32, "little").hex()
+
+
+SPEC_SMALL_ORDER_Y = tuple(
+    int.from_bytes(bytes.fromhex(value), "little") for value in SPEC_SMALL_ORDER_Y_HEX
+)
+
+
 def test_n1_anchor_table_construction_validation() -> None:
-    """AnchorTable and validate_anchor_table fail-fast construction validation (N1-SPEC section 2.2)."""
+    """Anchor-table construction rules K-OK to K13 and the unset clock domain
+    (N1-SPEC r2 2.2-2.3, 6.8), each refusal with its exact reason."""
+    # K-OK, K-OK2: the production default and the TEST-ONLY table construct.
     assert validate_anchor_table(PRODUCTION_ANCHOR_TABLE) is PRODUCTION_ANCHOR_TABLE
     assert validate_anchor_table(ANCHORS_1) is ANCHORS_1
+    # Valid canonical keys stay accepted, one of them with its sign bit set.
+    for good_key in (
+        RFC8032_TEST1_PUBLIC_KEY_HEX,
+        TEST2_PUB_HEX,
+        RFC8032_SHA_ABC_PUBLIC_KEY_HEX,
+    ):
+        assert public_key_problem(good_key) is None
+        assert _anchor_variant(public_key=good_key).entries[0].public_key == good_key
 
-    with pytest.raises(AnchorTableInvalid, match="table_type"):
-        validate_anchor_table("not-a-table")
-    with pytest.raises(AnchorTableInvalid, match="clock_domain"):
-        AnchorTable(clock_domain="", entries=ANCHORS_1.entries)
-    with pytest.raises(AnchorTableInvalid, match="entries_type"):
-        AnchorTable(clock_domain=CLOCK, entries=list(ANCHORS_1.entries))  # type: ignore[arg-type]
-    with pytest.raises(AnchorTableInvalid, match="entry_type"):
-        AnchorTable(clock_domain=CLOCK, entries=("not-an-entry",))  # type: ignore[arg-type]
-    with pytest.raises(AnchorTableInvalid, match="entry_id"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(
-                AnchorEntry("", KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX, "0", "100000"),
-            ),
-        )
-    with pytest.raises(AnchorTableInvalid, match="duplicate_issuer_key"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(ANCHORS_1.entries[0], ANCHORS_1.entries[0]),
-        )
-    with pytest.raises(AnchorTableInvalid, match="public_key_encoding"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(
-                AnchorEntry(
-                    ISSUER_ID,
-                    KEY_ID,
-                    RFC8032_TEST1_PUBLIC_KEY_HEX.upper(),
-                    "0",
-                    "100000",
-                ),
-            ),
-        )
-    with pytest.raises(AnchorTableInvalid, match="validity_encoding"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(
-                AnchorEntry(
-                    ISSUER_ID, KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX, "01", "100000"
-                ),
-            ),
-        )
-    with pytest.raises(AnchorTableInvalid, match="validity_empty"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(
-                AnchorEntry(
-                    ISSUER_ID, KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX, "100", "100"
-                ),
-            ),
-        )
-    with pytest.raises(AnchorTableInvalid, match="purposes"):
-        AnchorTable(
-            clock_domain=CLOCK,
-            entries=(
-                AnchorEntry(
-                    ISSUER_ID,
-                    KEY_ID,
-                    RFC8032_TEST1_PUBLIC_KEY_HEX,
-                    "0",
-                    "100000",
-                    frozenset(),
-                ),
-            ),
-        )
+    entry = ANCHORS_1.entries[0]
+    _assert_table_invalid("table_type", lambda: validate_anchor_table("not-a-table"))
+    _assert_entry_invalid("entry_id", issuer_id="")
+    _assert_entry_invalid("entry_id", key_id="")
+    _assert_table_invalid(
+        "entry_type",
+        lambda: AnchorTable(clock_domain=CLOCK, entries=("not-an-entry",)),  # type: ignore[arg-type]
+    )
+    # K1-K9
+    _assert_table_invalid(
+        "duplicate_issuer_key",
+        lambda: AnchorTable(clock_domain=CLOCK, entries=(entry, entry)),
+    )
+    _assert_entry_invalid(
+        "public_key_encoding", public_key=RFC8032_TEST1_PUBLIC_KEY_HEX.upper()
+    )
+    _assert_entry_invalid(
+        "public_key_encoding", public_key=RFC8032_TEST1_PUBLIC_KEY_HEX[:62]
+    )
+    _assert_entry_invalid("purposes", purposes=frozenset())
+    _assert_entry_invalid("purposes", purposes=frozenset({"authority"}))
+    _assert_entry_invalid("validity_encoding", valid_from="00")
+    _assert_entry_invalid("validity_empty", valid_from="100000")
+    _assert_table_invalid(
+        "clock_domain", lambda: AnchorTable(clock_domain="", entries=())
+    )
+    _assert_table_invalid(
+        "entries_type",
+        lambda: AnchorTable(clock_domain=CLOCK, entries=list(ANCHORS_1.entries)),  # type: ignore[arg-type]
+    )
+    # K10-K12: identity point (order 1), all-zero bytes (order 4), a point of order 8.
+    _assert_entry_invalid("public_key_small_order", public_key=IDENTITY_POINT_HEX)
+    _assert_entry_invalid("public_key_small_order", public_key="00" * 32)
+    _assert_entry_invalid(
+        "public_key_small_order", public_key=SPEC_SMALL_ORDER_Y_HEX[2]
+    )
+    # All ten small-order encodings: five y values, either sign bit.
+    for y in SPEC_SMALL_ORDER_Y:
+        for sign in (0, 1):
+            _assert_entry_invalid(
+                "public_key_small_order", public_key=_key_hex(y, sign)
+            )
+    # K13: y = p + 2 is non-canonical; so is y = p, which would read as y = 0.
+    for y in (ED25519_FIELD_PRIME + 2, ED25519_FIELD_PRIME):
+        for sign in (0, 1):
+            _assert_entry_invalid(
+                "public_key_noncanonical", public_key=_key_hex(y, sign)
+            )
+
+    # 6.8: no default clock domain, window or purposes; the production table's
+    # placeholder domain refuses as soon as the table holds an entry.
+    assert PRODUCTION_ANCHOR_TABLE.clock_domain == PRODUCTION_CLOCK_DOMAIN_UNSET
+    assert PRODUCTION_ANCHOR_TABLE.entries == ()
+    _assert_table_invalid(
+        "clock_domain_unset",
+        lambda: AnchorTable(
+            clock_domain=PRODUCTION_CLOCK_DOMAIN_UNSET, entries=ANCHORS_1.entries
+        ),
+    )
+    with pytest.raises(TypeError):
+        AnchorTable(entries=())  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        AnchorTable(clock_domain=CLOCK)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        AnchorEntry(ISSUER_ID, KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        AnchorEntry(ISSUER_ID, KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX, "0", "100000")  # type: ignore[call-arg]
 
 
 def test_n1_refusal_twins_i1_to_i12() -> None:
@@ -787,9 +865,7 @@ def test_n1_refusal_twins_i1_to_i12() -> None:
     )
     expired_anchor = AnchorTable(
         clock_domain=CLOCK,
-        entries=(
-            AnchorEntry(ISSUER_ID, KEY_ID, RFC8032_TEST1_PUBLIC_KEY_HEX, "0", "5000"),
-        ),
+        entries=(replace(ANCHORS_1.entries[0], valid_until="5000"),),
     )
     _assert_refusal(
         _make_verifier(anchors=expired_anchor).verify(
@@ -1638,3 +1714,197 @@ def test_guard_bite_compose_refuses_conflicting_issuer_and_peer_inputs() -> None
     ):
         composed = compose_p3_authority(**kwargs)
         assert composed.service._writes_enabled is False
+
+
+def test_guard_bite_small_order_and_noncanonical_keys_never_verify() -> None:
+    """N1-SPEC r2 2.3: ``cryptography`` loads small-order keys and accepts a forged
+    signature (small-order R, S = 0) under them. The key rule refuses them at
+    construction and in ``verify_ed25519_hex``, even in a table changed after it."""
+    # The module's five y values are the spec's, and each is the y of a point of
+    # order dividing 8: y = 1 (order 1), y = p - 1 (order 2), y = 0 (order 4), and
+    # the two order-8 values solve d*y^4 + 2*y^2 - 1 = 0 (doubling gives y = 0).
+    p = ED25519_FIELD_PRIME
+    assert p == 2**255 - 19
+    assert ED25519_SMALL_ORDER_Y == frozenset(SPEC_SMALL_ORDER_Y)
+    d = (-121665 * pow(121666, -1, p)) % p
+    order8 = set(SPEC_SMALL_ORDER_Y) - {0, 1, p - 1}
+    assert {0, 1, p - 1} <= set(SPEC_SMALL_ORDER_Y) and len(order8) == 2
+    assert all((d * pow(y, 4, p) + 2 * pow(y, 2, p) - 1) % p == 0 for y in order8)
+
+    # Under the identity key, R = identity and S = 0 pass cryptography's check for
+    # every message; verify_ed25519_hex refuses the key whatever the signature.
+    forged = bytes.fromhex(IDENTITY_POINT_HEX) + bytes(32)
+    signed_record = domain_prefix(KIND_AUTHORITY) + canonical_bytes(AUTHORITY_RECORD_1)
+    for message in (b"", b"N1 forged authority", signed_record):
+        assert not verify_ed25519_hex(IDENTITY_POINT_HEX, forged, message)
+        assert not verify_ed25519_hex(IDENTITY_POINT_HEX, forged.hex(), message)
+    for y in SPEC_SMALL_ORDER_Y:
+        for sign in (0, 1):
+            assert public_key_problem(_key_hex(y, sign)) == "public_key_small_order"
+            assert not verify_ed25519_hex(_key_hex(y, sign), forged, b"probe")
+    assert public_key_problem(_key_hex(p + 2)) == "public_key_noncanonical"
+    # A valid key with its sign bit set still verifies its RFC 8032 vector.
+    assert verify_ed25519_hex(
+        RFC8032_SHA_ABC_PUBLIC_KEY_HEX,
+        RFC8032_SHA_ABC_SIGNATURE_HEX,
+        hashlib.sha512(b"abc").digest(),
+    )
+
+    # A table whose entry is swapped for the identity key after construction:
+    # forged record and status envelopes still refuse at I11.
+    planted_table = AnchorTable(clock_domain=CLOCK, entries=ANCHORS_1.entries)
+    planted = _make_verifier(
+        anchors=planted_table,
+        authority_bytes=make_envelope(AUTHORITY_RECORD_1, forged),
+        status_bytes=make_envelope(STATUS_RECORD_1, forged),
+    )
+    object.__setattr__(
+        planted_table,
+        "entries",
+        (replace(ANCHORS_1.entries[0], public_key=IDENTITY_POINT_HEX),),
+    )
+    _assert_refusal(
+        planted.verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+
+
+def test_guard_bite_subject_projection_accepts_only_exact_types() -> None:
+    """N1-SPEC 3.3: only an exact SelectedSubject, PreDispatchJob, JobKey and
+    DispatchIdentity project. A look-alike class with the same name and fields
+    refuses SUBJECT_MISMATCH where its projection would match the signed subject."""
+
+    def _look_alike(name: str, *fields: str) -> type:
+        cls: type = dataclass(frozen=True)(
+            type(name, (), {"__annotations__": dict.fromkeys(fields, object)})
+        )
+        cls.__qualname__ = name
+        return cls
+
+    look_alike_dispatch = _LookAlikeDispatchIdentity(
+        execution_uuid=DISPATCH_1.execution_uuid,
+        dispatch_nonce=DISPATCH_1.dispatch_nonce,
+        running_attempt=1,
+    )
+    look_alike_job_key = _look_alike("JobKey", "dispatch", "job_revision")
+    look_alike_subject = _look_alike(
+        "SelectedSubject", "subject", "job", "selection_revision"
+    )
+    verifier = _make_verifier()
+    assert isinstance(
+        verifier.verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000), AcceptedData
+    )
+    for subject in (
+        replace(
+            SUBJECT_1,
+            job=JobKey(dispatch=look_alike_dispatch, job_revision="job-rev-run-1"),  # type: ignore[arg-type]
+        ),
+        replace(SUBJECT_1, job=look_alike_job_key(DISPATCH_1, "job-rev-run-1")),
+        look_alike_subject(
+            SUBJECT_1.subject, SUBJECT_1.job, SUBJECT_1.selection_revision
+        ),
+    ):
+        _assert_refusal(
+            _make_verifier().verify(REF_1, PEER_1, subject, EFFECTS_1, AT_5000),  # type: ignore[arg-type]
+            RefusalCode.SUBJECT_MISMATCH,
+            RetryKind.NOT_APPLICABLE,
+        )
+
+    # Pre-dispatch job: the exact type verifies, a look-alike refuses.
+    pre_job = PreDispatchJob(
+        execution_uuid=DISPATCH_1.execution_uuid,
+        designated_workflow="designated_v1",
+        descriptor_digest="0" * 64,
+        job_revision="job-rev-pre-1",
+    )
+    pre_record = {
+        **AUTHORITY_RECORD_1,
+        "subject": {
+            **AUTHORITY_RECORD_1["subject"],
+            "job": {
+                "kind": "pre-dispatch",
+                "execution_uuid": pre_job.execution_uuid,
+                "designated_workflow": pre_job.designated_workflow,
+                "descriptor_digest": pre_job.descriptor_digest,
+                "job_revision": pre_job.job_revision,
+            },
+        },
+    }
+    look_alike_pre_job = _look_alike(
+        "PreDispatchJob",
+        "execution_uuid",
+        "designated_workflow",
+        "descriptor_digest",
+        "job_revision",
+    )
+    for job, accepted in (
+        (pre_job, True),
+        (
+            look_alike_pre_job(
+                pre_job.execution_uuid,
+                pre_job.designated_workflow,
+                pre_job.descriptor_digest,
+                pre_job.job_revision,
+            ),
+            False,
+        ),
+    ):
+        result = _make_verifier(
+            authority_bytes=signed_envelope(KIND_AUTHORITY, pre_record)
+        ).verify(REF_1, PEER_1, replace(SUBJECT_1, job=job), EFFECTS_1, AT_5000)
+        if accepted:
+            assert isinstance(result, AcceptedData)
+        else:
+            _assert_refusal(
+                result, RefusalCode.SUBJECT_MISMATCH, RetryKind.NOT_APPLICABLE
+            )
+
+    # Existing process subject: a str identity with the registration on the
+    # subject itself is neither a process nor a root identity and refuses.
+    process_record = {
+        **AUTHORITY_RECORD_1,
+        "subject": {
+            **AUTHORITY_RECORD_1["subject"],
+            "subject": {
+                "kind": "existing-process",
+                "process_registration": "proc:worker-test-1",
+            },
+        },
+    }
+    look_alike_existing = _look_alike(
+        "ExistingSubjectRecord",
+        "identity",
+        "subject_kind",
+        "process_registration",
+        "filesystem_object",
+    )
+    for native, accepted in (
+        (ExistingSubjectRecord(identity=FakeProcessRef("proc:worker-test-1")), True),
+        (
+            look_alike_existing(
+                "proc:worker-test-1", "existing", "proc:worker-test-1", None
+            ),
+            False,
+        ),
+    ):
+        result = _make_verifier(
+            authority_bytes=signed_envelope(KIND_AUTHORITY, process_record)
+        ).verify(REF_1, PEER_1, replace(SUBJECT_1, subject=native), EFFECTS_1, AT_5000)
+        if accepted:
+            assert isinstance(result, AcceptedData)
+        else:
+            _assert_refusal(
+                result, RefusalCode.SUBJECT_MISMATCH, RetryKind.NOT_APPLICABLE
+            )
+
+    # running_attempt must be an exact int >= 1, even if changed after construction.
+    for bad_attempt in (0, True):
+        tampered = DispatchIdentity(
+            execution_uuid=DISPATCH_1.execution_uuid,
+            dispatch_nonce=DISPATCH_1.dispatch_nonce,
+            running_attempt=1,
+        )
+        object.__setattr__(tampered, "running_attempt", bad_attempt)
+        with pytest.raises(UnprojectableSubject, match="running_attempt"):
+            project_job(JobKey(dispatch=tampered, job_revision="job-rev-run-1"))

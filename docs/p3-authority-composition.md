@@ -75,7 +75,20 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   stale status refuses `AUTHORITY_UNAVAILABLE`; listed `record_id` or
   `authority_revision` refuses `AUTHORITY_REVOKED`), and evaluates every
   `ConditionRef` against the closed `CONDITION_TABLE` (`CONDITIONS_UNMET` on
-  unknown or unsatisfied conditions). `compose_p3_authority(...)` accepts
+  unknown or unsatisfied conditions). Every `AnchorTable` and `AnchorEntry`
+  field is required (no default clock domain, validity window or purposes) and
+  the table is checked whole at construction, raising `AnchorTableInvalid`
+  (`p3_issuer_anchor_table_invalid:<reason>`): a public key that is not 64
+  lowercase hex, non-canonical (`public_key_noncanonical`) or one of the ten
+  small-order encodings (`public_key_small_order`; `cryptography` loads those
+  and accepts forged signatures for them) never enters the table, and
+  `verify_ed25519_hex` refuses such keys too. The production table's clock
+  domain is the placeholder `PRODUCTION_CLOCK_DOMAIN_UNSET`; a table that holds
+  entries under it raises `clock_domain_unset`, so pinning a live anchor must
+  name a clock that never repeats or goes back (N1-SPEC r2 6.8). Subject
+  projection accepts only the exact `SelectedSubject`, `PreDispatchJob`,
+  `JobKey` and `DispatchIdentity` types; a look-alike class refuses
+  `SUBJECT_MISMATCH`. `compose_p3_authority(...)` accepts
   explicit `issuer_verifier`, `peer_verifier`, `issuer_anchors`,
   `issuer_records`, `issuer_statuses`, `issuer_condition_table`, and
   `pinned_peers` parameters while keeping all defaults `None` and

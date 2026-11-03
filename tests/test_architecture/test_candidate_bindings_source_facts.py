@@ -1,14 +1,17 @@
-"""Candidate bindings stay unset in the source (#125: Security O-466-3, R-125-1, R-125-2).
+"""Candidate bindings stay unset in the source (#125: Security O-466-3, R-125-1, R-125-2, R-125-3).
 
 While P3 host writes are off, no production code may build, store or hand on candidate bindings. These tests
 check that as facts over the source of temper_ai/, configs/, scripts/, p3_host_contracts/ and p3_source_closure/
 (outside temper_ai/p3_authority/, which defines the types). Each fact has planted twins the check must report
 exactly once under that fact's rule, and clean twins it must pass.
 
-1. Every candidate_bindings parameter, of a function or a lambda, defaults to None.
+1. Every candidate_bindings parameter, of a function or a lambda, is keyword-only and defaults to None; no *args or
+   **kwargs takes that name.
 2. A value handed on (a candidate_bindings= keyword, a "candidate_bindings" dict key, or bindings= to
    submit_candidate) is the calling function's own untouched candidate_bindings parameter, and nothing is splatted
-   into submit_candidate. The one exception is routes._start_run's `bindings = _candidate_bindings()`, assigned once.
+   into submit_candidate. The one exception is routes._start_run's `bindings = _candidate_bindings()`: a direct
+   statement of _start_run's body, placed before the statement holding the call, and the value's only binding
+   there (its name is no parameter of _start_run and is not declared global or nonlocal in it).
 3. Nothing stores candidate_bindings: no attribute store, no module- or class-level name of that name (a field
    left None or only declared included), no global declaration; and the string "candidate_bindings" appears only
    as a .get/getattr/hasattr read or as a dict key fact 2 checks, so setattr, setdefault, setitem, subscript
@@ -18,13 +21,18 @@ exactly once under that fact's rule, and clean twins it must pass.
 5. submit_candidate appears only as a direct call's function or a plain un-aliased import.
 6. The state reader that fact 2's exception trusts is pinned: in temper_ai/api/routes.py the only binding of
    _candidate_bindings is one undecorated plain module-level def with no parameters and no yield or await, every
-   return in it gives
-   None or vars(<one argument>).get("candidate_bindings"), and vars is not rebound there. With fact 3 holding, that
-   read gives None.
+   return in it gives None or vars(S).get("candidate_bindings"), where S is _state() or a name the reader binds
+   exactly once, by S = _state(), and declares neither global nor nonlocal; _state is one undecorated plain
+   module-level def there; vars is not rebound there, and no scanned code imports builtins or names __builtins__.
+   With fact 3 holding, that read gives None.
+7. Nothing shadows or replaces the state reader: the name _candidate_bindings appears only in routes.py, as that
+   def and as the function of calls with no arguments. No parameter, attribute, keyword, import, def, class,
+   capture, global or nonlocal declaration or string of that name appears anywhere scanned.
 
 Not seen: names built at run time (setattr(obj, name, ...), import_module strings), values loaded from data at run
-time, string annotations, and positional passes to functions whose candidate_bindings parameter is not keyword-only
-(is_designated(workflow, bindings) only reads).
+time, string annotations, an attribute named _state set on the routes module from elsewhere (_state is a common
+attribute name, so it is not banned), and positional passes to a parameter of another name
+(is_designated(workflow, bindings) only reads; submit_candidate takes bindings keyword-only).
 """
 
 from __future__ import annotations
@@ -64,14 +72,29 @@ _ADMISSION_ENTRY = "submit_candidate"
 _STATE_READER_FILE = "temper_ai/api/routes.py"
 _STATE_READER_CALLER = "_start_run"
 _STATE_READER = "_candidate_bindings"
+# The server-state getter the reader's vars() argument must come from (fact 6).
+_STATE_GETTER = "_state"
 _NAME_LOOKUP_CALLS = {"getattr", "hasattr"}
+_BUILTINS_MODULE = "builtins"
+_BUILTINS_NAME = "__builtins__"
 
-_DEFAULT_RULE = "candidate_bindings must default to None"
+_DEFAULT_RULE = "candidate_bindings must be keyword-only and default to None"
 _PASS_THROUGH_RULE = "is not its own untouched parameter"
 _STORE_RULE = "stores candidate_bindings"
 _REFERENCE_RULE = "named outside first_app_p3_native.py"
 _DIRECT_CALL_RULE = "other than as a direct call"
-_READER_RULE = "the state reader"
+_READER_RULE = "state reader not pinned"
+_READER_NAME_RULE = "names _candidate_bindings outside its def and no-argument calls in routes.py"
+# No rule text holds another, so each report names exactly one rule.
+_RULES = (
+    _DEFAULT_RULE,
+    _PASS_THROUGH_RULE,
+    _STORE_RULE,
+    _REFERENCE_RULE,
+    _DIRECT_CALL_RULE,
+    _READER_RULE,
+    _READER_NAME_RULE,
+)
 
 
 def _production_sources():
@@ -87,6 +110,12 @@ def _parameter_defaults(node):
     positional = args.posonlyargs + args.args
     padded = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
     return list(zip(positional, padded, strict=True)) + list(zip(args.kwonlyargs, args.kw_defaults, strict=True))
+
+
+def _all_parameters(node) -> list[ast.arg]:
+    args = node.args
+    stars = [star for star in (args.vararg, args.kwarg) if star is not None]
+    return args.posonlyargs + args.args + args.kwonlyargs + stars
 
 
 def _name_bindings(scope, name):
@@ -117,8 +146,46 @@ def _is_literal(node, text: str) -> bool:
     return isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value == text
 
 
-def _is_state_read(node) -> bool:
-    """True for vars(<one argument>).get("candidate_bindings") and nothing else."""
+def _is_no_argument_call(node, function: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == function
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _is_module_level_def(tree: ast.Module, name: str) -> tuple[bool, int]:
+    """Whether name's only binding in the module is one undecorated plain module-level def, and how many bindings
+    it has."""
+    bindings = _name_bindings(tree, name)
+    only = bindings[0] if len(bindings) == 1 else None
+    return isinstance(only, ast.FunctionDef) and only in tree.body and not only.decorator_list, len(bindings)
+
+
+def _is_state_object(node, reader) -> bool:
+    """_state() itself, or a name the reader binds exactly once, by name = _state(), and declares neither global nor
+    nonlocal."""
+    if _is_no_argument_call(node, _STATE_GETTER):
+        return True
+    if not isinstance(node, ast.Name) or any(
+        isinstance(statement, (ast.Global, ast.Nonlocal)) and node.id in statement.names
+        for statement in ast.walk(reader)
+    ):
+        return False
+    bindings = _name_bindings(reader, node.id)
+    return len(bindings) == 1 and any(
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and statement.targets[0] is bindings[0]
+        and _is_no_argument_call(statement.value, _STATE_GETTER)
+        for statement in ast.walk(reader)
+    )
+
+
+def _is_state_read(node, reader) -> bool:
+    """True for vars(S).get("candidate_bindings") with S the server's state (see _is_state_object), nothing else."""
     if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"):
         return False
     target = node.func.value
@@ -128,6 +195,7 @@ def _is_state_read(node) -> bool:
         and target.func.id == "vars"
         and len(target.args) == 1
         and not target.keywords
+        and _is_state_object(target.args[0], reader)
         and len(node.args) == 1
         and _is_literal(node.args[0], _BINDINGS)
         and not node.keywords
@@ -138,30 +206,35 @@ def _state_reader_violations(name: str, tree: ast.Module) -> list[str]:
     """Fact 6, checked in routes.py only: the reader fact 2's exception trusts can only read the state."""
     if name != _STATE_READER_FILE:
         return []
-    bindings = _name_bindings(tree, _STATE_READER)
-    reader = bindings[0] if len(bindings) == 1 else None
-    if not (isinstance(reader, ast.FunctionDef) and reader in tree.body and not reader.decorator_list):
+    pinned, count = _is_module_level_def(tree, _STATE_READER)
+    if not pinned:
         return [
-            f"{name}: the state reader {_STATE_READER} must be one undecorated plain module-level def,"
-            f" never rebound or imported ({len(bindings)} binding(s) found)"
+            f"{name}: {_READER_RULE}: {_STATE_READER} must be one undecorated plain module-level def,"
+            f" never rebound or imported ({count} binding(s) found)"
         ]
+    reader = _name_bindings(tree, _STATE_READER)[0]
     found = []
-    parameters = reader.args
-    if parameters.posonlyargs or parameters.args or parameters.kwonlyargs or parameters.vararg or parameters.kwarg:
-        found.append(f"{name}:{reader.lineno}: the state reader must take no parameters")
+    if _all_parameters(reader):
+        found.append(f"{name}:{reader.lineno}: {_READER_RULE}: it must take no parameters")
     for node in ast.walk(reader):
         if isinstance(node, (ast.Yield, ast.YieldFrom, ast.Await)):
-            found.append(f"{name}:{node.lineno}: the state reader must not yield or await")
+            found.append(f"{name}:{node.lineno}: {_READER_RULE}: it must not yield or await")
         elif isinstance(node, ast.Return) and not (
             node.value is None or (isinstance(node.value, ast.Constant) and node.value.value is None)
-            or _is_state_read(node.value)
+            or _is_state_read(node.value, reader)
         ):
             found.append(
-                f"{name}:{node.lineno}: the state reader must return None or vars(...).get('candidate_bindings'),"
-                f" not {ast.unparse(node.value)}"
+                f"{name}:{node.lineno}: {_READER_RULE}: it must return None or"
+                f" vars(_state()).get('candidate_bindings'), not {ast.unparse(node.value)}"
             )
+    getter_pinned, getter_count = _is_module_level_def(tree, _STATE_GETTER)
+    if not getter_pinned:
+        found.append(
+            f"{name}: {_READER_RULE}: {_STATE_GETTER} must be one undecorated plain module-level def"
+            f" ({getter_count} binding(s) found)"
+        )
     if _name_bindings(tree, "vars"):
-        found.append(f"{name}: vars is rebound, so the state reader's read can't be trusted")
+        found.append(f"{name}: {_READER_RULE}: vars is rebound")
     return found
 
 
@@ -177,6 +250,7 @@ class _CandidateBindingFacts(ast.NodeVisitor):
         self.takes_bindings: set[str] = set()
         self._allowed_literals: set[int] = set()
         self._direct_calls: set[int] = set()
+        self._reader_calls: set[int] = set()
 
     def _report(self, node, text: str) -> None:
         self.violations.append(f"{self.name}:{node.lineno}: {text}")
@@ -195,27 +269,55 @@ class _CandidateBindingFacts(ast.NodeVisitor):
         )
 
     def _passes_state_reader(self, value) -> bool:
+        """Fact 2's one exception: in routes._start_run, value names a local bound exactly once, by a direct
+        `name = _candidate_bindings()` statement of its body placed before the statement holding this use."""
         own = self._own_function()
         if (
             own is None
             or (self.name, getattr(own, "name", None)) != (_STATE_READER_FILE, _STATE_READER_CALLER)
             or not isinstance(value, ast.Name)
+            or value.id in {arg.arg for arg in _all_parameters(own)}
+            or any(
+                isinstance(node, (ast.Global, ast.Nonlocal)) and value.id in node.names for node in ast.walk(own)
+            )
         ):
             return False
         bindings = _name_bindings(own, value.id)
         if len(bindings) != 1:
             return False
-        for node in ast.walk(own):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and node.targets[0] is bindings[0]:
-                call = node.value
-                return (
-                    isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Name)
-                    and call.func.id == _STATE_READER
-                    and not call.args
-                    and not call.keywords
-                )
-        return False
+        assigned = next(
+            (
+                index
+                for index, statement in enumerate(own.body)
+                if isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and statement.targets[0] is bindings[0]
+                and _is_no_argument_call(statement.value, _STATE_READER)
+            ),
+            None,
+        )
+        used = next(
+            (
+                index
+                for index, statement in enumerate(own.body)
+                if any(node is value for node in ast.walk(statement))
+            ),
+            None,
+        )
+        return assigned is not None and used is not None and assigned < used
+
+    def _names_reader(self, node, how: str) -> None:
+        self._report(node, f"{how} {_READER_NAME_RULE}")
+
+    def _reader_use_allowed(self, node: ast.Name) -> bool:
+        """In routes.py fact 6 owns every binding of the reader's name; a load there is allowed only as the function
+        of a call with no arguments. Anywhere else the name is not allowed at all."""
+        if self.name != _STATE_READER_FILE:
+            return False
+        return not isinstance(node.ctx, ast.Load) or id(node) in self._reader_calls
+
+    def _swaps_builtins(self, node, how: str) -> None:
+        self._report(node, f"{_READER_RULE}: {how} can swap the vars the state reader calls")
 
     def _reference(self, node, name: str) -> None:
         if name in _PROTECTED_NAMES and self.name != _REFERENCE_ALLOWED_FILE:
@@ -268,24 +370,66 @@ class _CandidateBindingFacts(ast.NodeVisitor):
     visit_With = _with
     visit_AsyncWith = _with
 
+    def _declares(self, node) -> None:
+        if _STATE_READER in node.names and self.name != _STATE_READER_FILE:
+            self._names_reader(node, f"a {type(node).__name__.lower()} declaration of {_STATE_READER}")
+
     def visit_Global(self, node: ast.Global) -> None:
         if _BINDINGS in node.names:
             self._report(node, f"global candidate_bindings {_STORE_RULE}")
+        self._declares(node)
         self.generic_visit(node)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self._declares(node)
+        self.generic_visit(node)
+
+    def _capture(self, node) -> None:
+        if node.name == _STATE_READER and self.name != _STATE_READER_FILE:
+            self._names_reader(node, f"a capture named {_STATE_READER}")
+        self.generic_visit(node)
+
+    visit_ExceptHandler = _capture
+    visit_MatchAs = _capture
+    visit_MatchStar = _capture
 
     def visit_Constant(self, node: ast.Constant) -> None:
         if _is_literal(node, _BINDINGS) and id(node) not in self._allowed_literals:
             self._report(node, f"'candidate_bindings' outside a .get/getattr/hasattr read or a checked dict key {_STORE_RULE}")
+        elif _is_literal(node, _STATE_READER):
+            self._names_reader(node, f"the string '{_STATE_READER}'")
+        elif _is_literal(node, _BUILTINS_NAME):
+            self._swaps_builtins(node, f"the string '{_BUILTINS_NAME}'")
 
     def visit_Name(self, node: ast.Name) -> None:
         self._reference(node, node.id)
+        if node.id == _STATE_READER and not self._reader_use_allowed(node):
+            self._names_reader(node, f"a {type(node.ctx).__name__.lower()} of {_STATE_READER}")
+        elif node.id == _BUILTINS_NAME:
+            self._swaps_builtins(node, _BUILTINS_NAME)
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         self._reference(node, node.attr)
+        if node.attr == _STATE_READER:
+            self._names_reader(node, f"the attribute {ast.unparse(node)}")
+        elif node.attr == _BUILTINS_NAME:
+            self._swaps_builtins(node, f"the attribute {ast.unparse(node)}")
+        self.generic_visit(node)
+
+    def visit_alias(self, node: ast.alias) -> None:
+        bound = node.asname or node.name.split(".")[0]
+        if node.name.split(".")[0] == _BUILTINS_MODULE:
+            self._swaps_builtins(node, f"an import of {node.name}")
+        if _STATE_READER in (bound, node.name.split(".")[-1]) and not (
+            self.name == _STATE_READER_FILE and bound == _STATE_READER
+        ):
+            self._names_reader(node, f"an import of {node.name}")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == _BUILTINS_MODULE:
+            self._swaps_builtins(node, f"from {_BUILTINS_MODULE} import")
         for alias in node.names:
             if alias.name in _PROTECTED_NAMES and self.name != _REFERENCE_ALLOWED_FILE:
                 self._report(node, f"{alias.name} {_REFERENCE_RULE}")
@@ -294,6 +438,8 @@ class _CandidateBindingFacts(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        if node.name == _STATE_READER and self.name != _STATE_READER_FILE:
+            self._names_reader(node, f"a class named {_STATE_READER}")
         self.scopes.append("class")
         self.generic_visit(node)
         self.scopes.pop()
@@ -309,12 +455,21 @@ class _CandidateBindingFacts(ast.NodeVisitor):
 
     def _function(self, node) -> None:
         label = getattr(node, "name", "<lambda>")
+        keyword_only = {id(arg) for arg in node.args.kwonlyargs}
         for arg, default in _parameter_defaults(node):
             if arg.arg != _BINDINGS:
                 continue
             self.takes_bindings.add(label)
-            if not (isinstance(default, ast.Constant) and default.value is None):
+            if id(arg) not in keyword_only or not (isinstance(default, ast.Constant) and default.value is None):
                 self.violations.append(f"{self.name}:{node.lineno} {label}: {_DEFAULT_RULE}")
+        for star in (node.args.vararg, node.args.kwarg):
+            if star is not None and star.arg == _BINDINGS:
+                self.violations.append(f"{self.name}:{node.lineno} {label}: a starred {star.arg}: {_DEFAULT_RULE}")
+        if label == _STATE_READER and self.name != _STATE_READER_FILE:
+            self._names_reader(node, f"a def named {_STATE_READER}")
+        for arg in _all_parameters(node):
+            if arg.arg == _STATE_READER:
+                self._names_reader(arg, f"a parameter named {_STATE_READER}")
         self.functions.append(node)
         self.scopes.append("function")
         self.generic_visit(node)
@@ -329,8 +484,12 @@ class _CandidateBindingFacts(ast.NodeVisitor):
         callee = _callee(node.func)
         if callee == _ADMISSION_ENTRY:
             self._direct_calls.add(id(node.func))
+        if _is_no_argument_call(node, _STATE_READER):
+            self._reader_calls.add(id(node.func))
         for keyword in node.keywords:
             value = keyword.value
+            if keyword.arg == _STATE_READER:
+                self._names_reader(node, f"the keyword {_STATE_READER}=")
             if keyword.arg == _BINDINGS and not self._passes_own_parameter(value):
                 self._report(node, f"candidate_bindings={ast.unparse(value)} {_PASS_THROUGH_RULE}")
             if callee != _ADMISSION_ENTRY:
@@ -370,13 +529,24 @@ def _scan(name: str, text: str) -> _ScanResult:
 
 _PLANTED = "temper_ai/planted.py"
 _ROUTES = _STATE_READER_FILE
-_READER_DEF = "def _candidate_bindings():\n    return vars(_state()).get('candidate_bindings')\n"
+_STATE_DEF = "def _state():\n    return APP\n"
+_READER_ONLY = "def _candidate_bindings():\n    return vars(_state()).get('candidate_bindings')\n"
+_READER_DEF = _STATE_DEF + _READER_ONLY
 _READER_CALLER = "def _start_run():\n    bindings = _candidate_bindings()\n"
-# Each twin breaks one fact; the check must report it under that fact's rule, and only once.
+# Each twin breaks one fact (or the facts listed); the check must report it under that rule, and only once.
 _PLANTED_TWINS = {
     # Fact 1
     "non-None default": (_PLANTED, "def run(*, candidate_bindings=object()):\n    pass\n", _DEFAULT_RULE),
     "required parameter": (_PLANTED, "def run(candidate_bindings):\n    pass\n", _DEFAULT_RULE),
+    "positional parameter left None": (_PLANTED, "def run(candidate_bindings=None):\n    pass\n", _DEFAULT_RULE),
+    "positional-only parameter": (_PLANTED, "def run(candidate_bindings=None, /):\n    pass\n", _DEFAULT_RULE),
+    "star parameter": (_PLANTED, "def run(*candidate_bindings):\n    pass\n", _DEFAULT_RULE),
+    "double-star parameter": (_PLANTED, "def run(**candidate_bindings):\n    pass\n", _DEFAULT_RULE),
+    "positional lambda left None": (
+        _PLANTED,
+        "HANDLER = lambda candidate_bindings=None: candidate_bindings\n",
+        _DEFAULT_RULE,
+    ),
     "lambda default built": (
         _PLANTED,
         "def run(*, candidate_bindings=None):\n"
@@ -421,11 +591,56 @@ _PLANTED_TWINS = {
     "state reader outside routes": (
         _PLANTED,
         _READER_CALLER + "    submit_candidate(bindings=bindings)\n",
-        _PASS_THROUGH_RULE,
+        (_PASS_THROUGH_RULE, _READER_NAME_RULE),
     ),
     "state reader value replaced": (
         _ROUTES,
         _READER_DEF + _READER_CALLER + "    bindings = make()\n    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value from a parameter": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run(body, *, bindings=None):\n"
+        "    if bindings is None:\n"
+        "        bindings = _candidate_bindings()\n"
+        "    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value used before it is assigned": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run():\n    submit_candidate(bindings=bindings)\n    bindings = _candidate_bindings()\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value assigned conditionally": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run(flag):\n"
+        "    if flag:\n"
+        "        bindings = _candidate_bindings()\n"
+        "    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value declared global": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run():\n"
+        "    global bindings\n"
+        "    bindings = _candidate_bindings()\n"
+        "    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value declared nonlocal": (
+        _ROUTES,
+        _READER_DEF
+        + "def outer():\n"
+        "    bindings = None\n"
+        "    def _start_run():\n"
+        "        nonlocal bindings\n"
+        "        bindings = _candidate_bindings()\n"
+        "        submit_candidate(bindings=bindings)\n"
+        "    return _start_run\n",
         _PASS_THROUGH_RULE,
     ),
     # Fact 3
@@ -508,24 +723,123 @@ _PLANTED_TWINS = {
     ),
     "submit_candidate rebound": (_PLANTED, "submit_candidate = make()\n", _DIRECT_CALL_RULE),
     # Fact 6
-    "state reader returns a built value": (_ROUTES, "def _candidate_bindings():\n    return make()\n", _READER_RULE),
+    "state reader returns a built value": (
+        _ROUTES,
+        _STATE_DEF + "def _candidate_bindings():\n    return make()\n",
+        _READER_RULE,
+    ),
     "state reader reads another key": (
         _ROUTES,
-        "def _candidate_bindings():\n    return vars(_state()).get('bindings')\n",
+        _STATE_DEF + "def _candidate_bindings():\n    return vars(_state()).get('bindings')\n",
         _READER_RULE,
     ),
-    "state reader yields": (_ROUTES, "def _candidate_bindings():\n    yield None\n", _READER_RULE),
+    "state reader yields": (_ROUTES, _STATE_DEF + "def _candidate_bindings():\n    yield None\n", _READER_RULE),
     "state reader rebound": (_ROUTES, _READER_DEF + "_candidate_bindings = make\n", _READER_RULE),
-    "state reader imported": (_ROUTES, "from temper_ai.api.state import _candidate_bindings\n", _READER_RULE),
-    "state reader decorated": (_ROUTES, "@cache\n" + _READER_DEF, _READER_RULE),
-    "state reader async": (_ROUTES, "async def _candidate_bindings():\n    return None\n", _READER_RULE),
+    "state reader imported": (
+        _ROUTES,
+        _STATE_DEF + "from temper_ai.api.state import _candidate_bindings\n",
+        _READER_RULE,
+    ),
+    "state reader decorated": (_ROUTES, _STATE_DEF + "@cache\n" + _READER_ONLY, _READER_RULE),
+    "state reader async": (
+        _ROUTES,
+        _STATE_DEF + "async def _candidate_bindings():\n    return None\n",
+        _READER_RULE,
+    ),
     "state reader takes a parameter": (
         _ROUTES,
-        "def _candidate_bindings(vars=make):\n    return vars(_state()).get('candidate_bindings')\n",
+        _STATE_DEF + "def _candidate_bindings(vars=make):\n    return vars(_state()).get('candidate_bindings')\n",
         _READER_RULE,
     ),
-    "state reader missing": (_ROUTES, "def _start_run():\n    pass\n", _READER_RULE),
+    "state reader missing": (_ROUTES, _STATE_DEF + "def _start_run():\n    pass\n", _READER_RULE),
     "vars rebound in routes": (_ROUTES, "vars = make\n" + _READER_DEF, _READER_RULE),
+    "vars reads another object": (
+        _ROUTES,
+        _STATE_DEF + "def _candidate_bindings():\n    return vars(other()).get('candidate_bindings')\n",
+        _READER_RULE,
+    ),
+    "vars reads a name not from _state()": (
+        _ROUTES,
+        _STATE_DEF
+        + "def _candidate_bindings():\n    state = other()\n    return vars(state).get('candidate_bindings')\n",
+        _READER_RULE,
+    ),
+    "vars reads a name bound twice": (
+        _ROUTES,
+        _STATE_DEF
+        + "def _candidate_bindings():\n"
+        "    state = _state()\n"
+        "    state = other()\n"
+        "    return vars(state).get('candidate_bindings')\n",
+        _READER_RULE,
+    ),
+    "vars reads a name declared global": (
+        _ROUTES,
+        _STATE_DEF
+        + "def _candidate_bindings():\n"
+        "    global state\n"
+        "    state = _state()\n"
+        "    return vars(state).get('candidate_bindings')\n",
+        _READER_RULE,
+    ),
+    "state getter rebound": (_ROUTES, _READER_DEF + "_state = make\n", _READER_RULE),
+    "state getter missing": (_ROUTES, _READER_ONLY, _READER_RULE),
+    "builtins imported": (_PLANTED, "import builtins\n", _READER_RULE),
+    "from builtins import": (_PLANTED, "from builtins import vars\n", _READER_RULE),
+    "__builtins__ named": (_PLANTED, "def boot():\n    __builtins__['vars'] = make\n", _READER_RULE),
+    # Fact 7
+    "reader shadowed by a parameter": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run(body, *, _candidate_bindings=None):\n"
+        "    bindings = _candidate_bindings()\n"
+        "    submit_candidate(bindings=bindings)\n",
+        _READER_NAME_RULE,
+    ),
+    "reader replaced through the module": (
+        _PLANTED,
+        "from temper_ai.api import routes\nroutes._candidate_bindings = make\n",
+        _READER_NAME_RULE,
+    ),
+    "reader replaced through setattr": (
+        _PLANTED,
+        "from temper_ai.api import routes\nsetattr(routes, '_candidate_bindings', make)\n",
+        _READER_NAME_RULE,
+    ),
+    "reader replaced through globals()": (
+        _ROUTES,
+        _READER_DEF + "globals()['_candidate_bindings'] = make\n",
+        _READER_NAME_RULE,
+    ),
+    "reader imported elsewhere": (
+        _PLANTED,
+        "from temper_ai.api.routes import _candidate_bindings\n",
+        _READER_NAME_RULE,
+    ),
+    "reader called elsewhere": (_PLANTED, "def peek():\n    return _candidate_bindings()\n", _READER_NAME_RULE),
+    "reader referenced, not called": (_ROUTES, _READER_DEF + "READ = _candidate_bindings\n", _READER_NAME_RULE),
+    "reader called with an argument": (
+        _ROUTES,
+        _READER_DEF + "def peek(x):\n    return _candidate_bindings(x)\n",
+        _READER_NAME_RULE,
+    ),
+    "reader passed as a keyword": (_PLANTED, "configure(_candidate_bindings=make)\n", _READER_NAME_RULE),
+    "reader defined elsewhere": (
+        _PLANTED,
+        "def _candidate_bindings():\n    return None\n",
+        _READER_NAME_RULE,
+    ),
+    "reader class elsewhere": (_PLANTED, "class _candidate_bindings:\n    pass\n", _READER_NAME_RULE),
+    "reader declared global elsewhere": (
+        _PLANTED,
+        "def boot():\n    global _candidate_bindings\n",
+        _READER_NAME_RULE,
+    ),
+    "reader captured elsewhere": (
+        _PLANTED,
+        "try:\n    pass\nexcept Exception as _candidate_bindings:\n    pass\n",
+        _READER_NAME_RULE,
+    ),
 }
 # Each clean twin keeps every fact; the check must report nothing.
 _CLEAN_TWINS = {
@@ -543,7 +857,9 @@ _CLEAN_TWINS = {
     "lambda pass-through": (
         _PLANTED,
         "def outer(*, candidate_bindings=None):\n"
-        "    return (lambda candidate_bindings=None: go(candidate_bindings=candidate_bindings))(candidate_bindings)\n",
+        "    return (lambda *, candidate_bindings=None: go(candidate_bindings=candidate_bindings))(\n"
+        "        candidate_bindings=candidate_bindings\n"
+        "    )\n",
     ),
     "reads elsewhere": (
         _PLANTED,
@@ -563,9 +879,26 @@ _CLEAN_TWINS = {
         + _READER_CALLER
         + "    submit_candidate(bindings=bindings)\n",
     ),
+    "start run shaped like the live one": (
+        _ROUTES,
+        "from temper_ai.runner.admission import is_designated, submit_candidate\n"
+        + _READER_DEF
+        + "def _start_run(body, *, execution_id=None):\n"
+        "    bindings = _candidate_bindings()\n"
+        "    refuse(execution_id)\n"
+        "    if body.admission is not None or is_designated(body.workflow, bindings):\n"
+        "        try:\n"
+        "            chosen = submit_candidate(execution_id=execution_id, bindings=bindings)\n"
+        "        except RuntimeError:\n"
+        "            raise\n"
+        "        return chosen\n"
+        "def _refuse_hold(hold):\n"
+        "    return is_designated(hold.get('workflow_name'), _candidate_bindings())\n",
+    ),
     "state reader shaped like the live one": (
         _ROUTES,
-        "def _candidate_bindings():\n"
+        _STATE_DEF
+        + "def _candidate_bindings():\n"
         "    try:\n"
         "        state = _state()\n"
         "    except RuntimeError:\n"
@@ -582,10 +915,12 @@ _CLEAN_TWINS = {
 
 @pytest.mark.parametrize("twin", sorted(_PLANTED_TWINS))
 def test_candidate_binding_fact_checks_catch_each_planted_twin(twin):
-    path, source, rule = _PLANTED_TWINS[twin]
+    path, source, rules = _PLANTED_TWINS[twin]
+    expected = (rules,) if isinstance(rules, str) else rules
     violations = _scan(path, source).violations
-    assert len(violations) == 1, violations
-    assert rule in violations[0]
+    assert len(violations) == len(expected), violations
+    found = sorted(rule for violation in violations for rule in _RULES if rule in violation)
+    assert found == sorted(expected), violations
 
 
 @pytest.mark.parametrize("twin", sorted(_CLEAN_TWINS))
@@ -611,7 +946,8 @@ def test_production_tree_breaks_no_candidate_binding_fact():
         takes_bindings |= {(module, function) for function in facts.takes_bindings}
     assert len(scanned) > 100
     assert {_STATE_READER_FILE, _REFERENCE_ALLOWED_FILE} <= scanned
-    assert any(name.startswith(("p3_host_contracts/", "p3_source_closure/")) for name in scanned)
+    for package in ("p3_host_contracts", "p3_source_closure"):
+        assert any(name.startswith(f"{package}/") for name in scanned), package
     assert violations == []
     assert _RUNNER_ENTRY_POINTS <= takes_bindings
     for module, function in sorted(_RUNNER_ENTRY_POINTS):

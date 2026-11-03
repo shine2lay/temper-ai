@@ -167,17 +167,22 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
     for value, cls in ((reviewed, t.ReviewedSourceGraph), (observed, t.LoadedClosureEnvelope),
                        (expected, t.NativeClosureExpectation), (verified, t.VerifiedClosureOrigins)):
         _record(value, cls)
-    # Revalidate even directly constructed records. Constructors are not authority.
-    validate_reviewed_graph(to_wire(reviewed.graph))
-    validate_loaded_envelope(to_wire(observed.envelope))
+    # Revalidate even directly constructed records. Constructors are not authority,
+    # and a content field is a claim: only the recomputed content is the identity.
+    canonical_reviewed = validate_reviewed_graph(to_wire(reviewed.graph))
+    canonical_observed = validate_loaded_envelope(to_wire(observed.envelope))
     check_boundary(expected.binding, expected.boundary)
     unique(tuple((f.ref, f.purpose) for f in verified.facts))
     unique(tuple(p.instance.instance_id for p in expected.processes))
     findings = Findings(verified)
     graph, envelope = reviewed.graph, observed.envelope
+    if reviewed.content != canonical_reviewed.content:
+        findings.refuse("REVIEW_ORIGIN")
+    if observed.content != canonical_observed.content:
+        findings.refuse("OBSERVER_ORIGIN")
     input_bindings: tuple[tuple[t.ContentIdentity | None, t.ContentIdentity, t.Reason], ...] = (
-        (verified.reviewed_bytes, reviewed.content, "REVIEW_ORIGIN"),
-        (verified.observed_bytes, observed.content, "OBSERVER_ORIGIN"),
+        (verified.reviewed_bytes, canonical_reviewed.content, "REVIEW_ORIGIN"),
+        (verified.observed_bytes, canonical_observed.content, "OBSERVER_ORIGIN"),
         (verified.expectation, claim_identity(expected), "BINDING"),
     )
     for supplied, input_identity, reason in input_bindings:
@@ -188,7 +193,7 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
     if verified.validity_checkpoint != expected.boundary.validity_checkpoint:
         findings.unknown("STALE_FRONTIER")
     if (envelope.reviewed_graph != expected.reviewed_graph or
-            envelope.reviewed_graph.content != reviewed.content):
+            envelope.reviewed_graph.content != canonical_reviewed.content):
         findings.refuse("REVIEW_ORIGIN")
     if graph.completeness_review_ref is None:
         findings.unknown("COVERAGE_GAP")

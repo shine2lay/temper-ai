@@ -185,6 +185,20 @@ for malformed shape/type/reference/encoding. This is the N3-local exception
 class, not R2's class or eleven-code table. Exceptions contain fixed labels only.
 No path is implicitly opened. A reference is data, never a lookup request.
 
+A record's `content` field is a claim, not its identity. `compare_loaded_source`
+keeps the records returned by revalidating `reviewed.graph` and `observed.envelope`
+and binds the REVIEW_ORIGIN/OBSERVER_ORIGIN inputs and the envelope's graph
+reference only to their recomputed canonical content (`claim_identity` of the
+decoded record). A supplied record whose `content` differs (a stale or forged
+label on a directly built record, or a record validated from valid but
+non-canonical bytes) refuses REVIEW_ORIGIN (graph) or OBSERVER_ORIGIN (envelope),
+even when the verified identity equals that field or is unavailable; only
+canonical transport bytes can MATCH. Held by
+`test_content_field_other_than_its_bytes_never_satisfies_origin_checks` (CC-G1..G4,
+CC-E1..E4) and `test_content_field_guard_mutant_is_killed` (FP-G, FP-E) in
+`tests/test_p3_authority/test_systems_n3_supplier.py`; Systems #91,
+H-N3-CANONICAL-CONTENT-1.
+
 Minimal N3 validation is tied to new-schema invariants (no legacy helper bundle):
 
 | Local check | New-schema invariant | Independent controls |

@@ -1363,3 +1363,139 @@ def test_guard_fault_proofs_fail_on_deliberately_broken_copy(
     install_mutation(monkeypatch, comparison_mod, function, before, after)
     with pytest.raises(AssertionError):
         run_guard()
+
+
+# H-N3-CANONICAL-CONTENT-1 (Systems #91): a record's content field is a claim, not
+# its identity. Origin checks bind only the content recomputed from the record.
+ContentTarget = Literal["graph", "envelope"]
+ContentKind = Literal["stale", "forged", "raw"]
+VerifiedKind = Literal["same", "unavailable", "canonical"]
+
+
+def _content_field_world(
+    base: SupplierTwinWorld,
+    target: ContentTarget,
+    content_kind: ContentKind,
+    verified_kind: VerifiedKind,
+) -> SupplierTwinWorld:
+    """Fixed world whose graph or envelope record carries a content field other than its bytes.
+
+    stale: the identity of an earlier version of the record; forged: a fixed label;
+    raw: valid non-canonical bytes (trailing newline) parsed by the real validator.
+    same: the verified identity (and for the graph, both graph references) agree
+    with the field; unavailable: the provider has no byte identity; canonical:
+    everything else stays bound to the record's canonical identity.
+    """
+    if target == "graph":
+        graph = base.reviewed.graph
+        if content_kind == "raw":
+            reviewed = validate_reviewed_graph(canonical_bytes(graph) + b"\n")
+            assert reviewed.graph == graph
+        else:
+            label = base.candidate_reviewed.content if content_kind == "stale" else _content("forged-reviewed-graph")
+            reviewed = ReviewedSourceGraph(graph, label)
+        assert reviewed.content != claim_identity(graph)
+        if verified_kind == "canonical":
+            return _rebuild_world(base, reviewed=reviewed, recompute_reviewed_bytes=False)
+        g_ref = replace(base.expected.reviewed_graph, content=reviewed.content)
+        world = _rebuild_world(
+            base,
+            reviewed=reviewed,
+            envelope=replace(base.observed.envelope, reviewed_graph=g_ref),
+            expected=replace(base.expected, reviewed_graph=g_ref),
+        )
+        if verified_kind == "unavailable":
+            world = replace(world, verified=replace(world.verified, reviewed_bytes=None))
+        return world
+    envelope = base.observed.envelope
+    if content_kind == "raw":
+        observed = validate_loaded_envelope(canonical_bytes(envelope) + b"\n")
+        assert observed.envelope == envelope
+    elif content_kind == "stale":
+        observed = LoadedClosureEnvelope(replace(envelope, envelope_id="env-supplier-2"), base.observed.content)
+    else:
+        observed = LoadedClosureEnvelope(envelope, _content("forged-loaded-envelope"))
+    assert observed.content != claim_identity(observed.envelope)
+    world = _rebuild_world(base, envelope=observed.envelope)
+    observed_bytes = {"same": observed.content, "unavailable": None, "canonical": world.observed.content}[verified_kind]
+    return replace(world, observed=observed, verified=replace(world.verified, observed_bytes=observed_bytes))
+
+
+def _assert_content_field_refused(
+    world: SupplierTwinWorld,
+    reason: Literal["REVIEW_ORIGIN", "OBSERVER_ORIGIN"],
+) -> None:
+    direct = compare_loaded_source(
+        world.reviewed,
+        world.observed,
+        expected=world.expected,
+        verified=world.verified,
+    )
+    assert direct.disposition == "REFUSED"
+    assert direct.reasons == (reason,)
+    assert direct.frontiers == ()
+    assert direct.reviewed_graph == world.expected.reviewed_graph
+
+    shared_out = _run_shared_n3_adapter(world)
+    assert isinstance(shared_out, Refusal)
+    assert shared_out.code == RefusalCode.CLOSURE_MISMATCH
+
+    sys_out = _run_systems_comparator(world)
+    assert isinstance(sys_out, Refusal)
+    assert sys_out.code == RefusalCode.CLOSURE_MISMATCH
+
+
+@pytest.mark.parametrize(
+    "case_id,target,content_kind,verified_kind",
+    [
+        ("CC-G1", "graph", "stale", "same"),
+        ("CC-G2", "graph", "forged", "same"),
+        ("CC-G3", "graph", "forged", "unavailable"),
+        ("CC-G4", "graph", "raw", "same"),
+        ("CC-E1", "envelope", "stale", "same"),
+        ("CC-E2", "envelope", "forged", "same"),
+        ("CC-E3", "envelope", "forged", "unavailable"),
+        ("CC-E4", "envelope", "raw", "same"),
+    ],
+)
+def test_content_field_other_than_its_bytes_never_satisfies_origin_checks(
+    clean_supplier_world: SupplierTwinWorld,
+    case_id: str,
+    target: ContentTarget,
+    content_kind: ContentKind,
+    verified_kind: VerifiedKind,
+) -> None:
+    clean = compare_loaded_source(
+        clean_supplier_world.reviewed,
+        clean_supplier_world.observed,
+        expected=clean_supplier_world.expected,
+        verified=clean_supplier_world.verified,
+    )
+    assert clean.disposition == "MATCH"
+
+    fault_world = _content_field_world(clean_supplier_world, target, content_kind, verified_kind)
+    _assert_content_field_refused(fault_world, "REVIEW_ORIGIN" if target == "graph" else "OBSERVER_ORIGIN")
+
+
+@pytest.mark.parametrize(
+    "case_id,target,reason,before",
+    [
+        ("FP-G", "graph", "REVIEW_ORIGIN", "if reviewed.content != canonical_reviewed.content:"),
+        ("FP-E", "envelope", "OBSERVER_ORIGIN", "if observed.content != canonical_observed.content:"),
+    ],
+)
+def test_content_field_guard_mutant_is_killed(
+    clean_supplier_world: SupplierTwinWorld,
+    monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
+    target: ContentTarget,
+    reason: Literal["REVIEW_ORIGIN", "OBSERVER_ORIGIN"],
+    before: str,
+) -> None:
+    # Bindings to recomputed content alone would MATCH a forged field that every
+    # other input contradicts; only the field check refuses it.
+    fault_world = _content_field_world(clean_supplier_world, target, "forged", "canonical")
+    _assert_content_field_refused(fault_world, reason)
+    install_mutation(monkeypatch, comparison_mod, "compare_loaded_source", before, "if False:")
+    with pytest.raises(AssertionError):
+        _assert_content_field_refused(fault_world, reason)

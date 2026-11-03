@@ -5,9 +5,14 @@ from __future__ import annotations
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from p3_source_closure import (
     ClosureEnvelope,
+    EvidenceRef,
+    LegacyLink,
     ReviewedSourceGraph,
     SourceGraph,
     VerifiedClosureOrigins,
@@ -32,8 +37,10 @@ from temper_ai.p3_authority.launch_adapters import (
 )
 from temper_ai.p3_authority.worker_closure_capture import (
     WorkerClosureCollector,
+    byte_content_identity,
     capture_git_checkout_provenance,
     claim_identity,
+    merge_dual_role_halves,
     to_wire,
     verify_and_compare_worker_closure,
 )
@@ -306,9 +313,11 @@ def test_worker_closure_capture_combined_happy_path(tmp_path: Path) -> None:
         processes=(*host_expected, *collector.expected_processes()),
     )
     all_procs = (*host_procs, *worker_envelope.envelope.process_observations)
+    # Shared origins only: each half's observer identity is passed separately and
+    # the merged envelope's origin is derived, never supplied.
     verified = VerifiedClosureOrigins(
         reviewed_bytes=reviewed.content,
-        observed_bytes=worker_envelope.content,
+        observed_bytes=None,
         expectation=claim_identity(expectation),
         validity_checkpoint=worker_envelope.envelope.boundary.validity_checkpoint,
         facts=witnesses(reviewed.graph, all_procs),
@@ -316,7 +325,9 @@ def test_worker_closure_capture_combined_happy_path(tmp_path: Path) -> None:
     comp_res = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=peer_envelope,
+        peer_observed_bytes=peer_envelope.content,
         expectation=expectation,
         verified_origins=verified,
         bookkeeper=CoverageBookkeeper(),
@@ -328,10 +339,22 @@ def test_worker_closure_capture_combined_happy_path(tmp_path: Path) -> None:
     assert comp_res.data.disposition == "MATCH"
 
     selected_job = make_selected_job()
-    merged_env = validate_loaded_envelope(
-        to_wire(replace(worker_envelope.envelope, process_observations=all_procs))
+    dual = merge_dual_role_halves(
+        worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
+        peer_envelope=peer_envelope,
+        peer_observed_bytes=peer_envelope.content,
+        boundary="C_BEFORE_COUNT",
+        evidence=ev,
     )
-    merged_verified = replace(verified, observed_bytes=merged_env.content)
+    assert isinstance(dual, AcceptedData)
+    merged_env = dual.data.envelope
+    assert merged_env.envelope.process_observations == all_procs
+    assert merged_env.envelope.envelope_id == (
+        f"{worker_envelope.envelope.envelope_id}+envelope-host-1"
+    )
+    assert dual.data.observed_bytes == merged_env.content
+    merged_verified = replace(verified, observed_bytes=dual.data.observed_bytes)
     sys_comp = SystemsSourceClosureComparator(
         job_lookup=lambda _rev: selected_job,
         peer_lookup=lambda _rev: ev.processes[0],
@@ -435,9 +458,11 @@ def test_refusal_twin_closure_version_on_schema_mismatch(tmp_path: Path) -> None
     comp_res = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=bad_worker_env,
+        worker_observed_bytes=bad_worker_env.content,
         peer_envelope=base.observed,
+        peer_observed_bytes=base.observed.content,
         expectation=base.expected,
-        verified_origins=base.verified,
+        verified_origins=replace(base.verified, observed_bytes=None),
         bookkeeper=CoverageBookkeeper(),
         load_stream_refs=(make_event_range(0, 8, 0),),
         boundary="C_BEFORE_COUNT",
@@ -480,9 +505,11 @@ def test_refusal_twin_closure_mismatch_on_unreviewed_module(tmp_path: Path) -> N
     comp_res = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=peer_envelope,
+        peer_observed_bytes=peer_envelope.content,
         expectation=base.expected,
-        verified_origins=base.verified,
+        verified_origins=replace(base.verified, observed_bytes=None),
         bookkeeper=CoverageBookkeeper(),
         load_stream_refs=(make_event_range(0, 9, 0),),
         boundary="C_BEFORE_COUNT",
@@ -551,7 +578,7 @@ def test_refusal_twin_dirty_tree_source_changed_and_digest_mismatch_closure_mism
     all_procs = (*host_procs, *worker_envelope.envelope.process_observations)
     verified = VerifiedClosureOrigins(
         reviewed_bytes=reviewed.content,
-        observed_bytes=worker_envelope.content,
+        observed_bytes=None,
         expectation=claim_identity(expectation),
         validity_checkpoint=worker_envelope.envelope.boundary.validity_checkpoint,
         facts=witnesses(reviewed.graph, all_procs),
@@ -563,11 +590,15 @@ def test_refusal_twin_dirty_tree_source_changed_and_digest_mismatch_closure_mism
         seen.append(comparison)
         return landed_mapping(comparison, boundary)
 
-    monkeypatch.setattr(worker_closure_capture, "comparison_to_refusal", recording_mapping)
+    monkeypatch.setattr(
+        worker_closure_capture, "comparison_to_refusal", recording_mapping
+    )
     comp_res = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=peer_envelope,
+        peer_observed_bytes=peer_envelope.content,
         expectation=expectation,
         verified_origins=verified,
         bookkeeper=CoverageBookkeeper(),
@@ -695,15 +726,19 @@ def test_guard_bite_one_half_envelope_refused(tmp_path: Path, monkeypatch) -> No
         compared.append(args)
         return landed_compare(*args, **kwargs)
 
-    monkeypatch.setattr(worker_closure_capture, "compare_loaded_source", recording_compare)
+    monkeypatch.setattr(
+        worker_closure_capture, "compare_loaded_source", recording_compare
+    )
 
     # 1. Missing peer_envelope -> CLOSURE_INCOMPLETE
     comp_none = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=None,
+        peer_observed_bytes=None,
         expectation=base.expected,
-        verified_origins=base.verified,
+        verified_origins=replace(base.verified, observed_bytes=None),
         bookkeeper=CoverageBookkeeper(),
         load_stream_refs=(make_event_range(0, 8, 0),),
         boundary="C_BEFORE_COUNT",
@@ -716,9 +751,11 @@ def test_guard_bite_one_half_envelope_refused(tmp_path: Path, monkeypatch) -> No
     comp_same_half = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=worker_envelope,
+        peer_observed_bytes=worker_envelope.content,
         expectation=base.expected,
-        verified_origins=base.verified,
+        verified_origins=replace(base.verified, observed_bytes=None),
         bookkeeper=CoverageBookkeeper(),
         load_stream_refs=(make_event_range(0, 8, 0),),
         boundary="C_BEFORE_COUNT",
@@ -741,9 +778,11 @@ def test_guard_bite_one_half_envelope_refused(tmp_path: Path, monkeypatch) -> No
     comp_container_only = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=container_only_peer,
+        peer_observed_bytes=container_only_peer.content,
         expectation=base.expected,
-        verified_origins=base.verified,
+        verified_origins=replace(base.verified, observed_bytes=None),
         bookkeeper=CoverageBookkeeper(),
         load_stream_refs=(make_event_range(0, 8, 0),),
         boundary="C_BEFORE_COUNT",
@@ -788,7 +827,7 @@ def test_guard_bite_unknown_disposition_never_maps_to_match(tmp_path: Path) -> N
     )
     verified = VerifiedClosureOrigins(
         reviewed_bytes=reviewed.content,
-        observed_bytes=worker_envelope.content,
+        observed_bytes=None,
         expectation=claim_identity(expectation),
         validity_checkpoint=worker_envelope.envelope.boundary.validity_checkpoint,
         facts=facts_no_review,
@@ -796,7 +835,9 @@ def test_guard_bite_unknown_disposition_never_maps_to_match(tmp_path: Path) -> N
     comp_res = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
         worker_envelope=worker_envelope,
+        worker_observed_bytes=worker_envelope.content,
         peer_envelope=peer_envelope,
+        peer_observed_bytes=peer_envelope.content,
         expectation=expectation,
         verified_origins=verified,
         bookkeeper=CoverageBookkeeper(),
@@ -806,6 +847,230 @@ def test_guard_bite_unknown_disposition_never_maps_to_match(tmp_path: Path) -> N
     )
     assert isinstance(comp_res, Refusal)
     assert comp_res.code == RefusalCode.CLOSURE_INCOMPLETE
+
+
+def _dual_role_world(tmp_path: Path) -> SimpleNamespace:
+    """The happy path's matching worker + host halves, expectation and shared origins."""
+    repo_dir = _init_clean_tmp_git_repo(tmp_path)
+    base, reviewed, _git_cap, ev = _build_reviewed_world_for_git_repo(repo_dir)
+    collector, graph_ref = _run_opt_in_worker_capture_flow(base, reviewed, ev)
+    env_res = collector.build_envelope(boundary="C_BEFORE_COUNT")
+    assert isinstance(env_res, AcceptedData)
+    worker_envelope = env_res.data
+    host_procs = _make_host_procs(base, reviewed, worker_envelope.envelope.binding)
+    peer_envelope = validate_loaded_envelope(
+        to_wire(
+            replace(
+                worker_envelope.envelope,
+                envelope_id="envelope-host-1",
+                process_observations=host_procs,
+            )
+        )
+    )
+    host_expected = tuple(
+        p for p in base.expected.processes if p.instance.location == "host"
+    )
+    expectation = replace(
+        base.expected,
+        binding=worker_envelope.envelope.binding,
+        reviewed_graph=graph_ref,
+        processes=(*host_expected, *collector.expected_processes()),
+    )
+    all_procs = (*host_procs, *worker_envelope.envelope.process_observations)
+    verified = VerifiedClosureOrigins(
+        reviewed_bytes=reviewed.content,
+        observed_bytes=None,
+        expectation=claim_identity(expectation),
+        validity_checkpoint=worker_envelope.envelope.boundary.validity_checkpoint,
+        facts=witnesses(reviewed.graph, all_procs),
+    )
+    return SimpleNamespace(
+        reviewed=reviewed,
+        worker=worker_envelope,
+        peer=peer_envelope,
+        expectation=expectation,
+        verified=verified,
+        ev=ev,
+    )
+
+
+def _compare_dual_role(
+    world, *, worker_observed_bytes, peer_observed_bytes, peer, verified
+):
+    return verify_and_compare_worker_closure(
+        reviewed_graph=world.reviewed,
+        worker_envelope=world.worker,
+        worker_observed_bytes=worker_observed_bytes,
+        peer_envelope=peer,
+        peer_observed_bytes=peer_observed_bytes,
+        expectation=world.expectation,
+        verified_origins=verified,
+        bookkeeper=CoverageBookkeeper(),
+        load_stream_refs=(make_event_range(0, 8, 0),),
+        boundary="C_BEFORE_COUNT",
+        evidence=world.ev,
+    )
+
+
+def _record_comparisons(monkeypatch) -> list:
+    seen: list = []
+    landed_compare = worker_closure_capture.compare_loaded_source
+
+    def recording_compare(*args, **kwargs):
+        result = landed_compare(*args, **kwargs)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(
+        worker_closure_capture, "compare_loaded_source", recording_compare
+    )
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code", "reaches_comparator"),
+    [
+        ("worker_origin_unavailable", RefusalCode.OBSERVATION_GAP, True),
+        ("peer_origin_unavailable", RefusalCode.OBSERVATION_GAP, True),
+        ("worker_origin_other_bytes", RefusalCode.CLOSURE_MISMATCH, False),
+        ("peer_origin_other_bytes", RefusalCode.CLOSURE_MISMATCH, False),
+        ("merged_origin_supplied", RefusalCode.CLOSURE_MISMATCH, False),
+    ],
+)
+def test_guard_bite_observer_origin_never_synthesized(
+    tmp_path: Path, monkeypatch, case, expected_code, reaches_comparator
+) -> None:
+    world = _dual_role_world(tmp_path)
+    worker_bytes, peer_bytes, verified = (
+        world.worker.content,
+        world.peer.content,
+        world.verified,
+    )
+    if case == "worker_origin_unavailable":
+        worker_bytes = None
+    elif case == "peer_origin_unavailable":
+        peer_bytes = None
+    elif case == "worker_origin_other_bytes":
+        worker_bytes = world.peer.content
+    elif case == "peer_origin_other_bytes":
+        peer_bytes = world.worker.content
+    else:
+        # The merged envelope has no observer: an origin supplied for it is the
+        # self-referential identity this guard refuses, even when it is exact.
+        dual = merge_dual_role_halves(
+            worker_envelope=world.worker,
+            worker_observed_bytes=worker_bytes,
+            peer_envelope=world.peer,
+            peer_observed_bytes=peer_bytes,
+            boundary="C_BEFORE_COUNT",
+            evidence=world.ev,
+        )
+        assert isinstance(dual, AcceptedData)
+        verified = replace(world.verified, observed_bytes=dual.data.envelope.content)
+    seen = _record_comparisons(monkeypatch)
+    res = _compare_dual_role(
+        world,
+        worker_observed_bytes=worker_bytes,
+        peer_observed_bytes=peer_bytes,
+        peer=world.peer,
+        verified=verified,
+    )
+    assert isinstance(res, Refusal)
+    assert res.code == expected_code
+    if reaches_comparator:
+        assert [(c.disposition, c.reasons) for c in seen] == [
+            ("UNKNOWN", ("OBSERVER_ORIGIN",))
+        ]
+    else:
+        assert seen == []
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_code"),
+    [
+        ("schema", RefusalCode.CLOSURE_VERSION),
+        ("binding", RefusalCode.SUBJECT_MISMATCH),
+        ("boundary", RefusalCode.SUBJECT_MISMATCH),
+        ("reviewed_graph", RefusalCode.CLOSURE_MISMATCH),
+        ("legacy_links", RefusalCode.CLOSURE_MISMATCH),
+    ],
+)
+def test_guard_bite_peer_envelope_fields_must_match_worker(
+    tmp_path: Path, monkeypatch, field, expected_code
+) -> None:
+    world = _dual_role_world(tmp_path)
+    inner = world.peer.envelope
+    if field == "schema":
+        changed = replace(inner)
+        object.__setattr__(changed, "schema", "qa-ops-host-source-closure/1")
+        peer = replace(world.peer, envelope=changed)
+    else:
+        if field == "binding":
+            changed = replace(
+                inner, binding=replace(inner.binding, execution_uuid="other-execution")
+            )
+        elif field == "boundary":
+            changed = replace(
+                inner,
+                boundary=replace(
+                    inner.boundary, validity_checkpoint="other-checkpoint"
+                ),
+            )
+        elif field == "reviewed_graph":
+            changed = replace(
+                inner,
+                reviewed_graph=replace(inner.reviewed_graph, record_id="other-graph"),
+            )
+        else:
+            legacy_ref = EvidenceRef(
+                schema="qa-ops-host-source-closure/1",
+                content=byte_content_identity("legacy-closure"),
+                supplier="qa",
+                record_id="legacy-1",
+            )
+            changed = replace(inner, legacy_links=(LegacyLink(legacy_ref, ()),))
+        peer = validate_loaded_envelope(to_wire(changed))
+    seen = _record_comparisons(monkeypatch)
+    res = _compare_dual_role(
+        world,
+        worker_observed_bytes=world.worker.content,
+        peer_observed_bytes=peer.content,
+        peer=peer,
+        verified=world.verified,
+    )
+    assert isinstance(res, Refusal)
+    assert res.code == expected_code
+    assert seen == []
+
+
+def test_merge_dual_role_halves_keeps_peer_provenance_refs(tmp_path: Path) -> None:
+    world = _dual_role_world(tmp_path)
+    host_ref = EvidenceRef(
+        schema="synthetic-evidence/1",
+        content=byte_content_identity("host-provenance"),
+        supplier="ops",
+        record_id="host-provenance-1",
+    )
+    worker_refs = world.worker.envelope.provenance_refs
+    peer = validate_loaded_envelope(
+        to_wire(replace(world.peer.envelope, provenance_refs=(*worker_refs, host_ref)))
+    )
+    dual = merge_dual_role_halves(
+        worker_envelope=world.worker,
+        worker_observed_bytes=world.worker.content,
+        peer_envelope=peer,
+        peer_observed_bytes=peer.content,
+        boundary="C_BEFORE_COUNT",
+        evidence=world.ev,
+    )
+    assert isinstance(dual, AcceptedData)
+    merged = dual.data.envelope.envelope
+    assert merged.provenance_refs == (*worker_refs, host_ref)
+    assert merged.process_observations == (
+        *peer.envelope.process_observations,
+        *world.worker.envelope.process_observations,
+    )
+    assert dual.data.observed_bytes == dual.data.envelope.content
 
 
 def test_unchanged_defaults_when_no_adapter_or_no_collector(monkeypatch) -> None:
@@ -855,7 +1120,3 @@ def test_unchanged_defaults_when_no_adapter_or_no_collector(monkeypatch) -> None
     )
     assert isinstance(runner_rec, AcceptedData)
     assert runner_rec.data.stage == "runner_bootstrap"
-
-
-
-

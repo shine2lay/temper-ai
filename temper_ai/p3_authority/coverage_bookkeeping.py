@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Final, Protocol
 
 from p3_source_closure import (
+    ALL_N3_COVERAGE_CATEGORIES,
     Checkpoint,
     LoadedClosureEnvelope,
     LoadEvent,
@@ -47,19 +48,6 @@ from temper_ai.p3_authority.contract import (
     RetryKind,
     SequenceUse,
     SharedN3,
-)
-
-ALL_N3_COVERAGE_CATEGORIES: Final[tuple[N3Coverage, ...]] = (
-    "launch",
-    "bootstrap",
-    "python",
-    "generated",
-    "cache",
-    "native",
-    "dynamic",
-    "children",
-    "control_plane",
-    "effect_fence",
 )
 
 AUTHENTICATED_STREAM_MECHANISMS: Final[frozenset[str]] = frozenset(

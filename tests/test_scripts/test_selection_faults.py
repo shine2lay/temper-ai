@@ -42,6 +42,7 @@ FAULTS = (
     Fault("scripts", "scripts/check_value.py", references_path=True),
     Fault("frontend", "frontend/probe.js", references_path=True, frontend=True, e2e=True),
     Fault("docs and project files", "docs/probe.md", references_path=True),
+    Fault("top-level packages", "p3_probe/value.py", references_path=True),
     Fault("unknown", "unknown/probe.bin", frontend=True, e2e=True),
 )
 
@@ -67,13 +68,29 @@ def _tree(fault: Fault) -> dict[str, str]:
         tree["configs/workflows/use.yaml"] = "agent: selected_agent\n"
     if fault.rule == "pure host contracts":
         tree["p3_host_contracts/__init__.py"] = ""
+    if fault.rule == "top-level packages":
+        tree["p3_probe/__init__.py"] = ""
     return tree
+
+
+def _write_keeping_mtime(path: Path, text: str) -> None:
+    """Inject a fault the way the worst case looks to Python's bytecode cache.
+
+    The file keeps the clean file's mtime, as if both were written in the same
+    second; with an equal size a cached compile of the clean file would then
+    look fresh and the fault would never run. _run's children write no cache.
+    """
+    before = path.stat()
+    path.write_text(text)
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
 
 
 def _run(repo: Path, targets: list[str], changed: str) -> tuple[int | None, dict[str, str]]:
     if not targets:
         return None, {}
-    env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", RULE_PROBE_PATH=changed, PYTHONPATH=str(repo))
+    # No bytecode cache: the clean control's compiled files must never stand in for the fault.
+    env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", RULE_PROBE_PATH=changed, PYTHONPATH=str(repo),
+               PYTHONDONTWRITEBYTECODE="1")
     env.pop("PYTEST_ADDOPTS", None)
     report = repo / "probe-results.xml"
     try:
@@ -114,7 +131,7 @@ def test_selected_checks_catch_injected_fault_after_clean_control(tmp_path: Path
 
     original = tree[fault.changed]
     changed = original.replace("assert 'good' == 'good'", "assert 'bad' == 'good'") if fault.rule == "test file" else "bad\n"
-    (tmp_path / fault.changed).write_text(changed)
+    _write_keeping_mtime(tmp_path / fault.changed, changed)
     tree[fault.changed] = changed
     selected_after = _select([st.Change(fault.changed)], tree)
     fault_exit, fault_cases = _run(tmp_path, selected_after.pytest_targets(), fault.changed)
@@ -250,6 +267,28 @@ MECHANISM_FAULTS: tuple[MechanismFault, ...] = (
         fault_content="import sys; sys.exit(1)\n",
     ),
     MechanismFault(
+        # A package beside temper_ai (land 183-03f156's p3_source_closure/): the test imports only the
+        # package, whose __init__ re-exports comparison, which imports the changed records module.
+        mechanism="top_level_package_import",
+        changed="p3_source_closure/records.py",
+        probe_test="tests/test_architecture/test_source_comparison.py",
+        extra_files={
+            "p3_source_closure/__init__.py": "from .comparison import compare\n",
+            "p3_source_closure/comparison.py": (
+                "from .records import record_kind\n"
+                "def compare():\n"
+                "    return record_kind()\n"
+            ),
+            "tests/test_architecture/test_source_comparison.py": (
+                "import p3_source_closure as public\n"
+                "def test_mechanism_probe():\n"
+                "    assert public.compare() == 'source'\n"
+            ),
+        },
+        clean_content="def record_kind():\n    return 'source'\n",
+        fault_content="def record_kind():\n    return 'broken'\n",
+    ),
+    MechanismFault(
         mechanism="sql_file_read_by_db_module",
         changed="scripts/sql/schema_check.sql",
         probe_test="tests/test_database/test_schema_sql.py",
@@ -297,7 +336,7 @@ def test_each_dependency_mechanism_catches_injected_fault(mf: MechanismFault, tm
     assert clean_exit == 0
     assert clean_cases.get("test_mechanism_probe") == "passed"
 
-    (tmp_path / mf.changed).write_text(mf.fault_content)
+    _write_keeping_mtime(tmp_path / mf.changed, mf.fault_content)
     tree[mf.changed] = mf.fault_content
     sel_fault = _select([st.Change(mf.changed)], tree)
     fault_exit, fault_cases = _run(tmp_path, sel_fault.pytest_targets(), mf.changed)

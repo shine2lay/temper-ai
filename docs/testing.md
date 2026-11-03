@@ -272,6 +272,16 @@ The pre-commit hook and GitHub's `select` job call the same script:
   `runpy.run_module(var)`, `find_spec(var)`, `spec_from_file_location(...)`) in
   a changed non-test Python file, or Python that cannot be parsed fall back to
   everything, not a missing edge.
+- **Top-level Python packages** (a folder at the repository root that holds
+  `__init__.py` in the checked tree, such as `p3_source_closure/`): a changed
+  `.py` file in one runs every test reachable from it through the dependency
+  graph that engine modules go through; unlike an engine module, it adds no
+  package test folder. The rule
+  (`top-level packages`, with `top-folder-holds = "__init__.py"`) comes last, so
+  it only takes paths no other rule names. The package's other files
+  (`py.typed`, data) and `.py` files in a root folder without `__init__.py`
+  remain unknown paths and run everything, and so does a whole package deleted
+  together with its `__init__.py`.
 - **Dashboard changes** (`frontend/**`) run the dashboard type check, unit
   tests and browser tests (`e2e`), and skip pytest unless a Python test reads
   one of the changed files.

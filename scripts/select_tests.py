@@ -59,6 +59,8 @@ HOST_PACKAGE = "p3_host_contracts"
 HOST_TESTS = "tests/test_p3_host_contracts"
 HOST_DOC = "docs/p3-host-contracts.md"
 SIMPLE_PARTS = ("full", "graph", "package-tests", "folder-tests", "frontend", "e2e", HOST_CONTRACTS)
+RULE_KEYS = {"name", "why", "paths", "parts"}
+TOP_FOLDER_HOLDS = "top-folder-holds"  # optional rule key: a file the changed path's top folder must hold
 SAFE_PATH = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
 
 
@@ -87,9 +89,17 @@ class Rule:
     paths: tuple[str, ...]
     parts: tuple[str, ...]
     patterns: tuple[re.Pattern[str], ...]
+    top_folder_holds: str = ""  # `top-folder-holds`: the file the path's top folder must hold
 
-    def matches(self, path: str) -> bool:
-        return any(p.fullmatch(path) for p in self.patterns)
+    def matches(self, path: str, tree: frozenset[str] = frozenset()) -> bool:
+        """Whether `path` takes this rule. With `top-folder-holds` the path's top folder must also
+        hold that file in `tree`, the checked tree; with no tree such a rule never matches."""
+        if not any(p.fullmatch(path) for p in self.patterns):
+            return False
+        if not self.top_folder_holds:
+            return True
+        top, slash, _ = path.partition("/")
+        return bool(slash) and f"{top}/{self.top_folder_holds}" in tree
 
 
 @dataclass(frozen=True)
@@ -97,9 +107,9 @@ class Rules:
     hubs: tuple[str, ...]
     rules: tuple[Rule, ...]
 
-    def rule_for(self, path: str) -> Rule | None:
-        """The first rule whose paths match `path`, or None (which runs everything)."""
-        return next((r for r in self.rules if r.matches(path)), None)
+    def rule_for(self, path: str, tree: frozenset[str] = frozenset()) -> Rule | None:
+        """The first rule whose paths match `path` in `tree`, or None (which runs everything)."""
+        return next((r for r in self.rules if r.matches(path, tree)), None)
 
 
 def glob_to_regex(pattern: str) -> re.Pattern[str]:
@@ -148,8 +158,8 @@ def load_rules(text: str) -> Rules:
     rules = []
     for index, raw in enumerate(data.get("rule", []), start=1):
         where = f"{RULES_PATH} rule {index}"
-        if not isinstance(raw, dict) or set(raw) != {"name", "why", "paths", "parts"}:
-            raise SelectionError(f"{where}: needs exactly name, why, paths and parts")
+        if not isinstance(raw, dict) or not RULE_KEYS <= set(raw) <= RULE_KEYS | {TOP_FOLDER_HOLDS}:
+            raise SelectionError(f"{where}: needs exactly name, why, paths and parts, and may add {TOP_FOLDER_HOLDS}")
         name, why, paths, parts = raw["name"], raw["why"], raw["paths"], raw["parts"]
         if not isinstance(name, str) or not name or not isinstance(why, str) or not why:
             raise SelectionError(f"{where}: name and why must be non-empty text")
@@ -158,7 +168,10 @@ def load_rules(text: str) -> Rules:
         if not isinstance(parts, list):
             raise SelectionError(f"{where} ({name}): parts must be a list")
         checked = tuple(_check_part(p, f"{where} ({name})") for p in parts)
-        rules.append(Rule(name, why, tuple(paths), checked, tuple(glob_to_regex(p) for p in paths)))
+        holds = raw.get(TOP_FOLDER_HOLDS, "")
+        if TOP_FOLDER_HOLDS in raw and not (isinstance(holds, str) and safe_path(holds) and "/" not in holds):
+            raise SelectionError(f"{where} ({name}): {TOP_FOLDER_HOLDS} must be one file name, like __init__.py")
+        rules.append(Rule(name, why, tuple(paths), checked, tuple(glob_to_regex(p) for p in paths), holds))
     if not rules:
         raise SelectionError(f"{RULES_PATH}: no rules")
     return Rules(tuple(hubs), tuple(rules))
@@ -246,7 +259,7 @@ def select(changes: Sequence[Change], rules: Rules, files: Iterable[str],
         return selection
     starts: dict[str, str] = {}  # where the graph starts -> the changed path it stands for
     for change in changes:
-        rule = rules.rule_for(change.path)
+        rule = rules.rule_for(change.path, tree)
         if rule is None:
             selection.run_everything(f"no rule matches {change.path} (unknown means everything)")
             return selection

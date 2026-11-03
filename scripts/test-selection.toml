@@ -18,6 +18,9 @@
 #
 # ruff and mypy run for every change; they take seconds. An empty change runs everything.
 #
+# A rule may add `top-folder-holds = "<file name>"`: it then takes a path only when the path's top
+# folder holds that file in the tree being checked (the head, or the index for a staged check).
+#
 # `hubs` name shared test plumbing: changing one, or deleting a file it still needs, runs everything.
 # They are NOT traversal stops. Conftests resolve requested/autouse fixture uses; pgtier and other
 # helpers keep ordinary imports. Every dependency of an autouse fixture reaches its entire scope.
@@ -132,4 +135,14 @@ paths = [
   ".env.example",
   ".gitignore",
 ]
+parts = ["graph"]
+
+# Last on purpose: it only takes .py files no rule above takes, and only inside a root folder that
+# is a Python package where checked (p3_source_closure/, say). The package's other files (py.typed,
+# data) and .py files in a root folder without __init__.py stay unknown, so they run everything.
+[[rule]]
+name = "top-level packages"
+why = "a Python package beside temper_ai runs in the tests that import it, run it or name it"
+paths = ["*/**/*.py"]
+top-folder-holds = "__init__.py"
 parts = ["graph"]

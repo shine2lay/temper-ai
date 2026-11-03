@@ -17,6 +17,10 @@ Known-answer cases:
 - frontend and e2e: frontend/** runs frontend + e2e (and only Python tests that read that
   frontend path); scripts/e2e_static_server.py runs e2e + its Python test
 - unknown path, empty diff, unresolvable diff: fail safe -> everything
+- top-level Python package (a root folder holding __init__.py, like p3_source_closure/ from land
+  183-03f156): its .py files run the tests that import it, directly or through a helper, not
+  everything; its other files, .py files in a root folder without __init__.py, a deleted whole
+  package and a new package with a dynamic import still run everything
 - batch union: several commits or files combine their selected sets; one full-trigger file in
   a batch upgrades the batch to everything
 - deleted file: tests or modules that still import or name the deleted path are selected; a hub
@@ -435,6 +439,92 @@ def test_dynamic_import_hotspot_in_changed_file_runs_everything_while_untouched_
     unrelated_sel = _select([st.Change("scripts/roamee_reader.py")], tree)
     assert not unrelated_sel.everything
     assert unrelated_sel.tests == {"tests/test_scripts/test_roamee.py"}
+
+
+# Land 183-03f156's shape: a package beside temper_ai, imported by one test directly and by another
+# through a helper module; plus a root folder without __init__.py and a root .py file.
+PACKAGE_TREE: dict[str, str] = {
+    **TREE,
+    "p3_source_closure/__init__.py": "from .comparison import compare\n",
+    "p3_source_closure/comparison.py": "from .records import Record\n\ndef compare():\n    return Record()\n",
+    "p3_source_closure/records.py": "class Record:\n    pass\n",
+    "p3_source_closure/py.typed": "",
+    "tests/test_architecture/source_cases.py": "from p3_source_closure import records\nCASES = (records.Record,)\n",
+    "tests/test_architecture/test_source_comparison.py": (
+        "import p3_source_closure as public\n"
+        "def test_compare():\n    assert public.compare()\n"
+    ),
+    "tests/test_architecture/test_source_regressions.py": (
+        "from tests.test_architecture.source_cases import CASES\n"
+        "def test_cases():\n    assert CASES\n"
+    ),
+    # Named after the package but never importing it: the rule follows the graph, not folder names.
+    "tests/test_p3_source_closure/test_never_imports_it.py": "def test_alone():\n    assert True\n",
+    "loose_tools/helper.py": "def helper():\n    return 1\n",
+    "root_helper.py": "def helper():\n    return 2\n",
+}
+PACKAGE_IMPORTERS = {
+    "tests/test_architecture/test_source_comparison.py",
+    "tests/test_architecture/test_source_regressions.py",
+}
+
+
+def test_top_level_package_runs_its_importers_tests_through_the_graph():
+    tree = frozenset(PACKAGE_TREE)
+    assert RULES.rule_for("p3_source_closure/records.py", tree).name == "top-level packages"
+    assert RULES.rule_for("p3_source_closure/records.py") is None  # no checked tree, no package
+    # Earlier rules keep their paths, even in root folders that hold __init__.py.
+    assert RULES.rule_for("temper_ai/tools/web_fetch.py", tree).name == "engine"
+    assert RULES.rule_for("tests/test_architecture/source_cases.py", tree).name == "test plumbing and data"
+
+    for module in ("p3_source_closure/records.py", "p3_source_closure/comparison.py", "p3_source_closure/__init__.py"):
+        sel = _select([st.Change(module)], PACKAGE_TREE)
+        assert not sel.everything, module
+        assert sel.tests == PACKAGE_IMPORTERS, module
+        assert not sel.frontend and not sel.e2e
+        assert f"{module}: rule 'top-level packages' -> graph" in sel.reasons
+
+    # 183-03f156's diff: a package module, a helper and a test file combine without everything.
+    land_183 = _select([st.Change("p3_source_closure/comparison.py"), st.Change("tests/test_architecture/source_cases.py"),
+                        st.Change("tests/test_architecture/test_source_regressions.py")], PACKAGE_TREE)
+    assert not land_183.everything and land_183.tests == PACKAGE_IMPORTERS
+
+    # A module deleted from a package that stays: tests reaching the files still importing it run.
+    without_records = {k: v for k, v in PACKAGE_TREE.items() if k != "p3_source_closure/records.py"}
+    deleted_module = _select([st.Change("p3_source_closure/records.py", deleted=True)], without_records)
+    assert not deleted_module.everything and deleted_module.tests == PACKAGE_IMPORTERS
+
+
+@pytest.mark.parametrize("unknown", ["p3_source_closure/py.typed", "loose_tools/helper.py", "root_helper.py"])
+def test_package_data_and_python_outside_packages_stay_unknown(unknown: str):
+    for changes in ([st.Change(unknown)], [st.Change("p3_source_closure/records.py"), st.Change(unknown)]):
+        sel = _select(changes, PACKAGE_TREE)
+        assert sel.everything and sel.python == "all" and sel.frontend and sel.e2e
+        assert f"everything: no rule matches {unknown} (unknown means everything)" in sel.reasons
+
+
+def test_deleted_package_and_new_package_with_dynamic_import_run_everything():
+    package = sorted(p for p in PACKAGE_TREE if p.startswith("p3_source_closure/"))
+    without_package = {k: v for k, v in PACKAGE_TREE.items() if k not in package}
+    deleted = _select([st.Change(p, deleted=True) for p in package], without_package)
+    assert deleted.everything and "everything: no rule matches p3_source_closure/__init__.py (unknown means everything)" in deleted.reasons
+
+    plugins = {
+        "p3_plugins/__init__.py": "",
+        "p3_plugins/loader.py": "import importlib\ndef load(name):\n    return importlib.import_module(name)\n",
+        "tests/test_plugins/test_loader.py": "from p3_plugins.loader import load\ndef test_load():\n    assert load('json')\n",
+    }
+    added = _select([st.Change(p) for p in plugins], {**PACKAGE_TREE, **plugins})
+    assert added.everything and added.python == "all"
+    assert "everything: dynamic import target cannot be narrowed statically in p3_plugins/loader.py" in added.reasons
+
+
+@pytest.mark.parametrize("holds", ['"pkg/__init__.py"', '""', '".."', "5"])
+def test_top_folder_holds_must_be_one_file_name(holds: str):
+    text = (ROOT / st.RULES_PATH).read_text()
+    assert text.count('top-folder-holds = "__init__.py"') == 1
+    with pytest.raises(st.SelectionError, match="top-folder-holds must be one file name"):
+        st.load_rules(text.replace('top-folder-holds = "__init__.py"', f"top-folder-holds = {holds}"))
 
 
 def test_transitive_folder_reader_does_not_cascade_from_intermediate_test_file():

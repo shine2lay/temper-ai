@@ -17,7 +17,6 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Protocol
 
-from p3_source_closure import ContentIdentity, N3Coverage
 from p3_source_closure import ProcessInstance as ClosureProcessInstance
 from temper_ai.p3_authority.contract import (
     AcceptedData,
@@ -35,13 +34,13 @@ from temper_ai.p3_authority.contract import (
     SelectedOperation,
     SequenceUse,
 )
-from temper_ai.p3_authority.coverage_bookkeeping import (
-    ALL_N3_COVERAGE_CATEGORIES,
-    make_refusal,
-)
+from temper_ai.p3_authority.coverage_bookkeeping import make_refusal
 
 if TYPE_CHECKING:
-    from temper_ai.p3_authority.worker_closure_capture import WorkerClosureCollector
+    from temper_ai.p3_authority.worker_closure_capture import (
+        ObservedLoad,
+        WorkerClosureCollector,
+    )
 
 VERIFIED_LAUNCHER_REGISTRATION_SOURCE: Final[str] = "verified_parent_launcher_provider"
 
@@ -80,6 +79,33 @@ def process_key_for(
         start_witness_ref=host_proc.start_identity.birth_witness.witness_reference,
         exec_epoch=closure_proc.exec_epoch,
     )
+
+
+def refuse_unpaired_process_instances(
+    host_proc: ProcessInstance,
+    closure_proc: ClosureProcessInstance,
+    *,
+    boundary: Boundary,
+) -> Refusal | None:
+    """Refuse RUNTIME_CHANGED unless host and closure records name the same process.
+
+    One pairing rule for the worker and its children: pid, boot, pid/mount/user
+    namespaces and launch identity must agree. ``None`` means they agree.
+    """
+    if (
+        host_proc.pid != closure_proc.pid
+        or host_proc.boot_id != closure_proc.host_boot
+        or host_proc.pid_namespace_id != closure_proc.pid_namespace
+        or host_proc.mount_namespace_id != closure_proc.mount_namespace
+        or host_proc.user_namespace_id != closure_proc.user_namespace
+        or host_proc.launch_id != closure_proc.launch_identity
+    ):
+        return make_refusal(
+            RefusalCode.RUNTIME_CHANGED,
+            boundary,
+            retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+        )
+    return None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -150,8 +176,8 @@ class ChildRegistrationRegistry:
         child_profile_id: str = "child",
         child_entrypoint_ids: tuple[str, ...] = (),
         child_runtime_nodes: tuple[str, ...] = (),
-        child_loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
-        child_coverage: tuple[N3Coverage, ...] = ALL_N3_COVERAGE_CATEGORIES,
+        child_runtime_loads: tuple[ObservedLoad, ...] = (),
+        child_loads: tuple[ObservedLoad, ...] = (),
     ) -> None:
         self._selected_job = selected_job
         self._worker_instance = worker_instance
@@ -160,8 +186,8 @@ class ChildRegistrationRegistry:
         self._child_profile_id = child_profile_id
         self._child_entrypoint_ids = child_entrypoint_ids
         self._child_runtime_nodes = child_runtime_nodes
-        self._child_loaded_nodes = child_loaded_nodes
-        self._child_coverage = child_coverage
+        self._child_runtime_loads = child_runtime_loads
+        self._child_loads = child_loads
         self._worker_key = process_key_for(worker_instance, worker_closure_instance)
         self._entries: dict[ProcessKey, RegisteredChildEntry] = {}
         self._active_by_pid: dict[tuple[str, str, int], ProcessKey] = {
@@ -317,19 +343,11 @@ class ChildRegistrationRegistry:
         closure_child = ticket.closure_instance
 
         # 3. Verify paired host_child and closure_child agree on pid/boot/namespaces
-        if (
-            host_child.pid != closure_child.pid
-            or host_child.boot_id != closure_child.host_boot
-            or host_child.pid_namespace_id != closure_child.pid_namespace
-            or host_child.mount_namespace_id != closure_child.mount_namespace
-            or host_child.user_namespace_id != closure_child.user_namespace
-            or host_child.launch_id != closure_child.launch_identity
-        ):
-            return make_refusal(
-                RefusalCode.RUNTIME_CHANGED,
-                boundary,
-                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
-            )
+        unpaired = refuse_unpaired_process_instances(
+            host_child, closure_child, boundary=boundary
+        )
+        if unpaired is not None:
+            return unpaired
 
         # 4. Verify parent process lineage (must be worker or active registered child)
         parent_ref = host_child.parent_instance
@@ -465,8 +483,8 @@ class ChildRegistrationRegistry:
                 child_profile_id=self._child_profile_id,
                 child_entrypoint_ids=self._child_entrypoint_ids,
                 child_runtime_nodes=self._child_runtime_nodes,
-                child_loaded_nodes=self._child_loaded_nodes,
-                child_coverage=self._child_coverage,
+                child_runtime_loads=self._child_runtime_loads,
+                child_loads=self._child_loads,
                 boundary=boundary,
             )
             if isinstance(cap_res, Refusal):

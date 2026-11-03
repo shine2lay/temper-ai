@@ -25,7 +25,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from p3_source_closure import ContentIdentity, N3Coverage
 from p3_source_closure import ProcessInstance as ClosureProcessInstance
 from temper_ai.p3_authority.child_registration import (
     NON_PROVIDER_REGISTRATION_SOURCES,
@@ -51,11 +50,11 @@ from temper_ai.p3_authority.contract import (
     SequenceUse,
     WorkerObservation,
 )
-from temper_ai.p3_authority.coverage_bookkeeping import (
-    ALL_N3_COVERAGE_CATEGORIES,
-    make_refusal,
+from temper_ai.p3_authority.coverage_bookkeeping import make_refusal
+from temper_ai.p3_authority.worker_closure_capture import (
+    ObservedLoad,
+    WorkerClosureCollector,
 )
-from temper_ai.p3_authority.worker_closure_capture import WorkerClosureCollector
 from temper_ai.p3_authority.worker_observation import WorkerObservationAdapter
 
 
@@ -103,12 +102,14 @@ class DockerLaunchObservationAdapter:
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
         closure_collector: WorkerClosureCollector | None = None,
+        runtime_loads: tuple[ObservedLoad, ...] = (),
         boundary: Boundary = "A_PRE_CREATE",
     ) -> None:
         self._worker_observer = worker_observer
         self._grant = grant
         self._selected_job = selected_job
         self._closure_collector = closure_collector
+        self._runtime_loads = runtime_loads
         self._boundary = boundary
         self._pre_spawn_checked = False
         self._records: list[DockerSpawnObservationRecord] = []
@@ -190,6 +191,7 @@ class DockerLaunchObservationAdapter:
                 execution_id=execution_id,
                 container_id=container_id,
                 worker_observation=obs,
+                runtime_loads=self._runtime_loads,
                 boundary=self._boundary,
             )
             if isinstance(cap_res, Refusal):
@@ -226,7 +228,7 @@ class EarlyBootstrapObservationHook:
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
         closure_collector: WorkerClosureCollector | None = None,
-        bootstrap_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
+        bootstrap_loads: tuple[ObservedLoad, ...] = (),
         use_box_profile_closure_as_complete: bool = False,
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> None:
@@ -234,7 +236,7 @@ class EarlyBootstrapObservationHook:
         self._grant = grant
         self._selected_job = selected_job
         self._closure_collector = closure_collector
-        self._bootstrap_nodes = bootstrap_nodes
+        self._bootstrap_loads = bootstrap_loads
         self._use_box_profile_closure_as_complete = use_box_profile_closure_as_complete
         self._boundary = boundary
         self._records: list[BootstrapObservationRecord] = []
@@ -271,7 +273,7 @@ class EarlyBootstrapObservationHook:
             cap_res = self._closure_collector.record_early_bootstrap(
                 execution_id=job_exec_uuid,
                 had_box_profile=had_box_profile,
-                bootstrap_nodes=self._bootstrap_nodes,
+                bootstrap_loads=self._bootstrap_loads,
                 use_box_profile_closure_as_complete=self._use_box_profile_closure_as_complete,
                 boundary=self._boundary,
             )
@@ -296,24 +298,14 @@ class RunnerBootstrapObservationHook:
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
         closure_collector: WorkerClosureCollector | None = None,
-        loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
-        categories: tuple[N3Coverage, ...] = (
-            "python",
-            "generated",
-            "cache",
-            "native",
-            "dynamic",
-            "control_plane",
-            "effect_fence",
-        ),
+        loads: tuple[ObservedLoad, ...] = (),
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> None:
         self._worker_observer = worker_observer
         self._grant = grant
         self._selected_job = selected_job
         self._closure_collector = closure_collector
-        self._loaded_nodes = loaded_nodes
-        self._categories = categories
+        self._loads = loads
         self._boundary = boundary
         self._records: list[BootstrapObservationRecord] = []
 
@@ -354,8 +346,7 @@ class RunnerBootstrapObservationHook:
         if self._closure_collector is not None:
             cap_res = self._closure_collector.record_runner_bootstrap(
                 execution_id=execution_id,
-                loaded_nodes=self._loaded_nodes,
-                categories=self._categories,
+                loads=self._loads,
                 boundary=self._boundary,
             )
             if isinstance(cap_res, Refusal):
@@ -408,8 +399,8 @@ class BashChildLaunchAdapter:
         child_profile_id: str = "child",
         child_entrypoint_ids: tuple[str, ...] = (),
         child_runtime_nodes: tuple[str, ...] = (),
-        child_loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
-        child_coverage: tuple[N3Coverage, ...] = ALL_N3_COVERAGE_CATEGORIES,
+        child_runtime_loads: tuple[ObservedLoad, ...] = (),
+        child_loads: tuple[ObservedLoad, ...] = (),
         boundary: Boundary = "C_PRE_EXECUTION",
     ) -> None:
         self._worker_observer = worker_observer
@@ -423,8 +414,8 @@ class BashChildLaunchAdapter:
         self._child_profile_id = child_profile_id
         self._child_entrypoint_ids = child_entrypoint_ids
         self._child_runtime_nodes = child_runtime_nodes
-        self._child_loaded_nodes = child_loaded_nodes
-        self._child_coverage = child_coverage
+        self._child_runtime_loads = child_runtime_loads
+        self._child_loads = child_loads
         self._boundary = boundary
         self._pre_spawn_checks: int = 0
         self._spawn_registrations: int = 0
@@ -525,8 +516,8 @@ class BashChildLaunchAdapter:
                 child_profile_id=self._child_profile_id,
                 child_entrypoint_ids=self._child_entrypoint_ids,
                 child_runtime_nodes=self._child_runtime_nodes,
-                child_loaded_nodes=self._child_loaded_nodes,
-                child_coverage=self._child_coverage,
+                child_runtime_loads=self._child_runtime_loads,
+                child_loads=self._child_loads,
                 boundary=self._boundary,
             )
             if isinstance(cap_res, Refusal):

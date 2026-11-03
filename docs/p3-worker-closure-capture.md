@@ -27,7 +27,8 @@ All capture hooks are **inert and switched off by default**:
 | --- | --- |
 | `CapturedGitCheckoutProvenance` | Immutable bundle of validated `RepositoryState`, per-file `GitProvenance` records, `SourceNode` (`kind="git_source"`) entries, and `VerifiedOriginFact` (`purpose="membership"`) witnesses for a clean Git checkout. |
 | `capture_git_checkout_provenance(...)` | Reads the HEAD commit, tree, tracked blob OIDs/modes and index straight from the explicit checkout's `.git` files (HEAD, refs, `packed-refs`, zlib loose objects, index; no subprocess), hashes every worktree file, and validates the result with `p3_source_closure.provenance.check_provenance`. |
-| `WorkerClosureCollector` | Opt-in stateful collector wired into launch, early bootstrap, runner bootstrap, script launch, and verified child registration hooks to assemble the worker-half `LoadedClosureEnvelope` (`build_envelope`, checked by `validate_loaded_envelope`), its `ExpectedProcess` entries (`expected_processes()`) and `VerifiedOriginFact` witnesses (`verified_origin_facts()`). |
+| `ObservedLoad` | One load the observer saw: `node_id`, `loaded` (the identity of the loaded bytes, never of the node name) and `categories` (the observed stream's labels for it; distinct, from `LOAD_COVERAGE_CATEGORIES`). |
+| `WorkerClosureCollector` | Opt-in stateful collector wired into launch, early bootstrap, runner bootstrap, script launch, and verified child registration hooks to assemble the worker-half `LoadedClosureEnvelope` (`build_envelope`, checked by `validate_loaded_envelope`). It supplies no `ExpectedProcess` entries or `VerifiedOriginFact` witnesses: those come from the caller's own observer record, so the collector never witnesses its own claims. |
 | `merge_dual_role_halves(...)` -> `DualRoleEnvelope` | Checks the worker half and the peer (host) half and each half's supplied observer identity, then merges them into one envelope whose observer origin is derived, never supplied (see below). |
 | `verify_and_compare_worker_closure(...)` | Validates the reviewed graph, merges the halves with `merge_dual_role_halves`, requires both the `host` and `container` roles (`CoverageBookkeeper.verify_envelope(require_dual_role=True)`), then delegates semantic comparison to `p3_source_closure.compare_loaded_source`; accepts only `MATCH` with no reasons. |
 
@@ -37,20 +38,23 @@ All capture hooks are **inert and switched off by default**:
 
 1. **`DockerLaunchObservationAdapter`** (`temper_ai/p3_authority/launch_adapters.py`):
    - Accepts `closure_collector: WorkerClosureCollector | None = None`.
-   - When provided, `after_container_start` records the worker process start event,
-     runtime nodes (`interpreter`, `stdlib`), and `"launch"` coverage.
+   - Accepts `closure_collector: WorkerClosureCollector | None = None` and
+     `runtime_loads: tuple[ObservedLoad, ...] = ()`.
+   - When provided, `after_container_start` passes the authenticated
+     `WorkerObservation` to `record_docker_launch`, which binds the closure to it
+     before recording anything (see "Launch binding" below), then records the worker's
+     trusted start (`"launch"`), its observed runtime loads, and takes the worker's
+     epoch from the observed `exec_generation` witness.
 2. **`EarlyBootstrapObservationHook`** (`temper_ai/p3_authority/launch_adapters.py`):
    - Accepts `closure_collector: WorkerClosureCollector | None = None`,
-     `bootstrap_nodes: tuple[tuple[str, ContentIdentity], ...] = ()`, and
+     `bootstrap_loads: tuple[ObservedLoad, ...] = ()`, and
      `use_box_profile_closure_as_complete: bool = False`.
-   - Records pre-request bootstrap module loads and `"bootstrap"` coverage.
-     Explicitly ignores `box_profile.closure` as complete coverage.
+   - Records the observed pre-request bootstrap loads. Explicitly ignores
+     `box_profile.closure` as complete coverage.
 3. **`RunnerBootstrapObservationHook`** (`temper_ai/p3_authority/launch_adapters.py`):
-   - Accepts `closure_collector: WorkerClosureCollector | None = None`,
-     `loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = ()`, and
-     `coverage_categories: tuple[N3Coverage, ...]`.
-   - Records worker module, generated, cache, native, dynamic, control-plane, and
-     effect-fence loads prior to runner execution.
+   - Accepts `closure_collector: WorkerClosureCollector | None = None` and
+     `loads: tuple[ObservedLoad, ...] = ()`.
+   - Records the observed loads before runner execution.
 4. **`ScriptLaunchObservationAdapter`** (`temper_ai/p3_authority/launch_adapters.py`):
    - Accepts `closure_collector: WorkerClosureCollector | None = None`.
    - Verifies that launch, early bootstrap, and runner bootstrap were already
@@ -59,16 +63,53 @@ All capture hooks are **inert and switched off by default**:
 5. **`ChildRegistrationRegistry` / `BashChildLaunchAdapter`**
    (`temper_ai/p3_authority/child_registration.py`, `launch_adapters.py`):
    - Accepts `closure_collector: WorkerClosureCollector | None = None` plus child
-     profile/node metadata.
-   - Records child spawn and sealed child `ProcessObservation` only after
-     `VERIFIED_LAUNCHER_REGISTRATION_SOURCE` verification (`ChildLaunchVerificationPort`).
-     Any non-provider surrogate registration (`refuse_surrogate_child_registration`)
+     profile/node metadata and `child_runtime_loads` / `child_loads:
+     tuple[ObservedLoad, ...]`.
+   - Records the child's birth (the worker's `"children"` event and the child's
+     `"launch"`) only after `VERIFIED_LAUNCHER_REGISTRATION_SOURCE` verification
+     (`ChildLaunchVerificationPort`); the child's `"children"` coverage only from its
+     observed termination (`record_child_termination`, from `on_terminated`). Any
+     non-provider surrogate registration (`refuse_surrogate_child_registration`)
      taints the collector (`PEER_UNVERIFIED`).
+   - The host/closure pairing check (`refuse_unpaired_process_instances`: pid, boot,
+     pid/mount/user namespaces, launch identity -> `RUNTIME_CHANGED`) is one function,
+     used for children and for the worker's launch binding.
 6. **`CoverageBookkeeper.verify_envelope`**
    (`temper_ai/p3_authority/coverage_bookkeeping.py`):
    - Accepts `require_dual_role: bool = False`. When `True`, the envelope's process
      observation locations must be exactly `{"host", "container"}`
      (`CLOSURE_INCOMPLETE` otherwise). The default keeps every current caller unchanged.
+
+---
+
+## Launch Binding (worker half)
+
+`record_docker_launch` refuses, before recording anything, unless the closure names
+the observed worker and its job:
+- the observed `worker_instance` pairs with the collector's worker `ProcessInstance`
+  (`refuse_unpaired_process_instances`) -> else `RUNTIME_CHANGED`;
+- `WorkerObservation.selection_revision` and the observed job's `selection_revision`
+  equal `ClosureBinding.selection_revision`, and the job's `job_revision` equals
+  `ClosureBinding.job_revision` -> else `SELECTION_CHANGED`;
+- the job's `route` equals `ClosureBinding.route` -> else `ROUTE_UNSUPPORTED`;
+- the job is a running `JobKey` (a `PreDispatchJob` has no nonce or attempt to bind)
+  whose `execution_uuid`, `dispatch_nonce` and `running_attempt` equal the binding's
+  `execution_uuid`, `dispatch_nonce` and `attempt` -> else `DISPATCH_CHANGED`.
+
+The codes follow `selection_snapshot.py` and `docs/p3-selection-snapshot.md`.
+
+## Coverage Is Observed, Never Declared
+
+No hook, adapter or registry takes a coverage or category argument. A category counts
+for a process only through what the observer saw for that process:
+- `launch`: the worker's bound Docker launch; a child's verified registration;
+- `children`: the worker's verified child event; a child's observed termination;
+- every other category: the `categories` labels of that process's `ObservedLoad`s.
+
+`build_envelope` checks every process, worker and child: a missing `effect_fence` or
+`control_plane` is `OBSERVATION_GAP`, any other missing category
+`CLOSURE_INCOMPLETE`; an unterminated child, and a worker with no observed child, are
+`CLOSURE_INCOMPLETE` (fail closed).
 
 ---
 
@@ -109,7 +150,11 @@ puts the peer's process observations before the worker's, keeps every distinct
 
 | Condition | Refusal Code |
 | --- | --- |
-| Late attach, skipped launch/bootstrap stage, or dropped load-stream events | `RefusalCode.OBSERVATION_GAP` |
+| Late attach, skipped launch/bootstrap stage, dropped load-stream events, or an unobserved `effect_fence` / `control_plane` category | `RefusalCode.OBSERVATION_GAP` |
+| Observed worker not paired with the closure's worker (pid, boot, namespaces, launch identity) | `RefusalCode.RUNTIME_CHANGED` |
+| Observed selection or job revision differing from the closure binding | `RefusalCode.SELECTION_CHANGED` |
+| Observed dispatch (execution, nonce, attempt) differing from the binding, or a pre-dispatch job | `RefusalCode.DISPATCH_CHANGED` |
+| Observed route differing from the binding's | `RefusalCode.ROUTE_UNSUPPORTED` |
 | Missing peer half or missing `host` / `container` role, missing any `ALL_N3_COVERAGE_CATEGORIES` category (`launch`, `bootstrap`, `python`, `generated`, `cache`, `native`, `dynamic`, `children`, `control_plane`, `effect_fence`), unauthenticated stream mechanism, or counting `box_profile.closure` as complete | `RefusalCode.CLOSURE_INCOMPLETE` |
 | Non-provider / surrogate child launcher registration (`NON_PROVIDER_REGISTRATION_SOURCES` or any source `!= VERIFIED_LAUNCHER_REGISTRATION_SOURCE`) | `RefusalCode.PEER_UNVERIFIED` |
 | Schema or version mismatch (`!= p3-reviewed-source-graph/1` or `!= p3-reviewed-loaded-closure/1`) | `RefusalCode.CLOSURE_VERSION` |

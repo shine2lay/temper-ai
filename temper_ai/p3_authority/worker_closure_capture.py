@@ -22,8 +22,9 @@ import os
 import struct
 import zlib
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Literal
 
 from p3_source_closure import (
     Checkpoint,
@@ -33,13 +34,11 @@ from p3_source_closure import (
     ContentIdentity,
     Entrypoint,
     EvidenceRef,
-    ExpectedProcess,
     GitProvenance,
     LoadedClosureEnvelope,
     LoadEvent,
     N3Coverage,
     NativeClosureExpectation,
-    ProcessFrontier,
     ProcessObservation,
     ProcessProfile,
     Repository,
@@ -57,25 +56,20 @@ from p3_source_closure import (
 from p3_source_closure import (
     ProcessInstance as ClosureProcessInstance,
 )
-from p3_source_closure.parsing import claim_identity, to_wire
-from p3_source_closure.provenance import (
-    Findings,
-    check_provenance,
-    checkpoint_claim,
-    collector_claim,
-    event_claim,
-    process_claim,
-)
+from p3_source_closure.parsing import byte_identity, claim_identity, to_wire
+from p3_source_closure.provenance import Findings, check_provenance
 from temper_ai.p3_authority.child_registration import (
     NON_PROVIDER_REGISTRATION_SOURCES,
     VERIFIED_LAUNCHER_REGISTRATION_SOURCE,
     RegisteredChildEntry,
     refuse_surrogate_child_registration,
+    refuse_unpaired_process_instances,
 )
 from temper_ai.p3_authority.contract import (
     AcceptedData,
     Boundary,
     DecisionEvidence,
+    JobKey,
     NativeEventRange,
     Refusal,
     RefusalCode,
@@ -109,9 +103,44 @@ def _is_hex40(value: str) -> bool:
 
 
 def byte_content_identity(raw: bytes | str) -> ContentIdentity:
-    """Compute SHA-256 ContentIdentity over raw bytes or UTF-8 string."""
-    data = raw.encode("utf-8") if isinstance(raw, str) else raw
-    return ContentIdentity(hashlib.sha256(data).hexdigest(), len(data))
+    """Landed ``byte_identity`` over raw bytes, or over a string's UTF-8 bytes."""
+    return byte_identity(raw.encode("utf-8") if isinstance(raw, str) else raw)
+
+
+# Categories an event, not a load, shows: a trusted start (launch) and a
+# verified child birth or an observed end of a child's stream (children).
+EVENT_COVERAGE_CATEGORIES: tuple[N3Coverage, ...] = ("launch", "children")
+LOAD_COVERAGE_CATEGORIES: tuple[N3Coverage, ...] = tuple(
+    cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat not in EVENT_COVERAGE_CATEGORIES
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ObservedLoad:
+    """One load the observer saw: node id, the loaded bytes' identity, its categories.
+
+    ``categories`` are the observed stream's labels for this load; a coverage
+    category counts for a process only through an observed load or event of it.
+    """
+
+    node_id: str
+    loaded: ContentIdentity
+    categories: tuple[N3Coverage, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.node_id, str) or not self.node_id:
+            raise ValueError("ObservedLoad.node_id must be a non-empty string")
+        if not isinstance(self.loaded, ContentIdentity):
+            raise ValueError("ObservedLoad.loaded must be a ContentIdentity")
+        if (
+            not self.categories
+            or len(set(self.categories)) != len(self.categories)
+            or any(cat not in LOAD_COVERAGE_CATEGORIES for cat in self.categories)
+        ):
+            raise ValueError(
+                "ObservedLoad.categories must be distinct load categories: "
+                + ", ".join(LOAD_COVERAGE_CATEGORIES)
+            )
 
 
 def make_evidence_ref(
@@ -457,6 +486,79 @@ def capture_git_checkout_provenance(
     )
 
 
+def stream_event(
+    profile_id: str,
+    sequence: int,
+    *,
+    kind: Literal["start", "load", "child", "end"],
+    node_id: str | None = None,
+    loaded: ContentIdentity | None = None,
+    loader: str = "loader-v1",
+    child_instance: str | None = None,
+) -> LoadEvent:
+    """One process stream's event at ``sequence``; ids and origin refs follow the profile."""
+    return LoadEvent(
+        sequence=sequence,
+        event_id=f"{profile_id}-{sequence}",
+        kind=kind,
+        node_id=node_id,
+        loaded=loaded,
+        loader=loader,
+        representation="bytes",
+        child_instance=child_instance,
+        origin_ref=make_evidence_ref(f"{profile_id}-event-{sequence}"),
+    )
+
+
+def refuse_missing_coverage(
+    coverage: set[N3Coverage] | frozenset[N3Coverage], boundary: Boundary
+) -> Refusal | None:
+    """Refuse a process missing any ``ALL_N3_COVERAGE_CATEGORIES`` entry; ``None`` if complete.
+
+    An unobserved effect fence or control plane is an observation gap; any other
+    missing category leaves the closure incomplete.
+    """
+    missing = [cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat not in coverage]
+    if not missing:
+        return None
+    if "effect_fence" in missing or "control_plane" in missing:
+        return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
+    return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
+
+
+@dataclass(slots=True, kw_only=True)
+class _ChildStream:
+    """A verified child's stream while the collector runs; sealed by ``build_envelope``."""
+
+    profile_id: str
+    instance: ClosureProcessInstance
+    epoch: str
+    entrypoint_ids: tuple[str, ...]
+    runtime_nodes: tuple[str, ...]
+    events: list[LoadEvent] = field(default_factory=list)
+    coverage: set[N3Coverage] = field(default_factory=set)
+    terminated: bool = False
+
+    def append(
+        self,
+        *,
+        kind: Literal["start", "load", "child", "end"],
+        node_id: str | None = None,
+        loaded: ContentIdentity | None = None,
+        loader: str = "loader-v1",
+    ) -> LoadEvent:
+        event = stream_event(
+            self.profile_id,
+            len(self.events),
+            kind=kind,
+            node_id=node_id,
+            loaded=loaded,
+            loader=loader,
+        )
+        self.events.append(event)
+        return event
+
+
 class WorkerClosureCollector:
     """Opt-in collector assembling the worker-half LoadedClosureEnvelope.
 
@@ -464,8 +566,13 @@ class WorkerClosureCollector:
     - Never counts ``box_profile.closure`` as complete coverage or a verified load.
     - Never counts an unverified/surrogate launcher registration
       (``refuse_surrogate_child_registration``) as complete coverage or authentic origin.
+    - Binds the closure to the authenticated ``WorkerObservation``: worker process
+      pairing, selection, job revision, dispatch identity and route.
+    - Coverage is derived, never declared: ``launch`` from a bound trusted start,
+      ``children`` from an accepted verified child event (worker) or an observed
+      termination (child), every other category only from ``ObservedLoad.categories``.
     - Validates the resulting ``LoadedClosureEnvelope`` with ``validate_loaded_envelope``
-      and requires all 10 ``ALL_N3_COVERAGE_CATEGORIES``.
+      and requires all 10 ``ALL_N3_COVERAGE_CATEGORIES`` for every process.
     """
 
     def __init__(
@@ -483,7 +590,6 @@ class WorkerClosureCollector:
         collector_version: str = WORKER_CLOSURE_COLLECTOR_VERSION,
         mechanism: str = WORKER_CLOSURE_MECHANISM,
         envelope_id: str = "envelope-worker-1",
-        worker_epoch: str = "epoch-worker",
         evidence: DecisionEvidence,
     ) -> None:
         self._binding = binding
@@ -498,7 +604,7 @@ class WorkerClosureCollector:
         self._collector_version = collector_version
         self._mechanism = mechanism
         self._envelope_id = envelope_id
-        self._worker_epoch = worker_epoch
+        self._worker_epoch: str | None = None
         self._evidence = evidence
 
         self._launch_observed = False
@@ -510,9 +616,8 @@ class WorkerClosureCollector:
 
         self._coverage: set[N3Coverage] = set()
         self._worker_events: list[LoadEvent] = []
-        self._child_observations: dict[str, ProcessObservation] = {}
+        self._children: dict[str, _ChildStream] = {}
         self._child_frontier_ids: list[str] = []
-        self._terminated_children: set[str] = set()
 
     @property
     def box_profile_closure_ignored(self) -> bool:
@@ -529,27 +634,85 @@ class WorkerClosureCollector:
     def _append_worker_event(
         self,
         *,
-        kind: str,
+        kind: Literal["start", "load", "child", "end"],
         node_id: str | None = None,
         loaded: ContentIdentity | None = None,
         loader: str = "loader-v1",
         child_instance: str | None = None,
     ) -> LoadEvent:
-        seq = len(self._worker_events)
-        ev_id = f"{self._worker_profile_id}-{seq}"
-        ev = LoadEvent(
-            sequence=seq,
-            event_id=ev_id,
-            kind=kind,  # type: ignore[arg-type]
+        ev = stream_event(
+            self._worker_profile_id,
+            len(self._worker_events),
+            kind=kind,
             node_id=node_id,
             loaded=loaded,
             loader=loader,
-            representation="bytes",
             child_instance=child_instance,
-            origin_ref=make_evidence_ref(f"{self._worker_profile_id}-event-{seq}"),
         )
         self._worker_events.append(ev)
         return ev
+
+    def _append_worker_loads(self, loads: Sequence[ObservedLoad]) -> tuple[LoadEvent, ...]:
+        added: list[LoadEvent] = []
+        for load in loads:
+            added.append(
+                self._append_worker_event(kind="load", node_id=load.node_id, loaded=load.loaded)
+            )
+            self._coverage.update(load.categories)
+        return tuple(added)
+
+    def _refuse_unbound_observation(
+        self, observation: WorkerObservation, boundary: Boundary
+    ) -> Refusal | None:
+        """Refuse unless the closure binding names the observed worker and its job."""
+        unpaired = refuse_unpaired_process_instances(
+            observation.worker_instance, self._worker_instance, boundary=boundary
+        )
+        if unpaired is not None:
+            return unpaired
+        binding = self._binding
+        job = observation.job
+        if (
+            observation.selection_revision != binding.selection_revision
+            or job.selection_revision != binding.selection_revision
+        ):
+            return make_refusal(
+                RefusalCode.SELECTION_CHANGED,
+                boundary,
+                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+            )
+        if getattr(job, "route", binding.route) != binding.route:
+            return make_refusal(
+                RefusalCode.ROUTE_UNSUPPORTED,
+                boundary,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+            )
+        target = job.pre_dispatch_or_running_job
+        if not isinstance(target, JobKey):
+            # A pre-dispatch job has no dispatch nonce or attempt to bind.
+            return make_refusal(
+                RefusalCode.DISPATCH_CHANGED,
+                boundary,
+                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+            )
+        if target.job_revision != binding.job_revision:
+            return make_refusal(
+                RefusalCode.SELECTION_CHANGED,
+                boundary,
+                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+            )
+        dispatch = target.dispatch
+        if (
+            dispatch.execution_uuid != binding.execution_uuid
+            or dispatch.dispatch_nonce != binding.dispatch_nonce
+            or dispatch.running_attempt != binding.attempt
+        ):
+            return make_refusal(
+                RefusalCode.DISPATCH_CHANGED,
+                boundary,
+                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+            )
+        return None
 
     def record_docker_launch(
         self,
@@ -557,6 +720,7 @@ class WorkerClosureCollector:
         execution_id: str,
         container_id: str,
         worker_observation: WorkerObservation,
+        runtime_loads: Sequence[ObservedLoad] = (),
         boundary: Boundary = "A_PRE_CREATE",
     ) -> Result[LoadEvent]:
         if execution_id != self._binding.execution_uuid:
@@ -574,17 +738,14 @@ class WorkerClosureCollector:
                 boundary,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
-        _ = worker_observation
+        unbound = self._refuse_unbound_observation(worker_observation, boundary)
+        if unbound is not None:
+            return unbound
+        self._worker_epoch = worker_observation.worker_instance.exec_generation.witness_reference
         self._launch_observed = True
         self._coverage.add("launch")
         ev = self._append_worker_event(kind="start", loader="trusted-launch")
-        for rt_node in self._worker_runtime_nodes:
-            self._append_worker_event(
-                kind="load",
-                node_id=rt_node,
-                loaded=byte_content_identity(rt_node),
-                loader="loader-v1",
-            )
+        self._append_worker_loads(runtime_loads)
         return AcceptedData(data=ev, evidence=self._evidence)
 
     def record_early_bootstrap(
@@ -592,7 +753,7 @@ class WorkerClosureCollector:
         *,
         execution_id: str,
         had_box_profile: bool,
-        bootstrap_nodes: Sequence[tuple[str, ContentIdentity]] = (),
+        bootstrap_loads: Sequence[ObservedLoad] = (),
         use_box_profile_closure_as_complete: bool = False,
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> Result[tuple[LoadEvent, ...]]:
@@ -602,38 +763,19 @@ class WorkerClosureCollector:
         if had_box_profile or use_box_profile_closure_as_complete:
             # Guard invariant: box_profile.closure never counts as complete coverage.
             self._box_profile_closure_ignored = True
-            if use_box_profile_closure_as_complete and not bootstrap_nodes:
+            if use_box_profile_closure_as_complete and not bootstrap_loads:
                 return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
-        if not bootstrap_nodes:
+        if not bootstrap_loads:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
-        added: list[LoadEvent] = []
-        for node_id, content in bootstrap_nodes:
-            added.append(
-                self._append_worker_event(
-                    kind="load",
-                    node_id=node_id,
-                    loaded=content,
-                    loader="loader-v1",
-                )
-            )
+        added = self._append_worker_loads(bootstrap_loads)
         self._early_bootstrap_observed = True
-        self._coverage.add("bootstrap")
-        return AcceptedData(data=tuple(added), evidence=self._evidence)
+        return AcceptedData(data=added, evidence=self._evidence)
 
     def record_runner_bootstrap(
         self,
         *,
         execution_id: str,
-        loaded_nodes: Sequence[tuple[str, ContentIdentity]] = (),
-        categories: Sequence[N3Coverage] = (
-            "python",
-            "generated",
-            "cache",
-            "native",
-            "dynamic",
-            "control_plane",
-            "effect_fence",
-        ),
+        loads: Sequence[ObservedLoad] = (),
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> Result[tuple[LoadEvent, ...]]:
         if (
@@ -643,22 +785,11 @@ class WorkerClosureCollector:
         ):
             self._late_attach_tainted = True
             return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
-        if not loaded_nodes:
+        if not loads:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
-        added: list[LoadEvent] = []
-        for node_id, content in loaded_nodes:
-            added.append(
-                self._append_worker_event(
-                    kind="load",
-                    node_id=node_id,
-                    loaded=content,
-                    loader="loader-v1",
-                )
-            )
+        added = self._append_worker_loads(loads)
         self._runner_bootstrap_observed = True
-        for cat in categories:
-            self._coverage.add(cat)
-        return AcceptedData(data=tuple(added), evidence=self._evidence)
+        return AcceptedData(data=added, evidence=self._evidence)
 
     def record_script_launch(
         self,
@@ -697,10 +828,16 @@ class WorkerClosureCollector:
         child_profile_id: str = "child",
         child_entrypoint_ids: tuple[str, ...] = ("child-entry",),
         child_runtime_nodes: tuple[str, ...] = ("interpreter-worker", "stdlib-worker"),
-        child_loaded_nodes: Sequence[tuple[str, ContentIdentity]] = (),
-        child_coverage: tuple[N3Coverage, ...] = ALL_N3_COVERAGE_CATEGORIES,
+        child_runtime_loads: Sequence[ObservedLoad] = (),
+        child_loads: Sequence[ObservedLoad] = (),
         boundary: Boundary = "C_PRE_EXECUTION",
-    ) -> Result[ProcessObservation]:
+    ) -> Result[LoadEvent]:
+        """Record a verified child birth: the worker's child event and the child's stream.
+
+        The child's ``launch`` counts from the verified registration; its load
+        categories only from its observed loads; ``children`` only once its
+        termination is observed (``record_child_termination``).
+        """
         if (
             registration_source in NON_PROVIDER_REGISTRATION_SOURCES
             or registration_source != VERIFIED_LAUNCHER_REGISTRATION_SOURCE
@@ -722,116 +859,48 @@ class WorkerClosureCollector:
                 boundary,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
-        self._append_worker_event(
+        worker_event = self._append_worker_event(
             kind="child",
             loader="trusted-launch",
             child_instance=c_inst.instance_id,
         )
         if c_inst.instance_id not in self._child_frontier_ids:
             self._child_frontier_ids.append(c_inst.instance_id)
+        self._coverage.add("children")
 
-        eff_entrypoints = child_entrypoint_ids or (f"{child_profile_id}-entry",)
-        eff_runtime = child_runtime_nodes or self._worker_runtime_nodes
-        c_events: list[LoadEvent] = [
-            LoadEvent(
-                sequence=0,
-                event_id=f"{child_profile_id}-0",
-                kind="start",
-                node_id=None,
-                loaded=None,
-                loader="trusted-launch",
-                representation="bytes",
-                child_instance=None,
-                origin_ref=make_evidence_ref(f"{child_profile_id}-event-0"),
-            )
-        ]
-        for rt_node in eff_runtime:
-            seq = len(c_events)
-            c_events.append(
-                LoadEvent(
-                    sequence=seq,
-                    event_id=f"{child_profile_id}-{seq}",
-                    kind="load",
-                    node_id=rt_node,
-                    loaded=byte_content_identity(rt_node),
-                    loader="loader-v1",
-                    representation="bytes",
-                    child_instance=None,
-                    origin_ref=make_evidence_ref(f"{child_profile_id}-event-{seq}"),
-                )
-            )
-        for nid, cid in child_loaded_nodes:
-            seq = len(c_events)
-            c_events.append(
-                LoadEvent(
-                    sequence=seq,
-                    event_id=f"{child_profile_id}-{seq}",
-                    kind="load",
-                    node_id=nid,
-                    loaded=cid,
-                    loader="loader-v1",
-                    representation="bytes",
-                    child_instance=None,
-                    origin_ref=make_evidence_ref(f"{child_profile_id}-event-{seq}"),
-                )
-            )
-        end_seq = len(c_events)
-        c_events.append(
-            LoadEvent(
-                sequence=end_seq,
-                event_id=f"{child_profile_id}-{end_seq}",
-                kind="end",
-                node_id=None,
-                loaded=None,
-                loader="trusted-launch",
-                representation="bytes",
-                child_instance=None,
-                origin_ref=make_evidence_ref(f"{child_profile_id}-event-{end_seq}"),
-            )
-        )
-        c_cp = Checkpoint(
-            epoch=f"epoch-{child_profile_id}",
-            first_sequence=0,
-            last_sequence=len(c_events) - 1,
-            last_event_id=c_events[-1].event_id,
-            child_frontier=(),
-            coverage=child_coverage,
-            gaps=(),
-            loss_count=0,
-            sealed=True,
-            initial_state_ref=make_evidence_ref(f"initial-{child_profile_id}"),
-            checkpoint_ref=make_evidence_ref(f"checkpoint-{child_profile_id}"),
-            boundary=self._closure_boundary,
-        )
-        c_obs = ProcessObservation(
+        child = _ChildStream(
             profile_id=child_profile_id,
             instance=c_inst,
-            binding=self._binding,
-            graph_id=self._graph_id,
-            entrypoint_ids=eff_entrypoints,
-            runtime_nodes=eff_runtime,
-            collector_id=self._collector_id,
-            collector_version=self._collector_version,
-            mechanism=self._mechanism,
-            process_ref=make_evidence_ref(f"process-{child_profile_id}"),
-            collector_ref=make_evidence_ref(f"collector-{child_profile_id}"),
-            events=tuple(c_events),
-            checkpoint=c_cp,
-            state="terminated",
+            epoch=entry.host_instance.exec_generation.witness_reference,
+            entrypoint_ids=child_entrypoint_ids or (f"{child_profile_id}-entry",),
+            runtime_nodes=child_runtime_nodes or self._worker_runtime_nodes,
         )
-        self._child_observations[c_inst.instance_id] = c_obs
-        self._coverage.add("children")
-        return AcceptedData(data=c_obs, evidence=self._evidence)
+        child.append(kind="start", loader="trusted-launch")
+        child.coverage.add("launch")
+        for load in (*child_runtime_loads, *child_loads):
+            child.append(kind="load", node_id=load.node_id, loaded=load.loaded)
+            child.coverage.update(load.categories)
+        self._children[c_inst.instance_id] = child
+        return AcceptedData(data=worker_event, evidence=self._evidence)
 
     def record_child_termination(
         self,
         *,
         child_instance_id: str,
         boundary: Boundary = "C_PRE_EXECUTION",
-    ) -> Result[None]:
-        _ = boundary
-        self._terminated_children.add(child_instance_id)
-        return AcceptedData(data=None, evidence=self._evidence)
+    ) -> Result[LoadEvent]:
+        """Close a recorded child's stream with its observed end.
+
+        A leaf child's stream closed by an observed end is what shows its
+        ``children`` coverage; an unknown or already closed child is a gap.
+        """
+        child = self._children.get(child_instance_id)
+        if child is None or child.terminated:
+            return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
+        end_event = child.append(kind="end", loader="trusted-launch")
+        child.terminated = True
+        child.coverage.add("children")
+        return AcceptedData(data=end_event, evidence=self._evidence)
 
     def build_envelope(
         self,
@@ -853,49 +922,42 @@ class WorkerClosureCollector:
         if self._mechanism not in AUTHENTICATED_STREAM_MECHANISMS:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, eff_boundary)
 
-        missing = [
-            cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat not in self._coverage
-        ]
-        if missing or not self._worker_events:
-            if "effect_fence" in missing or "control_plane" in missing:
-                return make_refusal(RefusalCode.OBSERVATION_GAP, eff_boundary)
+        if not self._worker_events or self._worker_epoch is None:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, eff_boundary)
+        # Every process, worker and child, needs every category observed for it.
+        for coverage in (self._coverage, *(c.coverage for c in self._children.values())):
+            missing_refusal = refuse_missing_coverage(coverage, eff_boundary)
+            if missing_refusal is not None:
+                return missing_refusal
 
-        ordered_coverage = tuple(
-            cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat in self._coverage
-        )
-        w_cp = Checkpoint(
-            epoch=self._worker_epoch,
-            first_sequence=0,
-            last_sequence=len(self._worker_events) - 1,
-            last_event_id=self._worker_events[-1].event_id,
-            child_frontier=tuple(self._child_frontier_ids),
-            coverage=ordered_coverage,
-            gaps=(),
-            loss_count=0,
-            sealed=True,
-            initial_state_ref=make_evidence_ref(f"initial-{self._worker_profile_id}"),
-            checkpoint_ref=make_evidence_ref(f"checkpoint-{self._worker_profile_id}"),
-            boundary=self._closure_boundary,
-        )
-        w_obs = ProcessObservation(
+        w_obs = self._sealed_observation(
             profile_id=self._worker_profile_id,
             instance=self._worker_instance,
-            binding=self._binding,
-            graph_id=self._graph_id,
+            epoch=self._worker_epoch,
             entrypoint_ids=self._worker_entrypoint_ids,
             runtime_nodes=self._worker_runtime_nodes,
-            collector_id=self._collector_id,
-            collector_version=self._collector_version,
-            mechanism=self._mechanism,
-            process_ref=make_evidence_ref(f"process-{self._worker_profile_id}"),
-            collector_ref=make_evidence_ref(f"collector-{self._worker_profile_id}"),
             events=tuple(self._worker_events),
-            checkpoint=w_cp,
+            child_frontier=tuple(self._child_frontier_ids),
+            coverage=self._coverage,
             state="running",
         )
-        self._last_worker_obs = w_obs
-        processes = (w_obs, *self._child_observations.values())
+        processes = (
+            w_obs,
+            *(
+                self._sealed_observation(
+                    profile_id=child.profile_id,
+                    instance=child.instance,
+                    epoch=child.epoch,
+                    entrypoint_ids=child.entrypoint_ids,
+                    runtime_nodes=child.runtime_nodes,
+                    events=tuple(child.events),
+                    child_frontier=(),
+                    coverage=child.coverage,
+                    state="terminated",
+                )
+                for child in self._children.values()
+            ),
+        )
         raw_env = ClosureEnvelope(
             schema="p3-reviewed-loaded-closure/1",
             envelope_id=self._envelope_id,
@@ -917,74 +979,51 @@ class WorkerClosureCollector:
             return make_refusal(code, eff_boundary)
         return AcceptedData(data=validated, evidence=self._evidence)
 
-    def verified_origin_facts(self) -> tuple[VerifiedOriginFact, ...]:
-        """Return VerifiedOriginFact records for worker and child process observations."""
-        w_obs: ProcessObservation = self._last_worker_obs
-        facts: list[VerifiedOriginFact] = []
-        for obs in (w_obs, *self._child_observations.values()):
-            assert obs.process_ref is not None
-            assert obs.collector_ref is not None
-            assert obs.checkpoint.initial_state_ref is not None
-            assert obs.checkpoint.checkpoint_ref is not None
-            facts.append(
-                VerifiedOriginFact(
-                    obs.process_ref, "process", claim_identity(process_claim(obs))
-                )
-            )
-            facts.append(
-                VerifiedOriginFact(
-                    obs.collector_ref, "collector", claim_identity(collector_claim(obs))
-                )
-            )
-            facts.append(
-                VerifiedOriginFact(
-                    obs.checkpoint.initial_state_ref,
-                    "collector",
-                    claim_identity(("initial", collector_claim(obs))),
-                )
-            )
-            facts.append(
-                VerifiedOriginFact(
-                    obs.checkpoint.checkpoint_ref,
-                    "checkpoint",
-                    claim_identity(checkpoint_claim(obs)),
-                )
-            )
-            for ev in obs.events:
-                assert ev.origin_ref is not None
-                facts.append(
-                    VerifiedOriginFact(
-                        ev.origin_ref,
-                        "event",
-                        claim_identity(event_claim(obs, ev)),
-                    )
-                )
-        return tuple(facts)
+    def _sealed_observation(
+        self,
+        *,
+        profile_id: str,
+        instance: ClosureProcessInstance,
+        epoch: str,
+        entrypoint_ids: tuple[str, ...],
+        runtime_nodes: tuple[str, ...],
+        events: tuple[LoadEvent, ...],
+        child_frontier: tuple[str, ...],
+        coverage: set[N3Coverage],
+        state: Literal["running", "terminated"],
+    ) -> ProcessObservation:
+        """One process's observation, sealed at its last recorded event."""
+        checkpoint = Checkpoint(
+            epoch=epoch,
+            first_sequence=0,
+            last_sequence=len(events) - 1,
+            last_event_id=events[-1].event_id,
+            child_frontier=child_frontier,
+            coverage=tuple(cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat in coverage),
+            gaps=(),
+            loss_count=0,
+            sealed=True,
+            initial_state_ref=make_evidence_ref(f"initial-{profile_id}"),
+            checkpoint_ref=make_evidence_ref(f"checkpoint-{profile_id}"),
+            boundary=self._closure_boundary,
+        )
+        return ProcessObservation(
+            profile_id=profile_id,
+            instance=instance,
+            binding=self._binding,
+            graph_id=self._graph_id,
+            entrypoint_ids=entrypoint_ids,
+            runtime_nodes=runtime_nodes,
+            collector_id=self._collector_id,
+            collector_version=self._collector_version,
+            mechanism=self._mechanism,
+            process_ref=make_evidence_ref(f"process-{profile_id}"),
+            collector_ref=make_evidence_ref(f"collector-{profile_id}"),
+            events=events,
+            checkpoint=checkpoint,
+            state=state,
+        )
 
-    def expected_processes(self) -> tuple[ExpectedProcess, ...]:
-        """Return ExpectedProcess entries for the worker and its verified children."""
-        w_obs: ProcessObservation = self._last_worker_obs
-        out: list[ExpectedProcess] = []
-        for obs in (w_obs, *self._child_observations.values()):
-            cp = obs.checkpoint
-            assert cp.checkpoint_ref is not None
-            frontier = ProcessFrontier(
-                instance_id=obs.instance.instance_id,
-                epoch=cp.epoch,
-                last_sequence=cp.last_sequence,
-                last_event_id=cp.last_event_id,
-                child_frontier=cp.child_frontier,
-                checkpoint_ref=cp.checkpoint_ref,
-            )
-            out.append(
-                ExpectedProcess(
-                    profile_id=obs.profile_id,
-                    instance=obs.instance,
-                    frontier=frontier,
-                    coverage=ALL_N3_COVERAGE_CATEGORIES,
-                )
-            )
-        return tuple(out)
 
 
 def _target_refusal(

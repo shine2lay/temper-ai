@@ -5,7 +5,7 @@ HYPOTHESIS.md); lead DECISION-6 (08a42dc1) D6.1-D6.4, DECISION-7 (25b0b8cc) D7.3
 - Live writes are off. WRITES_ADMITTED stays False until a reviewed change turns it on, after a real admitted run
   bundle (D6.3) loads through P5, every native, access and Owner requirement holds, and #259's fresh R5' landing and
   QA's fresh receiving hold (D6.4). While it is off, open_host and run_row read nothing, load nothing and write
-  nothing: the row is BLOCKED.
+  nothing: the row is BLOCKED. settle also returns before inspecting a supplied session while writes are off.
 - The window is loaded through P5 (ops_host_client_bound.load_bound_candidate_window) once per run.
 - Run start (Ops' plan 6.2, QA duty a, D7.4): each of this writer's pending WAITING-<row>.json files must be this
   writer's valid request for that row (#126's validate_request, writer, row) and is waited on up to its ORIGINAL
@@ -45,6 +45,7 @@ HOST_ROWS = ("R-1", "R-1i", "D-1", "D-5")
 DECISION = "lead DECISION-6 (08a42dc1)"
 # D6.4: a reviewed code change turns this on, once the conditions above hold. No flag, file or profile key does.
 WRITES_ADMITTED = False
+DEFAULT_CANDIDATE_BINDINGS = None
 WRITES_OFF = (f"live host writes are not admitted ({DECISION} D6.4: a real admitted run bundle, every native, access "
               "and Owner requirement, and #259's fresh R5' landing with QA's receiving come first): nothing read, "
               "no request written")
@@ -263,6 +264,8 @@ async def settle(host: HostSession, *, clock=utc_now, sleep=asyncio.sleep) -> No
     """Ops' plan 6.2 / QA duty a / DECISION-7 D7.4: before SEQ is read, each pending WAITING request of this writer
     gets a receipt that matches it in full by its ORIGINAL expires_at. Settled requests are recorded; nothing is
     judged with P5 and nothing is counted here. Unresolved, foreign or malformed: BLOCKED."""
+    if not WRITES_ADMITTED:
+        return
     if not host.loaded:
         return
     w, host_dir = host.plain, Path(host.plain["host_dir"])
@@ -308,12 +311,11 @@ async def settle(host: HostSession, *, clock=utc_now, sleep=asyncio.sleep) -> No
 
 async def run_row(host: HostSession, row: str, *, clock=utc_now, sleep=asyncio.sleep) -> dict:
     """One host row: {status UNQUALIFIED|BLOCKED, reasons, request, receipt, assessment}. Never PASS, never raises."""
+    if not WRITES_ADMITTED:
+        return {"status": "BLOCKED", "reasons": [WRITES_OFF], "writer": WRITER}
     out: dict = {"status": "BLOCKED", "reasons": [], "writer": WRITER}
     if row not in HOST_ROWS:
         out["reasons"].append(f"{row} is not a checker host row")
-        return out
-    if not WRITES_ADMITTED:
-        out["reasons"].append(WRITES_OFF)
         return out
     if not host.loaded:
         out["reasons"] += ["host wire not loaded: no request written"] + list(host.record.get("reasons") or [])
@@ -372,3 +374,37 @@ async def run_row(host: HostSession, row: str, *, clock=utc_now, sleep=asyncio.s
     code = "" if assessment["code"] == p5.NONE else f" ({assessment['code']})"
     out.update(status="UNQUALIFIED", reasons=[f"P5 assessment: {assessment['verdict']}{code}, not counted"])
     return out
+
+
+def native_boundary_status() -> dict:
+    """Report the disabled T4 native boundary posture without side effects."""
+    import first_app_p3_native as p3_native
+
+    return p3_native.inspect_disabled_native_boundary().to_dict()
+
+
+async def join_native_host_row(
+    host: HostSession,
+    row: str,
+    *,
+    native_boundary=None,
+    clock=utc_now,
+    sleep=asyncio.sleep,
+) -> dict:
+    """Disabled T4 native consumer hook: refuses before inspecting inputs while WRITES_ADMITTED is False."""
+    if not WRITES_ADMITTED:
+        return {
+            "status": "BLOCKED",
+            "reasons": [WRITES_OFF],
+            "writer": WRITER,
+            "count_eligible": False,
+        }
+    import first_app_p3_native as p3_native
+
+    return await p3_native.join_admitted_host_row(
+        host,
+        row,
+        native_boundary=native_boundary,
+        clock=clock,
+        sleep=sleep,
+    )

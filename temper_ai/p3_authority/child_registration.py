@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
+from p3_source_closure import ContentIdentity, N3Coverage
 from p3_source_closure import ProcessInstance as ClosureProcessInstance
 from temper_ai.p3_authority.contract import (
     AcceptedData,
@@ -34,7 +35,13 @@ from temper_ai.p3_authority.contract import (
     SelectedOperation,
     SequenceUse,
 )
-from temper_ai.p3_authority.coverage_bookkeeping import make_refusal
+from temper_ai.p3_authority.coverage_bookkeeping import (
+    ALL_N3_COVERAGE_CATEGORIES,
+    make_refusal,
+)
+
+if TYPE_CHECKING:
+    from temper_ai.p3_authority.worker_closure_capture import WorkerClosureCollector
 
 VERIFIED_LAUNCHER_REGISTRATION_SOURCE: Final[str] = "verified_parent_launcher_provider"
 
@@ -139,10 +146,22 @@ class ChildRegistrationRegistry:
         selected_job: SelectedJob,
         worker_instance: ProcessInstance,
         worker_closure_instance: ClosureProcessInstance,
+        closure_collector: WorkerClosureCollector | None = None,
+        child_profile_id: str = "child",
+        child_entrypoint_ids: tuple[str, ...] = (),
+        child_runtime_nodes: tuple[str, ...] = (),
+        child_loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
+        child_coverage: tuple[N3Coverage, ...] = ALL_N3_COVERAGE_CATEGORIES,
     ) -> None:
         self._selected_job = selected_job
         self._worker_instance = worker_instance
         self._worker_closure_instance = worker_closure_instance
+        self._closure_collector = closure_collector
+        self._child_profile_id = child_profile_id
+        self._child_entrypoint_ids = child_entrypoint_ids
+        self._child_runtime_nodes = child_runtime_nodes
+        self._child_loaded_nodes = child_loaded_nodes
+        self._child_coverage = child_coverage
         self._worker_key = process_key_for(worker_instance, worker_closure_instance)
         self._entries: dict[ProcessKey, RegisteredChildEntry] = {}
         self._active_by_pid: dict[tuple[str, str, int], ProcessKey] = {
@@ -195,6 +214,11 @@ class ChildRegistrationRegistry:
             registration_source in NON_PROVIDER_REGISTRATION_SOURCES
             or registration_source != VERIFIED_LAUNCHER_REGISTRATION_SOURCE
         ):
+            if self._closure_collector is not None:
+                self._closure_collector.record_surrogate_registration_attempt(
+                    surrogate_kind=registration_source,
+                    boundary=boundary,
+                )
             return refuse_surrogate_child_registration(
                 surrogate_kind=registration_source,
                 boundary=boundary,
@@ -250,6 +274,11 @@ class ChildRegistrationRegistry:
             ticket.registration_source in NON_PROVIDER_REGISTRATION_SOURCES
             or ticket.registration_source != VERIFIED_LAUNCHER_REGISTRATION_SOURCE
         ):
+            if self._closure_collector is not None:
+                self._closure_collector.record_surrogate_registration_attempt(
+                    surrogate_kind=ticket.registration_source,
+                    boundary=boundary,
+                )
             return refuse_surrogate_child_registration(
                 surrogate_kind=ticket.registration_source,
                 boundary=boundary,
@@ -429,6 +458,19 @@ class ChildRegistrationRegistry:
             parent_key=parent_key,
             active=True,
         )
+        if self._closure_collector is not None and closure_child.exec_epoch == 1:
+            cap_res = self._closure_collector.record_verified_child_spawn(
+                entry=entry,
+                registration_source=ticket.registration_source,
+                child_profile_id=self._child_profile_id,
+                child_entrypoint_ids=self._child_entrypoint_ids,
+                child_runtime_nodes=self._child_runtime_nodes,
+                child_loaded_nodes=self._child_loaded_nodes,
+                child_coverage=self._child_coverage,
+                boundary=boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         self._entries[child_key] = entry
         self._active_by_pid[pid_slot] = child_key
         self._instance_id_to_key[closure_child.instance_id] = child_key
@@ -447,6 +489,11 @@ class ChildRegistrationRegistry:
         entry = self._entries.get(key)
         if entry is None:
             return make_refusal(RefusalCode.PRIOR_MISSING, boundary)
+        if self._closure_collector is not None:
+            self._closure_collector.record_child_termination(
+                child_instance_id=entry.closure_instance.instance_id,
+                boundary=boundary,
+            )
         updated = RegisteredChildEntry(
             key=entry.key,
             host_instance=entry.host_instance,

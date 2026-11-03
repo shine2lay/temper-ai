@@ -160,6 +160,7 @@ class CoverageBookkeeper:
         reviewed_graph: ReviewedSourceGraph | None = None,
         since_cursor: N3ObservationEpoch | None = None,
         registered_child_ids: frozenset[str] = frozenset(),
+        require_dual_role: bool = False,
         evidence: DecisionEvidence,
     ) -> Result[tuple[ProcessCoverageSummary, ...]]:
         """Validate all process observations and stream continuity in ``envelope``."""
@@ -178,6 +179,10 @@ class CoverageBookkeeper:
             )
         if not raw_env.process_observations:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
+        if require_dual_role:
+            locations = {p.instance.location for p in raw_env.process_observations}
+            if locations != {"host", "container"}:
+                return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
         if not load_stream_refs:
             return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
 

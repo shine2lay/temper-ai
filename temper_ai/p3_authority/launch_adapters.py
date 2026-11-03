@@ -25,6 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from p3_source_closure import ContentIdentity, N3Coverage
 from p3_source_closure import ProcessInstance as ClosureProcessInstance
 from temper_ai.p3_authority.child_registration import (
     NON_PROVIDER_REGISTRATION_SOURCES,
@@ -50,7 +51,11 @@ from temper_ai.p3_authority.contract import (
     SequenceUse,
     WorkerObservation,
 )
-from temper_ai.p3_authority.coverage_bookkeeping import make_refusal
+from temper_ai.p3_authority.coverage_bookkeeping import (
+    ALL_N3_COVERAGE_CATEGORIES,
+    make_refusal,
+)
+from temper_ai.p3_authority.worker_closure_capture import WorkerClosureCollector
 from temper_ai.p3_authority.worker_observation import WorkerObservationAdapter
 
 
@@ -97,11 +102,13 @@ class DockerLaunchObservationAdapter:
         worker_observer: WorkerObservationAdapter | None = None,
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
+        closure_collector: WorkerClosureCollector | None = None,
         boundary: Boundary = "A_PRE_CREATE",
     ) -> None:
         self._worker_observer = worker_observer
         self._grant = grant
         self._selected_job = selected_job
+        self._closure_collector = closure_collector
         self._boundary = boundary
         self._pre_spawn_checked = False
         self._records: list[DockerSpawnObservationRecord] = []
@@ -178,6 +185,15 @@ class DockerLaunchObservationAdapter:
                 effect_state=EffectState.PARTIAL,
                 sequence_use=SequenceUse.USED,
             )
+        if self._closure_collector is not None:
+            cap_res = self._closure_collector.record_docker_launch(
+                execution_id=execution_id,
+                container_id=container_id,
+                worker_observation=obs,
+                boundary=self._boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         rec = DockerSpawnObservationRecord(
             execution_id=execution_id,
             container_id=container_id,
@@ -209,11 +225,17 @@ class EarlyBootstrapObservationHook:
         worker_observer: WorkerObservationAdapter | None = None,
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
+        closure_collector: WorkerClosureCollector | None = None,
+        bootstrap_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
+        use_box_profile_closure_as_complete: bool = False,
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> None:
         self._worker_observer = worker_observer
         self._grant = grant
         self._selected_job = selected_job
+        self._closure_collector = closure_collector
+        self._bootstrap_nodes = bootstrap_nodes
+        self._use_box_profile_closure_as_complete = use_box_profile_closure_as_complete
         self._boundary = boundary
         self._records: list[BootstrapObservationRecord] = []
 
@@ -245,6 +267,16 @@ class EarlyBootstrapObservationHook:
             if hasattr(self._selected_job.pre_dispatch_or_running_job, "execution_uuid")
             else self._selected_job.pre_dispatch_or_running_job.dispatch.execution_uuid
         )
+        if self._closure_collector is not None:
+            cap_res = self._closure_collector.record_early_bootstrap(
+                execution_id=job_exec_uuid,
+                had_box_profile=had_box_profile,
+                bootstrap_nodes=self._bootstrap_nodes,
+                use_box_profile_closure_as_complete=self._use_box_profile_closure_as_complete,
+                boundary=self._boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         rec = BootstrapObservationRecord(
             stage="cli_box_delivery" if had_box_profile else "cli_no_box_profile",
             execution_id=job_exec_uuid,
@@ -263,11 +295,25 @@ class RunnerBootstrapObservationHook:
         worker_observer: WorkerObservationAdapter | None = None,
         grant: ObservationGrant | None = None,
         selected_job: SelectedJob | None = None,
+        closure_collector: WorkerClosureCollector | None = None,
+        loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
+        categories: tuple[N3Coverage, ...] = (
+            "python",
+            "generated",
+            "cache",
+            "native",
+            "dynamic",
+            "control_plane",
+            "effect_fence",
+        ),
         boundary: Boundary = "B_PRE_REQUEST",
     ) -> None:
         self._worker_observer = worker_observer
         self._grant = grant
         self._selected_job = selected_job
+        self._closure_collector = closure_collector
+        self._loaded_nodes = loaded_nodes
+        self._categories = categories
         self._boundary = boundary
         self._records: list[BootstrapObservationRecord] = []
 
@@ -305,6 +351,15 @@ class RunnerBootstrapObservationHook:
         )
         if isinstance(obs_res, Refusal):
             return obs_res
+        if self._closure_collector is not None:
+            cap_res = self._closure_collector.record_runner_bootstrap(
+                execution_id=execution_id,
+                loaded_nodes=self._loaded_nodes,
+                categories=self._categories,
+                boundary=self._boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         rec = BootstrapObservationRecord(
             stage="runner_bootstrap",
             execution_id=execution_id,
@@ -349,6 +404,12 @@ class BashChildLaunchAdapter:
         intended_effect: SelectedOperation | None = None,
         child_identity_resolver: ChildIdentityResolver | None = None,
         registration_source: str = VERIFIED_LAUNCHER_REGISTRATION_SOURCE,
+        closure_collector: WorkerClosureCollector | None = None,
+        child_profile_id: str = "child",
+        child_entrypoint_ids: tuple[str, ...] = (),
+        child_runtime_nodes: tuple[str, ...] = (),
+        child_loaded_nodes: tuple[tuple[str, ContentIdentity], ...] = (),
+        child_coverage: tuple[N3Coverage, ...] = ALL_N3_COVERAGE_CATEGORIES,
         boundary: Boundary = "C_PRE_EXECUTION",
     ) -> None:
         self._worker_observer = worker_observer
@@ -358,6 +419,12 @@ class BashChildLaunchAdapter:
         self._intended_effect = intended_effect
         self._child_identity_resolver = child_identity_resolver
         self._registration_source = registration_source
+        self._closure_collector = closure_collector
+        self._child_profile_id = child_profile_id
+        self._child_entrypoint_ids = child_entrypoint_ids
+        self._child_runtime_nodes = child_runtime_nodes
+        self._child_loaded_nodes = child_loaded_nodes
+        self._child_coverage = child_coverage
         self._boundary = boundary
         self._pre_spawn_checks: int = 0
         self._spawn_registrations: int = 0
@@ -387,6 +454,11 @@ class BashChildLaunchAdapter:
             self._registration_source in NON_PROVIDER_REGISTRATION_SOURCES
             or self._registration_source != VERIFIED_LAUNCHER_REGISTRATION_SOURCE
         ):
+            if self._closure_collector is not None:
+                self._closure_collector.record_surrogate_registration_attempt(
+                    surrogate_kind=self._registration_source,
+                    boundary=self._boundary,
+                )
             return refuse_surrogate_child_registration(
                 surrogate_kind=self._registration_source,
                 boundary=self._boundary,
@@ -446,6 +518,19 @@ class BashChildLaunchAdapter:
         if isinstance(reg_res, Refusal):
             return reg_res
         entry, _ = reg_res.data
+        if self._closure_collector is not None:
+            cap_res = self._closure_collector.record_verified_child_spawn(
+                entry=entry,
+                registration_source=self._registration_source,
+                child_profile_id=self._child_profile_id,
+                child_entrypoint_ids=self._child_entrypoint_ids,
+                child_runtime_nodes=self._child_runtime_nodes,
+                child_loaded_nodes=self._child_loaded_nodes,
+                child_coverage=self._child_coverage,
+                boundary=self._boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         self._spawn_registrations += 1
         self._registrations.append(entry)
         return AcceptedData(data=entry, evidence=reg_res.evidence)
@@ -478,6 +563,14 @@ class BashChildLaunchAdapter:
                 exit_code=returncode,
                 boundary=self._boundary,
             )
+        if self._closure_collector is not None and child_key is not None:
+            for reg_entry in self._registrations:
+                if reg_entry.key == child_key:
+                    self._closure_collector.record_child_termination(
+                        child_instance_id=reg_entry.closure_instance.instance_id,
+                        boundary=self._boundary,
+                    )
+                    break
         self._terminations.append(
             BashChildTerminationRecord(
                 child_key=resolved_key,
@@ -509,6 +602,7 @@ class ScriptLaunchObservationAdapter:
         expected_agent_name: str | None = None,
         cwd: str | None = None,
         timeout_seconds: int | float = 600,
+        closure_collector: WorkerClosureCollector | None = None,
         boundary: Boundary = "C_PRE_EXECUTION",
     ) -> None:
         self._bash_adapter = bash_adapter
@@ -516,6 +610,7 @@ class ScriptLaunchObservationAdapter:
         self._expected_agent_name = expected_agent_name
         self._cwd = cwd
         self._timeout_seconds = timeout_seconds
+        self._closure_collector = closure_collector
         self._boundary = boundary
         self._bindings: list[ScriptLaunchBinding] = []
 
@@ -560,6 +655,14 @@ class ScriptLaunchObservationAdapter:
         pre_res = self._bash_adapter.before_spawn()
         if isinstance(pre_res, Refusal):
             return pre_res
+        if self._closure_collector is not None:
+            cap_res = self._closure_collector.record_script_launch(
+                agent_name=agent_name,
+                run_id=run_id,
+                boundary=self._boundary,
+            )
+            if isinstance(cap_res, Refusal):
+                return cap_res
         self._bindings.append(
             ScriptLaunchBinding(
                 agent_name=agent_name,

@@ -28,6 +28,8 @@ SETTINGS = {
 }
 MOUNTS = [
     "./temper_ai:/app/temper_ai:ro",
+    "./p3_source_closure:/app/p3_source_closure:ro",
+    "./p3_host_contracts:/app/p3_host_contracts:ro",
     "./configs:/app/configs:ro",
     "./.git:/app/.git:ro",
     "/var/run/docker.sock:/var/run/docker.sock",

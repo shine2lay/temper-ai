@@ -1034,7 +1034,7 @@ class DockerSpawner(Spawner):
                                                   limits=self._delivery_limits)
                 plan.tmpfs.append(box_bootstrap.tmpfs_spec(bootstrap))
             source = {part: dict(facts_) for part, facts_ in plan.sources.items()}
-            for part in ("code", "configs"):
+            for part in (*box_seal.CODE_SOURCES.values(), "configs"):
                 if source.get(part, {}).get("from") == "image":
                     source[part]["digest"] = template.image_id
             workdir = template.working_dir or "/"
@@ -1051,7 +1051,7 @@ class DockerSpawner(Spawner):
                     "boot": BOOT_DIGEST,
                     "path": path_value.split(os.pathsep), "home": home,
                     "user": template.user, "workdir": workdir,
-                    "immutable": sorted({box_seal.CODE_TARGET, box_seal.CONFIG_TARGET,
+                    "immutable": sorted({*box_seal.CODE_TARGETS, box_seal.CONFIG_TARGET,
                                          box_seal.LOCAL_TARGET, box_seal.CLAUDE_BIN,
                                          interpreter, os.path.dirname(os.path.dirname(interpreter)),
                                          workdir, home}),
@@ -1218,17 +1218,22 @@ class DockerSpawner(Spawner):
     def _engine_check(self, plan: box_seal.SealPlan, view: box_seal.WorkerView) -> dict:
         """Refuse code that starts programs from places the gate hasn't classified (G11).
 
-        The worker scans the code and local folders the box would mount (the scan is kept
-        per tree digest, so an unchanged tree is scanned once).
+        The worker scans the code packages and local folders the box would mount (the scan
+        is kept per tree digest, so an unchanged tree is scanned once).
         """
-        code = plan.sources.get("code") or {}
-        if code.get("from") != "bind":
-            raise BoxProfileError(
-                "the box's code would come from its image, where the worker can't look for "
-                "the places it starts programs; a sealed box runs bind-mounted code",
-            )
-        sites = set(_launch_sites(view.path(code["path"]), "temper_ai/", (),
-                                  code.get("digest")))
+        sites: set[str] = set()
+        packages: dict[str, str | None] = {}
+        for package in box_seal.CODE_PACKAGES:
+            code = plan.sources.get(box_seal.CODE_SOURCES[package]) or {}
+            if code.get("from") != "bind":
+                raise BoxProfileError(
+                    f"the box's code ({package}) would come from its image, where the worker "
+                    "can't look for the places it starts programs; a sealed box runs "
+                    "bind-mounted code",
+                )
+            sites |= _launch_sites(view.path(code["path"]), f"{package}/", (),
+                                   code.get("digest"))
+            packages[package] = code.get("digest")
         local = plan.sources.get("local")
         if local:
             sites |= _launch_sites(view.path(local["path"]), "local/",
@@ -1240,7 +1245,7 @@ class DockerSpawner(Spawner):
                 f"classified ({len(missing)}): " + ", ".join(missing[:8])
                 + (" and more" if len(missing) > 8 else ""),
             )
-        return {"sites": len(sites), "code": code.get("digest"),
+        return {"sites": len(sites), "code": packages["temper_ai"], "packages": packages,
                 "local": (local or {}).get("digest"), "rules": box_launches.GENERATOR}
 
     def _sealed_preflight(self, template: Template, env: BoxEnvSplit) -> str:

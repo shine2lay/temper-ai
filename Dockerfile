@@ -26,9 +26,14 @@ RUN mkdir -p temper_ai && touch temper_ai/__init__.py && \
 
 ENV PYTHONDONTWRITEBYTECODE=1
 COPY temper_ai/ ./temper_ai/
+# The image's other packages (pyproject.toml's wheel packages), copied as
+# temper_ai is: temper_ai.p3_authority imports them.
+COPY p3_source_closure/ ./p3_source_closure/
+COPY p3_host_contracts/ ./p3_host_contracts/
 # Remove any .pyc from the COPY — prevents stale bytecode when
 # source is volume-mounted in dev (the .pyc would shadow newer .py files)
-RUN find /app/temper_ai -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+RUN find /app/temper_ai /app/p3_source_closure /app/p3_host_contracts \
+    -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # ── frontend ─────────────────────────────────────────────────────────
 FROM base AS frontend-build

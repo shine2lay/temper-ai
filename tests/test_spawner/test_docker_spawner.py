@@ -640,7 +640,7 @@ def test_template_from_inspect_tolerates_missing_sections():
 import os  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-from temper_ai.spawner import box_launches, box_profile  # noqa: E402
+from temper_ai.spawner import box_launches, box_profile, box_seal  # noqa: E402
 from temper_ai.spawner import docker_spawner as ds  # noqa: E402
 from temper_ai.spawner.box_profile import BoxProfileError  # noqa: E402
 from temper_ai.spawner.box_seal import WorkerView  # noqa: E402
@@ -1089,6 +1089,8 @@ def test_a_launch_chosen_at_run_time_is_refused(install, monkeypatch):
 
 @pytest.mark.parametrize(("where", "site"), [
     ("code", "temper_ai/sneaky.py::run"),
+    ("p3_source_closure", "p3_source_closure/sneaky.py::run"),
+    ("p3_host_contracts", "p3_host_contracts/sneaky.py::run"),
     ("local", "local/providers/sneaky.py::run"),
 ])
 def test_code_that_starts_programs_from_an_unclassified_place_never_runs_sealed(
@@ -1096,7 +1098,8 @@ def test_code_that_starts_programs_from_an_unclassified_place_never_runs_sealed(
     """Security rm-963c1429 condition 1: engine launch paths the gate hasn't classified."""
     _sealed(monkeypatch)
     table = install.engine_table()
-    folder = install.code if where == "code" else install.local / "providers"
+    folder = {"code": install.code, "local": install.local / "providers",
+              **install.packages}[where]
     (folder / "sneaky.py").write_text("import os\n\n\ndef run():\n    os.system('id')\n")
     (install.local / "standee-ssh" / "not_mounted.py").write_text("import os\nos.system('id')\n")
     _refused_before_docker(install, str(install.run_a), "hasn't classified", site,
@@ -1107,15 +1110,23 @@ def test_code_that_starts_programs_from_an_unclassified_place_never_runs_sealed(
                  ).spawn("engine-1")  # classified: it runs; the unmounted file never counted
     engine = store.record("engine-1")["doc"]["launch"]["engine"]
     assert engine["sites"] == len(table) + 1 and engine["rules"] == box_launches.GENERATOR
+    doc = store.record("engine-1")["doc"]
+    assert set(engine["packages"]) == set(box_seal.CODE_PACKAGES)
+    for package, name in box_seal.CODE_SOURCES.items():
+        assert engine["packages"][package] == doc["source"][name]["digest"]
+        assert f"/app/{package}" in doc["runtime"]["immutable"]
+    assert engine["code"] == doc["source"]["code"]["digest"]
 
 
-def test_code_baked_into_the_image_is_refused(install, monkeypatch):
+@pytest.mark.parametrize("package", box_seal.CODE_PACKAGES)
+def test_code_baked_into_the_image_is_refused(install, monkeypatch, package):
     """The worker can't look for launch sites in an image's code: a sealed box runs bound code."""
     _sealed(monkeypatch)
     original = install.mounts
     monkeypatch.setattr(install, "mounts", lambda: [m for m in original()
-                                                    if m["Destination"] != "/app/temper_ai"])
-    _refused_before_docker(install, str(install.run_a), "can't look for the places")
+                                                    if m["Destination"] != f"/app/{package}"])
+    _refused_before_docker(install, str(install.run_a), "can't look for the places",
+                           f"({package})")
 
 
 @pytest.mark.parametrize(("default", "expect"), [

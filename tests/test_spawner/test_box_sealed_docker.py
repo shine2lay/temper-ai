@@ -20,7 +20,7 @@ import pytest
 from temper_ai.shared.box_env import BoxEnv
 from temper_ai.spawner import box_profile
 from temper_ai.spawner.base import SpawnerError
-from temper_ai.spawner.box_seal import WorkerView
+from temper_ai.spawner.box_seal import CODE_TARGETS, WorkerView
 from temper_ai.spawner.docker_spawner import DockerSpawner
 from tests.test_spawner.box_fixtures import (
     OWN_LABEL,
@@ -135,6 +135,7 @@ def test_two_sealed_runs_see_only_their_own_folder(install):
         assert shown == [], f"a sealed box shows {shown}"
         assert probe["data_read"] and not probe["data_write"]
         assert probe["tmp_write"]
+        assert probe["imports"] == {p: p for p in install.packages}, probe["imports"]
         written = sorted(p for p, ok in probe["writable"].items() if ok and p != "/tmp")
         assert written == [], f"a tool could change {written}"
         assert not any(probe["shadowed"].values()), probe["shadowed"]
@@ -161,7 +162,7 @@ def test_the_profile_records_no_key_views_and_pins_every_grant(install):
     doc = store.record(eid)["doc"]
     targets = {g["target"]: g for g in doc["grants"]}
     assert set(targets) == {
-        "/app/temper_ai", "/app/configs", "/app/local/__init__.py",
+        *CODE_TARGETS, "/app/configs", "/app/local/__init__.py",
         "/app/local/register_providers.py", "/app/local/providers", "/app/local/agents",
         "/app/.local/bin/claude", str(install.run_a), "/app/shared-data"}
     assert all(g["pin"]["ino"] for g in doc["grants"])

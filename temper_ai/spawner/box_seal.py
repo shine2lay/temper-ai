@@ -4,7 +4,8 @@ BS1 (docs/boxes.md, "Sealed boxes"). A legacy box copies the template container'
 mounts as they are. A sealed box inherits none of them: it gets only what this module
 grants, each one named and read-only unless it is the run's own workspace:
 
-  /app/temper_ai, /app/configs   the runner's code and the configs
+  /app/temper_ai, /app/configs   the runner's code and the configs; each other package the
+                                 image installs (CODE_PACKAGES) the way temper_ai is
   /app/local/<code>              the private provider code only (register_providers.py,
                                  providers/, agents/), never the rest of local/
   /app/.local/bin/claude         one Claude CLI executable, the newest the template has
@@ -42,7 +43,14 @@ from temper_ai.spawner.base import SpawnerError
 from temper_ai.spawner.box_profile import BoxProfileError, tree_digest
 
 DOCKER_SOCKET = "/var/run/docker.sock"
-CODE_TARGET = "/app/temper_ai"
+#: The Python packages the image installs (pyproject.toml's wheel packages), each at
+#: /app/<name>: the runner's code. A sealed box grants each one as it grants temper_ai.
+CODE_PACKAGES = ("temper_ai", "p3_source_closure", "p3_host_contracts")
+CODE_TARGETS = tuple(f"/app/{package}" for package in CODE_PACKAGES)
+CODE_TARGET = CODE_TARGETS[0]
+#: Each code package's entry in a sealed profile's source; temper_ai's is "code" (since BS1).
+CODE_SOURCES = {package: "code" if package == "temper_ai" else package
+                for package in CODE_PACKAGES}
 CONFIG_TARGET = "/app/configs"
 LOCAL_TARGET = "/app/local"
 #: The part of local/ the runner imports (llm/providers/factory.py -> local.register_providers).
@@ -70,7 +78,7 @@ def mount_class(source: str, target: str, workspace_dir: str | None) -> str:
         return "docker socket"
     if target == WORKSPACES_ALIAS or (workspace_dir and workspace_dir in (source, target)):
         return "all workspaces"
-    if target in (CODE_TARGET, CONFIG_TARGET):
+    if target in CODE_TARGETS or target == CONFIG_TARGET:
         return "code"
     if target == CLAUDE_VERSIONS_TARGET:
         return "executables"
@@ -324,7 +332,8 @@ def plan_sealed(
     try:
         if CONFIG_TARGET not in by_target:
             raise BoxProfileError("the template container mounts no /app/configs to seal")
-        for target, kind, name in ((CODE_TARGET, "code", "code"), (CONFIG_TARGET, "config", "configs")):
+        parts = [(f"/app/{package}", "code", CODE_SOURCES[package]) for package in CODE_PACKAGES]
+        for target, kind, name in (*parts, (CONFIG_TARGET, "config", "configs")):
             if target in by_target:
                 plan.grant(view, by_target[target], target, read_only=True, kind=kind)
                 plan.sources[name] = {"from": "bind", "path": by_target[target],

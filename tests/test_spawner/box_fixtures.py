@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from temper_ai.spawner.box_profile import METADATA_KEY, BoxProfileError, RunFacts
+from temper_ai.spawner.box_seal import CODE_PACKAGES, CODE_TARGETS
 from tests.test_spawner.test_container_parent import run_test_docker
 
 SYNTHETIC_MARK = "SYNTHETIC-NOT-A-REAL-SECRET"
@@ -143,6 +144,12 @@ PROBE = textwrap.dedent('''
         except OSError:
             return True
 
+    def imports(package):
+        try:
+            return __import__(package).NAME
+        except Exception as exc:
+            return type(exc).__name__
+
     def shadow(directory):
         try:
             with open(os.path.join(directory, "git"), "w") as fh:
@@ -166,6 +173,7 @@ PROBE = textwrap.dedent('''
         "data_read": open(plan["data_file"]).read() == plan["data_text"],
         "data_write": can_write(plan["data_dir"]),
         "tmp_write": can_write("/tmp"),
+        "imports": {p: imports(p) for p in plan["packages"]},
         "claude": subprocess.run(["claude"], capture_output=True, text=True,
                                  timeout=10).stdout.strip(),
         "env_names": sorted(os.environ),
@@ -214,12 +222,16 @@ class Install:
         from temper_ai.spawner.box_seal import LOCAL_CODE
 
         sites = box_launches.launch_sites(self.code, prefix="temper_ai/")
+        for package, folder in self.packages.items():
+            sites |= box_launches.launch_sites(folder, prefix=f"{package}/")
         sites |= box_launches.launch_sites(self.local, prefix="local/", only=LOCAL_CODE)
         return {site: "box: the synthetic runner (tests)" for site in sites}
 
     def __post_init__(self) -> None:
         r = self.root
         self.code = r / "src" / "temper_ai"
+        #: The image's other code packages (box_seal.CODE_PACKAGES), mounted as temper_ai is.
+        self.packages = {p: r / "src" / p for p in CODE_PACKAGES if p != "temper_ai"}
         self.configs = r / "src" / "configs"
         self.local = r / "src" / "local"
         self.versions = r / "claude-versions"
@@ -235,6 +247,8 @@ class Install:
         _write(self.code / "__init__.py", "")
         _write(self.code / "cli" / "__init__.py", "")
         _write(self.code / "cli" / "main.py", PROBE)
+        for package, folder in self.packages.items():
+            _write(folder / "__init__.py", f"NAME = {package!r}\n")
         _write(self.configs / "workflows" / f"{WORKFLOW}.yaml", textwrap.dedent(f"""
             workflow:
               name: {WORKFLOW}
@@ -285,12 +299,13 @@ class Install:
                 str(self.local), str(self.versions), "/opt/claude/versions",
                 str(self.run_a), str(self.run_b), str(self.data),
             ],
-            "immutable": ["/app", "/app/temper_ai", "/app/configs", "/app/local",
+            "immutable": ["/app", *CODE_TARGETS, "/app/configs", "/app/local",
                           "/app/local/providers", "/app/.local/bin", "/app/.local/bin/claude",
                           "/app/.venv", "/usr/local/bin", "/usr/local/lib"],
             "data_file": "/app/shared-data/readme.txt",
             "data_text": "declared data\n",
             "data_dir": "/app/shared-data",
+            "packages": sorted(self.packages),
         }))
 
     def mounts(self) -> list[dict]:
@@ -308,6 +323,7 @@ class Install:
             bind(self.versions, "/opt/claude/versions"),
             bind(self.local, "/app/local"),
             bind(self.code, "/app/temper_ai"),
+            *(bind(folder, f"/app/{package}") for package, folder in self.packages.items()),
             bind(self.configs, "/app/configs"),
             bind(self.data, "/app/shared-data"),
             bind("/var/run/docker.sock", "/var/run/docker.sock", rw=True),

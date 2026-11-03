@@ -174,8 +174,11 @@ services:
       # the host writes, the container reads. Runs execute in this process
       # (TEMPER_EXECUTION_MODE=inprocess) and a node's Bash reaches whatever
       # its uid can write — that must not include the code the next run
-      # executes.
+      # executes. The image's other packages (pyproject.toml) go with it, so
+      # they are never older than the temper_ai that imports them.
       - ./temper_ai:/app/temper_ai:ro
+      - ./p3_source_closure:/app/p3_source_closure:ro
+      - ./p3_host_contracts:/app/p3_host_contracts:ro
       - ./configs:/app/configs:ro
       - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
       # Serve the locally built dashboard when there is one, so `npm run
@@ -294,8 +297,11 @@ services:
     volumes:
       # Source code mount for hot-reload of agent / CLI changes. Read-only:
       # each run is a subprocess off this mount, and a node's Bash must not
-      # be able to rewrite the code the next run executes.
+      # be able to rewrite the code the next run executes. The image's other
+      # packages go with it, as on the server.
       - ./temper_ai:/app/temper_ai:ro
+      - ./p3_source_closure:/app/p3_source_closure:ro
+      - ./p3_host_contracts:/app/p3_host_contracts:ro
       - ./configs:/app/configs:ro
       # Workspaces at host-equivalent path, see above
       - ${WORKSPACE_DIR:-./workspaces}:${WORKSPACE_DIR:-./workspaces}
@@ -418,6 +424,8 @@ services:
     command: ["/app/.venv/bin/python", "-m", "temper_ai.cli.main", "watch-queue"]
     volumes:
       - ./temper_ai:/app/temper_ai:ro
+      - ./p3_source_closure:/app/p3_source_closure:ro
+      - ./p3_host_contracts:/app/p3_host_contracts:ro
       - ./configs:/app/configs:ro
       # The checkout's git folder, read-only: each Pi run records the temper
       # commit it ran on, at start and at every resume (SW-16). pi-worker's

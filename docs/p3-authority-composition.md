@@ -88,7 +88,12 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   name a clock that never repeats or goes back (N1-SPEC r2 6.8). Subject
   projection accepts only the exact `SelectedSubject`, `PreDispatchJob`,
   `JobKey` and `DispatchIdentity` types; a look-alike class refuses
-  `SUBJECT_MISMATCH`. `compose_p3_authority(...)` accepts
+  `SUBJECT_MISMATCH`. `verify` never raises (N1-SPEC 4.2): an error from the
+  record or status store, from the signature library, or from an odd subject
+  or peer object is a refusal in its row (`AUTHORITY_UNAVAILABLE` for I4, R1
+  and R4, `ISSUER_UNVERIFIED` for I11, `SUBJECT_MISMATCH` for S1,
+  `PEER_UNVERIFIED` for P1), and `PinnedPeerVerifier.verify_peer` answers
+  `False`. `compose_p3_authority(...)` accepts
   explicit `issuer_verifier`, `peer_verifier`, `issuer_anchors`,
   `issuer_records`, `issuer_statuses`, `issuer_condition_table`, and
   `pinned_peers` parameters while keeping all defaults `None` and

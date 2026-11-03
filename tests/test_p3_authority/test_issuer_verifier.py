@@ -12,8 +12,9 @@ Covers:
 4. Guard bites: empty identity inequality (``"" == ""`` refused), strict integer-only
    instant comparisons, registry snapshot ``verified_at`` + condition evaluation,
    ``P3CandidateBindings`` refused as authority, ``| file`` filter refusal in P3,
-   small-order and non-canonical keys never verifying a forged signature, and
-   subject projection accepting only the exact selection types.
+   small-order and non-canonical keys never verifying a forged signature,
+   subject projection accepting only the exact selection types, and ``verify``
+   never raising on a store, signature-library, subject or peer error (N1-SPEC 4.2).
 """
 
 from __future__ import annotations
@@ -1908,3 +1909,187 @@ def test_guard_bite_subject_projection_accepts_only_exact_types() -> None:
         object.__setattr__(tampered, "running_attempt", bad_attempt)
         with pytest.raises(UnprojectableSubject, match="running_attempt"):
             project_job(JobKey(dispatch=tampered, job_revision="job-rev-run-1"))
+
+
+class _FailingEnvelopeStore(EnvelopeStore):
+    """A store implementation whose read fails with an error other than StoreUnavailable."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+
+    def read(self, key: object) -> bytes | None:
+        raise self.error
+
+
+class _FailingItems(dict[object, bytes]):
+    """The default store's item index failing on lookup."""
+
+    def get(self, key: object, default: object = None) -> Any:  # type: ignore[override]
+        raise RuntimeError("store index broke")
+
+
+class _RaisingNativeSubject:
+    @property
+    def subject_kind(self) -> str:
+        raise RuntimeError("subject attribute broke")
+
+
+class _RaisingProcessPeer:
+    peer_registration = PEER_1.peer_registration
+
+    @property
+    def process(self) -> object:
+        raise RuntimeError("peer attribute broke")
+
+
+class _RaisingRegistrationPeer:
+    process = PEER_1.process
+
+    @property
+    def peer_registration(self) -> str:
+        raise RuntimeError("peer attribute broke")
+
+
+class _RaisingEqualityPeer:
+    peer_registration = PEER_1.peer_registration
+    process = PEER_1.process
+
+    def __eq__(self, other: object) -> bool:
+        raise RuntimeError("peer equality broke")
+
+    __hash__ = object.__hash__
+
+
+def test_guard_bite_verify_never_raises_on_odd_store_signature_subject_or_peer_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N1-SPEC 4.2: ``verify`` never raises. An error from either store or from the
+    signature library, or an odd subject or peer object, is a refusal in its row
+    (I4, R1, I11, R4, S1, P1); ``PinnedPeerVerifier.verify_peer`` returns False."""
+    import temper_ai.p3_authority.issuer_verifier as issuer_module
+
+    authority_env = signed_envelope(KIND_AUTHORITY, AUTHORITY_RECORD_1)
+    status_env = signed_envelope(KIND_STATUS, STATUS_RECORD_1)
+
+    def _verifier(
+        records: EnvelopeStore | None = None, statuses: EnvelopeStore | None = None
+    ) -> Ed25519IssuerVerifier:
+        return Ed25519IssuerVerifier(
+            anchors=ANCHORS_1,
+            records=(
+                records
+                if records is not None
+                else EnvelopeStore({REF_1: authority_env})
+            ),
+            statuses=(
+                statuses
+                if statuses is not None
+                else EnvelopeStore({ISSUER_ID: status_env})
+            ),
+        )
+
+    def _verify(
+        verifier: Ed25519IssuerVerifier,
+        *,
+        peer: Any = PEER_1,
+        subject: Any = SUBJECT_1,
+    ) -> object:
+        return verifier.verify(REF_1, peer, subject, EFFECTS_1, AT_5000)
+
+    assert isinstance(_verify(_verifier()), AcceptedData)
+
+    # I4 and R1: any store error, not only StoreUnavailable, refuses in its row.
+    errors: tuple[Exception, ...] = (
+        OSError("disk"),
+        RuntimeError("backend"),
+        KeyError("index"),
+        TypeError("decode"),
+    )
+    for error in errors:
+        _assert_refusal(
+            _verify(_verifier(records=_FailingEnvelopeStore(error))),
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+            RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+        )
+        _assert_refusal(
+            _verify(_verifier(statuses=_FailingEnvelopeStore(error))),
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+            RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+        )
+    broken_index = EnvelopeStore({REF_1: authority_env})
+    broken_index.items = _FailingItems()
+    _assert_refusal(
+        _verify(_verifier(records=broken_index)),
+        RefusalCode.AUTHORITY_UNAVAILABLE,
+        RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+    )
+
+    # I11 and R4: an error inside the signature library refuses in its row.
+    real_key_class = issuer_module.Ed25519PublicKey
+
+    def _backend_failing_on(prefix: bytes) -> type:
+        class _FailingKeyClass:
+            @staticmethod
+            def from_public_bytes(data: bytes) -> object:
+                real_key = real_key_class.from_public_bytes(data)
+
+                class _Key:
+                    def verify(self, signature: bytes, message: bytes) -> None:
+                        if message.startswith(prefix):
+                            raise RuntimeError("signature backend broke")
+                        real_key.verify(signature, message)
+
+                return _Key()
+
+        return _FailingKeyClass
+
+    for prefix, code, retry in (
+        (
+            domain_prefix(KIND_AUTHORITY),
+            RefusalCode.ISSUER_UNVERIFIED,
+            RetryKind.NOT_APPLICABLE,
+        ),
+        (
+            domain_prefix(KIND_STATUS),
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+            RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+        ),
+    ):
+        verifier = _verifier()
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                issuer_module, "Ed25519PublicKey", _backend_failing_on(prefix)
+            )
+            _assert_refusal(_verify(verifier), code, retry)
+    assert isinstance(_verify(_verifier()), AcceptedData)
+
+    # S1: a subject that cannot be encoded (lone surrogate) or whose attribute
+    # raises is SUBJECT_MISMATCH.
+    for subject in (
+        replace(SUBJECT_1, selection_revision="sel-run-1\ud800"),
+        replace(SUBJECT_1, subject=_RaisingNativeSubject()),
+    ):
+        _assert_refusal(
+            _verify(_verifier(), subject=subject),
+            RefusalCode.SUBJECT_MISMATCH,
+            RetryKind.NOT_APPLICABLE,
+        )
+
+    # P1: a peer whose attribute raises is PEER_UNVERIFIED.
+    for peer in (_RaisingProcessPeer(), _RaisingRegistrationPeer()):
+        _assert_refusal(
+            _verify(_verifier(), peer=peer),
+            RefusalCode.PEER_UNVERIFIED,
+            RetryKind.NOT_APPLICABLE,
+        )
+
+    # The pinned peer verifier answers False for such peers, never raises.
+    pinned = PinnedPeerVerifier([PEER_1])
+    assert pinned.verify_peer(PEER_1) is True
+    for odd_peer in (
+        _RaisingProcessPeer(),
+        _RaisingRegistrationPeer(),
+        _RaisingEqualityPeer(),
+    ):
+        assert pinned.verify_peer(odd_peer) is False  # type: ignore[arg-type]

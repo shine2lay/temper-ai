@@ -237,7 +237,9 @@ def verify_ed25519_hex(public_hex: str, signature: bytes | str, message: bytes) 
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex)).verify(
             sig_bytes, message
         )
-    except (InvalidSignature, ValueError):
+    except InvalidSignature:
+        return False
+    except Exception:  # noqa: BLE001 - N1-SPEC 4.2: a signature-check error refuses, never raises
         return False
     return True
 
@@ -846,11 +848,14 @@ class PinnedPeerVerifier:
         self._allowed.pop(_pinnable_peer_identity(peer), None)
 
     def verify_peer(self, peer: AuthenticatedPeer) -> bool:
-        identity = _strict_peer_identity(peer)
-        if identity is None:
+        try:
+            identity = _strict_peer_identity(peer)
+            if identity is None:
+                return False
+            expected = self._allowed.get(identity)
+            return expected is not None and bool(expected == peer)
+        except Exception:  # noqa: BLE001 - an odd peer object is unverified, never an error
             return False
-        expected = self._allowed.get(identity)
-        return expected is not None and expected == peer
 
 
 def _refusal(code: RefusalCode) -> Refusal:
@@ -930,7 +935,7 @@ class Ed25519IssuerVerifier:
     ) -> tuple[dict[str, object], str] | Refusal:
         try:
             stored = self._read_store(self.statuses, issuer_id)
-        except StoreUnavailable:
+        except Exception:  # noqa: BLE001 - N1-SPEC 4.2: any status-store error is R1
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)  # R1
         if stored is None:
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)  # R1
@@ -1002,10 +1007,10 @@ class Ed25519IssuerVerifier:
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)
         now = int(at.reading)
 
-        # I4 / I5: Read signed authority record from store
+        # I4 / I5: Read signed authority record from store; any store error is I4
         try:
             stored = self._read_store(self.records, ref)
-        except StoreUnavailable:
+        except Exception:  # noqa: BLE001 - N1-SPEC 4.2: verify never raises
             return _refusal(RefusalCode.AUTHORITY_UNAVAILABLE)
         if stored is None:
             return _refusal(RefusalCode.AUTHORITY_UNBOUND)
@@ -1077,20 +1082,24 @@ class Ed25519IssuerVerifier:
         if not (int(str(record["not_before"])) <= now < int(str(record["expires_at"]))):
             return _refusal(RefusalCode.AUTHORITY_EXPIRED)
 
-        # S1: Canonical SelectedSubject projection match
+        # S1: Canonical SelectedSubject projection match. A subject that cannot be
+        # projected or encoded (look-alike type, raising attribute, lone surrogate)
+        # is S1, never an exception out of verify (N1-SPEC 4.2).
         try:
-            projected = project_subject(subject)
-        except UnprojectableSubject:
+            projected_bytes = canonical_bytes(project_subject(subject))
+        except Exception:  # noqa: BLE001
             return _refusal(RefusalCode.SUBJECT_MISMATCH)
-        if canonical_bytes(projected) != canonical_bytes(record["subject"]):
+        if projected_bytes != canonical_bytes(record["subject"]):
             return _refusal(RefusalCode.SUBJECT_MISMATCH)
 
         # P1-P2: Non-empty peer & process registration (P1 -> PEER_UNVERIFIED) and actor membership (P2 -> SUBJECT_MISMATCH)
-        process = getattr(peer, "process", None)
-        registration = getattr(process, "process_registration", None)
-        if not is_text(getattr(peer, "peer_registration", None)) or not is_text(
-            registration
-        ):
+        try:
+            process: Any = getattr(peer, "process", None)
+            registration = getattr(process, "process_registration", None)
+            peer_registration = getattr(peer, "peer_registration", None)
+        except Exception:  # noqa: BLE001 - an odd peer object is P1, never an error
+            return _refusal(RefusalCode.PEER_UNVERIFIED)
+        if not is_text(peer_registration) or not is_text(registration):
             return _refusal(RefusalCode.PEER_UNVERIFIED)
         actors_raw = record["actors"]
         assert isinstance(actors_raw, list)
@@ -1220,7 +1229,7 @@ class Ed25519IssuerVerifier:
             selected_job=placeholder_job,
             authority_revisions=(ref,),
             window=None,
-            processes=(peer.process,),
+            processes=(process,),
             effect=primary_effect,
         )
         return AcceptedData(data=verified, evidence=evidence)

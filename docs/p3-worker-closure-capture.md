@@ -27,7 +27,22 @@ All capture hooks are **inert and switched off by default**:
 | --- | --- |
 | `CapturedGitCheckoutProvenance` | Immutable bundle of validated `RepositoryState`, per-file `GitProvenance` records, `SourceNode` (`kind="git_source"`) entries, and `VerifiedOriginFact` (`purpose="membership"`) witnesses for a clean Git checkout. |
 | `capture_git_checkout_provenance(...)` | Reads the HEAD commit, tree, tracked blob OIDs/modes and index straight from the explicit checkout's `.git` files (HEAD, refs, `packed-refs`, zlib loose objects, index; no subprocess), hashes every worktree file, and validates the result with `p3_source_closure.provenance.check_provenance`. |
-| `ObservedLoad` | One load the observer saw: `node_id` and `loaded` (the identity of the loaded bytes, never of the node name). It carries no coverage category. |
+| `ObservedLoad` | One load the observer saw: `node_id`, `loaded` (the identity of the loaded bytes, never of the node name) and `event_kind` (`"load"`, or `"cache"` when CPython ran a cached `.pyc`). It carries no coverage category. |
+
+`temper_ai.p3_authority.executed_python_code` (what CPython actually executes):
+
+| Symbol | Purpose |
+|---|---|
+| `cached_python_code_path(source_path, *, pycache_prefix, optimization)` | Where CPython looks for the `.pyc` (same rule as `importlib.util.cache_from_source`, with the worker's `sys.pycache_prefix` and `-O` level given). |
+| `executed_python_code(source_path, *, pycache_prefix, optimization, check_hash_based_pycs)` -> `ExecutedPythonCode` | The bytes CPython executes on import: a `.pyc` whose header CPython accepts (magic, known flags, then the recorded source mtime and size, or the source hash per `--check-hash-based-pycs`) runs instead of the source, even a stale one. |
+| `observe_python_module_execution(*, source_node_id, cached_node_id, source_path, boundary, ...)` | The `ObservedLoad` for one imported module: a used `.pyc` -> `event_kind="cache"` for the reviewed `cached_code` node with the `.pyc` bytes; a used `.pyc` with no reviewed cached node -> `CLOSURE_MISMATCH`; else the source bytes for the source node; unreadable source -> `OBSERVATION_GAP`. |
+
+A stale but valid `.pyc` (source `X = 1`, `.pyc` compiled from `X = 2` with the same
+size and mtime) is what CPython runs, even under `-B`; reported as a `cache` event for
+the reviewed `cached_code` node, the comparator refuses it with `BYTE_SUBSTITUTION` +
+`CACHED_CODE` (`test_refusal_twin_stale_valid_pyc_is_byte_substitution`). Reporting
+the source bytes instead would hide it. Every header rule is checked against a real
+CPython import in `test_executed_python_code_agrees_with_cpython`.
 | `refuse_observer_scope_shortfall` | Fail-fast check of one observer scope record (`Checkpoint`) against a recorded stream: epoch, `first_sequence=0`, `last_sequence` / `last_event_id` at the stream's last event, child frontier, closure boundary, `sealed`, `loss_count=0` and both refs, else `OBSERVATION_GAP`; every `ALL_N3_COVERAGE_CATEGORIES` entry in `coverage` and not in `gaps`, else `refuse_missing_coverage`. |
 | `WorkerClosureCollector` | Opt-in stateful collector wired into launch, early bootstrap, runner bootstrap, script launch, and verified child registration hooks to assemble the worker-half `LoadedClosureEnvelope` (`build_envelope`, checked by `validate_loaded_envelope`). It supplies no `ExpectedProcess` entries or `VerifiedOriginFact` witnesses: those come from the caller's own observer record, so the collector never witnesses its own claims. |
 | `merge_dual_role_halves(...)` -> `DualRoleEnvelope` | Checks the worker half and the peer (host) half and each half's supplied observer identity, then merges them into one envelope whose observer origin is derived, never supplied (see below). |
@@ -128,6 +143,16 @@ These are fail-fast pre-checks. The comparator stays the final decider: every lo
 judged by node id against the reviewed profile, bytes and representation, and each
 process's scope against the observer's facts, so an envelope claiming more than the
 observer sealed never compares `MATCH`.
+
+Shared cases: `test_shared_scope_case_worker_half_pre_check` runs Systems #95's
+`scope_case(case_id, "worker")` SC-01..SC-11 (the same cases ship as
+`p3_source_closure/n3_scope_cases.json`). On the observer-side worker record the
+pre-check passes SC-01/SC-02 (comparator `MATCH`), refuses SC-03/SC-09 with
+`CLOSURE_INCOMPLETE` and SC-04/SC-05/SC-08 with `OBSERVATION_GAP`, and refuses SC-07
+(a load after the sealed `last_sequence`) with `OBSERVATION_GAP`. SC-06/SC-10/SC-11
+change only the envelope's scope: the pre-check can't see them, the comparator
+refuses them, and the collector never makes them because it copies the observer's
+scope; their observer twins (SC-03, SC-04, SC-08) are refused by the pre-check.
 
 ---
 

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
+import os
+import py_compile
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,12 +27,13 @@ from p3_source_closure import (
     ReviewedSourceGraph,
     SourceGraph,
     VerifiedClosureOrigins,
+    compare_loaded_source,
     validate_loaded_envelope,
     validate_reviewed_graph,
 )
 from p3_source_closure.parsing import byte_identity
 from p3_source_closure.provenance import Findings, check_provenance
-from temper_ai.p3_authority import worker_closure_capture
+from temper_ai.p3_authority import executed_python_code, worker_closure_capture
 from temper_ai.p3_authority._providers import SystemsSourceClosureComparator
 from temper_ai.p3_authority.child_registration import ChildRegistrationRegistry
 from temper_ai.p3_authority.contract import AcceptedData, Refusal, RefusalCode
@@ -55,11 +60,17 @@ from temper_ai.p3_authority.worker_closure_capture import (
     claim_identity,
     make_evidence_ref,
     merge_dual_role_halves,
+    refuse_observer_scope_shortfall,
     to_wire,
     verify_and_compare_worker_closure,
 )
 from temper_ai.p3_authority.worker_observation import WorkerObservationAdapter
-from tests.test_architecture.ops_host_n3_cases import clean_world, witnesses
+from tests.test_architecture.ops_host_n3_cases import (
+    SCOPE_CASES,
+    clean_world,
+    scope_case,
+    witnesses,
+)
 from tests.test_p3_authority.test_child_registration import (
     SyntheticWorkerProviderDouble,
     make_child_pair,
@@ -179,18 +190,29 @@ def _loaded_bytes(reviewed: ReviewedSourceGraph, node_id: str) -> ContentIdentit
 
 
 def _entry_node(entry) -> str:
-    """A script entry is a node id, or (node id, loaded bytes override)."""
+    """A script entry is a node id, (node id, loaded bytes override) or an ObservedLoad."""
+    if isinstance(entry, ObservedLoad):
+        return entry.node_id
     return entry if isinstance(entry, str) else entry[0]
 
 
 def _entry_bytes(reviewed: ReviewedSourceGraph, entry) -> ContentIdentity:
     """A script entry's loaded bytes: its own override, else the reviewed node's."""
+    if isinstance(entry, ObservedLoad):
+        return entry.loaded
     return _loaded_bytes(reviewed, entry) if isinstance(entry, str) else entry[1]
+
+
+def _entry_kind(entry) -> str:
+    """A script entry's event kind: an ObservedLoad's own, else a plain load."""
+    return entry.event_kind if isinstance(entry, ObservedLoad) else "load"
 
 
 def _observed_loads(reviewed: ReviewedSourceGraph, script) -> tuple[ObservedLoad, ...]:
     return tuple(
-        ObservedLoad(node_id=_entry_node(entry), loaded=_entry_bytes(reviewed, entry))
+        entry
+        if isinstance(entry, ObservedLoad)
+        else ObservedLoad(node_id=_entry_node(entry), loaded=_entry_bytes(reviewed, entry))
         for entry in script
     )
 
@@ -431,7 +453,10 @@ def _observer_record(
     runtime, bootstrap, runner = flow.scripts
 
     def _loads(script):
-        return [("load", _entry_node(e), _entry_bytes(reviewed, e), "loader-v1", None) for e in script]
+        return [
+            (_entry_kind(e), _entry_node(e), _entry_bytes(reviewed, e), "loader-v1", None)
+            for e in script
+        ]
 
     start = ("start", None, None, "trusted-launch", None)
     child_id = flow.closure_child.instance_id
@@ -953,6 +978,356 @@ def test_refusal_twin_producer_widened_scope_is_refused_by_comparator(
     )
     assert seen and seen[0].disposition != "MATCH"
     assert isinstance(cmp.result, Refusal)
+
+
+# Systems #95 shared scope cases, worker half. Pre-check outcome on the observer-side
+# worker record (None = passes on to the comparator). SC-06/07/10/11 are producer edits:
+# the observer-side record is their twin's, and the producer copies it verbatim.
+SCOPE_CASE_OBSERVER_TWIN = {"SC-06": "SC-03", "SC-07": "SC-01", "SC-10": "SC-04", "SC-11": "SC-08"}
+SCOPE_CASE_PRE_CHECK = {
+    "SC-01": None,
+    "SC-02": None,
+    "SC-03": RefusalCode.CLOSURE_INCOMPLETE,
+    "SC-04": RefusalCode.OBSERVATION_GAP,
+    "SC-05": RefusalCode.OBSERVATION_GAP,
+    "SC-08": RefusalCode.OBSERVATION_GAP,
+    "SC-09": RefusalCode.CLOSURE_INCOMPLETE,
+}
+
+
+def _worker_half_pre_checks(inputs) -> dict[str, RefusalCode | None]:
+    """refuse_observer_scope_shortfall on the worker and its children, from their own records."""
+    envelope = inputs.observed.envelope
+    outcomes: dict[str, RefusalCode | None] = {}
+    for process in envelope.process_observations:
+        instance = process.instance
+        if instance.instance_id != "worker" and instance.parent_instance != "worker":
+            continue
+        res = refuse_observer_scope_shortfall(
+            process.checkpoint,
+            epoch=process.checkpoint.epoch,
+            events=process.events,
+            child_frontier=tuple(e.child_instance for e in process.events if e.kind == "child"),
+            closure_boundary=envelope.boundary,
+            boundary="C_BEFORE_COUNT",
+        )
+        outcomes[instance.instance_id] = res.code if isinstance(res, Refusal) else None
+    return outcomes
+
+
+def _worker_process(inputs) -> ProcessObservation:
+    (worker,) = (
+        p for p in inputs.observed.envelope.process_observations if p.instance.instance_id == "worker"
+    )
+    return worker
+
+
+@pytest.mark.parametrize("case", [c for c in SCOPE_CASES if c.half == "worker"], ids=lambda c: c.case_id)
+def test_shared_scope_case_worker_half_pre_check(case) -> None:
+    """Systems #95 SC-01..SC-11, worker half: the pre-check refuses every observer-side
+    record the comparator wouldn't MATCH, passes the honest ones, and a producer edit
+    differs from its observer twin only by the edit, which verbatim copy never makes."""
+    inputs = scope_case(case.case_id, case.half)
+    comparison = compare_loaded_source(
+        inputs.reviewed, inputs.observed, expected=inputs.expected, verified=inputs.verified
+    )
+    assert (comparison.disposition, tuple(sorted(comparison.reasons))) == (
+        case.disposition,
+        case.reasons,
+    )
+    outcomes = _worker_half_pre_checks(inputs)
+    twin_id = SCOPE_CASE_OBSERVER_TWIN.get(case.case_id)
+    if twin_id is None:
+        assert outcomes["worker"] == SCOPE_CASE_PRE_CHECK[case.case_id]
+        assert all(code is None for pid, code in outcomes.items() if pid != "worker")
+        assert (outcomes["worker"] is None) == (case.disposition == "MATCH")
+        return
+    twin = scope_case(twin_id, case.half)
+    observer_worker, producer_worker = _worker_process(twin), _worker_process(inputs)
+    # Witnesses come from the observer-side record: only the transport identity of the
+    # edited envelope bytes differs.
+    assert (inputs.reviewed, inputs.expected) == (twin.reviewed, twin.expected)
+    assert inputs.verified.observed_bytes != twin.verified.observed_bytes
+    assert replace(inputs.verified, observed_bytes=twin.verified.observed_bytes) == twin.verified
+    if case.case_id == "SC-07":
+        # A load recorded after the observer sealed: the stream outruns the scope.
+        assert replace(producer_worker, events=observer_worker.events) == observer_worker
+        assert outcomes["worker"] == RefusalCode.OBSERVATION_GAP
+    else:
+        # Only the scope differs: invisible to the pre-check, refused by the comparator,
+        # and never produced, because build_envelope copies the observer's scope.
+        assert producer_worker.checkpoint != observer_worker.checkpoint
+        assert replace(producer_worker, checkpoint=observer_worker.checkpoint) == observer_worker
+        assert outcomes["worker"] is None
+        assert comparison.disposition == "REFUSED"
+    assert _worker_half_pre_checks(twin)["worker"] == SCOPE_CASE_PRE_CHECK[twin_id]
+
+
+# Architecture #485 C8 / Systems rm-f8ac59b5: what CPython executed, not the source name.
+# Each fixture module holds "X = <n>"; the source is always X = 1, a stale .pyc X = 2.
+_HONEST_SOURCE = b"X = 1\n"
+_STALE_SOURCE = b"X = 2\n"  # same size as the honest source
+
+
+def _cpython_runs(module_dir: Path, *flags: str) -> bytes:
+    """The X a real CPython gets when it imports main from module_dir (-B: no writes)."""
+    code = "import sys; sys.path.insert(0, sys.argv[1]); import main; print(main.X)"
+    out = subprocess.run(
+        [sys.executable, "-I", "-B", *flags, "-c", code, str(module_dir)],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return f"X = {out.stdout.strip()}\n".encode("ascii")
+
+
+def _write_pyc(
+    tmp_path: Path,
+    source: Path,
+    pyc: Path,
+    *,
+    compiled_from: bytes = _STALE_SOURCE,
+    mode: py_compile.PycInvalidationMode = py_compile.PycInvalidationMode.TIMESTAMP,
+    optimize: int = -1,
+) -> bytes:
+    """Compile compiled_from into pyc for source, recording source's mtime (a valid header)."""
+    other = tmp_path / "compiled-from" / pyc.name / "main.py"
+    other.parent.mkdir(parents=True, exist_ok=True)
+    other.write_bytes(compiled_from)
+    stat = source.stat()
+    os.utime(other, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    pyc.parent.mkdir(parents=True, exist_ok=True)
+    py_compile.compile(
+        str(other), cfile=str(pyc), dfile=str(source), doraise=True, invalidation_mode=mode,
+        optimize=optimize,
+    )
+    return pyc.read_bytes()
+
+
+def _patch_pyc(pyc: Path, offset: int, value: bytes) -> None:
+    data = bytearray(pyc.read_bytes())
+    data[offset : offset + len(value)] = value
+    pyc.write_bytes(bytes(data))
+
+
+def _module_source(tmp_path: Path) -> Path:
+    source = tmp_path / "modules" / "main.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(_HONEST_SOURCE)
+    return source
+
+
+_HASH = py_compile.PycInvalidationMode
+# (case, how the fixture is set up, CPython flags, helper kwargs): CPython is the oracle.
+EXECUTED_CODE_CASES = (
+    ("timestamp-stale-same-mtime-size", {}, (), {}),
+    ("timestamp-mtime-differs", {"touch": True}, (), {}),
+    ("timestamp-size-differs", {"compiled_from": b"X = 22\n"}, (), {}),
+    ("bad-magic", {"patch": (0, b"\x00")}, (), {}),
+    ("unknown-flags", {"patch": (4, b"\x04")}, (), {}),
+    ("no-pyc", {"no_pyc": True}, (), {}),
+    ("checked-hash-stale", {"mode": _HASH.CHECKED_HASH}, (), {}),
+    ("unchecked-hash-stale", {"mode": _HASH.UNCHECKED_HASH}, (), {}),
+    (
+        "unchecked-hash-always",
+        {"mode": _HASH.UNCHECKED_HASH},
+        ("--check-hash-based-pycs", "always"),
+        {"check_hash_based_pycs": "always"},
+    ),
+    (
+        "checked-hash-never",
+        {"mode": _HASH.CHECKED_HASH},
+        ("--check-hash-based-pycs", "never"),
+        {"check_hash_based_pycs": "never"},
+    ),
+    ("empty-pycache-prefix", {}, ("prefix",), {"prefix": True}),
+    ("stale-in-pycache-prefix", {"in_prefix": True}, ("prefix",), {"prefix": True}),
+    ("optimized-run-ignores-plain-pyc", {}, ("-O",), {"optimization": "1"}),
+    ("optimized-run-uses-opt-pyc", {"optimize": 1}, ("-O",), {"optimization": "1"}),
+)
+
+
+@pytest.mark.parametrize(
+    ("case", "setup", "flags", "kwargs"), EXECUTED_CODE_CASES, ids=[c[0] for c in EXECUTED_CODE_CASES]
+)
+def test_executed_python_code_agrees_with_cpython(
+    tmp_path: Path, case: str, setup: dict, flags: tuple, kwargs: dict
+) -> None:
+    """executed_python_code reports the bytes a real CPython ran, for every header rule."""
+    source = _module_source(tmp_path)
+    prefix = tmp_path / "pycache-prefix"
+    prefix.mkdir()
+    helper_kwargs = dict(kwargs)
+    if helper_kwargs.pop("prefix", False):
+        helper_kwargs["pycache_prefix"] = prefix
+        flags = ("-X", f"pycache_prefix={prefix}")
+    pyc = executed_python_code.cached_python_code_path(
+        source,
+        pycache_prefix=prefix if setup.get("in_prefix") else None,
+        optimization="1" if setup.get("optimize") == 1 else "",
+    )
+    assert pyc is not None
+    if not setup.get("no_pyc"):
+        _write_pyc(
+            tmp_path,
+            source,
+            pyc,
+            compiled_from=setup.get("compiled_from", _STALE_SOURCE),
+            mode=setup.get("mode", _HASH.TIMESTAMP),
+            optimize=setup.get("optimize", -1),
+        )
+    if "patch" in setup:
+        _patch_pyc(pyc, *setup["patch"])
+    if setup.get("touch"):
+        stat = source.stat()
+        os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10_000_000_000))
+    ran = _cpython_runs(source.parent, *flags)
+    executed = executed_python_code.executed_python_code(source, **helper_kwargs)
+    if ran == _HONEST_SOURCE:
+        assert (executed.representation, executed.path, executed.raw) == (
+            "source",
+            source,
+            _HONEST_SOURCE,
+        ), case
+    else:
+        assert executed.representation == "cached", case
+        assert executed.raw == pyc.read_bytes()
+    assert (ran == _HONEST_SOURCE) == (
+        case
+        not in (
+            "timestamp-stale-same-mtime-size",
+            "unchecked-hash-stale",
+            "checked-hash-never",
+            "stale-in-pycache-prefix",
+            "optimized-run-uses-opt-pyc",
+        )
+    ), case
+
+
+@pytest.mark.parametrize("prefix", [False, True])
+@pytest.mark.parametrize("optimization", ["", "1", "2"])
+def test_cached_python_code_path_is_cpythons_cache_from_source(
+    tmp_path: Path, monkeypatch, prefix: bool, optimization: str
+) -> None:
+    source = _module_source(tmp_path)
+    pycache_prefix = tmp_path / "prefix" if prefix else None
+    monkeypatch.setattr(sys, "pycache_prefix", str(pycache_prefix) if prefix else None)
+    expected = importlib.util.cache_from_source(str(source), optimization=optimization)
+    assert executed_python_code.cached_python_code_path(
+        source, pycache_prefix=pycache_prefix, optimization=optimization
+    ) == Path(expected)
+
+
+def _pyc_reviewed_world(tmp_path: Path):
+    """Reviewed world whose main.py is X = 1 and whose cached_code node is its honest .pyc."""
+    repo_dir = _init_clean_tmp_git_repo(tmp_path)
+    (repo_dir / "main.py").write_bytes(_HONEST_SOURCE)
+    _git(repo_dir, "commit", "-am", "main X = 1")
+    source = repo_dir / "main.py"
+    base, reviewed, _git_cap, ev = _build_reviewed_world_for_git_repo(repo_dir)
+    pyc = executed_python_code.cached_python_code_path(source)
+    assert pyc is not None
+    honest = _write_pyc(tmp_path, source, pyc, compiled_from=_HONEST_SOURCE)
+    nodes = tuple(
+        replace(
+            n,
+            content=byte_identity(honest),
+            provenance=replace(n.provenance, executed=byte_identity(honest)),
+        )
+        if n.id == "cache"
+        else n
+        for n in reviewed.graph.nodes
+    )
+    reviewed = validate_reviewed_graph(to_wire(replace(reviewed.graph, nodes=nodes)))
+    (cache_node,) = (n for n in reviewed.graph.nodes if n.id == "cache")
+    assert cache_node.kind == "cached_code"
+    findings = Findings(
+        VerifiedClosureOrigins(
+            reviewed_bytes=reviewed.content,
+            observed_bytes=None,
+            expectation=None,
+            validity_checkpoint=None,
+            facts=witnesses(reviewed.graph, ()),
+        )
+    )
+    check_provenance(reviewed.graph, findings)
+    assert not findings.contradictions and not findings.gaps
+    return source, pyc, base, reviewed, ev
+
+
+@pytest.mark.parametrize("stale", [False, True], ids=["honest-pyc", "stale-pyc"])
+def test_refusal_twin_stale_valid_pyc_is_byte_substitution(
+    tmp_path: Path, monkeypatch, stale: bool
+) -> None:
+    """C8: a stale but valid .pyc (source X = 1, pyc X = 2, same size and mtime) is what
+    CPython runs, even under -B; the worker reports it as a cache event for the reviewed
+    cached_code node, so the comparator refuses BYTE_SUBSTITUTION + CACHED_CODE.
+    The honest twin (the reviewed .pyc) matches."""
+    source, pyc, base, reviewed, ev = _pyc_reviewed_world(tmp_path)
+    if stale:
+        _write_pyc(tmp_path, source, pyc, compiled_from=_STALE_SOURCE)
+    assert source.read_bytes() == _HONEST_SOURCE
+    assert _cpython_runs(source.parent) == (_STALE_SOURCE if stale else _HONEST_SOURCE)
+    observed = executed_python_code.observe_python_module_execution(
+        source_node_id="main", cached_node_id="cache", source_path=source, boundary="C_BEFORE_COUNT"
+    )
+    assert observed == ObservedLoad(
+        node_id="cache", loaded=byte_identity(pyc.read_bytes()), event_kind="cache"
+    )
+    runner = tuple(observed if entry == "cache" else entry for entry in RUNNER_SCRIPT)
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev, runner_script=runner)
+    env_res = _build(flow)
+    assert isinstance(env_res, AcceptedData)
+    worker_events = env_res.data.envelope.process_observations[0].events
+    assert [e.kind for e in worker_events if e.node_id == "cache"] == ["cache"]
+    seen = _record_comparisons(monkeypatch)
+    cmp = _compare_capture(flow, base, reviewed, ev, worker_envelope=env_res.data)
+    if not stale:
+        assert isinstance(cmp.result, AcceptedData)
+        assert cmp.result.data.disposition == "MATCH"
+        return
+    assert (seen[0].disposition, tuple(sorted(seen[0].reasons))) == (
+        "REFUSED",
+        ("BYTE_SUBSTITUTION", "CACHED_CODE"),
+    )
+    assert isinstance(cmp.result, Refusal)
+    assert cmp.result.code == RefusalCode.CLOSURE_MISMATCH
+
+
+def test_executed_pyc_without_reviewed_cached_node_or_readable_source_refuses(
+    tmp_path: Path,
+) -> None:
+    source = _module_source(tmp_path)
+    pyc = executed_python_code.cached_python_code_path(source)
+    assert pyc is not None
+    _write_pyc(tmp_path, source, pyc)
+    unreviewed = executed_python_code.observe_python_module_execution(
+        source_node_id="main", cached_node_id=None, source_path=source, boundary="C_BEFORE_COUNT"
+    )
+    assert isinstance(unreviewed, Refusal)
+    assert unreviewed.code == RefusalCode.CLOSURE_MISMATCH
+    pyc.unlink()
+    assert executed_python_code.observe_python_module_execution(
+        source_node_id="main", cached_node_id=None, source_path=source, boundary="C_BEFORE_COUNT"
+    ) == ObservedLoad(node_id="main", loaded=byte_identity(_HONEST_SOURCE))
+    unreadable = executed_python_code.observe_python_module_execution(
+        source_node_id="main",
+        cached_node_id="cache",
+        source_path=tmp_path / "missing" / "main.py",
+        boundary="C_BEFORE_COUNT",
+    )
+    assert isinstance(unreadable, Refusal)
+    assert unreadable.code == RefusalCode.OBSERVATION_GAP
+    with pytest.raises(ValueError):
+        executed_python_code.executed_python_code(Path("main.py"))
+    with pytest.raises(ValueError):
+        executed_python_code.executed_python_code(source, pycache_prefix=Path("relative"))
+    with pytest.raises(ValueError):
+        executed_python_code.executed_python_code(source, optimization="3")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        executed_python_code.executed_python_code(source, check_hash_based_pycs="sometimes")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        ObservedLoad(node_id="main", loaded=byte_identity(b"x"), event_kind="exec")  # type: ignore[arg-type]
 
 
 def test_no_hook_or_adapter_can_declare_coverage() -> None:

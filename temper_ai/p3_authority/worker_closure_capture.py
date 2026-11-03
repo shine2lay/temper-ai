@@ -107,22 +107,31 @@ def byte_content_identity(raw: bytes | str) -> ContentIdentity:
     return byte_identity(raw.encode("utf-8") if isinstance(raw, str) else raw)
 
 
+ObservedLoadKind = Literal["load", "cache"]
+StreamEventKind = Literal["start", "load", "cache", "child", "end"]
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ObservedLoad:
-    """One load the observer saw: node id and the loaded bytes' identity.
+    """One load the observer saw: node id, the loaded bytes' identity and its event kind.
 
-    A load carries no coverage category: what the observer watched is its own
-    sealed scope record (the process's ``Checkpoint``), never a load label.
+    ``event_kind`` is ``"cache"`` when the executed bytes were cached code (a
+    ``__pycache__`` .pyc; see ``executed_python_code.observe_python_module_execution``),
+    else ``"load"``. A load carries no coverage category: what the observer watched is
+    its own sealed scope record (the process's ``Checkpoint``), never a load label.
     """
 
     node_id: str
     loaded: ContentIdentity
+    event_kind: ObservedLoadKind = "load"
 
     def __post_init__(self) -> None:
         if not isinstance(self.node_id, str) or not self.node_id:
             raise ValueError("ObservedLoad.node_id must be a non-empty string")
         if not isinstance(self.loaded, ContentIdentity):
             raise ValueError("ObservedLoad.loaded must be a ContentIdentity")
+        if self.event_kind not in ("load", "cache"):
+            raise ValueError("ObservedLoad.event_kind must be 'load' or 'cache'")
 
 
 def make_evidence_ref(
@@ -472,7 +481,7 @@ def stream_event(
     profile_id: str,
     sequence: int,
     *,
-    kind: Literal["start", "load", "child", "end"],
+    kind: StreamEventKind,
     node_id: str | None = None,
     loaded: ContentIdentity | None = None,
     loader: str = "loader-v1",
@@ -572,7 +581,7 @@ class _ChildStream:
     def append(
         self,
         *,
-        kind: Literal["start", "load", "child", "end"],
+        kind: StreamEventKind,
         node_id: str | None = None,
         loaded: ContentIdentity | None = None,
         loader: str = "loader-v1",
@@ -669,7 +678,7 @@ class WorkerClosureCollector:
     def _append_worker_event(
         self,
         *,
-        kind: Literal["start", "load", "child", "end"],
+        kind: StreamEventKind,
         node_id: str | None = None,
         loaded: ContentIdentity | None = None,
         loader: str = "loader-v1",
@@ -691,7 +700,9 @@ class WorkerClosureCollector:
         added: list[LoadEvent] = []
         for load in loads:
             added.append(
-                self._append_worker_event(kind="load", node_id=load.node_id, loaded=load.loaded)
+                self._append_worker_event(
+                    kind=load.event_kind, node_id=load.node_id, loaded=load.loaded
+                )
             )
         return tuple(added)
 
@@ -930,7 +941,7 @@ class WorkerClosureCollector:
         )
         child.append(kind="start", loader="trusted-launch")
         for load in (*child_runtime_loads, *child_loads):
-            child.append(kind="load", node_id=load.node_id, loaded=load.loaded)
+            child.append(kind=load.event_kind, node_id=load.node_id, loaded=load.loaded)
         self._children[c_inst.instance_id] = child
         return AcceptedData(data=worker_event, evidence=self._evidence)
 

@@ -63,6 +63,10 @@ from temper_ai.p3_authority.host_types import (
     ReviewedSourceGraph,
     SelectedHostJob,
 )
+from temper_ai.p3_authority.native_values import (
+    NativeProcessRefValue,
+    NativeWitnessValue,
+)
 from temper_ai.p3_authority.registry import (
     DecisionEvidenceRecord,
     ImmutableReferenceRecord,
@@ -454,13 +458,9 @@ def verify_selected_host_job(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _SnapshotProcessRef:
-    process_reference: str = "proc:temper-selection-snapshot"
-
-    @property
-    def process_registration(self) -> str:
-        return self.process_reference
+_SNAPSHOT_PROCESS: Final[NativeProcessRefValue] = NativeProcessRefValue(
+    "proc:temper-selection-snapshot"
+)
 
 
 def _build_snapshot_evidence(
@@ -473,7 +473,7 @@ def _build_snapshot_evidence(
         selected_job=job,
         authority_revisions=job.authority_refs or (job.selector_issuer,),
         window=None,
-        processes=(_SnapshotProcessRef(),),
+        processes=(_SNAPSHOT_PROCESS,),
         effect=default_effect_for_job(job, boundary),
         phase=phase,
         boundary=boundary,
@@ -487,19 +487,10 @@ def _build_snapshot_evidence(
         compatibility=job.compatibility_profile,
     )
 
-@dataclass(frozen=True, slots=True)
-class _SnapshotWitness:
-    witness_registration: str = "witness:temper-selection-snapshot"
-
-    @property
-    def witness_reference(self) -> str:
-        return self.witness_registration
-
-
 _DEFAULT_VERIFIED_AT: Final[TrustedInstant] = TrustedInstant(
     clock_domain="monotonic:temper-selection-snapshot",
     reading="1000",
-    witness=_SnapshotWitness(),
+    witness=NativeWitnessValue("witness:temper-selection-snapshot"),
 )
 
 

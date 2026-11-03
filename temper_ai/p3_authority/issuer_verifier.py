@@ -57,10 +57,15 @@ from temper_ai.p3_authority.contract import (
     TrustedInstant,
     VerifiedAuthority,
 )
+from temper_ai.p3_authority.native_values import (
+    NativeIntervalValue,
+    NativeProcessRefValue,
+    NativeRootObjectValue,
+    NativeWitnessValue,
+)
 from temper_ai.p3_authority.references import (
     NativeProcessRef,
     NativeSubject,
-    NativeWitness,
 )
 
 ISSUER_SIGNATURE_LABEL: Final[bytes] = b"temper-p3-issuer/v1"
@@ -276,34 +281,8 @@ def open_envelope(data: object) -> tuple[dict[str, object], bytes] | None:
 
 
 # ---------------------------------------------------------------------------
-# Concrete reference carriers for verified outputs
+# Concrete subject carriers for verified outputs (native values: native_values)
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class IssuerWitness:
-    witness_reference: str
-
-    @property
-    def witness_registration(self) -> str:
-        return self.witness_reference
-
-
-@dataclass(frozen=True, slots=True)
-class IssuerProcessRef:
-    process_registration: str
-
-    @property
-    def process_reference(self) -> str:
-        return self.process_registration
-
-
-@dataclass(frozen=True, slots=True)
-class IssuerRootObject:
-    filesystem_object: str
-    mount_identity: str
-    namespace_identity: str
-    observation_epoch: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,14 +293,8 @@ class IssuerFutureSubject:
 
 @dataclass(frozen=True, slots=True)
 class IssuerExistingSubject:
-    identity: IssuerProcessRef | IssuerRootObject
+    identity: NativeProcessRefValue | NativeRootObjectValue
     subject_kind: Literal["existing"] = field(default="existing", init=False)
-
-
-@dataclass(frozen=True, slots=True)
-class IssuerInterval:
-    clock_domain: str
-    interval_witness: NativeWitness
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,9 +455,11 @@ def record_subject_to_native(obj: dict[str, object]) -> NativeSubject:
     if kind == "future":
         return IssuerFutureSubject(str(obj["selected_scope_reference"]))
     if kind == "existing-process":
-        return IssuerExistingSubject(IssuerProcessRef(str(obj["process_registration"])))
+        return IssuerExistingSubject(
+            NativeProcessRefValue(str(obj["process_registration"]))
+        )
     return IssuerExistingSubject(
-        IssuerRootObject(**{name: str(obj[name]) for name in _ROOT_FIELDS})
+        NativeRootObjectValue(**{name: str(obj[name]) for name in _ROOT_FIELDS})
     )
 
 
@@ -1160,7 +1135,7 @@ class Ed25519IssuerVerifier:
         ):
             return _refusal(RefusalCode.CONDITIONS_UNMET)
 
-        witness = IssuerWitness(f"{ISSUER_AUTHORITY_SCHEMA}#{digest}")
+        witness = NativeWitnessValue(f"{ISSUER_AUTHORITY_SCHEMA}#{digest}")
         roots_raw = record["roots"]
         assert isinstance(roots_raw, list)
         verified_ops = frozenset(
@@ -1204,7 +1179,7 @@ class Ed25519IssuerVerifier:
             issuer_identity=str(record["issuer_id"]),
             verified_record_digest=digest,
             subject=subject,
-            actors=tuple(IssuerProcessRef(str(a)) for a in actors_raw),
+            actors=tuple(NativeProcessRefValue(str(a)) for a in actors_raw),
             operations=verified_ops,
             roots=tuple(
                 record_subject_to_native(r) for r in roots_raw if isinstance(r, dict)
@@ -1216,7 +1191,7 @@ class Ed25519IssuerVerifier:
             revocation_revision=str(status["revocation_revision"]),
             checked_at=at,
             verification_profile=ISSUER_VERIFICATION_PROFILE,
-            validity=IssuerInterval(
+            validity=NativeIntervalValue(
                 clock_domain=str(record["clock_domain"]),
                 interval_witness=witness,
             ),
@@ -1266,11 +1241,7 @@ __all__ = [
     "ISSUER_VERIFICATION_PROFILE",
     "IssuerExistingSubject",
     "IssuerFutureSubject",
-    "IssuerInterval",
-    "IssuerProcessRef",
-    "IssuerRootObject",
     "IssuerVerificationEvidence",
-    "IssuerWitness",
     "PRODUCTION_ANCHOR_TABLE",
     "PRODUCTION_CLOCK_DOMAIN_UNSET",
     "PRODUCTION_TRUST_ANCHORS",

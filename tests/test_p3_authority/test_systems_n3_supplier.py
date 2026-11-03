@@ -59,7 +59,7 @@ from p3_source_closure.provenance import (
     event_claim,
     process_claim,
 )
-from p3_source_closure.records import Purpose
+from p3_source_closure.records import Purpose, Reason
 from temper_ai.p3_authority._providers import SystemsSourceClosureComparator
 from temper_ai.p3_authority.contract import (
     AcceptedData,
@@ -696,6 +696,76 @@ def _run_systems_comparator(
     )
 
 
+def _assert_matches_everywhere(world: SupplierTwinWorld) -> SourceClosureComparison:
+    """compare_loaded_source, SharedN3Adapter and SystemsSourceClosureComparator all MATCH."""
+    direct = compare_loaded_source(
+        world.reviewed,
+        world.observed,
+        expected=world.expected,
+        verified=world.verified,
+    )
+    assert direct.disposition == "MATCH"
+    assert direct.reasons == ()
+
+    shared_out = _run_shared_n3_adapter(world)
+    assert isinstance(shared_out, AcceptedData)
+    assert shared_out.data.disposition == "MATCH"
+
+    sys_out = _run_systems_comparator(world)
+    assert isinstance(sys_out, AcceptedData)
+    assert sys_out.data.disposition == "MATCH"
+    return direct
+
+
+def _assert_comparison_refused(
+    world: SupplierTwinWorld,
+    disposition: Literal["REFUSED", "UNKNOWN"],
+    reasons: tuple[Reason, ...],
+    code: RefusalCode,
+) -> None:
+    """compare_loaded_source gives exactly this disposition and reason set, with no
+    frontiers; SharedN3Adapter and SystemsSourceClosureComparator both refuse with code."""
+    direct = compare_loaded_source(
+        world.reviewed,
+        world.observed,
+        expected=world.expected,
+        verified=world.verified,
+    )
+    assert direct.disposition == disposition
+    assert direct.reasons == reasons
+    assert direct.frontiers == ()
+    assert direct.reviewed_graph == world.expected.reviewed_graph
+
+    shared_out = _run_shared_n3_adapter(world)
+    assert isinstance(shared_out, Refusal)
+    assert shared_out.code == code
+
+    sys_out = _run_systems_comparator(world)
+    assert isinstance(sys_out, Refusal)
+    assert sys_out.code == code
+
+
+def _worker_load_substituted(
+    base: SupplierTwinWorld,
+    node_id: str,
+    loaded: ContentIdentity,
+) -> SupplierTwinWorld:
+    """The world whose worker process loads node_id (its one load event) as other bytes.
+
+    The changed event is re-witnessed, so only the loaded bytes disagree with the review.
+    """
+    envelope = base.observed.envelope
+    processes = list(envelope.process_observations)
+    (index,) = (i for i, p in enumerate(processes) if p.instance.instance_id == "worker")
+    worker = processes[index]
+    (position,) = (i for i, e in enumerate(worker.events) if e.node_id == node_id)
+    assert worker.events[position].loaded != loaded
+    events = list(worker.events)
+    events[position] = replace(events[position], loaded=loaded)
+    processes[index] = replace(worker, events=tuple(events))
+    return _rebuild_world(base, envelope=replace(envelope, process_observations=tuple(processes)))
+
+
 def install_mutation(monkeypatch: pytest.MonkeyPatch, owner: object, function: str, before: str, after: str) -> None:
     import sys
 
@@ -721,23 +791,8 @@ def test_combined_worker_and_host_happy_path_matches_across_all_categories(
     clean_supplier_world: SupplierTwinWorld,
 ) -> None:
     assert len(ALL_N3_COVERAGE_CATEGORIES) == 10
-    direct = compare_loaded_source(
-        clean_supplier_world.reviewed,
-        clean_supplier_world.observed,
-        expected=clean_supplier_world.expected,
-        verified=clean_supplier_world.verified,
-    )
-    assert direct.disposition == "MATCH"
-    assert direct.reasons == ()
+    direct = _assert_matches_everywhere(clean_supplier_world)
     assert len(direct.frontiers) == 4
-
-    shared_out = _run_shared_n3_adapter(clean_supplier_world)
-    assert isinstance(shared_out, AcceptedData)
-    assert shared_out.data.disposition == "MATCH"
-
-    sys_out = _run_systems_comparator(clean_supplier_world)
-    assert isinstance(sys_out, AcceptedData)
-    assert sys_out.data.disposition == "MATCH"
 
 
 @pytest.mark.parametrize(
@@ -1112,15 +1167,10 @@ def test_closure_mismatch_and_dirty_git_source_refusal_twins(
         )
     elif fault_mode == "dirty_git_source_digest_mismatch":
         # Worker loads dirty working-tree main.py bytes while ReviewedSourceGraph holds committed Git blob.
-        main_idx = next(i for i, e in enumerate(events) if e.node_id == "main")
-        events[main_idx] = replace(
-            events[main_idx],
-            loaded=byte_identity(clean_supplier_world.dirty_main_bytes),
-        )
-        obs_procs[2] = replace(worker, events=tuple(events))
-        twin = _rebuild_world(
+        twin = _worker_load_substituted(
             clean_supplier_world,
-            envelope=replace(env, process_observations=tuple(obs_procs)),
+            "main",
+            byte_identity(clean_supplier_world.dirty_main_bytes),
         )
     else:
         facts = list(clean_supplier_world.verified.facts)
@@ -1223,6 +1273,39 @@ def test_generator_output_without_independent_completeness_review_ref_never_matc
             "compare_loaded_source",
             '"UNKNOWN" if findings.gaps else "MATCH"',
             '"MATCH"',
+        ),
+        # H-N3-CACHED-TWIN-1: one row per CACHED_CODE check, each killing its twin case.
+        (
+            "FP-07-cached-code-load",
+            "_check_process",
+            'if node.kind == "cached_code":',
+            "if False:",
+        ),
+        (
+            "FP-08-cached-code-only",
+            "_check_process",
+            'if node.kind == "cached_code":',
+            "if True:",
+        ),
+        # check_provenance rows patch the name compare_loaded_source calls,
+        # comparison_mod.check_provenance (from p3_source_closure.provenance; its only caller).
+        (
+            "FP-09-cached-executed",
+            "check_provenance",
+            "if node.content != p.executed:",
+            "if False:",
+        ),
+        (
+            "FP-10-cached-source-nodes",
+            "check_provenance",
+            "if not p.source_nodes:",
+            "if False:",
+        ),
+        (
+            "FP-11-cached-witness",
+            "check_provenance",
+            'findings.origin(p.provenance_ref, "cache", (node, tuple(nodes[key] for key in (*p.source_nodes, p.interpreter))), "CACHED_CODE")',
+            "pass",
         ),
     ],
 )
@@ -1349,6 +1432,46 @@ def test_guard_fault_proofs_fail_on_deliberately_broken_copy(
             )
             assert "COVERAGE_GAP" in res.reasons
 
+    elif guard_id == "FP-07-cached-code-load":
+        # T1: without the cached_code branch a substituted cache load loses CACHED_CODE.
+        fault_world = _worker_load_substituted(clean_supplier_world, "cache", _content("substituted-cache"))
+
+        def run_guard() -> None:
+            _assert_comparison_refused(
+                fault_world,
+                "REFUSED",
+                ("BYTE_SUBSTITUTION", "CACHED_CODE"),
+                RefusalCode.CLOSURE_MISMATCH,
+            )
+
+    elif guard_id == "FP-08-cached-code-only":
+        # T2 control: CACHED_CODE on every substituted load shows on the git_source node.
+        fault_world = _worker_load_substituted(clean_supplier_world, "main", _content("substituted-main"))
+
+        def run_guard() -> None:
+            _assert_comparison_refused(fault_world, "REFUSED", ("BYTE_SUBSTITUTION",), RefusalCode.CLOSURE_MISMATCH)
+
+    elif guard_id == "FP-09-cached-executed":
+        # T3: without the executed check, provenance naming other executed code matches.
+        fault_world = _cached_provenance_fault_world(clean_supplier_world, "executed_differs")
+
+        def run_guard() -> None:
+            _assert_comparison_refused(fault_world, "REFUSED", ("CACHED_CODE",), RefusalCode.CLOSURE_MISMATCH)
+
+    elif guard_id == "FP-10-cached-source-nodes":
+        # T3: without the source_nodes check, a cache naming no source matches.
+        fault_world = _cached_provenance_fault_world(clean_supplier_world, "no_source_nodes")
+
+        def run_guard() -> None:
+            _assert_comparison_refused(fault_world, "UNKNOWN", ("CACHED_CODE",), RefusalCode.CLOSURE_INCOMPLETE)
+
+    elif guard_id == "FP-11-cached-witness":
+        # T3: without the cache witness check, a contradicting witness matches.
+        fault_world = _cached_provenance_fault_world(clean_supplier_world, "witness_contradicts")
+
+        def run_guard() -> None:
+            _assert_comparison_refused(fault_world, "REFUSED", ("CACHED_CODE",), RefusalCode.CLOSURE_MISMATCH)
+
     else:
         unavailable = VerifiedClosureOrigins(None, None, None, None, ())
         fault_world = replace(clean_supplier_world, verified=unavailable)
@@ -1425,24 +1548,7 @@ def _assert_content_field_refused(
     world: SupplierTwinWorld,
     reason: Literal["REVIEW_ORIGIN", "OBSERVER_ORIGIN"],
 ) -> None:
-    direct = compare_loaded_source(
-        world.reviewed,
-        world.observed,
-        expected=world.expected,
-        verified=world.verified,
-    )
-    assert direct.disposition == "REFUSED"
-    assert direct.reasons == (reason,)
-    assert direct.frontiers == ()
-    assert direct.reviewed_graph == world.expected.reviewed_graph
-
-    shared_out = _run_shared_n3_adapter(world)
-    assert isinstance(shared_out, Refusal)
-    assert shared_out.code == RefusalCode.CLOSURE_MISMATCH
-
-    sys_out = _run_systems_comparator(world)
-    assert isinstance(sys_out, Refusal)
-    assert sys_out.code == RefusalCode.CLOSURE_MISMATCH
+    _assert_comparison_refused(world, "REFUSED", (reason,), RefusalCode.CLOSURE_MISMATCH)
 
 
 @pytest.mark.parametrize(
@@ -1499,3 +1605,123 @@ def test_content_field_guard_mutant_is_killed(
     install_mutation(monkeypatch, comparison_mod, "compare_loaded_source", before, "if False:")
     with pytest.raises(AssertionError):
         _assert_content_field_refused(fault_world, reason)
+
+
+# H-N3-CACHED-TWIN-1 (Systems #92; Security #236 checklist r2 row O3-2, section 13.1): the
+# comparator already refuses a substituted cached-code load and a CachedProvenance that
+# contradicts or leaves out what its node needs, but no test asserted reason CACHED_CODE.
+# Each twin pairs the clean world's MATCH with one fault and its exact reason set;
+# FP-07..FP-11 in test_guard_fault_proofs_fail_on_deliberately_broken_copy prove each
+# CACHED_CODE check is what refuses its case.
+CachedProvenanceFault = Literal["executed_differs", "no_source_nodes", "witness_missing", "witness_contradicts"]
+
+
+def _cached_provenance_fault_world(
+    base: SupplierTwinWorld,
+    fault: CachedProvenanceFault,
+) -> SupplierTwinWorld:
+    """The world whose reviewed "cache" node's CachedProvenance, or its one witness, is wrong.
+
+    executed_differs: the provenance names other executed code than the node's content;
+    no_source_nodes: it names no source the cache was compiled from. Both changed graphs
+    go through the real validate_reviewed_graph, which accepts them and keeps the fault
+    (it checks only that source_nodes and interpreter name graph nodes and that the node
+    is cached_code), and are re-reviewed and re-witnessed, so only the CachedProvenance
+    checks in compare_loaded_source's check_provenance can refuse them.
+    witness_missing / witness_contradicts keep the graph and drop or change the verified
+    "cache" fact. In every case the worker's cache load keeps its reviewed bytes.
+    """
+    facts = base.verified.facts
+    assert [f.purpose for f in facts].count("cache") == 1
+    if fault == "witness_missing":
+        return replace(base, verified=replace(base.verified, facts=tuple(f for f in facts if f.purpose != "cache")))
+    if fault == "witness_contradicts":
+        contradicted = tuple(
+            replace(f, claim=_content("contradicting-cache-witness")) if f.purpose == "cache" else f
+            for f in facts
+        )
+        return replace(base, verified=replace(base.verified, facts=contradicted))
+    graph = base.reviewed.graph
+    (cache,) = (n for n in graph.nodes if n.id == "cache")
+    provenance = cache.provenance
+    assert cache.kind == "cached_code"
+    assert isinstance(provenance, CachedProvenance)
+    assert provenance.executed == cache.content and provenance.source_nodes
+    if fault == "executed_differs":
+        provenance = replace(provenance, executed=_content("other-executed-code"))
+    else:
+        provenance = replace(provenance, source_nodes=())
+    changed = replace(
+        graph,
+        nodes=tuple(replace(n, provenance=provenance) if n.id == "cache" else n for n in graph.nodes),
+    )
+    reviewed = validate_reviewed_graph(canonical_bytes(changed))
+    assert reviewed.graph == changed
+    graph_ref = replace(base.expected.reviewed_graph, content=reviewed.content)
+    return _rebuild_world(
+        base,
+        reviewed=reviewed,
+        envelope=replace(base.observed.envelope, reviewed_graph=graph_ref),
+        expected=replace(base.expected, reviewed_graph=graph_ref),
+    )
+
+
+@pytest.mark.parametrize(
+    "case_id,node_id,node_kind,expected_reasons",
+    [
+        ("T1-cached-code", "cache", "cached_code", ("BYTE_SUBSTITUTION", "CACHED_CODE")),
+        ("T2-git-source-control", "main", "git_source", ("BYTE_SUBSTITUTION",)),
+        ("T2-generated-control", "generated", "generated", ("BYTE_SUBSTITUTION",)),
+    ],
+)
+def test_cached_code_load_substitution_refusal_twins(
+    clean_supplier_world: SupplierTwinWorld,
+    case_id: str,
+    node_id: str,
+    node_kind: str,
+    expected_reasons: tuple[Reason, ...],
+) -> None:
+    """T1 and its T2 controls: the worker's one load of node_id carries its reviewed bytes
+    and every path matches; the same load with other bytes is REFUSED with exactly
+    BYTE_SUBSTITUTION, plus CACHED_CODE only for the cached_code node."""
+    world = clean_supplier_world
+    (node,) = (n for n in world.reviewed.graph.nodes if n.id == node_id)
+    assert node.kind == node_kind
+    (worker,) = (p for p in world.observed.envelope.process_observations if p.instance.instance_id == "worker")
+    (profile,) = (p for p in world.reviewed.graph.process_profiles if p.id == worker.profile_id)
+    assert node_id in profile.allowed_node_ids
+    (load,) = (e for e in worker.events if e.node_id == node_id)
+    provenance = node.provenance
+    reviewed_bytes = provenance.execution_object if isinstance(provenance, GeneratedProvenance) else node.content
+    assert load.loaded == reviewed_bytes
+    _assert_matches_everywhere(world)
+
+    fault_world = _worker_load_substituted(world, node_id, _content(f"substituted-{node_id}"))
+    _assert_comparison_refused(fault_world, "REFUSED", expected_reasons, RefusalCode.CLOSURE_MISMATCH)
+
+
+@pytest.mark.parametrize(
+    "case_id,fault,expected_disposition,expected_code",
+    [
+        ("T3-executed-differs", "executed_differs", "REFUSED", RefusalCode.CLOSURE_MISMATCH),
+        ("T3-no-source-nodes", "no_source_nodes", "UNKNOWN", RefusalCode.CLOSURE_INCOMPLETE),
+        ("T3-witness-missing", "witness_missing", "UNKNOWN", RefusalCode.CLOSURE_INCOMPLETE),
+        ("T3-witness-contradicts", "witness_contradicts", "REFUSED", RefusalCode.CLOSURE_MISMATCH),
+    ],
+)
+def test_cached_provenance_refusal_twins(
+    clean_supplier_world: SupplierTwinWorld,
+    case_id: str,
+    fault: CachedProvenanceFault,
+    expected_disposition: Literal["REFUSED", "UNKNOWN"],
+    expected_code: RefusalCode,
+) -> None:
+    """T3: each CachedProvenance check refuses on its own with reasons exactly CACHED_CODE:
+    a contradiction is REFUSED (CLOSURE_MISMATCH), a gap UNKNOWN (CLOSURE_INCOMPLETE).
+
+    Refusing layer: check_provenance inside compare_loaded_source. validate_reviewed_graph
+    accepts the executed_differs and no_source_nodes graphs (see _cached_provenance_fault_world).
+    """
+    _assert_matches_everywhere(clean_supplier_world)
+    fault_world = _cached_provenance_fault_world(clean_supplier_world, fault)
+    _assert_comparison_refused(fault_world, expected_disposition, ("CACHED_CODE",), expected_code)

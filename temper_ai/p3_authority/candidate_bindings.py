@@ -57,6 +57,7 @@ from temper_ai.p3_authority.boundary_types import (
 from temper_ai.p3_authority.references import AuthenticatedPeer
 from temper_ai.p3_authority.refusals import Refusal, RefusalCode
 from temper_ai.p3_authority.results import DecisionEvidence
+from temper_ai.p3_authority.run_selection_source import encode_admitted_selection
 from temper_ai.p3_authority.selection import (
     JobKey,
     PreDispatchJob,
@@ -517,8 +518,12 @@ class P3CandidateBindings(CandidateBindings):
         ):
             raise AdmissionRefused(CandidateRefusalCode.AUTHORITY)
         self._last_authority = authority
+        writer = self._admission_selection_writer(authority)
         if self._delegate_bindings is not None:
-            return self._delegate_bindings.transport(authority)
+            delegated = self._delegate_bindings.transport(authority)
+            if not isinstance(delegated, DbAdmissionTransport):
+                raise AdmissionRefused(CandidateRefusalCode.AUTHORITY)
+            return delegated.with_admission_selection(writer)
         if (
             self._capture_adapter is None
             or self._installation_verifier is None
@@ -532,7 +537,31 @@ class P3CandidateBindings(CandidateBindings):
             installation=self._installation_verifier,
             preparation=self._preparation_verifier,
             worker_identity=self._capture_adapter.worker_identity,
+            admission_selection=writer,
         )
+
+    def _admission_selection_writer(
+        self, authority: DescriptorAuthority,
+    ) -> Callable[[AdmissionRecord], dict[str, Any]]:
+        """The install-time writer of the job ``authority_for_submit`` selected for ``authority``.
+
+        Every P3 install stores its selection (T5-O2): with no submit selection
+        for this authority, or one that does not match the admitted record, the
+        writer refuses and the admission rolls back with it.
+        """
+        selected = next(
+            (
+                recorded.selected_job
+                for recorded in self._recorded_submit_bindings.values()
+                if recorded.descriptor_authority == authority
+            ),
+            None,
+        )
+
+        def write(record: AdmissionRecord) -> dict[str, Any]:
+            return encode_admitted_selection(selected, authority=authority, record=record)
+
+        return write
 
     def prepare(
         self,

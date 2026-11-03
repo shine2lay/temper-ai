@@ -7,6 +7,16 @@
 - **Inert by default**: `WRITES_ADMITTED: Final[bool] = False`, `DEFAULT_SELECTION_SNAPSHOT_PROVIDER = None`, and `DEFAULT_REQUEST_HISTORY_PROVIDER = None`.
 - **Read-only over `DbAdmissionTransport`**: Queries `WorkflowRun` and verifies the persisted `AdmissionRecord` (`spawner_metadata["config_admission"]`) through `DbAdmissionTransport._row_record` and `DbAdmissionTransport._descriptor`. Never issues `INSERT`, `UPDATE`, `DELETE`, or DDL statements.
 - **Anti-spoofing**: Selected job, kit (`ProjectSelection`), calibration (`CalibrationSelection`), and execution route (`external-db-fresh`) are derived strictly from the admitted run record and `RunSelectionBinding`, ignoring caller flags (`WorkflowRun.inputs`) and process environment variables.
+- **No default clock**: `DbSelectionSnapshotProvider(verified_at=...)` takes the trusted instant the snapshot is verified at; without one `read_snapshot()` returns `None`, which `AuthorityRegistryService` refuses as `AUTHORITY_UNAVAILABLE`. The trusted clock source itself is not built yet.
+
+## Run selection source (T5-O2)
+
+A run's selection is recorded where it is made, at admission, and read back by `execution_uuid` (`temper_ai/p3_authority/run_selection_source.py`):
+
+- **Writer**: `P3CandidateBindings.transport(authority)` returns its `DbAdmissionTransport` with `with_admission_selection(writer)`. `DbAdmissionTransport.install` calls the writer with the checked `AdmissionRecord` and stores its output under `spawner_metadata["admission_selection"]` (`ADMISSION_SELECTION_KEY`) in the same row insert, and so the same transaction, as `spawner_metadata["config_admission"]`: no P3 admission without its selection, no selection without its admission. The writer refuses (`LOOKUP`, admission rolled back) unless the job `authority_for_submit` selected for that authority is a pre-dispatch job for exactly this record's execution_uuid, workflow and descriptor digest and the authority's pins. A transport without a writer (every other `CandidateBindings`) writes the row as before.
+- **Stored fields**: only the selection-specific ones (`STORED_SELECTION_FIELDS`: selection, selection_revision, selector_issuer, job_revision, reviewed_closure_ref, compatibility_profile, authorized_operations, conditions, authority_refs, expected_dispatch), canonical JSON (`canonical_bytes`). What the AdmissionRecord holds (execution_uuid, digests, caller label, receipt id, workflow) is referenced through the row check, never copied.
+- **Once and immutable**: the install insert is the only write; a second install is refused (`PROTECTED`) with the stored bytes unchanged, ordinary metadata writers refuse the key (`refuse_reserved_extra`), and dispatch binding keeps it byte for byte. A new selection means a new admission.
+- **Reader**: `RunSelectionSource(transport, *, authority_for_run=None)`, read-only. `binding_for(execution_uuid)` returns a `RunSelectionBinding` only after the row's AdmissionRecord passes `DbAdmissionTransport._row_record` under the run's authority; `accepted_bindings()` is the no-argument `bindings` callable for `DbSelectionSnapshotProvider` and `DbRequestHistoryProvider` (queued and running runs; refused stored selections are left out and logged). Nothing constructs it by default.
 
 ## Public Symbols
 
@@ -33,4 +43,5 @@
 | Descriptor digest, source closure digest, authority receipt, or `selection_revision` drifted between `for_submit`, `for_run`, and `check_current` | `RefusalCode.SELECTION_CHANGED` |
 | Route is not `"external-db-fresh"` in binding or admitted descriptor | `RefusalCode.ROUTE_UNSUPPORTED` |
 | `DispatchIdentity` (`execution_uuid`, `dispatch_nonce`, `running_attempt`) changed after claim | `RefusalCode.DISPATCH_CHANGED` |
-| Unconfigured transport (`transport=None`) | `RefusalCode.AUTHORITY_UNAVAILABLE` |
+| Unconfigured transport (`transport=None`), or no `verified_at` clock | `RefusalCode.AUTHORITY_UNAVAILABLE` |
+| `RunSelectionSource`: no row, no stored selection, or the row's AdmissionRecord fails the transport check (retry `SAME_BOUNDARY_AFTER_REPAIR`); stored selection malformed, not canonical, or its dispatch for another run (retry `NEW_BINDING_REQUIRED`) | `RefusalCode.SELECTION_MISSING` |

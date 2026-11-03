@@ -63,10 +63,7 @@ from temper_ai.p3_authority.host_types import (
     ReviewedSourceGraph,
     SelectedHostJob,
 )
-from temper_ai.p3_authority.native_values import (
-    NativeProcessRefValue,
-    NativeWitnessValue,
-)
+from temper_ai.p3_authority.native_values import NativeProcessRefValue
 from temper_ai.p3_authority.registry import (
     DecisionEvidenceRecord,
     ImmutableReferenceRecord,
@@ -487,15 +484,13 @@ def _build_snapshot_evidence(
         compatibility=job.compatibility_profile,
     )
 
-_DEFAULT_VERIFIED_AT: Final[TrustedInstant] = TrustedInstant(
-    clock_domain="monotonic:temper-selection-snapshot",
-    reading="1000",
-    witness=NativeWitnessValue("witness:temper-selection-snapshot"),
-)
-
-
 class DbSelectionSnapshotProvider:
-    """Read-only SelectionSnapshotProvider backed by DbAdmissionTransport."""
+    """Read-only SelectionSnapshotProvider backed by DbAdmissionTransport.
+
+    ``verified_at`` is the trusted instant the snapshot is verified at; there is
+    no default clock: without one ``read_snapshot`` returns None, which the
+    registry refuses as AUTHORITY_UNAVAILABLE.
+    """
 
     def __init__(
         self,
@@ -509,7 +504,7 @@ class DbSelectionSnapshotProvider:
         self._transport = transport
         self._bindings_source = bindings
         self._snapshot_revision = snapshot_revision
-        self._verified_at = verified_at or _DEFAULT_VERIFIED_AT
+        self._verified_at = verified_at
         self._subjects = dict(subjects) if subjects is not None else None
 
     def _current_bindings(self) -> tuple[RunSelectionBinding, ...]:
@@ -641,7 +636,7 @@ class DbSelectionSnapshotProvider:
 
     def read_snapshot(self) -> SelectionSnapshot | None:
         """Read current SelectionSnapshot from DbAdmissionTransport (read-only)."""
-        if self._transport is None:
+        if self._transport is None or type(self._verified_at) is not TrustedInstant:
             return None
         jobs: list[SelectedJob] = []
         for binding in self._current_bindings():

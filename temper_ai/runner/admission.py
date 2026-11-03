@@ -51,6 +51,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
+# The run's admission-time selection, written once beside RESERVED_KEY by
+# DbAdmissionTransport.install when an admission_selection writer is set; only
+# that insert writes it, and ordinary metadata writers may not replace it.
+ADMISSION_SELECTION_KEY = "admission_selection"
+
 
 class CandidateBindings(Protocol):
     """Injected composition boundary, not installed by this source candidate.
@@ -138,7 +143,7 @@ def has_admission(metadata: Mapping[str, Any] | None) -> bool:
 
 
 def refuse_reserved_extra(extra: Mapping[str, Any] | None) -> None:
-    if has_admission(extra):
+    if has_admission(extra) or (extra is not None and ADMISSION_SELECTION_KEY in extra):
         raise AdmissionRefused(RefusalCode.PROTECTED)
 
 
@@ -230,7 +235,8 @@ class DbAdmissionTransport:
                  current_source: Callable[[], FrozenJSON],
                  installation: InstallationVerifier | None = None,
                  preparation: PreparationVerifier | None = None,
-                 worker_identity: Callable[[], str] | None = None):
+                 worker_identity: Callable[[], str] | None = None,
+                 admission_selection: Callable[[AdmissionRecord], Mapping[str, Any]] | None = None):
         from temper_ai.config.candidate_admission import memoize_codec
 
         memoize_codec(codec)
@@ -240,6 +246,26 @@ class DbAdmissionTransport:
         self.installation = installation
         self.preparation = preparation
         self.worker_identity = worker_identity
+        self.admission_selection = admission_selection
+
+    def with_admission_selection(
+        self, writer: Callable[[AdmissionRecord], Mapping[str, Any]],
+    ) -> DbAdmissionTransport:
+        """A copy whose install also stores writer(checked record) under ADMISSION_SELECTION_KEY."""
+        if not callable(writer):
+            raise AdmissionRefused(RefusalCode.TYPE)
+        bound = copy.copy(self)
+        bound.admission_selection = writer
+        return bound
+
+    def _selection_metadata(self, checked: AdmissionRecord) -> dict[str, Any]:
+        if self.admission_selection is None:
+            return {}
+        selection = self.admission_selection(checked)
+        if not isinstance(selection, Mapping):
+            raise AdmissionRefused(RefusalCode.TYPE)
+        # canonical_bytes refuses (AdmissionRefused) whatever cannot be stored exactly.
+        return {ADMISSION_SELECTION_KEY: decode_canonical(canonical_bytes(dict(selection)))}
 
     def _checked_parts(self, wire: bytes):
         from temper_ai.config.candidate_admission import validated_record_parts
@@ -309,6 +335,8 @@ class DbAdmissionTransport:
             raise AdmissionRefused(RefusalCode.AUTHORITY)
         if lane_for(nodes) is not None:
             raise AdmissionRefused(RefusalCode.MODE)
+        # Same insert, same transaction: no admission without its selection.
+        selection = self._selection_metadata(checked)
         # The PK, not a SELECT alone, arbitrates two installs of an absent row.
         # A savepoint translates collision without silently aborting the outer work.
         try:
@@ -319,7 +347,7 @@ class DbAdmissionTransport:
                     workspace_path=descriptor["workspace_path"],
                     inputs=decode_canonical(descriptor["metadata_inputs_json"].encode("utf-8")),
                     status="queued",
-                    spawner_metadata={RESERVED_KEY: checked.value()},
+                    spawner_metadata={RESERVED_KEY: checked.value(), **selection},
                 ))
                 transaction.flush()
         except IntegrityError:

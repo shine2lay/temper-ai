@@ -250,8 +250,9 @@ class WorkerRootObservationAdapter(RootObserver):
     Its lookups answer only what it accepted, under the exact selection and boundary it
     accepted it at. Every attempt first forgets what it would replace there (a worker
     observation: every root at its selection and boundary; a one-root read: that root
-    and the binding), and root lookups answer for the actor's latest attempted
-    boundary, so a refused or newer attempt never leaves a stale answer.
+    and the binding), a refused worker observation also drops the binding there, and
+    root lookups answer for the actor's latest attempted boundary, so a refused or
+    newer attempt never leaves a stale answer.
     """
 
     def __init__(
@@ -263,9 +264,11 @@ class WorkerRootObservationAdapter(RootObserver):
         self._unpermitted_read_attempted = False
         # (selection revision, boundary, process registration, root kind) -> accepted root
         self._accepted_roots: dict[tuple[str, Boundary, str, str], RootObservation] = {}
-        # (selection revision, boundary) -> the one binding its own reads accepted there;
-        # None once two different bindings were accepted there (no first match).
-        self._accepted_bindings: dict[tuple[str, Boundary], RootBinding | None] = {}
+        # (selection revision, boundary) -> the binding of the latest one-root read accepted
+        # there, whichever root kind or actor made it (as InMemoryRootObserver: last wins).
+        # Every one-root read there first drops it and a refused worker observation there
+        # drops it too, so a refused read or worker observation leaves none.
+        self._accepted_bindings: dict[tuple[str, Boundary], RootBinding] = {}
         self._latest_boundary: dict[str, Boundary] = {}
         self._selection_of_actor: dict[str, str] = {}
 
@@ -292,7 +295,10 @@ class WorkerRootObservationAdapter(RootObserver):
         selection_revision: str,
         boundary: Boundary,
     ) -> RootBinding | None:
-        """The one root binding this adapter's own read accepted at the selection and boundary."""
+        """The binding of the latest one-root read accepted at the selection and boundary.
+
+        Any root kind or actor; none after a refused read or refused worker observation there.
+        """
         return self._accepted_bindings.get((selection_revision, boundary))
 
     def record_unpermitted_read_attempt(self) -> None:
@@ -334,8 +340,12 @@ class WorkerRootObservationAdapter(RootObserver):
             self._accepted_roots.pop(
                 (selection_revision, boundary, actor_registration, root_kind), None
             )
-        self._accepted_bindings.pop((selection_revision, boundary), None)
+        self._forget_binding(selection_revision, boundary)
         self._mark_latest(selection_revision, boundary, actor_registration)
+
+    def _forget_binding(self, selection_revision: str, boundary: Boundary) -> None:
+        """Drop the binding accepted at the selection and boundary."""
+        self._accepted_bindings.pop((selection_revision, boundary), None)
 
     def _accept_frame_roots(
         self,
@@ -423,14 +433,7 @@ class WorkerRootObservationAdapter(RootObserver):
             obs.root_kind,
         )
         self._accepted_roots[root_key] = obs
-        binding_key = (selection_revision, boundary)
-        if (
-            binding_key in self._accepted_bindings
-            and self._accepted_bindings[binding_key] != obs.binding
-        ):
-            self._accepted_bindings[binding_key] = None
-        else:
-            self._accepted_bindings[binding_key] = obs.binding
+        self._accepted_bindings[(selection_revision, boundary)] = obs.binding
         return res
 
     def verify_both_roots(
@@ -556,6 +559,21 @@ class WorkerObservationAdapter(WorkerObserver):
         selected_job: SelectedJob,
         boundary: Boundary,
         since_cursor: N3ObservationEpoch | None = None,
+    ) -> Result[WorkerObservation]:
+        """Observe the worker; a refusal also drops the root binding at its selection and boundary."""
+        res = self._observe_frame(grant, selected_job, boundary, since_cursor)
+        if isinstance(res, Refusal):
+            self._root_observer._forget_binding(
+                selected_job.selection_revision, boundary
+            )
+        return res
+
+    def _observe_frame(
+        self,
+        grant: ObservationGrant,
+        selected_job: SelectedJob,
+        boundary: Boundary,
+        since_cursor: N3ObservationEpoch | None,
     ) -> Result[WorkerObservation]:
         rev_key = selected_job.selection_revision
         # Any attempt first forgets what was accepted at this selection and boundary,

@@ -377,6 +377,17 @@ def publication_scope(world: World, **changes: Any) -> RootScope:
     return replace(scope, **changes)
 
 
+def host_evidence_scope(world: World, **changes: Any) -> RootScope:
+    scope = publication_scope(
+        world,
+        role="host-evidence",
+        selected_locator="/workspace/evidence",
+        expected_existing_object=root_object("host_evidence"),
+        required_rights=frozenset({"write"}),
+    )
+    return replace(scope, **changes)
+
+
 # -- the combined happy path (bp-be8d76b9) -------------------------------------------------
 
 
@@ -759,6 +770,11 @@ def test_refused_reobservation_leaves_no_stale_lookup() -> None:
         == RefusalCode.WRITES_DISABLED
     )
     assert_adapter_answers_nothing(adapter, revision)
+    # The refused worker observation saw the runtime change: the binding goes too.
+    assert (
+        roots.lookup_root_binding(selection_revision=revision, boundary=BOUNDARY)
+        is None
+    )
     other_object = publication_scope(
         world, expected_existing_object=root_object("elsewhere")
     )
@@ -770,6 +786,50 @@ def test_refused_reobservation_leaves_no_stale_lookup() -> None:
         roots.lookup_root_binding(selection_revision=revision, boundary=BOUNDARY)
         is None
     )
+
+
+def test_root_binding_lookup_answers_the_latest_accepted_read() -> None:
+    """Two different accepted bindings at one (S, B) answer the second, adapter and double alike.
+
+    A refused read after an accepted one answers none in the adapter. The double differs
+    there: its bindings come only from register_root_binding, and its reads never touch them.
+    """
+    world = clean()
+    revision = world.job.selection_revision
+    ops = world.job.authorized_operations
+    roots = WorkerObservationAdapter(provider=world.provider()).root_observer
+    double = InMemoryRootObserver()
+
+    def lookups() -> tuple[RootBinding | None, RootBinding | None]:
+        return (
+            roots.lookup_root_binding(selection_revision=revision, boundary=BOUNDARY),
+            double.lookup_root_binding(selection_revision=revision, boundary=BOUNDARY),
+        )
+
+    accepted: list[RootBinding] = []
+    for scope in (
+        publication_scope(world),
+        host_evidence_scope(world),
+        publication_scope(world),
+    ):
+        read = roots.observe(world.grant, ACTOR, scope, ops, BOUNDARY)
+        assert isinstance(read, AcceptedData)
+        double.register_root_binding(
+            selection_revision=revision, boundary=BOUNDARY, binding=read.data.binding
+        )
+        accepted.append(read.data.binding)
+        assert lookups() == (read.data.binding, read.data.binding)
+    assert accepted[0] != accepted[1]
+    assert (accepted[0].role, accepted[1].role) == ("publication", "host-evidence")
+
+    elsewhere = publication_scope(
+        world, expected_existing_object=root_object("elsewhere")
+    )
+    refused = roots.observe(world.grant, ACTOR, elsewhere, ops, BOUNDARY)
+    assert refusal_code(refused) == RefusalCode.ROOT_MISMATCH
+    double_refused = double.observe(world.grant, ACTOR, elsewhere, ops, BOUNDARY)
+    assert refusal_code(double_refused) == RefusalCode.ROOT_MISMATCH
+    assert lookups() == (None, accepted[-1])
 
 
 def test_attempt_at_a_new_boundary_hides_the_earlier_boundarys_roots() -> None:
@@ -1417,6 +1477,26 @@ GUARD_BITES: dict[str, GuardBite] = {
     "frame-roots-kept-only-once-accepted": (
         keep_frame_roots_before_acceptance,
         test_refused_frame_after_accepted_roots_keeps_nothing,
+        AssertionError,
+    ),
+    "refused-frame-drops-binding": (
+        lambda m: m.setattr(
+            WorkerObservationAdapter,
+            "observe",
+            lambda self, grant, job, boundary, since_cursor=None: self._observe_frame(
+                grant, job, boundary, since_cursor
+            ),
+        ),
+        test_refused_reobservation_leaves_no_stale_lookup,
+        AssertionError,
+    ),
+    "refused-read-drops-binding": (
+        lambda m: m.setattr(
+            WorkerRootObservationAdapter,
+            "_forget_binding",
+            lambda self, selection, boundary: None,
+        ),
+        test_root_binding_lookup_answers_the_latest_accepted_read,
         AssertionError,
     ),
 }

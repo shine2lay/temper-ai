@@ -347,6 +347,34 @@ def test_combined_happy_path_open_phase_bound_effect_fence_and_occurrence_lifecy
     assert writes_admitted_on_master() is False
 
 
+def test_public_phase_wrappers_open_the_record_path_in_order() -> None:
+    """The join's entry points: before_request, before_admit, before_execute, by keyword."""
+    w = open_world()
+    bound: dict[str, Any] = {
+        "selected_job": w.job,
+        "request_identity": w.req_id,
+        "actor": w.actor,
+        "frontier": w.cursors,
+        "window_id": WINDOW,
+    }
+    assert refusal_code(w.fence.before_admit(**bound)) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.admit()) == RefusalCode.WRITES_DISABLED
+
+    walked = (
+        (w.fence.before_request, "before_request", "B_PRE_REQUEST"),
+        (w.fence.before_admit, "before_admit", "B_PRE_REQUEST"),
+        (w.fence.before_execute, "before_execute", "C_PRE_EXECUTION"),
+    )
+    for wrapper, phase, boundary in walked:
+        checked = wrapper(**bound)
+        assert isinstance(checked, AcceptedData), phase
+        assert (checked.data.phase, checked.evidence.boundary) == (phase, boundary)
+    assert isinstance(w.admit(), AcceptedData)
+    assert isinstance(w.execute(), AcceptedData)
+    assert isinstance(w.count(), AcceptedData)
+    assert refusal_code(w.fence.before_request(**bound)) == RefusalCode.WRITES_DISABLED
+
+
 # ---------------------------------------------------------------------------
 # 2. A closed, write-disabled or unavailable fence never admits
 # ---------------------------------------------------------------------------

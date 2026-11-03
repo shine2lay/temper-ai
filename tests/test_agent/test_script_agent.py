@@ -395,6 +395,271 @@ class TestModelOutputCannotBecomeACommand:
         agent.run({"name": "proof"}, _real_context(tmp_path))
         assert (tmp_path / "proof").exists()
 
+    def test_the_file_filter_delivers_single_and_three_photo_megabyte_payloads_intact(self, tmp_path):
+        """Combined happy path: a real-size ~1.3 MB single-photo payload and a ~4 MB 3-photo
+        payload travel through `| file` into the script byte-equal, in 0600 files inside the
+        workspace, with single-quoted shell-safe paths and nothing in env or command text."""
+        import hashlib
+        import json
+        import pathlib
+        import stat
+
+        ws = tmp_path / "inkflow run's workspace"
+        ws.mkdir()
+
+        photo_1 = "data:image/jpeg;base64," + ("A1b2" * 337_500)  # 1,350,023 B (> 1.3 MB real photo)
+        photo_2 = "data:image/png;base64," + ("C3d4" * 337_500)   # 1,350,022 B
+        photo_3 = "data:image/webp;base64," + ("E5f6" * 340_000)  # 1,360,023 B
+
+        single_req = json.dumps({
+            "conversation": [{"id": "m-1", "sender": "client", "text": "Here is my photo $(touch pwned) 'quote'"}],
+            "referencePhotos": [{"mediaId": "ig-1", "messageId": "m-1", "mimeType": "image/jpeg", "dataUrl": photo_1}],
+        })
+        three_req = json.dumps({
+            "conversation": [{"id": "m-3", "sender": "client", "text": "Three reference photos attached"}],
+            "referencePhotos": [
+                {"mediaId": "ig-1", "messageId": "m-3", "mimeType": "image/jpeg", "dataUrl": photo_1},
+                {"mediaId": "ig-2", "messageId": "m-3", "mimeType": "image/png", "dataUrl": photo_2},
+                {"mediaId": "ig-3", "messageId": "m-3", "mimeType": "image/webp", "dataUrl": photo_3},
+            ],
+        })
+        single_bytes = len(single_req.encode("utf-8"))
+        three_bytes = len(three_req.encode("utf-8"))
+        assert single_bytes >= 1_350_000
+        assert three_bytes >= 4_000_000
+
+        template = (
+            "python3 - {{ single_req | default('') | file }} <<'PYEOF'\n"
+            "import hashlib, json, pathlib, stat, sys\n"
+            "p1 = pathlib.Path(sys.argv[1])\n"
+            "p2 = pathlib.Path({{ three_req | default('') | file }})\n"
+            "p3 = pathlib.Path(\"{{ single_req | file }}\")\n"
+            "b1 = p1.read_bytes()\n"
+            "b2 = p2.read_bytes()\n"
+            "b3 = p3.read_bytes()\n"
+            "d1 = json.loads(b1.decode('utf-8'))\n"
+            "d2 = json.loads(b2.decode('utf-8'))\n"
+            "print(json.dumps({\n"
+            "    'paths': [str(p1), str(p2), str(p3)],\n"
+            "    'modes': [stat.S_IMODE(p1.stat().st_mode), stat.S_IMODE(p2.stat().st_mode), stat.S_IMODE(p3.stat().st_mode)],\n"
+            "    'sizes': [len(b1), len(b2), len(b3)],\n"
+            "    'sha256': [hashlib.sha256(b1).hexdigest(), hashlib.sha256(b2).hexdigest(), hashlib.sha256(b3).hexdigest()],\n"
+            "    'photo_counts': [len(d1['referencePhotos']), len(d2['referencePhotos'])],\n"
+            "    'photo1_len': len(d1['referencePhotos'][0]['dataUrl']),\n"
+            "}))\n"
+            "PYEOF\n"
+        )
+        agent = ScriptAgent(config={"name": "inkflow_reply_prepare", "script_template": template})
+        result = agent.run({"single_req": single_req, "three_req": three_req}, _real_context(ws))
+        status_val = result.status.value
+        assert status_val == "completed"
+        assert not (ws / "pwned").exists()
+
+        out = result.structured_output
+        assert out is not None
+        expected_1_sha = hashlib.sha256(single_req.encode("utf-8")).hexdigest()
+        expected_2_sha = hashlib.sha256(three_req.encode("utf-8")).hexdigest()
+        assert out["sizes"] == [single_bytes, three_bytes, single_bytes]
+        assert out["sha256"] == [expected_1_sha, expected_2_sha, expected_1_sha]
+        assert out["modes"] == [0o600, 0o600, 0o600]
+        assert out["photo_counts"] == [1, 3]
+        photo1_len = len(photo_1)
+        assert out["photo1_len"] == photo1_len
+        for staged in out["paths"]:
+            p = pathlib.Path(staged)
+            assert p.parent == ws
+            assert stat.S_IMODE(p.stat().st_mode) == 0o600
+
+        # Check rendered command quotes the path and keeps payload out of command and env
+        mock_ctx = _make_context(ToolResult(success=True, result="{}"))
+        mock_ctx.workspace_path = str(ws)
+        agent.run({"single_req": single_req, "three_req": three_req}, mock_ctx)
+        params = mock_ctx.tool_executor.execute.call_args[0][1]
+        cmd = params["command"]
+        has_escaped_quote = "'\"'\"'" in cmd
+        assert has_escaped_quote  # apostrophe in workspace path is single-quote escaped
+        prefix = photo_1[:64]
+        in_cmd = prefix in cmd
+        assert not in_cmd
+        in_env = any(prefix in str(env_val) for env_val in params["env"].values())
+        assert not in_env
+
+    def test_non_string_values_serialize_as_json_for_both_file_and_env(self, tmp_path):
+        """Non-string values (dict, list, bool, int) serialize as JSON for both `| file` and `| env`,
+        while strings pass through as-is and None becomes empty text."""
+        template = (
+            "python3 - <<'PYEOF'\n"
+            "import json, os, pathlib\n"
+            "obj_file = json.loads(pathlib.Path({{ obj | file }}).read_text(encoding='utf-8'))\n"
+            "arr_file = json.loads(pathlib.Path({{ arr | file }}).read_text(encoding='utf-8'))\n"
+            "obj_env = json.loads(os.environ['{{ obj | env }}'])\n"
+            "arr_env = json.loads(os.environ['{{ arr | env }}'])\n"
+            "raw_str = pathlib.Path({{ text | file }}).read_text(encoding='utf-8')\n"
+            "none_str = pathlib.Path({{ empty | file }}).read_text(encoding='utf-8')\n"
+            "print(json.dumps({\n"
+            "    'obj_match': obj_file == obj_env == {'a': 1, 'ok': True},\n"
+            "    'arr_match': arr_file == arr_env == ['x', 2, False],\n"
+            "    'raw_str': raw_str,\n"
+            "    'none_str': none_str,\n"
+            "}))\n"
+            "PYEOF\n"
+        )
+        agent = ScriptAgent(config={"name": "serializer", "script_template": template})
+        result = agent.run(
+            {
+                "obj": {"a": 1, "ok": True},
+                "arr": ["x", 2, False],
+                "text": "plain string",
+                "empty": None,
+            },
+            _real_context(tmp_path),
+        )
+        assert result.status.value == "completed", result.error
+        assert result.structured_output == {
+            "obj_match": True,
+            "arr_match": True,
+            "raw_str": "plain string",
+            "none_str": "",
+        }
+
+    def test_file_filter_without_workspace_uses_private_temp_dir_and_cleans_up(self):
+        """When a run has no workspace_path, `| file` stages into a private 0700 temp directory
+        for the attempt and removes it once the attempt finishes (including on render failure)."""
+        import pathlib
+        import tempfile
+        from unittest.mock import patch
+
+        from temper_ai.agent.script_agent import ENV_MAX_BYTES
+        from temper_ai.tools.bash import Bash
+        from temper_ai.tools.executor import ToolExecutor
+
+        executor = ToolExecutor(workspace_root=None)
+        executor.register_tools({"Bash": Bash()})
+        ctx = MagicMock()
+        ctx.run_id = "run-no-ws"
+        ctx.node_path = "prepare"
+        ctx.agent_name = "no_ws_agent"
+        ctx.workspace_path = None
+        ctx.skip_policies = None
+        ctx.parent_event_id = None
+        ctx.tool_executor = executor
+
+        template = (
+            "python3 - <<'PYEOF'\n"
+            "import json, pathlib, stat\n"
+            "p = pathlib.Path({{ payload | file }})\n"
+            "print(json.dumps({\n"
+            "    'file': str(p),\n"
+            "    'dir': str(p.parent),\n"
+            "    'file_mode': stat.S_IMODE(p.stat().st_mode),\n"
+            "    'dir_mode': stat.S_IMODE(p.parent.stat().st_mode),\n"
+            "    'text': p.read_text(encoding='utf-8'),\n"
+            "}))\n"
+            "PYEOF\n"
+        )
+        agent = ScriptAgent(config={"name": "no_ws_agent", "script_template": template})
+        result = agent.run({"payload": "no-workspace-secret-payload"}, ctx)
+        assert result.status.value == "completed", result.error
+        out = result.structured_output
+        assert out is not None
+        assert out["file_mode"] == 0o600
+        assert out["dir_mode"] == 0o700
+        assert out["text"] == "no-workspace-secret-payload"
+        assert not pathlib.Path(out["file"]).exists()
+        assert not pathlib.Path(out["dir"]).exists()
+
+        # Also verify fallback temp dir is cleaned up if rendering fails later in the same template
+        created_dirs: list[pathlib.Path] = []
+        orig_mkdtemp = tempfile.mkdtemp
+
+        def tracking_mkdtemp(*args, **kwargs):
+            d = orig_mkdtemp(*args, **kwargs)
+            created_dirs.append(pathlib.Path(d))
+            return d
+
+        fail_agent = ScriptAgent(
+            config={
+                "name": "no_ws_fail",
+                "script_template": "cat {{ first | file }} && echo {{ huge | env }}",
+            }
+        )
+        with patch("temper_ai.agent.script_agent.tempfile.mkdtemp", side_effect=tracking_mkdtemp):
+            fail_res = fail_agent.run(
+                {"first": "staged-first", "huge": "X" * (ENV_MAX_BYTES + 10)},
+                ctx,
+            )
+        fail_status = fail_res.status.value
+        fail_err = fail_res.error or ""
+        has_huge = "huge" in fail_err
+        has_huge_fix = "{{ huge | file }}" in fail_err
+        assert fail_status == "failed"
+        assert has_huge
+        assert has_huge_fix
+        assert len(created_dirs) == 1
+        assert not created_dirs[0].exists()
+
+    def test_env_filter_over_limit_fails_loud_before_exec(self, tmp_path):
+        """`| env` (and any environment-stashed interpolation) over 131072 UTF-8 bytes raises
+        ScriptRenderError naming the agent, the input, and the `| file` fix before Bash starts."""
+        from temper_ai.agent.exceptions import ScriptRenderError
+        from temper_ai.agent.script_agent import ENV_MAX_BYTES, _ValueStash
+
+        # Boundary: exact 131,072-byte value is allowed
+        exact_limit = "A" * ENV_MAX_BYTES
+        stash_ok = _ValueStash(
+            agent_name="inkflow_reply_prepare",
+            inputs={"request_json": exact_limit},
+            expressions=["request_json | default('') | env"],
+        )
+        assert stash_ok.name(exact_limit) == "TEMPER_V1"
+
+        # 1 byte over limit (131,073 B) raises ScriptRenderError directly
+        over_by_one = "B" * (ENV_MAX_BYTES + 1)
+        stash_over = _ValueStash(
+            agent_name="inkflow_reply_prepare",
+            inputs={"request_json": over_by_one},
+            expressions=["request_json | default('') | env"],
+        )
+        with pytest.raises(ScriptRenderError) as exc_info:
+            stash_over.name(over_by_one)
+        err_msg = str(exc_info.value)
+        assert "inkflow_reply_prepare" in err_msg
+        assert "request_json" in err_msg
+        assert "131073 bytes" in err_msg
+        assert "131072-byte limit" in err_msg
+        assert "{{ request_json | default('') | file }}" in err_msg
+
+        # Real-size photo request (~1.25 MB) through ScriptAgent.run fails before subprocess starts
+        canary = "CANARY_SECRET_DATAURL_PAYLOAD_DO_NOT_LEAK"
+        real_size_photo = canary + ("P" * 1_250_944)
+        ctx = _make_context(ToolResult(success=True, result="should-not-run"))
+        ctx.workspace_path = str(tmp_path)
+        agent = ScriptAgent(
+            config={
+                "name": "inkflow_reply_prepare",
+                "script_template": (
+                    "python3 - <<'PYEOF'\n"
+                    "import os\n"
+                    "req = os.environ.get(\"{{ request_json | default('') | env }}\", \"\")\n"
+                    "PYEOF\n"
+                ),
+            }
+        )
+        result = agent.run({"request_json": real_size_photo}, ctx)
+        status_val = result.status.value
+        exec_called = ctx.tool_executor.execute.called
+        err_text = result.error or ""
+        has_agent = "inkflow_reply_prepare" in err_text
+        has_key = "request_json" in err_text
+        has_fix = "{{ request_json | default('') | file }}" in err_text
+        has_canary = canary in err_text
+        assert status_val == "failed"
+        assert not exec_called
+        assert has_agent
+        assert has_key
+        assert has_fix
+        assert not has_canary
+
 
 def test_a_long_json_output_reaches_the_next_node_whole(tmp_path):
     """The EPD plan stage's hand-off prints about 130,000 characters of JSON on one line. Through the

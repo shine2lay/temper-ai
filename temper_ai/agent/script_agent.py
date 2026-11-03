@@ -9,8 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
+import shutil
 import sys
+import tempfile
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -68,6 +71,12 @@ _JINJA_STMT = re.compile(r"\{%.*?%\}|\{#.*?#\}", re.DOTALL)
 BARE_FILTER = "_temper_env_bare"
 QUOTED_FILTER = "_temper_env_quoted"
 ENV_FILTER = "env"
+FILE_FILTER = "file"
+FILE_BARE_FILTER = "_temper_file_bare"
+
+#: Linux MAX_ARG_STRLEN (PAGE_SIZE * 32 = 131072 bytes): the kernel's per-string ceiling
+#: for execve() argv/envp entries. Anything larger fails execve with E2BIG (Errno 7).
+ENV_MAX_BYTES = 131_072
 
 #: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"`, `<<\EOF` -- but not `<<<` (a here-string, which is a word
 #: and expands like one). Group 1 is the quoting, group 2 the delimiter.
@@ -178,6 +187,19 @@ def _rewrite_interpolations(template: str, agent_name: str) -> str:
             out.append("{{ " + expr + " }}")
             pos = m.end()
             continue
+        if _ends_with_file_filter(expr):
+            # The author asked for a staged file path (`{{ x | file }}`). When the template
+            # already wraps the interpolation in quotes (`"{{ x | file }}"` or `'{{ x | file }}'`),
+            # emit the raw path inside those quotes; otherwise emit a single-quoted shell-safe path.
+            before_ch = template[m.start() - 1] if m.start() > 0 else ""
+            after_ch = template[m.end()] if m.end() < len(template) else ""
+            if before_ch in ('"', "'") and after_ch == before_ch:
+                bare_expr = re.sub(r"\|\s*" + FILE_FILTER + r"\s*$", "| " + FILE_BARE_FILTER, expr)
+                out.append("{{ " + bare_expr + " }}")
+            else:
+                out.append("{{ " + expr + " }}")
+            pos = m.end()
+            continue
         if state == "'":
             raise ScriptRenderError(
                 f"script for '{agent_name}' interpolates inside single quotes: {m.group(0).strip()!r}. "
@@ -205,8 +227,18 @@ def _ends_with_env_filter(expr: str) -> bool:
     return re.search(r"\|\s*" + ENV_FILTER + r"\s*$", expr) is not None
 
 
+def _ends_with_file_filter(expr: str) -> bool:
+    """`{{ x | file }}`, `{{ x | default('') | file }}`: the last filter is `file`, no arguments."""
+    return re.search(r"\|\s*" + FILE_FILTER + r"\s*$", expr) is not None
+
+
+def _shell_quote_path(path: str) -> str:
+    """Wrap a path in single quotes so spaces and shell metacharacters are inert."""
+    return "'" + path.replace("'", "'\"'\"'") + "'"
+
+
 class _ValueStash:
-    """Collects every rendered value into environment variables and emits a reference in its place.
+    """Collects rendered values into environment variables (or staged 0600 files) and emits a reference.
 
     This is the whole defence. `shlex.quote` protected a value only where the template author had
     not added quotes of their own: `echo {{ x }}` was safe, `echo "{{ x }}"` executed `$(...)` and
@@ -218,12 +250,64 @@ class _ValueStash:
 
     Whether the reference needs quotes of its own depends on where it lands, which is why
     `_rewrite_interpolations` picks the filter per site rather than this deciding for every site.
+    For values over Linux's 131,072-byte per-string environment limit (`MAX_ARG_STRLEN`), `| file`
+    writes the value to a `0600` file in the run workspace (or a private `0700` temp directory per
+    attempt when there is no workspace) and renders its shell-safe path.
     """
 
     PREFIX = "TEMPER_V"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        agent_name: str = "script",
+        workspace_path: str | None = None,
+        inputs: Mapping[str, Any] | None = None,
+        expressions: list[str] | None = None,
+    ) -> None:
         self.env: dict[str, str] = {}
+        self.files: list[str] = []
+        self.agent_name = agent_name or "script"
+        self.workspace_path = (
+            workspace_path.strip()
+            if isinstance(workspace_path, str) and workspace_path.strip()
+            else None
+        )
+        self._inputs: dict[str, Any] = dict(inputs) if inputs else {}
+        self._expressions: list[str] = list(expressions) if expressions else []
+        self._expr_index = 0
+        self._file_count = 0
+        self._temp_dir: str | None = None
+
+    @staticmethod
+    def _serialize(value: Any) -> str:
+        """Serialize a value for `| env` or `| file`: strings as-is, None as empty, others as JSON."""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
+
+    def _label_for(self, expr_idx: int, value: Any, text: str) -> tuple[str, str]:
+        raw_expr = self._expressions[expr_idx] if 0 <= expr_idx < len(self._expressions) else ""
+        base_expr = re.sub(r"\|\s*" + ENV_FILTER + r"\s*$", "", raw_expr).strip()
+        ident_match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)", base_expr)
+        expr_ident = ident_match.group(1) if ident_match else ""
+
+        input_key = ""
+        if expr_ident and expr_ident in self._inputs:
+            input_key = expr_ident
+        else:
+            for k, v in self._inputs.items():
+                if k in ("workspace_path", "run_id") or isinstance(v, Undefined):
+                    continue
+                if v is value or self._serialize(v) == text:
+                    input_key = k
+                    break
+
+        label = input_key or expr_ident or base_expr or f"{self.PREFIX}{len(self.env) + 1}"
+        fix_expr = base_expr or input_key or "value"
+        return label, fix_expr
 
     def _stash(self, value: Any) -> str | None:
         """Store the value, return its variable name — or None for an undefined, so the configured
@@ -233,14 +317,22 @@ class _ValueStash:
         did not fill) is stored as empty text, never as the word "None" a script would take for
         real text: a path named None, a repository called None. strict_undefined is not about
         these: it still fails only a name that does not exist."""
+        expr_idx = self._expr_index
+        self._expr_index += 1
         if isinstance(value, Undefined):
             str(value)
             return None
+        text = self._serialize(value)
+        nbytes = len(text.encode("utf-8"))
         name = f"{self.PREFIX}{len(self.env) + 1}"
-        if value is None:
-            self.env[name] = ""
-        else:
-            self.env[name] = value if isinstance(value, str) else str(value)
+        if nbytes > ENV_MAX_BYTES:
+            label, fix_expr = self._label_for(expr_idx, value, text)
+            raise ScriptRenderError(
+                f"script for '{self.agent_name}' passed {nbytes} bytes for '{label}' via "
+                f"environment variable {name}, over the {ENV_MAX_BYTES}-byte limit. "
+                f"Pass large values through a file instead: '{{{{ {fix_expr} | {FILE_FILTER} }}}}'."
+            )
+        self.env[name] = text
         return name
 
     def quoted(self, value: Any) -> str:
@@ -264,6 +356,53 @@ class _ValueStash:
         """
         name = self._stash(value)
         return name or f"{self.PREFIX}UNDEFINED"
+
+    def _target_dir(self) -> str:
+        if self.workspace_path and os.path.isdir(self.workspace_path):
+            return self.workspace_path
+        if self._temp_dir is None:
+            self._temp_dir = tempfile.mkdtemp(prefix="temper-script-")
+            os.chmod(self._temp_dir, 0o700)
+        return self._temp_dir
+
+    def _write_file(self, value: Any) -> str:
+        self._expr_index += 1
+        if isinstance(value, Undefined):
+            str(value)
+            text = ""
+        else:
+            text = self._serialize(value)
+        self._file_count += 1
+        target_dir = self._target_dir()
+        fd, path = tempfile.mkstemp(
+            prefix=f".temper_v{self._file_count}_",
+            dir=target_dir,
+        )
+        try:
+            os.fchmod(fd, 0o600)
+            data = text.encode("utf-8")
+            view = memoryview(data)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+        finally:
+            os.close(fd)
+        self.files.append(path)
+        return path
+
+    def file(self, value: Any) -> str:
+        """`{{ x | file }}`: write the value to a 0600 file and return its quoted shell-safe path."""
+        return _shell_quote_path(self._write_file(value))
+
+    def file_bare(self, value: Any) -> str:
+        """For `\"{{ x | file }}\"` or `'{{ x | file }}'` where the template already supplies quotes."""
+        return self._write_file(value)
+
+    def cleanup(self) -> None:
+        """Remove the per-attempt 0700 fallback directory when no workspace was set."""
+        if self._temp_dir is not None:
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
 
 
 def _recording_undefined(sink: list[str]) -> type[Undefined]:
@@ -333,11 +472,29 @@ class ScriptAgent(AgentABC):
         agent_event_id = self._record_script_started(_record, input_data, context)
 
         undefined_refs: list[str] = []
-        stash = _ValueStash()
+        render_vars = dict(input_data)
+        if context.workspace_path and not render_vars.get("workspace_path"):
+            render_vars["workspace_path"] = context.workspace_path
+        if context.run_id and not render_vars.get("run_id"):
+            render_vars["run_id"] = str(context.run_id)
+        if checked_vars is not None:
+            render_vars = checked_vars
+        workspace = render_vars.get("workspace_path")
+        raw_template = checked_template if checked_template is not None else self.config["script_template"]
+        env_exprs = [
+            m.group(1).strip()
+            for m in _INTERP.finditer(raw_template)
+            if not _ends_with_file_filter(m.group(1).strip())
+        ]
+        stash = _ValueStash(
+            agent_name=self.name,
+            workspace_path=workspace if isinstance(workspace, str) and workspace.strip() else None,
+            inputs=render_vars,
+            expressions=env_exprs,
+        )
         log: ScriptLog | None = None
         try:
-            template_text = _rewrite_interpolations(
-                checked_template if checked_template is not None else self.config["script_template"], self.name)
+            template_text = _rewrite_interpolations(raw_template, self.name)
             env = SandboxedEnvironment(
                 loader=BaseLoader(),
                 undefined=StrictUndefined if self.strict_undefined else _recording_undefined(undefined_refs),
@@ -345,21 +502,9 @@ class ScriptAgent(AgentABC):
             env.filters[QUOTED_FILTER] = stash.quoted
             env.filters[BARE_FILTER] = stash.bare
             env.filters[ENV_FILTER] = stash.name
+            env.filters[FILE_FILTER] = stash.file
+            env.filters[FILE_BARE_FILTER] = stash.file_bare
             template = env.from_string(template_text)
-            # `{{ workspace_path }}` is the documented way for a script to
-            # address the run's workspace, but it only ever resolved when a
-            # caller happened to pass it as a workflow input — otherwise it
-            # rendered empty and scripts silently wrote to `/`. Provide it
-            # from the execution context, without shadowing an explicit input.
-            render_vars = dict(input_data)
-            if context.workspace_path and not render_vars.get("workspace_path"):
-                render_vars["workspace_path"] = context.workspace_path
-            # Same for `{{ run_id }}`: scripts that leave a durable record
-            # (a claim file, a branch) want to say which run made it.
-            if context.run_id and not render_vars.get("run_id"):
-                render_vars["run_id"] = str(context.run_id)
-            if checked_vars is not None:
-                render_vars = checked_vars
             # No escaping here any more: `finalize` moves each value into the environment and writes a
             # reference in its place, so nothing that came from a model is ever parsed as shell code.
             try:
@@ -379,7 +524,6 @@ class ScriptAgent(AgentABC):
                 )
 
             timeout = declared_timeout_seconds(self.config)
-            workspace = render_vars.get("workspace_path")
             # `env` carries the interpolated values; `command` carries only the author's script.
             # TEMPER_PYTHON is the interpreter temper itself runs on, with its
             # dependencies (PyYAML among them); the image's `python3` has none.
@@ -466,6 +610,8 @@ class ScriptAgent(AgentABC):
                 error=str(e),
                 duration_seconds=duration,
             )
+        finally:
+            stash.cleanup()
 
     def _open_log(self, attempt_id: Any, context: ExecutionContext) -> ScriptLog | None:
         """This attempt's log, saved under its agent.started event's id; None without one."""

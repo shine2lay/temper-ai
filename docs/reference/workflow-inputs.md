@@ -57,9 +57,9 @@ out of the run, so the run gets the default.
 
 When a run leaves out an input that has no default, a step that reads it gets no value (None):
 
-- a script step gets empty text, in all three ways a script can take a value: `{{ name }}`,
-  `"{{ name }}"`, and `{{ name | env }}` (the variable is set, to empty text). A script never
-  gets the word `None`;
+- a script step gets empty text, in all four ways a script can take a value: `{{ name }}`,
+  `"{{ name }}"`, `{{ name | env }}` (the variable is set, to empty text), and
+  `{{ name | file }}` (the file is written, with empty text). A script never gets the word `None`;
 - a model step's prompt shows `None`, as before.
 
 Not the same thing: a name the step was not given at all. A script step renders it as blank and

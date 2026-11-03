@@ -228,8 +228,9 @@ NONE_SCRIPT = (
     'printf "quoted=[%s]\\n" {{ v }}\n'
     'printf "bare=[%s]\\n" "{{ v }}"\n'
     "python3 - <<'PY'\n"
-    "import os\n"
+    "import os, pathlib\n"
     "print('env=[' + os.environ['{{ v | env }}'] + ']')\n"
+    "print('file=[' + pathlib.Path({{ v | file }}).read_text(encoding='utf-8') + ']')\n"
     "PY\n"
 )
 
@@ -240,7 +241,7 @@ def test_a_none_value_reaches_the_script_as_empty_text_in_every_form(tmp_path, s
                                 "strict_undefined": strict})
     result = agent.run({"v": None}, _real_context(tmp_path))
     assert result.status.value == "completed", result.error
-    assert result.output == "quoted=[]\nbare=[]\nenv=[]\n"
+    assert result.output == "quoted=[]\nbare=[]\nenv=[]\nfile=[]\n"
     assert "None" not in result.output
 
 

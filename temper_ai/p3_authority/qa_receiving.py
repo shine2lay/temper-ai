@@ -169,21 +169,39 @@ class PublicationCohortSource(Protocol):
 
 
 class MappingPublicationCohortSource:
-    """Immutable read-only ``PublicationCohortSource`` backed by a mapping.
+    """Immutable read-only ``PublicationCohortSource`` backed by an exact-key mapping.
 
-    Keys may be ``(digest_or_path, selection_revision)`` pairs or bare
-    ``digest`` / ``path`` strings.
+    Keys must be exact ``(receiving_reference.digest, selection_revision)``
+    2-tuples (64-character lowercase hex SHA-256 ``str`` and non-empty ``str``
+    without outer whitespace), and values must be ``PublicationCohort`` or
+    ``None``. Looks up only ``(receiving_reference.digest, selection_revision)``
+    with no path or bare-key fallback; a real store port must key the same way.
     """
 
     def __init__(
         self,
-        cohorts: Mapping[tuple[str, str] | str, PublicationCohort | None],
+        cohorts: Mapping[tuple[str, str], PublicationCohort | None],
     ) -> None:
         if not isinstance(cohorts, Mapping):
             raise ValueError("cohorts must be a Mapping")
-        self._cohorts: dict[tuple[str, str] | str, PublicationCohort | None] = dict(
-            cohorts
-        )
+        validated: dict[tuple[str, str], PublicationCohort | None] = {}
+        for key, value in cohorts.items():
+            if not (
+                type(key) is tuple
+                and len(key) == 2
+                and _is_lowercase_sha256(key[0])
+                and _is_exact_non_empty_str(key[1])
+            ):
+                raise ValueError(
+                    "MappingPublicationCohortSource keys must be "
+                    "(64-char lowercase hex digest, exact non-empty selection_revision) tuples"
+                )
+            if value is not None and not isinstance(value, PublicationCohort):
+                raise ValueError(
+                    "MappingPublicationCohortSource values must be PublicationCohort or None"
+                )
+            validated[(key[0], key[1])] = value
+        self._cohorts: dict[tuple[str, str], PublicationCohort | None] = validated
 
     def load_cohort(
         self,
@@ -192,16 +210,14 @@ class MappingPublicationCohortSource:
         selection_revision: str,
     ) -> PublicationCohort | None:
         digest = getattr(receiving_reference, "digest", None)
-        path = getattr(receiving_reference, "path", None)
-        for key in (
-            (digest, selection_revision),
-            (path, selection_revision),
-            digest,
-            path,
+        if not (
+            type(digest) is str
+            and _is_lowercase_sha256(digest)
+            and type(selection_revision) is str
+            and _is_exact_non_empty_str(selection_revision)
         ):
-            if key in self._cohorts:
-                return self._cohorts[key]  # type: ignore[index]
-        return None
+            return None
+        return self._cohorts.get((digest, selection_revision))
 
 
 def _is_well_formed_member(member: object) -> bool:

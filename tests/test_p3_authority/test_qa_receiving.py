@@ -981,6 +981,241 @@ def test_constructor_validation_fails_loud_on_bad_inputs(
         )
 
 
+@pytest.mark.parametrize("boundary", ["A_PRE_ARM", "C_BEFORE_COUNT"])
+def test_exact_cohort_lookup_refuses_wrong_digest_and_wrong_selection_revision(
+    cohort_world: CohortWorld,
+    boundary: Boundary,
+) -> None:
+    """Exact (digest, selection_revision) lookup refuses (a) same path + different
+    lowercase digest and (b) right digest + other selection_revision with
+    QA_RECEIVING_MISSING at A_PRE_ARM and C_BEFORE_COUNT.
+    """
+    expected_phase = Phase.A if boundary == "A_PRE_ARM" else Phase.C
+    verifier = _make_verifier(cohort_world, cohort_world.cohort)
+
+    assert (
+        verifier.verify_qa_receiving(
+            cohort_world.qa_receiving,
+            selected_job=cohort_world.rig.running_job,
+            boundary=boundary,
+        )
+        is None
+    )
+
+    # (a) Same path + different valid lowercase 64-hex digest -> QA_RECEIVING_MISSING
+    different_digest_ref = replace(
+        cohort_world.qa_receiving.receiving_reference,
+        digest="8" * 64,
+    )
+    assert (
+        different_digest_ref.path
+        == cohort_world.qa_receiving.receiving_reference.path
+    )
+    assert (
+        different_digest_ref.digest
+        != cohort_world.qa_receiving.receiving_reference.digest
+    )
+    same_path_other_digest_receiving = FakeQAReceiving(
+        receiving_reference=different_digest_ref,
+        receiver=cohort_world.qa_receiving.receiver,
+    )
+    refusal_a = verifier.verify_qa_receiving(
+        same_path_other_digest_receiving,
+        selected_job=cohort_world.rig.running_job,
+        boundary=boundary,
+    )
+    assert isinstance(refusal_a, Refusal)
+    assert refusal_a.code is RefusalCode.QA_RECEIVING_MISSING
+    assert refusal_a.phase is expected_phase
+    assert refusal_a.retry_kind is RetryKind.SAME_BOUNDARY_AFTER_REPAIR
+
+    # (b) Right digest + other selection_revision -> QA_RECEIVING_MISSING
+    other_selection_job = replace(
+        cohort_world.rig.running_job,
+        selection_revision="sel-other-rev-99",
+    )
+    assert (
+        other_selection_job.selection_revision
+        != cohort_world.rig.running_job.selection_revision
+    )
+    refusal_b = verifier.verify_qa_receiving(
+        cohort_world.qa_receiving,
+        selected_job=other_selection_job,
+        boundary=boundary,
+    )
+    assert isinstance(refusal_b, Refusal)
+    assert refusal_b.code is RefusalCode.QA_RECEIVING_MISSING
+    assert refusal_b.phase is expected_phase
+    assert refusal_b.retry_kind is RetryKind.SAME_BOUNDARY_AFTER_REPAIR
+
+
+def test_mapping_cohort_source_constructor_rejects_fallback_and_invalid_mappings(
+    cohort_world: CohortWorld,
+) -> None:
+    """MappingPublicationCohortSource rejects bare-digest, bare-path, (path, rev),
+    3-tuple, uppercase-digest, whitespace-selection, and non-cohort-value mappings.
+    """
+    digest = cohort_world.qa_receiving.receiving_reference.digest
+    path = cohort_world.qa_receiving.receiving_reference.path
+    sel_rev = cohort_world.rig.running_job.selection_revision
+    cohort = cohort_world.cohort
+
+    # Valid exact-key mappings (PublicationCohort or None) succeed
+    valid_source = MappingPublicationCohortSource({(digest, sel_rev): cohort})
+    assert (
+        valid_source.load_cohort(
+            cohort_world.qa_receiving.receiving_reference,
+            selection_revision=sel_rev,
+        )
+        == cohort
+    )
+    none_source = MappingPublicationCohortSource({(digest, sel_rev): None})
+    assert (
+        none_source.load_cohort(
+            cohort_world.qa_receiving.receiving_reference,
+            selection_revision=sel_rev,
+        )
+        is None
+    )
+
+    invalid_mappings: list[Any] = [
+        {digest: cohort},  # bare-digest key
+        {path: cohort},  # bare-path key
+        {(path, sel_rev): cohort},  # (path, selection_revision) key
+        {(digest, path, sel_rev): cohort},  # 3-tuple key
+        {(digest,): cohort},  # 1-tuple key
+        {("A" * 64, sel_rev): cohort},  # uppercase-digest key
+        {(cohort.kit_sha256.upper(), sel_rev): cohort},  # mixed/uppercase-digest key
+        {("a" * 63, sel_rev): cohort},  # short digest key
+        {("g" * 64, sel_rev): cohort},  # non-hex digest key
+        {(digest, ""): cohort},  # empty selection_revision
+        {(digest, "   "): cohort},  # blank selection_revision
+        {(digest, f" {sel_rev}"): cohort},  # leading whitespace selection_revision
+        {(digest, f"{sel_rev} "): cohort},  # trailing whitespace selection_revision
+        {(digest, sel_rev): {"not": "a-cohort"}},  # non-cohort dict value
+        {(digest, sel_rev): "not-a-cohort"},  # non-cohort str value
+        {(digest, sel_rev): 123},  # non-cohort int value
+    ]
+    for bad_mapping in invalid_mappings:
+        with pytest.raises(ValueError):
+            MappingPublicationCohortSource(bad_mapping)
+
+
+def test_exact_cohort_lookup_bite_catches_legacy_fallback(
+    cohort_world: CohortWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Monkeypatching MappingPublicationCohortSource.load_cohort with the 277555d3
+    fallback lookup makes (a) same path + different digest and (b) right digest +
+    other selection_revision wrongly return None while the clean twin still passes.
+    """
+    digest = cohort_world.qa_receiving.receiving_reference.digest
+    path = cohort_world.qa_receiving.receiving_reference.path
+    sel_rev = cohort_world.rig.running_job.selection_revision
+    cohort = cohort_world.cohort
+
+    source = MappingPublicationCohortSource({(digest, sel_rev): cohort})
+    # Seed legacy fallback keys into the backing dict so only load_cohort's lookup
+    # rule differs when monkeypatched.
+    source._cohorts[(path, sel_rev)] = cohort  # type: ignore[index]
+    source._cohorts[digest] = cohort  # type: ignore[index]
+    source._cohorts[path] = cohort  # type: ignore[index]
+    verifier = PublicationCohortQAReceivingVerifier(
+        cohort_source=source,
+        expectations=cohort_world.expectations,
+    )
+
+    same_path_other_digest_receiving = FakeQAReceiving(
+        receiving_reference=replace(
+            cohort_world.qa_receiving.receiving_reference,
+            digest="8" * 64,
+        ),
+        receiver=cohort_world.qa_receiving.receiver,
+    )
+    other_selection_job = replace(
+        cohort_world.rig.running_job,
+        selection_revision="sel-other-rev-99",
+    )
+
+    # 1. With exact load_cohort active, clean twin passes and both (a) and (b) refuse.
+    for boundary in _TEST_BOUNDARIES:
+        assert (
+            verifier.verify_qa_receiving(
+                cohort_world.qa_receiving,
+                selected_job=cohort_world.rig.running_job,
+                boundary=boundary,
+            )
+            is None
+        )
+        pre_a = verifier.verify_qa_receiving(
+            same_path_other_digest_receiving,
+            selected_job=cohort_world.rig.running_job,
+            boundary=boundary,
+        )
+        assert isinstance(pre_a, Refusal)
+        assert pre_a.code is RefusalCode.QA_RECEIVING_MISSING
+
+        pre_b = verifier.verify_qa_receiving(
+            cohort_world.qa_receiving,
+            selected_job=other_selection_job,
+            boundary=boundary,
+        )
+        assert isinstance(pre_b, Refusal)
+        assert pre_b.code is RefusalCode.QA_RECEIVING_MISSING
+
+    # 2. Monkeypatch load_cohort with the 277555d3 fallback lookup.
+    def _legacy_fallback_load_cohort(
+        self: MappingPublicationCohortSource,
+        receiving_reference: Any,
+        *,
+        selection_revision: str,
+    ) -> PublicationCohort | None:
+        ref_digest = getattr(receiving_reference, "digest", None)
+        ref_path = getattr(receiving_reference, "path", None)
+        for key in (
+            (ref_digest, selection_revision),
+            (ref_path, selection_revision),
+            ref_digest,
+            ref_path,
+        ):
+            if key in self._cohorts:
+                return self._cohorts[key]  # type: ignore[index]
+        return None
+
+    monkeypatch.setattr(
+        MappingPublicationCohortSource,
+        "load_cohort",
+        _legacy_fallback_load_cohort,
+    )
+
+    # 3. Clean twin still passes, and both (a) and (b) now wrongly return None.
+    for boundary in _TEST_BOUNDARIES:
+        assert (
+            verifier.verify_qa_receiving(
+                cohort_world.qa_receiving,
+                selected_job=cohort_world.rig.running_job,
+                boundary=boundary,
+            )
+            is None
+        )
+        assert (
+            verifier.verify_qa_receiving(
+                same_path_other_digest_receiving,
+                selected_job=cohort_world.rig.running_job,
+                boundary=boundary,
+            )
+            is None
+        )
+        assert (
+            verifier.verify_qa_receiving(
+                cohort_world.qa_receiving,
+                selected_job=other_selection_job,
+                boundary=boundary,
+            )
+            is None
+        )
+
+
 @pytest.mark.parametrize(
     "check_name",
     [

@@ -38,9 +38,11 @@ Posture invariants:
 - `DEFAULT_NATIVE_BOUNDARY`, `DEFAULT_NATIVE_HOST_JOIN` and `DEFAULT_WORKER_OBSERVER` remain `None`:
   no native boundary is wired, so the host-row join refuses every row and never runs the plain
   host wire in its place.
-- Run admission gets candidate bindings only from an explicit caller: every runner entry point's
-  `candidate_bindings` parameter defaults to `None`, and only tests build a P3 composition
-  (checked by tests/test_architecture/test_first_app_p3_native.py, not at import).
+- Candidate bindings stay unset in the source: every runner entry point's `candidate_bindings`
+  parameter is keyword-only and defaults to `None`, and no production code builds, stores or hands
+  on bindings (six source facts, checked by
+  tests/test_architecture/test_candidate_bindings_source_facts.py, not at import; names built at
+  run time are not seen).
 - The offline supplier join here is pure (`join_offline_supplier_results`); the harness that
   drives the in-memory suppliers' state-changing calls lives in the tests only.
 - All N1-N8 native obligations remain `UNRESOLVED`; R-1, R-1i, D-1, D-5 remain

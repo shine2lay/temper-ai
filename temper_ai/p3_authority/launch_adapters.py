@@ -494,6 +494,16 @@ class BashChildLaunchAdapter:
         if isinstance(resolved, Refusal):
             return resolved
         child_host, child_closure = resolved.data
+        if self._closure_collector is not None:
+            # Architecture #482 S7: the closure's refusals run before the registry
+            # write, so a child the closure refuses is never left registered.
+            pre_refusal = self._closure_collector.refuse_child_spawn_before_registration(
+                closure_instance=child_closure,
+                registration_source=self._registration_source,
+                boundary=self._boundary,
+            )
+            if pre_refusal is not None:
+                return pre_refusal
 
         ticket = ChildRegistrationTicket(
             selected_job=self._selected_job,

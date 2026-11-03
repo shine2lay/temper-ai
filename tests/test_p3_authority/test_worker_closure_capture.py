@@ -71,22 +71,12 @@ from tests.test_p3_authority.test_child_registration import (
     make_selected_op,
 )
 
-# The observer's stream for each container process, as (node id, observed
-# categories) in load order. Coverage counts only through these labels and the
-# observed start, child and end events; no hook or adapter declares a category.
-WORKER_RUNTIME_SCRIPT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("interpreter-worker", ("native",)),
-    ("stdlib-worker", ("python",)),
-)
-BOOTSTRAP_SCRIPT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("main", ("bootstrap", "python", "control_plane")),
-    ("dep", ("bootstrap", "python", "dynamic")),
-)
-RUNNER_SCRIPT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("generated", ("generated",)),
-    ("cache", ("cache",)),
-    ("native_binary-worker", ("native", "effect_fence")),
-)
+# The observer's stream for each container process: the reviewed node ids it
+# saw loaded, in load order. A load carries no category: what the observer
+# watched is its own sealed scope record (``_observer_record``), never a label.
+WORKER_RUNTIME_SCRIPT: tuple[str, ...] = ("interpreter-worker", "stdlib-worker")
+BOOTSTRAP_SCRIPT: tuple[str, ...] = ("main", "dep")
+RUNNER_SCRIPT: tuple[str, ...] = ("generated", "cache", "native_binary-worker")
 CHILD_OS_PID = 104
 
 
@@ -188,21 +178,21 @@ def _loaded_bytes(reviewed: ReviewedSourceGraph, node_id: str) -> ContentIdentit
     return node.content
 
 
+def _entry_node(entry) -> str:
+    """A script entry is a node id, or (node id, loaded bytes override)."""
+    return entry if isinstance(entry, str) else entry[0]
+
+
 def _entry_bytes(reviewed: ReviewedSourceGraph, entry) -> ContentIdentity:
     """A script entry's loaded bytes: its own override, else the reviewed node's."""
-    return entry[2] if len(entry) > 2 else _loaded_bytes(reviewed, entry[0])
+    return _loaded_bytes(reviewed, entry) if isinstance(entry, str) else entry[1]
 
 
 def _observed_loads(reviewed: ReviewedSourceGraph, script) -> tuple[ObservedLoad, ...]:
     return tuple(
-        ObservedLoad(node_id=entry[0], loaded=_entry_bytes(reviewed, entry), categories=entry[1])
+        ObservedLoad(node_id=_entry_node(entry), loaded=_entry_bytes(reviewed, entry))
         for entry in script
     )
-
-
-def _without_label(script, label: str):
-    """The same stream with one category label never observed."""
-    return tuple((entry[0], tuple(c for c in entry[1] if c != label)) for entry in script)
 
 
 def _binding_for_job(base, job):
@@ -218,7 +208,7 @@ def _binding_for_job(base, job):
     )
 
 
-def _new_collector(base, reviewed, ev, *, binding, worker_closure):
+def _new_collector(base, reviewed, ev, *, binding, worker_closure, **collector_kwargs):
     graph_ref = replace(base.observed.envelope.reviewed_graph, content=reviewed.content)
     collector = WorkerClosureCollector(
         binding=binding,
@@ -227,6 +217,7 @@ def _new_collector(base, reviewed, ev, *, binding, worker_closure):
         graph_id=reviewed.graph.graph_id,
         worker_instance=worker_closure,
         evidence=ev,
+        **collector_kwargs,
     )
     return collector, graph_ref
 
@@ -242,13 +233,19 @@ def _run_opt_in_worker_capture_flow(
     runner_script=RUNNER_SCRIPT,
     spawn_child: bool = True,
     terminate_child: bool = True,
+    child_runtime_script=None,
     child_load_script=None,
+    collector_kwargs=None,
+    expect_spawn_refused: bool = False,
 ) -> SimpleNamespace:
     """Drive every opt-in adapter with the observer's stream; return the flow's records.
 
-    The child loads the worker's runtime, then ``child_load_script`` (default: the
-    worker's bootstrap and runner loads).
+    The child loads ``child_runtime_script`` (default: the worker's runtime), then
+    ``child_load_script`` (default: the worker's bootstrap and runner loads, which
+    the fixture graph's child profile requires).
     """
+    if child_runtime_script is None:
+        child_runtime_script = runtime_script
     if child_load_script is None:
         child_load_script = (*bootstrap_script, *runner_script)
     job = make_selected_job()
@@ -258,7 +255,7 @@ def _run_opt_in_worker_capture_flow(
     observer = WorkerObservationAdapter(provider=SyntheticWorkerProviderDouble())
     binding = _binding_for_job(base, job)
     collector, graph_ref = _new_collector(
-        base, reviewed, ev, binding=binding, worker_closure=worker_closure
+        base, reviewed, ev, binding=binding, worker_closure=worker_closure, **(collector_kwargs or {})
     )
     runtime_loads = _observed_loads(reviewed, runtime_script)
     bootstrap_loads = _observed_loads(reviewed, bootstrap_script)
@@ -304,7 +301,9 @@ def _run_opt_in_worker_capture_flow(
         worker_closure=worker_closure,
         host_child=host_child,
         closure_child=closure_child,
+        reviewed=reviewed,
         scripts=(runtime_script, bootstrap_script, runner_script),
+        child_runtime_script=child_runtime_script,
         child_load_script=child_load_script,
         graph_id=reviewed.graph.graph_id,
         closure_boundary=base.observed.envelope.boundary,
@@ -325,7 +324,7 @@ def _run_opt_in_worker_capture_flow(
         intended_effect=make_selected_op(),
         child_identity_resolver=_resolve_child,
         closure_collector=collector,
-        child_runtime_loads=runtime_loads,
+        child_runtime_loads=_observed_loads(reviewed, child_runtime_script),
         child_loads=_observed_loads(reviewed, child_load_script),
         boundary=boundary,  # type: ignore[arg-type]
     )
@@ -341,6 +340,14 @@ def _run_opt_in_worker_capture_flow(
     )
     assert isinstance(prep, AcceptedData)
     spawned = bash_adapter.on_spawned(os_pid=CHILD_OS_PID)
+    flow.observer = observer
+    flow.common = common
+    flow.resolve_child = _resolve_child
+    flow.bash_adapter = bash_adapter
+    flow.spawn_result = spawned
+    if expect_spawn_refused:
+        assert isinstance(spawned, Refusal), spawned
+        return flow
     assert isinstance(spawned, AcceptedData)
     flow.spawned = True
     if terminate_child:
@@ -356,9 +363,13 @@ def _run_opt_in_worker_capture_flow(
 
 
 def _observed_process(
-    flow, *, profile_id, instance, epoch, entrypoints, steps, coverage, child_frontier, state
+    flow, *, profile_id, instance, epoch, entrypoints, steps, child_frontier, state, scope
 ) -> ProcessObservation:
-    """One process as the test's observer saw it; steps are (kind, node, bytes, loader, child)."""
+    """One process as the test's observer saw it; steps are (kind, node, bytes, loader, child).
+
+    Its ``Checkpoint`` is the observer's sealed scope record: by default every
+    category watched, no gaps, sealed at the last event; ``scope`` changes fields.
+    """
     events = tuple(
         LoadEvent(
             sequence=seq,
@@ -386,43 +397,47 @@ def _observed_process(
         process_ref=make_evidence_ref(f"process-{profile_id}"),
         collector_ref=make_evidence_ref(f"collector-{profile_id}"),
         events=events,
-        checkpoint=Checkpoint(
-            epoch=epoch,
-            first_sequence=0,
-            last_sequence=len(events) - 1,
-            last_event_id=events[-1].event_id,
-            child_frontier=child_frontier,
-            coverage=tuple(c for c in ALL_N3_COVERAGE_CATEGORIES if c in coverage),
-            gaps=(),
-            loss_count=0,
-            sealed=True,
-            initial_state_ref=make_evidence_ref(f"initial-{profile_id}"),
-            checkpoint_ref=make_evidence_ref(f"checkpoint-{profile_id}"),
-            boundary=flow.closure_boundary,
+        checkpoint=replace(
+            Checkpoint(
+                epoch=epoch,
+                first_sequence=0,
+                last_sequence=len(events) - 1,
+                last_event_id=events[-1].event_id,
+                child_frontier=child_frontier,
+                coverage=ALL_N3_COVERAGE_CATEGORIES,
+                gaps=(),
+                loss_count=0,
+                sealed=True,
+                initial_state_ref=make_evidence_ref(f"initial-{profile_id}"),
+                checkpoint_ref=make_evidence_ref(f"checkpoint-{profile_id}"),
+                boundary=flow.closure_boundary,
+            ),
+            **(scope or {}),
         ),
         state=state,
     )
 
 
-def _observer_record(flow, reviewed: ReviewedSourceGraph) -> tuple[ProcessObservation, ...]:
+def _observer_record(
+    flow, reviewed: ReviewedSourceGraph, scopes=None
+) -> tuple[ProcessObservation, ...]:
     """The test's own record of what the observer saw, built from the scripts alone.
 
     Facts and the expectation come from this record, never from the collector, so
-    a category or binding the collector declares without observing finds no witness.
+    a binding or scope the collector declares without observing finds no witness.
+    ``scopes`` maps "worker" or "child" to changes in that process's sealed scope.
     """
+    scopes = scopes or {}
     runtime, bootstrap, runner = flow.scripts
 
-    def _loads_and_labels(script):
-        loads = [("load", e[0], _entry_bytes(reviewed, e), "loader-v1", None) for e in script]
-        return loads, {cat for entry in script for cat in entry[1]}
+    def _loads(script):
+        return [("load", _entry_node(e), _entry_bytes(reviewed, e), "loader-v1", None) for e in script]
 
-    loads, labels = _loads_and_labels((*runtime, *bootstrap, *runner))
     start = ("start", None, None, "trusted-launch", None)
     child_id = flow.closure_child.instance_id
-    worker_steps, worker_cov = [start, *loads], {"launch", *labels}
+    worker_steps = [start, *_loads((*runtime, *bootstrap, *runner))]
     if flow.spawned:
         worker_steps.append(("child", None, None, "trusted-launch", child_id))
-        worker_cov.add("children")
     worker = _observed_process(
         flow,
         profile_id="worker",
@@ -430,17 +445,15 @@ def _observer_record(flow, reviewed: ReviewedSourceGraph) -> tuple[ProcessObserv
         epoch=flow.worker_proc.exec_generation.witness_reference,
         entrypoints=("worker-entry",),
         steps=worker_steps,
-        coverage=worker_cov,
         child_frontier=(child_id,) if flow.spawned else (),
         state="running",
+        scope=scopes.get("worker"),
     )
     if not flow.spawned:
         return (worker,)
-    child_loads, child_labels = _loads_and_labels((*runtime, *flow.child_load_script))
-    child_steps, child_cov = [start, *child_loads], {"launch", *child_labels}
+    child_steps = [start, *_loads((*flow.child_runtime_script, *flow.child_load_script))]
     if flow.terminated:
         child_steps.append(("end", None, None, "trusted-launch", None))
-        child_cov.add("children")
     child = _observed_process(
         flow,
         profile_id="child",
@@ -448,11 +461,24 @@ def _observer_record(flow, reviewed: ReviewedSourceGraph) -> tuple[ProcessObserv
         epoch=flow.host_child.exec_generation.witness_reference,
         entrypoints=("child-entry",),
         steps=child_steps,
-        coverage=child_cov,
         child_frontier=(),
-        state="terminated",
+        state="terminated" if flow.terminated else "running",
+        scope=scopes.get("child"),
     )
     return (worker, child)
+
+
+def _observer_checkpoints(flow, reviewed: ReviewedSourceGraph, scopes=None):
+    """The observer's sealed scope record of each process, by closure instance id."""
+    return {p.instance.instance_id: p.checkpoint for p in _observer_record(flow, reviewed, scopes)}
+
+
+def _build(flow, scopes=None, *, boundary: str = "C_BEFORE_COUNT"):
+    """Seal the collector's half with the observer's own scope record."""
+    return flow.collector.build_envelope(
+        observer_checkpoints=_observer_checkpoints(flow, flow.reviewed, scopes),
+        boundary=boundary,  # type: ignore[arg-type]
+    )
 
 
 def _expected_from_record(records) -> tuple[ExpectedProcess, ...]:
@@ -476,10 +502,17 @@ def _expected_from_record(records) -> tuple[ExpectedProcess, ...]:
 
 
 def _expectation_and_origins(
-    flow, base, reviewed, worker_envelope, host_procs, *, drop_fact_purpose: str | None = None
+    flow,
+    base,
+    reviewed,
+    worker_envelope,
+    host_procs,
+    *,
+    drop_fact_purpose: str | None = None,
+    scopes=None,
 ):
     """The expectation and shared origin facts, from the test's observer record only."""
-    record = _observer_record(flow, reviewed)
+    record = _observer_record(flow, reviewed, scopes)
     host_expected = tuple(p for p in base.expected.processes if p.instance.location == "host")
     expectation = replace(
         base.expected,
@@ -504,7 +537,14 @@ def _expectation_and_origins(
 
 
 def _compare_capture(
-    flow, base, reviewed, ev, *, worker_envelope=None, drop_fact_purpose: str | None = None
+    flow,
+    base,
+    reviewed,
+    ev,
+    *,
+    worker_envelope=None,
+    drop_fact_purpose: str | None = None,
+    scopes=None,
 ) -> SimpleNamespace:
     """Compare the captured worker half with the host half.
 
@@ -512,7 +552,7 @@ def _compare_capture(
     never from the collector.
     """
     if worker_envelope is None:
-        env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+        env_res = _build(flow)
         assert isinstance(env_res, AcceptedData), env_res
         worker_envelope = env_res.data
     binding = worker_envelope.envelope.binding
@@ -532,7 +572,13 @@ def _compare_capture(
         )
     )
     expectation, verified, record = _expectation_and_origins(
-        flow, base, reviewed, worker_envelope, host_procs, drop_fact_purpose=drop_fact_purpose
+        flow,
+        base,
+        reviewed,
+        worker_envelope,
+        host_procs,
+        drop_fact_purpose=drop_fact_purpose,
+        scopes=scopes,
     )
     result = verify_and_compare_worker_closure(
         reviewed_graph=reviewed,
@@ -567,8 +613,10 @@ def test_worker_closure_capture_combined_happy_path(tmp_path: Path) -> None:
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
 
-    assert flow.collector.recorded_coverage == frozenset(ALL_N3_COVERAGE_CATEGORIES)
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    observer_scopes = _observer_checkpoints(flow, reviewed)
+    env_res = flow.collector.build_envelope(
+        observer_checkpoints=observer_scopes, boundary="C_BEFORE_COUNT"
+    )
     assert isinstance(env_res, AcceptedData)
     worker_envelope = env_res.data
     validate_loaded_envelope(to_wire(worker_envelope.envelope))
@@ -629,17 +677,18 @@ def test_refusal_twin_observation_gap_on_late_attach(tmp_path: Path) -> None:
     assert isinstance(early_res, Refusal)
     assert early_res.code == RefusalCode.OBSERVATION_GAP
 
-    env_res = collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = collector.build_envelope(observer_checkpoints={}, boundary="C_BEFORE_COUNT")
     assert isinstance(env_res, Refusal)
     assert env_res.code == RefusalCode.OBSERVATION_GAP
 
 
-def test_refusal_twin_closure_incomplete_on_missing_category(tmp_path: Path) -> None:
+@pytest.mark.parametrize("process", ["worker", "child"])
+def test_refusal_twin_closure_incomplete_on_missing_category(tmp_path: Path, process: str) -> None:
+    """The observer's scope record lacks "children": the collector adds none of its own."""
     _, base, reviewed, ev = _reviewed_world(tmp_path)
-    # No verified child was observed: the worker's "children" category is missing.
-    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev, spawn_child=False)
-    assert "children" not in flow.collector.recorded_coverage
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
+    without = tuple(c for c in ALL_N3_COVERAGE_CATEGORIES if c != "children")
+    env_res = _build(flow, {process: {"coverage": without}})
     assert isinstance(env_res, Refusal)
     assert env_res.code == RefusalCode.CLOSURE_INCOMPLETE
 
@@ -734,61 +783,176 @@ def test_refusal_twin_closure_not_bound_to_observed_worker_or_selection(
     )
     if code is None:
         assert isinstance(res, AcceptedData), case
-        assert "launch" in collector.recorded_coverage
+        assert set(collector.recorded_streams) == {worker_closure.instance_id}
         return
     assert isinstance(res, Refusal), case
     assert res.code == code, case
-    # A refused launch records nothing: no coverage, and later stages see a gap.
-    assert collector.recorded_coverage == frozenset()
+    # A refused launch records nothing: no stream, and later stages see a gap.
+    assert collector.recorded_streams == {}
+
+
+@pytest.mark.parametrize("started_execution", ["same", "other"])
+def test_refusal_twin_container_start_for_another_execution_writes_no_record(
+    tmp_path: Path, started_execution: str
+) -> None:
+    """Architecture #482 S6: after_container_start trusts the collector's execution-id check."""
+    _, base, reviewed, ev = _reviewed_world(tmp_path)
+    job = make_selected_job()
+    _, _, _, worker_closure = make_host_and_worker_processes()
+    collector, _ = _new_collector(
+        base, reviewed, ev, binding=_binding_for_job(base, job), worker_closure=worker_closure
+    )
+    adapter = DockerLaunchObservationAdapter(
+        worker_observer=WorkerObservationAdapter(provider=SyntheticWorkerProviderDouble()),
+        grant=make_grant(job, boundary="C_BEFORE_COUNT"),
+        selected_job=job,
+        closure_collector=collector,
+        runtime_loads=_observed_loads(reviewed, WORKER_RUNTIME_SCRIPT),
+        boundary="C_BEFORE_COUNT",
+    )
+    exec_uuid = job.pre_dispatch_or_running_job.dispatch.execution_uuid
+    assert isinstance(adapter.before_container_create(execution_id=exec_uuid), AcceptedData)
+    started = exec_uuid if started_execution == "same" else "00000000-0000-4000-8000-000000000997"
+    res = adapter.after_container_start(execution_id=started, container_id="container-1")
+    if started_execution == "same":
+        assert isinstance(res, AcceptedData), res
+        assert len(adapter.records) == 1
+        assert set(collector.recorded_streams) == {worker_closure.instance_id}
+        return
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.DISPATCH_CHANGED
+    assert adapter.records == ()
+    assert collector.recorded_streams == {}
+
+
+@pytest.mark.parametrize("mechanism", ["authenticated", "unauthenticated"])
+def test_refusal_twin_child_refused_by_closure_is_never_registered(
+    tmp_path: Path, mechanism: str
+) -> None:
+    """Architecture #482 S7: the closure refuses the child before the registry write."""
+    _, base, reviewed, ev = _reviewed_world(tmp_path)
+    refused = mechanism == "unauthenticated"
+    flow = _run_opt_in_worker_capture_flow(
+        base,
+        reviewed,
+        ev,
+        terminate_child=False,
+        collector_kwargs={"mechanism": "self-labelled-probe/1"} if refused else None,
+        expect_spawn_refused=refused,
+    )
+    # The same child registered again without a closure collector: an entry the
+    # refused spawn left behind would refuse it as a duplicate (RUNTIME_CHANGED).
+    again = BashChildLaunchAdapter(
+        **flow.common,
+        parent_instance=flow.worker_proc,
+        intended_effect=make_selected_op(),
+        child_identity_resolver=flow.resolve_child,
+        boundary="C_BEFORE_COUNT",
+    ).on_spawned(os_pid=CHILD_OS_PID)
+    if not refused:
+        assert isinstance(again, Refusal)
+        assert again.code == RefusalCode.RUNTIME_CHANGED
+        return
+    assert flow.spawn_result.code == RefusalCode.CLOSURE_INCOMPLETE
+    assert flow.bash_adapter.spawn_registrations == 0
+    assert flow.bash_adapter.registrations == ()
+    assert set(flow.collector.recorded_streams) == {flow.worker_closure.instance_id}
+    assert isinstance(again, AcceptedData), again
 
 
 def test_worker_epoch_is_the_observed_exec_generation(tmp_path: Path) -> None:
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = _build(flow)
     assert isinstance(env_res, AcceptedData)
     worker = env_res.data.envelope.process_observations[0]
     assert worker.instance.instance_id == flow.worker_closure.instance_id
     assert worker.checkpoint.epoch == flow.worker_proc.exec_generation.witness_reference
 
 
+def _without(category: str) -> tuple[str, ...]:
+    return tuple(c for c in ALL_N3_COVERAGE_CATEGORIES if c != category)
+
+
+# (case, scope change, code): the observer's sealed scope falls short of the stream.
+OBSERVER_SCOPE_SHORTFALLS = (
+    ("SC-03_native_not_watched", {"coverage": _without("native")}, RefusalCode.CLOSURE_INCOMPLETE),
+    ("SC-04_effect_fence_in_gaps", {"gaps": ("effect_fence",)}, RefusalCode.OBSERVATION_GAP),
+    ("SC-05_control_plane_in_gaps", {"gaps": ("control_plane",)}, RefusalCode.OBSERVATION_GAP),
+    ("dynamic_in_gaps", {"gaps": ("dynamic",)}, RefusalCode.CLOSURE_INCOMPLETE),
+    ("SC-07_sealed_before_last_load", {"last_sequence": 1}, RefusalCode.OBSERVATION_GAP),
+    ("SC-08_unsealed", {"sealed": False}, RefusalCode.OBSERVATION_GAP),
+    ("SC-08_loss", {"loss_count": 1}, RefusalCode.OBSERVATION_GAP),
+    ("epoch", {"epoch": "epoch-other"}, RefusalCode.OBSERVATION_GAP),
+    ("first_sequence", {"first_sequence": 1}, RefusalCode.OBSERVATION_GAP),
+    ("last_event_id", {"last_event_id": "event-other"}, RefusalCode.OBSERVATION_GAP),
+    ("child_frontier", {"child_frontier": ("child-other",)}, RefusalCode.OBSERVATION_GAP),
+    ("initial_state_ref", {"initial_state_ref": None}, RefusalCode.OBSERVATION_GAP),
+    ("checkpoint_ref", {"checkpoint_ref": None}, RefusalCode.OBSERVATION_GAP),
+    ("boundary", "boundary", RefusalCode.OBSERVATION_GAP),
+)
+
+
 @pytest.mark.parametrize(
-    ("label", "code"),
-    [
-        ("effect_fence", RefusalCode.OBSERVATION_GAP),
-        ("control_plane", RefusalCode.OBSERVATION_GAP),
-        ("dynamic", RefusalCode.CLOSURE_INCOMPLETE),
-    ],
+    ("case", "change", "code"), OBSERVER_SCOPE_SHORTFALLS, ids=[t[0] for t in OBSERVER_SCOPE_SHORTFALLS]
 )
 @pytest.mark.parametrize("process", ["worker", "child"])
-def test_refusal_twin_category_declared_but_not_observed(
-    tmp_path: Path, label: str, code: RefusalCode, process: str
+def test_refusal_twin_observer_scope_shortfall(
+    tmp_path: Path, case: str, change, code: RefusalCode, process: str
 ) -> None:
-    """Architecture #473 M3: a category the observer never labelled is a gap, never covered."""
+    """Systems #95 shape: the scope is the observer's sealed record; any shortfall refuses."""
     _, base, reviewed, ev = _reviewed_world(tmp_path)
-    # Only the named process's stream lacks the label; the other process observes it.
-    full, unlabelled = (
-        (*BOOTSTRAP_SCRIPT, *RUNNER_SCRIPT),
-        _without_label((*BOOTSTRAP_SCRIPT, *RUNNER_SCRIPT), label),
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
+    if change == "boundary":
+        change = {"boundary": replace(flow.closure_boundary, barrier_id="barrier-other")}
+    assert isinstance(_build(flow), AcceptedData)
+    env_res = _build(flow, {process: change})
+    assert isinstance(env_res, Refusal), case
+    assert env_res.code == code, case
+
+
+def test_refusal_twin_observer_scope_missing_or_extra_process(tmp_path: Path) -> None:
+    """Every recorded process needs the observer's scope, and no scope without a stream."""
+    _, base, reviewed, ev = _reviewed_world(tmp_path)
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
+    scopes = _observer_checkpoints(flow, reviewed)
+    missing = {k: v for k, v in scopes.items() if k != flow.closure_child.instance_id}
+    res = flow.collector.build_envelope(observer_checkpoints=missing, boundary="C_BEFORE_COUNT")
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.OBSERVATION_GAP
+    extra = {**scopes, "process-unrecorded": scopes[flow.worker_closure.instance_id]}
+    res = flow.collector.build_envelope(observer_checkpoints=extra, boundary="C_BEFORE_COUNT")
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.CLOSURE_INCOMPLETE
+    not_a_scope = {**scopes, flow.worker_closure.instance_id: {"coverage": "all"}}
+    res = flow.collector.build_envelope(
+        observer_checkpoints=not_a_scope,  # type: ignore[arg-type]
+        boundary="C_BEFORE_COUNT",
     )
-    if process == "worker":
-        flow = _run_opt_in_worker_capture_flow(
-            base,
-            reviewed,
-            ev,
-            bootstrap_script=_without_label(BOOTSTRAP_SCRIPT, label),
-            runner_script=_without_label(RUNNER_SCRIPT, label),
-            child_load_script=full,
-        )
-        assert label not in flow.collector.recorded_coverage
-    else:
-        flow = _run_opt_in_worker_capture_flow(
-            base, reviewed, ev, child_load_script=unlabelled
-        )
-        assert label in flow.collector.recorded_coverage
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
-    assert isinstance(env_res, Refusal)
-    assert env_res.code == code
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.OBSERVATION_GAP
+
+
+def test_refusal_twin_producer_widened_scope_is_refused_by_comparator(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """SC-06: an envelope claiming more than the observer sealed never compares MATCH."""
+    _, base, reviewed, ev = _reviewed_world(tmp_path)
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
+    env_res = _build(flow)
+    assert isinstance(env_res, AcceptedData)
+    # The observer really sealed the worker without native; the envelope claims all.
+    seen = _record_comparisons(monkeypatch)
+    cmp = _compare_capture(
+        flow,
+        base,
+        reviewed,
+        ev,
+        worker_envelope=env_res.data,
+        scopes={"worker": {"coverage": _without("native")}},
+    )
+    assert seen and seen[0].disposition != "MATCH"
+    assert isinstance(cmp.result, Refusal)
 
 
 def test_no_hook_or_adapter_can_declare_coverage() -> None:
@@ -813,7 +977,7 @@ def test_no_hook_or_adapter_can_declare_coverage() -> None:
 def test_refusal_twin_closure_version_on_schema_mismatch(tmp_path: Path) -> None:
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = _build(flow)
     assert isinstance(env_res, AcceptedData)
     bad_inner = replace(env_res.data.envelope)
     object.__setattr__(bad_inner, "schema", "qa-ops-host-source-closure/1")
@@ -838,7 +1002,7 @@ def test_refusal_twin_closure_version_on_schema_mismatch(tmp_path: Path) -> None
 def test_refusal_twin_closure_mismatch_on_unreviewed_module(tmp_path: Path, monkeypatch) -> None:
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     # The observer saw a module the reviewed graph does not hold.
-    unreviewed = ("unreviewed_plugin", ("python",), byte_identity(b"unreviewed plugin"))
+    unreviewed = ("unreviewed_plugin", byte_identity(b"unreviewed plugin"))
     flow = _run_opt_in_worker_capture_flow(
         base, reviewed, ev, runner_script=(*RUNNER_SCRIPT, unreviewed)
     )
@@ -876,8 +1040,8 @@ def test_refusal_twin_dirty_tree_source_changed_and_digest_mismatch_closure_mism
     # happy path's, so the substituted bytes are the only difference.
     _git(repo_dir, "checkout", "--", "main.py")
     substituted = tuple(
-        (node_id, cats, _loaded_bytes(reviewed, "dep")) if node_id == "main" else (node_id, cats)
-        for node_id, cats in BOOTSTRAP_SCRIPT
+        (node_id, _loaded_bytes(reviewed, "dep")) if node_id == "main" else node_id
+        for node_id in BOOTSTRAP_SCRIPT
     )
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev, bootstrap_script=substituted)
     seen = _record_comparisons(monkeypatch)
@@ -930,7 +1094,7 @@ def test_guard_bite_unverified_launcher_registration_never_counts_as_complete(
     assert surrogate_res.code == RefusalCode.PEER_UNVERIFIED
     assert flow.collector.surrogate_registration_tainted is True
 
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = _build(flow)
     assert isinstance(env_res, Refusal)
     assert env_res.code == RefusalCode.PEER_UNVERIFIED
 
@@ -942,17 +1106,11 @@ def test_guard_bite_dropping_any_n3_coverage_category_fails(
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     assert len(ALL_N3_COVERAGE_CATEGORIES) == 10
 
+    flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
     for dropped_cat in ALL_N3_COVERAGE_CATEGORIES:
-        flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
-        streams = (
-            [flow.collector._coverage]
-            if process == "worker"
-            else [c.coverage for c in flow.collector._children.values()]
-        )
-        assert streams
-        for coverage in streams:
-            coverage.discard(dropped_cat)
-        env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+        # The observer's sealed scope for one process omits the category.
+        without = tuple(c for c in ALL_N3_COVERAGE_CATEGORIES if c != dropped_cat)
+        env_res = _build(flow, {process: {"coverage": without}})
         assert isinstance(env_res, Refusal), f"Dropping {dropped_cat} from {process} must refuse"
         assert env_res.code == (
             RefusalCode.OBSERVATION_GAP
@@ -964,7 +1122,7 @@ def test_guard_bite_dropping_any_n3_coverage_category_fails(
 def test_guard_bite_one_half_envelope_refused(tmp_path: Path, monkeypatch) -> None:
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = _build(flow)
     assert isinstance(env_res, AcceptedData)
     worker_envelope = env_res.data
     # A one-half envelope must be refused before any comparison runs.
@@ -1023,7 +1181,7 @@ def _dual_role_world(tmp_path: Path) -> SimpleNamespace:
     """The happy path's matching worker + host halves, expectation and shared origins."""
     _, base, reviewed, ev = _reviewed_world(tmp_path)
     flow = _run_opt_in_worker_capture_flow(base, reviewed, ev)
-    env_res = flow.collector.build_envelope(boundary="C_BEFORE_COUNT")
+    env_res = _build(flow)
     assert isinstance(env_res, AcceptedData)
     worker_envelope = env_res.data
     host_procs = _make_host_procs(base, reviewed, worker_envelope.envelope.binding)

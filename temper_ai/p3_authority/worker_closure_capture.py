@@ -21,7 +21,7 @@ import hashlib
 import os
 import struct
 import zlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
@@ -107,40 +107,22 @@ def byte_content_identity(raw: bytes | str) -> ContentIdentity:
     return byte_identity(raw.encode("utf-8") if isinstance(raw, str) else raw)
 
 
-# Categories an event, not a load, shows: a trusted start (launch) and a
-# verified child birth or an observed end of a child's stream (children).
-EVENT_COVERAGE_CATEGORIES: tuple[N3Coverage, ...] = ("launch", "children")
-LOAD_COVERAGE_CATEGORIES: tuple[N3Coverage, ...] = tuple(
-    cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat not in EVENT_COVERAGE_CATEGORIES
-)
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ObservedLoad:
-    """One load the observer saw: node id, the loaded bytes' identity, its categories.
+    """One load the observer saw: node id and the loaded bytes' identity.
 
-    ``categories`` are the observed stream's labels for this load; a coverage
-    category counts for a process only through an observed load or event of it.
+    A load carries no coverage category: what the observer watched is its own
+    sealed scope record (the process's ``Checkpoint``), never a load label.
     """
 
     node_id: str
     loaded: ContentIdentity
-    categories: tuple[N3Coverage, ...]
 
     def __post_init__(self) -> None:
         if not isinstance(self.node_id, str) or not self.node_id:
             raise ValueError("ObservedLoad.node_id must be a non-empty string")
         if not isinstance(self.loaded, ContentIdentity):
             raise ValueError("ObservedLoad.loaded must be a ContentIdentity")
-        if (
-            not self.categories
-            or len(set(self.categories)) != len(self.categories)
-            or any(cat not in LOAD_COVERAGE_CATEGORIES for cat in self.categories)
-        ):
-            raise ValueError(
-                "ObservedLoad.categories must be distinct load categories: "
-                + ", ".join(LOAD_COVERAGE_CATEGORIES)
-            )
 
 
 def make_evidence_ref(
@@ -526,6 +508,55 @@ def refuse_missing_coverage(
     return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
 
 
+def refuse_observer_scope_shortfall(
+    checkpoint: object,
+    *,
+    epoch: str,
+    events: Sequence[LoadEvent],
+    child_frontier: tuple[str, ...],
+    closure_boundary: ClosureBoundary,
+    boundary: Boundary,
+) -> Refusal | None:
+    """Refuse an observer scope record that doesn't seal the recorded stream; ``None`` if it does.
+
+    A fail-fast pre-check; the comparator stays the final decider. A scope for
+    another epoch, interval, child frontier or boundary, an unsealed or lossy
+    scope, or one without its refs is an observation gap. A category the scope
+    lacks or lists in ``gaps`` is uncovered: ``refuse_missing_coverage`` refuses it.
+    """
+    if not isinstance(checkpoint, Checkpoint) or not events:
+        return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
+    if (
+        checkpoint.epoch != epoch
+        or checkpoint.first_sequence != 0
+        or checkpoint.last_sequence != len(events) - 1
+        or checkpoint.last_event_id != events[-1].event_id
+        or checkpoint.child_frontier != child_frontier
+        or checkpoint.boundary != closure_boundary
+        or not checkpoint.sealed
+        or checkpoint.loss_count != 0
+        or checkpoint.initial_state_ref is None
+        or checkpoint.checkpoint_ref is None
+    ):
+        return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
+    covered = frozenset(cat for cat in checkpoint.coverage if cat not in checkpoint.gaps)
+    return refuse_missing_coverage(covered, boundary)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _RecordedStream:
+    """One process's recorded stream at seal time, before its observer scope is added."""
+
+    profile_id: str
+    instance: ClosureProcessInstance
+    epoch: str
+    entrypoint_ids: tuple[str, ...]
+    runtime_nodes: tuple[str, ...]
+    events: tuple[LoadEvent, ...]
+    child_frontier: tuple[str, ...]
+    state: Literal["running", "terminated"]
+
+
 @dataclass(slots=True, kw_only=True)
 class _ChildStream:
     """A verified child's stream while the collector runs; sealed by ``build_envelope``."""
@@ -536,7 +567,6 @@ class _ChildStream:
     entrypoint_ids: tuple[str, ...]
     runtime_nodes: tuple[str, ...]
     events: list[LoadEvent] = field(default_factory=list)
-    coverage: set[N3Coverage] = field(default_factory=set)
     terminated: bool = False
 
     def append(
@@ -568,11 +598,11 @@ class WorkerClosureCollector:
       (``refuse_surrogate_child_registration``) as complete coverage or authentic origin.
     - Binds the closure to the authenticated ``WorkerObservation``: worker process
       pairing, selection, job revision, dispatch identity and route.
-    - Coverage is derived, never declared: ``launch`` from a bound trusted start,
-      ``children`` from an accepted verified child event (worker) or an observed
-      termination (child), every other category only from ``ObservedLoad.categories``.
+    - Builds no coverage: each process's ``Checkpoint`` (coverage, gaps, interval,
+      seal, refs) is the observer's own sealed scope record, copied verbatim at
+      ``build_envelope`` after it is checked against the recorded stream.
     - Validates the resulting ``LoadedClosureEnvelope`` with ``validate_loaded_envelope``
-      and requires all 10 ``ALL_N3_COVERAGE_CATEGORIES`` for every process.
+      and requires all 10 ``ALL_N3_COVERAGE_CATEGORIES`` in every process's scope.
     """
 
     def __init__(
@@ -614,7 +644,6 @@ class WorkerClosureCollector:
         self._surrogate_registration_tainted = False
         self._box_profile_closure_ignored = False
 
-        self._coverage: set[N3Coverage] = set()
         self._worker_events: list[LoadEvent] = []
         self._children: dict[str, _ChildStream] = {}
         self._child_frontier_ids: list[str] = []
@@ -628,8 +657,14 @@ class WorkerClosureCollector:
         return self._surrogate_registration_tainted
 
     @property
-    def recorded_coverage(self) -> frozenset[N3Coverage]:
-        return frozenset(self._coverage)
+    def recorded_streams(self) -> dict[str, tuple[LoadEvent, ...]]:
+        """Each process's recorded events by closure instance id; empty before a launch."""
+        streams = {
+            child.instance.instance_id: tuple(child.events) for child in self._children.values()
+        }
+        if self._worker_events:
+            streams = {self._worker_instance.instance_id: tuple(self._worker_events), **streams}
+        return streams
 
     def _append_worker_event(
         self,
@@ -658,7 +693,6 @@ class WorkerClosureCollector:
             added.append(
                 self._append_worker_event(kind="load", node_id=load.node_id, loaded=load.loaded)
             )
-            self._coverage.update(load.categories)
         return tuple(added)
 
     def _refuse_unbound_observation(
@@ -743,7 +777,6 @@ class WorkerClosureCollector:
             return unbound
         self._worker_epoch = worker_observation.worker_instance.exec_generation.witness_reference
         self._launch_observed = True
-        self._coverage.add("launch")
         ev = self._append_worker_event(kind="start", loader="trusted-launch")
         self._append_worker_loads(runtime_loads)
         return AcceptedData(data=ev, evidence=self._evidence)
@@ -820,23 +853,18 @@ class WorkerClosureCollector:
             boundary=boundary,
         )
 
-    def record_verified_child_spawn(
+    def refuse_child_spawn_before_registration(
         self,
         *,
-        entry: RegisteredChildEntry,
+        closure_instance: ClosureProcessInstance,
         registration_source: str = VERIFIED_LAUNCHER_REGISTRATION_SOURCE,
-        child_profile_id: str = "child",
-        child_entrypoint_ids: tuple[str, ...] = ("child-entry",),
-        child_runtime_nodes: tuple[str, ...] = ("interpreter-worker", "stdlib-worker"),
-        child_runtime_loads: Sequence[ObservedLoad] = (),
-        child_loads: Sequence[ObservedLoad] = (),
         boundary: Boundary = "C_PRE_EXECUTION",
-    ) -> Result[LoadEvent]:
-        """Record a verified child birth: the worker's child event and the child's stream.
+    ) -> Refusal | None:
+        """Every refusal ``record_verified_child_spawn`` gives, checked before any registry write.
 
-        The child's ``launch`` counts from the verified registration; its load
-        categories only from its observed loads; ``children`` only once its
-        termination is observed (``record_child_termination``).
+        A launch adapter calls it before registering the child, so a child the
+        closure refuses is never left in the registry. A refusal taints the
+        collector exactly as the record call would; ``None`` records nothing.
         """
         if (
             registration_source in NON_PROVIDER_REGISTRATION_SOURCES
@@ -851,14 +879,40 @@ class WorkerClosureCollector:
             return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
         if self._mechanism not in AUTHENTICATED_STREAM_MECHANISMS:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
-
-        c_inst = entry.closure_instance
-        if c_inst.parent_instance != self._worker_instance.instance_id:
+        if closure_instance.parent_instance != self._worker_instance.instance_id:
             return make_refusal(
                 RefusalCode.SUBJECT_MISMATCH,
                 boundary,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
+        return None
+
+    def record_verified_child_spawn(
+        self,
+        *,
+        entry: RegisteredChildEntry,
+        registration_source: str = VERIFIED_LAUNCHER_REGISTRATION_SOURCE,
+        child_profile_id: str = "child",
+        child_entrypoint_ids: tuple[str, ...] = ("child-entry",),
+        child_runtime_nodes: tuple[str, ...] = ("interpreter-worker", "stdlib-worker"),
+        child_runtime_loads: Sequence[ObservedLoad] = (),
+        child_loads: Sequence[ObservedLoad] = (),
+        boundary: Boundary = "C_PRE_EXECUTION",
+    ) -> Result[LoadEvent]:
+        """Record a verified child birth: the worker's child event and the child's stream.
+
+        The child's stream starts at the verified registration and holds its
+        observed loads; its coverage is the observer's sealed scope record, given
+        to ``build_envelope``.
+        """
+        refused = self.refuse_child_spawn_before_registration(
+            closure_instance=entry.closure_instance,
+            registration_source=registration_source,
+            boundary=boundary,
+        )
+        if refused is not None:
+            return refused
+        c_inst = entry.closure_instance
         worker_event = self._append_worker_event(
             kind="child",
             loader="trusted-launch",
@@ -866,7 +920,6 @@ class WorkerClosureCollector:
         )
         if c_inst.instance_id not in self._child_frontier_ids:
             self._child_frontier_ids.append(c_inst.instance_id)
-        self._coverage.add("children")
 
         child = _ChildStream(
             profile_id=child_profile_id,
@@ -876,10 +929,8 @@ class WorkerClosureCollector:
             runtime_nodes=child_runtime_nodes or self._worker_runtime_nodes,
         )
         child.append(kind="start", loader="trusted-launch")
-        child.coverage.add("launch")
         for load in (*child_runtime_loads, *child_loads):
             child.append(kind="load", node_id=load.node_id, loaded=load.loaded)
-            child.coverage.update(load.categories)
         self._children[c_inst.instance_id] = child
         return AcceptedData(data=worker_event, evidence=self._evidence)
 
@@ -891,22 +942,29 @@ class WorkerClosureCollector:
     ) -> Result[LoadEvent]:
         """Close a recorded child's stream with its observed end.
 
-        A leaf child's stream closed by an observed end is what shows its
-        ``children`` coverage; an unknown or already closed child is a gap.
+        The child is sealed as ``terminated`` only after this; an unknown or
+        already closed child is a gap.
         """
         child = self._children.get(child_instance_id)
         if child is None or child.terminated:
             return make_refusal(RefusalCode.OBSERVATION_GAP, boundary)
         end_event = child.append(kind="end", loader="trusted-launch")
         child.terminated = True
-        child.coverage.add("children")
         return AcceptedData(data=end_event, evidence=self._evidence)
 
     def build_envelope(
         self,
         *,
+        observer_checkpoints: Mapping[str, Checkpoint],
         boundary: Boundary | None = None,
     ) -> Result[LoadedClosureEnvelope]:
+        """Seal the recorded streams into the worker half, each with its observer's scope.
+
+        ``observer_checkpoints`` maps every recorded process's closure instance id
+        to the observer's own sealed ``Checkpoint`` for it. The collector checks
+        each against the recorded stream (``refuse_observer_scope_shortfall``),
+        then copies it verbatim; it builds no coverage, interval or seal itself.
+        """
         eff_boundary: Boundary = boundary or self._closure_boundary.phase
         if self._late_attach_tainted or not (
             self._launch_observed
@@ -924,39 +982,28 @@ class WorkerClosureCollector:
 
         if not self._worker_events or self._worker_epoch is None:
             return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, eff_boundary)
-        # Every process, worker and child, needs every category observed for it.
-        for coverage in (self._coverage, *(c.coverage for c in self._children.values())):
-            missing_refusal = refuse_missing_coverage(coverage, eff_boundary)
-            if missing_refusal is not None:
-                return missing_refusal
-
-        w_obs = self._sealed_observation(
-            profile_id=self._worker_profile_id,
-            instance=self._worker_instance,
-            epoch=self._worker_epoch,
-            entrypoint_ids=self._worker_entrypoint_ids,
-            runtime_nodes=self._worker_runtime_nodes,
-            events=tuple(self._worker_events),
-            child_frontier=tuple(self._child_frontier_ids),
-            coverage=self._coverage,
-            state="running",
-        )
-        processes = (
-            w_obs,
-            *(
-                self._sealed_observation(
-                    profile_id=child.profile_id,
-                    instance=child.instance,
-                    epoch=child.epoch,
-                    entrypoint_ids=child.entrypoint_ids,
-                    runtime_nodes=child.runtime_nodes,
-                    events=tuple(child.events),
-                    child_frontier=(),
-                    coverage=child.coverage,
-                    state="terminated",
-                )
-                for child in self._children.values()
-            ),
+        streams = self._recorded_process_streams(self._worker_epoch)
+        recorded_ids = {stream.instance.instance_id for stream in streams}
+        if not recorded_ids <= set(observer_checkpoints):
+            # A recorded process the observer sealed no scope for.
+            return make_refusal(RefusalCode.OBSERVATION_GAP, eff_boundary)
+        if set(observer_checkpoints) != recorded_ids:
+            # The observer sealed a process the collector never recorded.
+            return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, eff_boundary)
+        for stream in streams:
+            shortfall = refuse_observer_scope_shortfall(
+                observer_checkpoints[stream.instance.instance_id],
+                epoch=stream.epoch,
+                events=stream.events,
+                child_frontier=stream.child_frontier,
+                closure_boundary=self._closure_boundary,
+                boundary=eff_boundary,
+            )
+            if shortfall is not None:
+                return shortfall
+        processes = tuple(
+            self._sealed_observation(stream, observer_checkpoints[stream.instance.instance_id])
+            for stream in streams
         )
         raw_env = ClosureEnvelope(
             schema="p3-reviewed-loaded-closure/1",
@@ -979,49 +1026,52 @@ class WorkerClosureCollector:
             return make_refusal(code, eff_boundary)
         return AcceptedData(data=validated, evidence=self._evidence)
 
-    def _sealed_observation(
-        self,
-        *,
-        profile_id: str,
-        instance: ClosureProcessInstance,
-        epoch: str,
-        entrypoint_ids: tuple[str, ...],
-        runtime_nodes: tuple[str, ...],
-        events: tuple[LoadEvent, ...],
-        child_frontier: tuple[str, ...],
-        coverage: set[N3Coverage],
-        state: Literal["running", "terminated"],
-    ) -> ProcessObservation:
-        """One process's observation, sealed at its last recorded event."""
-        checkpoint = Checkpoint(
-            epoch=epoch,
-            first_sequence=0,
-            last_sequence=len(events) - 1,
-            last_event_id=events[-1].event_id,
-            child_frontier=child_frontier,
-            coverage=tuple(cat for cat in ALL_N3_COVERAGE_CATEGORIES if cat in coverage),
-            gaps=(),
-            loss_count=0,
-            sealed=True,
-            initial_state_ref=make_evidence_ref(f"initial-{profile_id}"),
-            checkpoint_ref=make_evidence_ref(f"checkpoint-{profile_id}"),
-            boundary=self._closure_boundary,
+    def _recorded_process_streams(self, worker_epoch: str) -> tuple[_RecordedStream, ...]:
+        """The worker's stream, then each verified child's, as recorded so far."""
+        worker = _RecordedStream(
+            profile_id=self._worker_profile_id,
+            instance=self._worker_instance,
+            epoch=worker_epoch,
+            entrypoint_ids=self._worker_entrypoint_ids,
+            runtime_nodes=self._worker_runtime_nodes,
+            events=tuple(self._worker_events),
+            child_frontier=tuple(self._child_frontier_ids),
+            state="running",
         )
+        children = tuple(
+            _RecordedStream(
+                profile_id=child.profile_id,
+                instance=child.instance,
+                epoch=child.epoch,
+                entrypoint_ids=child.entrypoint_ids,
+                runtime_nodes=child.runtime_nodes,
+                events=tuple(child.events),
+                child_frontier=(),
+                state="terminated" if child.terminated else "running",
+            )
+            for child in self._children.values()
+        )
+        return (worker, *children)
+
+    def _sealed_observation(
+        self, stream: _RecordedStream, observer_checkpoint: Checkpoint
+    ) -> ProcessObservation:
+        """One process's observation: its recorded stream and the observer's scope, verbatim."""
         return ProcessObservation(
-            profile_id=profile_id,
-            instance=instance,
+            profile_id=stream.profile_id,
+            instance=stream.instance,
             binding=self._binding,
             graph_id=self._graph_id,
-            entrypoint_ids=entrypoint_ids,
-            runtime_nodes=runtime_nodes,
+            entrypoint_ids=stream.entrypoint_ids,
+            runtime_nodes=stream.runtime_nodes,
             collector_id=self._collector_id,
             collector_version=self._collector_version,
             mechanism=self._mechanism,
-            process_ref=make_evidence_ref(f"process-{profile_id}"),
-            collector_ref=make_evidence_ref(f"collector-{profile_id}"),
-            events=events,
-            checkpoint=checkpoint,
-            state=state,
+            process_ref=make_evidence_ref(f"process-{stream.profile_id}"),
+            collector_ref=make_evidence_ref(f"collector-{stream.profile_id}"),
+            events=stream.events,
+            checkpoint=observer_checkpoint,
+            state=stream.state,
         )
 
 

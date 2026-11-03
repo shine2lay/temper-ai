@@ -27,7 +27,8 @@ All capture hooks are **inert and switched off by default**:
 | --- | --- |
 | `CapturedGitCheckoutProvenance` | Immutable bundle of validated `RepositoryState`, per-file `GitProvenance` records, `SourceNode` (`kind="git_source"`) entries, and `VerifiedOriginFact` (`purpose="membership"`) witnesses for a clean Git checkout. |
 | `capture_git_checkout_provenance(...)` | Reads the HEAD commit, tree, tracked blob OIDs/modes and index straight from the explicit checkout's `.git` files (HEAD, refs, `packed-refs`, zlib loose objects, index; no subprocess), hashes every worktree file, and validates the result with `p3_source_closure.provenance.check_provenance`. |
-| `ObservedLoad` | One load the observer saw: `node_id`, `loaded` (the identity of the loaded bytes, never of the node name) and `categories` (the observed stream's labels for it; distinct, from `LOAD_COVERAGE_CATEGORIES`). |
+| `ObservedLoad` | One load the observer saw: `node_id` and `loaded` (the identity of the loaded bytes, never of the node name). It carries no coverage category. |
+| `refuse_observer_scope_shortfall` | Fail-fast check of one observer scope record (`Checkpoint`) against a recorded stream: epoch, `first_sequence=0`, `last_sequence` / `last_event_id` at the stream's last event, child frontier, closure boundary, `sealed`, `loss_count=0` and both refs, else `OBSERVATION_GAP`; every `ALL_N3_COVERAGE_CATEGORIES` entry in `coverage` and not in `gaps`, else `refuse_missing_coverage`. |
 | `WorkerClosureCollector` | Opt-in stateful collector wired into launch, early bootstrap, runner bootstrap, script launch, and verified child registration hooks to assemble the worker-half `LoadedClosureEnvelope` (`build_envelope`, checked by `validate_loaded_envelope`). It supplies no `ExpectedProcess` entries or `VerifiedOriginFact` witnesses: those come from the caller's own observer record, so the collector never witnesses its own claims. |
 | `merge_dual_role_halves(...)` -> `DualRoleEnvelope` | Checks the worker half and the peer (host) half and each half's supplied observer identity, then merges them into one envelope whose observer origin is derived, never supplied (see below). |
 | `verify_and_compare_worker_closure(...)` | Validates the reviewed graph, merges the halves with `merge_dual_role_halves`, requires both the `host` and `container` roles (`CoverageBookkeeper.verify_envelope(require_dual_role=True)`), then delegates semantic comparison to `p3_source_closure.compare_loaded_source`; accepts only `MATCH` with no reasons. |
@@ -37,14 +38,16 @@ All capture hooks are **inert and switched off by default**:
 ## Opt-In Hook Wiring
 
 1. **`DockerLaunchObservationAdapter`** (`temper_ai/p3_authority/launch_adapters.py`):
-   - Accepts `closure_collector: WorkerClosureCollector | None = None`.
    - Accepts `closure_collector: WorkerClosureCollector | None = None` and
      `runtime_loads: tuple[ObservedLoad, ...] = ()`.
    - When provided, `after_container_start` passes the authenticated
      `WorkerObservation` to `record_docker_launch`, which binds the closure to it
      before recording anything (see "Launch binding" below), then records the worker's
-     trusted start (`"launch"`), its observed runtime loads, and takes the worker's
-     epoch from the observed `exec_generation` witness.
+     trusted start event, its observed runtime loads, and takes the worker's
+     epoch from the observed `exec_generation` witness. `after_container_start`
+     re-checks no execution id itself: `record_docker_launch` refuses an
+     `execution_id` other than the bound one (`DISPATCH_CHANGED`) and the adapter
+     then keeps no record.
 2. **`EarlyBootstrapObservationHook`** (`temper_ai/p3_authority/launch_adapters.py`):
    - Accepts `closure_collector: WorkerClosureCollector | None = None`,
      `bootstrap_loads: tuple[ObservedLoad, ...] = ()`, and
@@ -65,12 +68,17 @@ All capture hooks are **inert and switched off by default**:
    - Accepts `closure_collector: WorkerClosureCollector | None = None` plus child
      profile/node metadata and `child_runtime_loads` / `child_loads:
      tuple[ObservedLoad, ...]`.
-   - Records the child's birth (the worker's `"children"` event and the child's
-     `"launch"`) only after `VERIFIED_LAUNCHER_REGISTRATION_SOURCE` verification
-     (`ChildLaunchVerificationPort`); the child's `"children"` coverage only from its
-     observed termination (`record_child_termination`, from `on_terminated`). Any
+   - Records the child's birth (the worker's `child` event and the child's start
+     event) only after `VERIFIED_LAUNCHER_REGISTRATION_SOURCE` verification
+     (`ChildLaunchVerificationPort`); the child's `end` event and `terminated` state
+     only from its observed termination (`record_child_termination`, from
+     `on_terminated`). Any
      non-provider surrogate registration (`refuse_surrogate_child_registration`)
      taints the collector (`PEER_UNVERIFIED`).
+   - `BashChildLaunchAdapter.on_spawned` runs
+     `WorkerClosureCollector.refuse_child_spawn_before_registration` (every refusal
+     `record_verified_child_spawn` gives) before the registry write, so a child the
+     closure refuses is never left in the registry.
    - The host/closure pairing check (`refuse_unpaired_process_instances`: pid, boot,
      pid/mount/user namespaces, launch identity -> `RUNTIME_CHANGED`) is one function,
      used for children and for the worker's launch binding.
@@ -98,18 +106,28 @@ the observed worker and its job:
 
 The codes follow `selection_snapshot.py` and `docs/p3-selection-snapshot.md`.
 
-## Coverage Is Observed, Never Declared
+## Scope Is the Observer's Sealed Record, Never Built
 
-No hook, adapter or registry takes a coverage or category argument. A category counts
-for a process only through what the observer saw for that process:
-- `launch`: the worker's bound Docker launch; a child's verified registration;
-- `children`: the worker's verified child event; a child's observed termination;
-- every other category: the `categories` labels of that process's `ObservedLoad`s.
+No hook, adapter or registry takes a coverage or category argument, and no load carries
+a category label (a label is the producer's assertion, and no kind-to-category map is
+lossless). What the observer watched for a process is the observer's own sealed scope
+record, its whole `Checkpoint` (Systems #95 shape): `epoch`, `first_sequence=0`,
+`last_sequence`, `last_event_id`, `child_frontier`, `coverage`, `gaps`, `loss_count`,
+`sealed`, `initial_state_ref`, `checkpoint_ref`, `boundary`.
 
-`build_envelope` checks every process, worker and child: a missing `effect_fence` or
-`control_plane` is `OBSERVATION_GAP`, any other missing category
-`CLOSURE_INCOMPLETE`; an unterminated child, and a worker with no observed child, are
-`CLOSURE_INCOMPLETE` (fail closed).
+`build_envelope(observer_checkpoints=...)` takes that record for every recorded
+process (closure instance id -> `Checkpoint`) and copies each verbatim into the
+process's observation; the collector builds none of it. Before copying it refuses:
+- a recorded process without a scope record, or a scope that doesn't seal its stream
+  (`refuse_observer_scope_shortfall`) -> `OBSERVATION_GAP`;
+- a scope record for a process the collector never recorded -> `CLOSURE_INCOMPLETE`;
+- a category the scope lacks or lists in `gaps`: `effect_fence` or `control_plane`
+  -> `OBSERVATION_GAP`, any other -> `CLOSURE_INCOMPLETE`.
+
+These are fail-fast pre-checks. The comparator stays the final decider: every load is
+judged by node id against the reviewed profile, bytes and representation, and each
+process's scope against the observer's facts, so an envelope claiming more than the
+observer sealed never compares `MATCH`.
 
 ---
 

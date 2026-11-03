@@ -10,8 +10,10 @@ Covers:
    one switch (first_app_p3_host.WRITES_ADMITTED=False), no native boundary installed,
    N1-N8 UNRESOLVED, R-1/R-1i/D-1/D-5 UNQUALIFIED, and P5 UNTRUSTED.
    With writes on, the host-row join still refuses every row and never runs run_row (O-466-1).
-   Run admission gets candidate bindings only from an explicit caller: checked as facts over
-   the source, each check with planted twins it must catch (O-466-3).
+   Candidate bindings stay unset in the source: four facts checked over temper_ai/, configs/ and
+   scripts/ (None defaults, untouched pass-through, no stores, P3 composition names only in the
+   consumer), each with planted twins it must catch and clean twins it must pass (O-466-3,
+   R-125-1). Names built at run time are not seen.
 3. H2 Offline consumer join over canonical #261/#262/#263/#71 suppliers across all four
    host rows (R-1, R-1i, D-1, D-5), verifying accepted inner decisions remain
    outer status='UNQUALIFIED' and count_eligible=False while writes are off. The harness
@@ -988,7 +990,7 @@ def test_offline_harness_refuses_anything_but_the_exact_in_memory_suppliers(fiel
         )
 
 
-# --- O-466-3: run admission gets candidate bindings only from an explicit caller (facts over the source) ----
+# --- O-466-3 / R-125-1: candidate bindings stay unset in the source (facts over the source) ----
 
 _P3_AUTHORITY_DIR = _ROOT / "temper_ai" / "p3_authority"
 _RUNNER_ENTRY_POINTS = {
@@ -998,13 +1000,27 @@ _RUNNER_ENTRY_POINTS = {
     ("temper_ai.cli.watch_queue", "_claim_row"),
     ("temper_ai.cli.main", "_cmd_validate"),
 }
-# The one production caller of a P3 composition: the disabled consumer's composer, which refuses writes.
-_ALLOWED_COMPOSER_CALLS = {("configs/architecture/bin/first_app_p3_native.py", "compose_p3_authority")}
-_COMPOSERS = {"compose_p3_authority", "compose_disabled_consumer_service"}
+# The one module allowed to name the P3 composition types and composers: the disabled consumer, which refuses writes.
+_REFERENCE_ALLOWED_FILE = "configs/architecture/bin/first_app_p3_native.py"
+_PROTECTED_NAMES = frozenset(
+    {
+        "P3CandidateBindings",
+        "P3AuthorityComposition",
+        "P3AuthorityService",
+        "compose_p3_authority",
+        "compose_disabled_consumer_service",
+    }
+)
+# The one place that reads bindings off the server's state and hands them to admission: routes._start_run, as
+# `bindings = _candidate_bindings()`, assigned once. While nothing stores state.candidate_bindings it reads None.
+_STATE_READER = ("temper_ai/api/routes.py", "_start_run")
+_STATE_READER_CALL = "_candidate_bindings"
+_SETATTR_CALLS = {"setattr", "__setattr__"}
+_NAME_LOOKUP_CALLS = {"getattr", "hasattr"}
 
 
 def _production_sources():
-    for top in ("temper_ai", "configs"):
+    for top in ("temper_ai", "configs", "scripts"):
         for path in sorted((_ROOT / top).rglob("*.py")):
             if _P3_AUTHORITY_DIR in path.parents or "__pycache__" in path.parts:
                 continue
@@ -1018,27 +1034,171 @@ def _parameter_defaults(node):
     return list(zip(positional, padded, strict=True)) + list(zip(args.kwonlyargs, args.kw_defaults, strict=True))
 
 
-def _assigns_name(function, name):
+def _name_bindings(function, name):
+    """Every node in the function that binds name: a store or delete (any assignment, loop, with, comprehension),
+    an except or match capture, an import alias, or a nested definition. The parameter itself is not one."""
+    found = []
     for node in ast.walk(function):
-        targets = ()
-        if isinstance(node, ast.Assign):
-            targets = node.targets
-        elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
-            targets = (node.target,)
-        for target in targets:
-            if any(isinstance(t, ast.Name) and t.id == name for t in ast.walk(target)):
-                return True
-    return False
+        if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+            found.append(node)
+        elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and node.name == name:
+            found.append(node)
+        elif isinstance(node, ast.alias) and (node.asname or node.name.split(".")[0]) == name:
+            found.append(node)
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node is not function
+            and node.name == name
+        ):
+            found.append(node)
+    return found
+
+
+def _callee(func):
+    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+
+
+def _is_literal(node, text: str) -> bool:
+    return isinstance(node, ast.Constant) and node.value == text
 
 
 class _CandidateBindingFacts(ast.NodeVisitor):
-    """Collect breaks of the three facts in one file, plus every function that takes candidate_bindings."""
+    """Collect breaks of the four facts in one file, plus every function that takes candidate_bindings.
+
+    1. A candidate_bindings parameter defaults to None.
+    2. A candidate_bindings value handed on (keyword, dict key, or bindings= to submit_candidate) is the calling
+       function's own untouched candidate_bindings parameter; the one exception is the state reader in
+       routes._start_run.
+    3. Nothing stores candidate_bindings: no attribute or subscript store, no setattr with that literal name, no
+       module- or class-level value other than None, no global declaration.
+    4. Only first_app_p3_native.py names the P3 composition types and composers (a name, attribute, import, or
+       getattr/hasattr string).
+    Not seen: names built at run time (setattr(obj, name, ...), import_module strings) and positional passes to
+    functions whose candidate_bindings parameter is not keyword-only.
+    """
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
         self.violations: list[str] = []
         self.takes_bindings: set[str] = set()
+
+    def _report(self, node, text: str) -> None:
+        self.violations.append(f"{self.name}:{node.lineno}: {text}")
+
+    def _own_function(self):
+        return self.functions[-1] if self.functions else None
+
+    def _passes_own_parameter(self, value) -> bool:
+        own = self._own_function()
+        return (
+            isinstance(value, ast.Name)
+            and value.id == "candidate_bindings"
+            and own is not None
+            and any(arg.arg == "candidate_bindings" for arg, _ in _parameter_defaults(own))
+            and not _name_bindings(own, "candidate_bindings")
+        )
+
+    def _passes_state_reader(self, value) -> bool:
+        own = self._own_function()
+        if own is None or (self.name, own.name) != _STATE_READER or not isinstance(value, ast.Name):
+            return False
+        bindings = _name_bindings(own, value.id)
+        if len(bindings) != 1:
+            return False
+        for node in ast.walk(own):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and node.targets[0] is bindings[0]:
+                call = node.value
+                return (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Name)
+                    and call.func.id == _STATE_READER_CALL
+                    and not call.args
+                    and not call.keywords
+                )
+        return False
+
+    def _reference(self, node, name: str) -> None:
+        if name in _PROTECTED_NAMES and self.name != _REFERENCE_ALLOWED_FILE:
+            self._report(node, f"{name} named outside first_app_p3_native.py")
+
+    def _store(self, target, value) -> None:
+        """value is the stored expression, or None when the store has no single one (loop, with, augmented)."""
+        if isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                self._store(element, None)
+        elif isinstance(target, ast.Starred):
+            self._store(target.value, None)
+        elif isinstance(target, ast.Attribute) and target.attr == "candidate_bindings":
+            self._report(target, f"{ast.unparse(target)} = ... stores candidate_bindings")
+        elif isinstance(target, ast.Subscript) and _is_literal(target.slice, "candidate_bindings"):
+            self._report(target, f"{ast.unparse(target)} = ... stores candidate_bindings")
+        elif (
+            isinstance(target, ast.Name)
+            and target.id == "candidate_bindings"
+            and not self.functions
+            and not (isinstance(value, ast.Constant) and value.value is None)
+        ):
+            self._report(target, "a module- or class-level candidate_bindings value stores candidate_bindings")
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            self._store(target, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            self._store(node.target, node.value)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self._store(node.target, None)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self._store(node.target, node.value)
+        self.generic_visit(node)
+
+    def _loop(self, node) -> None:
+        self._store(node.target, None)
+        self.generic_visit(node)
+
+    visit_For = _loop
+    visit_AsyncFor = _loop
+    visit_comprehension = _loop
+
+    def _with(self, node) -> None:
+        for item in node.items:
+            if item.optional_vars is not None:
+                self._store(item.optional_vars, None)
+        self.generic_visit(node)
+
+    visit_With = _with
+    visit_AsyncWith = _with
+
+    def visit_Global(self, node: ast.Global) -> None:
+        if "candidate_bindings" in node.names:
+            self._report(node, "global candidate_bindings stores candidate_bindings")
+        self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        self._reference(node, node.id)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        self._reference(node, node.attr)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self._reference(node, alias.name)
+        self.generic_visit(node)
+
+    def visit_Dict(self, node: ast.Dict) -> None:
+        for key, value in zip(node.keys, node.values, strict=True):
+            if _is_literal(key, "candidate_bindings") and not self._passes_own_parameter(value):
+                self._report(node, f"{{'candidate_bindings': {ast.unparse(value)}}} is not its own untouched parameter")
+        self.generic_visit(node)
 
     def _function(self, node) -> None:
         for arg, default in _parameter_defaults(node):
@@ -1055,26 +1215,31 @@ class _CandidateBindingFacts(ast.NodeVisitor):
     visit_AsyncFunctionDef = _function
 
     def visit_Call(self, node: ast.Call) -> None:
+        callee = _callee(node.func)
         for keyword in node.keywords:
-            if keyword.arg != "candidate_bindings":
-                continue
             value = keyword.value
-            own = self.functions[-1] if self.functions else None
-            passes_own_parameter = (
-                isinstance(value, ast.Name)
-                and value.id == "candidate_bindings"
-                and own is not None
-                and any(arg.arg == "candidate_bindings" for arg, _ in _parameter_defaults(own))
-                and not _assigns_name(own, "candidate_bindings")
-            )
-            if not passes_own_parameter:
-                self.violations.append(
-                    f"{self.name}:{node.lineno}: candidate_bindings={ast.unparse(value)} is not its own untouched parameter"
+            if keyword.arg == "candidate_bindings" and not self._passes_own_parameter(value):
+                self._report(node, f"candidate_bindings={ast.unparse(value)} is not its own untouched parameter")
+            if callee != "submit_candidate":
+                continue
+            if keyword.arg is None:
+                self._report(
+                    node, f"submit_candidate(**{ast.unparse(value)}) hides bindings: is not its own untouched parameter"
                 )
-        func = node.func
-        callee = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
-        if callee in _COMPOSERS and (self.name, callee) not in _ALLOWED_COMPOSER_CALLS:
-            self.violations.append(f"{self.name}:{node.lineno}: {callee}() outside tests")
+            elif keyword.arg == "bindings" and not (
+                self._passes_own_parameter(value) or self._passes_state_reader(value)
+            ):
+                self._report(
+                    node,
+                    f"submit_candidate(bindings={ast.unparse(value)}) is not its own untouched parameter"
+                    " or the state reader",
+                )
+        if callee in _SETATTR_CALLS and any(_is_literal(arg, "candidate_bindings") for arg in node.args):
+            self._report(node, f"{callee}(..., 'candidate_bindings', ...) stores candidate_bindings")
+        if callee in _NAME_LOOKUP_CALLS:
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    self._reference(node, arg.value)
         self.generic_visit(node)
 
 
@@ -1086,50 +1251,140 @@ def _scan(name: str, text: str) -> _CandidateBindingFacts:
 
 _DEFAULT_RULE = "candidate_bindings must default to None"
 _PASS_THROUGH_RULE = "is not its own untouched parameter"
-_COMPOSER_RULE = "() outside tests"
+_STORE_RULE = "stores candidate_bindings"
+_REFERENCE_RULE = "named outside first_app_p3_native.py"
+_PLANTED = "temper_ai/planted.py"
+_ROUTES = _STATE_READER[0]
+_READER = "def _start_run():\n    bindings = _candidate_bindings()\n"
 # Each twin breaks one fact; the check must report it under that fact's rule, and only once.
 _PLANTED_TWINS = {
-    "non-None default": ("def run(*, candidate_bindings=object()):\n    pass\n", _DEFAULT_RULE),
-    "required parameter": ("def run(candidate_bindings):\n    pass\n", _DEFAULT_RULE),
+    "non-None default": (_PLANTED, "def run(*, candidate_bindings=object()):\n    pass\n", _DEFAULT_RULE),
+    "required parameter": (_PLANTED, "def run(candidate_bindings):\n    pass\n", _DEFAULT_RULE),
     "built value passed": (
+        _PLANTED,
         "def run(*, candidate_bindings=None):\n    go(candidate_bindings=make())\n",
         _PASS_THROUGH_RULE,
     ),
-    "name that is not a parameter": ("def run():\n    go(candidate_bindings=candidate_bindings)\n", _PASS_THROUGH_RULE),
+    "name that is not a parameter": (
+        _PLANTED,
+        "def run():\n    go(candidate_bindings=candidate_bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
     "parameter replaced first": (
+        _PLANTED,
         "def run(*, candidate_bindings=None):\n    candidate_bindings = make()\n    go(candidate_bindings=candidate_bindings)\n",
         _PASS_THROUGH_RULE,
     ),
-    "module-level call": ("go(candidate_bindings=BINDINGS)\n", _PASS_THROUGH_RULE),
-    "composition built": ("def boot():\n    return compose_p3_authority()\n", _COMPOSER_RULE),
+    "parameter rebound by a loop": (
+        _PLANTED,
+        "def run(*, candidate_bindings=None):\n"
+        "    for candidate_bindings in [make()]:\n"
+        "        go(candidate_bindings=candidate_bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "module-level call": (_PLANTED, "go(candidate_bindings=BINDINGS)\n", _PASS_THROUGH_RULE),
+    "dict key with a built value": (
+        _PLANTED,
+        "def run():\n    execute_workflow(**{'candidate_bindings': make()})\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "built bindings to submit_candidate": (
+        _PLANTED,
+        "def start():\n    submit_candidate(bindings=make())\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "splat into submit_candidate": (_PLANTED, "def start(kw):\n    submit_candidate(**kw)\n", _PASS_THROUGH_RULE),
+    "state reader outside routes": (
+        _PLANTED,
+        _READER + "    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "state reader value replaced": (
+        _ROUTES,
+        _READER + "    bindings = make()\n    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "attribute store": (_PLANTED, "def boot(state):\n    state.candidate_bindings = make()\n", _STORE_RULE),
+    "setattr store": (_PLANTED, "def boot(state):\n    setattr(state, 'candidate_bindings', make())\n", _STORE_RULE),
+    "object.__setattr__ store": (
+        _PLANTED,
+        "def boot(state):\n    object.__setattr__(state, 'candidate_bindings', make())\n",
+        _STORE_RULE,
+    ),
+    "subscript store": (_PLANTED, "def boot(state):\n    vars(state)['candidate_bindings'] = make()\n", _STORE_RULE),
+    "class field with a value": (_PLANTED, "class AppState:\n    candidate_bindings: object = make()\n", _STORE_RULE),
+    "module-level value": (_PLANTED, "candidate_bindings = make()\n", _STORE_RULE),
+    "global store": (
+        _PLANTED,
+        "def boot():\n    global candidate_bindings\n    candidate_bindings = make()\n",
+        _STORE_RULE,
+    ),
+    "composition built": (_PLANTED, "def boot():\n    return compose_p3_authority()\n", _REFERENCE_RULE),
     "disabled composer called": (
+        _PLANTED,
         "import first_app_p3_native as n\nn.compose_disabled_consumer_service()\n",
-        _COMPOSER_RULE,
+        _REFERENCE_RULE,
+    ),
+    "composer imported under another name": (
+        _PLANTED,
+        "from temper_ai.p3_authority.service import compose_p3_authority as build\n",
+        _REFERENCE_RULE,
+    ),
+    "composer reached through getattr": (
+        _PLANTED,
+        "def boot(module):\n    return getattr(module, 'compose_p3_authority')()\n",
+        _REFERENCE_RULE,
+    ),
+    "bindings type named": (_PLANTED, "def boot():\n    return P3CandidateBindings()\n", _REFERENCE_RULE),
+    "service type named": (_PLANTED, "def boot(x):\n    return isinstance(x, P3AuthorityService)\n", _REFERENCE_RULE),
+}
+# Each clean twin keeps every fact; the check must report nothing.
+_CLEAN_TWINS = {
+    "keyword pass-through": (
+        _PLANTED,
+        "def outer(*, candidate_bindings=None):\n"
+        "    return inner(candidate_bindings=candidate_bindings)\n"
+        "async def inner(*, candidate_bindings=None):\n"
+        "    return candidate_bindings is None\n",
+    ),
+    "dict key pass-through": (
+        _PLANTED,
+        "def outer(*, candidate_bindings=None):\n    return run(**{'candidate_bindings': candidate_bindings})\n",
+    ),
+    "state reader in routes": (
+        _ROUTES,
+        "def _candidate_bindings():\n"
+        "    return vars(_state()).get('candidate_bindings')\n" + _READER + "    submit_candidate(bindings=bindings)\n",
+    ),
+    "class field left None": (_PLANTED, "class AppState:\n    candidate_bindings: object = None\n"),
+    "composer named in its own module": (
+        _REFERENCE_ALLOWED_FILE,
+        "from temper_ai.p3_authority.service import P3AuthorityService, compose_p3_authority\n"
+        "def compose(**kwargs):\n    return compose_p3_authority(**kwargs)\n",
     ),
 }
 
 
 @pytest.mark.parametrize("twin", sorted(_PLANTED_TWINS))
 def test_candidate_binding_fact_checks_catch_each_planted_twin(twin):
-    source, rule = _PLANTED_TWINS[twin]
-    violations = _scan("temper_ai/planted.py", source).violations
-    assert len(violations) == 1
+    path, source, rule = _PLANTED_TWINS[twin]
+    violations = _scan(path, source).violations
+    assert len(violations) == 1, violations
     assert rule in violations[0]
 
 
-def test_candidate_binding_fact_checks_pass_a_clean_pass_through():
-    clean = (
-        "def outer(*, candidate_bindings=None):\n"
-        "    return inner(candidate_bindings=candidate_bindings)\n"
-        "async def inner(*, candidate_bindings=None):\n"
-        "    return candidate_bindings is None\n"
-    )
-    facts = _scan("temper_ai/planted.py", clean)
-    assert facts.violations == []
+@pytest.mark.parametrize("twin", sorted(_CLEAN_TWINS))
+def test_candidate_binding_fact_checks_pass_each_clean_twin(twin):
+    path, source = _CLEAN_TWINS[twin]
+    assert _scan(path, source).violations == []
+
+
+def test_candidate_binding_fact_checks_list_the_functions_that_take_bindings():
+    facts = _scan(_PLANTED, _CLEAN_TWINS["keyword pass-through"][1])
     assert facts.takes_bindings == {"outer", "inner"}
 
 
-def test_run_admission_gets_candidate_bindings_only_from_an_explicit_caller():
+def test_production_tree_breaks_no_candidate_binding_fact():
     violations: list[str] = []
     takes_bindings: set[tuple[str, str]] = set()
     scanned = 0

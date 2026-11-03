@@ -237,8 +237,22 @@ def validate_compatibility_profile(
     return None
 
 
+# RootScope.role -> RootObservation.root_kind (a host parent has no root observation)
+_ROOT_KIND_OF_SCOPE_ROLE: dict[str, str] = {
+    "publication": "publication",
+    "host-evidence": "host_evidence",
+}
+
+
 class WorkerRootObservationAdapter(RootObserver):
-    """Typed RootObserver adapter enforcing permission-first and both-root separation."""
+    """Typed RootObserver adapter enforcing permission-first and both-root separation.
+
+    Its lookups answer only what it accepted, under the exact selection and boundary it
+    accepted it at. Every attempt first forgets what it would replace there (a worker
+    observation: every root at its selection and boundary; a one-root read: that root
+    and the binding), and root lookups answer for the actor's latest attempted
+    boundary, so a refused or newer attempt never leaves a stale answer.
+    """
 
     def __init__(
         self,
@@ -247,8 +261,13 @@ class WorkerRootObservationAdapter(RootObserver):
     ) -> None:
         self._provider = provider
         self._unpermitted_read_attempted = False
-        self._accepted_root_observations: dict[tuple[str, str], RootObservation] = {}
-        self._accepted_root_bindings: dict[tuple[str, str], RootBinding] = {}
+        # (selection revision, boundary, process registration, root kind) -> accepted root
+        self._accepted_roots: dict[tuple[str, Boundary, str, str], RootObservation] = {}
+        # (selection revision, boundary) -> the one binding its own reads accepted there;
+        # None once two different bindings were accepted there (no first match).
+        self._accepted_bindings: dict[tuple[str, Boundary], RootBinding | None] = {}
+        self._latest_boundary: dict[str, Boundary] = {}
+        self._selection_of_actor: dict[str, str] = {}
 
     def lookup_root_observation(
         self,
@@ -256,27 +275,79 @@ class WorkerRootObservationAdapter(RootObserver):
         process_registration: str,
         root_kind: str,
     ) -> RootObservation | None:
-        """The root observation this adapter last accepted for the actor and root kind."""
-        return self._accepted_root_observations.get((process_registration, root_kind))
+        """The root accepted for the actor at its selection's latest observed boundary."""
+        selection = self._selection_of_actor.get(process_registration)
+        if selection is None:
+            return None
+        boundary = self._latest_boundary.get(selection)
+        if boundary is None:
+            return None
+        return self._accepted_roots.get(
+            (selection, boundary, process_registration, root_kind)
+        )
 
     def lookup_root_binding(
         self,
         *,
-        selection_revision: str | None = None,
-        boundary: Boundary | None = None,
-        process_registration: str | None = None,
-        root_kind: str = "publication",
+        selection_revision: str,
+        boundary: Boundary,
     ) -> RootBinding | None:
-        """The root binding this adapter last accepted (any actor when none is named)."""
-        for (reg, kind), bind in self._accepted_root_bindings.items():
-            if kind == root_kind and (
-                process_registration is None or reg == process_registration
-            ):
-                return bind
-        return None
+        """The one root binding this adapter's own read accepted at the selection and boundary."""
+        return self._accepted_bindings.get((selection_revision, boundary))
 
     def record_unpermitted_read_attempt(self) -> None:
         self._unpermitted_read_attempted = True
+
+    def _mark_latest(
+        self,
+        selection_revision: str,
+        boundary: Boundary,
+        actor_registration: str | None,
+    ) -> None:
+        self._latest_boundary[selection_revision] = boundary
+        if actor_registration is not None:
+            self._selection_of_actor[actor_registration] = selection_revision
+
+    def _forget_frame_attempt(
+        self,
+        selection_revision: str,
+        boundary: Boundary,
+        actor_registration: str | None,
+    ) -> None:
+        """A worker observation starts: drop every root accepted at its selection and boundary."""
+        for key in [
+            k for k in self._accepted_roots if k[:2] == (selection_revision, boundary)
+        ]:
+            del self._accepted_roots[key]
+        self._mark_latest(selection_revision, boundary, actor_registration)
+
+    def _forget_read_attempt(
+        self,
+        selection_revision: str,
+        boundary: Boundary,
+        actor_registration: str,
+        selected_root: RootScope,
+    ) -> None:
+        """A one-root read starts: drop the root and binding it would replace."""
+        root_kind = _ROOT_KIND_OF_SCOPE_ROLE.get(selected_root.role)
+        if root_kind is not None:
+            self._accepted_roots.pop(
+                (selection_revision, boundary, actor_registration, root_kind), None
+            )
+        self._accepted_bindings.pop((selection_revision, boundary), None)
+        self._mark_latest(selection_revision, boundary, actor_registration)
+
+    def _accept_frame_roots(
+        self,
+        selection_revision: str,
+        boundary: Boundary,
+        actor_registration: str,
+        both: BothRootObservations,
+    ) -> None:
+        """Keep both roots of a worker frame the worker adapter accepted as a whole."""
+        for obs in (both.publication, both.host_evidence):
+            key = (selection_revision, boundary, actor_registration, obs.root_kind)
+            self._accepted_roots[key] = obs
 
     def observe(
         self,
@@ -286,6 +357,13 @@ class WorkerRootObservationAdapter(RootObserver):
         required_operations: EffectSet,
         boundary: Boundary,
     ) -> Result[RootObservation]:
+        selection_revision = grant.authority.subject.selection_revision
+        self._forget_read_attempt(
+            selection_revision,
+            boundary,
+            actor_instance.process_registration,
+            selected_root,
+        )
         if self._unpermitted_read_attempted:
             return make_refusal(
                 RefusalCode.OBSERVATION_NOT_AUTHORIZED,
@@ -338,9 +416,21 @@ class WorkerRootObservationAdapter(RootObserver):
                 boundary,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
-        key = (actor_instance.process_registration, obs.root_kind)
-        self._accepted_root_observations[key] = obs
-        self._accepted_root_bindings[key] = obs.binding
+        root_key = (
+            selection_revision,
+            boundary,
+            actor_instance.process_registration,
+            obs.root_kind,
+        )
+        self._accepted_roots[root_key] = obs
+        binding_key = (selection_revision, boundary)
+        if (
+            binding_key in self._accepted_bindings
+            and self._accepted_bindings[binding_key] != obs.binding
+        ):
+            self._accepted_bindings[binding_key] = None
+        else:
+            self._accepted_bindings[binding_key] = obs.binding
         return res
 
     def verify_both_roots(
@@ -352,7 +442,11 @@ class WorkerRootObservationAdapter(RootObserver):
         boundary: Boundary,
         evidence: DecisionEvidence,
     ) -> Result[BothRootObservations]:
-        """Verify that both publication and host_evidence roots are present and distinct."""
+        """Verify that both publication and host_evidence roots are present and distinct.
+
+        Pure check: it keeps nothing. The worker adapter keeps the roots only once
+        the whole worker observation is accepted.
+        """
         if both is None:
             return make_refusal(RefusalCode.ROOT_MISMATCH, boundary)
         pub = both.publication
@@ -395,11 +489,6 @@ class WorkerRootObservationAdapter(RootObserver):
             if actor_owns_root(assertion):
                 return make_refusal(RefusalCode.RIGHTS_MISSING, boundary)
 
-        reg = actor_instance.process_registration
-        self._accepted_root_observations[(reg, "publication")] = pub
-        self._accepted_root_bindings[(reg, "publication")] = pub.binding
-        self._accepted_root_observations[(reg, "host_evidence")] = host_ev
-        self._accepted_root_bindings[(reg, "host_evidence")] = host_ev.binding
         return AcceptedData(data=both, evidence=evidence)
 
 
@@ -410,6 +499,7 @@ class _SessionState:
     bookkeeper: CoverageBookkeeper
     last_observation: WorkerObservation
     last_evidence: DecisionEvidence
+    last_boundary: Boundary
 
 
 class WorkerObservationAdapter(WorkerObserver):
@@ -432,6 +522,8 @@ class WorkerObservationAdapter(WorkerObserver):
         self._root_observer = WorkerRootObservationAdapter(provider=provider)
         self._sessions: dict[str, _SessionState] = {}
         self._unpermitted_jobs: set[str] = set()
+        # (selection revision, boundary) -> the worker observation accepted there
+        self._accepted_workers: dict[tuple[str, Boundary], WorkerObservation] = {}
 
     @property
     def is_configured(self) -> bool:
@@ -445,11 +537,10 @@ class WorkerObservationAdapter(WorkerObserver):
         self,
         *,
         selection_revision: str,
-        boundary: Boundary | None = None,
+        boundary: Boundary,
     ) -> WorkerObservation | None:
-        """The worker observation this adapter last accepted for the selection."""
-        session = self._sessions.get(selection_revision)
-        return session.last_observation if session is not None else None
+        """The worker observation this adapter accepted at exactly the selection and boundary."""
+        return self._accepted_workers.get((selection_revision, boundary))
 
     def record_unpermitted_read_attempt(self, selection_revision: str) -> None:
         """Poison a job selection when a caller attempts collection before permission."""
@@ -467,6 +558,16 @@ class WorkerObservationAdapter(WorkerObserver):
         since_cursor: N3ObservationEpoch | None = None,
     ) -> Result[WorkerObservation]:
         rev_key = selected_job.selection_revision
+        # Any attempt first forgets what was accepted at this selection and boundary,
+        # so a refusal below never leaves an earlier observation for the lookups.
+        self._accepted_workers.pop((rev_key, boundary), None)
+        self._root_observer._forget_frame_attempt(
+            rev_key,
+            boundary,
+            grant.authority.actors[0].process_registration
+            if grant.authority.actors
+            else None,
+        )
         if rev_key in self._unpermitted_jobs:
             return make_refusal(
                 RefusalCode.OBSERVATION_NOT_AUTHORIZED,
@@ -570,6 +671,7 @@ class WorkerObservationAdapter(WorkerObserver):
             )
 
         # 6. Verify BothRootObservations (publication + host_evidence) and actor vs owner
+        accepted_roots: tuple[str, BothRootObservations] | None = None
         if self._require_both_roots:
             if not grant.authority.actors:
                 return make_refusal(
@@ -587,6 +689,7 @@ class WorkerObservationAdapter(WorkerObserver):
             )
             if isinstance(roots_res, Refusal):
                 return roots_res
+            accepted_roots = (actor_ref.process_registration, roots_res.data)
 
         # 7. Initialize or retrieve per-job ChildRegistrationRegistry and CoverageBookkeeper
         session = self._sessions.get(rev_key)
@@ -646,7 +749,12 @@ class WorkerObservationAdapter(WorkerObserver):
             bookkeeper=bookkeeper,
             last_observation=worker_obs,
             last_evidence=evidence,
+            last_boundary=boundary,
         )
+        # Kept only now that the whole observation is accepted.
+        self._accepted_workers[(rev_key, boundary)] = worker_obs
+        if accepted_roots is not None:
+            self._root_observer._accept_frame_roots(rev_key, boundary, *accepted_roots)
         return AcceptedData(data=worker_obs, evidence=evidence)
 
     def verify_pre_spawn(
@@ -720,6 +828,9 @@ class WorkerObservationAdapter(WorkerObserver):
             session.last_observation,
             child_instances=session.child_registry.registered_children,
         )
+        record_key = (rev_key, session.last_boundary)
+        if self._accepted_workers.get(record_key) is session.last_observation:
+            self._accepted_workers[record_key] = updated_obs
         session.last_observation = updated_obs
         return AcceptedData(
             data=(entry, updated_obs),

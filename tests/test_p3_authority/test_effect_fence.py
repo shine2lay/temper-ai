@@ -31,12 +31,14 @@ from temper_ai.p3_authority.contract import (
     Refusal,
     RefusalCode,
     RequestIdentity,
+    Result,
     SelectedJob,
     SequenceUse,
 )
 from temper_ai.p3_authority.effect_fence import (
     DeterministicEffectFenceProvider,
     EffectFenceCheck,
+    EffectFencePhase,
 )
 from temper_ai.p3_authority.registry import (
     ExistingSubjectRecord,
@@ -53,6 +55,8 @@ from tests.test_p3_authority.test_child_registration import (
 )
 
 _ARCHITECTURE_BIN = Path(__file__).resolve().parents[2] / "configs/architecture/bin"
+WINDOW = "win-n4-1"
+REVISION = "rev-fence-286"
 
 
 def writes_admitted_on_master() -> bool:
@@ -71,6 +75,14 @@ def make_process_ref(registration: str) -> NativeProcessRef:
     return _ProcessRef(registration)
 
 
+@dataclass(frozen=True)
+class _ProcessRefAtEpoch:
+    """The same registration seen at another start epoch: equal name, other process."""
+
+    process_registration: str
+    epoch: str
+
+
 @dataclass(frozen=True, slots=True)
 class _FakeRawRef:
     sha256: str = "a" * 64
@@ -84,7 +96,7 @@ class _FakeCheckerBinding:
 
 @dataclass(frozen=True, slots=True)
 class _FakeRequestIdentity:
-    window_id: str = "win-n4-1"
+    window_id: str = WINDOW
     row: str = "row-1"
     request_id: str = "req-1"
     sequence: int = 1
@@ -103,7 +115,7 @@ class _FakeOccurrenceHandle:
     witness: NativeWitness
 
 
-def _build_cursors(revision: str = "rev-fence-286") -> CurrentObservationCursors:
+def _build_cursors(revision: str = REVISION) -> CurrentObservationCursors:
     world = clean_world(revision)
     obs0 = world.observed.envelope.process_observations[0]
     obs2 = world.observed.envelope.process_observations[2]
@@ -178,121 +190,165 @@ def _build_occurrence_inputs(
     return req_id, imm, cur, occ, leg
 
 
+@dataclass
+class FenceWorld:
+    """One open fence bound to one job, actor and frontier, plus one request's inputs."""
+
+    job: SelectedJob
+    actor: NativeProcessRef
+    cursors: CurrentObservationCursors
+    fence: DeterministicEffectFenceProvider
+    req_id: RequestIdentity
+    imm: ImmutableRequestBinding
+    cur: CurrentBinding
+    occ: OccurrenceHandle
+    leg: OperationLeg
+
+    def phase(
+        self,
+        phase: EffectFencePhase,
+        *,
+        req_id: RequestIdentity | None = None,
+        job: SelectedJob | None = None,
+        actor: NativeProcessRef | None = None,
+        frontier: CurrentObservationCursors | None = None,
+        window_id: str = WINDOW,
+    ) -> Result[EffectFenceCheck]:
+        return self.fence.verify_fence(
+            phase=phase,
+            selected_job=job if job is not None else self.job,
+            request_identity=req_id if req_id is not None else self.req_id,
+            actor=actor if actor is not None else self.actor,
+            frontier=frontier if frontier is not None else self.cursors,
+            window_id=window_id,
+            boundary="C_PRE_EXECUTION"
+            if phase == "before_execute"
+            else "B_PRE_REQUEST",
+        )
+
+    def admit(
+        self, *, cur: CurrentBinding | None = None
+    ) -> Result[RecordedRowOccurrence]:
+        return self.fence.record_admission(
+            immutable_request_binding=self.imm,
+            current_binding=cur if cur is not None else self.cur,
+            occurrence=self.occ,
+            admission_witness=make_witness("wit-admit-1"),
+        )
+
+    def execute(
+        self, *, cur: CurrentBinding | None = None
+    ) -> Result[RecordedRowOccurrence]:
+        return self.fence.record_execution_leg(
+            request_identity=self.req_id,
+            operation_leg=self.leg,
+            current_binding=cur if cur is not None else self.cur,
+        )
+
+    def count(self, key: str = "idem-n4-1") -> Result[RecordedRowOccurrence]:
+        return self.fence.mark_counted(
+            request_identity=self.req_id,
+            idempotency_identity=key,
+            current_binding=self.cur,
+        )
+
+
+def open_world(**fence_overrides: Any) -> FenceWorld:
+    job = make_selected_job(REVISION)
+    actor = make_process_ref("inst-worker")
+    cursors = _build_cursors(REVISION)
+    req_id, imm, cur, occ, leg = _build_occurrence_inputs(job, actor)
+    settings: dict[str, Any] = {
+        "writes_enabled": True,
+        "fence_open": True,
+        "selected_job": job,
+        "window_id": WINDOW,
+        "fenced_actor": actor,
+        "expected_frontier": cursors,
+    }
+    settings.update(fence_overrides)
+    fence = DeterministicEffectFenceProvider(**settings)
+    return FenceWorld(job, actor, cursors, fence, req_id, imm, cur, occ, leg)
+
+
+def refusal_code(result: object) -> RefusalCode | None:
+    return result.code if isinstance(result, Refusal) else None
+
+
 # ---------------------------------------------------------------------------
 # 1. Combined whole-feature happy path
 # ---------------------------------------------------------------------------
 
 
-def test_combined_happy_path_open_phase_bound_effect_fence_and_occurrence_lifecycle() -> None:
-    """Combined happy path: open DeterministicEffectFenceProvider admits before_request -> before_admit -> before_execute and occurrence lifecycle."""
+def test_combined_happy_path_open_phase_bound_effect_fence_and_occurrence_lifecycle() -> (
+    None
+):
+    """One request walks before_request -> before_admit -> before_execute through an open fence."""
     assert writes_admitted_on_master() is False
 
     default_fence = DeterministicEffectFenceProvider()
     assert default_fence.writes_enabled is False
     assert default_fence.fence_open is False
 
-    job = make_selected_job("rev-fence-286")
-    actor = make_process_ref("inst-worker")
-    cursors = _build_cursors("rev-fence-286")
-    req_id, imm, cur, occ, leg = _build_occurrence_inputs(job, actor)
+    w = open_world()
+    as_protocol: EffectFenceProvider = w.fence
+    assert as_protocol is w.fence
 
-    fence = DeterministicEffectFenceProvider(
-        writes_enabled=True,
-        fence_open=True,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
-        require_explicit_phase_calls=True,
-    )
-    as_protocol: EffectFenceProvider = fence
-    assert as_protocol is fence
-
-    # Initial history is NOT_ADMITTED / NONE / UNUSED
-    h0 = fence.lookup_history(req_id)
+    h0 = w.fence.lookup_history(w.req_id)
     assert h0.admission_state == AdmissionState.NOT_ADMITTED
     assert h0.effect_state == EffectState.NONE
     assert h0.sequence_use == SequenceUse.UNUSED
-    assert fence.lookup_occurrence(req_id) is None
-
-    # Phase 1: before_request
-    r1 = fence.before_request(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        boundary="B_PRE_REQUEST",
-        request_identity=req_id,
+    assert w.fence.lookup_occurrence(w.req_id) is None
+    assert (
+        w.fence.refusal_if_closed_or_stale(
+            selected_job=w.job, actor=w.actor, frontier=w.cursors
+        )
+        is None
     )
+
+    r1 = w.phase("before_request")
     assert isinstance(r1, AcceptedData)
     assert isinstance(r1.data, EffectFenceCheck)
     assert r1.data.phase == "before_request"
     assert r1.data.fence_open is True
     assert r1.data.writes_enabled is True
-    assert r1.data.fenced_actor == actor
-    assert r1.data.frontier == cursors
+    assert r1.data.fenced_actor == w.actor
+    assert r1.data.frontier == w.cursors
+    assert r1.data.window_id == WINDOW
+    assert r1.data.selection_revision == REVISION
 
-    # Phase 2: before_admit + record_admission
-    r2 = fence.before_admit(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        boundary="B_PRE_REQUEST",
-        request_identity=req_id,
-    )
+    r2 = w.phase("before_admit")
     assert isinstance(r2, AcceptedData)
     assert r2.data.phase == "before_admit"
+    admitted = w.admit()
+    assert isinstance(admitted, AcceptedData)
+    assert isinstance(admitted.data, RecordedRowOccurrence)
+    assert admitted.data.effect_state == EffectState.ADMITTED_ONLY
+    assert admitted.data.sequence_use == SequenceUse.USED
+    again = w.admit()
+    assert isinstance(again, AcceptedData) and again.data == admitted.data
 
-    admit_res = fence.record_admission(
-        immutable_request_binding=imm,
-        current_binding=cur,
-        occurrence=occ,
-        admission_witness=make_witness("wit-admit-1"),
-    )
-    assert isinstance(admit_res, AcceptedData)
-    assert isinstance(admit_res.data, RecordedRowOccurrence)
-    assert admit_res.data.effect_state == EffectState.ADMITTED_ONLY
-    assert admit_res.data.sequence_use == SequenceUse.USED
-
-    # Phase 3: before_execute + record_execution_leg + mark_counted
-    r3 = fence.before_execute(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        boundary="C_PRE_EXECUTION",
-        request_identity=req_id,
-    )
+    r3 = w.phase("before_execute")
     assert isinstance(r3, AcceptedData)
     assert r3.data.phase == "before_execute"
+    executed = w.execute()
+    assert isinstance(executed, AcceptedData)
+    assert executed.data.effect_state == EffectState.COMPLETE
+    assert executed.data.executed_legs == (w.leg,)
 
-    exec_res = fence.record_execution_leg(
-        request_identity=req_id,
-        operation_leg=leg,
-        current_binding=cur,
-        effect_state=EffectState.COMPLETE,
-    )
-    assert isinstance(exec_res, AcceptedData)
-    assert exec_res.data.effect_state == EffectState.COMPLETE
-    assert exec_res.data.executed_legs == (leg,)
+    counted = w.count()
+    assert isinstance(counted, AcceptedData)
+    assert counted.data.counted_idempotency_key == "idem-n4-1"
 
-    counted_res = fence.mark_counted(
-        request_identity=req_id,
-        idempotency_identity="idem-n4-1",
-        current_binding=cur,
-    )
-    assert isinstance(counted_res, AcceptedData)
-    assert counted_res.data.counted_idempotency_key == "idem-n4-1"
-
-    h_final = fence.lookup_history(req_id)
+    h_final = w.fence.lookup_history(w.req_id)
     assert h_final.admission_state == AdmissionState.ALREADY_ADMITTED
     assert h_final.effect_state == EffectState.COMPLETE
     assert h_final.sequence_use == SequenceUse.USED
+    assert writes_admitted_on_master() is False
 
 
 # ---------------------------------------------------------------------------
-# 2. Guard bite: closed fence with writes_enabled=False never admits
+# 2. A closed, write-disabled or unavailable fence never admits
 # ---------------------------------------------------------------------------
 
 
@@ -310,316 +366,240 @@ def test_guard_bite_closed_or_disabled_fence_never_admits(
     fence_open: bool,
     fence_available: bool,
 ) -> None:
-    """Guard bite: writes_enabled=False, fence_open=False, or fence_available=False refuses with WRITES_DISABLED everywhere."""
-    job = make_selected_job("rev-fence-286")
-    actor = make_process_ref("inst-worker")
-    cursors = _build_cursors("rev-fence-286")
-    req_id, imm, cur, occ, leg = _build_occurrence_inputs(job, actor)
-
-    fence = DeterministicEffectFenceProvider(
+    w = open_world(
         writes_enabled=writes_enabled,
         fence_open=fence_open,
         fence_available=fence_available,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
     )
-
-    for phase_fn in (fence.before_request, fence.before_admit, fence.before_execute):
-        res = phase_fn(
-            selected_job=job,
-            window_id="win-n4-1",
-            actor=actor,
-            frontier=cursors,
-            request_identity=req_id,
-        )
-        assert isinstance(res, Refusal)
-        assert res.code == RefusalCode.WRITES_DISABLED
-
-    admit_res = fence.record_admission(
-        immutable_request_binding=imm,
-        current_binding=cur,
-        occurrence=occ,
-        admission_witness=make_witness("wit-admit-closed"),
-    )
-    assert isinstance(admit_res, Refusal)
-    assert admit_res.code == RefusalCode.WRITES_DISABLED
-    assert fence.lookup_occurrence(req_id) is None
-
-    exec_res = fence.record_execution_leg(
-        request_identity=req_id,
-        operation_leg=leg,
-        current_binding=cur,
-    )
-    assert isinstance(exec_res, Refusal)
-    assert exec_res.code == RefusalCode.WRITES_DISABLED
-
-    count_res = fence.mark_counted(
-        request_identity=req_id,
-        idempotency_identity="idem-closed",
-        current_binding=cur,
-    )
-    assert isinstance(count_res, Refusal)
-    assert count_res.code == RefusalCode.WRITES_DISABLED
+    for phase in ("before_request", "before_admit", "before_execute"):
+        assert refusal_code(w.phase(phase)) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.admit()) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.execute()) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.count()) == RefusalCode.WRITES_DISABLED
+    assert w.fence.lookup_occurrence(w.req_id) is None
 
 
-# ---------------------------------------------------------------------------
-# 3. Refusal twins: stale frontier after wait, phase ordering, subject/selection/occurrence
-# ---------------------------------------------------------------------------
+def test_fence_closed_or_disabled_mid_request_stops_the_record_path() -> None:
+    w = open_world()
+    assert isinstance(w.phase("before_request"), AcceptedData)
+    assert isinstance(w.phase("before_admit"), AcceptedData)
+    w.fence.close_fence()
+    assert refusal_code(w.admit()) == RefusalCode.WRITES_DISABLED
+    w2 = open_world()
+    assert isinstance(w2.phase("before_request"), AcceptedData)
+    assert isinstance(w2.phase("before_admit"), AcceptedData)
+    w2.fence.disable_writes()
+    assert refusal_code(w2.admit()) == RefusalCode.WRITES_DISABLED
+    assert w.fence.lookup_occurrence(w.req_id) is None
+    assert w2.fence.lookup_occurrence(w2.req_id) is None
 
 
-def test_stale_frontier_after_wait_refuses_runtime_changed() -> None:
-    """Refusal twin: stale frontier after wait between phases or before execution -> RUNTIME_CHANGED."""
-    job = make_selected_job("rev-fence-286")
+def test_open_fence_without_its_binding_or_with_bad_settings_fails_loud() -> None:
+    """An open or write-enabled fence is always bound to a job, an actor and a frontier."""
+    job = make_selected_job(REVISION)
     actor = make_process_ref("inst-worker")
-    cursors = _build_cursors("rev-fence-286")
-    newer_cursors = _advance_cursors(cursors)
-    req_id, imm, cur, occ, leg = _build_occurrence_inputs(job, actor)
-
-    fence = DeterministicEffectFenceProvider(
-        writes_enabled=True,
-        fence_open=True,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
+    cursors = _build_cursors(REVISION)
+    whole: dict[str, Any] = {
+        "selected_job": job,
+        "fenced_actor": actor,
+        "expected_frontier": cursors,
+    }
+    switches: tuple[dict[str, Any], ...] = (
+        {"writes_enabled": True},
+        {"fence_open": True},
     )
-    r1 = fence.before_request(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        request_identity=req_id,
-    )
-    assert isinstance(r1, AcceptedData)
-
-    # Simulate runtime frontier advancing while waiting before_admit
-    fence.advance_frontier(newer_cursors)
-
-    # Caller presenting the stale pre-wait cursors is refused with RUNTIME_CHANGED
-    r2_stale = fence.before_admit(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        request_identity=req_id,
-    )
-    assert isinstance(r2_stale, Refusal)
-    assert r2_stale.code == RefusalCode.RUNTIME_CHANGED
-
-    # Even if caller passes newer_cursors to before_admit, predecessor phase had old cursors -> RUNTIME_CHANGED
-    r2_drift = fence.before_admit(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=newer_cursors,
-        request_identity=req_id,
-    )
-    assert isinstance(r2_drift, Refusal)
-    assert r2_drift.code == RefusalCode.RUNTIME_CHANGED
-
-    # And record_admission after frontier moved is refused with RUNTIME_CHANGED
-    admit_stale = fence.record_admission(
-        immutable_request_binding=imm,
-        current_binding=cur,
-        occurrence=occ,
-        admission_witness=make_witness("wit-admit-stale"),
-    )
-    assert isinstance(admit_stale, Refusal)
-    assert admit_stale.code == RefusalCode.RUNTIME_CHANGED
-
-    # Explicit mark_frontier_stale also refuses record_execution_leg with RUNTIME_CHANGED
-    fence2 = DeterministicEffectFenceProvider(
-        writes_enabled=True,
-        fence_open=True,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
-    )
-    assert isinstance(
-        fence2.record_admission(
-            immutable_request_binding=imm,
-            current_binding=cur,
-            occurrence=occ,
-            admission_witness=make_witness("wit-admit-ok"),
-        ),
-        AcceptedData,
-    )
-    fence2.mark_frontier_stale()
-    exec_stale = fence2.record_execution_leg(
-        request_identity=req_id,
-        operation_leg=leg,
-        current_binding=cur,
-    )
-    assert isinstance(exec_stale, Refusal)
-    assert exec_stale.code == RefusalCode.RUNTIME_CHANGED
-
-
-def test_out_of_order_phases_or_unpermitted_phase_refuses_writes_disabled() -> None:
-    """Refusal twin: calling before_admit before before_request or before_execute before before_admit -> WRITES_DISABLED."""
-    job = make_selected_job("rev-fence-286")
-    actor = make_process_ref("inst-worker")
-    cursors = _build_cursors("rev-fence-286")
-    req_id, imm, cur, occ, _ = _build_occurrence_inputs(job, actor)
-
-    fence = DeterministicEffectFenceProvider(
-        writes_enabled=True,
-        fence_open=True,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
-        require_explicit_phase_calls=True,
-    )
-
-    # Calling before_admit before before_request -> WRITES_DISABLED
-    r_admit_early = fence.before_admit(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        request_identity=req_id,
-    )
-    assert isinstance(r_admit_early, Refusal)
-    assert r_admit_early.code == RefusalCode.WRITES_DISABLED
-
-    # Calling record_admission when require_explicit_phase_calls=True and before_admit not completed -> WRITES_DISABLED
-    admit_without_phase = fence.record_admission(
-        immutable_request_binding=imm,
-        current_binding=cur,
-        occurrence=occ,
-        admission_witness=make_witness("wit-no-phase"),
-    )
-    assert isinstance(admit_without_phase, Refusal)
-    assert admit_without_phase.code == RefusalCode.WRITES_DISABLED
-
-    # Complete before_request, then try before_execute skipping before_admit -> WRITES_DISABLED
-    assert isinstance(
-        fence.before_request(
-            selected_job=job,
-            window_id="win-n4-1",
-            actor=actor,
-            frontier=cursors,
-            request_identity=req_id,
-        ),
-        AcceptedData,
-    )
-    r_exec_early = fence.before_execute(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-        request_identity=req_id,
-    )
-    assert isinstance(r_exec_early, Refusal)
-    assert r_exec_early.code == RefusalCode.WRITES_DISABLED
-
-
-def test_actor_selection_window_and_occurrence_refusal_twins() -> None:
-    """Refusal twins for actor mismatch, selection mismatch, window drift, prior missing/foreign, and duplicate count."""
-    job = make_selected_job("rev-fence-286")
-    other_job = make_selected_job("rev-other-999")
-    actor = make_process_ref("inst-worker")
-    wrong_actor = make_process_ref("inst-impostor")
-    cursors = _build_cursors("rev-fence-286")
-    req_id, imm, cur, occ, leg = _build_occurrence_inputs(job, actor)
-
+    for switch in switches:
+        for missing in whole:
+            partial = {k: v for k, v in whole.items() if k != missing}
+            with pytest.raises(ValueError, match="selected_job, fenced_actor"):
+                DeterministicEffectFenceProvider(**switch, **partial)
+    # A closed fence needs none of them: that is the default.
+    assert DeterministicEffectFenceProvider().fence_open is False
     with pytest.raises(ValueError, match="distributed enforcement"):
         DeterministicEffectFenceProvider(distributed_enforced=True)
+    with pytest.raises(ValueError, match="allowed_phases"):
+        DeterministicEffectFenceProvider(
+            allowed_phases=cast(Any, frozenset({"before_anything"}))
+        )
+    with pytest.raises(ValueError, match="window_id"):
+        DeterministicEffectFenceProvider(window_id="")
 
-    fence = DeterministicEffectFenceProvider(
-        writes_enabled=True,
-        fence_open=True,
-        selected_job=job,
-        window_id="win-n4-1",
-        fenced_actor=actor,
-        expected_frontier=cursors,
-    )
 
-    # Wrong actor -> SUBJECT_MISMATCH
-    res_actor = fence.before_request(
-        selected_job=job,
-        window_id="win-n4-1",
-        actor=wrong_actor,
-        frontier=cursors,
-    )
-    assert isinstance(res_actor, Refusal)
-    assert res_actor.code == RefusalCode.SUBJECT_MISMATCH
+# ---------------------------------------------------------------------------
+# 3. Phases per request, in order, at the current frontier
+# ---------------------------------------------------------------------------
 
-    # Wrong selection -> SELECTION_CHANGED
-    res_sel = fence.before_request(
-        selected_job=other_job,
-        window_id="win-n4-1",
-        actor=actor,
-        frontier=cursors,
-    )
-    assert isinstance(res_sel, Refusal)
-    assert res_sel.code == RefusalCode.SELECTION_CHANGED
 
-    # Wrong window -> RUNTIME_CHANGED
-    res_win = fence.before_request(
-        selected_job=job,
-        window_id="win-other-999",
-        actor=actor,
-        frontier=cursors,
-    )
-    assert isinstance(res_win, Refusal)
-    assert res_win.code == RefusalCode.RUNTIME_CHANGED
+def test_phases_out_of_order_or_unpermitted_refuse_writes_disabled() -> None:
+    w = open_world()
+    assert refusal_code(w.phase("before_admit")) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.phase("before_execute")) == RefusalCode.WRITES_DISABLED
+    assert isinstance(w.phase("before_request"), AcceptedData)
+    assert refusal_code(w.phase("before_execute")) == RefusalCode.WRITES_DISABLED
+    assert isinstance(w.phase("before_admit"), AcceptedData)
+    # Phases only go forward: no earlier phase once a later one passed.
+    assert refusal_code(w.phase("before_request")) == RefusalCode.WRITES_DISABLED
 
-    # Execution leg before admission -> PRIOR_MISSING
-    res_prior_missing = fence.record_execution_leg(
-        request_identity=req_id,
-        operation_leg=leg,
-        current_binding=cur,
-    )
-    assert isinstance(res_prior_missing, Refusal)
-    assert res_prior_missing.code == RefusalCode.PRIOR_MISSING
+    limited = open_world(allowed_phases=frozenset({"before_request", "before_admit"}))
+    assert isinstance(limited.phase("before_request"), AcceptedData)
+    assert isinstance(limited.phase("before_admit"), AcceptedData)
+    assert refusal_code(limited.phase("before_execute")) == RefusalCode.WRITES_DISABLED
+    assert isinstance(limited.admit(), AcceptedData)
+    assert refusal_code(limited.execute()) == RefusalCode.WRITES_DISABLED
 
-    # Admit, then re-admit with conflicting sha256 -> PRIOR_FOREIGN
-    assert isinstance(
-        fence.record_admission(
-            immutable_request_binding=imm,
-            current_binding=cur,
-            occurrence=occ,
-            admission_witness=make_witness("wit-admit-1"),
-        ),
-        AcceptedData,
+
+def test_each_record_needs_its_own_phase_for_its_own_request() -> None:
+    """Another request's phases never let this request's record through."""
+    w = open_world()
+    assert refusal_code(w.admit()) == RefusalCode.WRITES_DISABLED
+    assert isinstance(w.phase("before_request"), AcceptedData)
+    assert refusal_code(w.admit()) == RefusalCode.WRITES_DISABLED
+    assert isinstance(w.phase("before_admit"), AcceptedData)
+    assert isinstance(w.admit(), AcceptedData)
+    assert refusal_code(w.execute()) == RefusalCode.WRITES_DISABLED
+    assert refusal_code(w.count()) == RefusalCode.WRITES_DISABLED
+
+    other_req, other_imm, _, _, other_leg = _build_occurrence_inputs(
+        w.job, w.actor, req_key="req-2"
     )
-    _, imm_conflict, _, _, _ = _build_occurrence_inputs(
-        job, actor, req_key="req-1", sha256="b" * 64
-    )
-    res_prior_foreign = fence.record_admission(
-        immutable_request_binding=imm_conflict,
-        current_binding=cur,
-        occurrence=occ,
+    other_admit = w.fence.record_admission(
+        immutable_request_binding=other_imm,
+        current_binding=w.cur,
+        occurrence=w.occ,
         admission_witness=make_witness("wit-admit-2"),
     )
-    assert isinstance(res_prior_foreign, Refusal)
-    assert res_prior_foreign.code == RefusalCode.PRIOR_FOREIGN
+    assert refusal_code(other_admit) == RefusalCode.WRITES_DISABLED
+    assert (
+        refusal_code(w.phase("before_admit", req_id=other_req))
+        == RefusalCode.WRITES_DISABLED
+    )
+    assert isinstance(w.phase("before_execute"), AcceptedData)
+    other_leg_result = w.fence.record_execution_leg(
+        request_identity=other_req, operation_leg=other_leg, current_binding=w.cur
+    )
+    assert refusal_code(other_leg_result) == RefusalCode.WRITES_DISABLED
+    assert w.fence.lookup_occurrence(other_req) is None
 
-    # Execute and count once -> AcceptedData; count second time -> ALREADY_COUNTED
-    assert isinstance(
-        fence.record_execution_leg(
-            request_identity=req_id,
-            operation_leg=leg,
-            current_binding=cur,
-        ),
-        AcceptedData,
+
+def test_stale_or_moved_frontier_refuses_runtime_changed() -> None:
+    w = open_world()
+    moved = _advance_cursors(w.cursors)
+    assert (
+        refusal_code(w.phase("before_request", frontier=moved))
+        == RefusalCode.RUNTIME_CHANGED
     )
-    assert isinstance(
-        fence.mark_counted(
-            request_identity=req_id,
-            idempotency_identity="idem-1",
-            current_binding=cur,
-        ),
-        AcceptedData,
+    assert isinstance(w.phase("before_request"), AcceptedData)
+    assert isinstance(w.phase("before_admit"), AcceptedData)
+
+    # The runtime moved during a wait: the phase passed at the old frontier no longer counts.
+    w.fence.advance_frontier(moved)
+    assert refusal_code(w.admit()) == RefusalCode.RUNTIME_CHANGED
+    # And the next phase must be at the frontier its predecessor passed at.
+    assert (
+        refusal_code(w.phase("before_execute", frontier=moved))
+        == RefusalCode.RUNTIME_CHANGED
     )
-    res_dup = fence.mark_counted(
-        request_identity=req_id,
-        idempotency_identity="idem-1",
-        current_binding=cur,
+    assert w.fence.lookup_occurrence(w.req_id) is None
+
+    stale = open_world()
+    assert isinstance(stale.phase("before_request"), AcceptedData)
+    assert isinstance(stale.phase("before_admit"), AcceptedData)
+    stale.fence.mark_frontier_stale()
+    assert refusal_code(stale.phase("before_execute")) == RefusalCode.RUNTIME_CHANGED
+    assert refusal_code(stale.admit()) == RefusalCode.RUNTIME_CHANGED
+    assert (
+        refusal_code(
+            stale.fence.refusal_if_closed_or_stale(
+                selected_job=stale.job, actor=stale.actor, frontier=stale.cursors
+            )
+        )
+        == RefusalCode.RUNTIME_CHANGED
     )
-    assert isinstance(res_dup, Refusal)
-    assert res_dup.code == RefusalCode.ALREADY_COUNTED
+
+
+# ---------------------------------------------------------------------------
+# 4. Another job, window or actor
+# ---------------------------------------------------------------------------
+
+
+def test_other_selection_job_window_or_actor_refused() -> None:
+    w = open_world()
+    other_selection = make_selected_job("rev-other-999")
+    other_job = make_registration_job(
+        selection_revision=REVISION,
+        execution_uuid="00000000-0000-4000-8000-000000000999",
+    )
+    assert (
+        other_job != w.job and other_job.selection_revision == w.job.selection_revision
+    )
+    impostor = make_process_ref("inst-impostor")
+    restarted = cast(NativeProcessRef, _ProcessRefAtEpoch("inst-worker", "epoch-2"))
+    cases: dict[str, tuple[dict[str, Any], RefusalCode]] = {
+        "other-selection": ({"job": other_selection}, RefusalCode.SELECTION_CHANGED),
+        "other-job-same-selection": ({"job": other_job}, RefusalCode.DISPATCH_CHANGED),
+        "other-window": ({"window_id": "win-other-999"}, RefusalCode.RUNTIME_CHANGED),
+        "other-actor": ({"actor": impostor}, RefusalCode.SUBJECT_MISMATCH),
+        "same-name-other-process": ({"actor": restarted}, RefusalCode.RUNTIME_CHANGED),
+    }
+    for case, (drift, code) in cases.items():
+        assert refusal_code(w.phase("before_request", **drift)) == code, case
+        gate = w.fence.refusal_if_closed_or_stale(
+            selected_job=drift.get("job", w.job),
+            window_id=drift.get("window_id"),
+            actor=drift.get("actor", w.actor),
+            frontier=w.cursors,
+        )
+        assert refusal_code(gate) == code, case
+
+    # The record path checks the job its binding names, and the checker it records.
+    assert isinstance(w.phase("before_request"), AcceptedData)
+    assert isinstance(w.phase("before_admit"), AcceptedData)
+    for job, code in (
+        (other_selection, RefusalCode.SELECTION_CHANGED),
+        (other_job, RefusalCode.DISPATCH_CHANGED),
+    ):
+        foreign = replace(w.cur, selected_job=job)
+        assert refusal_code(w.admit(cur=foreign)) == code
+    _, impostor_imm, _, _, _ = _build_occurrence_inputs(w.job, impostor)
+    impostor_admit = w.fence.record_admission(
+        immutable_request_binding=impostor_imm,
+        current_binding=w.cur,
+        occurrence=w.occ,
+        admission_witness=make_witness("wit-admit-x"),
+    )
+    assert refusal_code(impostor_admit) == RefusalCode.SUBJECT_MISMATCH
+    assert w.fence.lookup_occurrence(w.req_id) is None
+
+
+# ---------------------------------------------------------------------------
+# 5. Occurrence history
+# ---------------------------------------------------------------------------
+
+
+def test_occurrence_prior_missing_foreign_and_counted_once() -> None:
+    w = open_world()
+    for phase in ("before_request", "before_admit", "before_execute"):
+        assert isinstance(w.phase(phase), AcceptedData)
+    # Executing or counting what was never admitted.
+    assert refusal_code(w.execute()) == RefusalCode.PRIOR_MISSING
+    assert refusal_code(w.count()) == RefusalCode.PRIOR_MISSING
+
+    w2 = open_world()
+    assert isinstance(w2.phase("before_request"), AcceptedData)
+    assert isinstance(w2.phase("before_admit"), AcceptedData)
+    assert isinstance(w2.admit(), AcceptedData)
+    _, conflicting, _, _, _ = _build_occurrence_inputs(
+        w2.job, w2.actor, sha256="b" * 64
+    )
+    foreign = w2.fence.record_admission(
+        immutable_request_binding=conflicting,
+        current_binding=w2.cur,
+        occurrence=w2.occ,
+        admission_witness=make_witness("wit-admit-2"),
+    )
+    assert refusal_code(foreign) == RefusalCode.PRIOR_FOREIGN
+    assert isinstance(w2.phase("before_execute"), AcceptedData)
+    assert isinstance(w2.execute(), AcceptedData)
+    assert isinstance(w2.count("idem-1"), AcceptedData)
+    assert refusal_code(w2.count("idem-1")) == RefusalCode.ALREADY_COUNTED
+    assert refusal_code(w2.count("idem-2")) == RefusalCode.ALREADY_COUNTED

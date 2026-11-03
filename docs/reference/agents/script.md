@@ -60,7 +60,9 @@ from an upstream step is never parsed as shell code:
   temporary directory per attempt when there is no workspace, removed after the attempt) and emits
   its shell-safe path (`Path({{ x | file }}).read_text(encoding="utf-8")` or `cat {{ x | file }}`).
   Use `| file` for payloads that can exceed the environment limit, such as base64 photo data URLs
-  or large JSON documents.
+  or large JSON documents. In P3-protected launches (`p3_protected_launch` or `p3_launch_adapter`),
+  `| file` is refused before any file is written with a `ScriptRenderError` directing the caller to
+  use `| env` or `| quoted`.
 
 Both `| env` and `| file` serialize strings as-is, `None` as empty text, and other values (`dict`,
 `list`, `int`, `float`, `bool`) as JSON.

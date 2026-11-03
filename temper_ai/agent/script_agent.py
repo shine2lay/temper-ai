@@ -67,12 +67,25 @@ _INTERP = re.compile(r"\{\{((?:[^'\"}]|'[^']*'|\"[^\"]*\"|\}(?!\}))*)\}\}")
 #: Jinja statements and comments emit no shell text, so they must not affect the quote scan
 #: (`{% if x == "a" %}` would otherwise look like an opening double quote).
 _JINJA_STMT = re.compile(r"\{%.*?%\}|\{#.*?#\}", re.DOTALL)
+_JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
+_JINJA_TAG = re.compile(
+    r"\{\{((?:[^'\"}]|'[^']*'|\"[^\"]*\"|\}(?!\}))*)\}\}"
+    r"|\{%((?:[^'\"}%]|'[^']*'|\"[^\"]*\"|%(?!\}))*?)%\}",
+    re.DOTALL,
+)
+_STRING_LITERAL = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 BARE_FILTER = "_temper_env_bare"
 QUOTED_FILTER = "_temper_env_quoted"
+PUBLIC_QUOTED_FILTER = "quoted"
 ENV_FILTER = "env"
 FILE_FILTER = "file"
 FILE_BARE_FILTER = "_temper_file_bare"
+
+_FILE_FILTER_IN_TAG = re.compile(
+    rf"\|\s*(?:{re.escape(FILE_FILTER)}|{re.escape(FILE_BARE_FILTER)})(?!\w)"
+)
+_SET_ASSIGN_PREFIX = re.compile(r"^-?\s*set\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*")
 
 #: Linux MAX_ARG_STRLEN (PAGE_SIZE * 32 = 131072 bytes): the kernel's per-string ceiling
 #: for execve() argv/envp entries. Anything larger fails execve with E2BIG (Errno 7).
@@ -215,6 +228,8 @@ def _rewrite_interpolations(template: str, agent_name: str) -> str:
                 f"it on the command line (`python3 - {{{{ x }}}} <<'{delimiter}'`, then sys.argv), "
                 f"or read it from the environment by name: os.environ[\"{{{{ x | env }}}}\"]."
             )
+        if _ends_with_quoted_filter(expr):
+            expr = re.sub(r"\|\s*" + PUBLIC_QUOTED_FILTER + r"\s*$", "", expr).strip()
         filt = BARE_FILTER if state in ('"', HEREDOC_EXPANDS) else QUOTED_FILTER
         out.append("{{ (" + expr + ") | " + filt + " }}")
         pos = m.end()
@@ -230,6 +245,39 @@ def _ends_with_env_filter(expr: str) -> bool:
 def _ends_with_file_filter(expr: str) -> bool:
     """`{{ x | file }}`, `{{ x | default('') | file }}`: the last filter is `file`, no arguments."""
     return re.search(r"\|\s*" + FILE_FILTER + r"\s*$", expr) is not None
+
+
+def _ends_with_quoted_filter(expr: str) -> bool:
+    """`{{ x | quoted }}`, `{{ x | default('') | quoted }}`: the last filter is `quoted`, no arguments."""
+    return re.search(r"\|\s*" + PUBLIC_QUOTED_FILTER + r"\s*$", expr) is not None
+
+
+def _extract_file_exprs(template: str) -> list[str]:
+    """Return the expressions piped to ``| file`` across ``{{ ... }}`` and ``{% ... %}`` tags."""
+    exprs: list[str] = []
+    uncommented = _JINJA_COMMENT.sub("", template)
+    for match in _JINJA_TAG.finditer(uncommented):
+        body = match.group(1) if match.group(1) is not None else match.group(2)
+        if body is None:
+            continue
+        scrubbed = _STRING_LITERAL.sub(lambda m: " " * len(m.group(0)), body)
+        filter_match = _FILE_FILTER_IN_TAG.search(scrubbed)
+        if filter_match is None:
+            continue
+        before_file = body[: filter_match.start()]
+        if match.group(2) is not None:
+            before_file = _SET_ASSIGN_PREFIX.sub("", before_file)
+        cleaned = before_file.lstrip("-").strip().lstrip("(").strip()
+        exprs.append(cleaned or "input")
+    return exprs
+
+
+def _file_filter_refused_message(agent_name: str, expr: str) -> str:
+    """Authoring error message when ``| file`` is used in a P3-protected script launch."""
+    return (
+        f"script for '{agent_name}' cannot use '{{{{ {expr} | {FILE_FILTER} }}}}' "
+        f"in a P3-protected launch; use | env or | quoted instead."
+    )
 
 
 def _shell_quote_path(path: str) -> str:
@@ -264,6 +312,7 @@ class _ValueStash:
         workspace_path: str | None = None,
         inputs: Mapping[str, Any] | None = None,
         expressions: list[str] | None = None,
+        file_expressions: list[str] | None = None,
     ) -> None:
         self.env: dict[str, str] = {}
         self.files: list[str] = []
@@ -275,7 +324,9 @@ class _ValueStash:
         )
         self._inputs: dict[str, Any] = dict(inputs) if inputs else {}
         self._expressions: list[str] = list(expressions) if expressions else []
+        self._file_expressions: list[str] = list(file_expressions) if file_expressions else []
         self._expr_index = 0
+        self._file_expr_index = 0
         self._file_count = 0
         self._temp_dir: str | None = None
 
@@ -290,7 +341,11 @@ class _ValueStash:
 
     def _label_for(self, expr_idx: int, value: Any, text: str) -> tuple[str, str]:
         raw_expr = self._expressions[expr_idx] if 0 <= expr_idx < len(self._expressions) else ""
-        base_expr = re.sub(r"\|\s*" + ENV_FILTER + r"\s*$", "", raw_expr).strip()
+        base_expr = re.sub(
+            r"\|\s*(?:" + ENV_FILTER + "|" + PUBLIC_QUOTED_FILTER + r")\s*$",
+            "",
+            raw_expr,
+        ).strip()
         ident_match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)", base_expr)
         expr_ident = ident_match.group(1) if ident_match else ""
 
@@ -398,6 +453,43 @@ class _ValueStash:
         """For `\"{{ x | file }}\"` or `'{{ x | file }}'` where the template already supplies quotes."""
         return self._write_file(value)
 
+    def first_file_expr(self) -> str:
+        """Return the first template expression piped to ``| file`` without inspecting values."""
+        if self._file_expressions:
+            return self._file_expressions[0]
+        for k in self._inputs:
+            if k not in ("workspace_path", "run_id"):
+                return k
+        return "input"
+
+    def _next_file_expr(self) -> str:
+        idx = self._file_expr_index
+        self._file_expr_index += 1
+        if 0 <= idx < len(self._file_expressions):
+            return self._file_expressions[idx]
+        return self.first_file_expr()
+
+    def refuse_file(self, _value: Any) -> str:
+        """Refuse ``| file`` in a P3-protected launch before any file is written."""
+        raise ScriptRenderError(
+            _file_filter_refused_message(self.agent_name, self._next_file_expr())
+        )
+
+    def register_filters(
+        self, env: SandboxedEnvironment, *, p3_protected: bool = False
+    ) -> None:
+        """Register script interpolation filters, refusing ``| file`` when P3-protected."""
+        env.filters[QUOTED_FILTER] = self.quoted
+        env.filters[PUBLIC_QUOTED_FILTER] = self.quoted
+        env.filters[BARE_FILTER] = self.bare
+        env.filters[ENV_FILTER] = self.name
+        if p3_protected:
+            env.filters[FILE_FILTER] = self.refuse_file
+            env.filters[FILE_BARE_FILTER] = self.refuse_file
+        else:
+            env.filters[FILE_FILTER] = self.file
+            env.filters[FILE_BARE_FILTER] = self.file_bare
+
     def cleanup(self) -> None:
         """Remove the per-attempt 0700 fallback directory when no workspace was set."""
         if self._temp_dir is not None:
@@ -481,16 +573,28 @@ class ScriptAgent(AgentABC):
             render_vars = checked_vars
         workspace = render_vars.get("workspace_path")
         raw_template = checked_template if checked_template is not None else self.config["script_template"]
+        from temper_ai.agent.admission_use import _declared_attribute
+
+        p3_adapter = _declared_attribute(context, "p3_launch_adapter") or self.config.get(
+            "p3_launch_adapter"
+        )
+        p3_protected = bool(
+            _declared_attribute(context, "p3_protected_launch", False)
+            or self.config.get("p3_protected_launch", False)
+        )
+        is_p3_protected = p3_protected or p3_adapter is not None
         env_exprs = [
             m.group(1).strip()
             for m in _INTERP.finditer(raw_template)
             if not _ends_with_file_filter(m.group(1).strip())
         ]
+        file_exprs = _extract_file_exprs(raw_template)
         stash = _ValueStash(
             agent_name=self.name,
             workspace_path=workspace if isinstance(workspace, str) and workspace.strip() else None,
             inputs=render_vars,
             expressions=env_exprs,
+            file_expressions=file_exprs,
         )
         log: ScriptLog | None = None
         try:
@@ -499,11 +603,7 @@ class ScriptAgent(AgentABC):
                 loader=BaseLoader(),
                 undefined=StrictUndefined if self.strict_undefined else _recording_undefined(undefined_refs),
             )
-            env.filters[QUOTED_FILTER] = stash.quoted
-            env.filters[BARE_FILTER] = stash.bare
-            env.filters[ENV_FILTER] = stash.name
-            env.filters[FILE_FILTER] = stash.file
-            env.filters[FILE_BARE_FILTER] = stash.file_bare
+            stash.register_filters(env, p3_protected=is_p3_protected)
             template = env.from_string(template_text)
             # No escaping here any more: `finalize` moves each value into the environment and writes a
             # reference in its place, so nothing that came from a model is ever parsed as shell code.
@@ -533,16 +633,11 @@ class ScriptAgent(AgentABC):
                 "command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
                 "env": {**stash.env, "TEMPER_PYTHON": sys.executable, **_run_key_env(context)},
             }
-            from temper_ai.agent.admission_use import _declared_attribute
-
-            p3_adapter = _declared_attribute(context, "p3_launch_adapter") or self.config.get(
-                "p3_launch_adapter"
-            )
-            p3_protected = bool(
-                _declared_attribute(context, "p3_protected_launch", False)
-                or self.config.get("p3_protected_launch", False)
-            )
-            if p3_protected or p3_adapter is not None:
+            if is_p3_protected:
+                if stash.files:
+                    raise ScriptRenderError(
+                        _file_filter_refused_message(self.name, stash.first_file_expr())
+                    )
                 from temper_ai.p3_authority.contract import Refusal
                 from temper_ai.p3_authority.launch_adapters import (
                     P3ObservationRefusedError,
@@ -716,8 +811,16 @@ class ScriptAgent(AgentABC):
 
     def validate_config(self) -> list[str]:
         errors = super().validate_config()
-        if not self.config.get("script_template"):
+        template = self.config.get("script_template")
+        if not template:
             errors.append("ScriptAgent requires 'script_template' in config")
+        elif isinstance(template, str) and (
+            bool(self.config.get("p3_protected_launch", False))
+            or self.config.get("p3_launch_adapter") is not None
+        ):
+            file_exprs = _extract_file_exprs(template)
+            if file_exprs:
+                errors.append(_file_filter_refused_message(self.name, file_exprs[0]))
         for check in (log_limit, declared_timeout_seconds):
             try:
                 check(self.config)

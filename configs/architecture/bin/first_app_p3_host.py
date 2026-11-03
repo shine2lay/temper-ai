@@ -45,7 +45,6 @@ HOST_ROWS = ("R-1", "R-1i", "D-1", "D-5")
 DECISION = "lead DECISION-6 (08a42dc1)"
 # D6.4: a reviewed code change turns this on, once the conditions above hold. No flag, file or profile key does.
 WRITES_ADMITTED = False
-DEFAULT_CANDIDATE_BINDINGS = None
 WRITES_OFF = (f"live host writes are not admitted ({DECISION} D6.4: a real admitted run bundle, every native, access "
               "and Owner requirement, and #259's fresh R5' landing with QA's receiving come first): nothing read, "
               "no request written")
@@ -387,11 +386,13 @@ async def join_native_host_row(
     host: HostSession,
     row: str,
     *,
-    native_boundary=None,
     clock=utc_now,
     sleep=asyncio.sleep,
 ) -> dict:
-    """Disabled T4 native consumer hook: refuses before inspecting inputs while WRITES_ADMITTED is False."""
+    """Disabled T4 native consumer hook: refuses before inspecting inputs while WRITES_ADMITTED is False.
+
+    With writes on it still refuses every row: no native boundary is wired (first_app_p3_native).
+    """
     if not WRITES_ADMITTED:
         return {
             "status": "BLOCKED",
@@ -401,10 +402,4 @@ async def join_native_host_row(
         }
     import first_app_p3_native as p3_native
 
-    return await p3_native.join_admitted_host_row(
-        host,
-        row,
-        native_boundary=native_boundary,
-        clock=clock,
-        sleep=sleep,
-    )
+    return await p3_native.join_admitted_host_row(host, row, clock=clock, sleep=sleep)

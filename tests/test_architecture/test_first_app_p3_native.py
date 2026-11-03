@@ -7,18 +7,26 @@ Covers:
 2. Canonical supplier identity: temper_ai.p3_authority.contract, p3_host_contracts,
    p3_source_closure, ops_host_source_comparison, temper_ai.p3_authority.service, and
    temper_ai.p3_authority.worker_observation resolve without stubs and maintain
-   WRITES_ADMITTED=False, DEFAULT_CANDIDATE_BINDINGS=None, N1-N8 UNRESOLVED,
-   R-1/R-1i/D-1/D-5 UNQUALIFIED, and P5 UNTRUSTED.
+   one switch (first_app_p3_host.WRITES_ADMITTED=False), no native boundary installed,
+   N1-N8 UNRESOLVED, R-1/R-1i/D-1/D-5 UNQUALIFIED, and P5 UNTRUSTED.
+   With writes on, the host-row join still refuses every row and never runs run_row (O-466-1).
+   Run admission gets candidate bindings only from an explicit caller: checked as facts over
+   the source, each check with planted twins it must catch (O-466-3).
 3. H2 Offline consumer join over canonical #261/#262/#263/#71 suppliers across all four
    host rows (R-1, R-1i, D-1, D-5), verifying accepted inner decisions remain
-   outer status='UNQUALIFIED' and count_eligible=False while writes are off.
+   outer status='UNQUALIFIED' and count_eligible=False while writes are off. The harness
+   that drives the suppliers (_evaluate_offline_native_join) lives here, not in production,
+   and takes only the exact in-memory supplier types (O-466-2).
 4. Refusal and incomplete-closure propagation across authority, source closure,
    worker observation, and both-root verification, plus fail-loud input validation.
 """
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import importlib
+import inspect
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -37,8 +45,12 @@ import ops_host_source_comparison as ops_closure  # noqa: E402
 
 import p3_host_contracts as host_contracts  # noqa: E402
 import p3_source_closure as source_closure  # noqa: E402
+from temper_ai.p3_authority import registry as authority_registry  # noqa: E402
 from temper_ai.p3_authority.boundary_types import BothRootObservations  # noqa: E402
 from temper_ai.p3_authority.contract import (  # noqa: E402
+    AcceptedData,
+    ActualCreation,
+    ActualRequestAndReceipt,
     AdmissionState,
     EffectState,
     HostCalibrationSelection,
@@ -52,7 +64,12 @@ from temper_ai.p3_authority.contract import (  # noqa: E402
     SequenceUse,
     SourceClosureComparison,
     VerifiedClosureOrigins,
+    WindowBinding,
     compare_loaded_source,
+)
+from temper_ai.p3_authority.service import (  # noqa: E402
+    NativeHostJoinAdapter,
+    P3AuthorityService,
 )
 from temper_ai.p3_authority.worker_observation import (  # noqa: E402
     EXISTING_TEMPER_SEAM_GUARANTEES,
@@ -62,8 +79,6 @@ from temper_ai.p3_authority.worker_observation import (  # noqa: E402
     build_worker_observation_compat_cases,
     refuse_existing_seam_as_complete_coverage,
 )
-from temper_ai.runner import admission as runner_admission  # noqa: E402
-from temper_ai.runner.admission import is_designated  # noqa: E402
 from tests.test_architecture.ops_host_n3_cases import (  # noqa: E402
     bad_twin,
     clean_world,
@@ -163,11 +178,238 @@ def _setup_offline_supplier_world():
     }
 
 
+def _evaluate_offline_native_join(
+    *,
+    row,
+    service,
+    host_join,
+    worker_observer,
+    peer_worker,
+    peer_checker,
+    peer_run,
+    peer_qa,
+    session_host,
+    pre_dispatch_job,
+    running_job,
+    creator_observation,
+    parent_root_binding,
+    bootstrap_comparison,
+    window_id,
+    window_object_identity,
+    window_birth_witness,
+    host_observation_arm,
+    worker_observation_grant,
+    worker_observation_job=None,
+    both_roots_observation,
+    both_roots_actor=None,
+    both_roots_assertions=(),
+    checker_worker_observation=None,
+    checker_both_roots_observation=None,
+    closure_comparison_arm,
+    qa_receiving,
+    compatibility_receiving,
+    receipt_producer_binding,
+    request_identity,
+    observation_cursors,
+    occurrence_handle,
+    admission_witness,
+    operation_leg,
+    raw_publication,
+    receive_effect,
+    p5_assessment,
+):
+    """Test-only harness: drive the in-memory #261/#262/#263/#71 suppliers, then the pure production join.
+
+    It calls state-changing supplier methods (record_admitted_occurrence, receive), so it takes only the exact
+    in-memory types the test rig builds and lives here, not in first_app_p3_native (O-466-2).
+    """
+    for name, value, kind in (
+        ("service", service, P3AuthorityService),
+        ("host_join", host_join, NativeHostJoinAdapter),
+        ("worker_observer", worker_observer, WorkerObservationAdapter),
+    ):
+        if type(value) is not kind:
+            raise TypeError(f"{name} must be exactly {kind.__name__}, got {type(value).__name__}")
+
+    eff_worker_job = worker_observation_job if worker_observation_job is not None else running_job
+    worker_obs_res = worker_observer.observe(
+        worker_observation_grant,
+        eff_worker_job,
+        worker_observation_grant.boundary,
+    )
+    if isinstance(worker_obs_res, AcceptedData):
+        actor_ref = (
+            both_roots_actor
+            if both_roots_actor is not None
+            else both_roots_observation.publication.binding.actor_instance
+        )
+        roots_obs_res = worker_observer.root_observer.verify_both_roots(
+            both_roots_observation,
+            actor_instance=actor_ref,
+            root_owner_assertions=both_roots_assertions,
+            boundary=both_roots_observation.publication.observation_boundary,
+            evidence=worker_obs_res.evidence,
+        )
+    else:
+        roots_obs_res = worker_obs_res
+
+    create_res = service.before_create(
+        peer_worker,
+        pre_dispatch_job,
+        creator_observation,
+        parent_root_binding,
+        bootstrap_comparison,
+    )
+
+    if (
+        isinstance(create_res, AcceptedData)
+        and isinstance(worker_obs_res, AcceptedData)
+        and isinstance(roots_obs_res, AcceptedData)
+    ):
+        reg = getattr(service, "registry", None) or getattr(service, "_registry", None)
+        if reg is None:
+            raise TypeError("service does not expose a P3AuthorityRegistry")
+        cur_arm = reg.check_current(
+            peer_checker,
+            running_job.selection_revision,
+            "A_PRE_ARM",
+            authority_registry.default_effect_for_job(running_job, "A_PRE_ARM"),
+        )
+        if isinstance(cur_arm, AcceptedData):
+            win_binding = WindowBinding(
+                current=cur_arm.data,
+                actual_creation=ActualCreation(
+                    window_id=window_id,
+                    object_identity=window_object_identity,
+                    creator=create_res.data.creator,
+                    birth=window_birth_witness,
+                ),
+            )
+            checker_res = service.before_checker(
+                peer_checker,
+                win_binding,
+                host_observation_arm,
+                checker_worker_observation
+                if checker_worker_observation is not None
+                else worker_obs_res.data,
+                checker_both_roots_observation
+                if checker_both_roots_observation is not None
+                else roots_obs_res.data,
+                closure_comparison_arm,
+                qa_receiving,
+                compatibility_receiving,
+                receipt_producer_binding,
+            )
+        else:
+            checker_res = cur_arm
+    elif isinstance(create_res, Refusal):
+        checker_res = create_res
+    elif isinstance(worker_obs_res, Refusal):
+        checker_res = worker_obs_res
+    else:
+        assert isinstance(roots_obs_res, Refusal)
+        checker_res = roots_obs_res
+
+    if isinstance(checker_res, AcceptedData):
+        req_row = getattr(request_identity, "row", row)
+        req_res = service.before_request(
+            peer_run,
+            checker_res.data.binding,
+            req_row if isinstance(req_row, str) else row,
+            request_identity,
+            observation_cursors,
+        )
+    else:
+        req_res = checker_res
+
+    admitted_binding = None
+    if isinstance(req_res, AcceptedData):
+        admit_res = service.before_admit(
+            peer_run,
+            req_res.data.binding,
+            observation_cursors,
+        )
+        if isinstance(admit_res, AcceptedData):
+            rec_occ = service.record_admitted_occurrence(
+                immutable_request_binding=req_res.data.binding,
+                current_binding=admit_res.data.current,
+                occurrence=occurrence_handle,
+                admission_witness=admission_witness,
+            )
+            if isinstance(rec_occ, AcceptedData):
+                admitted_binding = rec_occ.data
+            else:
+                admit_res = rec_occ
+    else:
+        admit_res = req_res
+
+    if isinstance(admit_res, AcceptedData) and admitted_binding is not None:
+        exec_res = service.before_execute(
+            peer_run,
+            admitted_binding,
+            operation_leg,
+            observation_cursors,
+        )
+    else:
+        assert isinstance(admit_res, Refusal)
+        exec_res = admit_res
+
+    recv_res = None
+    count_res = None
+    if isinstance(exec_res, AcceptedData) and isinstance(req_res, AcceptedData):
+        occ_lookup = host_join.lookup_occurrence(session_host, request_identity)
+        if isinstance(occ_lookup, AcceptedData):
+            pub_ver = host_join.verify_publication(
+                session_host,
+                request_identity,
+                raw_publication,
+                occ_lookup.data,
+            )
+            if isinstance(pub_ver, AcceptedData):
+                recv_res = host_join.receive(
+                    session_host,
+                    request_identity,
+                    pub_ver.data,
+                    receive_effect,
+                )
+                if isinstance(recv_res, AcceptedData):
+                    count_res = service.before_count(
+                        peer_qa,
+                        ActualRequestAndReceipt(
+                            request=req_res.data.binding,
+                            publication=raw_publication,
+                        ),
+                        p5_assessment,
+                        pub_ver.data,
+                        observation_cursors,
+                        qa_receiving,
+                    )
+            else:
+                recv_res = pub_ver
+        else:
+            recv_res = occ_lookup
+
+    return native_consumer.join_offline_supplier_results(
+        row=row,
+        create_result=create_res,
+        checker_result=checker_res,
+        request_result=req_res,
+        admit_result=admit_res,
+        execute_result=exec_res,
+        closure_comparison=closure_comparison_arm,
+        worker_observation_result=worker_obs_res,
+        roots_observation_result=roots_obs_res,
+        native_receive_result=recv_res,
+        count_result=count_res,
+    )
+
+
 def test_disabled_entries_refuse_before_inspecting_inputs_or_clock():
     assert wire.WRITES_ADMITTED is False
-    assert wire.DEFAULT_CANDIDATE_BINDINGS is None
-    assert native_consumer.WRITES_ADMITTED is False
-    assert native_consumer.DEFAULT_CANDIDATE_BINDINGS is None
+    assert not hasattr(wire, "DEFAULT_CANDIDATE_BINDINGS")
+    assert not hasattr(native_consumer, "WRITES_ADMITTED")
+    assert not hasattr(native_consumer, "DEFAULT_CANDIDATE_BINDINGS")
+    assert not hasattr(native_consumer, "evaluate_offline_native_join")
 
     opaque = OpaqueInput()
     session = wire.open_host(opaque, clock=unexpected_effect)
@@ -194,7 +436,6 @@ def test_disabled_entries_refuse_before_inspecting_inputs_or_clock():
         wire.join_native_host_row(
             opaque,
             opaque,
-            native_boundary=opaque,
             clock=unexpected_effect,
             sleep=unexpected_effect,
         )
@@ -210,7 +451,6 @@ def test_disabled_entries_refuse_before_inspecting_inputs_or_clock():
         native_consumer.join_native_host_row(
             opaque,
             opaque,
-            native_boundary=opaque,
             clock=unexpected_effect,
             sleep=unexpected_effect,
         )
@@ -284,8 +524,6 @@ def test_disabled_native_boundary_posture_and_canonical_supplier_identity():
         "worker_compat_profile_valid": True,
     }
 
-    assert getattr(runner_admission, "DEFAULT_CANDIDATE_BINDINGS", None) is None
-    assert is_designated("designated_v1", native_consumer.DEFAULT_CANDIDATE_BINDINGS) is False
     assert RawRef is host_contracts.RawRef
     assert HostProjectSelection is host_contracts.ProjectSelection
     assert HostCalibrationSelection is host_contracts.CalibrationSelection
@@ -300,7 +538,7 @@ def test_disabled_native_boundary_posture_and_canonical_supplier_identity():
 
     status = native_consumer.inspect_disabled_native_boundary()
     assert status.writes_admitted is False
-    assert status.default_candidate_bindings_active is False
+    assert "default_candidate_bindings_active" not in status.to_dict()
     assert status.default_native_boundary_active is False
     assert status.default_native_host_join_active is False
     assert status.default_worker_observer_active is False
@@ -328,7 +566,7 @@ def test_offline_consumer_join_over_canonical_suppliers_stays_unqualified_and_ne
         w = _setup_offline_supplier_world()
         rig = w["rig"]
         obs = w["obs"]
-        evaluation = native_consumer.evaluate_offline_native_join(
+        evaluation = _evaluate_offline_native_join(
             row=row,
             service=rig.composition.service,
             host_join=rig.composition.host_join,
@@ -371,7 +609,6 @@ def test_offline_consumer_join_over_canonical_suppliers_stays_unqualified_and_ne
         assert evaluation.status == "UNQUALIFIED"
         assert evaluation.status != "PASS"
         assert evaluation.writes_admitted is False
-        assert evaluation.default_candidate_bindings_active is False
         assert evaluation.authority_accepted is True
         assert evaluation.closure_accepted is True
         assert evaluation.worker_observation_accepted is True
@@ -398,7 +635,7 @@ def test_offline_consumer_join_propagates_authority_closure_and_worker_refusals(
 
     # 1. Unconfigured WorkerObservationAdapter refuses with AUTHORITY_UNAVAILABLE -> BLOCKED
     unconfigured_worker = WorkerObservationAdapter()
-    eval_worker_refused = native_consumer.evaluate_offline_native_join(
+    eval_worker_refused = _evaluate_offline_native_join(
         row="R-1",
         service=rig.composition.service,
         host_join=rig.composition.host_join,
@@ -453,7 +690,7 @@ def test_offline_consumer_join_propagates_authority_closure_and_worker_refusals(
     assert bad_cmp.disposition in ("REFUSED", "UNKNOWN", "MISMATCH")
     assert len(bad_cmp.reasons) > 0
 
-    eval_closure_refused = native_consumer.evaluate_offline_native_join(
+    eval_closure_refused = _evaluate_offline_native_join(
         row="D-1",
         service=rig2.composition.service,
         host_join=rig2.composition.host_join,
@@ -512,7 +749,7 @@ def test_offline_consumer_join_propagates_authority_closure_and_worker_refusals(
             ),
         ),
     )
-    eval_roots_refused = native_consumer.evaluate_offline_native_join(
+    eval_roots_refused = _evaluate_offline_native_join(
         row="R-1",
         service=rig3.composition.service,
         host_join=rig3.composition.host_join,
@@ -560,7 +797,7 @@ def test_offline_consumer_join_propagates_authority_closure_and_worker_refusals(
     rig4 = w4["rig"]
     obs4 = w4["obs"]
     unverified_session = FakeSession("session:unverified-host", rig4.peer_host)
-    eval_session_refused = native_consumer.evaluate_offline_native_join(
+    eval_session_refused = _evaluate_offline_native_join(
         row="D-5",
         service=rig4.composition.service,
         host_join=rig4.composition.host_join,
@@ -680,3 +917,234 @@ def test_worker_observation_compat_profile_and_reregistration_bindings():
         native_consumer.SUPPLIER_ARTIFACTS["temper_263"]["ops_760_corpus_commit"]
         == "57a1988bba9b3bef65fa161fd188fae292300b92"
     )
+
+
+# --- O-466-1: with writes on, the host-row join still refuses and never runs the plain wire ---------------
+
+
+def test_writes_on_native_join_refuses_every_row_and_never_runs_the_plain_wire(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(wire, "WRITES_ADMITTED", True)
+    monkeypatch.setattr(wire, "run_row", unexpected_effect)
+    refused = {
+        "status": "BLOCKED",
+        "reasons": [native_consumer.NATIVE_BOUNDARY_NOT_WIRED],
+        "writer": wire.WRITER,
+        "count_eligible": False,
+        "native_obligations": dict(native_consumer.UNRESOLVED_NATIVE_OBLIGATIONS),
+    }
+    opaque = OpaqueInput()
+    for row in wire.HOST_ROWS:
+        for entry in (
+            wire.join_native_host_row,
+            native_consumer.join_native_host_row,
+            native_consumer.join_admitted_host_row,
+        ):
+            result = asyncio.run(entry(opaque, row, clock=unexpected_effect, sleep=unexpected_effect))
+            assert result == refused
+
+
+def test_native_join_entries_take_no_boundary_argument():
+    for entry in (
+        wire.join_native_host_row,
+        native_consumer.join_native_host_row,
+        native_consumer.join_admitted_host_row,
+    ):
+        assert "native_boundary" not in inspect.signature(entry).parameters
+        with pytest.raises(TypeError, match="native_boundary"):
+            entry(OpaqueInput(), "R-1", native_boundary=object())
+
+
+# --- O-466-2: the offline harness takes only the exact in-memory supplier types ---------------------------
+
+_HARNESS_PLAIN_INPUTS = tuple(
+    name
+    for name, parameter in inspect.signature(_evaluate_offline_native_join).parameters.items()
+    if parameter.default is inspect.Parameter.empty
+    and name not in {"row", "service", "host_join", "worker_observer"}
+)
+
+
+@pytest.mark.parametrize("field", ["service", "host_join", "worker_observer"])
+def test_offline_harness_refuses_anything_but_the_exact_in_memory_suppliers(field):
+    w = _setup_offline_supplier_world()
+    rig = w["rig"]
+    suppliers = {
+        "service": rig.composition.service,
+        "host_join": rig.composition.host_join,
+        "worker_observer": w["worker_observer"],
+    }
+    assert {name: type(value) for name, value in suppliers.items()} == {
+        "service": P3AuthorityService,
+        "host_join": NativeHostJoinAdapter,
+        "worker_observer": WorkerObservationAdapter,
+    }
+    lookalike = type("Lookalike", (type(suppliers[field]),), {})
+    suppliers[field] = lookalike.__new__(lookalike)
+    with pytest.raises(TypeError, match=f"{field} must be exactly"):
+        _evaluate_offline_native_join(
+            row="R-1",
+            **suppliers,
+            **{name: OpaqueInput() for name in _HARNESS_PLAIN_INPUTS},
+        )
+
+
+# --- O-466-3: run admission gets candidate bindings only from an explicit caller (facts over the source) ----
+
+_P3_AUTHORITY_DIR = _ROOT / "temper_ai" / "p3_authority"
+_RUNNER_ENTRY_POINTS = {
+    ("temper_ai.runner.execute", "execute_workflow"),
+    ("temper_ai.cli.run_workflow", "cmd_run_workflow"),
+    ("temper_ai.cli.watch_queue", "_scan_and_dispatch"),
+    ("temper_ai.cli.watch_queue", "_claim_row"),
+    ("temper_ai.cli.main", "_cmd_validate"),
+}
+# The one production caller of a P3 composition: the disabled consumer's composer, which refuses writes.
+_ALLOWED_COMPOSER_CALLS = {("configs/architecture/bin/first_app_p3_native.py", "compose_p3_authority")}
+_COMPOSERS = {"compose_p3_authority", "compose_disabled_consumer_service"}
+
+
+def _production_sources():
+    for top in ("temper_ai", "configs"):
+        for path in sorted((_ROOT / top).rglob("*.py")):
+            if _P3_AUTHORITY_DIR in path.parents or "__pycache__" in path.parts:
+                continue
+            yield path.relative_to(_ROOT).as_posix(), path.read_text(encoding="utf-8")
+
+
+def _parameter_defaults(node):
+    args = node.args
+    positional = args.posonlyargs + args.args
+    padded = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    return list(zip(positional, padded, strict=True)) + list(zip(args.kwonlyargs, args.kw_defaults, strict=True))
+
+
+def _assigns_name(function, name):
+    for node in ast.walk(function):
+        targets = ()
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+            targets = (node.target,)
+        for target in targets:
+            if any(isinstance(t, ast.Name) and t.id == name for t in ast.walk(target)):
+                return True
+    return False
+
+
+class _CandidateBindingFacts(ast.NodeVisitor):
+    """Collect breaks of the three facts in one file, plus every function that takes candidate_bindings."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        self.violations: list[str] = []
+        self.takes_bindings: set[str] = set()
+
+    def _function(self, node) -> None:
+        for arg, default in _parameter_defaults(node):
+            if arg.arg != "candidate_bindings":
+                continue
+            self.takes_bindings.add(node.name)
+            if not (isinstance(default, ast.Constant) and default.value is None):
+                self.violations.append(f"{self.name}:{node.lineno} {node.name}: candidate_bindings must default to None")
+        self.functions.append(node)
+        self.generic_visit(node)
+        self.functions.pop()
+
+    visit_FunctionDef = _function
+    visit_AsyncFunctionDef = _function
+
+    def visit_Call(self, node: ast.Call) -> None:
+        for keyword in node.keywords:
+            if keyword.arg != "candidate_bindings":
+                continue
+            value = keyword.value
+            own = self.functions[-1] if self.functions else None
+            passes_own_parameter = (
+                isinstance(value, ast.Name)
+                and value.id == "candidate_bindings"
+                and own is not None
+                and any(arg.arg == "candidate_bindings" for arg, _ in _parameter_defaults(own))
+                and not _assigns_name(own, "candidate_bindings")
+            )
+            if not passes_own_parameter:
+                self.violations.append(
+                    f"{self.name}:{node.lineno}: candidate_bindings={ast.unparse(value)} is not its own untouched parameter"
+                )
+        func = node.func
+        callee = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+        if callee in _COMPOSERS and (self.name, callee) not in _ALLOWED_COMPOSER_CALLS:
+            self.violations.append(f"{self.name}:{node.lineno}: {callee}() outside tests")
+        self.generic_visit(node)
+
+
+def _scan(name: str, text: str) -> _CandidateBindingFacts:
+    facts = _CandidateBindingFacts(name)
+    facts.visit(ast.parse(text, filename=name))
+    return facts
+
+
+_DEFAULT_RULE = "candidate_bindings must default to None"
+_PASS_THROUGH_RULE = "is not its own untouched parameter"
+_COMPOSER_RULE = "() outside tests"
+# Each twin breaks one fact; the check must report it under that fact's rule, and only once.
+_PLANTED_TWINS = {
+    "non-None default": ("def run(*, candidate_bindings=object()):\n    pass\n", _DEFAULT_RULE),
+    "required parameter": ("def run(candidate_bindings):\n    pass\n", _DEFAULT_RULE),
+    "built value passed": (
+        "def run(*, candidate_bindings=None):\n    go(candidate_bindings=make())\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "name that is not a parameter": ("def run():\n    go(candidate_bindings=candidate_bindings)\n", _PASS_THROUGH_RULE),
+    "parameter replaced first": (
+        "def run(*, candidate_bindings=None):\n    candidate_bindings = make()\n    go(candidate_bindings=candidate_bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "module-level call": ("go(candidate_bindings=BINDINGS)\n", _PASS_THROUGH_RULE),
+    "composition built": ("def boot():\n    return compose_p3_authority()\n", _COMPOSER_RULE),
+    "disabled composer called": (
+        "import first_app_p3_native as n\nn.compose_disabled_consumer_service()\n",
+        _COMPOSER_RULE,
+    ),
+}
+
+
+@pytest.mark.parametrize("twin", sorted(_PLANTED_TWINS))
+def test_candidate_binding_fact_checks_catch_each_planted_twin(twin):
+    source, rule = _PLANTED_TWINS[twin]
+    violations = _scan("temper_ai/planted.py", source).violations
+    assert len(violations) == 1
+    assert rule in violations[0]
+
+
+def test_candidate_binding_fact_checks_pass_a_clean_pass_through():
+    clean = (
+        "def outer(*, candidate_bindings=None):\n"
+        "    return inner(candidate_bindings=candidate_bindings)\n"
+        "async def inner(*, candidate_bindings=None):\n"
+        "    return candidate_bindings is None\n"
+    )
+    facts = _scan("temper_ai/planted.py", clean)
+    assert facts.violations == []
+    assert facts.takes_bindings == {"outer", "inner"}
+
+
+def test_run_admission_gets_candidate_bindings_only_from_an_explicit_caller():
+    violations: list[str] = []
+    takes_bindings: set[tuple[str, str]] = set()
+    scanned = 0
+    for name, text in _production_sources():
+        facts = _scan(name, text)
+        scanned += 1
+        violations += facts.violations
+        module = name.removesuffix(".py").replace("/", ".")
+        takes_bindings |= {(module, function) for function in facts.takes_bindings}
+    assert scanned > 100
+    assert violations == []
+    assert _RUNNER_ENTRY_POINTS <= takes_bindings
+    for module, function in sorted(_RUNNER_ENTRY_POINTS):
+        parameter = inspect.signature(getattr(importlib.import_module(module), function)).parameters[
+            "candidate_bindings"
+        ]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is None

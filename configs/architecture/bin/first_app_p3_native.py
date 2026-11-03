@@ -21,9 +21,8 @@ Consumes the canonical supplier exports delivered by:
   `WindowBinding`, `CheckerBinding`, `ImmutableRequestBinding`, `AdmittedRequestBinding`,
   `WorkerObservation`, `RootObservation`, `BothRootObservations`,
   `CurrentObservationCursors`, `ActualRequestAndReceipt`, `P5Assessment`, `QAReceiving`.
-- Temper #262 (`temper_ai.p3_authority.service`, `registry`, `candidate_bindings`, `_providers`,
-  and `temper_ai.runner.admission`):
-  `DEFAULT_CANDIDATE_BINDINGS`, `P3AuthorityComposition`, `P3AuthorityService`,
+- Temper #262 (`temper_ai.p3_authority.service`, `registry`, `candidate_bindings`, `_providers`):
+  `P3AuthorityComposition`, `P3AuthorityService`,
   `NativeHostJoinAdapter`, `compose_p3_authority`, `AuthorityRegistryService`,
   `P3CandidateBindings`, `SystemsSourceClosureComparator`.
 - Temper #263 (`temper_ai.p3_authority.worker_observation`, `child_registration`,
@@ -35,9 +34,15 @@ Consumes the canonical supplier exports delivered by:
   `build_worker_observation_compat_cases`, `validate_compatibility_profile`.
 
 Posture invariants:
-- `WRITES_ADMITTED` remains `False` (`first_app_p3_host.WRITES_ADMITTED is False`).
-- `DEFAULT_CANDIDATE_BINDINGS`, `DEFAULT_NATIVE_BOUNDARY`, `DEFAULT_NATIVE_HOST_JOIN`,
-  and `DEFAULT_WORKER_OBSERVER` remain `None`.
+- One switch: `first_app_p3_host.WRITES_ADMITTED` remains `False`; this module keeps no copy of it.
+- `DEFAULT_NATIVE_BOUNDARY`, `DEFAULT_NATIVE_HOST_JOIN` and `DEFAULT_WORKER_OBSERVER` remain `None`:
+  no native boundary is wired, so the host-row join refuses every row and never runs the plain
+  host wire in its place.
+- Run admission gets candidate bindings only from an explicit caller: every runner entry point's
+  `candidate_bindings` parameter defaults to `None`, and only tests build a P3 composition
+  (checked by tests/test_architecture/test_first_app_p3_native.py, not at import).
+- The offline supplier join here is pure (`join_offline_supplier_results`); the harness that
+  drives the in-memory suppliers' state-changing calls lives in the tests only.
 - All N1-N8 native obligations remain `UNRESOLVED`; R-1, R-1i, D-1, D-5 remain
   `UNQUALIFIED`; P5 remains `UNTRUSTED`.
 - Guard-off calls short-circuit before inspecting caller inputs, clocks, sleeps,
@@ -89,23 +94,15 @@ from temper_ai.p3_authority import (  # noqa: E402
 from temper_ai.p3_authority.contract import (  # noqa: E402
     DECISION_SCHEMA,
     AcceptedData,
-    ActualCreation,
-    ActualRequestAndReceipt,
     AdmissionDecision,
     AdmissionState,
-    AdmittedRequestBinding,
-    AuthenticatedPeer,
     BothRootObservations,
     CheckerDecision,
-    CompatibilityReceiving,
     CountDecision,
     CreateArmDecision,
-    CurrentObservationCursors,
     EffectState,
     ExecutionDecision,
     HostCalibrationSelection,
-    HostEffect,
-    HostObservation,
     HostProjectSelection,
     LoadedClosureEnvelope,
     N3Coverage,
@@ -113,35 +110,18 @@ from temper_ai.p3_authority.contract import (  # noqa: E402
     N3ObservationEpoch,
     N3SourceEpoch,
     NativeClosureExpectation,
-    NativeHostJoin,
-    NativeProcessRef,
-    NativeRootObject,
-    NativeSession,
-    NativeWitness,
-    ObservationGrant,
-    OccurrenceHandle,
-    OperationLeg,
-    P3NativeBoundary,
-    P5Assessment,
     Phase,
-    QAReceiving,
-    RawPublication,
     RawRef,
-    ReceiptProducerBinding,
     Refusal,
     RefusalCode,
     RequestDecision,
-    RequestIdentity,
     Result,
     RetryKind,
     ReviewedSourceGraph,
-    RootBinding,
-    SelectedJob,
     SequenceUse,
     SourceClosureComparison,
     VerifiedClosureOrigins,
     VerifiedReceiptBinding,
-    WindowBinding,
     WorkerObservation,
     compare_loaded_source,
     validate_loaded_envelope,
@@ -156,23 +136,19 @@ from temper_ai.p3_authority.service import (  # noqa: E402
 from temper_ai.p3_authority.worker_observation import (  # noqa: E402
     EXISTING_TEMPER_SEAM_GUARANTEES,
     WORKER_OBSERVATION_COMPAT_CORPUS_ID,
-    RootOwnerVsActorAssertion,
     WorkerObservationAdapter,
     build_worker_observation_compat_cases,
     refuse_existing_seam_as_complete_coverage,
     validate_compatibility_profile,
 )
-from temper_ai.runner import admission as runner_admission  # noqa: E402
-from temper_ai.runner.admission import (  # noqa: E402
-    CandidateBindings,
-    is_designated,
-)
 
-WRITES_ADMITTED: Final[bool] = False
-DEFAULT_CANDIDATE_BINDINGS: Final[CandidateBindings | None] = None
 DEFAULT_NATIVE_BOUNDARY: Final[None] = None
 DEFAULT_NATIVE_HOST_JOIN: Final[None] = None
 DEFAULT_WORKER_OBSERVER: Final[None] = None
+NATIVE_BOUNDARY_NOT_WIRED: Final[str] = (
+    "no native boundary is wired (DEFAULT_NATIVE_BOUNDARY is None): the native join runs no host row, "
+    "and a plain host-wire result is never native-verified or counted"
+)
 
 CANONICAL_N1_TO_N8_CODES: Final[tuple[str, ...]] = (
     "N1",
@@ -250,7 +226,6 @@ class NativeBoundaryStatus:
     """Immutable snapshot of the disabled T4 native boundary posture."""
 
     writes_admitted: bool
-    default_candidate_bindings_active: bool
     default_native_boundary_active: bool
     default_native_host_join_active: bool
     default_worker_observer_active: bool
@@ -270,7 +245,6 @@ class NativeBoundaryStatus:
     def to_dict(self) -> dict[str, Any]:
         return {
             "writes_admitted": self.writes_admitted,
-            "default_candidate_bindings_active": self.default_candidate_bindings_active,
             "default_native_boundary_active": self.default_native_boundary_active,
             "default_native_host_join_active": self.default_native_host_join_active,
             "default_worker_observer_active": self.default_worker_observer_active,
@@ -291,12 +265,16 @@ class NativeBoundaryStatus:
 
 @dataclass(frozen=True)
 class NativeJoinedHostEvaluation:
-    """Result of joining supplier authority, closure, and worker-observation outcomes for a host row."""
+    """Result of joining supplier authority, closure, and worker-observation outcomes for a host row.
+
+    Consumers key on `status` and `count_eligible` only. `inner_count_decision` is the supplier's own
+    raw before_count decision, kept for the record; its verdict can be PASS while this join is
+    UNQUALIFIED, and it never counts a row.
+    """
 
     row: str
     status: str
     writes_admitted: bool
-    default_candidate_bindings_active: bool
     boundary_mode: str
     authority_accepted: bool
     closure_accepted: bool
@@ -323,7 +301,6 @@ class NativeJoinedHostEvaluation:
             "row": self.row,
             "status": self.status,
             "writes_admitted": self.writes_admitted,
-            "default_candidate_bindings_active": self.default_candidate_bindings_active,
             "boundary_mode": self.boundary_mode,
             "authority_accepted": self.authority_accepted,
             "closure_accepted": self.closure_accepted,
@@ -355,16 +332,14 @@ class NativeJoinedHostEvaluation:
 
 def verify_canonical_supplier_bindings() -> dict[str, bool]:
     """Fail-loud verification that all supplier exports resolve to exact canonical types without stubs."""
-    if host_wire.WRITES_ADMITTED is not False or WRITES_ADMITTED is not False:
-        raise RuntimeError("WRITES_ADMITTED must remain False in disabled T4 posture")
+    if host_wire.WRITES_ADMITTED is not False:
+        raise RuntimeError("first_app_p3_host.WRITES_ADMITTED must remain False in disabled T4 posture")
     if (
-        getattr(runner_admission, "DEFAULT_CANDIDATE_BINDINGS", None) is not None
-        or DEFAULT_CANDIDATE_BINDINGS is not None
-        or is_designated("designated_v1", DEFAULT_CANDIDATE_BINDINGS) is not False
+        DEFAULT_NATIVE_BOUNDARY is not None
+        or DEFAULT_NATIVE_HOST_JOIN is not None
+        or DEFAULT_WORKER_OBSERVER is not None
     ):
-        raise RuntimeError("DEFAULT_CANDIDATE_BINDINGS must remain None in disabled T4 posture")
-    if host_wire.DEFAULT_CANDIDATE_BINDINGS is not None:
-        raise RuntimeError("first_app_p3_host.DEFAULT_CANDIDATE_BINDINGS must remain None")
+        raise RuntimeError("no native boundary, host join or worker observer may be installed in disabled T4 posture")
 
     host_contract_identity = (
         RawRef is host_contracts.RawRef
@@ -458,7 +433,6 @@ def inspect_disabled_native_boundary() -> NativeBoundaryStatus:
     checks = verify_canonical_supplier_bindings()
     return NativeBoundaryStatus(
         writes_admitted=host_wire.WRITES_ADMITTED,
-        default_candidate_bindings_active=DEFAULT_CANDIDATE_BINDINGS is not None,
         default_native_boundary_active=DEFAULT_NATIVE_BOUNDARY is not None,
         default_native_host_join_active=DEFAULT_NATIVE_HOST_JOIN is not None,
         default_worker_observer_active=DEFAULT_WORKER_OBSERVER is not None,
@@ -475,7 +449,8 @@ def inspect_disabled_native_boundary() -> NativeBoundaryStatus:
         p5_trust_posture="UNTRUSTED",
         reasons=(
             host_wire.WRITES_OFF,
-            "DEFAULT_CANDIDATE_BINDINGS is None; no live native authority, closure, or worker observer is installed",
+            "no live native authority, closure, or worker observer is installed "
+            "(DEFAULT_NATIVE_BOUNDARY, DEFAULT_NATIVE_HOST_JOIN and DEFAULT_WORKER_OBSERVER are None)",
             "N1-N8 native obligations remain UNRESOLVED; R-1, R-1i, D-1, D-5 remain UNQUALIFIED; P5 remains UNTRUSTED",
         ),
     )
@@ -496,7 +471,6 @@ async def join_native_host_row(
     host: Any,
     row: Any,
     *,
-    native_boundary: P3NativeBoundary | None = None,
     clock: Any = host_wire.utc_now,
     sleep: Any = asyncio.sleep,
 ) -> dict[str, Any]:
@@ -509,24 +483,22 @@ async def join_native_host_row(
             "count_eligible": False,
             "native_obligations": dict(UNRESOLVED_NATIVE_OBLIGATIONS),
         }
-    return await join_admitted_host_row(
-        host,
-        row,
-        native_boundary=native_boundary,
-        clock=clock,
-        sleep=sleep,
-    )
+    return await join_admitted_host_row(host, row, clock=clock, sleep=sleep)
 
 
 async def join_admitted_host_row(
     host: Any,
     row: Any,
     *,
-    native_boundary: P3NativeBoundary | None = None,
     clock: Any = host_wire.utc_now,
     sleep: Any = asyncio.sleep,
 ) -> dict[str, Any]:
-    """Fail-closed backup even if called directly: refuses when writes are off or native boundary is absent."""
+    """Fail-closed backup even if called directly: refuses every row.
+
+    Writes off -> BLOCKED with WRITES_OFF before touching any input. Writes on -> still BLOCKED, because no
+    native boundary is wired: the join never runs the plain host wire (run_row) in place of a native check,
+    so nothing here can be read as native-verified. Wiring a boundary is a reviewed code change.
+    """
     if not host_wire.WRITES_ADMITTED:
         return {
             "status": "BLOCKED",
@@ -543,21 +515,13 @@ async def join_admitted_host_row(
             "count_eligible": False,
             "native_obligations": dict(UNRESOLVED_NATIVE_OBLIGATIONS),
         }
-    if native_boundary is None:
-        return {
-            "status": "BLOCKED",
-            "reasons": ["native boundary provider is not installed (DEFAULT_NATIVE_BOUNDARY is None)"],
-            "writer": host_wire.WRITER,
-            "count_eligible": False,
-            "native_obligations": dict(UNRESOLVED_NATIVE_OBLIGATIONS),
-        }
-    wire = await host_wire.run_row(host, row, clock=clock, sleep=sleep)
-    out = dict(wire)
-    out["count_eligible"] = False
-    out["native_obligations"] = dict(UNRESOLVED_NATIVE_OBLIGATIONS)
-    if out.get("status") == "PASS":
-        out["status"] = "UNQUALIFIED"
-    return out
+    return {
+        "status": "BLOCKED",
+        "reasons": [NATIVE_BOUNDARY_NOT_WIRED],
+        "writer": host_wire.WRITER,
+        "count_eligible": False,
+        "native_obligations": dict(UNRESOLVED_NATIVE_OBLIGATIONS),
+    }
 
 
 def _validate_boundary_result(
@@ -720,7 +684,6 @@ def join_offline_supplier_results(
         row=row,
         status=status,
         writes_admitted=host_wire.WRITES_ADMITTED,
-        default_candidate_bindings_active=DEFAULT_CANDIDATE_BINDINGS is not None,
         boundary_mode="offline_injected_join",
         authority_accepted=authority_accepted,
         closure_accepted=closure_accepted,
@@ -744,245 +707,18 @@ def join_offline_supplier_results(
     )
 
 
-def evaluate_offline_native_join(
-    *,
-    row: str,
-    service: P3AuthorityService,
-    host_join: NativeHostJoin,
-    worker_observer: WorkerObservationAdapter,
-    peer_worker: AuthenticatedPeer,
-    peer_checker: AuthenticatedPeer,
-    peer_run: AuthenticatedPeer,
-    peer_qa: AuthenticatedPeer,
-    session_host: NativeSession,
-    pre_dispatch_job: SelectedJob,
-    running_job: SelectedJob,
-    creator_observation: HostObservation,
-    parent_root_binding: RootBinding,
-    bootstrap_comparison: SourceClosureComparison,
-    window_id: str,
-    window_object_identity: NativeRootObject,
-    window_birth_witness: NativeWitness,
-    host_observation_arm: HostObservation,
-    worker_observation_grant: ObservationGrant,
-    worker_observation_job: SelectedJob | None = None,
-    both_roots_observation: BothRootObservations,
-    both_roots_actor: NativeProcessRef | None = None,
-    both_roots_assertions: tuple[RootOwnerVsActorAssertion, ...] = (),
-    checker_worker_observation: WorkerObservation | None = None,
-    checker_both_roots_observation: BothRootObservations | None = None,
-    closure_comparison_arm: SourceClosureComparison,
-    qa_receiving: QAReceiving,
-    compatibility_receiving: CompatibilityReceiving,
-    receipt_producer_binding: ReceiptProducerBinding,
-    request_identity: RequestIdentity,
-    observation_cursors: CurrentObservationCursors,
-    occurrence_handle: OccurrenceHandle,
-    admission_witness: NativeWitness,
-    operation_leg: OperationLeg,
-    raw_publication: RawPublication,
-    receive_effect: HostEffect,
-    p5_assessment: P5Assessment,
-) -> NativeJoinedHostEvaluation:
-    """Execute a complete offline consumer join across #261/#262/#263/#71 supplier ports without live side effects."""
-    if not isinstance(service, P3AuthorityService):
-        raise TypeError(f"service must be a P3AuthorityService, got {type(service).__name__}")
-    if not isinstance(worker_observer, WorkerObservationAdapter):
-        raise TypeError(
-            f"worker_observer must be a WorkerObservationAdapter, got {type(worker_observer).__name__}"
-        )
-
-    eff_worker_job = worker_observation_job if worker_observation_job is not None else running_job
-    worker_obs_res = worker_observer.observe(
-        worker_observation_grant,
-        eff_worker_job,
-        worker_observation_grant.boundary,
-    )
-    if isinstance(worker_obs_res, AcceptedData):
-        actor_ref = (
-            both_roots_actor
-            if both_roots_actor is not None
-            else both_roots_observation.publication.binding.actor_instance
-        )
-        roots_obs_res = worker_observer.root_observer.verify_both_roots(
-            both_roots_observation,
-            actor_instance=actor_ref,
-            root_owner_assertions=both_roots_assertions,
-            boundary=both_roots_observation.publication.observation_boundary,
-            evidence=worker_obs_res.evidence,
-        )
-    else:
-        roots_obs_res = worker_obs_res
-
-    create_res = service.before_create(
-        peer_worker,
-        pre_dispatch_job,
-        creator_observation,
-        parent_root_binding,
-        bootstrap_comparison,
-    )
-
-    checker_res: Result[CheckerDecision]
-    if (
-        isinstance(create_res, AcceptedData)
-        and isinstance(worker_obs_res, AcceptedData)
-        and isinstance(roots_obs_res, AcceptedData)
-    ):
-        reg = getattr(service, "registry", None) or getattr(service, "_registry", None)
-        if reg is None:
-            raise TypeError("service does not expose a P3AuthorityRegistry")
-        cur_arm = reg.check_current(
-            peer_checker,
-            running_job.selection_revision,
-            "A_PRE_ARM",
-            authority_registry.default_effect_for_job(running_job, "A_PRE_ARM"),
-        )
-        if isinstance(cur_arm, AcceptedData):
-            win_binding = WindowBinding(
-                current=cur_arm.data,
-                actual_creation=ActualCreation(
-                    window_id=window_id,
-                    object_identity=window_object_identity,
-                    creator=create_res.data.creator,
-                    birth=window_birth_witness,
-                ),
-            )
-            checker_res = service.before_checker(
-                peer_checker,
-                win_binding,
-                host_observation_arm,
-                checker_worker_observation
-                if checker_worker_observation is not None
-                else worker_obs_res.data,
-                checker_both_roots_observation
-                if checker_both_roots_observation is not None
-                else roots_obs_res.data,
-                closure_comparison_arm,
-                qa_receiving,
-                compatibility_receiving,
-                receipt_producer_binding,
-            )
-        else:
-            checker_res = cur_arm
-    elif isinstance(create_res, Refusal):
-        checker_res = create_res
-    elif isinstance(worker_obs_res, Refusal):
-        checker_res = worker_obs_res
-    else:
-        assert isinstance(roots_obs_res, Refusal)
-        checker_res = roots_obs_res
-
-    req_res: Result[RequestDecision]
-    if isinstance(checker_res, AcceptedData):
-        req_row = getattr(request_identity, "row", row)
-        req_res = service.before_request(
-            peer_run,
-            checker_res.data.binding,
-            req_row if isinstance(req_row, str) else row,
-            request_identity,
-            observation_cursors,
-        )
-    else:
-        req_res = checker_res
-
-    admit_res: Result[AdmissionDecision]
-    admitted_binding: AdmittedRequestBinding | None = None
-    if isinstance(req_res, AcceptedData):
-        admit_res = service.before_admit(
-            peer_run,
-            req_res.data.binding,
-            observation_cursors,
-        )
-        if isinstance(admit_res, AcceptedData):
-            rec_occ = service.record_admitted_occurrence(
-                immutable_request_binding=req_res.data.binding,
-                current_binding=admit_res.data.current,
-                occurrence=occurrence_handle,
-                admission_witness=admission_witness,
-            )
-            if isinstance(rec_occ, AcceptedData):
-                admitted_binding = rec_occ.data
-            else:
-                admit_res = rec_occ
-    else:
-        admit_res = req_res
-
-    exec_res: Result[ExecutionDecision]
-    if isinstance(admit_res, AcceptedData) and admitted_binding is not None:
-        exec_res = service.before_execute(
-            peer_run,
-            admitted_binding,
-            operation_leg,
-            observation_cursors,
-        )
-    else:
-        assert isinstance(admit_res, Refusal)
-        exec_res = admit_res
-
-    recv_res: Result[VerifiedReceiptBinding] | None = None
-    count_res: Result[CountDecision] | None = None
-    if isinstance(exec_res, AcceptedData) and isinstance(req_res, AcceptedData):
-        occ_lookup = host_join.lookup_occurrence(session_host, request_identity)
-        if isinstance(occ_lookup, AcceptedData):
-            pub_ver = host_join.verify_publication(
-                session_host,
-                request_identity,
-                raw_publication,
-                occ_lookup.data,
-            )
-            if isinstance(pub_ver, AcceptedData):
-                recv_res = host_join.receive(
-                    session_host,
-                    request_identity,
-                    pub_ver.data,
-                    receive_effect,
-                )
-                if isinstance(recv_res, AcceptedData):
-                    actual_req_and_rcpt = ActualRequestAndReceipt(
-                        request=req_res.data.binding,
-                        publication=raw_publication,
-                    )
-                    count_res = service.before_count(
-                        peer_qa,
-                        actual_req_and_rcpt,
-                        p5_assessment,
-                        pub_ver.data,
-                        observation_cursors,
-                        qa_receiving,
-                    )
-            else:
-                recv_res = pub_ver
-        else:
-            recv_res = occ_lookup
-
-    return join_offline_supplier_results(
-        row=row,
-        create_result=create_res,
-        checker_result=checker_res,
-        request_result=req_res,
-        admit_result=admit_res,
-        execute_result=exec_res,
-        closure_comparison=closure_comparison_arm,
-        worker_observation_result=worker_obs_res,
-        roots_observation_result=roots_obs_res,
-        native_receive_result=recv_res,
-        count_result=count_res,
-    )
-
-
 __all__ = [
     "CANONICAL_N1_TO_N8_CODES",
     "CANONICAL_NATIVE_OBLIGATION_DESCRIPTIONS",
     "DECISION_SCHEMA",
-    "DEFAULT_CANDIDATE_BINDINGS",
     "DEFAULT_NATIVE_BOUNDARY",
     "DEFAULT_NATIVE_HOST_JOIN",
     "DEFAULT_WORKER_OBSERVER",
     "EXISTING_TEMPER_SEAM_GUARANTEES",
+    "NATIVE_BOUNDARY_NOT_WIRED",
     "SUPPLIER_ARTIFACTS",
     "UNRESOLVED_NATIVE_OBLIGATIONS",
     "WORKER_OBSERVATION_COMPAT_CORPUS_ID",
-    "WRITES_ADMITTED",
     "AcceptedData",
     "AdmissionState",
     "EffectState",
@@ -995,7 +731,6 @@ __all__ = [
     "RetryKind",
     "SequenceUse",
     "compose_disabled_consumer_service",
-    "evaluate_offline_native_join",
     "inspect_disabled_native_boundary",
     "join_admitted_host_row",
     "join_native_host_row",

@@ -13,7 +13,7 @@ exactly once under that fact's rule, and clean twins it must pass.
    statement of _start_run's body, placed before the statement holding the call, and the value's only binding
    there (its name is no parameter of _start_run and is not declared global or nonlocal in it).
 3. Nothing stores candidate_bindings: no attribute store, no module- or class-level name of that name (a field
-   left None or only declared included), no global declaration; and the string "candidate_bindings" appears only
+   left None or only declared, and an except or match capture, included), no global declaration; and the string "candidate_bindings" appears only
    as a .get/getattr/hasattr read or as a dict key fact 2 checks, so setattr, setdefault, setitem, subscript
    stores and dict(zip(...)) are all seen.
 4. Only configs/architecture/bin/first_app_p3_native.py names the P3 composition types and composers (as a name,
@@ -23,16 +23,22 @@ exactly once under that fact's rule, and clean twins it must pass.
    _candidate_bindings is one undecorated plain module-level def with no parameters and no yield or await, every
    return in it gives None or vars(S).get("candidate_bindings"), where S is _state() or a name the reader binds
    exactly once, by S = _state(), and declares neither global nor nonlocal; _state is one undecorated plain
-   module-level def there; vars is not rebound there, and no scanned code imports builtins or names __builtins__.
+   module-level def there; vars is not rebound there and routes.py has no star import. No scanned code imports
+   builtins, holds the string "builtins" or names __builtins__, and only routes.py and temper_ai/server.py name the
+   state holder _app_state or its setter init_app_state (as a name, an attribute, an import or a string).
    With fact 3 holding, that read gives None.
 7. Nothing shadows or replaces the state reader: the name _candidate_bindings appears only in routes.py, as that
    def and as the function of calls with no arguments. No parameter, attribute, keyword, import, def, class,
-   capture, global or nonlocal declaration or string of that name appears anywhere scanned.
+   capture (a mapping pattern's **rest included), global or nonlocal declaration or string of that name appears
+   anywhere scanned.
 
-Not seen: names built at run time (setattr(obj, name, ...), import_module strings), values loaded from data at run
-time, string annotations, an attribute named _state set on the routes module from elsewhere (_state is a common
-attribute name, so it is not banned), and positional passes to a parameter of another name
-(is_designated(workflow, bindings) only reads; submit_candidate takes bindings keyword-only).
+Not seen: names built at run time (setattr(obj, name, ...), import_module(name) with a computed name), values loaded
+from data at run time, code run from strings (exec, eval, compile), string annotations, an attribute named _state set
+on the routes module from elsewhere (_state is a common attribute name, so it is not banned), and positional passes
+to a parameter of another name (is_designated(workflow, bindings) only reads; submit_candidate takes bindings
+keyword-only). The reader trusts _state() to return the real AppState with a plain attribute dict: a state object
+that fakes its attribute dict (a __dict__ property, or a mapping with its own get), handed to init_app_state by
+server.py, is not seen.
 """
 
 from __future__ import annotations
@@ -77,6 +83,10 @@ _STATE_GETTER = "_state"
 _NAME_LOOKUP_CALLS = {"getattr", "hasattr"}
 _BUILTINS_MODULE = "builtins"
 _BUILTINS_NAME = "__builtins__"
+# The server-state holder and its setter: only routes.py, which defines them, and server.py, which installs the state
+# at start, may name them (fact 6).
+_STATE_HOLDER_NAMES = frozenset({"_app_state", "init_app_state"})
+_STATE_HOLDER_FILES = frozenset({_STATE_READER_FILE, "temper_ai/server.py"})
 
 _DEFAULT_RULE = "candidate_bindings must be keyword-only and default to None"
 _PASS_THROUGH_RULE = "is not its own untouched parameter"
@@ -120,12 +130,15 @@ def _all_parameters(node) -> list[ast.arg]:
 
 def _name_bindings(scope, name):
     """Every node inside scope (a function or a module) that binds name: a store or delete (any assignment, loop,
-    with, comprehension), an except or match capture, an import alias, or a definition. A parameter is not one."""
+    with, comprehension), an except or match capture (a mapping pattern's **rest included), an import alias, or a
+    definition. A parameter is not one."""
     found = []
     for node in ast.walk(scope):
         if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
             found.append(node)
         elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and node.name == name:
+            found.append(node)
+        elif isinstance(node, ast.MatchMapping) and node.rest == name:
             found.append(node)
         elif isinstance(node, ast.alias) and (node.asname or node.name.split(".")[0]) == name:
             found.append(node)
@@ -235,6 +248,11 @@ def _state_reader_violations(name: str, tree: ast.Module) -> list[str]:
         )
     if _name_bindings(tree, "vars"):
         found.append(f"{name}: {_READER_RULE}: vars is rebound")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
+            found.append(
+                f"{name}:{node.lineno}: {_READER_RULE}: a star import can rebind vars, {_STATE_GETTER} or {_STATE_READER}"
+            )
     return found
 
 
@@ -319,6 +337,10 @@ class _CandidateBindingFacts(ast.NodeVisitor):
     def _swaps_builtins(self, node, how: str) -> None:
         self._report(node, f"{_READER_RULE}: {how} can swap the vars the state reader calls")
 
+    def _names_state_holder(self, node, name: str, how: str) -> None:
+        if name in _STATE_HOLDER_NAMES and self.name not in _STATE_HOLDER_FILES:
+            self._report(node, f"{_READER_RULE}: {how} outside routes.py and server.py can swap the state it reads")
+
     def _reference(self, node, name: str) -> None:
         if name in _PROTECTED_NAMES and self.name != _REFERENCE_ALLOWED_FILE:
             self._report(node, f"{name} {_REFERENCE_RULE}")
@@ -385,21 +407,27 @@ class _CandidateBindingFacts(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _capture(self, node) -> None:
-        if node.name == _STATE_READER and self.name != _STATE_READER_FILE:
+        captured = node.rest if isinstance(node, ast.MatchMapping) else node.name
+        if captured == _STATE_READER and self.name != _STATE_READER_FILE:
             self._names_reader(node, f"a capture named {_STATE_READER}")
+        elif captured == _BINDINGS and self.scopes[-1] != "function":
+            self._report(node, f"a module- or class-level candidate_bindings capture {_STORE_RULE}")
         self.generic_visit(node)
 
     visit_ExceptHandler = _capture
     visit_MatchAs = _capture
     visit_MatchStar = _capture
+    visit_MatchMapping = _capture
 
     def visit_Constant(self, node: ast.Constant) -> None:
         if _is_literal(node, _BINDINGS) and id(node) not in self._allowed_literals:
             self._report(node, f"'candidate_bindings' outside a .get/getattr/hasattr read or a checked dict key {_STORE_RULE}")
         elif _is_literal(node, _STATE_READER):
             self._names_reader(node, f"the string '{_STATE_READER}'")
-        elif _is_literal(node, _BUILTINS_NAME):
-            self._swaps_builtins(node, f"the string '{_BUILTINS_NAME}'")
+        elif _is_literal(node, _BUILTINS_NAME) or _is_literal(node, _BUILTINS_MODULE):
+            self._swaps_builtins(node, f"the string '{node.value}'")
+        elif isinstance(node.value, str):
+            self._names_state_holder(node, node.value, f"the string '{node.value}'")
 
     def visit_Name(self, node: ast.Name) -> None:
         self._reference(node, node.id)
@@ -407,6 +435,7 @@ class _CandidateBindingFacts(ast.NodeVisitor):
             self._names_reader(node, f"a {type(node.ctx).__name__.lower()} of {_STATE_READER}")
         elif node.id == _BUILTINS_NAME:
             self._swaps_builtins(node, _BUILTINS_NAME)
+        self._names_state_holder(node, node.id, f"the name {node.id}")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -415,6 +444,7 @@ class _CandidateBindingFacts(ast.NodeVisitor):
             self._names_reader(node, f"the attribute {ast.unparse(node)}")
         elif node.attr == _BUILTINS_NAME:
             self._swaps_builtins(node, f"the attribute {ast.unparse(node)}")
+        self._names_state_holder(node, node.attr, f"the attribute {ast.unparse(node)}")
         self.generic_visit(node)
 
     def visit_alias(self, node: ast.alias) -> None:
@@ -425,6 +455,9 @@ class _CandidateBindingFacts(ast.NodeVisitor):
             self.name == _STATE_READER_FILE and bound == _STATE_READER
         ):
             self._names_reader(node, f"an import of {node.name}")
+        holder = next((part for part in (bound, node.name.split(".")[-1]) if part in _STATE_HOLDER_NAMES), None)
+        if holder is not None:
+            self._names_state_holder(node, holder, f"an import of {node.name}")
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -643,6 +676,26 @@ _PLANTED_TWINS = {
         "    return _start_run\n",
         _PASS_THROUGH_RULE,
     ),
+    "parameter rebound by a match rest": (
+        _PLANTED,
+        "def run(*, candidate_bindings=None):\n"
+        "    match make():\n"
+        "        case {**candidate_bindings}:\n"
+        "            pass\n"
+        "    go(candidate_bindings=candidate_bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
+    "reader's value rebound by a match rest": (
+        _ROUTES,
+        _READER_DEF
+        + "def _start_run():\n"
+        "    bindings = _candidate_bindings()\n"
+        "    match make():\n"
+        "        case {**bindings}:\n"
+        "            pass\n"
+        "    submit_candidate(bindings=bindings)\n",
+        _PASS_THROUGH_RULE,
+    ),
     # Fact 3
     "attribute store": (_PLANTED, "def boot(state):\n    state.candidate_bindings = make()\n", _STORE_RULE),
     "setattr store": (_PLANTED, "def boot(state):\n    setattr(state, 'candidate_bindings', make())\n", _STORE_RULE),
@@ -681,6 +734,31 @@ _PLANTED_TWINS = {
         _STORE_RULE,
     ),
     "module-level value": (_PLANTED, "candidate_bindings = make()\n", _STORE_RULE),
+    "module-level match capture": (
+        _PLANTED,
+        "match make():\n    case candidate_bindings:\n        pass\n",
+        _STORE_RULE,
+    ),
+    "module-level match rest": (
+        _PLANTED,
+        "match make():\n    case {**candidate_bindings}:\n        pass\n",
+        _STORE_RULE,
+    ),
+    "module-level match star": (
+        _PLANTED,
+        "match make():\n    case [*candidate_bindings]:\n        pass\n",
+        _STORE_RULE,
+    ),
+    "module-level except capture": (
+        _PLANTED,
+        "try:\n    pass\nexcept Exception as candidate_bindings:\n    pass\n",
+        _STORE_RULE,
+    ),
+    "class-level match capture": (
+        _PLANTED,
+        "class State:\n    match make():\n        case candidate_bindings:\n            pass\n",
+        _STORE_RULE,
+    ),
     "global store": (
         _PLANTED,
         "def boot():\n    global candidate_bindings\n    candidate_bindings = make()\n",
@@ -787,6 +865,65 @@ _PLANTED_TWINS = {
     "builtins imported": (_PLANTED, "import builtins\n", _READER_RULE),
     "from builtins import": (_PLANTED, "from builtins import vars\n", _READER_RULE),
     "__builtins__ named": (_PLANTED, "def boot():\n    __builtins__['vars'] = make\n", _READER_RULE),
+    "builtins reached through __import__": (
+        _PLANTED,
+        "def boot():\n    __import__('builtins').vars = make\n",
+        _READER_RULE,
+    ),
+    "builtins reached through import_module": (
+        _PLANTED,
+        "import importlib\nimportlib.import_module('builtins').vars = make\n",
+        _READER_RULE,
+    ),
+    "builtins reached through sys.modules": (_PLANTED, "import sys\nsys.modules['builtins'].vars = make\n", _READER_RULE),
+    "star import in routes": (_ROUTES, _READER_DEF + "from temper_ai.api.state import *\n", _READER_RULE),
+    "vars reads a name rebound by a match rest": (
+        _ROUTES,
+        _STATE_DEF
+        + "def _candidate_bindings():\n"
+        "    state = _state()\n"
+        "    match make():\n"
+        "        case {**state}:\n"
+        "            pass\n"
+        "    return vars(state).get('candidate_bindings')\n",
+        _READER_RULE,
+    ),
+    "vars rebound by a match rest": (
+        _ROUTES,
+        _READER_DEF + "match make():\n    case {**vars}:\n        pass\n",
+        _READER_RULE,
+    ),
+    "reader rebound by a match rest": (
+        _ROUTES,
+        _READER_DEF + "match make():\n    case {**_candidate_bindings}:\n        pass\n",
+        _READER_RULE,
+    ),
+    "state getter rebound by a match rest": (
+        _ROUTES,
+        _READER_DEF + "match make():\n    case {**_state}:\n        pass\n",
+        _READER_RULE,
+    ),
+    "state holder set through the module": (
+        _PLANTED,
+        "from temper_ai.api import routes\nroutes._app_state = make()\n",
+        _READER_RULE,
+    ),
+    "state holder set through setattr": (
+        _PLANTED,
+        "from temper_ai.api import routes\nsetattr(routes, '_app_state', make())\n",
+        _READER_RULE,
+    ),
+    "state installed elsewhere": (
+        _PLANTED,
+        "from temper_ai.api import routes\nroutes.init_app_state(make())\n",
+        _READER_RULE,
+    ),
+    "state setter imported elsewhere": (
+        _PLANTED,
+        "from temper_ai.api.routes import init_app_state\n",
+        _READER_RULE,
+    ),
+    "state holder named elsewhere": (_PLANTED, "def peek():\n    return _app_state\n", _READER_RULE),
     # Fact 7
     "reader shadowed by a parameter": (
         _ROUTES,
@@ -905,6 +1042,30 @@ _CLEAN_TWINS = {
         "        return None\n"
         "    return vars(state).get('candidate_bindings')\n",
     ),
+    "match rest of another name": (
+        _PLANTED,
+        "def pick(*, candidate_bindings=None):\n"
+        "    match make():\n"
+        "        case {**rest}:\n"
+        "            return rest\n"
+        "    return go(candidate_bindings=candidate_bindings)\n",
+    ),
+    "state holder shaped like the live one": (
+        _ROUTES,
+        "_app_state = None\n"
+        "def init_app_state(state):\n"
+        "    global _app_state\n"
+        "    _app_state = state\n"
+        "def _state():\n"
+        "    if _app_state is None:\n"
+        "        raise RuntimeError('no state')\n"
+        "    return _app_state\n" + _READER_ONLY,
+    ),
+    "state installed by the server": (
+        "temper_ai/server.py",
+        "from temper_ai.api.routes import init_app_state\ndef start(state):\n    init_app_state(state)\n",
+    ),
+    "the word builtins inside prose": (_PLANTED, "NOTE = 'see the builtins module'\n"),
     "composer named in its own module": (
         _REFERENCE_ALLOWED_FILE,
         "from temper_ai.p3_authority.service import P3AuthorityService, compose_p3_authority\n"
@@ -945,7 +1106,7 @@ def test_production_tree_breaks_no_candidate_binding_fact():
         module = name.removesuffix(".py").replace("/", ".")
         takes_bindings |= {(module, function) for function in facts.takes_bindings}
     assert len(scanned) > 100
-    assert {_STATE_READER_FILE, _REFERENCE_ALLOWED_FILE} <= scanned
+    assert {_STATE_READER_FILE, _REFERENCE_ALLOWED_FILE} | _STATE_HOLDER_FILES <= scanned
     for package in ("p3_host_contracts", "p3_source_closure"):
         assert any(name.startswith(f"{package}/") for name in scanned), package
     assert violations == []

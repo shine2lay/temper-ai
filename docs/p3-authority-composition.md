@@ -176,10 +176,31 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
     `before_count` (Phase C, `C_BEFORE_COUNT`) refuse with `PRIOR_MISSING` if
     D-1 was not recorded first, `PRIOR_FOREIGN` on foreign selection/key, and
     `PRIOR_UNVERIFIED` on digest or witness mismatch.
-  - `lookup_occurrence`, `verify_publication`, and `receive` link D-1 occurrence
-    witnesses to D-5 publication provenance and `VerifiedReceiptBinding` without
-    granting count permission (`receive` returns `VerifiedReceiptBinding` with
-    `evidence.receiving == ()`).
+  - `verify_publication` links a published receipt into its window's chain
+    through `HostProvenance.bind_publication` and checks the returned record is
+    exactly that key's `ReceiptProvenance` for that publication.
+    `lookup_occurrence` and `witness_event` are observation only.
+  - `receive` (only at `C_PRE_EXECUTION` / `C_BEFORE_COUNT`, else
+    `SCOPE_MISMATCH`) and `before_count` get their `VerifiedReceiptBinding` only
+    from `HostProvenance.verify_linked_receipt`, which the adapter answers from
+    its own linked chain (exact `ReceiptProvenance`, predecessor equal to the
+    linked one, anchored and untainted window, held bytes). The service never
+    builds a "verified" binding from caller fields; it checks the port's binding
+    against the counted key, provenance, publication and occurrence (else
+    `RESULT_UNVERIFIED`) and the caller's named predecessor (`PRIOR_FOREIGN` /
+    `PRIOR_UNVERIFIED`). `receive` grants no count permission.
+  - Continuation rows (`REQUIRED_PREDECESSOR_ROW`: `D-5` needs `D-1`, `API-D-5`
+    needs `API-D-1`) refuse `PRIOR_MISSING` without a predecessor and
+    `PRIOR_UNVERIFIED` unless it is a successful receipt of the required row in
+    the same selection revision and window. A link that lands between the two
+    rows in one window makes the continuation fail closed.
+  - Ports, not classes: the service calls only `HostObserver` /
+    `HostProvenance` members and never checks a provider's class.
+    `P3AuthorityService` refuses at construction (`TypeError` naming the
+    missing members, `host_ports.require_port_members`) a provider that lacks
+    one. `temper_ai.p3_authority.host_provenance_conformance.run_conformance`
+    is the kit a `HostProvenance` adapter must pass; `InMemoryHostProvenance`
+    is a test double that passes it, never a base for a live adapter.
   - `before_count` requires `P5Assessment.trust == "UNTRUSTED"` and
     `verdict in ("PASS", "FAIL")` (`BLOCKED` refuses `RESULT_UNVERIFIED`),
     complete receipt provenance (`state == "complete"`), terminal publication
@@ -187,8 +208,8 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
     state (`"not-required"`, `"complete"`), terminal occurrence state
     (`"completed"`, `"failed"`), consistency between native failure outcome and
     P5 verdict (native failure paired with `verdict == "PASS"` refuses
-    `RESULT_UNVERIFIED`), verified D-1 -> D-5 predecessor provenance when
-    `provenance.predecessor` is present, complete receipt provenance before
+    `RESULT_UNVERIFIED`), a port-verified binding for the counted row and its
+    predecessor (above), complete receipt provenance before
     disarm (`during`/`after`/`unknown` disarm relations refuse
     `WINDOW_INELIGIBLE`), committed effect state (`EffectState.UNCERTAIN` from
     lost ack refuses `RESULT_UNVERIFIED`), and exact QA receiving verification.

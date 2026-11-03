@@ -81,12 +81,13 @@ from tests.test_architecture.ops_host_n3_cases import (  # noqa: E402
     bad_twin,
     clean_world,
 )
-from tests.test_p3_authority._composition_fixtures import (  # noqa: E402
+from tests.test_p3_authority._composition_fixtures import (  # noqa: E402  # noqa: E402
     WITNESS_1,
     FakeNativeRootObject,
     FakeSession,
     make_populated_test_rig,
     populate_boundary_happy_path_observations,
+    publish_and_link_counted_receipt,
 )
 from tests.test_p3_authority.test_child_registration import (  # noqa: E402
     SyntheticWorkerProviderDouble,
@@ -117,19 +118,7 @@ def unexpected_effect(*args: object, **kwargs: object):
 def _setup_offline_supplier_world():
     rig = make_populated_test_rig(writes_enabled=False)
     obs = populate_boundary_happy_path_observations(rig)
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
 
     worker_job = make_selected_job()
     worker_grant = make_grant(worker_job, boundary="B_PRE_REQUEST")

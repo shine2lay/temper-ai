@@ -5,8 +5,9 @@ closed schemas, applicability and current authority before returning this data.
 Abstract observation/receiving origins remain deliberately unimplemented.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 from p3_source_closure import LoadedClosureEnvelope, N3ObservationEpoch
 
@@ -197,9 +198,14 @@ class P5Assessment(Protocol):
 class VerifiedReceiptBinding:
     """Accepted DATA only; exact predecessor remains an actual occurrence.
 
-    D-5's service check requires the actual authorized D-1 predecessor, earlier
-    distinct sequence/request, original bytes and receiving; constructors do not
-    enforce order or authorize continuation after drift/disarm.
+    Only a ``HostProvenance.verify_linked_receipt`` answer is one: the adapter
+    builds it from its own linked chain; the service never constructs one.
+    A continuation row (each key of ``REQUIRED_PREDECESSOR_ROW``, e.g. D-5)
+    requires the actual linked predecessor of the required row (D-1), earlier
+    distinct sequence/request, original bytes and receiving; no predecessor
+    refuses ``PRIOR_MISSING``, any other predecessor ``PRIOR_UNVERIFIED``.
+    Constructors do not enforce order or authorize continuation after
+    drift/disarm.
     """
 
     selection: NativeSelection
@@ -213,6 +219,13 @@ class VerifiedReceiptBinding:
 
 
 NativeReceive = VerifiedReceiptBinding
+
+# Continuation row -> the row its linked predecessor must be (one table, reused
+# by the service's count/receive rule and QA's receiving verifier).
+REQUIRED_PREDECESSOR_ROW: Final[Mapping[str, str]] = {
+    "D-5": "D-1",
+    "API-D-5": "API-D-1",
+}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

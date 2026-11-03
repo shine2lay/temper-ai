@@ -7,10 +7,14 @@ explicit in-memory doubles for synthetic testing. No provider is active by defau
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
+from p3_host_contracts import LifecycleKey as _LIFECYCLE_KEY_RECORD
+from p3_host_contracts import ReceiptProvenance as _RECEIPT_PROVENANCE_RECORD
+from p3_host_contracts import RowKey as _ROW_KEY_RECORD
 from temper_ai.p3_authority.contract import (
     AcceptedData,
     AdmissionState,
@@ -64,6 +68,12 @@ from temper_ai.p3_authority.contract import (
     WorkerObservation,
     WorkerObserver,
     compare_loaded_source,
+)
+from temper_ai.p3_authority.host_ports import LINKED_RECEIPT_BOUNDARIES
+from temper_ai.p3_authority.linked_receipt_rules import (
+    continuation_predecessor_refusal,
+    exact_receipt_equal,
+    linked_predecessor_mismatch,
 )
 from temper_ai.p3_authority.registry import (
     DecisionEvidenceRecord,
@@ -862,18 +872,95 @@ class InMemoryHostObserver(HostObserver):
         return AcceptedData(data=witness, evidence=ev)
 
 
+@dataclass(frozen=True, slots=True)
+class _PublishedReceipt:
+    """A receipt the host published, with the original bytes it holds (or none)."""
+
+    provenance: ReceiptProvenance
+    request_raw: bytes | None
+    receipt_raw: bytes | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ReceiptLink:
+    """One link of a window's receipt chain: the receipt, its receiving, its bytes
+    and the decision evidence it was linked under."""
+
+    provenance: ReceiptProvenance
+    receiving: NativeWitness
+    request_raw: bytes | None
+    receipt_raw: bytes | None
+    evidence: DecisionEvidenceRecord
+
+
+_WindowKey = tuple[str, str]
+
+
+def _window_of(key: OperationKey) -> _WindowKey | None:
+    """A row key's chain unit (selection_revision, window_id); lifecycle keys have none."""
+    if type(key) is not _ROW_KEY_RECORD:
+        return None
+    row_key = cast(RowKey, key)
+    return (row_key.selection.selection_revision, row_key.window_id)
+
+
+def _phase_for_key(key: OperationKey) -> Phase:
+    return Phase.C if type(key) is _ROW_KEY_RECORD else Phase.A
+
+
+def _held_bytes_match(link: _ReceiptLink) -> bool:
+    """Obligation h: the held original bytes hash to the linked publication's refs."""
+    publication = link.provenance.raw_publication
+    request_ref = publication.request_raw_ref
+    receipt_ref = publication.receipt_raw_ref
+    if not link.request_raw or not link.receipt_raw:
+        return False
+    return (
+        request_ref is not None
+        and receipt_ref is not None
+        and request_ref.sha256 == hashlib.sha256(link.request_raw).hexdigest()
+        and receipt_ref.sha256 == hashlib.sha256(link.receipt_raw).hexdigest()
+    )
+
+
+def _witness_ref(witness: object) -> object:
+    return getattr(
+        witness, "witness_registration", getattr(witness, "witness_reference", None)
+    )
+
+
+def _refuse(code: RefusalCode, phase: Phase) -> Refusal:
+    retry_kind = (
+        RetryKind.SAME_BOUNDARY_AFTER_REPAIR
+        if code is RefusalCode.PRIOR_MISSING
+        else RetryKind.NOT_APPLICABLE
+    )
+    return make_refusal(code, phase=phase, retry_kind=retry_kind)
+
+
 class InMemoryHostProvenance(HostProvenance):
-    """Explicit test-only ``HostProvenance`` double."""
+    """Explicit test-only ``HostProvenance`` double; the port's reference implementation.
+
+    Host facts arrive through helpers standing in for the host feed:
+    ``register_evidence``, ``register_occurrence`` (an observed occurrence),
+    ``anchor_window``, ``publish_receipt`` / ``register_publication_provenance``
+    (a published receipt and the original bytes held for it) and
+    ``taint_window``. ``bind_publication`` links a published receipt after its
+    window's head; ``verify_linked_receipt`` answers only from those links.
+    Observed occurrences and witnesses are never authentication.
+    """
 
     def __init__(self) -> None:
         self._occurrences: dict[OperationKey, OccurrenceHandle] = {}
         self._witnesses: dict[OperationKey, NativeWitness] = {}
-        self._provenances: dict[tuple[OperationKey, str], ReceiptProvenance] = {}
-        self._verified_receives: dict[
-            tuple[OperationKey, str], VerifiedReceiptBinding
-        ] = {}
-        self._raw_payloads: dict[tuple[OperationKey, str], tuple[bytes, bytes]] = {}
+        self._published: dict[tuple[OperationKey, str], _PublishedReceipt] = {}
+        self._anchored_windows: set[_WindowKey] = set()
+        self._tainted_windows: set[_WindowKey] = set()
+        self._window_heads: dict[_WindowKey, ReceiptProvenance] = {}
+        self._links: dict[OperationKey, _ReceiptLink] = {}
         self._evidence_by_rev: dict[str, DecisionEvidenceRecord] = {}
+
+    # -- host feed (test helpers) ------------------------------------------
 
     def register_evidence(
         self,
@@ -894,12 +981,33 @@ class InMemoryHostProvenance(HostProvenance):
         else:
             self._witnesses[key] = occurrence.witness
 
-    def record_witness(
+    def anchor_window(self, selection_revision: str, window_id: str) -> None:
+        """The host anchored this window's genesis; its chain may start."""
+        self._anchored_windows.add((selection_revision, window_id))
+
+    def taint_window(self, selection_revision: str, window_id: str) -> None:
+        """The host saw this window go wrong; nothing in it verifies again."""
+        self._tainted_windows.add((selection_revision, window_id))
+
+    def publish_receipt(
         self,
-        key: OperationKey,
-        witness: NativeWitness,
+        provenance: ReceiptProvenance,
+        *,
+        request_raw: bytes | None,
+        receipt_raw: bytes | None,
     ) -> None:
-        self._witnesses[key] = witness
+        """The host published this receipt for its occurrence (not linked yet)."""
+        publication = provenance.raw_publication
+        receipt_ref = publication.receipt_raw_ref or publication.request_raw_ref
+        if receipt_ref is None:
+            raise ValueError("a published receipt needs a receipt or request reference")
+        self.register_publication_provenance(
+            key=publication.occurrence.key,
+            publication_sha256=receipt_ref.sha256,
+            provenance=provenance,
+            request_raw=request_raw,
+            receipt_raw=receipt_raw,
+        )
 
     def register_publication_provenance(
         self,
@@ -907,28 +1015,25 @@ class InMemoryHostProvenance(HostProvenance):
         key: OperationKey,
         publication_sha256: str,
         provenance: ReceiptProvenance,
-        verified_receive: VerifiedReceiptBinding | None = None,
         request_raw: bytes | None = None,
         receipt_raw: bytes | None = None,
     ) -> None:
-        self._provenances[(key, publication_sha256)] = provenance
-        if verified_receive is not None:
-            self._verified_receives[(key, publication_sha256)] = verified_receive
-        if request_raw is not None and receipt_raw is not None:
-            self._raw_payloads[(key, publication_sha256)] = (request_raw, receipt_raw)
+        """``publish_receipt`` under an explicit occurrence key and receipt digest."""
+        self._published[(key, publication_sha256)] = _PublishedReceipt(
+            provenance=provenance,
+            request_raw=request_raw,
+            receipt_raw=receipt_raw,
+        )
 
-    def lookup_raw_payloads(
-        self,
-        key: OperationKey,
-        publication_sha256: str,
-    ) -> tuple[bytes, bytes] | None:
-        return self._raw_payloads.get((key, publication_sha256))
+    # -- observation (never authentication) ---------------------------------
 
     def lookup_witness(self, key: OperationKey) -> NativeWitness | None:
         return self._witnesses.get(key)
 
     def lookup_occurrence_handle(self, key: OperationKey) -> OccurrenceHandle | None:
         return self._occurrences.get(key)
+
+    # -- HostProvenance -----------------------------------------------------
 
     def note_admission(
         self,
@@ -937,8 +1042,7 @@ class InMemoryHostProvenance(HostProvenance):
         lease: EffectLease,
         admission_witness: NativeWitness,
     ) -> Result[OccurrenceHandle]:
-        row_key_origin = getattr(RowKey, "__origin__", RowKey)
-        phase = Phase.C if type(key) is row_key_origin else Phase.A
+        phase = _phase_for_key(key)
         occ = self._occurrences.get(key)
         rev = key.selection.selection_revision
         ev = self._evidence_by_rev.get(rev)
@@ -971,9 +1075,8 @@ class InMemoryHostProvenance(HostProvenance):
         effect: HostEffect,
         witness: NativeWitness,
     ) -> Result[OccurrenceHandle]:
-        row_key_origin = getattr(RowKey, "__origin__", RowKey)
         key = occurrence.key
-        phase = Phase.C if type(key) is row_key_origin else Phase.A
+        phase = _phase_for_key(key)
         rev = key.selection.selection_revision
         ev = self._evidence_by_rev.get(rev)
         if ev is None:
@@ -992,134 +1095,29 @@ class InMemoryHostProvenance(HostProvenance):
         publication: RawPublication,
         witness: NativeWitness,
     ) -> Result[ReceiptProvenance]:
-        row_key_origin = getattr(RowKey, "__origin__", RowKey)
         key = occurrence.key
-        phase = Phase.C if type(key) is row_key_origin else Phase.A
+        phase = _phase_for_key(key)
         pub_ref = (
             publication.receipt_raw_ref
             if publication.receipt_raw_ref is not None
             else publication.request_raw_ref
         )
-        if pub_ref is None:
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        pub_sha = pub_ref.sha256
-        prov = self._provenances.get((key, pub_sha))
-        rev = key.selection.selection_revision
-        ev = self._evidence_by_rev.get(rev)
-        if prov is None or ev is None:
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        return AcceptedData(data=prov, evidence=ev)
-
-    def lookup_occurrence(
-        self,
-        grant: ObservationGrant,
-        selected_job: SelectedJob,
-        key: OperationKey,
-        lease: EffectLease,
-        admission_witness: NativeWitness,
-    ) -> Result[OccurrenceHandle]:
-        row_key_origin = getattr(RowKey, "__origin__", RowKey)
-        phase = Phase.C if type(key) is row_key_origin else Phase.A
-        occ = self._occurrences.get(key)
-        ev = self._evidence_by_rev.get(selected_job.selection_revision)
-        if occ is None or ev is None:
-            return make_refusal(
-                RefusalCode.PRIOR_MISSING,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
-        if occ.key.selection.selection_revision != selected_job.selection_revision:
-            return make_refusal(
-                RefusalCode.SELECTION_FOREIGN,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        occ_wit = getattr(
-            occ.witness, "witness_registration", occ.witness.witness_reference
+        published = (
+            self._published.get((key, pub_ref.sha256)) if pub_ref is not None else None
         )
-        adm_wit = getattr(
-            admission_witness,
-            "witness_registration",
-            admission_witness.witness_reference,
-        )
-        if occ_wit != adm_wit:
-            return make_refusal(
-                RefusalCode.PRIOR_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        return AcceptedData(data=occ, evidence=ev)
-
-    def verify_publication(
-        self,
-        grant: ObservationGrant,
-        selected_job: SelectedJob,
-        occurrence: OccurrenceHandle,
-        publication: RawPublication,
-        witness: NativeWitness,
-    ) -> Result[ReceiptProvenance]:
-        row_key_origin = getattr(RowKey, "__origin__", RowKey)
-        key = occurrence.key
-        phase = Phase.C if type(key) is row_key_origin else Phase.A
-        pub_ref = (
-            publication.receipt_raw_ref
-            if publication.receipt_raw_ref is not None
-            else publication.request_raw_ref
-        )
-        if pub_ref is None:
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        pub_sha = pub_ref.sha256
-        prov = self._provenances.get((key, pub_sha))
-        ev = self._evidence_by_rev.get(selected_job.selection_revision)
-        if prov is None or ev is None:
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
+        ev = self._evidence_by_rev.get(key.selection.selection_revision)
+        if published is None or ev is None:
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        prov = published.provenance
         if (
             prov.operation_key.selection.selection_revision
-            != selected_job.selection_revision
+            != key.selection.selection_revision
         ):
-            return make_refusal(
-                RefusalCode.SELECTION_FOREIGN,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        prov_occ_wit = getattr(
-            prov.occurrence_witness,
-            "witness_registration",
-            prov.occurrence_witness.witness_reference,
-        )
-        occ_wit = getattr(
-            occurrence.witness,
-            "witness_registration",
-            occurrence.witness.witness_reference,
-        )
-        prov_pub_wit = getattr(
-            prov.publication_witness,
-            "witness_registration",
-            prov.publication_witness.witness_reference,
-        )
-        pub_wit = getattr(witness, "witness_registration", witness.witness_reference)
-        if prov_occ_wit != occ_wit or prov_pub_wit != pub_wit:
-            return make_refusal(
-                RefusalCode.PRIOR_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
+            return _refuse(RefusalCode.SELECTION_FOREIGN, phase)
+        if _witness_ref(prov.occurrence_witness) != _witness_ref(
+            occurrence.witness
+        ) or _witness_ref(prov.publication_witness) != _witness_ref(witness):
+            return _refuse(RefusalCode.PRIOR_UNVERIFIED, phase)
         if (
             prov.state != "complete"
             or publication.cleanup_state not in ("not-required", "complete")
@@ -1127,137 +1125,92 @@ class InMemoryHostProvenance(HostProvenance):
             or occurrence.state not in ("completed", "failed")
             or prov.raw_publication != publication
         ):
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+
+        window = _window_of(key)
+        if window is None:
+            # Lifecycle keys have no window chain: answered unlinked, so
+            # verify_linked_receipt never verifies them.
+            return AcceptedData(data=prov, evidence=ev)
+        if window not in self._anchored_windows:
+            return _refuse(RefusalCode.PRIOR_MISSING, phase)
+        if window in self._tainted_windows:
+            return _refuse(RefusalCode.WINDOW_INELIGIBLE, phase)
+        existing = self._links.get(key)
+        if existing is not None:
+            if exact_receipt_equal(existing.provenance, prov):
+                return AcceptedData(data=prov, evidence=ev)
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        # The predecessor must be exactly the window's head, which is always a
+        # linked receipt, so a link's predecessor is itself linked.
+        head_code = linked_predecessor_mismatch(
+            prov.predecessor, self._window_heads.get(window)
+        )
+        if head_code is not None:
+            return _refuse(head_code, phase)
+        continuation_code = continuation_predecessor_refusal(key, prov.predecessor)
+        if continuation_code is not None:
+            return _refuse(continuation_code, phase)
+        self._links[key] = _ReceiptLink(
+            provenance=prov,
+            receiving=witness,
+            request_raw=published.request_raw,
+            receipt_raw=published.receipt_raw,
+            evidence=ev,
+        )
+        self._window_heads[window] = prov
         return AcceptedData(data=prov, evidence=ev)
 
-    def verify_received(
+    def verify_linked_receipt(
         self,
-        session: NativeSession,
         key: OperationKey,
-        request_raw: bytes,
-        receipt_raw: bytes,
         provenance: ReceiptProvenance,
-        boundary: HostEffect,
+        boundary: Boundary,
     ) -> Result[NativeReceive]:
-        import hashlib
-
-        phase = boundary_to_phase(boundary.boundary)
-        pub_req_ref = provenance.raw_publication.request_raw_ref
-        pub_rec_ref = (
-            provenance.raw_publication.receipt_raw_ref
-            or provenance.raw_publication.request_raw_ref
+        if boundary not in LINKED_RECEIPT_BOUNDARIES:
+            return _refuse(RefusalCode.SCOPE_MISMATCH, Phase.C)
+        phase = boundary_to_phase(boundary)
+        if (
+            type(key) not in (_ROW_KEY_RECORD, _LIFECYCLE_KEY_RECORD)
+            or type(provenance) is not _RECEIPT_PROVENANCE_RECORD
+            or provenance.operation_key != key
+        ):
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        window = _window_of(key)
+        if window is None:
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        if window not in self._anchored_windows:
+            return _refuse(RefusalCode.PRIOR_MISSING, phase)
+        if window in self._tainted_windows:
+            return _refuse(RefusalCode.WINDOW_INELIGIBLE, phase)
+        link = self._links.get(key)
+        if link is None:
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        linked = link.provenance
+        predecessor_code = linked_predecessor_mismatch(
+            provenance.predecessor, linked.predecessor
         )
-        if (
-            not request_raw
-            or not receipt_raw
-            or pub_req_ref is None
-            or pub_rec_ref is None
-            or pub_req_ref.sha256 != hashlib.sha256(request_raw).hexdigest()
-            or pub_rec_ref.sha256 != hashlib.sha256(receipt_raw).hexdigest()
-            or provenance.state != "complete"
-            or provenance.raw_publication.cleanup_state
-            not in ("not-required", "complete")
-            or provenance.raw_publication.outcome
-            not in ("success", "app-failure", "host-failure")
-            or provenance.raw_publication.occurrence.state
-            not in ("completed", "failed")
-        ):
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        pub_sha = pub_rec_ref.sha256
-        rec = self._verified_receives.get((key, pub_sha))
-        rev = provenance.operation_key.selection.selection_revision
-        ev = self._evidence_by_rev.get(rev)
-        if rec is None or ev is None or rec.disposition != "verified":
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        if rec.provenance != provenance or rec.operation_key != key:
-            return make_refusal(
-                RefusalCode.PRIOR_FOREIGN,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        if (
-            provenance.predecessor is not None
-            and rec.predecessor != provenance.predecessor
-        ):
-            return make_refusal(
-                RefusalCode.PRIOR_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        return AcceptedData(data=rec, evidence=ev)
-
-    def receive_verified(
-        self,
-        *,
-        key: OperationKey,
-        provenance: ReceiptProvenance,
-        boundary: HostEffect,
-        phase: Phase,
-    ) -> Result[VerifiedReceiptBinding]:
-        pub_ref = (
-            provenance.raw_publication.receipt_raw_ref
-            if provenance.raw_publication.receipt_raw_ref is not None
-            else provenance.raw_publication.request_raw_ref
+        if predecessor_code is not None:
+            return _refuse(predecessor_code, phase)
+        if not exact_receipt_equal(provenance, linked):
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        # The continuation rule (g) held when the link was made, and links
+        # never change, so the linked predecessor still meets it here.
+        if not _held_bytes_match(link):
+            return _refuse(RefusalCode.RESULT_UNVERIFIED, phase)
+        return AcceptedData(
+            data=VerifiedReceiptBinding(
+                selection=key.selection,
+                operation_key=key,
+                occurrence=linked.raw_publication.occurrence,
+                provenance=linked,
+                publication=linked.raw_publication,
+                receiving=link.receiving,
+                predecessor=linked.predecessor,
+                disposition="verified",
+            ),
+            evidence=link.evidence,
         )
-        if (
-            pub_ref is None
-            or provenance.state != "complete"
-            or provenance.raw_publication.cleanup_state
-            not in ("not-required", "complete")
-            or provenance.raw_publication.outcome
-            not in ("success", "app-failure", "host-failure")
-            or provenance.raw_publication.occurrence.state
-            not in ("completed", "failed")
-        ):
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        pub_sha = pub_ref.sha256
-        rec = self._verified_receives.get((key, pub_sha))
-        if rec is None or rec.disposition != "verified":
-            return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        if rec.provenance != provenance or rec.operation_key != key:
-            return make_refusal(
-                RefusalCode.PRIOR_FOREIGN,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        if (
-            provenance.predecessor is not None
-            and rec.predecessor != provenance.predecessor
-        ):
-            return make_refusal(
-                RefusalCode.PRIOR_UNVERIFIED,
-                phase=phase,
-                retry_kind=RetryKind.NOT_APPLICABLE,
-            )
-        rev = provenance.operation_key.selection.selection_revision
-        ev = self._evidence_by_rev.get(rev)
-        if ev is None:
-            return make_refusal(
-                RefusalCode.AUTHORITY_UNAVAILABLE,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
-        return AcceptedData(data=rec, evidence=ev)
 
 
 class InMemoryWorkerObserver(WorkerObserver):

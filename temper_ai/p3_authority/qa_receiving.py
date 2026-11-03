@@ -36,6 +36,7 @@ from p3_host_contracts import (
     RowKey,
 )
 from temper_ai.p3_authority._providers import QAReceivingVerifier
+from temper_ai.p3_authority.boundary_types import REQUIRED_PREDECESSOR_ROW
 from temper_ai.p3_authority.contract import (
     Boundary,
     ImmutableReference,
@@ -59,10 +60,6 @@ _CERTAIN_OCCURRENCE_STATES: Final[frozenset[str]] = frozenset({"completed", "ref
 _COMPLETE_CLEANUP_STATES: Final[frozenset[str]] = frozenset(
     {"complete", "not-required"}
 )
-_PREDECESSOR_CRASH_ROW: Final[Mapping[str, str]] = {
-    "D-5": "D-1",
-    "API-D-5": "API-D-1",
-}
 
 
 def _is_exact_non_empty_str(value: object) -> bool:
@@ -501,10 +498,10 @@ def _check_d1_before_d5(cohort: PublicationCohort | None) -> bool:
     for index, key in host_rows:
         if key.row in ("D-1", "API-D-1") and key.operation != "crash":
             return False
-        if key.row in _PREDECESSOR_CRASH_ROW:
+        if key.row in REQUIRED_PREDECESSOR_ROW:
             if key.operation != "start":
                 return False
-            expected_crash_row = _PREDECESSOR_CRASH_ROW[key.row]
+            expected_crash_row = REQUIRED_PREDECESSOR_ROW[key.row]
             matching_crashes = [
                 (prior_index, prior_key)
                 for prior_index, prior_key in host_rows

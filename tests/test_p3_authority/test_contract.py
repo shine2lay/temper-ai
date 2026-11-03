@@ -665,8 +665,14 @@ def test_service_ports_keep_phase_effect_receiving_and_count_distinct() -> None:
         contract.P3AuthorityRegistry: {"for_submit", "for_run", "check_current", "bind_created"},
         contract.P3NativeBoundary: {"before_create", "before_checker", "before_request", "before_admit", "before_execute", "before_count"},
         contract.WorkerObserver: {"observe"}, contract.RootObserver: {"observe"},
-        contract.HostObserver: {"begin", "checkpoint", "before_effect", "finish"},
-        contract.HostProvenance: {"note_admission", "note_effect", "bind_publication", "verify_received"},
+        contract.HostObserver: {
+            "lookup_observation", "observe", "begin", "checkpoint", "before_effect",
+            "finish", "finish_witness",
+        },
+        contract.HostProvenance: {
+            "note_admission", "note_effect", "bind_publication", "verify_linked_receipt",
+            "lookup_occurrence_handle", "lookup_witness",
+        },
         contract.SharedN3: {"compare"},
     }
     for port, methods in expected_ports.items():

@@ -117,6 +117,10 @@ from temper_ai.p3_authority.contract import (
     WorkerObservation,
     WorkerObserver,
 )
+from temper_ai.p3_authority.host_ports import (
+    LINKED_RECEIPT_BOUNDARIES,
+    require_port_members,
+)
 from temper_ai.p3_authority.issuer_verifier import (
     PRODUCTION_ANCHOR_TABLE,
     PRODUCTION_TRUST_ANCHORS,
@@ -125,6 +129,11 @@ from temper_ai.p3_authority.issuer_verifier import (
     Ed25519IssuerVerifier,
     EnvelopeStore,
     PinnedPeerVerifier,
+)
+from temper_ai.p3_authority.linked_receipt_rules import (
+    continuation_predecessor_refusal,
+    exact_receipt_equal,
+    linked_predecessor_mismatch,
 )
 from temper_ai.p3_authority.registry import (
     COMPATIBILITY_CORPUS_SCHEMA,
@@ -154,13 +163,6 @@ class _HostSelectionHandle:
 
     selection_reference: str
     selection_revision: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class _HostObservationGrant:
-    """Internal ``ObservationGrant`` carrier for host-join observation calls."""
-
-    grant_reference: str
 
 
 _HOST_OBSERVATION_CLS = getattr(HostObservation, "__origin__", HostObservation)
@@ -202,6 +204,97 @@ _HOST_COVERAGE_CLS = getattr(HostCoverage, "__origin__", HostCoverage)
 _EFFECT_LEASE_CLS = getattr(EffectLease, "__origin__", EffectLease)
 _OCCURRENCE_HANDLE_CLS = getattr(OccurrenceHandle, "__origin__", OccurrenceHandle)
 _RAW_PUBLICATION_CLS = getattr(RawPublication, "__origin__", RawPublication)
+_VERIFIED_RECEIPT_BINDING_CLS = getattr(
+    VerifiedReceiptBinding, "__origin__", VerifiedReceiptBinding
+)
+
+
+def _retry_kind_for(code: RefusalCode) -> RetryKind:
+    """PRIOR_MISSING may pass after the missing record arrives; the rest never retry."""
+    if code is RefusalCode.PRIOR_MISSING:
+        return RetryKind.SAME_BOUNDARY_AFTER_REPAIR
+    return RetryKind.NOT_APPLICABLE
+
+
+def _caller_predecessor_refusal_code(
+    key: OperationKey,
+    predecessor: ReceiptProvenance | None,
+    selection_revision: str,
+) -> RefusalCode | None:
+    """The service's own checks on the predecessor a caller's receipt names.
+
+    Shape only: whether the predecessor is linked in the window's chain is the
+    port's answer (``HostProvenance.verify_linked_receipt``), never this one.
+    Foreign selection, window or writer -> PRIOR_FOREIGN; a later or same
+    request, a failed or incomplete receipt -> PRIOR_UNVERIFIED; then the
+    continuation rule (``REQUIRED_PREDECESSOR_ROW``): none -> PRIOR_MISSING.
+    """
+    if predecessor is not None:
+        if type(predecessor) is not _RECEIPT_PROVENANCE_CLS:
+            return RefusalCode.PRIOR_UNVERIFIED
+        pred_pub = predecessor.raw_publication
+        pred_occ = pred_pub.occurrence
+        pred_key = predecessor.operation_key
+        if pred_key.selection.selection_revision != selection_revision:
+            return RefusalCode.PRIOR_FOREIGN
+        if type(pred_key) is _ROW_KEY_CLS and type(key) is _ROW_KEY_CLS:
+            pred_row_key = cast(RequestIdentity, pred_key)
+            row_key = cast(RequestIdentity, key)
+            if (
+                pred_row_key.window_id != row_key.window_id
+                or pred_row_key.writer != row_key.writer
+            ):
+                return RefusalCode.PRIOR_FOREIGN
+            if (
+                pred_row_key.sequence >= row_key.sequence
+                or pred_row_key.request_id == row_key.request_id
+            ):
+                return RefusalCode.PRIOR_UNVERIFIED
+        # A failed receipt (app-failure, host-failure, occurrence failed) is
+        # not a success, so the one check below refuses it too.
+        if (
+            predecessor.state != "complete"
+            or pred_pub.outcome != "success"
+            or pred_pub.cleanup_state not in ("not-required", "complete")
+            or pred_occ.state != "completed"
+            or pred_occ.key != pred_key
+        ):
+            return RefusalCode.PRIOR_UNVERIFIED
+    return continuation_predecessor_refusal(key, predecessor)
+
+
+def _linked_binding_refusal_code(
+    binding: object,
+    key: OperationKey,
+    provenance: ReceiptProvenance,
+    publication: RawPublication,
+) -> RefusalCode | None:
+    """Ruling C4: the port's binding is for exactly this receipt, else refuse.
+
+    Predecessor exact both ways (ruling C2); any other mismatch ->
+    RESULT_UNVERIFIED.
+    """
+    if type(binding) is not _VERIFIED_RECEIPT_BINDING_CLS:
+        return RefusalCode.RESULT_UNVERIFIED
+    verified = cast(VerifiedReceiptBinding, binding)
+    if verified.disposition != "verified":
+        return RefusalCode.RESULT_UNVERIFIED
+    predecessor_code = linked_predecessor_mismatch(
+        provenance.predecessor, verified.predecessor
+    )
+    if predecessor_code is not None:
+        return predecessor_code
+    if (
+        verified.selection != key.selection
+        or verified.operation_key != key
+        or not exact_receipt_equal(verified.provenance, provenance)
+        or verified.publication != publication
+        or verified.occurrence != publication.occurrence
+        or not _wit_ref(verified.receiving)
+    ):
+        return RefusalCode.RESULT_UNVERIFIED
+    return None
+
 
 DEFAULT_P3_ALLOWED_ROWS: frozenset[str] = frozenset(
     {"row-1", "row-2", "row-01", "row-02"}
@@ -234,6 +327,14 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
         writes_enabled: bool = False,
         refuse_count_as_write_disabled: bool = False,
     ) -> None:
+        # Structural check of the host ports at composition (fail loud): an
+        # adapter needs every member the service calls, never a double's base.
+        if host_observer is not None:
+            require_port_members(host_observer, HostObserver, role="host_observer")
+        if host_provenance is not None:
+            require_port_members(
+                host_provenance, HostProvenance, role="host_provenance"
+            )
         self._registry = registry
         self._closure_comparator = closure_comparator
         self._host_observer = host_observer
@@ -486,14 +587,9 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
                 history=history,
             )
 
-        lookup_host_obs = getattr(self._host_observer, "lookup_observation", None)
-        expected_host_obs = (
-            lookup_host_obs(
-                selection_revision=selected_job.selection_revision,
-                boundary=boundary,
-            )
-            if lookup_host_obs is not None
-            else None
+        expected_host_obs = self._host_observer.lookup_observation(
+            selection_revision=selected_job.selection_revision,
+            boundary=boundary,
         )
         if expected_host_obs is None or expected_host_obs != creator_observation:
             return make_refusal(
@@ -715,14 +811,9 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
                 history=history,
             )
 
-        lookup_host_obs = getattr(self._host_observer, "lookup_observation", None)
-        expected_host_obs = (
-            lookup_host_obs(
-                selection_revision=selected_job.selection_revision,
-                boundary=boundary,
-            )
-            if lookup_host_obs is not None
-            else None
+        expected_host_obs = self._host_observer.lookup_observation(
+            selection_revision=selected_job.selection_revision,
+            boundary=boundary,
         )
         lookup_worker_obs = getattr(
             self._worker_observer, "lookup_worker_observation", None
@@ -1414,91 +1505,16 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
                 history=history,
             )
 
-        if provenance.predecessor is not None:
-            pred_prov = provenance.predecessor
-            pred_pub = pred_prov.raw_publication
-            pred_occ = pred_pub.occurrence
-            pred_key = pred_prov.operation_key
-            if pred_key.selection.selection_revision != selected_job.selection_revision:
-                return make_refusal(
-                    RefusalCode.PRIOR_FOREIGN,
-                    phase=phase,
-                    retry_kind=RetryKind.NOT_APPLICABLE,
-                    history=history,
-                )
-            if type(pred_key) is _ROW_KEY_CLS:
-                pred_row_key = cast(RequestIdentity, pred_key)
-                if (
-                    pred_row_key.window_id != actual_req_id.window_id
-                    or pred_row_key.writer != actual_req_id.writer
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_FOREIGN,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                        history=history,
-                    )
-                if (
-                    pred_row_key.sequence >= actual_req_id.sequence
-                    or pred_row_key.request_id == actual_req_id.request_id
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_UNVERIFIED,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                        history=history,
-                    )
-            if (
-                pred_pub.outcome in ("app-failure", "host-failure")
-                or pred_occ.state == "failed"
-            ):
-                return make_refusal(
-                    RefusalCode.PRIOR_UNVERIFIED,
-                    phase=phase,
-                    retry_kind=RetryKind.NOT_APPLICABLE,
-                    history=history,
-                )
-            if (
-                pred_prov.state != "complete"
-                or pred_pub.outcome != "success"
-                or pred_pub.cleanup_state not in ("not-required", "complete")
-                or pred_occ.state != "completed"
-                or pred_occ.key != pred_key
-            ):
-                return make_refusal(
-                    RefusalCode.PRIOR_UNVERIFIED,
-                    phase=phase,
-                    retry_kind=RetryKind.NOT_APPLICABLE,
-                    history=history,
-                )
-            if isinstance(self._host_provenance, InMemoryHostProvenance):
-                reg_pred = self._host_provenance.lookup_occurrence_handle(pred_key)
-                reg_pred_wit = self._host_provenance.lookup_witness(pred_key)
-                if reg_pred is None or reg_pred_wit is None:
-                    return make_refusal(
-                        RefusalCode.PRIOR_MISSING,
-                        phase=phase,
-                        retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-                        history=history,
-                    )
-                if (
-                    reg_pred != pred_occ
-                    or _wit_ref(reg_pred.witness) != _wit_ref(pred_occ.witness)
-                    or _wit_ref(reg_pred_wit) != _wit_ref(pred_occ.witness)
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_UNVERIFIED,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                        history=history,
-                    )
-            else:
-                return make_refusal(
-                    RefusalCode.PRIOR_UNVERIFIED,
-                    phase=phase,
-                    retry_kind=RetryKind.NOT_APPLICABLE,
-                    history=history,
-                )
+        predecessor_code = _caller_predecessor_refusal_code(
+            actual_req_id, provenance.predecessor, selected_job.selection_revision
+        )
+        if predecessor_code is not None:
+            return make_refusal(
+                predecessor_code,
+                phase=phase,
+                retry_kind=_retry_kind_for(predecessor_code),
+                history=history,
+            )
 
         if (
             provenance.state != "complete"
@@ -1587,6 +1603,30 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
+        # The one authentication of the counted receipt and its predecessor:
+        # the port answers from its own chain, never from the caller's objects.
+        linked_res = self._host_provenance.verify_linked_receipt(
+            actual_req_id, provenance, boundary
+        )
+        if isinstance(linked_res, Refusal):
+            return make_refusal(
+                linked_res.code,
+                phase=phase,
+                retry_kind=linked_res.retry_kind,
+                history=history,
+            )
+        binding_code = _linked_binding_refusal_code(
+            linked_res.data, actual_req_id, provenance, publication
+        )
+        if binding_code is not None:
+            return make_refusal(
+                binding_code,
+                phase=phase,
+                retry_kind=_retry_kind_for(binding_code),
+                history=history,
+            )
+        verified_receipt = linked_res.data
+
         idempotency_identity = (
             f"{selected_job.selection_revision}:{actual_req_id.row}:"
             f"{actual_req_id.request_id}:{actual_req_id.sequence}"
@@ -1603,16 +1643,6 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             request=actual_request_and_receipt.request,
             occurrence=recorded.occurrence,
             admission_witness=recorded.admission_witness,
-        )
-        verified_receipt = VerifiedReceiptBinding(
-            selection=provenance.operation_key.selection,
-            operation_key=actual_req_id,
-            occurrence=recorded.occurrence,
-            provenance=provenance,
-            publication=publication,
-            receiving=provenance.occurrence_witness,
-            predecessor=provenance.predecessor,
-            disposition="verified",
         )
         count_decision = CountDecision(
             binding=admitted_binding,
@@ -2032,14 +2062,7 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
-        observe_fn = getattr(self._host_observer, "observe", None)
-        if observe_fn is None:
-            return make_refusal(
-                RefusalCode.OBSERVATION_GAP,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
-        obs_res = observe_fn(session, eff_bnd)
+        obs_res = self._host_observer.observe(session, eff_bnd)
         if isinstance(obs_res, Refusal):
             return obs_res
         if obs_res.data.gaps or not obs_res.data.coverage:
@@ -2117,14 +2140,7 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
-        observe_fn = getattr(self._host_observer, "observe", None)
-        if observe_fn is None:
-            return make_refusal(
-                RefusalCode.OBSERVATION_GAP,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
-        obs_res = observe_fn(session, eff_bnd)
+        obs_res = self._host_observer.observe(session, eff_bnd)
         if isinstance(obs_res, Refusal):
             return obs_res
         if obs_res.data.gaps or not obs_res.data.coverage:
@@ -2194,19 +2210,9 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
         cov_res = self._host_observer.finish(session, boundary)
         if isinstance(cov_res, Refusal):
             return cov_res
-        finish_wit_fn = getattr(self._host_observer, "finish_witness", None)
-        if finish_wit_fn is None:
-            return make_refusal(
-                RefusalCode.OBSERVATION_GAP,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
-        fin_res = finish_wit_fn(session, eff_bnd)
+        fin_res = self._host_observer.finish_witness(session, eff_bnd)
         if isinstance(fin_res, Refusal):
             return fin_res
-
-        if isinstance(self._host_provenance, InMemoryHostProvenance):
-            self._host_provenance.record_witness(key, fin_res.data)
 
         return AcceptedData(
             data=fin_res.data,
@@ -2271,12 +2277,7 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
-        if not isinstance(self._host_provenance, InMemoryHostProvenance):
-            return make_refusal(
-                RefusalCode.PRIOR_MISSING,
-                phase=phase,
-                retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-            )
+        # Observation only: what the host saw for this key, never authentication.
         occ = self._host_provenance.lookup_occurrence_handle(key)
         witness = self._host_provenance.lookup_witness(key)
         if occ is None or witness is None:
@@ -2375,26 +2376,24 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
-        if isinstance(self._host_provenance, InMemoryHostProvenance):
-            grant = _HostObservationGrant(
-                grant_reference=f"grant:{_peer_ref_str(peer)}:{job.selection_revision}"
-            )
-            prov_res = self._host_provenance.verify_publication(
-                grant,  # type: ignore[arg-type]
-                job,
-                occurrence,
-                publication,
-                witness,
-            )
-        else:
-            prov_res = self._host_provenance.bind_publication(
-                session,
-                occurrence,
-                publication,
-                witness,
-            )
+        prov_res = self._host_provenance.bind_publication(
+            session,
+            occurrence,
+            publication,
+            witness,
+        )
         if isinstance(prov_res, Refusal):
             return prov_res
+        if (
+            type(prov_res.data) is not _RECEIPT_PROVENANCE_CLS
+            or prov_res.data.operation_key != key
+            or prov_res.data.raw_publication != publication
+        ):
+            return make_refusal(
+                RefusalCode.RESULT_UNVERIFIED,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+            )
 
         return AcceptedData(
             data=prov_res.data,
@@ -2477,101 +2476,37 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
             return current_res
         current = current_res.data
 
-        if isinstance(self._host_provenance, InMemoryHostProvenance):
-            occ = self._host_provenance.lookup_occurrence_handle(key)
-            if occ is None:
-                return make_refusal(
-                    RefusalCode.PRIOR_MISSING,
-                    phase=phase,
-                    retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-                )
-            if provenance.predecessor is not None:
-                pred_prov = provenance.predecessor
-                pred_pub = pred_prov.raw_publication
-                pred_occ = pred_pub.occurrence
-                pred_key = pred_prov.operation_key
-                if pred_key.selection.selection_revision != job.selection_revision:
-                    return make_refusal(
-                        RefusalCode.PRIOR_FOREIGN,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                    )
-                if (
-                    pred_pub.outcome in ("app-failure", "host-failure")
-                    or pred_occ.state == "failed"
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_UNVERIFIED,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                    )
-                if (
-                    pred_prov.state != "complete"
-                    or pred_pub.outcome != "success"
-                    or pred_pub.cleanup_state not in ("not-required", "complete")
-                    or pred_occ.state != "completed"
-                    or pred_occ.key != pred_key
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_UNVERIFIED,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                    )
-                reg_pred = self._host_provenance.lookup_occurrence_handle(pred_key)
-                reg_pred_wit = self._host_provenance.lookup_witness(pred_key)
-                if reg_pred is None or reg_pred_wit is None:
-                    return make_refusal(
-                        RefusalCode.PRIOR_MISSING,
-                        phase=phase,
-                        retry_kind=RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
-                    )
-                if (
-                    reg_pred != pred_occ
-                    or _wit_ref(reg_pred.witness) != _wit_ref(pred_occ.witness)
-                    or _wit_ref(reg_pred_wit) != _wit_ref(pred_occ.witness)
-                ):
-                    return make_refusal(
-                        RefusalCode.PRIOR_UNVERIFIED,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                    )
-            pub_rec_ref = (
-                provenance.raw_publication.receipt_raw_ref
-                or provenance.raw_publication.request_raw_ref
-            )
-            if pub_rec_ref is None:
-                return make_refusal(
-                    RefusalCode.RESULT_UNVERIFIED,
-                    phase=phase,
-                    retry_kind=RetryKind.NOT_APPLICABLE,
-                )
-            raw_pair = self._host_provenance.lookup_raw_payloads(
-                key, pub_rec_ref.sha256
-            )
-            if raw_pair is not None:
-                rec_res = self._host_provenance.verify_received(
-                    session,
-                    key,
-                    raw_pair[0],
-                    raw_pair[1],
-                    provenance,
-                    boundary,
-                )
-            else:
-                rec_res = self._host_provenance.receive_verified(
-                    key=key,
-                    provenance=provenance,
-                    boundary=boundary,
-                    phase=phase,
-                )
-        else:
+        if eff_bnd not in LINKED_RECEIPT_BOUNDARIES:
             return make_refusal(
-                RefusalCode.RESULT_UNVERIFIED,
+                RefusalCode.SCOPE_MISMATCH,
                 phase=phase,
                 retry_kind=RetryKind.NOT_APPLICABLE,
             )
+        predecessor_code = _caller_predecessor_refusal_code(
+            key, provenance.predecessor, job.selection_revision
+        )
+        if predecessor_code is not None:
+            return make_refusal(
+                predecessor_code,
+                phase=phase,
+                retry_kind=_retry_kind_for(predecessor_code),
+            )
+        # The one authentication of the received receipt and its predecessor:
+        # the port answers from its own chain, never from the caller's objects.
+        rec_res = self._host_provenance.verify_linked_receipt(
+            key, provenance, eff_bnd
+        )
         if isinstance(rec_res, Refusal):
             return rec_res
+        binding_code = _linked_binding_refusal_code(
+            rec_res.data, key, provenance, provenance.raw_publication
+        )
+        if binding_code is not None:
+            return make_refusal(
+                binding_code,
+                phase=phase,
+                retry_kind=_retry_kind_for(binding_code),
+            )
 
         return AcceptedData(
             data=rec_res.data,

@@ -89,6 +89,10 @@ from temper_ai.p3_authority.service import (
     compose_p3_authority,
 )
 from tests.test_architecture.ops_host_n3_cases import clean_world
+from tests.test_p3_authority._port_only_hosts import (
+    PortOnlyHostObserver,
+    PortOnlyHostProvenance,
+)
 from tests.test_p3_host_contracts.examples import examples as host_examples
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -666,12 +670,12 @@ class PopulatedAuthorityTestRig:
     publisher: InMemorySelectionPublisher
     selection_provider: InMemorySelectionSnapshotProvider
     request_history_provider: InMemoryRequestHistoryProvider
-    host_observer: InMemoryHostObserver
+    host_observer: InMemoryHostObserver | PortOnlyHostObserver
     worker_observer: InMemoryWorkerObserver
     root_observer: InMemoryRootObserver
     qa_verifier: InMemoryQAReceivingVerifier
     effect_fence_provider: InMemoryEffectFenceProvider
-    host_provenance: InMemoryHostProvenance
+    host_provenance: InMemoryHostProvenance | PortOnlyHostProvenance
     host_session_peer_resolver: InMemoryHostSessionPeerResolver
     comparator: SystemsSourceClosureComparator
     v1_harness: V1CandidateHarness
@@ -682,13 +686,20 @@ class PopulatedAuthorityTestRig:
     examples: dict[str, Any]
     world: dict[str, Any]
     composition: P3AuthorityComposition
+    evidence_by_revision: dict[str, DecisionEvidenceRecord]
 
 
 def make_populated_test_rig(
     *,
     session_factory: sessionmaker[Session] | None = None,
     writes_enabled: bool = False,
+    host_ports: Literal["double", "port-only"] = "double",
+    host_provenance: InMemoryHostProvenance | PortOnlyHostProvenance | None = None,
 ) -> PopulatedAuthorityTestRig:
+    """The populated rig; ``host_ports="port-only"`` composes host adapters with
+    no base class (``_port_only_hosts``); ``host_provenance`` overrides it."""
+    if host_ports not in ("double", "port-only"):
+        raise ValueError(f"host_ports must be 'double' or 'port-only', not {host_ports!r}")
     v1_harness = make_v1_candidate_harness(session_factory=session_factory)
     ex = host_examples()
     w = clean_world()
@@ -755,12 +766,19 @@ def make_populated_test_rig(
     selection_provider = publisher.reader()
     request_history_provider = InMemoryRequestHistoryProvider()
 
-    host_observer = InMemoryHostObserver()
+    host_observer: InMemoryHostObserver | PortOnlyHostObserver = (
+        InMemoryHostObserver() if host_ports == "double" else PortOnlyHostObserver()
+    )
     worker_observer = InMemoryWorkerObserver()
     root_observer = InMemoryRootObserver()
     qa_verifier = InMemoryQAReceivingVerifier()
     effect_fence_provider = InMemoryEffectFenceProvider()
-    host_provenance = InMemoryHostProvenance()
+    if host_provenance is None:
+        host_provenance = (
+            InMemoryHostProvenance()
+            if host_ports == "double"
+            else PortOnlyHostProvenance()
+        )
     host_session_peer_resolver = InMemoryHostSessionPeerResolver()
     host_session_peer_resolver.register_session(session_host, peer_host)
 
@@ -770,6 +788,7 @@ def make_populated_test_rig(
         cal_job.selection_revision: cal_job,
     }
     expectations_by_key: dict[tuple[str, Boundary], tuple[object, object]] = {}
+    evidence_by_revision: dict[str, DecisionEvidenceRecord] = {}
 
     comparator = SystemsSourceClosureComparator(
         job_lookup=lambda rev: jobs_by_rev.get(rev),
@@ -791,6 +810,7 @@ def make_populated_test_rig(
             closure=REF_CLOSURE,
             compatibility=COMPAT_PROFILE_1,
         )
+        evidence_by_revision[job.selection_revision] = ev
         host_observer.register_evidence(job.selection_revision, ev)
         host_provenance.register_evidence(job.selection_revision, ev)
 
@@ -852,6 +872,7 @@ def make_populated_test_rig(
         examples=ex,
         world=w,
         composition=composition,
+        evidence_by_revision=evidence_by_revision,
     )
 
 
@@ -918,8 +939,16 @@ def make_world_for_boundary(phase: Boundary, operation: str = "B-2") -> Any:
 
 def populate_boundary_happy_path_observations(
     rig: PopulatedAuthorityTestRig,
+    *,
+    predecessor_row: str = "row-0",
+    counted_row: str = "row-1",
 ) -> dict[str, Any]:
-    """Populate synthetic A/B/C observations in rig's in-memory observers for the happy path."""
+    """Populate synthetic A/B/C observations in rig's in-memory observers for the happy path.
+
+    The counted row (sequence 2) follows ``predecessor_row`` (sequence 1) in
+    window win-1; the host links the predecessor here and the counted row in
+    ``publish_and_link_counted_receipt``.
+    """
     import hashlib
     from dataclasses import replace as dc_replace
 
@@ -1103,7 +1132,7 @@ def populate_boundary_happy_path_observations(
             actual_creation,
         )
 
-    req_bytes = b'{"row":"row-1"}'
+    req_bytes = f'{{"row":"{counted_row}"}}'.encode()
     rec_bytes = b'{"status":"ok"}'
     req_raw_ref = dc_replace(
         RAW_REF_REQUEST,
@@ -1119,15 +1148,25 @@ def populate_boundary_happy_path_observations(
         ex["RowKey"],
         selection=sel_run,
         window_id="win-1",
-        row="row-1",
+        row=counted_row,
         request_id="req-1",
-        sequence=1,
+        sequence=2,
         request_raw_ref=req_raw_ref,
     )
+    # The earlier row of the same window and writer, linked by the host before
+    # the counted row (the window chain's head when the counted row links).
+    pred_req_bytes = f'{{"row":"{predecessor_row}"}}'.encode()
+    pred_req_raw_ref = dc_replace(
+        RAW_REF_REQUEST,
+        sha256=hashlib.sha256(pred_req_bytes).hexdigest(),
+        byte_length=len(pred_req_bytes),
+    )
     pred_key = dc_replace(
-        ex["LifecycleKey"],
-        selection=sel_run,
-        launch_id="launch-1",
+        req_id,
+        row=predecessor_row,
+        request_id="req-0",
+        sequence=1,
+        request_raw_ref=pred_req_raw_ref,
     )
     pred_occ_handle = dc_replace(
         ex["OccurrenceHandle"],
@@ -1145,7 +1184,11 @@ def populate_boundary_happy_path_observations(
     pred_pub = dc_replace(
         ex["RawPublication"],
         occurrence=pred_occ_handle,
+        request_raw_ref=pred_req_raw_ref,
         receipt_raw_ref=rec_raw_ref,
+        window_ref=RAW_REF_WINDOW,
+        numbered_log_ref=RAW_REF_LOG,
+        current_row_ref=RAW_REF_ROW,
         outcome="success",
         cleanup_state="complete",
     )
@@ -1190,7 +1233,8 @@ def populate_boundary_happy_path_observations(
         predecessor=pred_prov,
         state="complete",
     )
-    ver_recv = VerifiedReceiptBinding(
+    # A binding the caller built itself: never authority (the port's answer is).
+    caller_built_binding = VerifiedReceiptBinding(
         selection=sel_run,
         operation_key=req_id,
         occurrence=occ_handle,
@@ -1200,6 +1244,17 @@ def populate_boundary_happy_path_observations(
         predecessor=pred_prov,
         disposition="verified",
     )
+
+    # Host side: the window's genesis is anchored and the earlier row's receipt
+    # is published and linked as the window's first link.
+    rig.host_provenance.anchor_window(sel_run.selection_revision, "win-1")
+    rig.host_provenance.publish_receipt(
+        pred_prov, request_raw=pred_req_bytes, receipt_raw=rec_bytes
+    )
+    pred_link = rig.host_provenance.bind_publication(
+        rig.session_host, pred_occ_handle, pred_pub, WITNESS_1
+    )
+    assert isinstance(pred_link, AcceptedData), pred_link
 
     op_leg = OperationLeg(
         operation=default_effect_for_job(rig.running_job, "C_PRE_EXECUTION"),
@@ -1238,6 +1293,8 @@ def populate_boundary_happy_path_observations(
         "req_raw_ref": req_raw_ref,
         "rec_raw_ref": rec_raw_ref,
         "req_id": req_id,
+        "pred_req_bytes": pred_req_bytes,
+        "pred_req_raw_ref": pred_req_raw_ref,
         "pred_key": pred_key,
         "pred_occ_handle": pred_occ_handle,
         "pred_pub": pred_pub,
@@ -1245,7 +1302,30 @@ def populate_boundary_happy_path_observations(
         "occ_handle": occ_handle,
         "raw_pub": raw_pub,
         "prov": prov,
-        "ver_recv": ver_recv,
+        "caller_built_binding": caller_built_binding,
         "op_leg": op_leg,
         "p5_ass": p5_ass,
     }
+
+
+def publish_and_link_counted_receipt(rig: Any, obs: dict[str, Any]) -> None:
+    """Host side for the counted row: occurrence seen, receipt published with its
+    original bytes and linked after the window's head (the earlier row)."""
+    from temper_ai.p3_authority.contract import AcceptedData
+
+    rig.host_provenance.register_occurrence(
+        obs["req_id"],
+        obs["occ_handle"],
+        witness=WITNESS_1,
+    )
+    rig.host_provenance.register_publication_provenance(
+        key=obs["req_id"],
+        publication_sha256=obs["rec_raw_ref"].sha256,
+        provenance=obs["prov"],
+        request_raw=obs["req_bytes"],
+        receipt_raw=obs["rec_bytes"],
+    )
+    link = rig.host_provenance.bind_publication(
+        rig.session_host, obs["occ_handle"], obs["raw_pub"], WITNESS_1
+    )
+    assert isinstance(link, AcceptedData), link

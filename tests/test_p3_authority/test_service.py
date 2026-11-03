@@ -53,6 +53,7 @@ from tests.test_p3_authority._composition_fixtures import (
     FakeSession,
     make_populated_test_rig,
     populate_boundary_happy_path_observations,
+    publish_and_link_counted_receipt,
 )
 
 
@@ -188,19 +189,7 @@ def test_combined_happy_path_p3_native_boundary_and_host_join() -> None:
     assert isinstance(res_exec.data, ExecutionDecision)
 
     # 6. NativeHostJoin D-1 -> D-5 linkage (lookup_occurrence -> verify_publication -> receive)
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
 
     occ_lookup = join.lookup_occurrence(rig.session_host, obs["req_id"])
     assert isinstance(occ_lookup, AcceptedData)
@@ -683,19 +672,7 @@ def test_d1_before_d5_duplicate_counting_prior_fail_and_foreign_receipt_refusals
         admission_witness=WITNESS_1,
     )
     assert isinstance(res_rec_occ, AcceptedData)
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
 
     # 4. Foreign selection in provenance -> PRIOR_FOREIGN
     foreign_req_id = replace(obs["req_id"], selection=obs["sel_pre"])
@@ -1077,19 +1054,7 @@ def test_guard_deletion_and_loosening_bites_with_positive_twins() -> None:
     )
     assert isinstance(rec_occ, AcceptedData)
     svc.before_execute(rig.peer_run, rec_occ.data, obs["op_leg"], obs["cursors"])
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
     actual_req_and_rcpt = ActualRequestAndReceipt(
         request=imm_req,
         publication=obs["raw_pub"],
@@ -1579,19 +1544,7 @@ def test_security_arm_b_hardening_twins_and_guard_bites() -> None:
     assert res_exec_wrong_win.code is RefusalCode.SCOPE_MISMATCH
 
     # --- SB-F1: provenance/publication/occurrence state, P5 parity & D-1 -> D-5 predecessor ---
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
     actual_req_and_rcpt = ActualRequestAndReceipt(
         request=imm_req,
         publication=obs["raw_pub"],
@@ -1709,7 +1662,7 @@ def test_security_arm_b_hardening_twins_and_guard_bites() -> None:
     assert isinstance(res_incomplete_pred, Refusal)
     assert res_incomplete_pred.code is RefusalCode.PRIOR_UNVERIFIED
 
-    unreg_pred_key = replace(obs["pred_key"], launch_id="launch-unreg-pred")
+    unreg_pred_key = replace(obs["pred_key"], request_id="req-unreg-pred")
     unreg_pred_occ = replace(obs["pred_occ_handle"], key=unreg_pred_key)
     unreg_pred_pub = replace(obs["pred_pub"], occurrence=unreg_pred_occ)
     unreg_pred_prov = replace(
@@ -1725,8 +1678,10 @@ def test_security_arm_b_hardening_twins_and_guard_bites() -> None:
         obs["cursors"],
         obs["qa_recv"],
     )
+    # Not the predecessor the host linked (ruling C2): PRIOR_UNVERIFIED, from the
+    # port's own chain (it was PRIOR_MISSING from the test double's lookups).
     assert isinstance(res_missing_pred, Refusal)
-    assert res_missing_pred.code is RefusalCode.PRIOR_MISSING
+    assert res_missing_pred.code is RefusalCode.PRIOR_UNVERIFIED
 
     # 6. Positive twin: valid D-1 -> D-5 predecessor preserved in VerifiedReceiptBinding
     res_count_ok = svc.before_count(

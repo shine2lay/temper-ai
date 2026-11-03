@@ -51,6 +51,7 @@ from tests.test_p3_authority._composition_fixtures import (
     FakeQAReceiving,
     make_populated_test_rig,
     populate_boundary_happy_path_observations,
+    publish_and_link_counted_receipt,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -489,19 +490,7 @@ def test_combined_happy_path_direct_and_composed_service(
     )
     assert isinstance(exec_res, AcceptedData)
 
-    rig.host_provenance.register_occurrence(
-        obs["req_id"],
-        obs["occ_handle"],
-        witness=WITNESS_1,
-    )
-    rig.host_provenance.register_publication_provenance(
-        key=obs["req_id"],
-        publication_sha256=obs["rec_raw_ref"].sha256,
-        provenance=obs["prov"],
-        verified_receive=obs["ver_recv"],
-        request_raw=obs["req_bytes"],
-        receipt_raw=obs["rec_bytes"],
-    )
+    publish_and_link_counted_receipt(rig, obs)
     actual_req_and_rcpt = ActualRequestAndReceipt(
         request=imm_req,
         publication=obs["raw_pub"],

@@ -62,6 +62,11 @@ See `p3-host-contracts.md` and `ops-host-source-comparison.md` for supplier maps
   aliases `VerifiedReceiptBinding`, never `CountDecision`.
 - `host_ports`: `NativeHostJoin`'s nine abstract methods, `HostObserver`,
   `HostProvenance`, `SharedN3`, and provider aliases. No concrete host collector.
+  `HostProvenance.verify_linked_receipt` is the one source of a "verified"
+  `VerifiedReceiptBinding`, answered from the adapter's own chain;
+  `LINKED_RECEIPT_BOUNDARIES` names where it may be asked, and
+  `require_port_members` checks a provider's members at composition (the ports
+  are not runtime-checkable).
 - `service_ports`: `IssuerVerifier`, `P3AuthorityRegistry`, `P3NativeBoundary`,
   `WorkerObserver`, `RootObserver`; every operation is abstract and mandatory.
 - `contract`: explicit facade of these types and actual canonical suppliers.

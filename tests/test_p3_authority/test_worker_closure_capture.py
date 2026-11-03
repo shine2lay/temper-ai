@@ -895,11 +895,18 @@ def _dual_role_world(tmp_path: Path) -> SimpleNamespace:
 
 
 def _compare_dual_role(
-    world, *, worker_observed_bytes, peer_observed_bytes, peer, verified
+    world,
+    *,
+    worker_observed_bytes,
+    peer_observed_bytes,
+    peer,
+    verified,
+    worker=None,
+    reviewed=None,
 ):
     return verify_and_compare_worker_closure(
-        reviewed_graph=world.reviewed,
-        worker_envelope=world.worker,
+        reviewed_graph=world.reviewed if reviewed is None else reviewed,
+        worker_envelope=world.worker if worker is None else worker,
         worker_observed_bytes=worker_observed_bytes,
         peer_envelope=peer,
         peer_observed_bytes=peer_observed_bytes,
@@ -1040,6 +1047,72 @@ def test_guard_bite_peer_envelope_fields_must_match_worker(
     )
     assert isinstance(res, Refusal)
     assert res.code == expected_code
+    assert seen == []
+
+
+@pytest.mark.parametrize("supplied", ["stale", "true"])
+@pytest.mark.parametrize("half", ["worker", "peer"])
+def test_guard_bite_stale_half_content_field_refused(
+    tmp_path: Path, monkeypatch, half, supplied
+) -> None:
+    # LoadedClosureEnvelope.content is caller-set: a half whose envelope changed
+    # after construction keeps a stale content field naming bytes never observed.
+    world = _dual_role_world(tmp_path)
+    original = world.worker if half == "worker" else world.peer
+    changed_inner = replace(
+        original.envelope, envelope_id=f"{original.envelope.envelope_id}-changed"
+    )
+    changed_content = validate_loaded_envelope(to_wire(changed_inner)).content
+    stale_half = replace(original, envelope=changed_inner)
+    assert stale_half.content == original.content != changed_content
+    identity = original.content if supplied == "stale" else changed_content
+    worker, worker_bytes = world.worker, world.worker.content
+    peer, peer_bytes = world.peer, world.peer.content
+    if half == "worker":
+        worker, worker_bytes = stale_half, identity
+    else:
+        peer, peer_bytes = stale_half, identity
+    seen = _record_comparisons(monkeypatch)
+    res = _compare_dual_role(
+        world,
+        worker_observed_bytes=worker_bytes,
+        peer_observed_bytes=peer_bytes,
+        peer=peer,
+        verified=world.verified,
+        worker=worker,
+    )
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.CLOSURE_MISMATCH
+    assert seen == []
+
+
+def test_guard_bite_stale_reviewed_graph_content_field_refused(
+    tmp_path: Path, monkeypatch
+) -> None:
+    world = _dual_role_world(tmp_path)
+    changed_graph = replace(
+        world.reviewed.graph,
+        completeness_review_ref=EvidenceRef(
+            schema="synthetic-evidence/1",
+            content=byte_content_identity("other-completeness-review"),
+            supplier="systems",
+            record_id="completeness-review-other",
+        ),
+    )
+    stale_reviewed = replace(world.reviewed, graph=changed_graph)
+    changed_content = validate_reviewed_graph(to_wire(changed_graph)).content
+    assert stale_reviewed.content == world.verified.reviewed_bytes != changed_content
+    seen = _record_comparisons(monkeypatch)
+    res = _compare_dual_role(
+        world,
+        worker_observed_bytes=world.worker.content,
+        peer_observed_bytes=world.peer.content,
+        peer=world.peer,
+        verified=world.verified,
+        reviewed=stale_reviewed,
+    )
+    assert isinstance(res, Refusal)
+    assert res.code == RefusalCode.CLOSURE_MISMATCH
     assert seen == []
 
 

@@ -81,8 +81,14 @@ observer, so `verify_and_compare_worker_closure` takes `worker_observed_bytes` a
 `peer_observed_bytes` (each `None` when that half's provider is unavailable) and
 requires `verified_origins.observed_bytes` to be `None`.
 
+`LoadedClosureEnvelope.content` and `ReviewedSourceGraph.content` are caller-set
+fields: the records bind them to nothing. So each half and the reviewed graph are
+revalidated (`validate_loaded_envelope`, `validate_reviewed_graph`), a `content`
+field that differs from the validated content (stale or forged) is refused
+(`CLOSURE_MISMATCH`), and only the validated values are merged, counted and compared.
+
 `merge_dual_role_halves` derives the merged envelope's origin:
-- a supplied half identity that differs from that half's `content` -> refused
+- a supplied half identity that differs from that half's validated `content` -> refused
   (`CLOSURE_MISMATCH`, REFUSED `OBSERVER_ORIGIN`) before merging;
 - both half identities supplied and equal -> the merged envelope's `content`
   (the merge is a pure function of two verified halves);
@@ -110,7 +116,7 @@ puts the peer's process observations before the worker's, keeps every distinct
 | Index differing from the HEAD tree, worktree bytes differing from their blob, any untracked or ignored file, symlink or submodule entry, or a requested path not in the HEAD tree | `RefusalCode.SOURCE_CHANGED` |
 | Unreadable checkout, packed object (only loose objects are read), or non-hex HEAD/tree | `RefusalCode.OBSERVATION_GAP` |
 | Peer `binding` or `boundary` differing from the worker's | `RefusalCode.SUBJECT_MISMATCH` |
-| Peer `reviewed_graph` or `legacy_links` differing from the worker's, a supplied half observer identity differing from that half's `content`, or a supplied `verified_origins.observed_bytes` | `RefusalCode.CLOSURE_MISMATCH` |
+| Peer `reviewed_graph` or `legacy_links` differing from the worker's, a half's or the reviewed graph's `content` field differing from its validated content, a supplied half observer identity differing from that half's validated `content`, or a supplied `verified_origins.observed_bytes` | `RefusalCode.CLOSURE_MISMATCH` |
 | A half observer identity unavailable (`None`) | `RefusalCode.OBSERVATION_GAP` (UNKNOWN `OBSERVER_ORIGIN`, never `MATCH`) |
 | `compare_loaded_source` returning `disposition="REFUSED"` (unreviewed loaded module, byte substitution, Git membership contradiction), mapped by the landed `comparison_to_refusal` | `RefusalCode.CLOSURE_MISMATCH` (`BINDING` -> `RefusalCode.SUBJECT_MISMATCH`, `PROCESS_INSTANCE` -> `RefusalCode.RUNTIME_CHANGED`) |
 | `compare_loaded_source` returning `disposition="UNKNOWN"` | `RefusalCode.OBSERVATION_GAP` for `SEQUENCE_GAP` / `STALE_FRONTIER` / `OBSERVER_ORIGIN`, else `RefusalCode.CLOSURE_INCOMPLETE` (never mapped to `MATCH`) |

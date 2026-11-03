@@ -1025,31 +1025,46 @@ def merge_dual_role_halves(
 ) -> Result[DualRoleEnvelope]:
     """Check both halves and their observer identities, then merge them.
 
+    Each half is revalidated and only the validated value is used: a half's
+    ``content`` field is caller-set (``LoadedClosureEnvelope`` binds it to
+    nothing), so it must equal the content identity of the half's own bytes.
+
     Fails closed, before merging:
     - a half fails ``validate_loaded_envelope`` -> ``CLOSURE_VERSION`` for a
       schema/version mismatch (one accepted envelope schema, so validated halves
       share it), else ``CLOSURE_INCOMPLETE``; missing peer -> ``CLOSURE_INCOMPLETE``
+    - a half's ``content`` field differs from its validated content (stale or
+      forged) -> ``CLOSURE_MISMATCH``
     - peer ``binding`` or ``boundary`` differs from the worker's -> ``SUBJECT_MISMATCH``
     - peer ``reviewed_graph`` or ``legacy_links`` differs -> ``CLOSURE_MISMATCH``
-    - a supplied half observer identity differs from that half's ``content``
-      -> ``CLOSURE_MISMATCH`` (REFUSED ``OBSERVER_ORIGIN``)
+    - a supplied half observer identity differs from that half's validated
+      content -> ``CLOSURE_MISMATCH`` (REFUSED ``OBSERVER_ORIGIN``)
 
     The merged envelope keeps the shared fields, puts the peer's observations
     before the worker's, keeps every distinct provenance ref of both halves
     (peer first) and gets the id ``"<worker envelope_id>+<peer envelope_id>"``.
     """
     try:
-        validate_loaded_envelope(to_wire(worker_envelope.envelope))
+        worker_validated = validate_loaded_envelope(to_wire(worker_envelope.envelope))
     except TargetRefused as exc:
         return _target_refusal(exc, RefusalCode.CLOSURE_INCOMPLETE, boundary)
     if peer_envelope is None:
         return make_refusal(RefusalCode.CLOSURE_INCOMPLETE, boundary)
     try:
-        validate_loaded_envelope(to_wire(peer_envelope.envelope))
+        peer_validated = validate_loaded_envelope(to_wire(peer_envelope.envelope))
     except TargetRefused as exc:
         return _target_refusal(exc, RefusalCode.CLOSURE_INCOMPLETE, boundary)
+    if (
+        worker_envelope.content != worker_validated.content
+        or peer_envelope.content != peer_validated.content
+    ):
+        return make_refusal(
+            RefusalCode.CLOSURE_MISMATCH,
+            boundary,
+            retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+        )
 
-    worker, peer = worker_envelope.envelope, peer_envelope.envelope
+    worker, peer = worker_validated.envelope, peer_validated.envelope
     if peer.binding != worker.binding or peer.boundary != worker.boundary:
         return make_refusal(
             RefusalCode.SUBJECT_MISMATCH,
@@ -1066,8 +1081,8 @@ def merge_dual_role_halves(
             retry_kind=RetryKind.NEW_BINDING_REQUIRED,
         )
     for supplied, half in (
-        (worker_observed_bytes, worker_envelope),
-        (peer_observed_bytes, peer_envelope),
+        (worker_observed_bytes, worker_validated),
+        (peer_observed_bytes, peer_validated),
     ):
         if supplied is not None and supplied != half.content:
             return make_refusal(
@@ -1125,9 +1140,14 @@ def verify_and_compare_worker_closure(
     merged envelope's observer origin is derived by ``merge_dual_role_halves``,
     never supplied or synthesized.
 
+    The reviewed graph is revalidated and only the validated value reaches the
+    bookkeeper and the comparator.
+
     Fails closed:
     - supplied ``verified_origins.observed_bytes`` -> ``CLOSURE_MISMATCH``
     - schema/version mismatch -> ``CLOSURE_VERSION``
+    - reviewed graph ``content`` field differs from its validated content (stale
+      or forged) -> ``CLOSURE_MISMATCH``
     - any ``merge_dual_role_halves`` refusal
     - missing host or container role -> ``CLOSURE_INCOMPLETE``
     - ``UNKNOWN`` or ``REFUSED`` from ``compare_loaded_source`` -> mapped via
@@ -1141,9 +1161,15 @@ def verify_and_compare_worker_closure(
             retry_kind=RetryKind.NEW_BINDING_REQUIRED,
         )
     try:
-        validate_reviewed_graph(to_wire(reviewed_graph.graph))
+        reviewed_validated = validate_reviewed_graph(to_wire(reviewed_graph.graph))
     except TargetRefused as exc:
         return _target_refusal(exc, RefusalCode.CLOSURE_MISMATCH, boundary)
+    if reviewed_graph.content != reviewed_validated.content:
+        return make_refusal(
+            RefusalCode.CLOSURE_MISMATCH,
+            boundary,
+            retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+        )
 
     dual = merge_dual_role_halves(
         worker_envelope=worker_envelope,
@@ -1161,7 +1187,7 @@ def verify_and_compare_worker_closure(
         merged_envelope,
         boundary=boundary,
         load_stream_refs=load_stream_refs,
-        reviewed_graph=reviewed_graph,
+        reviewed_graph=reviewed_validated,
         require_dual_role=True,
         evidence=evidence,
     )
@@ -1171,7 +1197,7 @@ def verify_and_compare_worker_closure(
     merged_origins = replace(verified_origins, observed_bytes=dual.data.observed_bytes)
     try:
         comparison = compare_loaded_source(
-            reviewed_graph,
+            reviewed_validated,
             merged_envelope,
             expected=expectation,
             verified=merged_origins,

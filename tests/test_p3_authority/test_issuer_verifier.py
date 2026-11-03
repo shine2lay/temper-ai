@@ -52,6 +52,7 @@ from temper_ai.p3_authority.contract import (
 from temper_ai.p3_authority.issuer_verifier import (
     ANCHOR_PURPOSES,
     AUTHORITY_RECORD_KIND,
+    CONDITION_PREDICATES,
     CONDITION_TABLE,
     ED25519_FIELD_PRIME,
     ED25519_SMALL_ORDER_Y,
@@ -226,6 +227,25 @@ ANCHORS_1 = AnchorTable(
     ),
 )
 
+# N1-SPEC 8.1 TEST-ONLY anchor table: two issuers, both on the RFC 8032 TEST 1 key.
+SPEC_ANCHORS = AnchorTable(
+    clock_domain=CLOCK,
+    entries=tuple(
+        AnchorEntry(
+            issuer_id=issuer_id,
+            key_id=key_id,
+            public_key=RFC8032_TEST1_PUBLIC_KEY_HEX,
+            valid_from="0",
+            valid_until="100000",
+            purposes=ANCHOR_PURPOSES,
+        )
+        for issuer_id, key_id in (
+            ("issuer:authority-test", "test-key-1"),
+            ("issuer:policy-test", "test-key-p"),
+        )
+    ),
+)
+
 AUTHORITY_RECORD_1: dict[str, Any] = {
     "schema": ISSUER_AUTHORITY_SCHEMA,
     "verification_profile": ISSUER_VERIFICATION_PROFILE,
@@ -307,7 +327,6 @@ def _make_verifier(
     status_bytes: bytes | None = None,
     records_unavailable: bool = False,
     statuses_unavailable: bool = False,
-    condition_table: dict[str, str] | None = None,
 ) -> Ed25519IssuerVerifier:
     env_a = (
         authority_bytes
@@ -323,9 +342,6 @@ def _make_verifier(
         anchors=anchors,
         records=EnvelopeStore({REF_1: env_a}, unavailable=records_unavailable),
         statuses=EnvelopeStore({ISSUER_ID: env_s}, unavailable=statuses_unavailable),
-        condition_table=(
-            condition_table if condition_table is not None else dict(CONDITION_TABLE)
-        ),
     )
 
 
@@ -452,6 +468,60 @@ def test_n1_combined_happy_path_rfc8032_vector_and_registry_composition() -> Non
         sha256_hex(env_vec_s)
         == "88b57cb1deade16168418bde18d999543f84e01baf1de60a9e57058aff19d376"
     )
+
+    # Spec T-OK: vector A verifies with vector S on the 8.1 inputs (pre-dispatch job).
+    spec_ref = AuthorityRef(
+        issuer_id="issuer:authority-test",
+        record_id="auth:grant-1",
+        authority_revision="rev-1",
+    )
+    spec_job = PreDispatchJob(
+        execution_uuid="00000000-0000-4000-8000-000000000001",
+        designated_workflow="designated_v1",
+        descriptor_digest=hashlib.sha256(b"N1 TEST-ONLY descriptor").hexdigest(),
+        job_revision="job-rev-1",
+    )
+    assert spec_job.descriptor_digest == vector_a["subject"]["job"]["descriptor_digest"]
+    spec_subject = SelectedSubject(
+        subject=FutureSubjectRecord(selected_scope_reference="scope:sel-rev-1"),
+        job=spec_job,
+        selection_revision="sel-rev-1",
+    )
+    spec_effects = frozenset(
+        {
+            SelectedOperation(
+                domain="p3.boundary", operation="A_PRE_CREATE", revision="sel-rev-1"
+            )
+        }
+    )
+    spec_res = Ed25519IssuerVerifier(
+        anchors=SPEC_ANCHORS,
+        records={spec_ref: env_vec_a},
+        statuses={"issuer:authority-test": env_vec_s},
+    ).verify(
+        spec_ref,
+        FakePeer("peer:submit-test-1", FakeProcessRef("proc:worker-test-1")),
+        spec_subject,
+        spec_effects,
+        TrustedInstant(
+            clock_domain=CLOCK, reading="5000", witness=FakeWitness("snapshot:test-1")
+        ),
+    )
+    assert isinstance(spec_res, AcceptedData)
+    spec_verified = spec_res.data
+    assert spec_verified.issuer_identity == "issuer:authority-test"
+    assert (
+        spec_verified.verified_record_digest
+        == "29787feb35064373c585e71a94a02ef23162dca667989c235c492a20d4ada834"
+    )
+    assert spec_verified.subject == spec_subject
+    assert spec_verified.operations == spec_effects
+    assert spec_verified.revocation_revision == "7"
+    assert spec_verified.revocation_source.record_id == (
+        "p3-issuer-revocation/1#"
+        "791bb47161ac0e8708c919dcd6ceca8af9c9aeecc667df51100f3b56276eded9"
+    )
+    assert spec_verified.verification_profile == ISSUER_VERIFICATION_PROFILE
 
     env_a = signed_envelope(KIND_AUTHORITY, AUTHORITY_RECORD_1)
     env_s = signed_envelope(KIND_STATUS, STATUS_RECORD_1)
@@ -632,8 +702,9 @@ SPEC_SMALL_ORDER_Y = tuple(
 def test_n1_anchor_table_construction_validation() -> None:
     """Anchor-table construction rules K-OK to K13 and the unset clock domain
     (N1-SPEC r2 2.2-2.3, 6.8), each refusal with its exact reason."""
-    # K-OK, K-OK2: the production default and the TEST-ONLY table construct.
+    # K-OK, K-OK2: the production default and the 8.1 TEST-ONLY table construct.
     assert validate_anchor_table(PRODUCTION_ANCHOR_TABLE) is PRODUCTION_ANCHOR_TABLE
+    assert validate_anchor_table(SPEC_ANCHORS) is SPEC_ANCHORS
     assert validate_anchor_table(ANCHORS_1) is ANCHORS_1
     # Valid canonical keys stay accepted, one of them with its sign bit set.
     for good_key in (
@@ -1025,6 +1096,67 @@ def test_n1_refusal_twins_r1_to_r7() -> None:
         AcceptedData,
     )
 
+    # T-R3b: the status key's anchor entry lacks the revocation-status purpose. The
+    # record is still verified (authority-record purpose), so the status refuses R3.
+    record_only = _anchor_variant(purposes=frozenset({AUTHORITY_RECORD_KIND}))
+    _assert_refusal(
+        _make_verifier(anchors=record_only).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        RefusalCode.AUTHORITY_UNAVAILABLE,
+        RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+    )
+    # A second key that carries only the revocation-status purpose signs the status.
+    status_key = AnchorEntry(
+        issuer_id=ISSUER_ID,
+        key_id="ed25519:status-test-2",
+        public_key=TEST2_PUB_HEX,
+        valid_from="0",
+        valid_until="100000",
+        purposes=frozenset({REVOCATION_STATUS_KIND}),
+    )
+    split_purposes = AnchorTable(
+        clock_domain=CLOCK, entries=(record_only.entries[0], status_key)
+    )
+    status_by_key2 = {**STATUS_RECORD_1, "key_id": "ed25519:status-test-2"}
+    status_by_key2_env = make_envelope(
+        status_by_key2,
+        sign_ed25519(
+            TEST2_SEED_HEX,
+            domain_prefix(KIND_STATUS) + canonical_bytes(status_by_key2),
+        ),
+    )
+    assert isinstance(
+        _make_verifier(anchors=split_purposes, status_bytes=status_by_key2_env).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        AcceptedData,
+    )
+    # The record key cannot sign statuses, and the status key cannot sign records.
+    _assert_refusal(
+        _make_verifier(anchors=split_purposes).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        RefusalCode.AUTHORITY_UNAVAILABLE,
+        RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+    )
+    record_by_key2 = {**AUTHORITY_RECORD_1, "key_id": "ed25519:status-test-2"}
+    _assert_refusal(
+        _make_verifier(
+            anchors=split_purposes,
+            authority_bytes=make_envelope(
+                record_by_key2,
+                sign_ed25519(
+                    TEST2_SEED_HEX,
+                    domain_prefix(KIND_AUTHORITY) + canonical_bytes(record_by_key2),
+                ),
+            ),
+            status_bytes=status_by_key2_env,
+        ).verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+
     # R6: High-water rollback (revision 7 -> 6) and equivocation (revision 7 with different bytes)
     v_hw = _make_verifier()
     assert isinstance(
@@ -1357,6 +1489,61 @@ def test_n1_refusal_twins_w1_s1_p1_p2_e1_e2_c1_to_c5_and_precedence_x1_to_x4() -
         RetryKind.NEW_BINDING_REQUIRED,
     )
 
+    # Spec T-X3: empty anchor table and a missing record -> I2, before any store read.
+    class _CountingStore(EnvelopeStore):
+        def __init__(self) -> None:
+            super().__init__({})
+            self.reads: list[object] = []
+
+        def read(self, key: object) -> bytes | None:
+            self.reads.append(key)
+            return super().read(key)
+
+    no_records, no_statuses = _CountingStore(), _CountingStore()
+    _assert_refusal(
+        Ed25519IssuerVerifier(records=no_records, statuses=no_statuses).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+    assert no_records.reads == [] and no_statuses.reads == []
+    # Its twin: with the anchor pinned, the same missing record is read and refuses I5.
+    _assert_refusal(
+        Ed25519IssuerVerifier(
+            anchors=ANCHORS_1, records=no_records, statuses=no_statuses
+        ).verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.AUTHORITY_UNBOUND,
+        RetryKind.NOT_APPLICABLE,
+    )
+    assert no_records.reads == [REF_1] and no_statuses.reads == []
+
+    # Spec T-X4: bad signature and a status listing the record -> integrity wins (I11).
+    listed_status = signed_envelope(
+        KIND_STATUS,
+        {
+            **STATUS_RECORD_1,
+            "revoked": [
+                {"record_id": "auth:record-1", "authority_revision": "auth-rev-1"}
+            ],
+        },
+    )
+    _assert_refusal(
+        _make_verifier(
+            authority_bytes=make_envelope(AUTHORITY_RECORD_1, bytes(sig_flip)),
+            status_bytes=listed_status,
+        ).verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+    _assert_refusal(
+        _make_verifier(status_bytes=listed_status).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        RefusalCode.AUTHORITY_REVOKED,
+        RetryKind.NEW_BINDING_REQUIRED,
+    )
+
 
 def test_guard_bite_empty_identity_never_matches_in_peer_or_process_checks() -> None:
     """Guard bite: empty process_registration or peer_registration never compares equal ("" == "" -> refused)."""
@@ -1559,6 +1746,14 @@ def test_guard_bite_registry_enforces_snapshot_verified_at_condition_and_revocat
         conditions=frozenset({extra_cond}),  # type: ignore[arg-type]
     )
     assert evaluate_registry_conditions(job_nontuple_cond, verified_map) == "C5"
+    # T-C5b: a job condition whose authority is a bare str, not an AuthorityRef.
+    bare_str_cond = ConditionRef(
+        authority=AUTHORITY_REF_1.issuer_id,  # type: ignore[arg-type]
+        condition_id="mode:external-db-fresh",
+        revision="1",
+    )
+    job_bare_str = replace(rig.running_job, conditions=(bare_str_cond,))
+    assert evaluate_registry_conditions(job_bare_str, verified_map) == "C5"
 
     # Exact types (N1-SPEC 5 table and row C5): the job holding the verified
     # conditions passes; the same conditions in a tuple subclass refuse C5; a
@@ -1618,6 +1813,64 @@ def test_guard_bite_registry_enforces_snapshot_verified_at_condition_and_revocat
     assert res_c.code is RefusalCode.ISSUER_UNVERIFIED
     assert res_c.retry_kind is RetryKind.NOT_APPLICABLE
     assert res_c.phase is Phase.C
+
+    # Spec T-PH-B (R7 at B_PRE_REQUEST) and T-PH-C (W1 at C_BEFORE_COUNT): a real
+    # Ed25519 refusal on the fixed inputs keeps NEW_BINDING_REQUIRED and only its
+    # phase is re-stamped by the registry.
+    wide_status = {**STATUS_RECORD_1, "issued_at": "0", "next_update": "20000"}
+    listed = signed_envelope(
+        KIND_STATUS,
+        {
+            **wide_status,
+            "revoked": [
+                {"record_id": "auth:record-1", "authority_revision": "auth-rev-1"}
+            ],
+        },
+    )
+    at_expires = TrustedInstant(
+        clock_domain=CLOCK, reading="10000", witness=FakeWitness("w")
+    )
+
+    class _FixedInputsIssuerVerifier:
+        """Runs the real Ed25519 verifier on the fixed N1 inputs, whatever is asked."""
+
+        def __init__(self, status: bytes, at: TrustedInstant) -> None:
+            self._verifier = _make_verifier(status_bytes=status)
+            self._at = at
+
+        def verify(self, *_args: Any) -> Any:
+            return self._verifier.verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, self._at)
+
+    for status, at, boundary, code, phase in (
+        (listed, AT_5000, "B_PRE_REQUEST", RefusalCode.AUTHORITY_REVOKED, Phase.B),
+        (
+            signed_envelope(KIND_STATUS, wide_status),
+            at_expires,
+            "C_BEFORE_COUNT",
+            RefusalCode.AUTHORITY_EXPIRED,
+            Phase.C,
+        ),
+    ):
+        fixed = _FixedInputsIssuerVerifier(status, at)
+        direct = fixed.verify()
+        assert isinstance(direct, Refusal) and direct.code is code
+        assert direct.phase is Phase.A
+        reg_fixed = AuthorityRegistryService(
+            snapshot_provider=rig.publisher.reader(),
+            issuer_verifier=fixed,  # type: ignore[arg-type]
+            peer_verifier=rig.peer_verifier,
+            history_provider=InMemoryRequestHistoryProvider(),
+        )
+        restamped = reg_fixed.check_current(
+            rig.peer_run,
+            rig.running_job.selection_revision,
+            boundary,
+            default_effect_for_job(rig.running_job, boundary),
+        )
+        assert isinstance(restamped, Refusal)
+        assert restamped.code is code
+        assert restamped.retry_kind is RetryKind.NEW_BINDING_REQUIRED
+        assert restamped.phase is phase
 
 
 def test_guard_bite_candidate_bindings_never_accepted_as_authority_and_file_filter_refused() -> (
@@ -1847,10 +2100,6 @@ def test_guard_bite_compose_refuses_conflicting_issuer_and_peer_inputs() -> None
             {"issuer_verifier": Ed25519IssuerVerifier(), "issuer_statuses": {}},
         ),
         (
-            "issuer_verifier",
-            {"issuer_verifier": Ed25519IssuerVerifier(), "issuer_condition_table": {}},
-        ),
-        (
             "pinned_peers",
             {"peer_verifier": PinnedPeerVerifier((PEER_1,)), "pinned_peers": (PEER_1,)},
         ),
@@ -1876,6 +2125,21 @@ def test_guard_bite_compose_refuses_conflicting_issuer_and_peer_inputs() -> None
     ):
         composed = compose_p3_authority(**kwargs)
         assert composed.service._writes_enabled is False
+
+    # L-6: the closed condition table cannot be injected or changed (N1-SPEC 5.2-5.3).
+    with pytest.raises(TypeError):
+        compose_p3_authority(issuer_condition_table={})  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        Ed25519IssuerVerifier(condition_table={})  # type: ignore[call-arg]
+    verifier = Ed25519IssuerVerifier()
+    assert verifier.condition_table is CONDITION_TABLE
+    assert dict(CONDITION_TABLE) == {"mode:external-db-fresh": "1"}
+    with pytest.raises(AttributeError):
+        verifier.condition_table = {"mode:external-db-fresh": "2"}  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        CONDITION_TABLE["mode:external-db-fresh"] = "2"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        CONDITION_PREDICATES["tier:strict"] = lambda job: True  # type: ignore[index]
 
 
 def test_guard_bite_small_order_and_noncanonical_keys_never_verify() -> None:

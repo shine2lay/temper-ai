@@ -118,7 +118,6 @@ from temper_ai.p3_authority.contract import (
     WorkerObserver,
 )
 from temper_ai.p3_authority.issuer_verifier import (
-    CONDITION_TABLE,
     PRODUCTION_ANCHOR_TABLE,
     PRODUCTION_TRUST_ANCHORS,
     AnchorEntry,
@@ -2682,7 +2681,6 @@ def compose_p3_authority(
     issuer_anchors: AnchorTable | None = None,
     issuer_records: EnvelopeStore | Mapping[AuthorityRef, bytes] | None = None,
     issuer_statuses: EnvelopeStore | Mapping[str, bytes] | None = None,
-    issuer_condition_table: Mapping[str, str] | None = None,
     pinned_peers: Sequence[AuthenticatedPeer] | None = None,
     history_provider: RequestHistoryProvider | None = None,
     closure_comparator: SharedN3 | None = None,
@@ -2707,11 +2705,12 @@ def compose_p3_authority(
 ) -> P3AuthorityComposition:
     """Build a composed P3 authority bundle without side effects or default test doubles.
 
-    The issuer parts (``issuer_anchors``, ``issuer_records``, ``issuer_statuses``,
-    ``issuer_condition_table``) build an ``Ed25519IssuerVerifier`` and ``pinned_peers``
-    builds a ``PinnedPeerVerifier`` for the registry composed here. Passing them together
-    with ``issuer_verifier``, ``peer_verifier`` or ``registry`` raises ``ValueError``
-    instead of silently ignoring one of them.
+    The issuer parts (``issuer_anchors``, ``issuer_records``, ``issuer_statuses``)
+    build an ``Ed25519IssuerVerifier`` (its condition table is always the closed
+    ``CONDITION_TABLE``) and ``pinned_peers`` builds a ``PinnedPeerVerifier`` for the
+    registry composed here. Passing them together with ``issuer_verifier``,
+    ``peer_verifier`` or ``registry`` raises ``ValueError`` instead of silently
+    ignoring one of them.
     """
     issuer_parts_given = any(
         item is not None
@@ -2719,13 +2718,12 @@ def compose_p3_authority(
             issuer_anchors,
             issuer_records,
             issuer_statuses,
-            issuer_condition_table,
         )
     )
     if issuer_parts_given and issuer_verifier is not None:
         raise ValueError(
             "compose_p3_authority: pass issuer_verifier or the issuer parts "
-            "(issuer_anchors, issuer_records, issuer_statuses, issuer_condition_table), "
+            "(issuer_anchors, issuer_records, issuer_statuses), "
             "not both"
         )
     if pinned_peers is not None and peer_verifier is not None:
@@ -2747,11 +2745,6 @@ def compose_p3_authority(
             ),
             records=issuer_records,
             statuses=issuer_statuses,
-            condition_table=(
-                issuer_condition_table
-                if issuer_condition_table is not None
-                else CONDITION_TABLE
-            ),
         )
     effective_peer_verifier: PeerVerifierProtocol | None = peer_verifier
     if effective_peer_verifier is None and pinned_peers is not None:

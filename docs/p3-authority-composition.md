@@ -72,8 +72,8 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   against pinned `AnchorTable` entries (`PRODUCTION_ANCHOR_TABLE` is empty by
   default, refusing with `ISSUER_UNVERIFIED`), requires a signed
   `p3-issuer-revocation/1` status record in the same clock domain (missing or
-  stale status refuses `AUTHORITY_UNAVAILABLE`; listed `record_id` or
-  `authority_revision` refuses `AUTHORITY_REVOKED`), and evaluates every
+  stale status refuses `AUTHORITY_UNAVAILABLE`; a listed exact pair
+  (`record_id`, `authority_revision`) refuses `AUTHORITY_REVOKED`), and evaluates every
   `ConditionRef` against the closed `CONDITION_TABLE` (`CONDITIONS_UNMET` on
   unknown or unsatisfied conditions; the job's conditions must be an exact
   `tuple`, and `mode:external-db-fresh` holds only for a route that is the
@@ -98,10 +98,12 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   `PEER_UNVERIFIED` for P1), and `PinnedPeerVerifier.verify_peer` answers
   `False`. `compose_p3_authority(...)` accepts
   explicit `issuer_verifier`, `peer_verifier`, `issuer_anchors`,
-  `issuer_records`, `issuer_statuses`, `issuer_condition_table`, and
+  `issuer_records`, `issuer_statuses`, and
   `pinned_peers` parameters while keeping all defaults `None` and
   `writes_enabled=False`. The issuer parts build an `Ed25519IssuerVerifier` and
-  `pinned_peers` a `PinnedPeerVerifier`; passing them with `issuer_verifier`,
+  `pinned_peers` a `PinnedPeerVerifier`. The condition table cannot be passed:
+  `CONDITION_TABLE` and `CONDITION_PREDICATES` are read-only mappings, and
+  `Ed25519IssuerVerifier.condition_table` always returns `CONDITION_TABLE`; passing them with `issuer_verifier`,
   `peer_verifier` or `registry` raises `ValueError` instead of ignoring one.
 - **Window creation binding**: `bind_created` accepts only Phase A
   `CurrentBinding` records (`A_PRE_CREATE` / `A_PRE_ARM`) whose creator process

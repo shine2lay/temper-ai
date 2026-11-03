@@ -18,6 +18,7 @@ import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Final, Literal, TypeGuard
 
 from cryptography.exceptions import InvalidSignature
@@ -102,12 +103,14 @@ def job_runs_supported_mode(job: object) -> bool:
     return type(route) is str and route == SUPPORTED_MODE
 
 
-CONDITION_TABLE: Final[dict[str, str]] = {
-    "mode:external-db-fresh": "1",
-}
-CONDITION_PREDICATES: Final[dict[str, Callable[[object], bool]]] = {
-    "mode:external-db-fresh": job_runs_supported_mode,
-}
+# The closed condition table and its predicates are read-only: a new condition id
+# or revision needs a reviewed spec revision (N1-SPEC 5.2-5.3), never a caller's table.
+CONDITION_TABLE: Final[Mapping[str, str]] = MappingProxyType(
+    {"mode:external-db-fresh": "1"}
+)
+CONDITION_PREDICATES: Final[Mapping[str, Callable[[object], bool]]] = MappingProxyType(
+    {"mode:external-db-fresh": job_runs_supported_mode}
+)
 
 # Verify-only module: it holds no private key and has no signing function.
 # Signing and the RFC 8032 TEST 1 vector live in the tests only (N1-SPEC 8.1, C2).
@@ -896,8 +899,6 @@ class Ed25519IssuerVerifier:
         anchors: AnchorTable = PRODUCTION_ANCHOR_TABLE,
         records: EnvelopeStore | Mapping[AuthorityRef, bytes] | None = None,
         statuses: EnvelopeStore | Mapping[str, bytes] | None = None,
-        *,
-        condition_table: Mapping[str, str] = CONDITION_TABLE,
     ) -> None:
         self.anchors: AnchorTable = validate_anchor_table(anchors)
         if isinstance(records, EnvelopeStore):
@@ -908,9 +909,13 @@ class Ed25519IssuerVerifier:
             self.statuses: EnvelopeStore = statuses
         else:
             self.statuses = EnvelopeStore(statuses)
-        self.condition_table: dict[str, str] = dict(condition_table)
         self.high_water: dict[str, tuple[int, str]] = {}
         self._lock = threading.Lock()
+
+    @property
+    def condition_table(self) -> Mapping[str, str]:
+        """The closed ``CONDITION_TABLE``, read-only and never injected (N1-SPEC 5.2-5.3)."""
+        return CONDITION_TABLE
 
     def _anchor(
         self,

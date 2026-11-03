@@ -75,7 +75,10 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   stale status refuses `AUTHORITY_UNAVAILABLE`; listed `record_id` or
   `authority_revision` refuses `AUTHORITY_REVOKED`), and evaluates every
   `ConditionRef` against the closed `CONDITION_TABLE` (`CONDITIONS_UNMET` on
-  unknown or unsatisfied conditions). Every `AnchorTable` and `AnchorEntry`
+  unknown or unsatisfied conditions; the job's conditions must be an exact
+  `tuple`, and `mode:external-db-fresh` holds only for a route that is the
+  exact str `external-db-fresh`, see `job_runs_supported_mode`). Every
+  `AnchorTable` and `AnchorEntry`
   field is required (no default clock domain, validity window or purposes) and
   the table is checked whole at construction, raising `AnchorTableInvalid`
   (`p3_issuer_anchor_table_invalid:<reason>`): a public key that is not 64

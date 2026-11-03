@@ -20,6 +20,7 @@ Covers:
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -27,7 +28,11 @@ from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from temper_ai.config.admission_contract import DispatchIdentity, canonical_bytes
+from temper_ai.config.admission_contract import (
+    SUPPORTED_MODE,
+    DispatchIdentity,
+    canonical_bytes,
+)
 from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
 from temper_ai.p3_authority.contract import (
     AcceptedData,
@@ -896,6 +901,60 @@ def test_n1_refusal_twins_i1_to_i12() -> None:
             RetryKind.NOT_APPLICABLE,
         )
 
+    # T-I10b: the record's key_id is pinned, but under another issuer, and the
+    # record is signed with that key -> I10. The same table verifies the record
+    # under its own issuer's key.
+    policy_issuer = "issuer:policy-test-1"
+    policy_key = "ed25519:policy-test-1"
+    two_issuers = AnchorTable(
+        clock_domain=CLOCK,
+        entries=(
+            ANCHORS_1.entries[0],
+            AnchorEntry(
+                issuer_id=policy_issuer,
+                key_id=policy_key,
+                public_key=TEST2_PUB_HEX,
+                valid_from="0",
+                valid_until="100000",
+                purposes=ANCHOR_PURPOSES,
+            ),
+        ),
+    )
+    _assert_refusal(
+        _make_verifier(
+            anchors=two_issuers,
+            authority_bytes=signed_envelope(
+                KIND_AUTHORITY,
+                {**AUTHORITY_RECORD_1, "key_id": policy_key},
+                secret_key=TEST2_SEED_HEX,
+            ),
+        ).verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+    assert isinstance(
+        _make_verifier(anchors=two_issuers).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        AcceptedData,
+    )
+
+    # T-I11b: the envelope carries another record's valid signature -> I11.
+    other_record = {**AUTHORITY_RECORD_1, "record_id": "auth:record-2"}
+    other_signature = sign_record(KIND_AUTHORITY, other_record)
+    assert verify_ed25519_hex(
+        RFC8032_TEST1_PUBLIC_KEY_HEX,
+        other_signature,
+        domain_prefix(KIND_AUTHORITY) + canonical_bytes(other_record),
+    )
+    _assert_refusal(
+        _make_verifier(
+            authority_bytes=make_envelope(AUTHORITY_RECORD_1, other_signature)
+        ).verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.ISSUER_UNVERIFIED,
+        RetryKind.NOT_APPLICABLE,
+    )
+
 
 def test_n1_refusal_twins_r1_to_r7() -> None:
     """Twins R1-R7: revocation status availability, schema, anchor, signature, freshness window, high-water rollback/equivocation, and listing."""
@@ -937,6 +996,34 @@ def test_n1_refusal_twins_r1_to_r7() -> None:
             RefusalCode.AUTHORITY_UNAVAILABLE,
             RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
         )
+
+    # T-R2: the status envelope is valid JSON for the same object, but its bytes
+    # are not canonical (whitespace, key order) -> R2. The canonical bytes verify.
+    canonical_status = signed_envelope(KIND_STATUS, STATUS_RECORD_1)
+    status_sig_hex = sign_record(KIND_STATUS, STATUS_RECORD_1).hex()
+    for non_canonical_status in (
+        b"{ " + canonical_status[1:],
+        b'{"signature":"'
+        + status_sig_hex.encode("ascii")
+        + b'","record":'
+        + canonical_bytes(STATUS_RECORD_1)
+        + b"}",
+    ):
+        assert non_canonical_status != canonical_status
+        assert json.loads(non_canonical_status) == json.loads(canonical_status)
+        _assert_refusal(
+            _make_verifier(status_bytes=non_canonical_status).verify(
+                REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+            ),
+            RefusalCode.AUTHORITY_UNAVAILABLE,
+            RetryKind.SAME_BOUNDARY_AFTER_REPAIR,
+        )
+    assert isinstance(
+        _make_verifier(status_bytes=canonical_status).verify(
+            REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000
+        ),
+        AcceptedData,
+    )
 
     # R6: High-water rollback (revision 7 -> 6) and equivocation (revision 7 with different bytes)
     v_hw = _make_verifier()
@@ -1055,6 +1142,49 @@ def test_n1_refusal_twins_w1_s1_p1_p2_e1_e2_c1_to_c5_and_precedence_x1_to_x4() -
             RefusalCode.SUBJECT_MISMATCH,
             RetryKind.NOT_APPLICABLE,
         )
+
+    # T-S1b: the record binds the PreDispatchJob; the subject's job is a JobKey
+    # -> SUBJECT_MISMATCH. The subject holding that PreDispatchJob verifies.
+    bound_pre_job = PreDispatchJob(
+        execution_uuid=DISPATCH_1.execution_uuid,
+        designated_workflow="designated_v1",
+        descriptor_digest="0" * 64,
+        job_revision="job-rev-run-1",
+    )
+    pre_bound_verifier = _make_verifier(
+        authority_bytes=signed_envelope(
+            KIND_AUTHORITY,
+            {
+                **AUTHORITY_RECORD_1,
+                "subject": {
+                    **AUTHORITY_RECORD_1["subject"],
+                    "job": {
+                        "kind": "pre-dispatch",
+                        "execution_uuid": bound_pre_job.execution_uuid,
+                        "designated_workflow": bound_pre_job.designated_workflow,
+                        "descriptor_digest": bound_pre_job.descriptor_digest,
+                        "job_revision": bound_pre_job.job_revision,
+                    },
+                },
+            },
+        )
+    )
+    assert type(SUBJECT_1.job) is JobKey
+    _assert_refusal(
+        pre_bound_verifier.verify(REF_1, PEER_1, SUBJECT_1, EFFECTS_1, AT_5000),
+        RefusalCode.SUBJECT_MISMATCH,
+        RetryKind.NOT_APPLICABLE,
+    )
+    assert isinstance(
+        pre_bound_verifier.verify(
+            REF_1,
+            PEER_1,
+            replace(SUBJECT_1, job=bound_pre_job),
+            EFFECTS_1,
+            AT_5000,
+        ),
+        AcceptedData,
+    )
 
     # P1: Empty peer_registration, empty process_registration, or duck-typed process_reference without process_registration -> PEER_UNVERIFIED
     @dataclass(frozen=True)
@@ -1429,6 +1559,37 @@ def test_guard_bite_registry_enforces_snapshot_verified_at_condition_and_revocat
         conditions=frozenset({extra_cond}),  # type: ignore[arg-type]
     )
     assert evaluate_registry_conditions(job_nontuple_cond, verified_map) == "C5"
+
+    # Exact types (N1-SPEC 5 table and row C5): the job holding the verified
+    # conditions passes; the same conditions in a tuple subclass refuse C5; a
+    # route that only compares equal to the supported mode refuses C4.
+    good_job = replace(rig.running_job, conditions=verified.conditions)
+    assert evaluate_registry_conditions(good_job, verified_map) is None
+
+    class _ConditionTuple(tuple[ConditionRef, ...]):
+        """A tuple subclass carrying the same conditions."""
+
+    job_tuple_subclass = replace(
+        good_job, conditions=_ConditionTuple(good_job.conditions)
+    )
+    assert type(job_tuple_subclass.conditions) is _ConditionTuple
+    assert job_tuple_subclass.conditions == good_job.conditions
+    assert evaluate_registry_conditions(job_tuple_subclass, verified_map) == "C5"
+
+    class _RouteStr(str):
+        """A str subclass equal to the supported route."""
+
+    class _EqualsEverything:
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        __hash__ = object.__hash__
+
+    for odd_route in (_RouteStr(SUPPORTED_MODE), _EqualsEverything()):
+        job_odd_route = replace(good_job)
+        object.__setattr__(job_odd_route, "route", odd_route)
+        assert job_odd_route.route == SUPPORTED_MODE
+        assert evaluate_registry_conditions(job_odd_route, verified_map) == "C4"
 
     # T-PH-B & T-PH-C: Registry re-stamps Phase.A verifier refusals to boundary_to_phase(boundary)
     reg_empty_anchors = AuthorityRegistryService(

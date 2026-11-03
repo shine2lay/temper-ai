@@ -94,11 +94,19 @@ ED25519_SMALL_ORDER_Y: Final[frozenset[int]] = frozenset(
     )
 )
 
+
+def job_runs_supported_mode(job: object) -> bool:
+    """Predicate of ``mode:external-db-fresh`` (N1-SPEC 5): the job's route is the
+    exact str ``SUPPORTED_MODE``; a str subclass or any other equal object fails."""
+    route = getattr(job, "route", None)
+    return type(route) is str and route == SUPPORTED_MODE
+
+
 CONDITION_TABLE: Final[dict[str, str]] = {
     "mode:external-db-fresh": "1",
 }
 CONDITION_PREDICATES: Final[dict[str, Callable[[object], bool]]] = {
-    "mode:external-db-fresh": lambda job: getattr(job, "route", None) == SUPPORTED_MODE,
+    "mode:external-db-fresh": job_runs_supported_mode,
 }
 
 # Verify-only module: it holds no private key and has no signing function.
@@ -782,7 +790,7 @@ def evaluate_registry_conditions(
             if not predicate(job):
                 return "C4"
     job_conditions = getattr(job, "conditions", ())
-    if not isinstance(job_conditions, tuple):
+    if type(job_conditions) is not tuple:  # C5: an exact tuple, never a subclass
         return "C5"
     for cond in job_conditions:
         if (
@@ -1270,6 +1278,7 @@ __all__ = [
     "evaluate_registry_conditions",
     "is_decimal",
     "is_text",
+    "job_runs_supported_mode",
     "open_envelope",
     "parse_strict_instant_int",
     "project_job",

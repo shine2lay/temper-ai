@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import subprocess
 import textwrap
@@ -21,6 +22,8 @@ from p3_source_closure import (
     GeneratedProvenance,
     GraphBuildError,
     ProcessProfileSpec,
+    RepositorySpec,
+    ReviewedSourceGraph,
     SourceNode,
     build_reviewed_source_graph,
     validate_reviewed_graph,
@@ -461,3 +464,405 @@ def test_generator_guard_mutations_killed(
     install_mutation(monkeypatch, gb_mod, "_collect_module_ast_deps", before, after)
     with pytest.raises(AssertionError):
         check_rejects()
+
+
+# --- Several repositories and per-profile import roots (Systems #93, H-N3-MULTIREPO-1) ---
+
+
+def _commit_tree(repo: Path, files: dict[str, bytes], message: str = "tree") -> str:
+    if not (repo / ".git").exists():
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q")
+        _git(repo, "config", "user.email", "systems@example.invalid")
+        _git(repo, "config", "user.name", "Systems Test")
+    for rel_path, raw in files.items():
+        full = repo / rel_path
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_bytes(raw)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", message)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _runtime_inventory() -> tuple[SourceNode | DeclaredNodeSpec, ...]:
+    """Runtime nodes of _declared_inventory without its single-repository ids (generated, cache, source "main")."""
+    keep: list[SourceNode | DeclaredNodeSpec] = []
+    for item in _declared_inventory():
+        node = item.node if isinstance(item, DeclaredNodeSpec) else item
+        if node.id in ("generated", "cache"):
+            continue
+        node = dataclasses.replace(node, provenance=dataclasses.replace(node.provenance, sources=()))
+        keep.append(DeclaredNodeSpec(node, item.module_names) if isinstance(item, DeclaredNodeSpec) else node)
+    return tuple(keep)
+
+
+def _profile(profile_id: str, entry_ids: tuple[str, ...], module_path: tuple[tuple[str, str], ...], **extra) -> ProcessProfileSpec:
+    return ProcessProfileSpec(
+        id=profile_id,
+        role="worker",
+        entrypoint_ids=entry_ids,
+        runtime_nodes=("interpreter-host", "stdlib-host"),
+        load_policy_ref=_ref(f"policy-{profile_id}"),
+        module_path=module_path,
+        **extra,
+    )
+
+
+def _two_repositories(tmp_path: Path) -> tuple[RepositorySpec, RepositorySpec]:
+    host_commit = _commit_tree(
+        tmp_path / "host",
+        {
+            "bin/run.py": b"import helper\nimport sharedlib\nfrom toolkit import core\nimport json\n",
+            "bin/helper.py": b"VALUE = 1\n",
+            "toolkit/__init__.py": b"from . import core\n",
+            "toolkit/core.py": b"CORE = 1\n",
+        },
+    )
+    lib_commit = _commit_tree(
+        tmp_path / "lib",
+        {
+            "sharedlib/__init__.py": b"from .impl import compute\n",
+            "sharedlib/impl.py": b"def compute() -> int:\n    return 1\n",
+        },
+    )
+    return (
+        RepositorySpec("host", "ops", tmp_path / "host", host_commit),
+        RepositorySpec("lib", "temper", tmp_path / "lib", lib_commit),
+    )
+
+
+HOST_ROOTS = (("host", "bin"), ("host", ""), ("lib", ""))
+
+
+def test_multi_repository_cross_repo_imports_and_script_directory_root(tmp_path: Path) -> None:
+    assert public.RepositorySpec is RepositorySpec
+    host, lib = _two_repositories(tmp_path)
+    reviewed = build_reviewed_source_graph(
+        repositories=(host, lib),
+        entrypoints=(EntrypointSpec("run", "p", "host:bin/run.py", "run:main"),),
+        process_profiles=(_profile("p", ("run",), HOST_ROOTS),),
+        declared_nodes=_runtime_inventory(),
+        graph_id="graph-multi-1",
+    )
+    graph = reviewed.graph
+    assert validate_reviewed_graph(canonical_bytes(graph)) == reviewed
+    assert graph.completeness_review_ref is None
+    assert [(r.id, r.owner, r.commit) for r in graph.repositories] == [("host", "ops", host.commit), ("lib", "temper", lib.commit)]
+
+    nodes = {n.id: n for n in graph.nodes}
+    git_ids = {"host.bin.run", "host.bin.helper", "host.toolkit", "host.toolkit.core", "lib.sharedlib", "lib.sharedlib.impl"}
+    assert git_ids | {"stdlib-host", "interpreter-host"} == set(nodes)
+    assert nodes["lib.sharedlib.impl"].provenance.repository == "lib"
+    assert nodes["lib.sharedlib.impl"].provenance.commit == lib.commit
+    assert nodes["lib.sharedlib.impl"].provenance.path == "sharedlib/impl.py"
+    assert nodes["lib.sharedlib.impl"].logical_origin == "git:lib:sharedlib/impl.py"
+    assert nodes["host.bin.helper"].provenance.repository == "host"
+    assert nodes["host.bin.helper"].content == byte_identity(b"VALUE = 1\n")
+
+    edges = {(e.source, e.target, e.kind) for e in graph.edges}
+    assert {
+        ("host.bin.run", "host.bin.helper", "import"),
+        ("host.bin.run", "lib.sharedlib", "import"),
+        ("host.bin.run", "host.toolkit", "import"),
+        ("host.bin.run", "host.toolkit.core", "import"),
+        ("host.bin.run", "stdlib-host", "import"),
+        ("host.toolkit", "host.toolkit.core", "import"),
+        ("lib.sharedlib", "lib.sharedlib.impl", "import"),
+    } <= edges
+    profile = graph.process_profiles[0]
+    assert git_ids <= set(profile.required_load_ids)
+
+
+@pytest.mark.parametrize(
+    "roots,expected,shadowed",
+    [
+        ((("r", "bin"), ("r", "")), "r.bin.util", "r.util"),
+        ((("r", ""), ("r", "bin")), "r.util", "r.bin.util"),
+    ],
+)
+def test_first_root_holding_the_module_wins(tmp_path: Path, roots, expected: str, shadowed: str) -> None:
+    commit = _commit_tree(
+        tmp_path / "r",
+        {"bin/main.py": b"import util\n", "bin/util.py": b"WHERE = 'bin'\n", "util.py": b"WHERE = 'root'\n"},
+    )
+    reviewed = build_reviewed_source_graph(
+        repositories=(RepositorySpec("r", "temper", tmp_path / "r", commit),),
+        entrypoints=(EntrypointSpec("e", "p", "r:bin/main.py", "main"),),
+        process_profiles=(_profile("p", ("e",), roots),),
+        declared_nodes=_runtime_inventory(),
+    )
+    node_ids = {n.id for n in reviewed.graph.nodes}
+    assert ("r.bin.main", expected, "import") in {(e.source, e.target, e.kind) for e in reviewed.graph.edges}
+    assert expected in node_ids
+    assert shadowed not in node_ids
+
+
+def test_conflicting_resolution_across_profiles_fails_loud(tmp_path: Path) -> None:
+    commit = _commit_tree(
+        tmp_path / "r",
+        {"shared.py": b"import util\n", "one/util.py": b"A = 1\n", "two/util.py": b"B = 2\n"},
+    )
+    repository = RepositorySpec("r", "temper", tmp_path / "r", commit)
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(
+            repositories=(repository,),
+            entrypoints=(
+                EntrypointSpec("ea", "a", "r:shared.py", "shared"),
+                EntrypointSpec("eb", "b", "r:shared.py", "shared"),
+            ),
+            process_profiles=(
+                _profile("a", ("ea",), (("r", "one"), ("r", ""))),
+                _profile("b", ("eb",), (("r", "two"), ("r", ""))),
+            ),
+            declared_nodes=_runtime_inventory(),
+        )
+    assert exc_info.value.code == "CONFLICTING_RESOLUTION"
+    assert exc_info.value.items == ("r.shared:a/shared:b/shared",)
+
+    # Same roots in both profiles: one resolution, no conflict.
+    reviewed = build_reviewed_source_graph(
+        repositories=(repository,),
+        entrypoints=(
+            EntrypointSpec("ea", "a", "r:shared.py", "shared"),
+            EntrypointSpec("eb", "b", "r:shared.py", "shared"),
+        ),
+        process_profiles=(
+            _profile("a", ("ea",), (("r", "one"), ("r", ""))),
+            _profile("b", ("eb",), (("r", "one"), ("r", ""))),
+        ),
+        declared_nodes=_runtime_inventory(),
+    )
+    assert ("r.shared", "r.one.util", "import") in {(e.source, e.target, e.kind) for e in reviewed.graph.edges}
+
+
+def test_multi_repository_spec_errors_fail_loud(tmp_path: Path) -> None:
+    host, lib = _two_repositories(tmp_path)
+    entry = EntrypointSpec("run", "p", "host:bin/run.py", "run:main")
+    good_profile = _profile("p", ("run",), HOST_ROOTS)
+
+    def spec_error(**overrides) -> GraphBuildError:
+        kwargs = {
+            "repositories": (host, lib),
+            "entrypoints": (entry,),
+            "process_profiles": (good_profile,),
+            "declared_nodes": _runtime_inventory(),
+            **overrides,
+        }
+        with pytest.raises(GraphBuildError) as exc_info:
+            build_reviewed_source_graph(**kwargs)
+        return exc_info.value
+
+    unqualified = spec_error(
+        entrypoints=(EntrypointSpec("run", "p", "bin/run.py", "run:main", bootstrap_chain=("toolkit",)),),
+        process_profiles=(_profile("p", ("run",), HOST_ROOTS, extra_required_load_ids=("toolkit.core",), extra_allowed_node_ids=("sharedlib",)),),
+        dynamic_imports=(DynamicImportSpec("bin/run.py", "host:toolkit", _ref("condition")),),
+    )
+    assert unqualified.code == "INVALID_GRAPH_SPEC"
+    assert unqualified.items == (
+        "unqualified_ref:dynamic_import:bin/run.py->host:toolkit",
+        "unqualified_ref:unknown_allowed_node:p:sharedlib",
+        "unqualified_ref:unknown_bootstrap_target:run:toolkit",
+        "unqualified_ref:unknown_entrypoint_target:run:bin/run.py",
+        "unqualified_ref:unknown_required_load:p:toolkit.core",
+    )
+    unknown = spec_error(entrypoints=(EntrypointSpec("run", "p", "nope:bin/run.py", "run:main"),))
+    assert unknown.items == ("unknown_entrypoint_target:run:nope:bin/run.py",)
+
+    missing = spec_error(process_profiles=(_profile("p", ("run",), ()),))
+    assert missing.code == "INVALID_GRAPH_SPEC"
+    assert missing.items == ("missing_module_path:p",)
+    bad_roots = spec_error(process_profiles=(_profile("p", ("run",), (("host", "absent"), ("other", ""), ("host", "../x"))),))
+    assert bad_roots.items == (
+        "invalid_module_path:p:malformed_root_directory:host:../x",
+        "invalid_module_path:p:missing_root_directory:host:absent",
+        "invalid_module_path:p:unknown_root_repository:other",
+    )
+
+    both = spec_error(repo_path=tmp_path / "host", commit=host.commit)
+    assert both.code == "INVALID_REPOSITORY_FORM"
+    neither = spec_error(repositories=None)
+    assert neither.code == "INVALID_REPOSITORY_FORM"
+    duplicate = spec_error(repositories=(host, RepositorySpec("host", "temper", lib.repo_path, lib.commit)))
+    assert duplicate.code == "INVALID_REPOSITORY_SPEC"
+    assert duplicate.items == ("duplicate_repository_id:host",)
+    bad_owner = spec_error(repositories=(host, RepositorySpec("lib", "nobody", lib.repo_path, lib.commit)))
+    assert bad_owner.items == ("invalid_repository_owner:lib:nobody",)
+
+    single_with_roots = spec_error(
+        repositories=None,
+        repo_path=tmp_path / "host",
+        commit=host.commit,
+        entrypoints=(EntrypointSpec("run", "p", "bin/run.py", "run:main"),),
+    )
+    assert single_with_roots.items == ("module_path_needs_repositories:p",)
+
+
+def test_multi_repository_declared_dynamic_imports(tmp_path: Path) -> None:
+    commit = _commit_tree(
+        tmp_path / "r",
+        {
+            "bin/main.py": b"import importlib\nimportlib.import_module('plugin')\n__import__('json')\n",
+            "bin/plugin.py": b"P = 1\n",
+        },
+    )
+    kwargs = {
+        "repositories": (RepositorySpec("r", "temper", tmp_path / "r", commit),),
+        "entrypoints": (EntrypointSpec("e", "p", "r:bin/main.py", "main"),),
+        "process_profiles": (_profile("p", ("e",), (("r", "bin"),)),),
+        "declared_nodes": _runtime_inventory(),
+    }
+    reviewed = build_reviewed_source_graph(
+        **kwargs,
+        dynamic_imports=(
+            DynamicImportSpec("r:bin/main.py", "r:bin/plugin.py", _ref("plugin-condition")),
+            DynamicImportSpec("r:bin/main.py", "json", _ref("json-condition")),
+        ),
+    )
+    edges = {(e.source, e.target, e.kind) for e in reviewed.graph.edges}
+    assert {("r.bin.main", "r.bin.plugin", "dynamic_import"), ("r.bin.main", "stdlib-host", "dynamic_import")} <= edges
+    profile = reviewed.graph.process_profiles[0]
+    assert "r.bin.plugin" in profile.allowed_node_ids
+    assert "r.bin.plugin" not in profile.required_load_ids
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(**kwargs)
+    assert exc_info.value.items == (
+        "r:bin/main.py:2:unresolved_dynamic:*.import_module(plugin)",
+        "r:bin/main.py:3:unresolved_dynamic:__import__(json)",
+    )
+
+
+def test_relative_import_without_parent_package_fails_loud(tmp_path: Path) -> None:
+    commit = _commit_tree(tmp_path / "r", {"bin/main.py": b"from . import sibling\n", "bin/sibling.py": b"S = 1\n"})
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(
+            repositories=(RepositorySpec("r", "temper", tmp_path / "r", commit),),
+            entrypoints=(EntrypointSpec("e", "p", "r:bin/main.py", "main"),),
+            process_profiles=(_profile("p", ("e",), (("r", "bin"),)),),
+            declared_nodes=_runtime_inventory(),
+        )
+    assert exc_info.value.code == "UNRESOLVED_CLOSURE"
+    assert exc_info.value.items == ("r:bin/main.py:1:unresolved_import:relative_without_package",)
+
+
+def test_same_repository_at_two_commits_is_two_repositories(tmp_path: Path) -> None:
+    old_commit = _commit_tree(tmp_path / "r", {"main.py": b"A = 1\n"}, "old")
+    new_commit = _commit_tree(tmp_path / "r", {"main.py": b"A = 2\n"}, "new")
+    reviewed = build_reviewed_source_graph(
+        repositories=(
+            RepositorySpec("old", "temper", tmp_path / "r", old_commit),
+            RepositorySpec("new", "temper", tmp_path / "r", new_commit),
+        ),
+        entrypoints=(EntrypointSpec("eo", "po", "old:main", "main"), EntrypointSpec("en", "pn", "new:main.py", "main")),
+        process_profiles=(_profile("po", ("eo",), (("old", ""),)), _profile("pn", ("en",), (("new", ""),))),
+        declared_nodes=_runtime_inventory(),
+    )
+    assert validate_reviewed_graph(canonical_bytes(reviewed.graph)) == reviewed
+    nodes = {n.id: n for n in reviewed.graph.nodes}
+    assert nodes["old.main"].content == byte_identity(b"A = 1\n")
+    assert nodes["new.main"].content == byte_identity(b"A = 2\n")
+    assert (nodes["old.main"].provenance.commit, nodes["new.main"].provenance.commit) == (old_commit, new_commit)
+    assert [(r.id, r.commit) for r in reviewed.graph.repositories] == [("old", old_commit), ("new", new_commit)]
+
+
+def test_prefixed_node_id_overflow_and_collision_fail_loud(tmp_path: Path) -> None:
+    long_path = f"{'a' * 70}/{'b' * 70}.py"
+    commit = _commit_tree(tmp_path / "r", {"main.py": b"import " + f"{'a' * 70}.{'b' * 70}".encode() + b"\n", long_path: b"X = 1\n"})
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(
+            repositories=(RepositorySpec("r", "temper", tmp_path / "r", commit),),
+            entrypoints=(EntrypointSpec("e", "p", "r:main.py", "main"),),
+            process_profiles=(_profile("p", ("e",), (("r", ""),)),),
+            declared_nodes=_runtime_inventory(),
+        )
+    assert exc_info.value.code == "UNRESOLVED_CLOSURE"
+    assert exc_info.value.items == (f"r:{long_path}:0:invalid_node_id:r.{'a' * 70}.{'b' * 70}",)
+
+    a_commit = _commit_tree(tmp_path / "a", {"b/c.py": b"C = 1\n"})
+    ab_commit = _commit_tree(tmp_path / "ab", {"c.py": b"C = 2\n"})
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(
+            repositories=(
+                RepositorySpec("a", "temper", tmp_path / "a", a_commit),
+                RepositorySpec("a.b", "temper", tmp_path / "ab", ab_commit),
+            ),
+            entrypoints=(EntrypointSpec("e", "p", "a:b/c.py", "c"),),
+            process_profiles=(_profile("p", ("e",), (("a", ""),)),),
+            declared_nodes=_runtime_inventory(),
+        )
+    assert exc_info.value.code == "NODE_ID_COLLISION"
+    assert exc_info.value.items == ("a.b.c:a:b/c.py:a.b:c.py",)
+
+
+def _declared_package(node_id: str, module_names: tuple[str, ...]) -> DeclaredNodeSpec:
+    """A declared installed package, shaped like _runtime_inventory's stdlib node."""
+    stdlib = next(item for item in _runtime_inventory() if isinstance(item, DeclaredNodeSpec) and item.node.id == "stdlib-host")
+    return DeclaredNodeSpec(dataclasses.replace(stdlib.node, id=node_id, kind="package", logical_origin=node_id), module_names)
+
+
+def test_declared_module_beats_a_root_namespace_portion(tmp_path: Path) -> None:
+    # PathFinder keeps scanning sys.path past a namespace portion; a later regular package wins.
+    commit = _commit_tree(tmp_path / "r", {"main.py": b"import yaml\n", "yaml/README.md": b"data, not a package\n"})
+    spec = {
+        "repositories": (RepositorySpec("r", "temper", tmp_path / "r", commit),),
+        "entrypoints": (EntrypointSpec("e", "p", "r:main.py", "main"),),
+        "process_profiles": (_profile("p", ("e",), (("r", ""),)),),
+    }
+    declared = build_reviewed_source_graph(**spec, declared_nodes=(*_runtime_inventory(), _declared_package("yaml-pkg", ("yaml",))))
+    assert ("r.main", "yaml-pkg", "import") in {(e.source, e.target, e.kind) for e in declared.graph.edges}
+    namespace_only = build_reviewed_source_graph(**spec, declared_nodes=_runtime_inventory())
+    assert [e for e in namespace_only.graph.edges if e.source == "r.main"] == []
+
+
+def test_declared_module_never_supplies_a_submodule_of_a_root_module(tmp_path: Path) -> None:
+    # A regular package found on a root binds its submodule search to its own directory; a module has none.
+    declared = (
+        *_runtime_inventory(),
+        _declared_package("pkg-dist", ("pkg",)),
+        _declared_package("pkg-extra", ("pkg.extra",)),
+        _declared_package("mod-sub", ("mod.sub",)),
+    )
+    repository = tmp_path / "r"
+    files = {"pkg/__init__.py": b"", "mod.py": b"M = 1\n"}
+    bad = _commit_tree(repository, {**files, "main.py": b"import pkg.missing\nimport mod.sub\n"}, "bad")
+    good = _commit_tree(repository, {**files, "main.py": b"import pkg.extra\nfrom pkg import extra\n"}, "good")
+
+    def build(commit: str) -> ReviewedSourceGraph:
+        return build_reviewed_source_graph(
+            repositories=(RepositorySpec("r", "temper", repository, commit),),
+            entrypoints=(EntrypointSpec("e", "p", "r:main.py", "main"),),
+            process_profiles=(_profile("p", ("e",), (("r", ""),)),),
+            declared_nodes=declared,
+        )
+
+    with pytest.raises(GraphBuildError) as exc_info:
+        build(bad)
+    assert exc_info.value.code == "UNRESOLVED_CLOSURE"
+    assert exc_info.value.items == ("r:main.py:1:unresolved_import:pkg.missing", "r:main.py:2:unresolved_import:mod.sub")
+    edges = {(e.source, e.target, e.kind) for e in build(good).graph.edges if e.source == "r.main"}
+    assert edges == {("r.main", "r.pkg", "import"), ("r.main", "pkg-extra", "import")}
+
+
+def test_multi_repository_reads_only_committed_git_objects(tmp_path: Path) -> None:
+    host, lib = _two_repositories(tmp_path)
+    (tmp_path / "host" / "bin" / "helper.py").write_bytes(b"raise RuntimeError('dirty working tree')\n")
+    (tmp_path / "lib" / "sharedlib" / "impl.py").write_bytes(b"import untracked_mod\n")
+    (tmp_path / "host" / "bin" / "untracked_mod.py").write_bytes(b"U = 1\n")
+    entry = EntrypointSpec("run", "p", "host:bin/run.py", "run:main")
+    reviewed = build_reviewed_source_graph(
+        repositories=(host, lib),
+        entrypoints=(entry,),
+        process_profiles=(_profile("p", ("run",), HOST_ROOTS),),
+        declared_nodes=_runtime_inventory(),
+    )
+    nodes = {n.id: n for n in reviewed.graph.nodes}
+    assert nodes["host.bin.helper"].content == byte_identity(b"VALUE = 1\n")
+    assert nodes["lib.sharedlib.impl"].content == byte_identity(b"def compute() -> int:\n    return 1\n")
+    assert "host.bin.untracked_mod" not in nodes
+    with pytest.raises(GraphBuildError) as exc_info:
+        build_reviewed_source_graph(
+            repositories=(host, lib),
+            entrypoints=(entry,),
+            process_profiles=(_profile("p", ("run",), HOST_ROOTS, extra_required_load_ids=("host:bin/untracked_mod.py",)),),
+            declared_nodes=_runtime_inventory(),
+        )
+    assert exc_info.value.items == ("unknown_required_load:p:host:bin/untracked_mod.py",)

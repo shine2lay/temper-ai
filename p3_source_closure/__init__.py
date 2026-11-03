@@ -7,6 +7,7 @@ from .graph_builder import (
     EntrypointSpec,
     GraphBuildError,
     ProcessProfileSpec,
+    RepositorySpec,
     build_reviewed_source_graph,
 )
 from .loaded_envelope import validate_loaded_envelope
@@ -60,7 +61,7 @@ __all__ = [
     "LegacyNodeLink", "LoadedClosureEnvelope", "LoadEvent", "N3Coverage",
     "N3Gap", "N3ObservationEpoch", "N3SourceEpoch", "NativeClosureExpectation",
     "ProcessFrontier", "ProcessInstance", "ProcessObservation", "ProcessProfile",
-    "ProcessProfileSpec", "Repository", "ReviewedSourceGraph",
+    "ProcessProfileSpec", "Repository", "RepositorySpec", "ReviewedSourceGraph",
     "SourceClosureComparison", "SourceEdge", "SourceGraph", "SourceNode",
     "TargetRefused", "VerifiedClosureOrigins", "VerifiedOriginFact",
     "WORKER_PROCESS_ROLES", "build_reviewed_source_graph",

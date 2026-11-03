@@ -17,11 +17,20 @@ EnvelopeSchema = Literal["p3-reviewed-loaded-closure/1"]
 BoundaryPhase = Literal["A_PRE_CREATE", "A_PRE_ARM", "B_PRE_REQUEST", "C_PRE_REQUEST", "C_PRE_EXECUTION", "C_BEFORE_COUNT"]
 Reason = Literal["FORMAT", "REVIEW_ORIGIN", "GIT_MEMBERSHIP", "GENERATED_PROVENANCE", "RUNTIME_PROVENANCE", "CACHED_CODE", "BINDING", "PROCESS_INSTANCE", "UNREVIEWED_LOAD", "BYTE_SUBSTITUTION", "REQUIRED_LOAD", "OBSERVER_ORIGIN", "SEQUENCE_GAP", "COVERAGE_GAP", "STALE_FRONTIER", "CHILD_COVERAGE"]
 Coverage = Literal["launch", "bootstrap", "python", "generated", "cache", "native", "dynamic", "children", "control_plane", "effect_fence"]
+ALL_N3_COVERAGE_CATEGORIES: tuple[Coverage, ...] = (
+    "launch", "bootstrap", "python", "generated", "cache",
+    "native", "dynamic", "children", "control_plane", "effect_fence",
+)
 # Adopted §8.1 names reuse the checkpoint's exact categories; no complete flag.
 N3Coverage = Coverage
 N3Gap = Coverage
 Purpose = Literal["review", "membership", "generation", "artifact", "cache", "condition", "policy", "legacy", "process", "collector", "event", "checkpoint"]
 Role = Literal["creator", "controller", "executor", "worker", "checker", "child", "registry", "verifier", "observer", "comparator", "dispatcher"]
+HOST_PROCESS_ROLES: tuple[Role, ...] = (
+    "creator", "controller", "executor", "checker",
+    "registry", "verifier", "observer", "comparator", "dispatcher",
+)
+WORKER_PROCESS_ROLES: tuple[Role, ...] = ("worker",)
 
 
 def _typed(value: object, annotation: object) -> bool:

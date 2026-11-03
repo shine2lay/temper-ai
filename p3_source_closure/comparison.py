@@ -73,6 +73,9 @@ def _check_process(process: t.ProcessObservation, required: t.ExpectedProcess,
     else:
         if process.entrypoint_ids != profile.entrypoint_ids:
             findings.refuse("PROCESS_INSTANCE")
+        if ((profile.role in t.HOST_PROCESS_ROLES and process.instance.location != "host") or
+                (profile.role in t.WORKER_PROCESS_ROLES and process.instance.location != "container")):
+            findings.refuse("PROCESS_INSTANCE")
         if process.runtime_nodes != profile.runtime_nodes or process.instance.runtime_id not in profile.runtime_nodes:
             findings.refuse("RUNTIME_PROVENANCE")
     findings.origin(process.process_ref, "process", process_claim(process), "PROCESS_INSTANCE")
@@ -86,7 +89,8 @@ def _check_process(process: t.ProcessObservation, required: t.ExpectedProcess,
         findings.unknown("STALE_FRONTIER")
     if not cp.sealed or cp.loss_count or cp.gaps or not set(required.coverage) <= set(cp.coverage):
         findings.unknown("COVERAGE_GAP")
-    if "effect_fence" not in cp.coverage:
+    if (not set(t.ALL_N3_COVERAGE_CATEGORIES) <= set(cp.coverage) or
+            not set(t.ALL_N3_COVERAGE_CATEGORIES) <= set(required.coverage)):
         findings.unknown("COVERAGE_GAP")
     events = process.events
     sequences = tuple(e.sequence for e in events)
@@ -215,7 +219,16 @@ def compare_loaded_source(reviewed: ReviewedSourceGraph, observed: LoadedClosure
     if actual.keys() - required.keys():
         findings.refuse("PROCESS_INSTANCE")
     if envelope.boundary.phase not in ("A_PRE_CREATE", "A_PRE_ARM"):
-        if {p.instance.location for p in expected.processes} != {"host", "container"}:
+        profiles_by_id = {p.id: p for p in graph.process_profiles}
+        has_host_half = (
+            any(p.instance.location == "host" and (prof := profiles_by_id.get(p.profile_id)) is not None and prof.role in t.HOST_PROCESS_ROLES for p in expected.processes)
+            and any(p.instance.location == "host" and (prof := profiles_by_id.get(p.profile_id)) is not None and prof.role in t.HOST_PROCESS_ROLES for p in envelope.process_observations)
+        )
+        has_worker_half = (
+            any(p.instance.location == "container" and (prof := profiles_by_id.get(p.profile_id)) is not None and prof.role in t.WORKER_PROCESS_ROLES for p in expected.processes)
+            and any(p.instance.location == "container" and (prof := profiles_by_id.get(p.profile_id)) is not None and prof.role in t.WORKER_PROCESS_ROLES for p in envelope.process_observations)
+        )
+        if {p.instance.location for p in expected.processes} != {"host", "container"} or not has_host_half or not has_worker_half:
             findings.unknown("COVERAGE_GAP")
     for key in sorted(required.keys() & actual.keys()):
         process = actual[key]

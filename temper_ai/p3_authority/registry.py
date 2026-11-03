@@ -23,6 +23,7 @@ from temper_ai.p3_authority.contract import (
     AuthorityRef,
     Boundary,
     CompatibilityProfile,
+    ConditionRef,
     CurrentBinding,
     DecisionEvidence,
     EffectSet,
@@ -49,10 +50,22 @@ from temper_ai.p3_authority.contract import (
     VerifiedAuthority,
     WindowBinding,
 )
+from temper_ai.p3_authority.issuer_verifier import (
+    CONDITION_PREDICATES,
+    evaluate_registry_conditions,
+    is_text,
+    parse_strict_instant_int,
+)
 
-COMPATIBILITY_CORPUS_SCHEMA: Literal["ops-host-compat-corpus/1"] = "ops-host-compat-corpus/1"
-REVIEWED_GRAPH_SCHEMA: Literal["p3-reviewed-source-graph/1"] = "p3-reviewed-source-graph/1"
-LOADED_CLOSURE_SCHEMA: Literal["p3-reviewed-loaded-closure/1"] = "p3-reviewed-loaded-closure/1"
+COMPATIBILITY_CORPUS_SCHEMA: Literal["ops-host-compat-corpus/1"] = (
+    "ops-host-compat-corpus/1"
+)
+REVIEWED_GRAPH_SCHEMA: Literal["p3-reviewed-source-graph/1"] = (
+    "p3-reviewed-source-graph/1"
+)
+LOADED_CLOSURE_SCHEMA: Literal["p3-reviewed-loaded-closure/1"] = (
+    "p3-reviewed-loaded-closure/1"
+)
 
 
 def boundary_to_phase(boundary: Boundary | str) -> Phase:
@@ -75,12 +88,7 @@ class ImmutableReferenceRecord:
     revision: str
 
     def __post_init__(self) -> None:
-        if (
-            not self.path
-            or not self.digest
-            or self.length <= 0
-            or not self.revision
-        ):
+        if not self.path or not self.digest or self.length <= 0 or not self.revision:
             raise ValueError("invalid ImmutableReferenceRecord fields")
 
 
@@ -149,7 +157,9 @@ class DecisionEvidenceRecord:
         if type(self.phase) is not Phase:
             raise TypeError("DecisionEvidenceRecord.phase must be Phase")
         if self.boundary != "C_BEFORE_COUNT" and self.receiving:
-            raise ValueError("non-count DecisionEvidenceRecord cannot carry receiving refs")
+            raise ValueError(
+                "non-count DecisionEvidenceRecord cannot carry receiving refs"
+            )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -206,7 +216,9 @@ class SelectionSnapshotProvider(Protocol):
 class RequestHistoryProvider(Protocol):
     """Read-only lookup of prior request admission/effect/sequence history."""
 
-    def lookup_history(self, request_identity: RequestIdentity) -> PriorRequestHistory: ...
+    def lookup_history(
+        self, request_identity: RequestIdentity
+    ) -> PriorRequestHistory: ...
 
 
 def make_refusal(
@@ -246,18 +258,40 @@ def default_effect_for_job(job: SelectedJob, boundary: Boundary) -> SelectedOper
     )
 
 
+def _strict_proc_registration(proc: object) -> str:
+    val = getattr(proc, "process_registration", None)
+    return val if type(val) is str and val != "" else ""
+
+
+def _strict_peer_registration(peer: object) -> str:
+    val = getattr(peer, "peer_registration", None)
+    return val if type(val) is str and val != "" else ""
+
+
+def _same_strict_proc_registration(left: object, right: object) -> bool:
+    left_reg = _strict_proc_registration(left)
+    right_reg = _strict_proc_registration(right)
+    return bool(left_reg) and bool(right_reg) and left_reg == right_reg
+
+
 def _proc_ref(proc: object) -> str:
-    val = getattr(proc, "process_reference", None) or getattr(
-        proc, "process_registration", ""
-    )
-    return val if isinstance(val, str) else ""
+    if hasattr(proc, "process_registration"):
+        return _strict_proc_registration(proc)
+    val = getattr(proc, "process_reference", "")
+    return val if type(val) is str and val != "" else ""
 
 
 def _peer_ref(peer: object) -> str:
-    val = getattr(peer, "peer_reference", None) or getattr(
-        peer, "peer_registration", ""
-    )
-    return val if isinstance(val, str) else ""
+    if hasattr(peer, "peer_registration"):
+        return _strict_peer_registration(peer)
+    val = getattr(peer, "peer_reference", "")
+    return val if type(val) is str and val != "" else ""
+
+
+def _same_non_empty_proc_ref(left: object, right: object) -> bool:
+    left_ref = _proc_ref(left)
+    right_ref = _proc_ref(right)
+    return bool(left_ref) and bool(right_ref) and left_ref == right_ref
 
 
 class AuthorityRegistryService(P3AuthorityRegistry):
@@ -445,8 +479,60 @@ class AuthorityRegistryService(P3AuthorityRegistry):
                 retry_kind=selector_res.retry_kind,
                 history=history,
             )
+        selector_verified = selector_res.data
+        if type(selector_verified) is not VerifiedAuthority:
+            return make_refusal(
+                RefusalCode.ISSUER_UNVERIFIED,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
+        if selector_verified.subject != expected_subject:
+            return make_refusal(
+                RefusalCode.SUBJECT_MISMATCH,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
 
-        peer_proc = _proc_ref(peer.process)
+        peer_proc = _strict_proc_registration(getattr(peer, "process", None))
+        if not peer_proc or not _strict_peer_registration(peer):
+            return make_refusal(
+                RefusalCode.PEER_UNVERIFIED,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
+        if not selector_verified.actors or any(
+            not _strict_proc_registration(actor) for actor in selector_verified.actors
+        ):
+            return make_refusal(
+                RefusalCode.PEER_UNVERIFIED,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
+        if not any(
+            _same_strict_proc_registration(actor, peer.process)
+            for actor in selector_verified.actors
+        ):
+            return make_refusal(
+                RefusalCode.SUBJECT_MISMATCH,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
+        if intended_effect not in selector_verified.operations:
+            return make_refusal(
+                RefusalCode.SCOPE_MISMATCH,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
+
+        verified_by_ref: dict[AuthorityRef, VerifiedAuthority] = {
+            job.selector_issuer: selector_verified,
+        }
         verified_list: list[VerifiedAuthority] = []
         for auth_ref in job.authority_refs:
             ver_res = self._issuer_verifier.verify(
@@ -478,7 +564,19 @@ class AuthorityRegistryService(P3AuthorityRegistry):
                     retry_kind=RetryKind.NOT_APPLICABLE,
                     history=history,
                 )
-            if not any(_proc_ref(actor) == peer_proc for actor in verified.actors):
+            if not verified.actors or any(
+                not _strict_proc_registration(actor) for actor in verified.actors
+            ):
+                return make_refusal(
+                    RefusalCode.PEER_UNVERIFIED,
+                    phase=phase,
+                    retry_kind=RetryKind.NOT_APPLICABLE,
+                    history=history,
+                )
+            if not any(
+                _same_strict_proc_registration(actor, peer.process)
+                for actor in verified.actors
+            ):
                 return make_refusal(
                     RefusalCode.SUBJECT_MISMATCH,
                     phase=phase,
@@ -492,15 +590,24 @@ class AuthorityRegistryService(P3AuthorityRegistry):
                     retry_kind=RetryKind.NOT_APPLICABLE,
                     history=history,
                 )
-            for req_cond in job.conditions:
-                if req_cond not in verified.conditions:
-                    return make_refusal(
-                        RefusalCode.CONDITIONS_UNMET,
-                        phase=phase,
-                        retry_kind=RetryKind.NOT_APPLICABLE,
-                        history=history,
-                    )
+            verified_by_ref[auth_ref] = verified
             verified_list.append(verified)
+
+        cond_table = getattr(self._issuer_verifier, "condition_table", None)
+        if (
+            evaluate_registry_conditions(
+                job,
+                verified_by_ref,
+                condition_table=cond_table,
+            )
+            is not None
+        ):
+            return make_refusal(
+                RefusalCode.CONDITIONS_UNMET,
+                phase=phase,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+                history=history,
+            )
 
         return tuple(verified_list)
 
@@ -779,7 +886,8 @@ class AuthorityRegistryService(P3AuthorityRegistry):
         selected = matching[0]
         if (
             request_identity is not None
-            and request_identity.selection.selection_revision != selected.selection_revision
+            and request_identity.selection.selection_revision
+            != selected.selection_revision
         ):
             return make_refusal(
                 RefusalCode.SELECTION_FOREIGN,
@@ -902,23 +1010,28 @@ class InMemoryPeerVerifier:
     """Explicit test double for peer channel + process registration verification."""
 
     def __init__(self, allowed_peers: tuple[AuthenticatedPeer, ...] = ()) -> None:
-        self._allowed: dict[tuple[str, str], AuthenticatedPeer] = {
-            (_peer_ref(p), _proc_ref(p.process)): p
-            for p in allowed_peers
-        }
+        self._allowed: dict[tuple[str, str], AuthenticatedPeer] = {}
+        for p in allowed_peers:
+            self.register_peer(p)
 
     def register_peer(self, peer: AuthenticatedPeer) -> None:
-        self._allowed[(_peer_ref(peer), _proc_ref(peer.process))] = peer
+        peer_ref = _peer_ref(peer)
+        proc_ref = _proc_ref(getattr(peer, "process", None))
+        if peer_ref and proc_ref:
+            self._allowed[(peer_ref, proc_ref)] = peer
 
     def revoke_peer(self, peer: AuthenticatedPeer) -> None:
-        self._allowed.pop(
-            (_peer_ref(peer), _proc_ref(peer.process)), None
-        )
+        peer_ref = _peer_ref(peer)
+        proc_ref = _proc_ref(getattr(peer, "process", None))
+        if peer_ref and proc_ref:
+            self._allowed.pop((peer_ref, proc_ref), None)
 
     def verify_peer(self, peer: AuthenticatedPeer) -> bool:
-        if not hasattr(peer, "process") or not _peer_ref(peer):
+        peer_ref = _peer_ref(peer)
+        proc_ref = _proc_ref(getattr(peer, "process", None))
+        if not peer_ref or not proc_ref:
             return False
-        key = (_peer_ref(peer), _proc_ref(peer.process))
+        key = (peer_ref, proc_ref)
         expected = self._allowed.get(key)
         return expected is not None and expected == peer
 
@@ -1039,24 +1152,16 @@ class InMemoryIssuerVerifier(IssuerVerifier):
                 phase=Phase.A,
                 retry_kind=RetryKind.NEW_BINDING_REQUIRED,
             )
-        if (
-            isinstance(at.reading, str)
-            and at.reading.lstrip("-").isdigit()
-            and isinstance(rec.verified.not_before.reading, str)
-            and rec.verified.not_before.reading.lstrip("-").isdigit()
-            and isinstance(rec.verified.expires_at.reading, str)
-            and rec.verified.expires_at.reading.lstrip("-").isdigit()
-        ):
-            at_int = int(at.reading)
-            nb_int = int(rec.verified.not_before.reading)
-            exp_int = int(rec.verified.expires_at.reading)
-            out_of_range = at_int < nb_int or at_int > exp_int
-        else:
-            at_str = str(at.reading)
-            nb_str = str(rec.verified.not_before.reading)
-            exp_str = str(rec.verified.expires_at.reading)
-            out_of_range = at_str < nb_str or at_str > exp_str
-        if out_of_range:
+        at_int = parse_strict_instant_int(at.reading)
+        nb_int = parse_strict_instant_int(rec.verified.not_before.reading)
+        exp_int = parse_strict_instant_int(rec.verified.expires_at.reading)
+        if at_int is None or nb_int is None or exp_int is None:
+            return make_refusal(
+                RefusalCode.AUTHORITY_EXPIRED,
+                phase=Phase.A,
+                retry_kind=RetryKind.NEW_BINDING_REQUIRED,
+            )
+        if not (nb_int <= at_int < exp_int):
             return make_refusal(
                 RefusalCode.AUTHORITY_EXPIRED,
                 phase=Phase.A,
@@ -1068,8 +1173,21 @@ class InMemoryIssuerVerifier(IssuerVerifier):
                 phase=Phase.A,
                 retry_kind=RetryKind.NOT_APPLICABLE,
             )
-        peer_proc = _proc_ref(peer.process)
-        if not any(_proc_ref(actor) == peer_proc for actor in rec.verified.actors):
+        if (
+            not _peer_ref(peer)
+            or not _proc_ref(getattr(peer, "process", None))
+            or not rec.verified.actors
+            or any(not _proc_ref(actor) for actor in rec.verified.actors)
+        ):
+            return make_refusal(
+                RefusalCode.PEER_UNVERIFIED,
+                phase=Phase.A,
+                retry_kind=RetryKind.NOT_APPLICABLE,
+            )
+        if not any(
+            _same_non_empty_proc_ref(actor, peer.process)
+            for actor in rec.verified.actors
+        ):
             return make_refusal(
                 RefusalCode.SUBJECT_MISMATCH,
                 phase=Phase.A,
@@ -1081,6 +1199,19 @@ class InMemoryIssuerVerifier(IssuerVerifier):
                 phase=Phase.A,
                 retry_kind=RetryKind.NOT_APPLICABLE,
             )
+        for cond in rec.verified.conditions:
+            if (
+                type(cond) is not ConditionRef
+                or type(cond.authority) is not AuthorityRef
+                or not is_text(cond.revision)
+                or cond.condition_id not in CONDITION_PREDICATES
+                or not CONDITION_PREDICATES[cond.condition_id](rec.job_Lookup)
+            ):
+                return make_refusal(
+                    RefusalCode.CONDITIONS_UNMET,
+                    phase=Phase.A,
+                    retry_kind=RetryKind.NOT_APPLICABLE,
+                )
         effect = sorted(
             effects,
             key=lambda item: (item.domain, item.operation, item.revision),
@@ -1174,6 +1305,3 @@ __all__ = [
     "default_effect_for_job",
     "make_refusal",
 ]
-
-
-

@@ -16,6 +16,7 @@ closed when its required provider is absent.
 
 | Module | Role |
 | --- | --- |
+| `temper_ai.p3_authority.issuer_verifier` | Verify-only module (no private key, no signing function): `Ed25519IssuerVerifier`, implementing the `IssuerVerifier` port, verifying signed `p3-issuer-authority/1` records and `p3-issuer-revocation/1` status envelopes over `temper-p3-issuer/v1\x00<kind>\x00<CAJ-1 canonical bytes>` against `AnchorTable` (`PRODUCTION_ANCHOR_TABLE` / `PRODUCTION_TRUST_ANCHORS` empty at T5 until owner consent `C2`), integer-only `TrustedInstant` window comparisons (`not_before <= at < expires_at`), closed `CONDITION_TABLE` evaluation, and `PinnedPeerVerifier` (`PeerVerifierProtocol`) for non-empty `AuthenticatedPeer` verification (pinning or revoking a peer without both non-empty registrations raises `PinnedPeerInvalid`). |
 | `temper_ai.p3_authority.registry` | `AuthorityRegistryService` implementing `P3AuthorityRegistry` (`for_submit`, `for_run`, `check_current`, `bind_created`), immutable `SelectionSnapshot` / `DecisionEvidenceRecord` / subject records, read-only provider protocols (`SelectionSnapshotProvider`, `PeerVerifierProtocol`, `RequestHistoryProvider`), and explicit test-only doubles (`InMemorySelectionPublisher`, `InMemorySelectionSnapshotProvider`, `InMemoryIssuerVerifier`, `InMemoryPeerVerifier`, `InMemoryRequestHistoryProvider`). |
 | `temper_ai.p3_authority.candidate_bindings` | `P3CandidateBindings` implementing `temper_ai.runner.admission.CandidateBindings`, plus `CandidateCaptureAdapter` and `StaticCallerPeerProvider`, delegating capture, install, rollback, snapshot restore, context binding, and `external-db-fresh` persistence to existing V1 primitives. |
 | `temper_ai.p3_authority._providers` | Internal typed provider protocols (`EffectFenceProvider`, `QAReceivingVerifier`, `HostSessionPeerResolver`), `SystemsSourceClosureComparator` delegating to `p3_source_closure.compare_loaded_source`, and explicit test-only observer/provenance/fence doubles (`InMemoryHostObserver`, `InMemoryWorkerObserver`, `InMemoryRootObserver`, `InMemoryHostProvenance`, `InMemoryEffectFenceProvider`, `InMemoryQAReceivingVerifier`, `InMemoryHostSessionPeerResolver`). |
@@ -23,11 +24,18 @@ closed when its required provider is absent.
 
 ```python
 from temper_ai.p3_authority.service import (
+    AnchorEntry,
+    AnchorTable,
+    Ed25519IssuerVerifier,
+    EnvelopeStore,
     NativeHostJoinAdapter,
     P3AuthorityComposition,
     P3AuthorityService,
+    PRODUCTION_ANCHOR_TABLE,
+    PinnedPeerVerifier,
     compose_p3_authority,
 )
+from temper_ai.p3_authority.issuer_verifier import CONDITION_TABLE
 from temper_ai.p3_authority.registry import AuthorityRegistryService
 from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
 ```
@@ -52,7 +60,28 @@ from temper_ai.p3_authority.candidate_bindings import P3CandidateBindings
   `DISPATCH_CHANGED`. Every job's `selector_issuer` and `authority_refs` are
   verified through `IssuerVerifier.verify(...)` against the job's exact
   `SelectedSubject`, peer actor process, required `SelectedOperation` set,
-  `ConditionRef` tuple, and `TrustedInstant` validity window.
+  `ConditionRef` tuple, and `TrustedInstant` validity window (`at` taken solely
+  from `snapshot.verified_at` using strict non-negative integer comparisons
+  `not_before <= at < expires_at`). Empty process or peer identity strings never
+  compare equal (`"" == ""` refuses with `PEER_UNVERIFIED` / `SCOPE_MISMATCH`).
+- **Signed Ed25519 issuer and revocation verification (`issuer_verifier.py`)**:
+  `Ed25519IssuerVerifier` (implements the `IssuerVerifier` port; the module holds
+  no private key and no signing function) verifies CAJ-1 canonical envelopes
+  (`temper_ai.config.admission_contract.canonical_bytes` / `decode_canonical`)
+  with domain separation `b"temper-p3-issuer/v1\x00" + kind + b"\x00" + canonical_bytes(record)`
+  against pinned `AnchorTable` entries (`PRODUCTION_ANCHOR_TABLE` is empty by
+  default, refusing with `ISSUER_UNVERIFIED`), requires a signed
+  `p3-issuer-revocation/1` status record in the same clock domain (missing or
+  stale status refuses `AUTHORITY_UNAVAILABLE`; listed `record_id` or
+  `authority_revision` refuses `AUTHORITY_REVOKED`), and evaluates every
+  `ConditionRef` against the closed `CONDITION_TABLE` (`CONDITIONS_UNMET` on
+  unknown or unsatisfied conditions). `compose_p3_authority(...)` accepts
+  explicit `issuer_verifier`, `peer_verifier`, `issuer_anchors`,
+  `issuer_records`, `issuer_statuses`, `issuer_condition_table`, and
+  `pinned_peers` parameters while keeping all defaults `None` and
+  `writes_enabled=False`. The issuer parts build an `Ed25519IssuerVerifier` and
+  `pinned_peers` a `PinnedPeerVerifier`; passing them with `issuer_verifier`,
+  `peer_verifier` or `registry` raises `ValueError` instead of ignoring one.
 - **Window creation binding**: `bind_created` accepts only Phase A
   `CurrentBinding` records (`A_PRE_CREATE` / `A_PRE_ARM`) whose creator process
   is authorized, and refuses conflicting re-bindings of the same `window_id`

@@ -9,7 +9,7 @@ All providers default to ``None`` and fail closed with ``AUTHORITY_UNAVAILABLE``
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -44,6 +44,7 @@ from temper_ai.p3_authority.contract import (
     AdmissionState,
     AdmittedRequestBinding,
     AuthenticatedPeer,
+    AuthorityRef,
     BothRootObservations,
     Boundary,
     CalibrationSelection,
@@ -116,6 +117,16 @@ from temper_ai.p3_authority.contract import (
     WorkerObservation,
     WorkerObserver,
 )
+from temper_ai.p3_authority.issuer_verifier import (
+    CONDITION_TABLE,
+    PRODUCTION_ANCHOR_TABLE,
+    PRODUCTION_TRUST_ANCHORS,
+    AnchorEntry,
+    AnchorTable,
+    Ed25519IssuerVerifier,
+    EnvelopeStore,
+    PinnedPeerVerifier,
+)
 from temper_ai.p3_authority.registry import (
     COMPATIBILITY_CORPUS_SCHEMA,
     AuthorityRegistryService,
@@ -167,10 +178,10 @@ def _wit_ref(w: object) -> str:
 
 
 def _proc_ref_str(proc: object) -> str:
-    val = getattr(proc, "process_registration", None) or getattr(
-        proc, "process_reference", ""
-    )
-    return val if isinstance(val, str) else ""
+    val = getattr(proc, "process_registration", None)
+    if not (type(val) is str and val != ""):
+        val = getattr(proc, "process_reference", "")
+    return val if type(val) is str and val != "" else ""
 
 
 def _proc_from_actor(actor: object) -> NativeProcessRef:
@@ -178,10 +189,10 @@ def _proc_from_actor(actor: object) -> NativeProcessRef:
 
 
 def _peer_ref_str(peer: object) -> str:
-    val = getattr(peer, "peer_reference", None) or getattr(
-        peer, "peer_registration", ""
-    )
-    return val if isinstance(val, str) else ""
+    val = getattr(peer, "peer_registration", None)
+    if not (type(val) is str and val != ""):
+        val = getattr(peer, "peer_reference", "")
+    return val if type(val) is str and val != "" else ""
 
 
 _RECEIPT_PROVENANCE_CLS = getattr(ReceiptProvenance, "__origin__", ReceiptProvenance)
@@ -464,7 +475,11 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
 
         creator_proc = _proc_from_actor(creator_observation.process_instances[0])
         parent_proc = _proc_from_actor(parent_access_observation.actor_instance)
-        if _proc_ref_str(parent_proc) != _proc_ref_str(creator_proc):
+        if (
+            not _proc_ref_str(parent_proc)
+            or not _proc_ref_str(creator_proc)
+            or _proc_ref_str(parent_proc) != _proc_ref_str(creator_proc)
+        ):
             return make_refusal(
                 RefusalCode.ROOT_MISMATCH,
                 phase=phase,
@@ -1920,7 +1935,12 @@ class P3AuthorityService(P3NativeBoundary, NativeHostJoin):
         peer, refusal = self._resolve_host_session_peer(session, phase=phase)
         if refusal is not None or peer is None:
             return refusal  # type: ignore[return-value]
-        if _peer_ref_str(granted_peer) != _peer_ref_str(peer) or granted_scope != scope:
+        if (
+            not _peer_ref_str(granted_peer)
+            or not _peer_ref_str(peer)
+            or _peer_ref_str(granted_peer) != _peer_ref_str(peer)
+            or granted_scope != scope
+        ):
             return make_refusal(
                 RefusalCode.SCOPE_MISMATCH,
                 phase=phase,
@@ -2659,6 +2679,11 @@ def compose_p3_authority(
     snapshot_provider: SelectionSnapshotProvider | None = None,
     issuer_verifier: IssuerVerifier | None = None,
     peer_verifier: PeerVerifierProtocol | None = None,
+    issuer_anchors: AnchorTable | None = None,
+    issuer_records: EnvelopeStore | Mapping[AuthorityRef, bytes] | None = None,
+    issuer_statuses: EnvelopeStore | Mapping[str, bytes] | None = None,
+    issuer_condition_table: Mapping[str, str] | None = None,
+    pinned_peers: Sequence[AuthenticatedPeer] | None = None,
     history_provider: RequestHistoryProvider | None = None,
     closure_comparator: SharedN3 | None = None,
     host_observer: HostObserver | None = None,
@@ -2680,14 +2705,64 @@ def compose_p3_authority(
     writes_enabled: bool = False,
     refuse_count_as_write_disabled: bool = False,
 ) -> P3AuthorityComposition:
-    """Build a composed P3 authority bundle without side effects or default test doubles."""
+    """Build a composed P3 authority bundle without side effects or default test doubles.
+
+    The issuer parts (``issuer_anchors``, ``issuer_records``, ``issuer_statuses``,
+    ``issuer_condition_table``) build an ``Ed25519IssuerVerifier`` and ``pinned_peers``
+    builds a ``PinnedPeerVerifier`` for the registry composed here. Passing them together
+    with ``issuer_verifier``, ``peer_verifier`` or ``registry`` raises ``ValueError``
+    instead of silently ignoring one of them.
+    """
+    issuer_parts_given = any(
+        item is not None
+        for item in (
+            issuer_anchors,
+            issuer_records,
+            issuer_statuses,
+            issuer_condition_table,
+        )
+    )
+    if issuer_parts_given and issuer_verifier is not None:
+        raise ValueError(
+            "compose_p3_authority: pass issuer_verifier or the issuer parts "
+            "(issuer_anchors, issuer_records, issuer_statuses, issuer_condition_table), "
+            "not both"
+        )
+    if pinned_peers is not None and peer_verifier is not None:
+        raise ValueError(
+            "compose_p3_authority: pass peer_verifier or pinned_peers, not both"
+        )
+    if registry is not None and (issuer_parts_given or pinned_peers is not None):
+        raise ValueError(
+            "compose_p3_authority: the issuer parts and pinned_peers build the "
+            "registry's verifiers; a given registry already holds its own"
+        )
+    effective_issuer_verifier: IssuerVerifier | None = issuer_verifier
+    if effective_issuer_verifier is None and issuer_parts_given:
+        effective_issuer_verifier = Ed25519IssuerVerifier(
+            anchors=(
+                issuer_anchors
+                if issuer_anchors is not None
+                else PRODUCTION_ANCHOR_TABLE
+            ),
+            records=issuer_records,
+            statuses=issuer_statuses,
+            condition_table=(
+                issuer_condition_table
+                if issuer_condition_table is not None
+                else CONDITION_TABLE
+            ),
+        )
+    effective_peer_verifier: PeerVerifierProtocol | None = peer_verifier
+    if effective_peer_verifier is None and pinned_peers is not None:
+        effective_peer_verifier = PinnedPeerVerifier(pinned_peers)
     effective_registry = (
         registry
         if registry is not None
         else AuthorityRegistryService(
             snapshot_provider=snapshot_provider,
-            issuer_verifier=issuer_verifier,
-            peer_verifier=peer_verifier,
+            issuer_verifier=effective_issuer_verifier,
+            peer_verifier=effective_peer_verifier,
             history_provider=history_provider,
         )
     )
@@ -2734,7 +2809,11 @@ def compose_p3_authority(
 
 
 __all__ = [
+    "AnchorEntry",
+    "AnchorTable",
+    "Ed25519IssuerVerifier",
     "EffectFenceProvider",
+    "EnvelopeStore",
     "HostSessionPeerResolver",
     "InMemoryEffectFenceProvider",
     "InMemoryHostObserver",
@@ -2747,7 +2826,10 @@ __all__ = [
     "ObservationSessionRecord",
     "P3AuthorityComposition",
     "P3AuthorityService",
+    "PRODUCTION_ANCHOR_TABLE",
+    "PRODUCTION_TRUST_ANCHORS",
     "PermissionHandleRecord",
+    "PinnedPeerVerifier",
     "QAReceivingVerifier",
     "RecordedRowOccurrence",
     "SystemsSourceClosureComparator",

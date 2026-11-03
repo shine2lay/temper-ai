@@ -341,6 +341,33 @@ mutations. Their labelled transformations live with the existing case exports;
 there is no dependency on an external review directory at test time.
 Existing R2/R1/R5 suites and all their assertions remain unchanged.
 
+Shared coverage-scope cases (Systems #95, H-N3-SCOPE-CASES-1). Coverage is the
+observer's own sealed scope record, the Checkpoint, authenticated by its
+checkpoint, collector and initial facts: sealed, no loss, no gaps, and the
+checkpoint's and the expectation's coverage each hold all 10 categories. A
+covered category with no load is fine. A LoadEvent carries no category, so
+producer labels never give coverage; mislabels reduce to SC-03 (outside the
+envelope's scope) or SC-06 (widening it). `scope_case(case_id, half)` in the
+cases module builds SC-01..SC-11 for the host half (process `host`) and the
+worker half (process `worker`): the observer's record and loads first, witnesses
+from that record, producer edits to the envelope only afterwards.
+`test_scope_case_answer_is_exact` pins each exact disposition and reason set;
+the supplier test's FP-12..FP-14 rows kill copies that ignore gaps, skip the
+all-categories check or skip the checkpoint origin. The same cases ship as data
+only in the wheel: `p3_source_closure/n3_scope_cases.json`, schema
+`p3-n3-scope-cases/1`, each case with case_id, half, meaning, disposition,
+reasons and to_wire inputs. Load it with
+`importlib.resources.files("p3_source_closure").joinpath("n3_scope_cases.json")`;
+decode `reviewed_graph` and `observed_envelope` with `validate_reviewed_graph`
+and `validate_loaded_envelope`, and `expected` and `verified` with
+`p3_source_closure.parsing.decode_record(value, records.NativeClosureExpectation)`
+and `decode_record(value, records.VerifiedClosureOrigins)`, then call
+`compare_loaded_source(reviewed, observed, expected=..., verified=...)` and
+compare its disposition and sorted reasons with the case's. A test regenerates
+the file and compares bytes; regenerate it with
+`uv run python -m tests.test_architecture.ops_host_n3_cases`. Each case carries
+its four records in full, so a consumer needs no builder code.
+
 Canonical registration belongs to QA's actual `ops-host-compat-corpus/1` seam.
 No local registry is invented here; registration is NOT COMPLETE until QA's
 actual materialized artifact is available from Ops #739 (after Ops #738), per

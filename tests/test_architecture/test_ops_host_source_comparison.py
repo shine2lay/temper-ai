@@ -5,12 +5,15 @@ from __future__ import annotations
 import ast
 import builtins
 import dataclasses
+import hashlib
 import inspect
+import json
 import os
 import socket
 import subprocess
 import sys
 import textwrap
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -22,10 +25,14 @@ from p3_source_closure import parsing, provenance
 from p3_source_closure import records as types
 from tests.test_architecture.ops_host_n3_cases import (
     FAMILIES,
+    SCOPE_CASES,
+    SCOPE_CASES_RESOURCE,
     bad_twin,
     clean_world,
     content,
     received,
+    scope_case,
+    scope_cases_document,
     wire,
 )
 
@@ -35,13 +42,15 @@ def compare(inputs):
                                      expected=inputs.expected, verified=inputs.verified)
 
 
-def check_answer(inputs, disposition, reason=None):
+def check_answer(inputs, disposition, reason=None, *, reasons=None):
     result = compare(inputs)
     # Only fixed result labels participate in pytest assertions.
     assert result.disposition == disposition
     assert result.reasons == tuple(sorted(set(result.reasons)))
     if reason:
         assert reason in result.reasons
+    if reasons is not None:
+        assert result.reasons == reasons
     assert result.binding == inputs.expected.binding
     assert result.boundary == inputs.expected.boundary
     assert result.reviewed_graph == inputs.expected.reviewed_graph
@@ -64,6 +73,44 @@ def test_fixed_family(family):
         assert caught.value.code == family.disposition
     else:
         check_answer(bad_twin(family.case_id, clean), family.disposition, family.reason)
+
+
+@pytest.mark.parametrize("case", SCOPE_CASES, ids=lambda c: c.case_id + "-" + c.half)
+def test_scope_case_answer_is_exact(case):
+    """H-N3-SCOPE-CASES-1: coverage is the observer's sealed scope record, never a label."""
+    inputs = scope_case(case.case_id, case.half)
+    result = check_answer(inputs, case.disposition, reasons=case.reasons)
+    covered = tuple(sorted((p.frontier for p in inputs.expected.processes), key=lambda p: p.instance_id))
+    assert result.frontiers == (covered if case.disposition == "MATCH" else ())
+    if case.case_id == "SC-01":
+        assert inputs == clean_world()
+
+
+def test_scope_cases_file_is_the_builder_output_and_decodes_to_its_answers():
+    packaged = resources.files("p3_source_closure").joinpath(SCOPE_CASES_RESOURCE).read_bytes()
+    built = scope_cases_document()
+    # Digests, not a multi-megabyte diff, when the packaged copy is stale.
+    assert hashlib.sha256(packaged).hexdigest() == hashlib.sha256(built).hexdigest(), (
+        "stale p3_source_closure/" + SCOPE_CASES_RESOURCE
+        + "; regenerate: uv run python -m tests.test_architecture.ops_host_n3_cases")
+    rows = json.loads(packaged)["cases"]
+    assert [(r["case_id"], r["half"], r["disposition"], tuple(r["reasons"])) for r in rows] == [
+        (c.case_id, c.half, c.disposition, c.reasons) for c in SCOPE_CASES]
+    for row, case in zip(rows, SCOPE_CASES, strict=True):
+        inputs = scope_case(case.case_id, case.half)
+        wired = row["inputs"]
+        assert wired == {"reviewed_graph": parsing.to_wire(inputs.reviewed.graph),
+                         "observed_envelope": parsing.to_wire(inputs.observed.envelope),
+                         "expected": parsing.to_wire(inputs.expected),
+                         "verified": parsing.to_wire(inputs.verified)}
+        # A consumer's path: public validators and the closed decoder, then the comparator.
+        reviewed = api.validate_reviewed_graph(wired["reviewed_graph"])
+        observed = api.validate_loaded_envelope(wired["observed_envelope"])
+        expected = parsing.decode_record(wired["expected"], types.NativeClosureExpectation)
+        verified = parsing.decode_record(wired["verified"], types.VerifiedClosureOrigins)
+        assert (reviewed, observed, expected, verified) == (inputs.reviewed, inputs.observed, inputs.expected, inputs.verified)
+        result = api.compare_loaded_source(reviewed, observed, expected=expected, verified=verified)
+        assert (result.disposition, list(result.reasons)) == (row["disposition"], row["reasons"])
 
 
 @pytest.mark.parametrize("kind", ["graph", "envelope"])

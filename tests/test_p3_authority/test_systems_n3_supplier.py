@@ -79,6 +79,7 @@ from temper_ai.p3_authority.registry import (
     DecisionEvidenceRecord,
     default_effect_for_job,
 )
+from tests.test_architecture.ops_host_n3_cases import SCOPE_CASES, scope_case
 from tests.test_p3_authority._composition_fixtures import (
     COMPAT_PROFILE_1,
     NATIVE_SELECTION_RUN,
@@ -87,6 +88,13 @@ from tests.test_p3_authority._composition_fixtures import (
     REF_SOURCE,
     make_running_job,
 )
+
+# H-N3-SCOPE-CASES-1 (Systems #95): the shared scope cases each scope row's broken copy fails.
+SCOPE_GUARD_CASES = {
+    "FP-12-scope-gaps": ("SC-04", "SC-05"),
+    "FP-13-scope-all-categories": ("SC-09",),
+    "FP-14-scope-checkpoint-origin": ("SC-10", "SC-11"),
+}
 
 
 def _git(repo_dir: Path, *args: str) -> str:
@@ -1307,6 +1315,25 @@ def test_generator_output_without_independent_completeness_review_ref_never_matc
             'findings.origin(p.provenance_ref, "cache", (node, tuple(nodes[key] for key in (*p.source_nodes, p.interpreter))), "CACHED_CODE")',
             "pass",
         ),
+        # H-N3-SCOPE-CASES-1: copies that read coverage loosely, killed by SCOPE_GUARD_CASES.
+        (
+            "FP-12-scope-gaps",
+            "_check_process",
+            "if not cp.sealed or cp.loss_count or cp.gaps or",
+            "if not cp.sealed or cp.loss_count or",
+        ),
+        (
+            "FP-13-scope-all-categories",
+            "_check_process",
+            "if (not set(t.ALL_N3_COVERAGE_CATEGORIES) <= set(cp.coverage) or\n            not set(t.ALL_N3_COVERAGE_CATEGORIES) <= set(required.coverage)):",
+            "if False:",
+        ),
+        (
+            "FP-14-scope-checkpoint-origin",
+            "_check_process",
+            'findings.origin(cp.checkpoint_ref, "checkpoint", checkpoint_claim(process), "OBSERVER_ORIGIN")',
+            "pass",
+        ),
     ],
 )
 def test_guard_fault_proofs_fail_on_deliberately_broken_copy(
@@ -1471,6 +1498,21 @@ def test_guard_fault_proofs_fail_on_deliberately_broken_copy(
 
         def run_guard() -> None:
             _assert_comparison_refused(fault_world, "REFUSED", ("CACHED_CODE",), RefusalCode.CLOSURE_MISMATCH)
+
+    elif guard_id in SCOPE_GUARD_CASES:
+        scope_rows = [case for case in SCOPE_CASES if case.case_id in SCOPE_GUARD_CASES[guard_id]]
+        assert scope_rows
+
+        def run_guard() -> None:
+            for case in scope_rows:
+                inputs = scope_case(case.case_id, case.half)
+                result = compare_loaded_source(
+                    inputs.reviewed,
+                    inputs.observed,
+                    expected=inputs.expected,
+                    verified=inputs.verified,
+                )
+                assert (result.disposition, result.reasons) == (case.disposition, case.reasons)
 
     else:
         unavailable = VerifiedClosureOrigins(None, None, None, None, ())

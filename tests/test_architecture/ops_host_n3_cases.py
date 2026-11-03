@@ -340,7 +340,11 @@ def separate_exec_instance(inputs):
 
 def select_synthetic_graph(inputs, review_reference):
     """Select exact synthetic graph bytes, keeping the independently required review."""
-    graph = replace(inputs.reviewed.graph, completeness_review_ref=review_reference)
+    return select_reviewed_graph(inputs, replace(inputs.reviewed.graph, completeness_review_ref=review_reference))
+
+
+def select_reviewed_graph(inputs, graph):
+    """Select this exact synthetic graph; envelope, expectation and witnesses follow it."""
     graph_identity = identity(graph)
     graph_ref = replace(inputs.expected.reviewed_graph, content=graph_identity)
     envelope = replace(inputs.observed.envelope, reviewed_graph=graph_ref)
@@ -351,3 +355,189 @@ def select_synthetic_graph(inputs, review_reference):
     return replace(inputs, reviewed=t.ReviewedSourceGraph(graph, graph_identity),
                    observed=t.LoadedClosureEnvelope(envelope, identity(envelope)),
                    expected=expected, verified=verified)
+
+
+# Systems #95, H-N3-SCOPE-CASES-1: one shared set of coverage-scope cases for Temper #285's
+# producer tests, Ops #765's host half and the comparator tests. Coverage is the observer's
+# own sealed scope record (Checkpoint), authenticated by its checkpoint, collector and initial
+# facts; a covered category with no load is fine. A LoadEvent carries no category, so labels
+# never give coverage: mislabels (every label on one load, a wrong-node control_plane or
+# effect_fence label, swapped labels) reduce to SC-03 while they stay outside the envelope's
+# scope, and to SC-06 once they widen it.
+SCOPE_HALVES = ("host", "worker")  # the edited process: host controller, or container worker
+WITHOUT_NATIVE = tuple(category for category in COVERAGE if category != "native")
+SCOPE_CASES_RESOURCE = "n3_scope_cases.json"  # package data of p3_source_closure
+
+
+@dataclass(frozen=True)
+class ScopeCase:
+    case_id: str
+    half: str
+    disposition: str
+    reasons: tuple[str, ...]
+    meaning: str
+
+
+_SCOPE_TABLE = (
+    ("SC-01", "MATCH", (), "clean twin"),
+    ("SC-02", "MATCH", (), "honest bash leaf child: own profile, git_source script entrypoint, "
+                         "interpreter-bash runtime, no python, cache or generated loads; scope covers all 10"),
+    ("SC-03", "UNKNOWN", ("COVERAGE_GAP",), "observer scope lacks native; loads unchanged"),
+    ("SC-04", "UNKNOWN", ("COVERAGE_GAP",), "effect_fence in the observer's gaps"),
+    ("SC-05", "UNKNOWN", ("COVERAGE_GAP",), "control_plane in the observer's gaps"),
+    ("SC-06", "REFUSED", ("COVERAGE_GAP", "OBSERVER_ORIGIN"),
+     "producer widens the envelope's scope to all 10; the observer lacks native"),
+    ("SC-07", "UNKNOWN", ("OBSERVER_ORIGIN", "SEQUENCE_GAP", "STALE_FRONTIER"),
+     "load event after the observer's sealed last_sequence"),
+    ("SC-08", "UNKNOWN", ("COVERAGE_GAP",), "observer scope unsealed, loss_count 1"),
+    ("SC-09", "UNKNOWN", ("COVERAGE_GAP",),
+     "observer and expectation both lack native: no expectation waives a category"),
+    ("SC-10", "REFUSED", ("OBSERVER_ORIGIN",), "producer erases the observer's effect_fence gap"),
+    ("SC-11", "REFUSED", ("OBSERVER_ORIGIN",),
+     "producer seals the observer's unsealed scope and zeroes its loss_count"),
+)
+SCOPE_CASES = tuple(ScopeCase(case_id, half, disposition, reasons, meaning)
+                    for case_id, disposition, reasons, meaning in _SCOPE_TABLE for half in SCOPE_HALVES)
+# The observer's own sealed scope record, set before any witness exists.
+_OBSERVER_SCOPE = {
+    "SC-03": {"coverage": WITHOUT_NATIVE}, "SC-04": {"gaps": ("effect_fence",)},
+    "SC-05": {"gaps": ("control_plane",)}, "SC-06": {"coverage": WITHOUT_NATIVE},
+    "SC-08": {"sealed": False, "loss_count": 1}, "SC-09": {"coverage": WITHOUT_NATIVE},
+    "SC-10": {"gaps": ("effect_fence",)}, "SC-11": {"sealed": False, "loss_count": 1},
+}
+# Producer-side scope edits, made only to the envelope after the witnesses exist.
+_PRODUCER_SCOPE = {
+    "SC-06": {"coverage": COVERAGE}, "SC-10": {"gaps": ()},
+    "SC-11": {"sealed": True, "loss_count": 0},
+}
+
+
+def _edit_process(processes, instance_id, edit):
+    """Replace exactly the one process named instance_id with edit(process)."""
+    (index,) = (i for i, p in enumerate(processes) if p.instance.instance_id == instance_id)
+    return (*processes[:index], edit(processes[index]), *processes[index + 1:])
+
+
+def _scope_edit(changes):
+    return lambda process: replace(process, checkpoint=replace(process.checkpoint, **changes))
+
+
+def _late_load(inputs):
+    """A reviewed load after the sealed last_sequence, outside the observer's record."""
+    optional = next(n for n in inputs.reviewed.graph.nodes if n.id == "optional")
+
+    def edit(process):
+        sequence, name = len(process.events), process.instance.instance_id
+        late = t.LoadEvent(sequence, name + "-" + str(sequence), "load", optional.id, optional.content,
+                           "loader-v1", "bytes", None, ref(name + "-event-" + str(sequence)))
+        return replace(process, events=(*process.events, late))
+    return edit
+
+
+def _select_expected_coverage(inputs, instance_id, coverage):
+    """The service's own expectation narrows too; it still cannot waive a category."""
+    required = tuple(replace(p, coverage=coverage) if p.instance.instance_id == instance_id else p
+                     for p in inputs.expected.processes)
+    expected = replace(inputs.expected, processes=required)
+    return replace(inputs, expected=expected, verified=replace(inputs.verified, expectation=identity(expected)))
+
+
+def bash_leaf_child(inputs, parent_id):
+    """An honest bash leaf child of parent_id: own profile, git_source script entrypoint,
+    interpreter-bash runtime, no python, cache or generated loads; its sealed scope still
+    covers all 10 categories, because a covered category needs no load."""
+    graph, envelope = inputs.reviewed.graph, inputs.observed.envelope
+    repo = graph.repositories[0]
+    script = t.SourceNode("bash-script", "git_source", content("bash-script"), "bash-script.sh", "100755", t.GitProvenance(
+        "git", repo.id, repo.commit, repo.tree, "bash-script.sh", "100755", "c" * 40, ref("membership-bash-script"), (), "regular"))
+    bash = t.SourceNode("interpreter-bash", "interpreter", content("interpreter-bash"), "interpreter-bash", "100755", t.ArtifactProvenance(
+        "artifact", content("interpreter-bash"), content("build-interpreter-bash"), ("tool",), (), "interpreter-bash", "abi-bash",
+        "bytes", content("interpreter-bash"), ref("artifact-interpreter-bash")))
+    profile = t.ProcessProfile("bash-child", "child", ("bash-child-entry",), (bash.id,), (bash.id, script.id), (), (),
+                               ref("policy-bash-child"))
+    profiles = tuple(replace(p, child_profiles=(*p.child_profiles, profile.id)) if p.id == parent_id else p
+                     for p in graph.process_profiles)
+    graph = replace(graph, nodes=(*graph.nodes, script, bash), process_profiles=(*profiles, profile),
+                    entrypoints=(*graph.entrypoints, t.Entrypoint("bash-child-entry", profile.id, script.id, "bash-script.sh", ())))
+    parent = next(p for p in envelope.process_observations if p.instance.instance_id == parent_id)
+    location = parent.instance.location
+    instance = t.ProcessInstance("bash-child", "boot-1", 105, "birth-bash-child", 1, parent_id, "launch-bash-child",
+                                 "pidns-" + location, "mntns-" + location, "userns-" + location, location,
+                                 parent.instance.container_identity, "actor-bash-child", 1001, 1001, (), bash.id)
+    steps = (("start", None), ("load", bash), ("load", script), ("end", None))
+    events = tuple(t.LoadEvent(i, "bash-child-" + str(i), kind, node.id if node else None, node.content if node else None,
+                               "loader-v1" if node else "trusted-launch", "bytes", None, ref("bash-child-event-" + str(i)))
+                   for i, (kind, node) in enumerate(steps))
+    cp = t.Checkpoint("epoch-bash-child", 0, events[-1].sequence, events[-1].event_id, (), COVERAGE, (), 0, True,
+                      ref("initial-bash-child"), ref("checkpoint-bash-child"), envelope.boundary)
+    child = t.ProcessObservation(profile.id, instance, envelope.binding, graph.graph_id, profile.entrypoint_ids,
+                                 profile.runtime_nodes, parent.collector_id, parent.collector_version, parent.mechanism,
+                                 ref("process-bash-child"), ref("collector-bash-child"), events, cp, "terminated")
+    sequence = len(parent.events)
+    spawn = t.LoadEvent(sequence, parent_id + "-" + str(sequence), "child", None, None, "trusted-launch", "bytes",
+                        instance.instance_id, ref(parent_id + "-event-" + str(sequence)))
+    parent_cp = replace(parent.checkpoint, child_frontier=(*parent.checkpoint.child_frontier, instance.instance_id),
+                        last_sequence=sequence, last_event_id=spawn.event_id)
+    processes = _edit_process(envelope.process_observations, parent_id,
+                              lambda p: replace(p, events=(*p.events, spawn), checkpoint=parent_cp))
+    envelope = replace(envelope, process_observations=(*processes, child))
+    # Service frontiers are selected explicitly for this fixed positive world.
+    required = tuple(replace(p, frontier=replace(p.frontier, child_frontier=parent_cp.child_frontier,
+                                                last_sequence=sequence, last_event_id=spawn.event_id))
+                     if p.instance.instance_id == parent_id else p for p in inputs.expected.processes)
+    frontier = t.ProcessFrontier(instance.instance_id, cp.epoch, cp.last_sequence, cp.last_event_id, (), cp.checkpoint_ref)
+    expected = replace(inputs.expected, processes=(*required, t.ExpectedProcess(profile.id, instance, frontier, COVERAGE)))
+    inputs = replace(inputs, observed=t.LoadedClosureEnvelope(envelope, identity(envelope)), expected=expected)
+    return select_reviewed_graph(inputs, graph)
+
+
+def scope_case(case_id, half):
+    """One shared scope case. The observer's sealed scope record and loads are set first and
+    the witnesses are built from that observer-side record; a producer edit then touches
+    only the envelope. Invented synthetic data: it confers no authority."""
+    if case_id not in {row[0] for row in _SCOPE_TABLE} or half not in SCOPE_HALVES:
+        raise ValueError(f"unknown scope case {case_id!r} for half {half!r}")
+    inputs = clean_world()
+    if case_id == "SC-02":
+        return bash_leaf_child(inputs, half)
+    if case_id == "SC-09":
+        inputs = _select_expected_coverage(inputs, half, WITHOUT_NATIVE)
+    envelope = inputs.observed.envelope
+    observer = _edit_process(envelope.process_observations, half, _scope_edit(_OBSERVER_SCOPE.get(case_id, {})))
+    inputs = received(inputs, replace(envelope, process_observations=observer), observed_facts=True)
+    if case_id == "SC-07":
+        producer = _edit_process(observer, half, _late_load(inputs))
+    elif case_id in _PRODUCER_SCOPE:
+        producer = _edit_process(observer, half, _scope_edit(_PRODUCER_SCOPE[case_id]))
+    else:
+        return inputs
+    return received(inputs, replace(inputs.observed.envelope, process_observations=producer))
+
+
+def scope_cases_document():
+    """The exact bytes of p3_source_closure/n3_scope_cases.json: data only, no code.
+    Regenerate with: uv run python -m tests.test_architecture.ops_host_n3_cases"""
+    cases = []
+    for case in SCOPE_CASES:
+        inputs = scope_case(case.case_id, case.half)
+        cases.append({
+            "case_id": case.case_id, "half": case.half, "meaning": case.meaning,
+            "disposition": case.disposition, "reasons": list(case.reasons),
+            "inputs": {"reviewed_graph": wire(inputs.reviewed.graph), "observed_envelope": wire(inputs.observed.envelope),
+                       "expected": wire(inputs.expected), "verified": wire(inputs.verified)},
+        })
+    document = {
+        "schema": "p3-n3-scope-cases/1",
+        "about": ("Shared N3 coverage-scope cases (Systems #95). Coverage is the observer's own sealed scope "
+                  "record, authenticated by its checkpoint, collector and initial facts; labels never give "
+                  "coverage. Invented synthetic data: no authority and no native qualification."),
+        "builder": "tests/test_architecture/ops_host_n3_cases.py scope_case",
+        "cases": cases,
+    }
+    return (json.dumps(document, sort_keys=True, indent=0, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii")
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    (Path(__file__).resolve().parents[2] / "p3_source_closure" / SCOPE_CASES_RESOURCE).write_bytes(scope_cases_document())

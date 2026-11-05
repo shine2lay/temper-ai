@@ -8,8 +8,10 @@
     design_app_screen.py collect --product P --description TEXT [--request TEXT --request-source TEXT]
         [--doc d_x[@2,3]] [--record dr-x[:q1,q2]] [--history] (--out FILE | --workspace W)   (host, intake)
     design_app_screen.py grade-intake --case DIR --workspace W                  (host, intake trials)
+    design_app_screen.py capture --product P --workspace W                      (host, before stage 2)
+    design_app_screen.py grade-existing --case DIR --workspace W                (host, stage 2 trials)
 
-Steps: intake_collect, intake_check, intake, existing, ground, directions, gate_direction, build, checks, review, show, gate_final,
+Steps: intake_collect, intake_check, intake, existing_collect, existing_sheet, existing_check, existing, ground, directions, gate_direction, build, checks, review, show, gate_final,
 gate_final_next, handoff. A step's text input (a gate's answer) comes in env APP_SCREEN_DATA. After each
 step its output is validated against its contract (app_screen/contracts.py); a broken output fails the
 step with every file, field and reason. Prints one JSON line (the step's structured output).
@@ -34,6 +36,7 @@ from app_screen import (  # noqa: E402
     contracts,
     directions,
     existing,
+    existing_grade,
     gates,
     ground,
     handoff,
@@ -46,14 +49,17 @@ from app_screen import (  # noqa: E402
 from app_screen.fixture_stage import NotBuiltError  # noqa: E402
 from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa: E402
 
-HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake")
-RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run, "existing": existing.run, "ground": ground.run, "directions": directions.run,
+HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing")
+RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
+        "existing_collect": existing.collect, "existing_sheet": existing.sheet, "existing_check": existing.check,
+        "existing": existing.run, "ground": ground.run, "directions": directions.run,
         "gate_direction": lambda ws, raw: gates.answer(ws, "direction", raw), "build": build.run,
         "checks": checks.run, "review": checks.review, "show": show.run,
         "gate_final": lambda ws, raw: gates.answer(ws, "final", raw),
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
-            intake.IntakeError, intake_sources.SourcesError, OSError, ValueError, KeyError)
+            intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, OSError, ValueError, KeyError,
+            RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:
@@ -109,9 +115,19 @@ def collect(args: argparse.Namespace) -> dict:
     return {"items": len(doc["items"]), "kinds": sorted({i["kind"] for i in doc["items"]}), "written": str(out)}
 
 
+def capture(args: argparse.Namespace) -> dict:
+    """Host: stage 2's captures and measures of the product today (Playwright, Pillow: host only)."""
+    if not args.product or not args.workspace:
+        raise WorkspaceError("capture needs --product and --workspace")
+    from app_screen import existing_host
+    return existing_host.capture(args.product, args.workspace)
+
+
 def host(command: str, args: argparse.Namespace) -> dict:
     if command == "collect":
         return collect(args)
+    if command == "capture":
+        return capture(args)
     if not args.case:
         raise WorkspaceError(f"{command} needs --case DIR")
     if command == "freeze":
@@ -126,6 +142,8 @@ def host(command: str, args: argparse.Namespace) -> dict:
         raise WorkspaceError(f"{command} needs --workspace W")
     if command == "grade-intake":
         return intake_grade.grade(args.case, args.workspace)
+    if command == "grade-existing":
+        return existing_grade.grade(args.case, args.workspace)
     return known_case.pack(args.case, args.workspace)
 
 

@@ -54,6 +54,26 @@ CHOICES = {"type": "array", "items": TEXT, "minItems": 2, "maxItems": 4}
 ANSWERED = {"if": {"properties": {"status": {"const": "answered"}}, "required": ["status"]},
             "then": {"required": ["answer", "answer_source"], "properties": {"answer": TEXT, "answer_source": TEXT}}}
 
+# A script check of a model's draft (intake_check, existing_check): the verdict and every problem found.
+STEP_CHECK = obj({"verdict": {"enum": ["ok", "retry"]}, "pass": {"enum": ["draft", "final"]},
+                  "counts": {"type": "object"}, "problems": items(obj(
+                      {"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)})
+
+# 02-existing: a journey, a problem in it (observation, Nielsen severity 0-4, kind) and the evidence it rests on.
+# A ref points at one capture's measure (its value exactly as audit.json has it), at text visible in one
+# capture (texts.json), or at a per-width total (audit.json totals).
+JOURNEY_ID = {"type": "string", "pattern": "^J[0-9]{1,2}$"}
+PROBLEM_ID = {"type": "string", "pattern": "^P[0-9]{1,2}$"}
+SEVERITY = {"type": "integer", "minimum": 0, "maximum": 4}
+MEASURED_KINDS = ["layout-width", "text-size", "tap-target", "truncation", "buried", "error-recovery"]
+PROBLEM_KINDS = MEASURED_KINDS + ["overload", "navigation", "wording", "feedback", "state", "other"]
+REF = {"oneOf": [obj({"capture": ID, "measure": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,60}$"},
+                       "value": {}}),
+                  obj({"capture": ID, "text": TEXT}),
+                  obj({"total": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,60}@[0-9]{3,4}$"},
+                       "value": {"type": "integer", "minimum": 0}}, {"of": {"type": "integer", "minimum": 1}})]}
+KEEP = obj({"what": TEXT, "evidence": items(REF)})
+
 SCHEMAS: dict[str, dict] = {
     # 01-request
     "sources": obj({"product": ID, "description": TEXT, "items": items(obj(
@@ -78,17 +98,30 @@ SCHEMAS: dict[str, dict] = {
         {"id": QUESTION_ID, "question": TEXT, "status": {"enum": ["open", "answered"]}},
         {"answer": {"type": ["string", "null"]}, "answer_source": {"type": ["string", "null"]},
          "about": items(SOURCE_ID), "why": TEXT, "choices": CHOICES}) | ANSWERED, least=0)}),
-    "intake_check": obj({"verdict": {"enum": ["ok", "retry"]}, "pass": {"enum": ["draft", "final"]},
-                         "counts": {"type": "object"}, "problems": items(obj(
-                             {"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)}),
+    "intake_check": STEP_CHECK,
     # 02-existing
     "audit": obj({"source": TEXT, "screens": items(obj(
         {"id": ID, "width": WIDTH, "state": STATE, "capture": REL_PATH,
-         "measures": {"type": "object", "minProperties": 1}}, {"what": TEXT}))}, {"notes": {"type": "object"}}),
+         "measures": {"type": "object", "minProperties": 1}},
+        {"what": TEXT, "screen": ID, "name": TEXT, "height": {"type": "integer", "minimum": 1}}))},
+        {"notes": {"type": "object"}, "product": ID, "totals": {"type": "object"}}),
+    # The model's draft (existing_read / existing_revise): journeys naming the problems they hit, each problem
+    # observed and tied to captures by refs the script checks against audit.json and texts.json.
+    "existing_draft": obj({"journeys": items(obj(
+        {"id": JOURNEY_ID, "name": TEXT, "goal": TEXT, "screens": items(ID),
+         "problems": items(PROBLEM_ID, least=0), "keep": items(KEEP, least=0)},
+        {"steps": items(TEXT, least=0), "requirements": items(REQ_ID, least=0)})),
+        "problems": items(obj(
+            {"id": PROBLEM_ID, "claim": TEXT, "severity": SEVERITY, "kind": {"enum": PROBLEM_KINDS},
+             "evidence": items(REF)}), least=0)}, {"notes": TEXT}),
+    "existing_check": STEP_CHECK,
     "journeys": obj({"journeys": items(obj(
-        {"id": {"type": "string", "pattern": "^J[0-9]{1,2}$"}, "name": TEXT, "goal": TEXT,
-         "problems": items(obj({"claim": TEXT, "evidence": items(TEXT)}), least=0)},
-        {"screens": items(ID, least=0), "keep": items(TEXT, least=0)}))}, {"source": TEXT}),
+        {"id": JOURNEY_ID, "name": TEXT, "goal": TEXT,
+         "problems": items(obj({"claim": TEXT, "evidence": items(TEXT)},
+                               {"id": PROBLEM_ID, "severity": SEVERITY, "kind": {"enum": PROBLEM_KINDS},
+                                "refs": items(REF)}), least=0)},
+        {"screens": items(ID, least=0), "keep": items(TEXT, least=0), "keep_refs": items(KEEP, least=0),
+         "steps": items(TEXT, least=0), "requirements": items(REQ_ID, least=0)}))}, {"source": TEXT}),
     # 03-ground
     "fixture": {"type": "object", "minProperties": 1},
     "inventory": obj({"design_files": {"enum": ["defined", "partial", "none"]}, "screens": items(obj(
@@ -145,8 +178,12 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "intake_check": [("01-request/check.json", "intake_check", 0)],
     "intake": [("01-request/requirements.json", "requirements", 1), ("01-request/questions.json", "questions", 1),
                ("01-request/check-final.json", "intake_check", 0)],
+    # audit.json and sheet.png come from the host's capture (absent in fixture mode until existing copies the case).
+    "existing_collect": [("02-existing/audit.json", "audit", 0), ("02-existing/task.md", "md", 0)],
+    "existing_sheet": [("02-existing/sheet.png", "png", 0)],
+    "existing_check": [("02-existing/check.json", "existing_check", 0)],
     "existing": [("02-existing/captures/*.png", "png", 1), ("02-existing/audit.json", "audit", 1),
-                 ("02-existing/journeys.json", "journeys", 1)],
+                 ("02-existing/journeys.json", "journeys", 1), ("02-existing/check-final.json", "existing_check", 0)],
     "ground": [("03-ground/fixture.json", "fixture", 1), ("03-ground/inventory.json", "inventory", 1),
                ("03-ground/design-files/tokens.json", "tokens", 0), ("03-ground/design-files/DESIGN.md", "md", 0)],
     "directions": [("04-directions/directions.json", "directions", 1), ("04-directions/*/index.html", "html", 2),

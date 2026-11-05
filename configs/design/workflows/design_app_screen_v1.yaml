@@ -12,7 +12,8 @@ workflow:
   description: |
     intake (the owner's words as requirements, verbatim, and open questions; a fenced model step
     between measured checks) -> existing
-    (today's screens captured and measured; journeys with evidence) -> ground (shared fixture, design
+    (today's screens, captured and measured on the host beforehand; a fenced model step reads the
+    contact sheet and the measures into journeys, every problem held to its captures and measures) -> ground (shared fixture, design
     files, screens x states inventory) -> directions (two or more clickable directions with measured
     checks) -> DIRECTION gate -> build (the chosen direction, shell + one file per screen) -> checks
     (measured, by script) -> review (findings rated 0-4, Must/Should/Could/Won't; a Must loops back to
@@ -60,11 +61,38 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [intake_revise]
       input_map: {step: intake, product: input.product, mode: input.mode}
-    - name: existing
+    - name: existing_collect
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [intake]
-      input_map: {step: existing, product: input.product, mode: input.mode}
+      input_map: {step: existing_collect, product: input.product, mode: input.mode}
+    - name: existing_sheet
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_collect]
+      input_map: {step: existing_sheet, product: input.product, mode: input.mode}
+    - name: existing_read
+      type: agent
+      agent: design_app_screen_existing_v1
+      depends_on: [existing_collect, existing_sheet]
+      condition: {source: existing_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: existing_collect.structured.task, sheet: existing_sheet.structured.sheet}
+    - name: existing_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_read]
+      input_map: {step: existing_check, product: input.product, mode: input.mode, data: existing_read.output}
+    - name: existing_revise
+      type: agent
+      agent: design_app_screen_existing_v1
+      depends_on: [existing_sheet, existing_check]
+      condition: {source: existing_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: existing_check.structured.revise_task, sheet: existing_sheet.structured.sheet}
+    - name: existing
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_revise]
+      input_map: {step: existing, product: input.product, mode: input.mode, data: existing_revise.output}
     - name: ground
       type: agent
       agent: design_app_screen_stage_v1

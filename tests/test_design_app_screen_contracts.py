@@ -307,8 +307,8 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
 
 
 def test_real_mode_stage_fails_loud_until_built(tmp_path):
-    with pytest.raises(NotBuiltError, match="existing: the real stage is not built yet"):
-        CLI.run_step("existing", str(tmp_path), "rollcall", "real", "")
-    assert Workspace(tmp_path).run()["stages"]["existing"]["status"] == "failed"
+    with pytest.raises(NotBuiltError, match="ground: the real stage is not built yet"):
+        CLI.run_step("ground", str(tmp_path), "rollcall", "real", "")
+    assert Workspace(tmp_path).run()["stages"]["ground"]["status"] == "failed"
     with pytest.raises(WorkspaceError, match="run.json says mode real, the step was called with fixture"):
-        CLI.run_step("existing", str(tmp_path), None, "fixture", "")
+        CLI.run_step("ground", str(tmp_path), None, "fixture", "")

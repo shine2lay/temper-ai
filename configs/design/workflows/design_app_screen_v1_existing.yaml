@@ -1,0 +1,54 @@
+# Stage 2 (existing) of design_app_screen_v1 on its own (rule 16: each stage tested alone on known
+# cases): the same six nodes as the whole workflow's existing stage, ending at 02-existing/journeys.json.
+# Used for the stage's trials and re-runs (docs/design-app-screen.md, "Stage 2"). Before a run the host
+# captures the product (design_app_screen.py capture --product P --workspace W) and the workspace holds
+# stage 1's 01-request/requirements.json. Keep its nodes identical to the whole workflow's, since a trial
+# proves the stage only while they match (tests/test_design_app_screen_existing.py checks that they do).
+workflow:
+  name: design_app_screen_v1_existing
+  version: 1
+  description: |
+    Stage 2 of design_app_screen_v1 alone: the host's captures and measures (audit.json, texts.json,
+    contact sheet) and stage 1's requirements -> the model looks at the sheet and reads the measures into
+    user journeys and the problems in them -> measured checks (every problem cites captures, measure
+    values equal the audit, quoted text is on the screen, no problem a measure contradicts, no number no
+    ref shows) -> one revision only if a check failed -> final checks -> 02-existing/journeys.json.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+  outputs:
+    journeys: existing.structured.journeys
+    problems: existing.structured.problems
+    revised: existing.structured.revised
+  nodes:
+    - name: existing_collect
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: existing_collect, product: input.product, mode: input.mode}
+    - name: existing_sheet
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_collect]
+      input_map: {step: existing_sheet, product: input.product, mode: input.mode}
+    - name: existing_read
+      type: agent
+      agent: design_app_screen_existing_v1
+      depends_on: [existing_collect, existing_sheet]
+      condition: {source: existing_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: existing_collect.structured.task, sheet: existing_sheet.structured.sheet}
+    - name: existing_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_read]
+      input_map: {step: existing_check, product: input.product, mode: input.mode, data: existing_read.output}
+    - name: existing_revise
+      type: agent
+      agent: design_app_screen_existing_v1
+      depends_on: [existing_sheet, existing_check]
+      condition: {source: existing_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: existing_check.structured.revise_task, sheet: existing_sheet.structured.sheet}
+    - name: existing
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing_revise]
+      input_map: {step: existing, product: input.product, mode: input.mode, data: existing_revise.output}

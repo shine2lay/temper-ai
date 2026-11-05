@@ -356,7 +356,7 @@ def test_trial_workflow_runs_the_whole_workflows_intake_nodes_unchanged():
     assert [n["name"] for n in alone] == ["intake_collect", "intake_read", "intake_check", "intake_revise", "intake"]
     for node in alone:
         assert node == whole[node["name"]], node["name"]
-    assert whole["existing"]["depends_on"] == ["intake"]
+    assert whole["existing_collect"]["depends_on"] == ["intake"]
 
 
 def test_intake_agent_is_fenced():

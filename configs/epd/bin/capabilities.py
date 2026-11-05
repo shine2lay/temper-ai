@@ -423,6 +423,37 @@ def parse_map(path: Path) -> tuple[dict[str, str], str]:
     return intents, preamble
 
 
+_KIND_SECTION = re.compile(r"^## (.+?) \(\d+\)\s*$")
+_GROUP_SECTION = re.compile(r"^### (.+?)\s*$")
+
+
+def read_map(text: str) -> list[Capability]:
+    """Every entry of a written map, undescribed ones too, with its kind (from its `## <kind> (n)` section),
+    group (`### <group>`), key, intent ("" when undescribed) and where.
+
+    For readers of a map at a pinned commit, where the code is not checked out (design_app_screen's ground
+    stage reads a product's map this way); parse_map stays the refresh's merge.
+    """
+    kinds = {title: kind for kind, title in KIND_TITLES.items()}
+    caps: list[Capability] = []
+    kind = group = None
+    for line in text.splitlines():
+        m = _KIND_SECTION.match(line)
+        if m:
+            kind, group = kinds.get(m.group(1)), None
+            continue
+        m = _GROUP_SECTION.match(line)
+        if m:
+            group = m.group(1)
+            continue
+        m = _ENTRY.match(line.strip())
+        if m and kind:
+            intent = (m.group(2) or "").strip()
+            caps.append(Capability(kind=kind, key=m.group(1), where=m.group(3) or "", group=group or "",
+                                   intent="" if intent == UNDESCRIBED else intent))
+    return caps
+
+
 def render(root: Path, surface: Surface, intents: dict[str, str], preamble: str) -> str:
     name = root.resolve().name
     described = sum(1 for c in surface.caps if intents.get(c.key))

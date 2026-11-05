@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from . import existing_measures
+from . import existing_measures, model_step
 
 TEXT_CHARS = 1500           # visible text per screen state (the sheet width's capture), in page order
 SHOWN_PROBLEMS = 60
@@ -90,11 +90,8 @@ def task(audit: dict, texts: dict, app: dict, requirements: dict) -> str:
 
 
 def revise(task_text: str, draft_text: str, problems: list[dict]) -> str:
-    shown = [f"- {p['check']} at {p['where']}: {p['problem']}" for p in problems[:SHOWN_PROBLEMS]]
-    more = len(problems) - SHOWN_PROBLEMS
-    return (task_text + "\n# Your previous draft\n" + draft_text.strip() + "\n\n"
-            f"# The check found {len(problems)} problem(s) in it\n" + "\n".join(shown)
-            + (f"\n- and {more} more of the same kinds" if more > 0 else "") + "\n\n"
-            "Fix every one: correct a ref's value to the one the text gives, quote visible text exactly, cite a "
-            "measure with a \"!\" or drop a problem no measure or text supports, drop numbers no ref shows. Keep "
-            "everything else as it was. Reply with the whole corrected draft as ONE JSON object, no code fence.\n")
+    return model_step.revise_text(
+        task_text, draft_text, problems,
+        "Fix every one: correct a ref's value to the one the text gives, quote visible text exactly, cite a "
+        "measure with a \"!\" or drop a problem no measure or text supports, drop numbers no ref shows.",
+        SHOWN_PROBLEMS)

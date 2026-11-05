@@ -74,6 +74,18 @@ REF = {"oneOf": [obj({"capture": ID, "measure": {"type": "string", "pattern": "^
                        "value": {"type": "integer", "minimum": 0}}, {"of": {"type": "integer", "minimum": 1}})]}
 KEEP = obj({"what": TEXT, "evidence": items(REF)})
 
+# 03-ground: a source item's id says what it is: page:<route>, api:<METHOD path>, note:<file>#L<n>,
+# screen:<stage 2 screen>, req:<requirement>, journey:<stage 2 journey>.
+GROUND_KINDS = ["page", "api", "note", "screen", "seen", "req", "journey"]
+SHA256 = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+GROUND_REF = {"type": "string", "pattern": "^(page|api|note|screen|seen|req|journey):[^\\s].{0,200}$"}
+GROUND_STATE = obj({"name": STATE}, {"sources": items(GROUND_REF, least=0)})
+GROUND_SHOW = obj({"what": TEXT, "sources": items(GROUND_REF)})
+GROUND_ACTION = obj({"id": ID, "what": TEXT, "states": items(STATE), "sources": items(GROUND_REF)})
+GROUND_EXCLUDED = obj({"source": GROUND_REF, "reason": TEXT})
+CAPABILITY = obj({"kind": {"enum": ["http", "page", "cli"]}, "key": TEXT, "group": {"type": "string"},
+                  "intent": {"type": "string"}}, {"where": TEXT})
+
 SCHEMAS: dict[str, dict] = {
     # 01-request
     "sources": obj({"product": ID, "description": TEXT, "items": items(obj(
@@ -124,8 +136,38 @@ SCHEMAS: dict[str, dict] = {
          "steps": items(TEXT, least=0), "requirements": items(REQ_ID, least=0)}))}, {"source": TEXT}),
     # 03-ground
     "fixture": {"type": "object", "minProperties": 1},
+    # The host's ground-prep record: where the stage's sources came from (ground_host.py).
+    "ground_prep": obj({"product": ID, "capabilities": obj({"from": TEXT, "items": items(CAPABILITY, least=0)}),
+                        "notes": items(obj({"name": ID, "from": TEXT, "file": REL_PATH}), least=0),
+                        "fixture": obj({"from": TEXT, "sha256": SHA256},
+                                       {"invariants": {"type": "object"}, "parts_from": TEXT,
+                                        "parts": {"type": "object", "minProperties": 1,
+                                                  "propertyNames": {"pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"},
+                                                  "additionalProperties": SHA256}}),
+                        "design_files": obj({"registered": {"type": "boolean"}}, {"from": TEXT})},
+                       {"commit": TEXT}),
+    # Every source item the model must place, with its id (ground_sources.py).
+    "ground_sources": obj({"product": ID, "items": items(obj(
+        {"id": GROUND_REF, "kind": {"enum": GROUND_KINDS}, "text": TEXT},
+        {"group": TEXT, "where": TEXT}))}),
+    "fixture_check": obj({"verdict": {"enum": ["pass", "fail"]}, "checks": {"type": "integer", "minimum": 0},
+                          "problems": items(obj({"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)}),
+    # The model's draft (ground_read / ground_revise): screens with what they show, their states and actions,
+    # each citing source ids from 03-ground/sources.json; sources left out sit in excluded[] with a reason.
+    "ground_draft": obj({"screens": items(obj(
+        {"id": ID, "name": TEXT, "sources": items(GROUND_REF), "states": items(GROUND_STATE)},
+        {"shows": items(GROUND_SHOW, least=0), "actions": items(GROUND_ACTION, least=0)})),
+        "excluded": items(GROUND_EXCLUDED, least=0)}, {"notes": TEXT}),
+    "ground_check": STEP_CHECK,
     "inventory": obj({"design_files": {"enum": ["defined", "partial", "none"]}, "screens": items(obj(
-        {"id": ID, "name": TEXT, "states": items(STATE), "widths": items(WIDTH)}, {"spec": REL_PATH}))}),
+        {"id": ID, "name": TEXT, "states": items(STATE), "widths": items(WIDTH)},
+        {"spec": REL_PATH, "sources": items(GROUND_REF, least=0), "shows": items(GROUND_SHOW, least=0),
+         "actions": items(GROUND_ACTION, least=0), "data_needed": items(TEXT, least=0),
+         "state_sources": {"type": "object", "propertyNames": STATE,
+                           "additionalProperties": items(GROUND_REF)}}))},
+        {"source": obj({"product": ID}, {"commit": TEXT, "capabilities": TEXT, "notes": items(TEXT, least=0),
+                                         "fixture": TEXT}),
+         "excluded": items(GROUND_EXCLUDED, least=0)}),
     "tokens": {"type": "object", "minProperties": 1},
     # 04-directions
     "directions": obj({"directions": items(obj(
@@ -184,8 +226,13 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "existing_check": [("02-existing/check.json", "existing_check", 0)],
     "existing": [("02-existing/captures/*.png", "png", 1), ("02-existing/audit.json", "audit", 1),
                  ("02-existing/journeys.json", "journeys", 1), ("02-existing/check-final.json", "existing_check", 0)],
+    # prep.json and fixture.json come from the host's ground-prep (absent in fixture mode until ground copies the case).
+    "ground_collect": [("03-ground/source/prep.json", "ground_prep", 0), ("03-ground/sources.json", "ground_sources", 0),
+                       ("03-ground/task.md", "md", 0), ("03-ground/fixture-check.json", "fixture_check", 0)],
+    "ground_check": [("03-ground/check.json", "ground_check", 0)],
     "ground": [("03-ground/fixture.json", "fixture", 1), ("03-ground/inventory.json", "inventory", 1),
-               ("03-ground/design-files/tokens.json", "tokens", 0), ("03-ground/design-files/DESIGN.md", "md", 0)],
+               ("03-ground/design-files/tokens.json", "tokens", 0), ("03-ground/design-files/DESIGN.md", "md", 0),
+               ("03-ground/check-final.json", "ground_check", 0)],
     "directions": [("04-directions/directions.json", "directions", 1), ("04-directions/*/index.html", "html", 2),
                    ("04-directions/*/checks.json", "direction_checks", 2)],
     "gate_direction": [("04-directions/gate_direction.json", "gate", 1)],

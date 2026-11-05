@@ -23,7 +23,7 @@ import base64
 import json
 import shutil
 
-from . import contracts, existing_check, existing_task
+from . import contracts, existing_check, existing_task, model_step
 from .fixture_stage import run_fixture
 from .workspace import Workspace
 
@@ -39,10 +39,9 @@ class ExistingError(ValueError):
     """Stage 2 cannot go on: the capture is missing, or the final draft still breaks a check."""
 
 
-def _write(path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = data if isinstance(data, str) else json.dumps(data, indent=1, ensure_ascii=False) + "\n"
-    path.write_text(text, encoding="utf-8")
+_write = model_step.write_json
+_parse = model_step.parse_reply
+_result = model_step.check_record
 
 
 def _read(ws: Workspace, stage: str, name: str, what: str):
@@ -101,20 +100,6 @@ def sheet(ws: Workspace, raw: str) -> dict:
     return {"sheet": encoded, "bytes": len(data)}
 
 
-def _parse(text: str):
-    """The model's reply as JSON, or a marker the schema check reports."""
-    if not (text or "").strip():
-        return {"unreadable": "the model step returned nothing"}
-    try:
-        return json.loads(text)
-    except ValueError as exc:
-        return {"unreadable": f"not one JSON object ({exc})"}
-
-
-def _result(found: dict, pass_name: str) -> dict:
-    return {"verdict": found["verdict"], "pass": pass_name, "counts": found["counts"], "problems": found["problems"]}
-
-
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
     if ws.mode == "fixture":
@@ -148,9 +133,6 @@ def run(ws: Workspace, raw: str) -> dict:
     found = existing_check.check_draft(ctx, draft)
     _write(folder / CHECK_FINAL, _result(found, "final"))
     if found["problems"]:
-        shown = "; ".join(f"{p['check']} {p['where']}: {p['problem']}" for p in found["problems"][:SHOWN_PROBLEMS])
-        more = len(found["problems"]) - SHOWN_PROBLEMS
-        raise ExistingError(f"the final draft breaks {len(found['problems'])} check(s): {shown}"
-                            + (f"; and {more} more in 02-existing/{CHECK_FINAL}" if more > 0 else ""))
+        raise ExistingError(model_step.failure(found["problems"], f"02-existing/{CHECK_FINAL}"))
     _write(folder / JOURNEYS, existing_check.outputs(ctx, draft))
     return {"revised": revised, **found["counts"]}

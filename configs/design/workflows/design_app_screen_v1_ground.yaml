@@ -1,0 +1,52 @@
+# Stage 3 (ground) of design_app_screen_v1 on its own (rule 16: each stage tested alone on known
+# cases): the same five nodes as the whole workflow's ground stage, ending at 03-ground/inventory.json.
+# Used for the stage's trials and re-runs (docs/design-app-screen.md, "Stage 3"). Before a run the host
+# prepares the stage (design_app_screen.py ground-prep --product P --workspace W) and the workspace holds
+# stage 1's 01-request/requirements.json and questions.json and stage 2's 02-existing/app.json and
+# journeys.json. Keep its nodes identical to the whole workflow's, since a trial proves the stage only while
+# they match (tests/test_design_app_screen_ground.py checks that they do).
+workflow:
+  name: design_app_screen_v1_ground
+  version: 1
+  description: |
+    Stage 3 of design_app_screen_v1 alone: the host's design-file pack, capability map, knowledge files
+    and fixture, stage 1's requirements and stage 2's screens and journeys -> every source item with an
+    id -> the model maps each page, API route, screen and requirement onto screens (what each shows, its
+    states, its actions) or excludes it with a reason -> measured checks (every id real, every item placed
+    or excluded, base states on every screen and action, every extra state sourced) -> one revision only
+    if a check failed -> final checks -> 03-ground/inventory.json; the fixture's invariants checked by
+    script.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+  outputs:
+    screens: ground.structured.screens
+    data_needed: ground.structured.data_needed
+    revised: ground.structured.revised
+  nodes:
+    - name: ground_collect
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: ground_collect, product: input.product, mode: input.mode}
+    - name: ground_read
+      type: agent
+      agent: design_app_screen_ground_v1
+      depends_on: [ground_collect]
+      condition: {source: ground_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: ground_collect.structured.task}
+    - name: ground_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [ground_read]
+      input_map: {step: ground_check, product: input.product, mode: input.mode, data: ground_read.output}
+    - name: ground_revise
+      type: agent
+      agent: design_app_screen_ground_v1
+      depends_on: [ground_check]
+      condition: {source: ground_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: ground_check.structured.revise_task}
+    - name: ground
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [ground_revise]
+      input_map: {step: ground, product: input.product, mode: input.mode, data: ground_revise.output}

@@ -13,8 +13,10 @@ workflow:
     intake (the owner's words as requirements, verbatim, and open questions; a fenced model step
     between measured checks) -> existing
     (today's screens, captured and measured on the host beforehand; a fenced model step reads the
-    contact sheet and the measures into journeys, every problem held to its captures and measures) -> ground (shared fixture, design
-    files, screens x states inventory) -> directions (two or more clickable directions with measured
+    contact sheet and the measures into journeys, every problem held to its captures and measures) -> ground
+    (the design files, capability map, knowledge files and fixture prepared on the host beforehand; a fenced
+    model step maps every page, API route, screen and requirement onto the screens x states x actions
+    inventory, every entry held to its source ids; the shared fixture checked for its invariants) -> directions (two or more clickable directions with measured
     checks) -> DIRECTION gate -> build (the chosen direction, shell + one file per screen) -> checks
     (measured, by script) -> review (findings rated 0-4, Must/Should/Could/Won't; a Must loops back to
     build, at most twice) -> show (one Show&Tell share, the owner's comments) -> FINAL gate (approve, or
@@ -93,11 +95,33 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [existing_revise]
       input_map: {step: existing, product: input.product, mode: input.mode, data: existing_revise.output}
-    - name: ground
+    - name: ground_collect
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing]
-      input_map: {step: ground, product: input.product, mode: input.mode}
+      input_map: {step: ground_collect, product: input.product, mode: input.mode}
+    - name: ground_read
+      type: agent
+      agent: design_app_screen_ground_v1
+      depends_on: [ground_collect]
+      condition: {source: ground_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: ground_collect.structured.task}
+    - name: ground_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [ground_read]
+      input_map: {step: ground_check, product: input.product, mode: input.mode, data: ground_read.output}
+    - name: ground_revise
+      type: agent
+      agent: design_app_screen_ground_v1
+      depends_on: [ground_check]
+      condition: {source: ground_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: ground_check.structured.revise_task}
+    - name: ground
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [ground_revise]
+      input_map: {step: ground, product: input.product, mode: input.mode, data: ground_revise.output}
     - name: directions
       type: agent
       agent: design_app_screen_stage_v1

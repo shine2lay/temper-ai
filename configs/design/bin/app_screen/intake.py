@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 
-from . import intake_check, intake_sources
+from . import intake_check, intake_sources, model_step
 from .fixture_stage import run_fixture
 from .workspace import Workspace
 
@@ -27,7 +27,6 @@ DRAFT = "draft.json"
 FIRST_DRAFT = "draft-first.json"
 CHECK = "check.json"
 CHECK_FINAL = "check-final.json"
-SHOWN_PROBLEMS = 12
 
 
 class IntakeError(ValueError):
@@ -79,8 +78,7 @@ def _draft(ws: Workspace):
         return {"unreadable": True}
 
 
-def _result(found: dict, pass_name: str) -> dict:
-    return {"verdict": found["verdict"], "pass": pass_name, "counts": found["counts"], "problems": found["problems"]}
+_result = model_step.check_record
 
 
 def check(ws: Workspace, raw: str) -> dict:
@@ -111,10 +109,7 @@ def run(ws: Workspace, raw: str) -> dict:
     found = intake_check.check_draft(src, draft)
     _write(folder / CHECK_FINAL, _result(found, "final"))
     if found["problems"]:
-        shown = "; ".join(f"{p['check']} {p['where']}: {p['problem']}" for p in found["problems"][:SHOWN_PROBLEMS])
-        more = len(found["problems"]) - SHOWN_PROBLEMS
-        raise IntakeError(f"the final draft breaks {len(found['problems'])} check(s): {shown}"
-                          + (f"; and {more} more in 01-request/{CHECK_FINAL}" if more > 0 else ""))
+        raise IntakeError(model_step.failure(found["problems"], f"01-request/{CHECK_FINAL}"))
     requirements, questions = intake_check.outputs(src, draft)
     _write(folder / "requirements.json", requirements)
     _write(folder / "questions.json", questions)

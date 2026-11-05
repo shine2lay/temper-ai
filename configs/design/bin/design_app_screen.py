@@ -10,8 +10,11 @@
     design_app_screen.py grade-intake --case DIR --workspace W                  (host, intake trials)
     design_app_screen.py capture --product P --workspace W                      (host, before stage 2)
     design_app_screen.py grade-existing --case DIR --workspace W                (host, stage 2 trials)
+    design_app_screen.py ground-prep --product P --workspace W                  (host, before stage 3)
+    design_app_screen.py grade-ground --case DIR --workspace W                  (host, stage 3 trials)
 
-Steps: intake_collect, intake_check, intake, existing_collect, existing_sheet, existing_check, existing, ground, directions, gate_direction, build, checks, review, show, gate_final,
+Steps: intake_collect, intake_check, intake, existing_collect, existing_sheet, existing_check, existing,
+ground_collect, ground_check, ground, directions, gate_direction, build, checks, review, show, gate_final,
 gate_final_next, handoff. A step's text input (a gate's answer) comes in env APP_SCREEN_DATA. After each
 step its output is validated against its contract (app_screen/contracts.py); a broken output fails the
 step with every file, field and reason. Prints one JSON line (the step's structured output).
@@ -39,6 +42,8 @@ from app_screen import (  # noqa: E402
     existing_grade,
     gates,
     ground,
+    ground_grade,
+    ground_sources,
     handoff,
     intake,
     intake_grade,
@@ -49,17 +54,19 @@ from app_screen import (  # noqa: E402
 from app_screen.fixture_stage import NotBuiltError  # noqa: E402
 from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa: E402
 
-HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing")
+HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
+                 "ground-prep", "grade-ground")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
         "existing_collect": existing.collect, "existing_sheet": existing.sheet, "existing_check": existing.check,
-        "existing": existing.run, "ground": ground.run, "directions": directions.run,
+        "existing": existing.run, "ground_collect": ground.collect, "ground_check": ground.check,
+        "ground": ground.run, "directions": directions.run,
         "gate_direction": lambda ws, raw: gates.answer(ws, "direction", raw), "build": build.run,
         "checks": checks.run, "review": checks.review, "show": show.run,
         "gate_final": lambda ws, raw: gates.answer(ws, "final", raw),
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
-            intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, OSError, ValueError, KeyError,
-            RuntimeError)
+            intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
+            ground_sources.SourcesError, OSError, ValueError, KeyError, RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:
@@ -123,11 +130,21 @@ def capture(args: argparse.Namespace) -> dict:
     return existing_host.capture(args.product, args.workspace)
 
 
+def ground_prep(args: argparse.Namespace) -> dict:
+    """Host: stage 3's design-file pack, capability map, knowledge files and fixture (ground_host.py)."""
+    if not args.product or not args.workspace:
+        raise WorkspaceError("ground-prep needs --product and --workspace")
+    from app_screen import ground_host
+    return ground_host.prep(args.product, args.workspace)
+
+
 def host(command: str, args: argparse.Namespace) -> dict:
     if command == "collect":
         return collect(args)
     if command == "capture":
         return capture(args)
+    if command == "ground-prep":
+        return ground_prep(args)
     if not args.case:
         raise WorkspaceError(f"{command} needs --case DIR")
     if command == "freeze":
@@ -144,6 +161,8 @@ def host(command: str, args: argparse.Namespace) -> dict:
         return intake_grade.grade(args.case, args.workspace)
     if command == "grade-existing":
         return existing_grade.grade(args.case, args.workspace)
+    if command == "grade-ground":
+        return ground_grade.grade(args.case, args.workspace)
     return known_case.pack(args.case, args.workspace)
 
 

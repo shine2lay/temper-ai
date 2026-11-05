@@ -47,6 +47,17 @@ SERVER = obj({"kind": {"const": "server"}, "repo": TEXT, "commit": {"type": "str
               "env_file_variable": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
               "env": {"type": "object", "additionalProperties": {"type": "string"}}})
 STATIC = obj({"kind": {"const": "static"}, "root": TEXT, "port": PORT}, {"ready": {"type": "string", "pattern": "^/"}})
+# Stage 3 (ground): where the product's own sources are. A path is inside the repo at app.commit for a server
+# app, else absolute or beside this file; capabilities "derive" runs configs/epd/bin/capabilities.py on the
+# throwaway checkout (ground_host.py). The fixture (one JSON file, and optionally a folder of part files, each
+# added under its file name) is design data: absolute or beside this file, never read from the repo. A path in
+# the invariants: dotted keys, "[]" fans out over a list.
+SOURCE_PATH = {"type": "string", "minLength": 1, "pattern": r"^[^\\]+$"}
+DATA_PATH = {"type": "string", "pattern": r"^[A-Za-z_][A-Za-z0-9_]*(\[\])?(\.[A-Za-z_][A-Za-z0-9_]*(\[\])?)*$"}
+INVARIANTS = obj({}, {
+    "same_value": items(obj({"key": DATA_PATH, "field": DATA_PATH})),
+    "totals": items(obj({"total": DATA_PATH, "plus": items(DATA_PATH)}, {"minus": items(DATA_PATH)}))})
+FIXTURE = obj({"file": SOURCE_PATH}, {"parts": SOURCE_PATH, "invariants": INVARIANTS})
 APP_FILE = obj({
     "product": ID, "name": TEXT, "job": TEXT, "app": {"oneOf": [SERVER, STATIC]},
     "page": obj({"main": TEXT}, {
@@ -64,7 +75,8 @@ APP_FILE = obj({
     "screens": items(SCREEN),
 }, {"login": obj({"path": {"type": "string", "pattern": "^/"}, "fields": {"type": "object", "minProperties": 1,
                                                                       "additionalProperties": {"type": "string"}},
-                  "submit": TEXT, "wait_for": TEXT})})
+                  "submit": TEXT, "wait_for": TEXT}),
+    "capabilities": SOURCE_PATH, "notes": items(SOURCE_PATH), "fixture": FIXTURE})
 
 
 def _where(error) -> str:
@@ -109,6 +121,8 @@ def check(app: Any, label: str = "app.yaml") -> list[str]:
             except re.error as exc:
                 problems.append(f"{label}: {name}: not a regular expression ({exc})")
     a = app["app"]
+    if app.get("capabilities") == "derive" and a["kind"] != "server":
+        problems.append(f"{label}: capabilities: derive needs a server app (a checkout to read)")
     if a["kind"] == "server":
         repo, checkout = Path(a["repo"]).resolve(), Path(a["checkout"]).resolve()
         if checkout == repo or repo in checkout.parents or checkout in repo.parents:

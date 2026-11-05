@@ -201,7 +201,8 @@ Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it
 | --- | --- | --- |
 | 1 intake | real; met its bar 2026-11-05, 3/3 runs on every case (Stage 1, Results) | #206 |
 | 2 existing | real; see Stage 2, Results | #207 |
-| the other six, both gates | stub: fixture mode only | one task per stage |
+| 3 ground | real; met its bar 2026-11-05, round t4, 3/3 runs on every case (Stage 3, Results) | #210 |
+| the other five, both gates | stub: fixture mode only | one task per stage |
 
 ## Tests
 
@@ -230,6 +231,21 @@ missing-value rule; the grader on a good run and broken copies (an unsupported n
 id, a claim on the clean twin, a missed planted defect, a failed capture), and a key held to its bar, not
 to every entry; the trial workflow's nodes equal the whole workflow's; the agent is fenced (no tools, one
 image, JSON only).
+
+`python3 -m pytest -q tests/test_design_app_screen_ground.py`: the capability map read back with every
+entry's kind, group and intent; the product file's ground entries and their refusals; the host's prep
+(map, knowledge files, fixture and parts copied and recorded; a used workspace and a part named like a
+fixture key refused); source items with one id each, seen words without the frame; collect writes the
+sources, fixture check and task, and fails loud without the prep or on a fixture changed after it; the
+invariants (one value per entity, totals, paths that reach nothing) and the fixture's states at any
+depth; ground's script checks, each with a good and a bad fixed draft (invented id, unsourced state, page,
+requirement, captured screen or knowledge line neither placed nor excluded, an excluded route or captured
+screen, a missing base or action state, a named outcome drawn as a generic refusal, duplicate ids, a
+screen citing nothing, a non-slug state, a suggestion field); an unreadable reply gets a revision task;
+check then final write the inventory, the revised reply is the one checked last, and a broken invariant
+fails the stage after the inventory is written; the grader on a good run, its key, planted measures and
+final recheck; the trial workflow's nodes equal the whole workflow's; the agent is fenced (no tools, no
+image, JSON only, a ceiling that holds RollCall's draft).
 
 ## Stage 1: intake
 
@@ -611,3 +627,301 @@ Cost by round: t1 $4.19, t2 $1.48, t3 $2.23, t4 $2.63, t5 $3.86, t6 $3.45, t7 $4
 - The model reads words from the task text, not the small tiles; a screen whose problem is only visual
   (overlap, a hidden column) relies on the measures. A second image per call (a zoomed tile) needs
   Temper's image input to take more than one PNG.
+
+## Stage 3: ground
+
+Ground decides what the design must cover before any direction is drawn: the product's design files
+(defined, partial or none), every screen with its states, what it shows and its actions, and one shared
+sample-data fixture. It reads the product's own sources, so nothing the app already does is left out. In
+the hand-run RollCall redesign, option A v3 missed whole screens and flows today's app has (RollCall's
+audit rm-57e6ca43: the actions inbox, the ticket's market-shut and refusal states, partial fills, new
+entries from the Screener, sign-out and sign-up, Settings' sections, the More pages left as one-line
+stubs); they cost 13 gap tasks (#185-#197). Ground must catch those from the sources up front.
+
+| Step | Kind | Does |
+| --- | --- | --- |
+| host `ground-prep` | script, on spark | `design_app_screen.py ground-prep --product P --workspace W`: packs the design files with `design_files.pack` (a product not in `configs/design/products.yaml` gets a manifest saying so, status `none`); reads the product's sources: the capability map (`git show <commit>:<path>` for a server app, a path relative to the product file for a static one, or `derive`, which runs `configs/epd/bin/capabilities.py` on the throwaway checkout) and its notes files; copies the product's shared fixture as it is (its file and its part files). Writes `03-ground/design-files/`, `03-ground/source/` (`pack.json`, `prep.json`: what was read, from where, with sha256), `03-ground/product/` (`capabilities.md`, `notes/`), `03-ground/fixture.json` and `03-ground/fixtures/`. Workers reach neither the lab nor the repo, so this runs on the host before the workflow, as stage 2's capture does |
+| `ground_collect` | script | the design-file status from `design_files.inventory` on the pack; every source item with a stable id (`page:<route>`, `api:<METHOD path>`, `note:<file>#L<n>`, `screen:<id>` from stage 2 (its text lists the states stage 2 captured), `seen:<id>` (the words stage 2's captures of that screen show, every width and state, once each, the app's frame on half the screens or more left out; context since H3-3), `journey:<id>`, `req:<id>`); the fixture's invariant check -> `fixture-check.json`; `sources.json` and `task.md` for the model |
+| `ground_read` | model (`design_app_screen_ground_v1`, anthropic `claude-opus-5-5` on token label `roamee`, no tools, no temperature) | `task.md` -> `draft.json`: screens (id, name, sources, what each shows, its states, its actions with their states) and `excluded[]` (a source left out, with the reason). Fenced checklist: place every page, API item and knowledge line or exclude it with a reason (dev-only, a test harness, an alias, internal); every stage-2 screen and every requirement placed; each screen's base states plus every data condition the sources name; each action's pending, done and error plus confirm, refused, retry, undo where the sources name them; cite only ids from the task; JSON only |
+| `ground_check` | script | the checks below -> `check.json`; any problem -> `retry` |
+| `ground_revise` | model, only on `retry` | the same agent fixes exactly the problems in `check.json` (one revision) |
+| `ground` | script | the same checks on the final draft -> `check-final.json`; clean: `inventory.json` (widths from the product file, `data_needed` by script); then a failed fixture invariant fails the stage loud, as does any problem left |
+
+The checks (`ground_check.py`): schema; ids (screen ids and action ids unique); invented (a cited id that
+is no source item); unsourced (a screen, a shown fact, an action or a state beyond the base ones that
+cites no source); coverage (every `page:` and `api:` item is cited by a screen, or sits in `excluded[]`
+with a reason; every stage-2 screen and every requirement is cited); placed and excluded (an item both
+cited and excluded); base states (every screen has loading, empty, error, partial and normal); action
+states (every action has pending, done and error); named conditions (an outcome code a cited item names,
+"refused with `locker_full`", is a state of the screen, state or action citing it: the code's words in
+the state's name; since H3-2, below). Knowledge lines (`note:` items) count like pages and
+API routes: each is cited or excluded with a reason (since H3-1, below; before it they were context).
+
+`data_needed` (script): a state beyond the base ones is covered when a `states` field anywhere in the
+fixture or its parts (a list of names or an object's keys) holds the same words (`stale-quote` ->
+`stale_quote`); every other one is listed for build, as `<state>` on the screen or `<action id>: <state>`.
+RollCall's fixture lists only the five base states, so every extra state there is `data_needed`.
+
+Contract (compatible, rule 36): `inventory.json` keeps `design_files`, `screens[]` (`id`, `name`,
+`states[]` of strings, `widths[]`, optional `spec`) and gains optional `source` (product, commit,
+capability map, notes), `excluded[]` (`source`, `reason`), and per screen optional `sources[]`, `shows[]`
+(`what`, `sources[]`), `actions[]` (`id`, `what`, `states[]`, `sources[]`) and `data_needed[]`. `shows`
+is beyond the plan: the audit's first group (the account figures, a position row's facts, an alert's
+details) is what a screen shows, not a state or an action, so it needs its own place. The known case
+rollcall-20261104 keeps passing.
+
+Product file additions (all optional, checked by `product_app.py`): `capabilities` (a path to the
+capability map, or `derive`); `notes` (paths to other knowledge files that name states, such as RollCall's
+`.temper/topics/testing.md`, which names the broker refusal, the timeout, the market shut, the brake, the
+catch line and the working order); `fixture`: `file` (the product's shared fixture), optional `parts` (a
+folder of part files, each added under its file name; a name already a key of the fixture fails loud) and
+`invariants`: `same_value` (`key`, `field`: every object holding that key carries one value of that field
+per key value, one spot price per symbol) and `totals` (`total`, `plus[]`, `minus[]` paths; `[]` in a path
+sums over a list), checked over the fixture with its parts. The plan had a `builder` (run the product's
+fixture script on a copy); it was dropped before the first trial because RollCall's real shared fixture
+is not its builder's output: #170's `build_fixture.py` now writes sha256 `2c9dd1b3...`, while the
+fixture the redesign used (and the known case froze, `7f178e10...5004`) was later edited by hand by the
+gap tasks, with 17 part files beside it (`current/fixtures/`, merged the same way by `draft-a/build.py`).
+Copying the fixture and its parts is what the product really uses (rule 36: no builder kind without a
+real use). `from_api` (look-only GETs against the throwaway app) is not built either: no case needs it
+yet, and the schema refuses it.
+
+### Bar (written before the first trial run)
+
+Per run, on 3 of 3 runs per case (rule 16): ground-prep and collect errors 0; invented 0 and unsourced 0
+(the final `inventory.json`, turned back into its draft, passes every check again); every capability
+page placed (a screen cites it, or it is excluded with a reason); case A: the rm-57e6ca43 key at least 90%
+of its items on each run, and 100% of the pages; case P: 6 of 6 planted items; clean twin: 0 false gaps
+and the fixture invariants pass; the design-file status exactly `design_files.inventory`'s answer
+(rollcall none, temper partial, parcelly none; the brief guessed rollcall partial, but
+`configs/design/products.yaml` holds no approved RollCall part and `~/rollcall/design` does not exist, so the
+bar is the function's answer); RollCall's fixture copied byte-identical to the frozen `fixture.json` (sha256
+`7f178e10...5004`), its invariants passing over the fixture and its 17 parts; Parcelly planted's invariants
+failing on the planted parcel, the clean twin's passing.
+
+The grader (`design_app_screen.py grade-ground --case DIR --workspace W`, `ground_grade.py`) measures
+all of it from the run's files; no model judges. A key item is met when a screen whose id or name holds
+one of the item's screen terms (any screen when it lists none) holds a term of every group of the item
+in its text: name, shown facts, states, actions (id, what, states) and cited source ids. A planted item is
+found by its own measure (below). A false gap on the clean twin is a planted item's measure firing, or a
+screen citing no page, stage-2 screen or requirement. Items missed within the bar are notes; only bar
+failures fail the run. The grader is proven on broken copies of real drafts before the trial rounds.
+
+### Trial cases
+
+In `~/design-lab/app-screen-workflow/known-cases/ground/<case>/`: `01-request/` and `02-existing/` (frozen
+stage 1 and 2 outputs, copied into the run's workspace) and `expected.json` (the answer key, written before any run; later key changes are
+dated in its `changed`).
+
+| Case | Product | Key |
+| --- | --- | --- |
+| A `a-rollcall-v3` | RollCall at `81117dd`: stage 1 case A's requirements and questions (round t2), stage 2 case A's outputs (round t7), the capability map and the notes `testing.md`, `figures.md`, `contextual-help.md`, `alerts.md` at `81117dd` (110 items: 85 API, 25 pages) | the 25 pages, and RollCall's audit of option A v3 (rm-57e6ca43, copy in `rollcall-audit-rm-57e6ca43.md`) written out item by item with v3's stub screens: Today's figures, inbox and action kinds and flows; the ticket's market shut, stale quote, refused, timeout, brake, outside-rules and debit confirms, partial fill, new entries from Screener, Browse and Ladder; Positions' lanes, row facts and detail; Orders' unfinished entry groups; Alerts' details and deep link; the account menu, sign-in, sign-up, invite, the per-login Robinhood tab, glossary tips, keyboard; Settings' sections; Robinhood's filter, CSV and settings; the Screener's run, progress and exclusions; the More pages as real screens; 95 items, and the 19 pages a screen must cite (25 less `/dev/states`, `/load-check`, `/phone-check`, `/*`, `/recommendations`, `/logout`). Five items are named by no source the run gets (buy to close, the stale quote, the debit confirm, the partial fill, Ideas), so they are marked `unsourced`; the 90% bar (at most 9 misses) leaves room for them |
+| P `p-planted` | Parcelly (stage 2's static app), with stage 2 case P's outputs, stage 2's requirements plus a planted R4, its capability map and fixture in `known-cases/ground/sources/parcelly-planted/`, and one planted item each: a page reached only by a URL (`/track/:code`), an action only in the API (`POST /api/parcels/{id}/redirect`), a data condition named in the code (`locker_full` on the locker request), a requirement for a new screen (returns), a dev-only page that must be excluded (`/dev/seed`), and one parcel with two statuses in the fixture (the invariant check must fail) | 6 of 6: a screen cites the URL-only page; an action cites the API-only action; a state holds `locker full` on the screen or action citing the locker request; a screen not in stage 2 cites the returns requirement and holds `return`; `/dev/seed` is excluded and cited by no screen; `fixture-check.json` fails on that parcel |
+| C `c-clean` | Parcelly's clean twin: the same sources without the six planted items | 0 false gaps; invariants pass |
+| design files | rollcall, temper, parcelly | status none, partial, none (`design_files.inventory`; a script case, no model) |
+
+RollCall's fixture is #170's `current/fixture.json` with its parts in `current/fixtures/`; ground-prep
+copies them. Parcelly's capability maps and fixtures are written by
+`known-cases/ground/build_parcelly_ground.py`. The design-files case is `known-cases/ground/design-files/`
+(`check.py` runs `design_files.inventory` per product against `expected.json`).
+
+### Results
+
+Runs on temper-dev through the stage-alone workflow `design_app_screen_v1_ground.yaml` (trial copies
+`_d210`), with the runner `~/design-lab/app-screen-workflow/results/ground-trials/trial.py` (`prep` copies
+the case's `01-request/` and `02-existing/` into a fresh workspace and runs `ground-prep`; `start`, `wait`,
+`grade`, `cleanup`); grades in `results/ground-trials/grades/`, runs in `runs.json`.
+
+Design-files case (script, no model): rollcall `none`, temper `partial`, parcelly-planted `none`,
+parcelly-clean `none`: pass.
+
+Round t1 (smoke, one run per case, before the rounds of three):
+
+| Run | Case | Temper run | Bar | Key / planted / false gaps | Pages | Screens, actions, excluded | Cost, time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| t1-a1 | A | `057a55a1` | fail | key 84/95 (88%) | 19/19 | 23, 91, 12 | $0.91, 299 s |
+| t1-p1 | P | `87118a9f` | pass | planted 6/6 | 6/6 | 7, 12, 3 | $0.10, 32 s |
+| t1-c1 | C | `6478ddbb` | pass | false gaps 0 | 5/5 | | $0.08, 28 s |
+
+Invented, unsourced and collect errors 0 on all three; no revision needed; RollCall's fixture copied
+byte-identical (`7f178e10...`) with its invariants passing; Parcelly planted's invariant failed on PX-2041
+as planted (the run ends `failed` at `ground`, as the bar wants), the clean twin's passed.
+
+t1-a1's eleven misses: four of the five unsourced items (buy to close, the stale quote, the debit
+confirm, Ideas); the next open (a grader gap, G1 below); and six real ones: assignment watch (no
+`assign` anywhere: the notes' "one call assigned away" became the state `settled`), Let it be called as
+an action, a confirm on the inbox card's actions, the ticket's live price banner, fees on the ticket, and
+the InfoTip / HelpText pattern. Two of those (fees, InfoTip) are named only by knowledge lines
+(`contextual-help` L6, L9) that the draft never cited: it cited 64 of the 102 lines (testing 19/46,
+figures 38/43, contextual-help 4/8, alerts 3/5), because the task called the notes context ("covering
+every line is not needed") and the check did not count them.
+
+G1 (grader, 2026-11-05): `ticket-next-open` lacked the source's own words for the next open (figures.md
+L26 "The market opens again in N hours"); t1-a1's trade screen shows "Session line: open and closes at, or
+opens again in" and was scored a miss. The key item gains `opens again` (dated in `expected.json`'s
+`changed`). t1-a1 still fails with it: 85/95.
+
+Hypotheses (rule 20):
+
+- H3-1 (after t1-a1). Wrong: items named only in knowledge lines are dropped (fees, InfoTip; 38 of 102
+  lines uncited), because notes are context that nothing counts. Change: knowledge lines become items to
+  account for like pages and API routes: each one cited where it names something a screen shows, a state
+  or an action, or excluded with the reason (`ground_sources.PLACED`/`EXCLUDABLE` gain `note`; the task's
+  notes header, the reader's step 6 and its checklist say so); a measured check, not a prompt plea
+  (stage 2's lesson). Expect: on A every one of the 102 lines cited or excluded after the check; fees and
+  InfoTip placed on at least 2 of 3 runs; the key at least 87/95 on every run; invented and unsourced 0;
+  P and C unchanged (Parcelly has no notes); A's cost up by less than a third. Wrong if: the lines are
+  all accounted for but fees and InfoTip still missing (excluded, or cited without their words), or the key
+  stays under 86/95.
+
+Round t2 (H3-1, three runs per case):
+
+| Run | Case | Temper run | Bar | Key / planted / false gaps | Pages | Screens, actions, excluded | Revised | Cost, time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t2-a1 | A | `ab7fc8b5` | fail | key 83/95 (87%) | 19/19 | 20, 69, 44 | yes | $1.79, 594 s |
+| t2-a2 | A | `1d6b3846` | fail | key 84/95 (88%) | 19/19 | 21, 84, 45 | no | $0.91, 302 s |
+| t2-a3 | A | `187ab0c3` | fail | key 85/95 (89%) | 19/19 | 24, 86, 45 | no | $0.99, 332 s |
+| t2-p1 | P | `e6b1a153` | fail | planted 5/6 | 6/6 | 7, 11, 3 | no | $0.09, 34 s |
+| t2-p2 | P | `1cb36aca` | fail | planted 5/6 | 6/6 | 7, 9, 3 | no | $0.09, 28 s |
+| t2-p3 | P | `94fbafeb` | fail | planted 5/6 | 6/6 | 7, 9, 3 | no | $0.10, 39 s |
+| t2-c1 | C | `67fa9162` | pass | false gaps 0 | 5/5 | 5, 8, 1 | no | $0.06, 26 s |
+| t2-c2 | C | `745c0125` | pass | false gaps 0 | 5/5 | 5, 9, 1 | no | $0.07, 28 s |
+| t2-c3 | C | `55fcc4aa` | pass | false gaps 0 | 5/5 | 5, 9, 1 | no | $0.08, 28 s |
+
+Invented, unsourced and coverage problems 0 on every run; RollCall's fixture byte-identical with its
+invariants passing; Parcelly planted's invariant failing as planted, the clean twin's passing.
+
+H3-1: miss. Every knowledge line was now accounted for (33-34 of 102 excluded each run), but fees stayed
+missing 3 of 3 (contextual-help L6 was cited on the overview, the roll ticket and the app frame without
+the word) and InfoTip 2 of 3 (L9 cited on the glossary without its words, or excluded as "component
+implementation"); the key fell to 83-85. Citing a line is not carrying what it names. Two new misses
+showed instead: the broker timeout and the outside-rules confirm (3 of 3; t1-a1 had both): testing.md's
+broker codes were cited on the overview only. The run that needed a revision cost twice as much ($1.79).
+The sourced misses across t2: Let it be called 3/3, card actions' confirm 3/3, timeout 3/3, outside rules
+3/3, fees 3/3, InfoTip 2/3, assignment watch 2/3, live price 1/3, hold shares 1/3. With four unsourced
+items missed every run, the 90% bar leaves room for at most five sourced misses.
+
+P's planted data condition (`locker_full`) was found 1 of 4 times over t1 and t2: three drafts drew the
+locker request's refusal as a plain `refused`, losing which refusal it was.
+
+- H3-2 (after t2, P). Wrong: an outcome the sources name by its code ("refused with `locker_full`") is
+  drawn as a generic `refused`, so the designers never draw the full-locker message; t2-p1..p3 all did it.
+  A source's code is a measurable fact, so a script measure, not a prompt line: `ground_sources`
+  reads the codes an item's text names ("refused/rejected/fails/declined/denied/blocked with <code>", the
+  code snake or kebab case), and a new check `named_conditions` sends back any cited item whose code no
+  state of the screen, state or action citing it names (`locker_full` -> a state holding the words
+  `locker` and `full`); the reader's checklist and the revision text say the same. Offline, on the t1/t2
+  drafts it flags t2-p1..p3 (and t2-c3's `bad_password`, `notes_too_long`), and none of A's (A's sources
+  name no such code). Expect: P planted 6/6 on 3 of 3 runs; C still 0 false gaps (its codes become
+  states, which no false-gap measure counts); A unchanged by it. Wrong if: P still misses `locker_full`
+  after the check (the revision fails to fix it), or C gains a false gap.
+- H3-3 (after t2, A). Wrong: what today's screens show is lost before the model reads it. Stage 3 gets
+  from stage 2 only the screen and state names (`app.json`) and the journeys, not the words the captures
+  show (`texts.json`), though the brief names stage 2's outputs as inputs. The captures hold what the
+  misses lack: the positions row's "Let assign" button and "assignment risk" lane, the roll ticket's
+  "Any listed call, including off-rule choices" and "which of your rules disagrees". Change (one):
+  `ground_collect` adds a `seen:<screen>` item per stage-2 screen: the screen's visible text runs over all
+  its captures (every width and state), once each, without runs of the app's frame (on half the screens
+  or more) or runs with no word (`ground_sources.seen`); citable context, not counted for coverage. The
+  reader's step 2 says to carry each label, row fact, button and message into the screen that replaces
+  it, in the app's own words. The task grows from 57,634 to 110,982 characters. Expect: assignment watch,
+  Let it be called and the outside-rules confirm met on at least 2 of 3 runs; the key at least 86/95 on
+  every run; invented and unsourced 0; A's cost up by less than half. Wrong if: any run's key stays under
+  86/95, or those three items are not gained.
+
+G2 (grader, 2026-11-05, set before t3): `action-let-it-be-called` gains `let assign`, the app's own label
+for that flow (the positions row button in stage 2's capture). No t1 or t2 inventory holds the words, so
+their scores do not change. H3-2 and H3-3 touch different cases (P/C codes; A has none), so round t3
+measures both.
+
+Round t3 (H3-2 and H3-3, three runs per case; A's keys with G3, below):
+
+| Run | Case | Temper run | Bar | Key / planted / false gaps | Pages | Screens, actions, excluded | Revised | Cost, time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t3-a1 | A | `c35bebca` | pass | key 86/95 (91%; 84 before G3) | 19/19 | 23, 118, 49 | yes (first draft cut off) | $2.26, 699 s |
+| t3-a2 | A | `8b14e522` | fail | run failed: both drafts cut off | - | - | yes (cut off again) | $2.36, 742 s |
+| t3-a3 | A | `aa2522ac` | pass | key 86/95 (91%; 84 before G3) | 19/19 | 20, 113, 50 | yes (first draft cut off) | $2.26, 701 s |
+| t3-p1 | P | `7d5cdcfe` | pass | planted 6/6 | 6/6 | 7, 11, 3 | no | $0.14, 48 s |
+| t3-p2 | P | `2bdfaacf` | pass | planted 6/6 | 6/6 | 7, 11, 3 | no | $0.14, 47 s |
+| t3-p3 | P | `4ca7209e` | pass | planted 6/6 | 6/6 | 7, 11, 3 | no | $0.16, 55 s |
+| t3-c1 | C | `447db24e` | pass | false gaps 0 | 5/5 | 5, 11, 1 | no | $0.12, 40 s |
+| t3-c2 | C | `a681b693` | pass | false gaps 0 | 5/5 | 5, 13, 1 | no | $0.12, 41 s |
+| t3-c3 | C | `2127510c` | pass | false gaps 0 | 5/5 | 5, 9, 1 | no | $0.11, 38 s |
+
+H3-2: hit. P found all six planted items on 3 of 3 runs (`locker_full` drawn as its own state on every
+run, without a revision); C stayed at 0 false gaps; invented, unsourced and coverage 0 everywhere.
+
+H3-3: miss on its own wrong-if (a run failed, and both readable runs scored 84/95 before G3), but its
+target items came: Let it be called, the assignment watch and the outside-rules confirm were met on both
+readable runs (0 of 3 in t2), and hold shares too. Two things hid the gain. (1) Every A first draft was
+cut off mid-JSON ("Unterminated string" or "Expecting value" at 42,752-56,790 characters); each read cost
+exactly $1.18, the price of the full 48,000-token ceiling, which holds thinking and reply together. The
+revision then rewrote the whole inventory from nothing, doubling the cost ($2.26), and t3-a2's revision
+was cut off too, so the run failed. (2) With the screens' words in front of it, the reader wrote the
+settings connection in the app's own words ("Real money: Off: this server was started read-only",
+"Sources: All 2 sources answered") instead of the capability map's "live flag, port status", which the
+key's terms did not hold (G3). P and C cost about half as much again as in t2 ($0.11-0.16), for the
+words read.
+
+G3 (grader, 2026-11-05, after t3): `settings-live-flag` gains `read-only`, `read only` and
+`settings-port-status` gains `sources answer`, the app's own words for those two in /settings'
+Connection section (stage 2's capture: "Real money · Off: this server was started read-only", "Sources ·
+All 2 sources answered at", "Did your sources answer?"), one for one with the capability map's
+"Connection (broker kind, write-only credentials, live flag, port status)" (Broker, Keys, Real money,
+Sources). "real money" is not added: it is the separate `settings-real-money` item's term. Rescored, t1 and t2
+keep their scores (83-85/95); t3-a1 and t3-a3 go from 84 to 86/95.
+
+- H3-4 (after t3, A). Wrong: the reader's ceiling cuts RollCall's inventory off. Evidence: 3 of 3 first
+  drafts unreadable at 42-57 thousand characters, every read at the identical $1.18 (the full 48,000
+  tokens), one revision cut off as well; a run that fails is a hard miss of the bar (errors 0). Change
+  (one): the reader's `max_tokens` goes from 48,000 to 128,000, what the repository's other long Opus
+  readers use (an unused ceiling costs nothing), and its timeout from 1,500 s to 2,400 s to match.
+  Expect: every A first draft readable (no revision for a schema problem), every A run completes, each A
+  run costs less than t3's $2.26 (one read instead of two), key at least 86/95 on every run; P and C
+  unchanged (their drafts are far under the old ceiling). Wrong if: an A draft is still cut off, a run
+  fails, or the key falls under 86/95 on any run.
+
+Round t4 (H3-4; the fresh round that meets the bar, every case 3 of 3):
+
+| Run | Case | Temper run | Bar | Key / planted / false gaps | Pages | Screens, actions, excluded | Revised | Cost, time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t4-a1 | A | `58feecf0` | pass | key 89/95 (94%) | 19/19 | 23, 127, 50 | no | $1.22, 376 s |
+| t4-a2 | A | `7578e3f5` | pass | key 88/95 (93%) | 19/19 | 20, 130, 46 | no | $1.56, 494 s |
+| t4-a3 | A | `f64f26e3` | pass | key 88/95 (93%) | 19/19 | 21, 135, 46 | no | $1.37, 432 s |
+| t4-p1 | P | `f51b191b` | pass | planted 6/6 | 6/6 | 7, 10, 3 | no | $0.18, 62 s |
+| t4-p2 | P | `6398f04c` | pass | planted 6/6 | 6/6 | 7, 10, 3 | no | $0.16, 58 s |
+| t4-p3 | P | `7e05c8cb` | pass | planted 6/6 | 6/6 | 7, 10, 3 | no | $0.16, 55 s |
+| t4-c1 | C | `92d2f4de` | pass | false gaps 0 | 5/5 | 5, 12, 1 | no | $0.11, 39 s |
+| t4-c2 | C | `879dc438` | pass | false gaps 0 | 5/5 | 5, 10, 1 | no | $0.12, 40 s |
+| t4-c3 | C | `7fbc2a0e` | pass | false gaps 0 | 5/5 | 5, 11, 1 | no | $0.11, 37 s |
+
+Every run: ground-prep and collect errors 0, invented 0, unsourced 0, coverage 0 (236 of 236 required
+source items placed on A, the final inventory rechecked clean); design files `none` as the key says;
+RollCall's fixture copied byte-identical (`7f178e10...`) with its 4 invariants passing over the fixture
+and its 17 parts; Parcelly planted's invariant failing on PX-2041 (each P run ends `failed` at `ground`,
+as the bar wants), the clean twin's passing. Bar met on 9 of 9 runs. The round cost $4.99 in all.
+
+H3-4: hit. Every A first draft read whole and passed the check without a revision; every run completed;
+each A run cost $1.22-1.56 (t3: $2.26-2.36); the key rose to 88-89/95 (t3: 86). P and C stayed
+at 6/6 and 0 false gaps, a few cents dearer than t3 (more thinking under the higher ceiling).
+
+A's misses on t4 (notes, within the bar): the unsourced buy to close, debit confirm and Ideas on 3 of 3
+and the stale quote on 2 of 3 (named by no source the run gets: the item text is from RollCall's audit,
+not from the app at `81117dd`); the broker timeout 3 of 3 (testing.md names the broker codes, but the
+reader puts them on the overview, not on the ticket); the ticket's fees 3 of 3 (contextual-help.md's
+fee rule is general, not the ticket's); a position's upcoming events 2 of 3; the per-login Robinhood tab
+1 of 3. These go to stage 4+ as known gaps of the sources, not of the stage: build checks them against
+the audit itself.
+
+Grader proof (`results/ground-trials/broken_copies.py t4-a1 t4-p1 t4-c1`, broken copies of these real
+runs' files, `broken-copies.json`): 28 of 28 right. Each untouched copy passes; each broken one fails for
+its named reason: A an invented source, an unsourced state, a dropped base state, a wrong design-file
+status, `/orders` and `/glossary` uncited, a swapped fixture, the 4 largest screens dropped (53/95), the
+actions dropped (38/95); P an invented source, an unsourced state, a wrong status and each of the six
+planted items broken alone; C an invented source, a dropped base state, the three planted measures
+firing, a screen citing nothing, a failing fixture.
+
+Lessons (for later stages): a measurable fact the model misses becomes a script check that names it,
+not a prompt line (H3-2: a named outcome code must be a state); give the reader the screens' own words,
+not only their names (H3-3); a reader's token ceiling holds thinking and reply together, and a draft cut
+off costs the whole ceiling twice (H3-4: same cost on every run was the tell).

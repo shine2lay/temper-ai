@@ -1,0 +1,25 @@
+# System engineering's continuous deployer for RollCall: one free step (epd_cd), run every minute by
+# configs/triggers/epd_cd.yaml.
+#
+# RollCall's master goes live by itself: two minutes after the last land, master's HEAD is released
+# through epd_loop.deploy_prod (backup, up, migrate, health, its own undo), one release at a time, and
+# lands that come in during a release go out together in the next one. The rule, the state and the
+# log are in configs/epd/bin/rollcall_cd_deploy.py; the host does the work, this run only asks.
+workflow:
+  name: epd_cd
+  version: 1
+  description: |
+    One tick of RollCall's continuous deployer: on the host, fetch master, and release its HEAD once
+    it has been quiet for two minutes and no release is running. No model.
+
+  outputs:
+    decision: tick.structured.decision
+    reason: tick.structured.reason
+    head: tick.structured.head
+    deployed_sha: tick.structured.deployed_sha
+    unit: tick.structured.unit
+
+  nodes:
+    - name: tick
+      type: agent
+      agent: epd_cd

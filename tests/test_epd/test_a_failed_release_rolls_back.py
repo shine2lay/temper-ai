@@ -42,7 +42,7 @@ class Prod:
         self.image = OLD                         # the image the live container runs
         self.db = "r1"                           # the live database's alembic revision
         self.head_of = {OLD: "r1", NEW: "r2"}    # each image's migrations head
-        self.right_mount = f"{(L.REPO_CHECKOUT / 'var').resolve()}->/data"
+        self.right_mount = f"{(L.PROD_HOME / 'var').resolve()}->/data"
         self.mount, self.mount_after_up = self.right_mount, self.right_mount
         self.up_fails: list[str] = []            # what the next `standee up`s fail with, in turn
         self.upgrade = "ok"                      # ok | fails | fails-halfway | does-nothing
@@ -144,6 +144,7 @@ def prod(L, tmp_path, monkeypatch):
     monkeypatch.setattr(L, "wait_for_url", p.wait_for_url)
     monkeypatch.setattr(L, "prod_api_health", p.api_health)
     monkeypatch.setattr(L, "ensure_qa_password", lambda: "not-a-password")
+    monkeypatch.setattr(L, "planned_mount_problem", lambda: None)  # its own tests: test_one_deploy_at_a_time
     monkeypatch.setattr(L.time, "sleep", p.slept.append)
     monkeypatch.setattr(L, "HEALTH_TRIES", 3)
     return p
@@ -278,6 +279,117 @@ def test_an_undo_that_cannot_restore_the_database_says_so_and_how(L, prod, capsy
     assert "UNDO INCOMPLETE" in said
     assert f"the database is NOT restored: run `standee backup rollcall-prod --restore {prod.backups[1][0]} --yes`" in said
     assert "Prod now: NOT HEALTHY: the database is at r1b but the code's head is r1" in said
+
+
+# ---- one deploy at a time, and only onto the live data ---------------------------------------------
+
+
+def hold(path):
+    """Hold `path`'s flock the way another deploy's deploy_prod would; returns the open fd."""
+    import fcntl
+    import os
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def test_one_deploy_at_a_time(L, prod, capsys):
+    """While another deploy holds the lock, deploy_prod changes nothing and exits DEPLOY_BUSY (75)."""
+    import os
+
+    fd = hold(L.DEPLOY_LOCK)
+    try:
+        with pytest.raises(SystemExit) as e:
+            L.deploy_prod(REF)
+    finally:
+        os.close(fd)
+    assert e.value.code == L.DEPLOY_BUSY == 75
+    assert prod.steps() == []  # not even a backup
+    assert "another production deploy is running" in capsys.readouterr().out
+    # Once it lets go, the next deploy goes through.
+    died, said = release(L, capsys)
+    assert not died, said
+    assert prod.image == NEW
+
+
+def test_a_release_that_dies_lets_go_of_the_lock(L, prod, capsys):
+    import os
+
+    prod.url_dead = True
+    died, _ = release(L, capsys)
+    assert died
+    fd = hold(L.DEPLOY_LOCK)  # would raise BlockingIOError if the dead release still held it
+    os.close(fd)
+
+
+def test_the_lock_is_the_one_the_continuous_deployer_names(L):
+    """The CD reads the same exit code; the lock lives in its state directory by default."""
+    from pathlib import Path
+
+    bin_dir = Path(L.__file__).parent
+    assert f"DEPLOY_BUSY = {L.DEPLOY_BUSY}" in (bin_dir / "rollcall_cd_deploy.py").read_text()
+    assert '".local" / "state" / "rollcall-cd" / "deploy.lock"' in (bin_dir / "epd_loop.py").read_text()
+
+
+class Compose:
+    """`docker compose ... config --format json` as planned_mount_problem asks it."""
+
+    def __init__(self, source):
+        self.source, self.cmds = source, []
+
+    def run(self, cmd, **kw):
+        self.cmds.append(cmd)
+        assert cmd[:2] == ["docker", "compose"] and cmd[-3:] == ["config", "--format", "json"], cmd
+        vols = [{"type": "bind", "source": self.source, "target": "/data"}] if self.source else []
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"services": {"rollcall": {"volumes": vols}}}), "")
+
+
+def tree(L, prod_files):
+    L.REPO_CHECKOUT.mkdir(parents=True, exist_ok=True)
+    tiers = f"tiers:\n  prod:\n    compose: {json.dumps(prod_files)}\n" if prod_files else "tiers:\n  prod: {}\n"
+    (L.REPO_CHECKOUT / "standee.yaml").write_text(f"name: rollcall\ncompose: [deploy/compose.yaml]\n{tiers}")
+
+
+def test_a_tree_that_mounts_the_live_data_by_its_own_path_may_be_released(L, monkeypatch):
+    tree(L, ["deploy/compose.yaml", "deploy/compose.live.yaml"])
+    c = Compose(str((L.PROD_HOME / "var").resolve()))
+    monkeypatch.setattr(L.subprocess, "run", c.run)
+    assert L.planned_mount_problem() is None
+    cmd = c.cmds[0]
+    assert cmd[cmd.index("--project-directory") + 1] == str(L.REPO_CHECKOUT)
+    assert [cmd[i + 1] for i, a in enumerate(cmd) if a == "-f"] == [
+        str(L.REPO_CHECKOUT / "deploy/compose.yaml"), str(L.REPO_CHECKOUT / "deploy/compose.live.yaml")]
+
+
+def test_a_tree_from_before_the_live_paths_is_refused_before_anything_changes(L, monkeypatch, capsys, request):
+    """An older commit mounts ./var of the checkout it runs from: an empty database. Refused first."""
+    tree(L, None)
+    c = Compose(str(L.REPO_CHECKOUT / "var"))
+    with monkeypatch.context() as m:
+        m.setattr(L.subprocess, "run", c.run)
+        problem = L.planned_mount_problem()
+    prod = request.getfixturevalue("prod")  # the fake prod, whose own stub answers None
+    assert problem and "would mount" in problem and "predates deploy/compose.live.yaml" in problem
+    assert [cmd[i + 1] for cmd in c.cmds for i, a in enumerate(cmd) if a == "-f"] == [
+        str(L.REPO_CHECKOUT / "deploy/compose.yaml")]  # the top-level compose, tier prod naming none
+    monkeypatch.setattr(L, "planned_mount_problem", lambda: problem)
+    died, said = release(L, capsys)
+    assert died and prod.steps() == []
+    assert f"refusing to release {REF[:12]}" in said and "nothing was changed" in said
+
+
+def test_a_tree_without_a_standee_file_is_refused(L):
+    L.REPO_CHECKOUT.mkdir(parents=True, exist_ok=True)
+    assert "could not read" in L.planned_mount_problem()
+
+
+def test_every_standee_call_sees_the_live_data_home(L):
+    """`standee rollback` re-reads compose.live.yaml's ROLLCALL_HOME when it recreates the container."""
+    import os
+
+    assert os.environ["ROLLCALL_HOME"] == str(L.PROD_HOME)
 
 
 # ---- the pieces -----------------------------------------------------------------------------------

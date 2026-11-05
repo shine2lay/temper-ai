@@ -51,6 +51,12 @@ def L(tmp_path, monkeypatch):
     # Nothing in a test may reach either.
     monkeypatch.setenv("EPD_REPO_CHECKOUT", str(tmp_path / "checkout"))
     monkeypatch.setenv("EPD_PROD_ENV_FILE", str(tmp_path / "prod.env"))
+    # The live data's home (var/ is the database) and the one-deploy-at-a-time lock: real paths on
+    # this machine, so a temporary one here. ROLLCALL_HOME is set by the driver on import, and
+    # monkeypatch puts the process's own value back afterwards.
+    monkeypatch.setenv("EPD_PROD_HOME", str(tmp_path / "prod-home"))
+    monkeypatch.setenv("ROLLCALL_HOME", str(tmp_path / "prod-home"))
+    monkeypatch.setenv("EPD_DEPLOY_LOCK", str(tmp_path / "rollcall-cd" / "deploy.lock"))
     # Nor the autopilot's real temper key, which a write reads from its file on this host.
     monkeypatch.setenv("TEMPER_API_KEY_FILE", str(tmp_path / "no-api-key"))
     spec = importlib.util.spec_from_file_location("epd_loop_under_test", DRIVER)

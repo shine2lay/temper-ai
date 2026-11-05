@@ -62,7 +62,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import datetime as dt
+import fcntl
 import json
 import os
 import re
@@ -118,9 +120,23 @@ BASE_BRANCH = os.environ.get("EPD_BASE_BRANCH", "master")
 # again from the merge commit.
 PROD_ENV = os.environ.get("EPD_PROD_ENV", "rollcall-prod")
 PROD_CONTAINER = os.environ.get("EPD_PROD_CONTAINER", "rollcall-prod-rollcall-1")
-# The live server's env file: its compose reads it, so a secret put here reaches
-# the container without ever appearing in a command line.
-PROD_ENV_FILE = Path(os.environ.get("EPD_PROD_ENV_FILE", "/home/shinelay/rollcall/.env"))
+# Where the live product's data lives: var/ (the database, every order ever placed), .env, fixtures/,
+# data/. Not the checkout it is built from: rollcall's deploy/compose.live.yaml (tier prod) mounts
+# ${ROLLCALL_HOME}/var at /data by absolute path, so a release may be built from any clean checkout
+# (REPO_CHECKOUT; the continuous deployer's is ~/rollcall-deploy) and still open the owner's database.
+# Every standee call this driver makes reads ROLLCALL_HOME from here (`standee rollback` re-reads it
+# when it recreates the container), so it is set for the whole process.
+PROD_HOME = Path(os.environ.get("EPD_PROD_HOME", "/home/shinelay/rollcall"))
+os.environ["ROLLCALL_HOME"] = str(PROD_HOME)
+# The live server's env file: its compose reads it (PROD_HOME/.env, deploy/compose.live.yaml), so a
+# secret put here reaches the container without ever appearing in a command line.
+PROD_ENV_FILE = Path(os.environ.get("EPD_PROD_ENV_FILE", str(PROD_HOME / ".env")))
+# One production deploy at a time on this machine: the loop's own deploy after a merge and temper's
+# continuous deployer (configs/epd/bin/rollcall_cd_deploy.py) both go through deploy_prod, which
+# holds this lock for the whole release, undo included, and refuses to start while another holds it.
+DEPLOY_LOCK = Path(os.environ.get("EPD_DEPLOY_LOCK", str(Path.home() / ".local" / "state" / "rollcall-cd" / "deploy.lock")))
+#: deploy_prod's exit code when another deploy holds DEPLOY_LOCK: nothing was changed, try again later.
+DEPLOY_BUSY = 75
 PROD_URL = os.environ.get("EPD_PROD_URL", "https://rollcall.wai2shine.com")
 PROD_HOST_PORT = os.environ.get("EPD_PROD_HOST_PORT", "8020")
 # The pipeline's clone of the repository (task_worktree keeps it): the report
@@ -1364,9 +1380,13 @@ def up_prod() -> None:
     too"), there is nothing sound to build on: the release is undone instead.
     """
     tries = len(UP_RETRY_WAITS) + 1
+    cmd = ["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT, "--wait"]
+    # Any other PROD_ENV (a rehearsal) gets its own environment by name. Never `--name` for the live
+    # one: a named environment's gateway hostname is its name (rollcall-prod.<zone>), not rollcall.<zone>.
+    if PROD_ENV != f"{REPO_NAME}-prod":
+        cmd += ["--name", PROD_ENV]
     for n in range(1, tries + 1):
-        r = sh(["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT, "--wait"],
-               check=False)
+        r = sh(cmd, check=False)
         if r.returncode == 0:
             return
         out = f"{r.stdout}\n{r.stderr}"
@@ -1522,7 +1542,68 @@ def undo_release(ref: str, stage: str, why: str, was_running: str, restore_from:
         f"{'Undone' if not left else 'UNDO INCOMPLETE'}: {'; '.join(done + left)}. Prod now: {state}.")
 
 
+@contextlib.contextmanager
+def deploy_lock():
+    """Hold DEPLOY_LOCK for the block, or die with DEPLOY_BUSY at once when another deploy holds it.
+
+    flock, not a pid file: the kernel lets go when the holder exits, however it exits, so a crashed
+    deploy never leaves the next one locked out.
+    """
+    DEPLOY_LOCK.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(DEPLOY_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            die(f"another production deploy is running (it holds {DEPLOY_LOCK}); nothing was changed", DEPLOY_BUSY)
+        yield
+    finally:
+        os.close(fd)
+
+
+def planned_mount_problem() -> str | None:
+    """None when the tree in REPO_CHECKOUT would mount PROD_HOME/var at /data, else why not.
+
+    Asked of compose itself, with the files standee.yaml names for tier prod, before anything is
+    changed: a tree from before deploy/compose.live.yaml mounts ./var of whatever checkout it runs
+    from, an empty database outside ~/rollcall, and `standee rollback` would recreate the old images
+    with the same files.
+    """
+    import yaml  # the host's python3 has it; only a release needs it
+
+    try:
+        spec = yaml.safe_load((REPO_CHECKOUT / "standee.yaml").read_text()) or {}
+    except (OSError, yaml.YAMLError) as e:
+        return f"could not read {REPO_CHECKOUT / 'standee.yaml'}: {e}"
+    tier = ((spec.get("tiers") or {}).get("prod") or {})
+    files = tier.get("compose") or spec.get("compose") or []
+    if isinstance(files, str):
+        files = [files]
+    if not files:
+        return f"{REPO_CHECKOUT / 'standee.yaml'} names no compose file for tier prod"
+    cmd = ["docker", "compose", "--project-directory", str(REPO_CHECKOUT)]
+    for f in files:
+        cmd += ["-f", str(REPO_CHECKOUT / f)]
+    r = subprocess.run([*cmd, "config", "--format", "json"], text=True, capture_output=True)
+    if r.returncode != 0:
+        return f"`docker compose config` on {REPO_CHECKOUT} exited {r.returncode}: {_last_line(r.stderr)}"
+    want = str((PROD_HOME / "var").resolve())
+    sources = [v.get("source") for svc in (json.loads(r.stdout).get("services") or {}).values()
+               for v in svc.get("volumes") or [] if v.get("target") == "/data"]
+    if want not in sources:
+        return (f"the tree in {REPO_CHECKOUT} would mount {', '.join(map(str, sources)) or 'nothing'} at /data, "
+                f"not {want} (its standee.yaml tier prod: {', '.join(files)}); it predates deploy/compose.live.yaml "
+                f"or ROLLCALL_HOME is wrong")
+    return None
+
+
 def deploy_prod(ref: str) -> None:
+    """Put the live product on `ref`; one deploy at a time (DEPLOY_LOCK, DEPLOY_BUSY when taken)."""
+    with deploy_lock():
+        _deploy_prod(ref)
+
+
+def _deploy_prod(ref: str) -> None:
     """Put the live product on `ref`: backup, up, migrate, health check; undone by itself on a failure.
 
     `standee up` on an existing environment updates it in place: same name,
@@ -1542,15 +1623,21 @@ def deploy_prod(ref: str) -> None:
     From an export, `./var` is a new empty directory and `.env` does not
     exist at all (it is gitignored, so `git archive` omits it): the live
     product would come up with an empty database and no master key. So the
-    deploy runs from the checkout, which the caller has already
-    fast-forwarded to the merged commit -- the tree IS the commit, asserted
-    here rather than assumed.
+    deploy runs from a clean checkout at the commit (REPO_CHECKOUT: ~/rollcall
+    for the loop, fast-forwarded to the merge; ~/rollcall-deploy for the
+    continuous deployer) -- the tree IS the commit, asserted here rather than
+    assumed. Tier prod layers deploy/compose.live.yaml over the lines above,
+    which names the live data by absolute path (PROD_HOME), and
+    planned_mount_problem refuses any tree that would mount anything else.
     """
     head = sh(["git", "rev-parse", "HEAD"], cwd=REPO_CHECKOUT).stdout.strip()
     if head != ref:
         die(f"{REPO_CHECKOUT} is at {head[:12]}, not the commit being shipped ({ref[:12]})")
     if sh(["git", "status", "--porcelain"], cwd=REPO_CHECKOUT).stdout.strip():
         die(f"{REPO_CHECKOUT} has uncommitted changes; the live product is built from this tree")
+    problem = planned_mount_problem()
+    if problem:
+        die(f"refusing to release {ref[:12]}: {problem}; nothing was changed")
     ensure_qa_password()  # before `up`: the container reads the env file at start
     was_running = prod_image()
     # --label deploy: a release's restore point, kept by count apart from the nightly rotation
@@ -1562,7 +1649,7 @@ def deploy_prod(ref: str) -> None:
         problem = prod_mount_problem()
         if problem:
             raise ReleaseFailed(problem)
-        log(f"live database still mounted from {(REPO_CHECKOUT / 'var').resolve()}")
+        log(f"live database still mounted from {(PROD_HOME / 'var').resolve()}")
         stage = f"waiting for {PROD_URL} to answer"
         wait_for_url(PROD_URL)
         stage = "reading the database version"
@@ -1599,7 +1686,7 @@ def prod_mount_problem() -> str | None:
     product: a compose run from the wrong directory gives every relative
     bind mount a fresh empty one instead.
     """
-    want = str((REPO_CHECKOUT / "var").resolve())
+    want = str((PROD_HOME / "var").resolve())
     r = sh(["docker", "inspect", PROD_CONTAINER, "--format",
             "{{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}"], check=False)
     mounts = r.stdout.strip()

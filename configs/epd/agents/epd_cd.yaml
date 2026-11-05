@@ -1,0 +1,46 @@
+# RollCall's continuous deployer, one tick: ask the host whether master's HEAD is due to go live, and
+# start that release when it is. The decision and the release are the host's
+# (configs/epd/bin/rollcall_cd_deploy.py tick); this node only asks, and reports the answer.
+#
+# Why over ssh: a release needs the host's docker, standee, systemd and the live product's files,
+# none of which this container has. The key is the epd-ship key, pinned to a forced command on the
+# host (local/host-bin/epd-ship-only); that command must admit the fixed line `epd-cd tick` (no
+# arguments, nothing else) before this node can run. Until it does, the host refuses with exit 126
+# and the node fails loud with the host's words.
+#
+# No model (rule 17): one script, one JSON line out. A tick that refuses (the deploy checkout has
+# changes) fails the node, so a stuck deployer shows as failing runs, every minute, until fixed.
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_cd
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    KEYDIR=/app/standee-ssh
+    KEY_SRC="$KEYDIR/id_ed25519_ship"
+    fail() {
+      python3 -c 'import json,sys; print(json.dumps({"decision": "error", "reason": sys.argv[1]}))' "$1"
+      echo "epd_cd failed: $1" >&2
+      exit 1
+    }
+    [ -f "$KEY_SRC" ] || fail "no epd-ship key at $KEY_SRC (run local/standee-ssh/setup.sh, mount it)"
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY" /tmp/epd_cd.out' EXIT
+    install -m 600 "$KEY_SRC" "$KEY"
+    set +e
+    ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
+        -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
+        shinelay@host.docker.internal "epd-cd tick" > /tmp/epd_cd.out 2>&1
+    RC=$?
+    set -e
+    # The tick prints one JSON line last; anything before it is the host's log.
+    LAST=$(tail -n 1 /tmp/epd_cd.out)
+    if [ "$RC" = 0 ] && printf '%s' "$LAST" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+      printf '%s\n' "$LAST"
+      exit 0
+    fi
+    fail "host tick exited $RC: $(tail -n 3 /tmp/epd_cd.out | tr '\n' ' ')"

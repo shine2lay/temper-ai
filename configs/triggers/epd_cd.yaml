@@ -1,0 +1,16 @@
+# RollCall's continuous deployer, every minute: each tick asks the host whether master's HEAD has been
+# quiet for two minutes and, when it has and nothing is releasing, starts that release
+# (configs/epd/workflows/epd_cd.yaml, configs/epd/bin/rollcall_cd_deploy.py).
+#
+# Off until RollCall says go: the rehearsal (RollCall CD 3) runs it first, and the host's forced
+# command must admit `epd-cd tick`. A tick whose previous run is still going skips this minute, and a
+# minute missed while temper was down is not caught up: the next tick sees the same master.
+# `enabled: true` switches it on (read on every tick, no restart).
+trigger:
+  name: epd_cd
+  source: schedule
+  enabled: false
+  on:
+    every: 1m
+    catch_up: false
+  workflow: epd_cd

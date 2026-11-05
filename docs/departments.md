@@ -33,7 +33,7 @@ role tests and lands a change.
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
-| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
+| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, RollCall's continuous deployer (`epd_cd`: master goes live two minutes after the last land, one release at a time, [below](#rollcalls-continuous-deployer)), temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
 | `docs` | Docs | The knowledge-folder check (`.temper/`) and capability maps; next, a docs grader, a doc step for builds, changelogs. |
@@ -261,6 +261,34 @@ A script step can check which files its own run's agents went near:
 `GET http://server:8420/api/runs/{{ run_id }}/tool-calls` lists every tool call
 with its attempt, agent, round and the paths it named, never their contents;
 `contains=` marks the calls whose inputs hold a given string (a hidden folder, say).
+
+## RollCall's continuous deployer
+
+`epd_cd` (systems) puts RollCall's master live by itself: two minutes
+after the last land, master's HEAD is released through `epd_loop.deploy_prod`
+(backup, up, migrate, health, its own undo), one release at a time, and lands
+that come in during a release go out together in the next one (owner,
+2026-11-05). Its trigger, `configs/triggers/epd_cd.yaml`, ticks every minute
+and lands switched off; RollCall switches it on.
+
+- The rule, the state and the log: `configs/epd/bin/rollcall_cd_deploy.py`
+  (`tick`, one decision; `deploy --sha S --kind deploy|undo --reason TEXT`,
+  one release). State and log in `~/.local/state/rollcall-cd/` (`state.json`,
+  `deploys.jsonl`), shared with the money-test undo.
+- It builds from its own plain clone, `/home/shinelay/rollcall-deploy`,
+  detached at the commit and clean; the live data stays where it is,
+  `/home/shinelay/rollcall/var` at `/data` (rollcall's
+  `deploy/compose.live.yaml`, `EPD_PROD_HOME`).
+- One deploy at a time on the machine: `deploy_prod` holds
+  `~/.local/state/rollcall-cd/deploy.lock` for the whole release and exits 75
+  while another holds it, so the loop's own deploy after a merge and this one
+  never overlap.
+- Messages: `configs/epd/bin/rollcall_cd_notify.py`. `role` is a note in a
+  role's home chat through pi-web-ui's `script_notice` route (its
+  docs/script-notice.md); `owner` is the owner's Telegram through
+  agent-tools' `sendTelegram`. What does not go waits in
+  `~/.local/state/rollcall-cd/outbox.jsonl`; role lines are sent again
+  before the next one.
 
 ## Releasing a leftover task
 
@@ -652,10 +680,11 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/workflows/epd_qa_grade.yaml` | workflow |
 | `epd/workflows/qa_flaky_report.yaml` | workflow |
 
-### systems (27)
+### systems (32)
 
 | Config | Kind |
 |---|---|
+| `epd/workflows/epd_cd.yaml` | workflow |
 | `epd/workflows/epd_deploy.yaml` | workflow |
 | `epd/workflows/epd_leftovers.yaml` | workflow |
 | `epd/workflows/epd_probe.yaml` | workflow |
@@ -670,6 +699,7 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `agents/gate_smoke_ask.yaml` | agent (script) |
 | `agents/gate_smoke_use.yaml` | agent (script) |
 | `agents/smoke_echo.yaml` | agent (script) |
+| `epd/agents/epd_cd.yaml` | agent (script) |
 | `epd/agents/epd_deploy.yaml` | agent (script) |
 | `epd/agents/epd_leftovers.yaml` | agent (script) |
 | `epd/agents/epd_ship.yaml` | agent (script) |
@@ -683,6 +713,9 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/agents/task_stack_up.yaml` | agent (script) |
 | `epd/agents/task_worktree.yaml` | agent (script) |
 | `epd/bin/leftovers.py` | script |
+| `epd/bin/rollcall_cd_deploy.py` | script |
+| `epd/bin/rollcall_cd_notify.py` | script |
+| `triggers/epd_cd.yaml` | trigger |
 
 ### security (3)
 

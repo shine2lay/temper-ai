@@ -7,8 +7,10 @@
     rollcall_cd_deploy.py deploy --sha S --kind deploy|undo --reason TEXT
         One release of S through epd_loop.deploy_prod (backup, up, migrate, health, its own undo),
         from the deploy checkout. What a tick starts, in a systemd unit of its own; the money-test
-        undo (RollCall CD 2) calls it with --kind undo. Exit 0 when S is live and healthy, 75 when
-        another deploy held the lock (nothing changed), 1 otherwise.
+        undo (RollCall CD 2) calls it with --kind undo (deploy_prod's kind undo: the order guard lets
+        it go back; --kind deploy is kind forward). Exit 0 when S is live and healthy (or was live
+        already), 75 when another deploy or standee command held the lock, 76 when deploy_prod's
+        order guard refused (the live commit is no ancestor of S; both: nothing changed), 1 otherwise.
 
 The rule (owner, 2026-11-05, relayed by RollCall rm-ff184438): "after something lands deploy will
 start on that commit ... while deploy is going more landing could happen and deploy can pick up
@@ -26,7 +28,7 @@ origin/master's HEAD when all of these hold:
 It deploys HEAD, never a land in between, so one deploy carries every land so far. It does not wait
 for GitHub's CI: a land only reaches master once its land check has passed.
 
-What stays the same for the live product: epd_loop.deploy_prod does the release, unchanged, and holds
+What stays the same for the live product: epd_loop.deploy_prod does the release (and tags it), and holds
 the machine's one deploy lock, so epd_loop's own deploy after a bet merge and this one never overlap.
 The live data comes by absolute path (EPD_PROD_HOME, rollcall's deploy/compose.live.yaml): the
 standee env rollcall-prod, its container and port 8020, /home/shinelay/rollcall/var at /data and
@@ -40,7 +42,9 @@ Shared with RollCall CD 2 (the money-test undo), kept exactly:
                     deploys.jsonl, one JSON line per event {ts, kind: deploy|undo|refusal|skip, sha,
                                from_sha, reason, result, unit}
   undone_shas: commits this deployer will not release on its own again: undone by the money test,
-  or whose release failed (deploy_prod undid it by itself) or ended without saying how. A new land
+  or whose release failed (deploy_prod undid it by itself) or ended without saying how, or that
+  deploy_prod's order guard refused (result "out of order": the live commit is no ancestor of it;
+  it would refuse again). A commit that is live already ends ok, nothing changed. A new land
   is a new HEAD and goes out as usual; `deploy --sha` releases one of them by hand, and a release
   that goes live takes its commit off the list.
 
@@ -80,7 +84,13 @@ NOTIFY_ROLE = "rollcall"
 UNIT_PREFIX = "rollcall-cd-deploy-"
 #: epd_loop.DEPLOY_BUSY: deploy_prod's exit code while another deploy holds the lock (checked by a test).
 DEPLOY_BUSY = 75
+#: epd_loop.DEPLOY_REFUSED: its order guard refused (the live commit is no ancestor of this one); nothing changed.
+DEPLOY_REFUSED = 76
+#: epd_loop.DEPLOY_ALREADY_LIVE: the commit asked for is the live one; nothing changed.
+DEPLOY_ALREADY_LIVE = 77
 KINDS = ("deploy", "undo")
+#: This CLI's --kind -> epd_loop.deploy_prod's kind (forward: the order guard applies; undo: may go back).
+RELEASE_KIND = {"deploy": "forward", "undo": "undo"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 STATE_DEFAULTS: dict = {"deployed_sha": None, "deploy_running_unit": None, "last_seen_head": None,
                         "last_seen_at": None, "last_deploy_end_at": None, "undone_shas": []}
@@ -138,10 +148,13 @@ def launch(unit: str, sha: str, reason: str) -> None:
         raise RuntimeError(f"`systemd-run --unit={unit}` exited {r.returncode}: {r.stderr.strip()}")
 
 
-def run_release(sha: str) -> tuple[int, str]:
-    """epd_loop.deploy_prod(sha) from CHECKOUT, its output passed through; (exit code, why it ended)."""
+def run_release(sha: str, kind: str, reason: str) -> tuple[int, str]:
+    """epd_loop.deploy_prod(sha, kind=RELEASE_KIND[kind], reason=reason) from CHECKOUT, its output passed
+    through; (exit code, why it ended)."""
     env = dict(os.environ, EPD_REPO_CHECKOUT=str(CHECKOUT), EPD_PROD_HOME=str(PROD_HOME))
-    p = subprocess.Popen([sys.executable, "-c", "import sys, epd_loop; epd_loop.deploy_prod(sys.argv[1])", sha],
+    code = ("import sys, epd_loop; "
+            "epd_loop.deploy_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])")
+    p = subprocess.Popen([sys.executable, "-c", code, sha, RELEASE_KIND[kind], reason],
                          cwd=BIN, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     tail: collections.deque[str] = collections.deque(maxlen=40)
     assert p.stdout is not None
@@ -443,11 +456,15 @@ def deploy(sha: str, kind: str, reason: str) -> int:
                 fetch_head()
                 checkout(sha)
                 ev_kind, result = kind, "failed"
-                code, why = run_release(sha)
+                code, why = run_release(sha, kind, reason)
                 if code == 0:
                     result = "ok"
+                elif code == DEPLOY_ALREADY_LIVE:  # what was asked for is live: done, nothing changed
+                    code, result = 0, "ok"
                 elif code == DEPLOY_BUSY:
                     ev_kind, result = "refusal", "busy"
+                elif code == DEPLOY_REFUSED:  # the order guard: it would refuse again, so not again on its own
+                    ev_kind, result = "refusal", "out of order"
     except CheckoutProblem as e:
         code, why = 1, str(e)
     except Exception as e:  # recorded, then raised: a deploy never ends without a line saying so
@@ -459,7 +476,7 @@ def deploy(sha: str, kind: str, reason: str) -> int:
             if result == "ok":  # live now (a hand release of an undone commit too): not undone any more
                 st["deployed_sha"] = sha
                 st["undone_shas"] = [s for s in st["undone_shas"] if s != sha]
-            elif result == "failed" and sha not in st["undone_shas"]:
+            elif result in ("failed", "out of order") and sha not in st["undone_shas"]:
                 st["undone_shas"].append(sha)
             st["last_deploy_end_at"] = _iso(now())
             if st["deploy_running_unit"] == me:

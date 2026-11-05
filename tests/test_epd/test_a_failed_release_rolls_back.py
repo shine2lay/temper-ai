@@ -25,7 +25,11 @@ from tests.test_epd import test_epd_loop
 L = test_epd_loop.L
 
 REF = "c0ffee1234567890c0ffee1234567890c0ffee12"
+OLD_SHA = "a1" * 20                     # the commit live before the release, an ancestor of REF
 OLD, NEW = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+REVISION = "org.opencontainers.image.revision"
+LOCK_BUSY = ("Error: another standee command holds the lock (/home/shinelay/.standee/standee.lock); "
+             "waited 60s for up")
 DOCKER_HUB = ('ERROR: failed to solve: node:22-alpine: failed to resolve source metadata for '
               'docker.io/library/node:22-alpine: failed to do request: Head "https://registry-1.docker.io/v2/'
               'library/node/manifests/22-alpine": net/http: TLS handshake timeout')
@@ -53,29 +57,83 @@ class Prod:
         self.dir = tmp_path / "backups" / "rollcall-prod"
         self.ran: list[str] = []                 # the steps that matter, in order
         self.slept: list[float] = []
+        # which commit runs: each image's labels (standee's and the Dockerfile's) and /api/health's commit
+        self.labels_of = {OLD: {"standee.commit": OLD_SHA[:12], REVISION: OLD_SHA},
+                          NEW: {"standee.commit": REF[:12], REVISION: REF}}
+        self.commit_of: dict[str, str | None] = {OLD: OLD_SHA, NEW: REF}
+        self.ancestor_rc = 0                     # `git merge-base --is-ancestor`: 0 yes, 1 no, 128 unknown
+        self.asked_ancestor: list[tuple[str, str]] = []
+        self.up_env: list[dict] = []             # the environment each `standee up` got
+        # standee's lock: how many more tries of each command find it taken; each such try waits 60 s
+        self.lock_busy = {"backup": 0, "up": 0}
+        self.clock = 1000.0
+        # the release tags: on origin and in the checkout, name -> commit; what each tag says
+        self.remote_tags: dict[str, str] = {}
+        self.local_tags: dict[str, str] = {}
+        self.tag_message: dict[str, str] = {}
+        self.tag_fails = self.push_fails = False
+        self.pushed: list[str] = []
+        self.told: list[str] = []                # what RollCall was told
 
     def steps(self) -> list[str]:
         return self.ran
 
     # -- the commands deploy_prod runs ------------------------------------------------------------
-    def sh(self, cmd, cwd=None, check=True):
+    def sh(self, cmd, cwd=None, check=True, env=None):
         def done(out="", rc=0, err=""):
             if rc and check:
                 self.L.die(f"command failed ({rc}): {' '.join(cmd)}")
             return subprocess.CompletedProcess(cmd, rc, out, err)
+
+        def lock_taken(what):
+            if self.lock_busy[what] <= 0:
+                return False
+            self.lock_busy[what] -= 1
+            self.clock += 60  # standee waits 60 s for its lock before it gives up
+            return True
 
         match cmd:
             case ["git", "rev-parse", "HEAD"]:
                 return done(REF + "\n")
             case ["git", "status", "--porcelain"]:
                 return done("")
+            case ["git", "rev-parse", "--verify", "--quiet", short]:
+                full = next((s for s in (OLD_SHA, REF) if s.startswith(short.removesuffix("^{commit}"))), "")
+                return done(full + "\n" if full else "", 0 if full else 1)
+            case ["git", "merge-base", "--is-ancestor", running, ref]:
+                self.asked_ancestor.append((running, ref))
+                return done("", self.ancestor_rc, "fatal: Not a valid commit name" if self.ancestor_rc > 1 else "")
+            case ["git", "ls-remote", "--tags", "origin", "prod/*"]:
+                rows = [f"{'f' * 40}\trefs/tags/{n}\n{sha}\trefs/tags/{n}^{{}}" for n, sha in self.remote_tags.items()]
+                return done("\n".join(rows) + "\n" if rows else "")
+            case ["git", "for-each-ref", fmt, "refs/tags/prod/*"]:
+                return done("".join(f"{n} {sha} {'e' * 40}\n" for n, sha in self.local_tags.items()))
+            case ["git", "tag", "-a", name, sha, "-m", message]:
+                if self.tag_fails:
+                    return done("", 128, "fatal: unable to auto-detect email address")
+                self.local_tags[name], self.tag_message[name] = sha, message
+                return done("")
+            case ["git", "push", "origin", tag_ref]:
+                if self.push_fails:
+                    return done("", 128, "ERROR: Repository not found.\nfatal: Could not read from remote repository.")
+                name = tag_ref.removeprefix("refs/tags/")
+                self.remote_tags[name] = self.local_tags[name]
+                self.pushed.append(name)
+                return done("", err=f" * [new tag]         {name} -> {name}\n")
             case ["docker", "inspect", _, "--format", "{{.Image}}"]:
                 return done(self.image + "\n") if self.image else done("", 1, "Error: No such object")
+            case ["docker", "inspect", _, "--format", "{{json .Config.Labels}}"]:
+                if not self.image:
+                    return done("", 1, "Error: No such object")
+                return done(json.dumps({"com.docker.compose.project": "rollcall-prod",
+                                        **self.labels_of[self.image]}) + "\n")
             case ["docker", "inspect", _, "--format", fmt] if "Mounts" in fmt:
                 self.ran.append("mounts")
                 return done(self.mount + " \n")
             case ["standee", "backup", _, "--label", "deploy"]:  # an unlabelled backup matches nothing here
                 self.ran.append("backup")
+                if lock_taken("backup"):
+                    return done("", 1, LOCK_BUSY.replace("for up", "for backup"))
                 when = f"2026-10-29-1030{len(self.backups):02d}"
                 self.backups.append((str(self.dir / "rollcall" / f"{when}.deploy.db.gz"), self.db))
                 return done(f"rollcall  sqlite  1.2M  {self.backups[-1][0]}\n")
@@ -95,6 +153,9 @@ class Prod:
                 return done("restored /data/rollcall.db\n")
             case ["standee", "up", *_]:
                 self.ran.append("up")
+                self.up_env.append(env)
+                if lock_taken("up"):
+                    return done("", 1, LOCK_BUSY)
                 if self.up_fails:  # standee puts the images that ran before back itself
                     return done("", 1, self.up_fails.pop(0) + "\n✗ up failed: rolled back to the previous images")
                 self.image, self.mount = NEW, self.mount_after_up
@@ -136,6 +197,13 @@ class Prod:
         self.ran.append("health")
         return "/api/health says ok=False, db_ok=False" if self.image in self.unhealthy else None
 
+    def health_commit(self):
+        return self.commit_of[self.image]
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.clock += seconds
+
 
 @pytest.fixture
 def prod(L, tmp_path, monkeypatch):
@@ -145,20 +213,30 @@ def prod(L, tmp_path, monkeypatch):
     monkeypatch.setattr(L, "prod_api_health", p.api_health)
     monkeypatch.setattr(L, "ensure_qa_password", lambda: "not-a-password")
     monkeypatch.setattr(L, "planned_mount_problem", lambda: None)  # its own tests: test_one_deploy_at_a_time
-    monkeypatch.setattr(L.time, "sleep", p.slept.append)
+    monkeypatch.setattr(L, "prod_health_commit", p.health_commit)
+    monkeypatch.setattr(L, "tell_rollcall", p.told.append)
+    monkeypatch.setattr(L, "clock_seconds", lambda: p.clock)
+    monkeypatch.setattr(L, "release_time", lambda: L.dt.datetime(2026, 11, 5, 20, 31, 7, tzinfo=L.dt.UTC))
+    monkeypatch.setattr(L.time, "sleep", p.sleep)
     monkeypatch.setattr(L, "HEALTH_TRIES", 3)
     return p
 
 
-def release(L, capsys) -> tuple[bool, str]:
-    """deploy_prod(REF): (whether it died, everything it said)."""
+def release(L, capsys, **kw) -> tuple[bool, str]:
+    """deploy_prod(REF, **kw): (whether it died, everything it said)."""
+    died, said = release_code(L, capsys, **kw)
+    return died is not None, said
+
+
+def release_code(L, capsys, ref=REF, **kw) -> tuple[int | str | None, str]:
+    """deploy_prod(ref, **kw): (its exit code, None when it returned; everything it said)."""
     try:
-        L.deploy_prod(REF)
-        died = False
-    except SystemExit:
-        died = True
+        L.deploy_prod(ref, **kw)
+        code = None
+    except SystemExit as e:
+        code = e.code
     out = capsys.readouterr()
-    return died, out.out + out.err
+    return code, out.out + out.err
 
 
 # ---- the release goes through ---------------------------------------------------------------------

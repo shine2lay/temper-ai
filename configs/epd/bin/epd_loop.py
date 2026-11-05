@@ -135,8 +135,20 @@ PROD_ENV_FILE = Path(os.environ.get("EPD_PROD_ENV_FILE", str(PROD_HOME / ".env")
 # continuous deployer (configs/epd/bin/rollcall_cd_deploy.py) both go through deploy_prod, which
 # holds this lock for the whole release, undo included, and refuses to start while another holds it.
 DEPLOY_LOCK = Path(os.environ.get("EPD_DEPLOY_LOCK", str(Path.home() / ".local" / "state" / "rollcall-cd" / "deploy.lock")))
-#: deploy_prod's exit code when another deploy holds DEPLOY_LOCK: nothing was changed, try again later.
+#: deploy_prod's exit code when another deploy holds DEPLOY_LOCK, or another standee command held standee's
+#: lock for STANDEE_LOCK_LIMIT: nothing was changed, try again later.
 DEPLOY_BUSY = 75
+#: deploy_prod's exit code when the order guard refuses: the commit live now is not an ancestor of the one
+#: asked for (older over newer, or a commit this checkout cannot place), and it is no undo. Nothing changed.
+DEPLOY_REFUSED = 76
+#: deploy_prod's exit code when the commit asked for is the one live now: nothing to release, nothing changed.
+DEPLOY_ALREADY_LIVE = 77
+#: Where the release tags go: origin of REPO_CHECKOUT (shine2lay/rollcall), as prod/<UTC yyyymmdd-hhmm>.
+RELEASE_TAG_PREFIX = "prod/"
+#: Who hears when a healthy release could not be tagged (rollcall_cd_notify.role).
+RELEASE_NOTIFY_ROLE = "rollcall"
+#: deploy_prod's kinds: forward (the order guard applies) or undo (an older commit may go back live).
+RELEASE_KINDS = ("forward", "undo")
 PROD_URL = os.environ.get("EPD_PROD_URL", "https://rollcall.wai2shine.com")
 PROD_HOST_PORT = os.environ.get("EPD_PROD_HOST_PORT", "8020")
 # The pipeline's clone of the repository (task_worktree keeps it): the report
@@ -377,10 +389,12 @@ def require_tools(*names: str) -> None:
             f"EXTRA_PATH in this file is what should have covered it)")
 
 
-def sh(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
+def sh(cmd: list[str], cwd: Path | None = None, check: bool = True,
+       env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """Run `cmd`, showing it and its output; `env` (optional) is the whole environment it gets."""
     # a multi-line argument (a script) is shown by its first line only
     log("$ " + " ".join(a.split("\n", 1)[0] + (" …" if "\n" in a else "") for a in cmd))
-    r = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    r = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, env=env)
     if r.stdout.strip():
         print(r.stdout.rstrip(), flush=True)
     if r.returncode != 0:
@@ -1314,15 +1328,20 @@ def trust_main_clone() -> None:
 
 # ---------------------------------------------------------------- releases --
 #
-# deploy_prod() is the one way a commit goes live, and it undoes itself. In order: back the
-# database up; `standee up` the checkout (again, after a pause, when the image pull or build
-# failed on the registry or the network); check the live database is still the one mounted;
+# deploy_prod() is the one way a commit goes live, and it undoes itself. In order: refuse an
+# older commit over a newer one (the order guard; an undo may go back) and the commit already
+# live; back the database up; `standee up` the checkout with GIT_SHA set (again, after a pause,
+# when the image pull or build failed on the registry or the network, or another standee
+# command held standee's lock); check the live database is still the one mounted; check the
+# code that started is the commit shipped (the live-code check: labels, /api/health's commit);
 # wait for the URL; migrate the database (`alembic upgrade head` inside the new container,
 # which until 2026-10-29 somebody had to remember to run by hand); check the release is
-# healthy. When a step after the first change fails, it puts the release before back by
-# itself: the database restored from the copy taken just before the migration (only when a
-# migration ran), the previous images back with `standee rollback`, the result checked, and
-# the run dies saying what failed and what state prod is in.
+# healthy; tag it prod/<UTC yyyymmdd-hhmm> on origin, the durable record of what ran when.
+# When a step after the first change fails, it puts the release before back by itself: the
+# database restored from the copy taken just before the migration (only when a migration
+# ran), the previous images back with `standee rollback`, the result checked, and the run
+# dies saying what failed and what state prod is in. A put-back is not tagged: no new
+# release went live.
 
 #: Seconds to wait before each new try of a `standee up` that failed on the registry or the network:
 #: the same three waits as a bet's deploy (configs/epd/agents/task_deploy.yaml, version 4).
@@ -1339,6 +1358,15 @@ TRANSIENT_UP_ERRORS = re.compile(
     r"bad gateway|gateway time-?out|unexpected EOF|request canceled|failed to resolve source metadata|"
     r"failed to do request|context deadline exceeded", re.IGNORECASE)
 
+#: What a standee command says when it gave up waiting (60 s, standee's lock.py) for standee's host lock,
+#: held by another standee command: the nightly `standee backup --all` holds it for minutes, `standee up`
+#: for a whole build. Nothing was changed by that command. The pre-up backup and `standee up` are tried
+#: again after STANDEE_LOCK_PAUSE seconds, until STANDEE_LOCK_LIMIT seconds have gone by since the first
+#: try; then the release is called off with DEPLOY_BUSY, prod as it was. No other step waits for it: the
+#: backup before a migration runs while the new code already serves the old database.
+STANDEE_LOCK_BUSY = "another standee command holds the lock"
+STANDEE_LOCK_PAUSE, STANDEE_LOCK_LIMIT = 30, 20 * 60
+
 #: /api/health is asked up to HEALTH_TRIES times, HEALTH_PAUSE seconds apart, before a release (or
 #: the release put back after an undo) is called unhealthy: a proxy can blink once.
 HEALTH_TRIES, HEALTH_PAUSE = 18, 5
@@ -1346,6 +1374,34 @@ HEALTH_TRIES, HEALTH_PAUSE = 18, 5
 
 class ReleaseFailed(RuntimeError):
     """One step of a production release failed; deploy_prod undoes the release and says why."""
+
+
+class StandeeLockBusy(RuntimeError):
+    """standee's lock stayed taken for STANDEE_LOCK_LIMIT: the step that wanted it changed nothing."""
+
+
+def clock_seconds() -> float:
+    """A clock for the standee lock's waits (time.monotonic; a fake one in the tests)."""
+    return time.monotonic()
+
+
+def release_time() -> dt.datetime:
+    """Now, in UTC: when a release went live, for its tag (a fixed time in the tests)."""
+    return dt.datetime.now(dt.UTC)
+
+
+def standee_lock_busy(r: subprocess.CompletedProcess) -> bool:
+    """Whether a failed standee command failed only because another standee command held the lock."""
+    return r.returncode != 0 and STANDEE_LOCK_BUSY in f"{r.stdout}\n{r.stderr}"
+
+
+def wait_for_standee_lock(what: str, deadline: float, r: subprocess.CompletedProcess) -> None:
+    """Pause STANDEE_LOCK_PAUSE before `what` is tried again; StandeeLockBusy once that would pass `deadline`."""
+    if clock_seconds() + STANDEE_LOCK_PAUSE > deadline:
+        raise StandeeLockBusy(f"{what}: standee's lock stayed taken by another standee command for "
+                              f"{STANDEE_LOCK_LIMIT // 60} min ({_last_line(r.stderr or r.stdout)})")
+    log(f"{what}: another standee command holds standee's lock; trying again in {STANDEE_LOCK_PAUSE}s")
+    time.sleep(STANDEE_LOCK_PAUSE)
 
 
 def _last_line(text: str) -> str:
@@ -1371,9 +1427,11 @@ def transient_up_error(output: str) -> str:
     return found[-1] if found else ""
 
 
-def up_prod() -> None:
-    """`standee up` the checkout as the live product; tried again after a pause when the pull or the
-    build failed on the registry or the network. Raises ReleaseFailed when it did not go up.
+def up_prod(ref: str) -> None:
+    """`standee up` the checkout as the live product, built with GIT_SHA=`ref` (deploy/Dockerfile puts it
+    in the image as ROLLCALL_COMMIT and the org.opencontainers.image.revision label); tried again after
+    a pause when the pull or the build failed on the registry or the network. Raises ReleaseFailed when
+    it did not go up, StandeeLockBusy when standee's lock stayed taken (then it never started).
 
     When compose fails, `standee up --wait` puts the images that ran before back by itself, so a
     new try starts from the release before. When that put-back failed too ("rollback failed
@@ -1385,10 +1443,17 @@ def up_prod() -> None:
     # one: a named environment's gateway hostname is its name (rollcall-prod.<zone>), not rollcall.<zone>.
     if PROD_ENV != f"{REPO_NAME}-prod":
         cmd += ["--name", PROD_ENV]
-    for n in range(1, tries + 1):
-        r = sh(cmd, check=False)
+    # standee hands its own environment to compose, which fills deploy/compose.yaml's ${GIT_SHA:-unknown}
+    env = {**os.environ, "GIT_SHA": ref}
+    lock_deadline = clock_seconds() + STANDEE_LOCK_LIMIT
+    n = 1
+    while True:
+        r = sh(cmd, check=False, env=env)
         if r.returncode == 0:
             return
+        if standee_lock_busy(r):  # standee never started: not one of the tries below
+            wait_for_standee_lock("`standee up`", lock_deadline, r)
+            continue
         out = f"{r.stdout}\n{r.stderr}"
         cause = transient_up_error(out)
         if not cause or n == tries or "rollback failed too" in out.lower():
@@ -1399,6 +1464,22 @@ def up_prod() -> None:
         log(f"`standee up` failed on a registry or network error ({cause}); "
             f"trying again in {pause}s (try {n + 1} of {tries})")
         time.sleep(pause)
+        n += 1
+
+
+def backup_before_release() -> None:
+    """The release's restore point, `standee backup --label deploy`, before anything is changed: kept by
+    count apart from the nightly rotation. Waits out another standee command's lock (StandeeLockBusy
+    after STANDEE_LOCK_LIMIT); any other failure dies here, nothing changed."""
+    deadline = clock_seconds() + STANDEE_LOCK_LIMIT
+    cmd = ["standee", "backup", PROD_ENV, "--label", "deploy"]
+    while True:
+        r = sh(cmd, check=False)
+        if r.returncode == 0:
+            return
+        if not standee_lock_busy(r):
+            die(f"command failed ({r.returncode}): {' '.join(cmd)}")
+        wait_for_standee_lock("the backup before the release", deadline, r)
 
 
 def prod_alembic(args: str) -> subprocess.CompletedProcess:
@@ -1468,6 +1549,217 @@ def prod_health_problems() -> list[str]:
     except ReleaseFailed as e:
         problems.append(str(e))
     return problems
+
+
+# ---- which commit runs: labels, /api/health ---------------------------------------------------------
+
+#: Set by standee on every service it starts: the commit of the tree it built, sha[:12].
+COMMIT_LABEL = "standee.commit"
+#: Set by rollcall's deploy/Dockerfile from its GIT_SHA build arg ("unknown" when the build had none);
+#: absent from images of commits before that Dockerfile change.
+REVISION_LABEL = "org.opencontainers.image.revision"
+#: What a label or /api/health's "commit" holds when it cannot say which commit runs.
+NOT_AVAILABLE = ("", "unknown")
+
+
+def prod_labels() -> dict[str, str]:
+    """The live container's labels (its image's included); {} when there is no such container."""
+    r = sh(["docker", "inspect", PROD_CONTAINER, "--format", "{{json .Config.Labels}}"], check=False)
+    if r.returncode != 0:
+        return {}
+    try:
+        labels = json.loads(r.stdout or "null")
+    except ValueError:
+        return {}
+    return {k: str(v) for k, v in labels.items()} if isinstance(labels, dict) else {}
+
+
+def running_commit(labels: dict[str, str]) -> str:
+    """The commit the live container runs: its image's revision label (a full sha), else standee's
+    commit label (sha[:12]); '' when neither says."""
+    for name in (REVISION_LABEL, COMMIT_LABEL):
+        value = labels.get(name, "").strip().lower()
+        if value not in NOT_AVAILABLE and re.fullmatch(r"[0-9a-f]{7,40}", value):
+            return value
+    return ""
+
+
+def release_order_problem(ref: str, kind: str, running: str) -> tuple[str, int] | None:
+    """None when `ref` may go live over `running`, else (why not, deploy_prod's exit code).
+
+    The same commit is refused as already live. Otherwise a forward release needs `running` to be an
+    ancestor of `ref` (git merge-base --is-ancestor in REPO_CHECKOUT): an older commit never goes back
+    over a newer one by accident. An undo may go back, which is what it is for.
+    """
+    if not running:
+        log("order guard: no running commit known (no live container, or one without labels): not checked")
+        return None
+    if ref.startswith(running):
+        return f"{ref[:12]} is already live", DEPLOY_ALREADY_LIVE
+    if kind == "undo":
+        log(f"order guard: an undo, so {ref[:12]} may go back over {running[:12]}")
+        return None
+    r = sh(["git", "merge-base", "--is-ancestor", running, ref], cwd=REPO_CHECKOUT, check=False)
+    if r.returncode == 0:
+        log(f"order guard: {running[:12]} (live) is an ancestor of {ref[:12]}")
+        return None
+    if r.returncode == 1:
+        return (f"{running[:12]}, live now, is not an ancestor of {ref[:12]}: an older or unrelated commit "
+                f"would replace a newer one (release it with kind undo if that is meant)"), DEPLOY_REFUSED
+    return (f"could not tell whether {running[:12]}, live now, is an ancestor of {ref[:12]} "
+            f"(`git merge-base --is-ancestor` in {REPO_CHECKOUT} exited {r.returncode}: "
+            f"{_last_line(r.stderr or r.stdout)})"), DEPLOY_REFUSED
+
+
+def label_problem(ref: str, labels: dict[str, str]) -> str | None:
+    """None when the live container's labels say it runs `ref`, else what they say instead.
+
+    standee.commit is always there and must be ref[:12]. The revision label is checked when the image
+    has one: an image built before the Dockerfile took GIT_SHA (an undo to an older commit) has none,
+    which is logged as not available, never a failure.
+    """
+    standee_commit = labels.get(COMMIT_LABEL, "")
+    if standee_commit != ref[:12]:
+        return (f"the live container's {COMMIT_LABEL} label is {standee_commit or 'missing'}, not {ref[:12]}: "
+                f"the code that started is not the commit shipped")
+    revision = labels.get(REVISION_LABEL, "")
+    if revision in NOT_AVAILABLE:
+        log(f"live code: {COMMIT_LABEL} {standee_commit}; image label {REVISION_LABEL} not available "
+            f"({revision or 'absent'}: an image from before deploy/Dockerfile took GIT_SHA)")
+        return None
+    if revision != ref:
+        return (f"the live image's {REVISION_LABEL} label is {revision}, not {ref}: the image that started "
+                f"was built from another commit")
+    log(f"live code: {COMMIT_LABEL} {standee_commit} and image label {REVISION_LABEL} {revision[:12]}")
+    return None
+
+
+def prod_health_commit() -> str | None:
+    """/api/health's "commit" (env ROLLCALL_COMMIT inside the app); None when it does not say. Asked again
+    (HEALTH_TRIES, HEALTH_PAUSE apart) while it does not answer, as a proxy can blink once; None after that
+    too (the health check after the migration then fails the release on its own)."""
+    for n in range(1, HEALTH_TRIES + 1):
+        try:
+            with urllib.request.urlopen(PROD_URL.rstrip("/") + "/api/health", timeout=15) as resp:
+                body = json.loads(resp.read().decode() or "{}")
+            break
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+            if n == HEALTH_TRIES:
+                log(f"live code: /api/health did not answer ({getattr(e, 'reason', e)}; {HEALTH_TRIES} tries)")
+                return None
+            time.sleep(HEALTH_PAUSE)
+    commit = body.get("commit") if isinstance(body, dict) else None
+    return commit if isinstance(commit, str) else None
+
+
+def health_commit_problem(ref: str, commit: str | None) -> str | None:
+    """None when /api/health's commit is `ref` or not available (the field absent, or "unknown": code from
+    before rollcall 5243d892 or an image without ROLLCALL_COMMIT; logged), else what it reports."""
+    if commit is None or commit in NOT_AVAILABLE:
+        log(f"live code: /api/health commit not available ({'absent' if commit is None else repr(commit)}: "
+            f"code or image from before it was reported)")
+        return None
+    if commit != ref:
+        return f"/api/health reports commit {commit}, not {ref}: the app that answers is not the commit shipped"
+    log(f"live code: /api/health reports commit {commit[:12]}")
+    return None
+
+
+# ---- the release tag: what went live when, on origin -------------------------------------------------
+
+def release_tags() -> dict[str, str]:
+    """Every prod/* tag on origin and in REPO_CHECKOUT: name -> the commit it is on ('' when unread)."""
+    tags: dict[str, str] = {}
+    r = sh(["git", "ls-remote", "--tags", "origin", f"{RELEASE_TAG_PREFIX}*"], cwd=REPO_CHECKOUT, check=False)
+    for line in r.stdout.splitlines() if r.returncode == 0 else []:
+        sha, _, ref = line.partition("\t")
+        name = ref.strip().removeprefix("refs/tags/")
+        if name.endswith("^{}"):  # an annotated tag's commit
+            tags[name[:-3]] = sha.strip()
+        else:
+            tags.setdefault(name, "")
+    r = sh(["git", "for-each-ref", "--format=%(refname:short) %(*objectname) %(objectname)",
+            f"refs/tags/{RELEASE_TAG_PREFIX}*"], cwd=REPO_CHECKOUT, check=False)
+    for line in r.stdout.splitlines() if r.returncode == 0 else []:
+        words = line.split()
+        if words and not tags.get(words[0]):
+            tags[words[0]] = words[1] if len(words) > 1 else ""
+    return {name: sha for name, sha in tags.items() if name.startswith(RELEASE_TAG_PREFIX)}
+
+
+def _tag_order(name: str) -> tuple[str, int]:
+    """prod/20261105-1200 < prod/20261105-1200-2 < prod/20261105-1200-10 < prod/20261105-1201."""
+    m = re.fullmatch(re.escape(RELEASE_TAG_PREFIX) + r"(\d{8}-\d{4})(?:-(\d+))?", name)
+    return (m.group(1), int(m.group(2) or 1)) if m else ("", 0)
+
+
+def newest_release_commit(tags: dict[str, str]) -> str:
+    """The commit of the newest prod/* tag that names one; '' when none does."""
+    named = [name for name, sha in tags.items() if sha]
+    return tags[max(named, key=_tag_order)] if named else ""
+
+
+def release_tag_name(at: dt.datetime, taken: set[str]) -> str:
+    """prod/<UTC yyyymmdd-hhmm> for `at`; -2, -3 and so on when a release in the same minute has it."""
+    base = f"{RELEASE_TAG_PREFIX}{at.astimezone(dt.UTC):%Y%m%d-%H%M}"
+    name, n = base, 1
+    while name in taken:
+        n += 1
+        name = f"{base}-{n}"
+    return name
+
+
+def release_tag_message(ref: str, kind: str, previous: str, reason: str, backups: list[tuple[str, str]],
+                        at: dt.datetime) -> str:
+    """What the annotated tag says: which release, of what kind, over what, why, and its restore points."""
+    lines = [f"RollCall prod release {ref[:12]}", "",
+             f"kind: {kind}",
+             f"commit: {ref}",
+             f"previous: {previous or 'unknown'}",
+             f"reason: {reason.strip() or '(none given)'}"]
+    lines += [f"{what}: {path}" for what, path in backups]
+    lines.append(f"released: {at.astimezone(dt.UTC):%Y-%m-%dT%H:%M:%SZ} by epd_loop.deploy_prod from {REPO_CHECKOUT}")
+    return "\n".join(lines) + "\n"
+
+
+def tell_rollcall(text: str) -> None:
+    """An fyi in RollCall's home chat (rollcall_cd_notify.role: pi-web-ui, else its outbox); never raises."""
+    try:
+        import rollcall_cd_notify  # beside this file; only a release that could not tag needs it
+
+        rollcall_cd_notify.role(RELEASE_NOTIFY_ROLE, "fyi", text)
+    except Exception as e:  # the release is live either way; the log line above says what happened
+        log(f"could not tell {RELEASE_NOTIFY_ROLE}: {type(e).__name__}: {e}")
+
+
+def tag_release(ref: str, kind: str, previous: str, reason: str, backups: list[tuple[str, str]]) -> str | None:
+    """Tag the healthy release of `ref` prod/<UTC yyyymmdd-hhmm> in REPO_CHECKOUT and push the tag to
+    origin; the tag's name, or None when it could not be made or pushed. Never raises or dies: a
+    release that is live and healthy stays live. A failure is logged loudly and told to RollCall.
+    """
+    try:
+        tags = release_tags()
+        previous = previous or newest_release_commit(tags) or "unknown"
+        at = release_time()
+        name = release_tag_name(at, set(tags))
+        message = release_tag_message(ref, kind, previous, reason, backups, at)
+        r = sh(["git", "tag", "-a", name, ref, "-m", message], cwd=REPO_CHECKOUT, check=False)
+        if r.returncode != 0:
+            failed, how = f"`git tag -a {name}` exited {r.returncode}: {_last_line(r.stderr or r.stdout)}", ""
+        else:
+            r = sh(["git", "push", "origin", f"refs/tags/{name}"], cwd=REPO_CHECKOUT, check=False)
+            if r.returncode == 0:
+                log(f"tagged the release {name} on {ref[:12]} and pushed it to origin")
+                return name
+            failed = f"`git push origin refs/tags/{name}` exited {r.returncode}: {_last_line(r.stderr or r.stdout)}"
+            how = f" The tag is in {REPO_CHECKOUT}: git -C {REPO_CHECKOUT} push origin refs/tags/{name}"
+    except Exception as e:  # anything at all: the release is live and stays live
+        failed, how = f"{type(e).__name__}: {e}", ""
+    text = (f"deploy_prod: release of {ref[:12]} ({kind}) is live and healthy, but it is NOT TAGGED on origin: "
+            f"{failed}.{how}")
+    log(f"WARNING: {text}")
+    tell_rollcall(text)
+    return None
 
 
 def newest_backup(env: str) -> Path:
@@ -1597,13 +1889,31 @@ def planned_mount_problem() -> str | None:
     return None
 
 
-def deploy_prod(ref: str) -> None:
-    """Put the live product on `ref`; one deploy at a time (DEPLOY_LOCK, DEPLOY_BUSY when taken)."""
+def deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
+    """Put the live product on `ref`; one deploy at a time (DEPLOY_LOCK, DEPLOY_BUSY when taken).
+
+    `kind`: forward (a newer commit; the order guard refuses anything else) or undo (an older commit
+    goes back live). `reason`: why, for the release tag's message. Exits DEPLOY_REFUSED or
+    DEPLOY_ALREADY_LIVE, nothing changed, when the order guard says no.
+    """
+    if kind not in RELEASE_KINDS:
+        die(f"deploy_prod: kind must be one of {', '.join(RELEASE_KINDS)}, got {kind!r}; nothing was changed")
+    if not re.fullmatch(r"[0-9a-f]{40}", ref or ""):
+        die(f"deploy_prod: ref must be a full 40-character commit sha, got {ref!r}; nothing was changed")
     with deploy_lock():
-        _deploy_prod(ref)
+        _deploy_prod(ref, kind, reason)
 
 
-def _deploy_prod(ref: str) -> None:
+def full_commit(sha: str) -> str:
+    """`sha` (maybe short, like standee's label) as REPO_CHECKOUT's full sha; as given when it cannot."""
+    if not sha or len(sha) == 40:
+        return sha
+    r = sh(["git", "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], cwd=REPO_CHECKOUT, check=False)
+    full = r.stdout.strip()
+    return full if r.returncode == 0 and len(full) == 40 else sha
+
+
+def _deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
     """Put the live product on `ref`: backup, up, migrate, health check; undone by itself on a failure.
 
     `standee up` on an existing environment updates it in place: same name,
@@ -1638,20 +1948,39 @@ def _deploy_prod(ref: str) -> None:
     problem = planned_mount_problem()
     if problem:
         die(f"refusing to release {ref[:12]}: {problem}; nothing was changed")
+    running = running_commit(prod_labels())
+    refused = release_order_problem(ref, kind, running)
+    if refused:
+        die(f"refusing to release {ref[:12]} ({kind}): {refused[0]}; nothing was changed", refused[1])
+    previous = full_commit(running)  # for the tag; '' -> the newest prod/* tag's, else unknown
     ensure_qa_password()  # before `up`: the container reads the env file at start
     was_running = prod_image()
-    # --label deploy: a release's restore point, kept by count apart from the nightly rotation
-    sh(["standee", "backup", PROD_ENV, "--label", "deploy"])
+    try:
+        backup_before_release()
+    except StandeeLockBusy as e:
+        die(f"release of {ref[:12]} called off: {e}; nothing was changed", DEPLOY_BUSY)
+    try:
+        backups = [("backup", str(newest_backup(PROD_ENV)))]
+    except ReleaseFailed as e:  # the copy was written (standee said so); only its name is unread
+        backups = [("backup", f"unknown ({e})")]
     stage, restore_from, heads = "starting the new images (`standee up`)", None, ()
     try:
-        up_prod()
+        up_prod(ref)
         stage = "checking the live database is still mounted"
         problem = prod_mount_problem()
         if problem:
             raise ReleaseFailed(problem)
         log(f"live database still mounted from {(PROD_HOME / 'var').resolve()}")
+        stage = "checking the code that started is the commit shipped"
+        problem = label_problem(ref, prod_labels())
+        if problem:
+            raise ReleaseFailed(problem)
         stage = f"waiting for {PROD_URL} to answer"
         wait_for_url(PROD_URL)
+        stage = "checking the app that answers is the commit shipped"
+        problem = health_commit_problem(ref, prod_health_commit())
+        if problem:
+            raise ReleaseFailed(problem)
         stage = "reading the database version"
         current, heads = prod_alembic_state()
         if current == heads:
@@ -1662,6 +1991,7 @@ def _deploy_prod(ref: str) -> None:
             if r.returncode != 0:
                 raise ReleaseFailed(f"`standee backup {PROD_ENV}` exited {r.returncode}: {_last_line(r.stderr)}")
             backup = newest_backup(PROD_ENV)
+            backups.append(("backup before migration", str(backup)))
             stage = f"migrating the database from {', '.join(current) or 'no version'} to {', '.join(heads)}"
             restore_from = backup  # from here on the database may have changed
             r = prod_alembic("upgrade head")
@@ -1674,9 +2004,14 @@ def _deploy_prod(ref: str) -> None:
             raise ReleaseFailed("; ".join(problems))
     except SystemExit:  # a helper died (wait_for_url); its ERROR line above says why
         undo_release(ref, stage, "see the ERROR line above", was_running, restore_from)
+    except StandeeLockBusy as e:  # `standee up` never started: nothing to undo when the old images still run
+        if prod_image() == was_running:
+            die(f"release of {ref[:12]} called off while {stage}: {e}; nothing was changed", DEPLOY_BUSY)
+        undo_release(ref, stage, str(e), was_running, restore_from)
     except Exception as e:  # any failure after the first change is undone, expected or not
         undo_release(ref, stage, str(e), was_running, restore_from)
     log(f"release of {ref[:12]} is live and healthy: /api/health ok, database at head ({', '.join(heads)})")
+    tag_release(ref, kind, previous, reason, backups)
 
 
 def prod_mount_problem() -> str | None:

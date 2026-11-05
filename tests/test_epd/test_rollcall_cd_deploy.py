@@ -60,6 +60,7 @@ class World:
         self.running: set[str] = set()
         self.launched: list[tuple[str, str]] = []  # (unit, sha)
         self.released: list[str] = []
+        self.kinds: list[str] = []  # the --kind each release was given
         self.release_result = (0, "release of it is live and healthy")
         self.dirty = ""
         self.checked_out: list[str] = []
@@ -85,8 +86,9 @@ class World:
             del os.environ["ROLLCALL_CD_UNIT"]
             self.running.discard(unit)
 
-    def run_release(self, sha):
+    def run_release(self, sha, kind, reason):
         self.released.append(sha)
+        self.kinds.append(kind)
         return self.release_result
 
     def checkout(self, sha):
@@ -277,6 +279,50 @@ def test_an_undone_commit_released_by_hand_comes_off_the_list_and_is_idle(cd):
     assert (events(cd)[-1]["result"], events(cd)[-1]["unit"]) == ("ok", None)
     assert w.tick(9 * MIN)["decision"] == "idle"
     assert w.launched == [(unit(A), A)]
+
+
+def test_a_commit_already_live_ends_ok_and_is_live_now(cd):
+    """deploy_prod exits DEPLOY_ALREADY_LIVE (77) for the commit live now (deployed_sha was stale: a hand
+    release put it live): ok, nothing changed, deployed_sha follows, and the next tick is idle, no loop."""
+    w = cd.world
+    w.release_result = (cd.DEPLOY_ALREADY_LIVE, f"refusing to release {A[:12]} (forward): {A[:12]} is already live")
+    w.tick(dt.timedelta(0))
+    w.tick(2 * MIN)
+    assert w.finish(2 * MIN + 5 * SEC) == 0
+    st = state(cd)
+    assert st["deployed_sha"] == A and st["undone_shas"] == []
+    e = events(cd)[-1]
+    assert (e["kind"], e["result"]) == ("deploy", "ok") and "already live" in e["reason"]
+    assert w.tick(5 * MIN)["decision"] == "idle"
+    assert w.kinds == ["deploy"]
+
+
+def test_an_out_of_order_refusal_is_not_tried_again_on_its_own(cd):
+    """deploy_prod's order guard exits DEPLOY_REFUSED (76): a refusal, nothing changed, and the commit
+    goes on undone_shas because the guard would refuse it again every tick; the next land goes out."""
+    w = cd.world
+    w.release_result = (cd.DEPLOY_REFUSED, f"refusing to release {A[:12]} (forward): {LIVE[:12]}, live now, "
+                                           f"is not an ancestor of {A[:12]}")
+    w.tick(dt.timedelta(0))
+    w.tick(2 * MIN)
+    assert w.finish(2 * MIN + 5 * SEC) == 76
+    st = state(cd)
+    assert st["deployed_sha"] == LIVE and st["undone_shas"] == [A]
+    e = events(cd)[-1]
+    assert (e["kind"], e["result"]) == ("refusal", "out of order") and "not an ancestor" in e["reason"]
+    assert "out of order" in outbox(cd)[-1]["text"]
+    assert w.tick(6 * MIN)["decision"] == "skip"
+    w.head = B
+    w.tick(7 * MIN)
+    assert w.tick(9 * MIN)["decision"] == "deploy"
+
+
+def test_the_exit_codes_are_the_ones_deploy_prod_names(cd):
+    text = (BIN / "epd_loop.py").read_text()
+    for name in ("DEPLOY_BUSY", "DEPLOY_REFUSED", "DEPLOY_ALREADY_LIVE"):
+        assert f"{name} = {getattr(cd, name)}\n" in text, name
+    assert set(cd.RELEASE_KIND) == set(cd.KINDS) and set(cd.RELEASE_KIND.values()) == {"forward", "undo"}
+    assert 'RELEASE_KINDS = ("forward", "undo")' in text
 
 
 def test_a_unit_that_ended_without_saying_how_is_not_guessed(cd):
@@ -493,7 +539,7 @@ def test_a_real_file_where_a_live_link_belongs_is_refused(repo):
 def test_a_deploy_from_a_dirty_checkout_is_a_refusal_not_a_failed_release(repo, monkeypatch):
     cd, _, _, second = repo
     released = []
-    monkeypatch.setattr(cd, "run_release", lambda sha: released.append(sha) or (0, "ok"))
+    monkeypatch.setattr(cd, "run_release", lambda sha, kind, reason: released.append(sha) or (0, "ok"))
     (cd.CHECKOUT / "scratch.txt").write_text("left over\n")
     assert cd.deploy(second, "deploy", "by hand") == 1
     assert released == []
@@ -532,9 +578,14 @@ def test_the_release_runs_deploy_prod_from_the_checkout_with_the_live_home(tmp_p
             return 1
 
     monkeypatch.setattr(cd.subprocess, "Popen", P)
-    code, why = cd.run_release(A)
+    code, why = cd.run_release(A, "undo", "money test failed on bbbbbbbb")
     assert code == 1 and why == "/api/health says ok=False"
-    assert seen["cmd"][-1] == A and "epd_loop.deploy_prod" in seen["cmd"][2]
+    # --kind undo is deploy_prod's kind undo, the reason goes to its tag; each its own argument
+    assert seen["cmd"][-3:] == [A, "undo", "money test failed on bbbbbbbb"]
+    assert "epd_loop.deploy_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])" in seen["cmd"][2]
+    seen.clear()
+    cd.run_release(A, "deploy", "master aaaaaaaa")
+    assert seen["cmd"][-3:] == [A, "forward", "master aaaaaaaa"]
     assert seen["cwd"] == BIN
     assert seen["env"]["EPD_REPO_CHECKOUT"] == str(cd.CHECKOUT)
     assert seen["env"]["EPD_PROD_HOME"] == str(cd.PROD_HOME)

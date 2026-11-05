@@ -282,7 +282,26 @@ and lands switched off; RollCall switches it on.
 - One deploy at a time on the machine: `deploy_prod` holds
   `~/.local/state/rollcall-cd/deploy.lock` for the whole release and exits 75
   while another holds it, so the loop's own deploy after a merge and this one
-  never overlap.
+  never overlap. It also waits out standee's own lock ("another standee
+  command holds the lock", from the pre-up backup or `standee up`), 30 s at a
+  time for up to 20 min, then exits 75, nothing changed.
+- Order guard: before any change, `deploy_prod` refuses (exit 76) a commit
+  the live one is not an ancestor of (`git merge-base --is-ancestor`), unless
+  `kind="undo"` (`--kind undo`), and the commit already live (exit 77, which
+  the deployer counts as done). The live commit is the container's
+  `org.opencontainers.image.revision` label, else `standee.commit`.
+- Which code runs: `standee up` gets `GIT_SHA=<sha>`; rollcall's
+  `deploy/Dockerfile` puts it in the image as `ROLLCALL_COMMIT` (`/api/health`'s
+  `commit`) and the revision label. After `up`, `standee.commit` must be
+  `sha[:12]`, the revision label and `/api/health`'s commit the sha when they
+  say one; a mismatch is undone like any failed release. An image from before
+  that change says none, which is logged and passes (an undo to an old sha).
+- Release tags: a healthy release (not the self-undo after a failed one) is
+  tagged `prod/<UTC yyyymmdd-hhmm>` (`-2`, `-3` in the same minute) on
+  shine2lay/rollcall from the deploy checkout, an annotated tag saying its
+  kind (forward or undo), the commit live before, the reason and its backups.
+  A failed tag push leaves the release live and tells RollCall. Shas, not
+  tags, stay the deployer's keys.
 - Messages: `configs/epd/bin/rollcall_cd_notify.py`. `role` is a note in a
   role's home chat through pi-web-ui's `script_notice` route (its
   docs/script-notice.md); `owner` is the owner's Telegram through

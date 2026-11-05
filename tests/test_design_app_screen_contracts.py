@@ -37,7 +37,7 @@ LAB_CASE = Path.home() / "design-lab/app-screen-workflow/known-cases" / CASE_NAM
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 HTML = "<!doctype html><title>placeholder for the known case's page</title>\n"
 # The workflow's steps in run order (configs/design/workflows/design_app_screen_v1.yaml).
-ORDER = ["intake", "existing", "ground", "directions", "gate_direction", "build", "checks", "review", "show",
+ORDER = ["intake_collect", "intake_check", "intake", "existing", "ground", "directions", "gate_direction", "build", "checks", "review", "show",
          "gate_final", "gate_final_next", "handoff"]
 DESIGN_ANSWER = {"direction": {"choice": "a", "decided_by": "design", "source": "fixture run",
                                "reason": "the known case's owner picked a"},
@@ -131,7 +131,8 @@ def test_fixture_run_passes_every_contract(tmp_path, case, monkeypatch):
 def test_every_step_has_a_contract_and_the_known_case_meets_it(filled):
     assert set(contracts.FILES) == set(STEPS)
     for step in ORDER:
-        assert contracts.validate(step, filled) or step == "gate_final_next"
+        # gate_final_next leaves nothing; intake's collect and draft-check files are absent in a fixture run.
+        assert contracts.validate(step, filled) or step in ("gate_final_next", "intake_collect", "intake_check")
 
 
 def test_known_case_gate_answers_are_the_owners(case):
@@ -306,8 +307,8 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
 
 
 def test_real_mode_stage_fails_loud_until_built(tmp_path):
-    with pytest.raises(NotBuiltError, match="intake: the real stage is not built yet"):
-        CLI.run_step("intake", str(tmp_path), "rollcall", "real", "")
-    assert Workspace(tmp_path).run()["stages"]["intake"]["status"] == "failed"
+    with pytest.raises(NotBuiltError, match="existing: the real stage is not built yet"):
+        CLI.run_step("existing", str(tmp_path), "rollcall", "real", "")
+    assert Workspace(tmp_path).run()["stages"]["existing"]["status"] == "failed"
     with pytest.raises(WorkspaceError, match="run.json says mode real, the step was called with fixture"):
         CLI.run_step("existing", str(tmp_path), None, "fixture", "")

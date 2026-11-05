@@ -12,9 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 STAGES = ("intake", "existing", "ground", "directions", "build", "checks", "show", "handoff")
-# Workflow steps that are not one of the eight stages: the two owner gates, the review half of the
-# checks stage, and the bookkeeping step after the final gate.
-STEPS = STAGES + ("gate_direction", "review", "gate_final", "gate_final_next")
+# Workflow steps that are not one of the eight stages: intake's collect and draft-check steps (its model
+# step is an agent of its own), the two owner gates, the review half of the checks stage, and the
+# bookkeeping step after the final gate.
+STEPS = STAGES + ("intake_collect", "intake_check", "gate_direction", "review", "gate_final", "gate_final_next")
 FOLDERS = {"intake": "01-request", "existing": "02-existing", "ground": "03-ground", "directions": "04-directions",
            "build": "05-build", "checks": "06-checks", "show": "07-show", "handoff": "08-handoff"}
 MODES = ("real", "fixture")

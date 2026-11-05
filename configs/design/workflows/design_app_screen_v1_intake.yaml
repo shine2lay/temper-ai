@@ -1,0 +1,48 @@
+# Stage 1 (intake) of design_app_screen_v1 on its own (rule 16: each stage tested alone on known
+# cases): the same five nodes as the whole workflow's intake, ending at 01-request/. Used for intake's
+# trials and re-runs (docs/design-app-screen.md, "Stage 1"); keep its nodes identical to the whole
+# workflow's, since a trial proves the stage only while they match (tests/test_design_app_screen_intake.py
+# checks that they do).
+workflow:
+  name: design_app_screen_v1_intake
+  version: 1
+  description: |
+    Stage 1 of design_app_screen_v1 alone: the owner's words (a sources document: request, Show&Tell
+    comments, dialog answers, each verbatim) -> the model drafts requirements and questions -> measured
+    checks (every item covered, owner_words verbatim, nothing unsourced, no number nobody said) -> one
+    revision only if a check failed -> final checks -> 01-request/requirements.json and questions.json.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+    request_json: {type: string, default: ""}
+  outputs:
+    requirements: intake.structured.requirements
+    questions: intake.structured.questions
+    revised: intake.structured.revised
+  nodes:
+    - name: intake_collect
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: intake_collect, product: input.product, mode: input.mode, data: input.request_json}
+    - name: intake_read
+      type: agent
+      agent: design_app_screen_intake_v1
+      depends_on: [intake_collect]
+      condition: {source: intake_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {phase: draft}
+    - name: intake_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [intake_read]
+      input_map: {step: intake_check, product: input.product, mode: input.mode}
+    - name: intake_revise
+      type: agent
+      agent: design_app_screen_intake_v1
+      depends_on: [intake_check]
+      condition: {source: intake_check.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: revise}
+    - name: intake
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [intake_revise]
+      input_map: {step: intake, product: input.product, mode: input.mode}

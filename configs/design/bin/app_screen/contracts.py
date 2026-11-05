@@ -44,19 +44,43 @@ CHECK = obj({"id": ID, "value": {}, "result": {"enum": ["pass", "fail"]}, "evide
              "element": TEXT, "location": TEXT})
 CHECKS = obj({"checks": items(CHECK)}, {"round": {"type": "integer", "minimum": 1}, "tool": TEXT})
 
+# 01-request: a source item (the owner's words, one request, comment or answer), and what intake makes of it.
+SOURCE_ID = {"type": "string", "pattern": "^S[0-9]{1,3}$"}
+REQ_ID = {"type": "string", "pattern": "^R[0-9]{1,3}$"}
+QUESTION_ID = {"type": "string", "pattern": "^Q[0-9]{1,3}$"}
+KINDS = ["goal", "feature", "change", "constraint", "taste"]
+SOURCE_KINDS = ["request", "comment", "answer", "history"]
+CHOICES = {"type": "array", "items": TEXT, "minItems": 2, "maxItems": 4}
+ANSWERED = {"if": {"properties": {"status": {"const": "answered"}}, "required": ["status"]},
+            "then": {"required": ["answer", "answer_source"], "properties": {"answer": TEXT, "answer_source": TEXT}}}
+
 SCHEMAS: dict[str, dict] = {
     # 01-request
+    "sources": obj({"product": ID, "description": TEXT, "items": items(obj(
+        {"id": SOURCE_ID, "kind": {"enum": SOURCE_KINDS}, "text": TEXT, "source": TEXT},
+        {"context": TEXT, "ref": {"type": "object"}}))}),
+    # The model's draft (intake_read / intake_revise): requirements tied to one source item each, questions
+    # about one or more items. The script fills each source line from the item, never the model.
+    "intake_draft": obj({"requirements": items(obj(
+        {"id": REQ_ID, "item": SOURCE_ID, "owner_words": TEXT, "kind": {"enum": KINDS}, "means": TEXT,
+         "maps_to": items(TEXT)},
+        {"open_questions": items(QUESTION_ID, least=0)})),
+        "questions": items(obj(
+            {"id": QUESTION_ID, "about": items(SOURCE_ID), "question": TEXT, "why": TEXT,
+             "status": {"enum": ["open", "answered"]}},
+            {"choices": CHOICES, "answer": {"type": ["string", "null"]},
+             "answer_source": {"anyOf": [SOURCE_ID, {"type": "null"}]}}) | ANSWERED, least=0)}),
     "requirements": obj({"product": ID, "items": items(obj(
-        {"id": {"type": "string", "pattern": "^R[0-9]{1,3}$"}, "owner_words": TEXT, "source": TEXT,
-         "kind": {"enum": ["goal", "feature", "change", "constraint", "taste"]},
-         "maps_to": items({"type": "string", "minLength": 1})}))}),
+        {"id": REQ_ID, "owner_words": TEXT, "source": TEXT, "kind": {"enum": KINDS},
+         "maps_to": items({"type": "string", "minLength": 1})},
+        {"item": SOURCE_ID, "means": TEXT, "open_questions": items(QUESTION_ID, least=0)}))}),
     "questions": obj({"questions": items(obj(
-        {"id": {"type": "string", "pattern": "^Q[0-9]{1,3}$"}, "question": TEXT,
-         "status": {"enum": ["open", "answered"]}},
-        {"answer": {"type": ["string", "null"]}, "answer_source": {"type": ["string", "null"]}}) | {
-        "if": {"properties": {"status": {"const": "answered"}}},
-        "then": {"required": ["answer", "answer_source"],
-                 "properties": {"answer": TEXT, "answer_source": TEXT}}}, least=0)}),
+        {"id": QUESTION_ID, "question": TEXT, "status": {"enum": ["open", "answered"]}},
+        {"answer": {"type": ["string", "null"]}, "answer_source": {"type": ["string", "null"]},
+         "about": items(SOURCE_ID), "why": TEXT, "choices": CHOICES}) | ANSWERED, least=0)}),
+    "intake_check": obj({"verdict": {"enum": ["ok", "retry"]}, "pass": {"enum": ["draft", "final"]},
+                         "counts": {"type": "object"}, "problems": items(obj(
+                             {"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)}),
     # 02-existing
     "audit": obj({"source": TEXT, "screens": items(obj(
         {"id": ID, "width": WIDTH, "state": STATE, "capture": REL_PATH,
@@ -116,7 +140,11 @@ SCHEMAS["gate"]["allOf"] = [{"if": {"properties": {"gate": {"const": "final"}}},
 # What each step must leave: (path relative to the workspace, schema name or file kind, least matches).
 # "<round>" becomes round-<n> of the checks stage.
 FILES: dict[str, list[tuple[str, str, int]]] = {
-    "intake": [("01-request/requirements.json", "requirements", 1), ("01-request/questions.json", "questions", 1)],
+    # sources.json and check.json are absent in fixture mode (the known case starts at requirements).
+    "intake_collect": [("01-request/sources.json", "sources", 0)],
+    "intake_check": [("01-request/check.json", "intake_check", 0)],
+    "intake": [("01-request/requirements.json", "requirements", 1), ("01-request/questions.json", "questions", 1),
+               ("01-request/check-final.json", "intake_check", 0)],
     "existing": [("02-existing/captures/*.png", "png", 1), ("02-existing/audit.json", "audit", 1),
                  ("02-existing/journeys.json", "journeys", 1)],
     "ground": [("03-ground/fixture.json", "fixture", 1), ("03-ground/inventory.json", "inventory", 1),

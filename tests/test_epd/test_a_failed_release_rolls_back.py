@@ -74,16 +74,16 @@ class Prod:
             case ["docker", "inspect", _, "--format", fmt] if "Mounts" in fmt:
                 self.ran.append("mounts")
                 return done(self.mount + " \n")
-            case ["standee", "backup", _]:
+            case ["standee", "backup", _, "--label", "deploy"]:  # an unlabelled backup matches nothing here
                 self.ran.append("backup")
                 when = f"2026-10-29-1030{len(self.backups):02d}"
-                self.backups.append((str(self.dir / "rollcall" / f"{when}.db.gz"), self.db))
+                self.backups.append((str(self.dir / "rollcall" / f"{when}.deploy.db.gz"), self.db))
                 return done(f"rollcall  sqlite  1.2M  {self.backups[-1][0]}\n")
             case ["standee", "backup", _, "--list"]:
                 rows = []
                 for path, _rev in self.backups:
                     when = path.rsplit("/", 1)[1].split(".")[0]
-                    rows.append(f"{when:<20}{'files':<12}{'667B':>9}  {self.dir}/files/{when}")
+                    rows.append(f"{when:<20}{'files':<12}{'667B':>9}  {self.dir}/files/{when}.deploy")
                     rows.append(f"{when:<20}{'rollcall':<12}{'1.2M':>9}  {path}")
                 return done("\n".join(sorted(rows)) + "\n")
             case ["standee", "backup", _, "--restore", path, "--yes"]:

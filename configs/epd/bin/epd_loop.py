@@ -106,8 +106,10 @@ def hpath(p: str) -> Path:
     return Path(p)
 REPO_NAME = os.environ.get("EPD_REPO", "rollcall")
 REPO_URL = os.environ.get("EPD_REPO_URL", "git@github.com:shine2lay/rollcall.git")
-# The owner's own checkout: used only to push the branch and open the PR (the
-# container's deploy key is read-only). Never built from.
+# The checkout on the host: pushes the branch and opens the PR (the container's
+# deploy key is read-only), and deploy_prod builds the live product from it
+# (`standee up` this tree), so a release needs it clean and at the commit being
+# shipped. EPD_REPO_CHECKOUT points a deployer at a checkout of its own.
 REPO_CHECKOUT = Path(os.environ.get("EPD_REPO_CHECKOUT", "/home/shinelay/rollcall"))
 GH_REPO = os.environ.get("EPD_GH_REPO", "shine2lay/rollcall")
 BASE_BRANCH = os.environ.get("EPD_BASE_BRANCH", "master")
@@ -1450,7 +1452,7 @@ def prod_health_problems() -> list[str]:
 
 def newest_backup(env: str) -> Path:
     """The newest database copy `standee backup` keeps for `env`: what a restore puts back.
-    (An unchanged database makes no new copy, so the newest one is the database as it is now.)"""
+    (A release's copies are `--label deploy`: always written, so the newest is the one just taken.)"""
     r = sh(["standee", "backup", env, "--list"], check=False)
     found = []
     for line in r.stdout.splitlines():
@@ -1551,7 +1553,8 @@ def deploy_prod(ref: str) -> None:
         die(f"{REPO_CHECKOUT} has uncommitted changes; the live product is built from this tree")
     ensure_qa_password()  # before `up`: the container reads the env file at start
     was_running = prod_image()
-    sh(["standee", "backup", PROD_ENV])
+    # --label deploy: a release's restore point, kept by count apart from the nightly rotation
+    sh(["standee", "backup", PROD_ENV, "--label", "deploy"])
     stage, restore_from, heads = "starting the new images (`standee up`)", None, ()
     try:
         up_prod()
@@ -1568,7 +1571,7 @@ def deploy_prod(ref: str) -> None:
             log(f"database already at head ({', '.join(heads)}): no migration to run")
         else:
             stage = "backing the database up before the migration"
-            r = sh(["standee", "backup", PROD_ENV], check=False)
+            r = sh(["standee", "backup", PROD_ENV, "--label", "deploy"], check=False)
             if r.returncode != 0:
                 raise ReleaseFailed(f"`standee backup {PROD_ENV}` exited {r.returncode}: {_last_line(r.stderr)}")
             backup = newest_backup(PROD_ENV)

@@ -803,11 +803,31 @@ def test_the_owner_message_without_the_cli_lands_in_the_outbox(tmp_path, monkeyp
 def test_announce_deploy_formats_outcomes_caps_five_subjects_handles_first_deploy_and_never_raises(
     tmp_path, monkeypatch
 ):
-    _, notify = fresh_modules(tmp_path, monkeypatch)
+    cd, notify = fresh_modules(tmp_path, monkeypatch)
+    assert "ROLLCALL_CD_NOTIFY_SINK" in cd.FORWARD_ENV
+    assert "ROLLCALL_CD_OWNER_PING" in cd.FORWARD_ENV
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(notify, "owner", lambda text, *, from_name="RollCall", run=subprocess.run: (
         sent.append((from_name, text)) or True
     ))
+
+    # 0. Default (ROLLCALL_CD_OWNER_PING unset / "never"): sends 0 owner Telegram pings
+    monkeypatch.delenv("ROLLCALL_CD_OWNER_PING", raising=False)
+    assert notify.announce_deploy(
+        outcome="deployed",
+        kind="forward",
+        sha=A,
+        tag="prod/20261105-1800",
+        previous_sha=None,
+        subjects=["initial"],
+        health="ok",
+        scheduler_lock="acquired",
+        since_previous_seconds=None,
+    ) is False
+    assert sent == []
+
+    # Opt in via ROLLCALL_CD_OWNER_PING=always to verify formatting and delivery
+    monkeypatch.setenv("ROLLCALL_CD_OWNER_PING", "always")
 
     # 1. First deploy with no previous tag/sha
     assert notify.announce_deploy(

@@ -14,9 +14,10 @@ binary with PI_WEB_DATA_DIR=/home/shinelay/.pi-web-ui; the text goes over stdin.
 exits 2, 3, 4 mean not sent (logged and queued in the outbox for retry); exit 5 means maybe sent
 (logged and recorded in the outbox with maybe_sent=true, NEVER resent).
 
-announce_deploy(...): formats and sends the owner Telegram ping on every prod deploy (forward or undo,
-success, self-undone failure, or UNDO INCOMPLETE). Refusals before any change are not deploys and do
-not call announce_deploy.
+announce_deploy(...): formats a prod deploy summary (forward or undo, success, self-undone failure, or
+UNDO INCOMPLETE). Disabled by default per owner order (2026-11-05: "Stop sending me those it works and I
+am annoying the volume of it"): sends owner Telegram only when ROLLCALL_CD_OWNER_PING=always (default
+never). Refusals before any change are not deploys and do not call announce_deploy.
 
 role(role_id, kind, text, key=None): a note in the role's home chat, through pi-web-ui's script_notice
 route on its control socket (pi-web-ui docs/script-notice.md, Ops #782): the app token is read from
@@ -385,14 +386,20 @@ def format_deploy_ping(
     return "\n".join(lines)
 
 
+OWNER_PING_DEFAULT = "never"
+
+
 def announce_deploy(
     *,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     **kwargs,
 ) -> bool:
-    """Send the owner Telegram ping for one prod deploy; logs and returns False on send failure."""
+    """Format the prod deploy ping; send owner Telegram only when ROLLCALL_CD_OWNER_PING=always (default never)."""
     try:
         text = format_deploy_ping(**kwargs)
+        mode = os.environ.get("ROLLCALL_CD_OWNER_PING", OWNER_PING_DEFAULT).strip().lower()
+        if mode != "always":
+            return False
         return owner(text, run=run, from_name=TELEGRAM_FROM)
     except Exception as e:
         print(f"rollcall_cd_notify: announce_deploy failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)

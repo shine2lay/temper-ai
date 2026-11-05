@@ -1,0 +1,66 @@
+{
+ "_about": "Recorded from gh on 2026-11-05, shine2lay/rollcall ci.yml runs on master. jobs: gh run view ID --json jobs, kept to name/status/conclusion/steps; long step lists cut to the first steps and those around the failure. logs: gh run view ID --log-failed, cut to the Run, error and FAILED lines; each FAILED line cut after its error type. GitHub masks secrets as ***; none were in these lines. 36080431059: an old run (its log names every step UNKNOWN STEP) red in backend/tests/test_entry.py; 42004004262: red in backend/tests/test_dev_seed_clone.py; 42081259790: a schedule run red in qa/positions_journey.py; 36763096407: every job failed before any step ran (gh answers 'log not found').",
+ "jobs": {
+  "36080431059": [
+   {"name": "backend", "status": "completed", "conclusion": "failure", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Run actions/checkout@v7", "conclusion": "success"},
+    {"name": "Lint (ruff check)", "conclusion": "success"},
+    {"name": "Tests (pytest)", "conclusion": "failure"},
+    {"name": "Post Run astral-sh/setup-uv@v7", "conclusion": "skipped"},
+    {"name": "Post Run actions/checkout@v7", "conclusion": "success"}]},
+   {"name": "frontend", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Run actions/checkout@v7", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]}
+  ],
+  "42004004262": [
+   {"name": "select", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Pick the checks this change needs", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]},
+   {"name": "frontend", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]},
+   {"name": "backend", "status": "completed", "conclusion": "failure", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Run actions/checkout@v7", "conclusion": "success"},
+    {"name": "Lint (ruff check)", "conclusion": "success"},
+    {"name": "Tests (pytest)", "conclusion": "failure"},
+    {"name": "Post Run astral-sh/setup-uv@v7", "conclusion": "skipped"},
+    {"name": "Post Run actions/checkout@v7", "conclusion": "success"}]},
+   {"name": "qa", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]}
+  ],
+  "42081259790": [
+   {"name": "select", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Pick the checks this change needs", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]},
+   {"name": "qa", "status": "completed", "conclusion": "failure", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Run actions/checkout@v7", "conclusion": "success"},
+    {"name": "The Analysis tab's happy path", "conclusion": "success"},
+    {"name": "The Positions tab's happy path", "conclusion": "failure"},
+    {"name": "In and out of the money colours", "conclusion": "skipped"},
+    {"name": "The Screener's happy path", "conclusion": "skipped"}]},
+   {"name": "backend", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]},
+   {"name": "frontend", "status": "completed", "conclusion": "success", "steps": [
+    {"name": "Set up job", "conclusion": "success"},
+    {"name": "Complete job", "conclusion": "success"}]}
+  ],
+  "36763096407": [
+   {"name": "frontend", "status": "completed", "conclusion": "failure", "steps": []},
+   {"name": "backend", "status": "completed", "conclusion": "failure", "steps": []},
+   {"name": "qa", "status": "completed", "conclusion": "failure", "steps": []}
+  ]
+ },
+ "logs": {
+  "36080431059": "backend\tUNKNOWN STEP\t2026-09-25T01:05:19.4985966Z ##[group]Run actions/checkout@v7\nbackend\tUNKNOWN STEP\t2026-09-25T01:05:21.0412560Z ##[group]Run astral-sh/setup-uv@v7\nbackend\tUNKNOWN STEP\t2026-09-25T01:05:23.2605794Z ##[group]Run uv sync\nbackend\tUNKNOWN STEP\t2026-09-25T01:05:24.7878134Z ##[group]Run uv run ruff check backend\nbackend\tUNKNOWN STEP\t2026-09-25T01:05:25.1639119Z ##[group]Run uv run pytest -q -p no:cacheprovider --durations=15\nbackend\tUNKNOWN STEP\t2026-09-25T01:16:47.8230192Z FAILED backend/tests/test_entry.py::test_preview_prices_the_entry_the_screener_already_showed_him - AssertionError\nbackend\tUNKNOWN STEP\t2026-09-25T01:16:47.8231155Z FAILED backend/tests/test_entry.py::test_preview_shows_every_gate_including_the_ones_only_an_entry_has - KeyError\nbackend\tUNKNOWN STEP\t2026-09-25T01:16:47.8231680Z FAILED backend/tests/test_entry.py::test_preview_prices_the_half_done_state_before_he_confirms - KeyError\nbackend\tUNKNOWN STEP\t2026-09-25T01:16:47.8232149Z FAILED backend/tests/test_entry.py::test_the_default_call_limit_is_the_mid_not_the_price_basis - KeyError\nbackend\tUNKNOWN STEP\t2026-09-25T01:16:48.1683091Z ##[error]Process completed with exit code 1.\n",
+  "42004004262": "backend\tTests (pytest)\t\ufeff2026-11-05T09:46:49.0424980Z ##[group]Run uv run pytest -q -p no:cacheprovider --durations=15 -m \"$MARKERS\" $BACKEND_TESTS\nbackend\tTests (pytest)\t2026-11-05T09:55:24.1276511Z FAILED backend/tests/test_dev_seed_clone.py::test_a_screens_wall_clock_elapsed_is_not_seeded_state_but_its_counts_are - KeyError\nbackend\tTests (pytest)\t2026-11-05T09:55:24.5647522Z ##[error]Process completed with exit code 1.\n",
+  "42081259790": "qa\tThe Positions tab's happy path\t\ufeff2026-11-05T18:26:11.9260733Z ##[group]Run uv run python qa/positions_journey.py\nqa\tThe Positions tab's happy path\t2026-11-05T18:27:15.0873339Z ##[error]Process completed with exit code 1.\n"
+ }
+}

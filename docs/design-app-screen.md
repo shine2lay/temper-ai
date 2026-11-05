@@ -185,7 +185,7 @@ Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it
 
 | Stage | Real stage | Task |
 | --- | --- | --- |
-| 1 intake | built; 3/3 trial runs per case (Stage 1, Results) | #206 |
+| 1 intake | real; met its bar 2026-11-05, 3/3 runs on every case (Stage 1, Results) | #206 |
 | the other seven, both gates | stub: fixture mode only | one task per stage |
 
 ## Tests
@@ -200,7 +200,8 @@ case in the lab and that the repo copy matches it.
 and a bad fixed draft (mapping, verbatim substring, unsourced, invented number, ids, schema); a clean
 draft becomes the final files with source lines from the items; a bad draft retries, then fails loud;
 the collector on a plain request, Show&Tell comments and dialog answers (with fake servers); fixture mode
-passes through; the grader's key, question, conflict and specifics counts; the trial workflow's nodes
+passes through; the grader's key, question, conflict and specifics counts, and a key point split over
+two requirements on its item (met together; unmet when one part is gone); the trial workflow's nodes
 equal the whole workflow's; the agent is fenced (no tools block, JSON-only draft).
 
 ## Stage 1: intake
@@ -240,9 +241,10 @@ question about both conflicting items that names the conflict; 0 silent picks (a
 item that doesn't wait for that question).
 
 The grader (`design_app_screen.py grade-intake --case DIR --workspace W`) measures all of it from the
-run's files; no model judges. A key point is met when a requirement on one of its items says, in its
-`means` and `maps_to` (not his quoted words, which would meet it by copying), a term from each of the
-point's groups.
+run's files; no model judges. A key point is met when the requirements on its items together say, in
+their `means` and `maps_to` (not his quoted words, which would meet it by copying), a term from each of
+the point's groups: one requirement or several, since the stage splits a compound comment into one
+requirement per ask (changed after round t1, hypothesis H1 below; at first it needed one requirement).
 
 ### Trial cases
 
@@ -259,7 +261,8 @@ sources with `collect`. The owner's words stay in the lab, not in this public re
 | D `d-conflict` | A plus a planted comment "show simulated on every account", against his "we dont need to show simulated" | an open question about both naming the conflict; 0 silent picks; A's other 8 points |
 
 A trial run: put the case's `sources.json` in as `request_json` on a fresh folder under
-`~/temper-ai/workspaces/`, run `design_app_screen_v1_intake` with `product` and `mode real`, then grade:
+`~/temper-ai/workspaces/` (given as its full path, and open to the worker, which writes as another user:
+`chmod 777`), run `design_app_screen_v1_intake` with `product` and `mode real`, then grade:
 
 ```
 python3 ~/design-lab/tools/temper_call.py POST /api/runs @body.json   # {"workflow": "design_app_screen_v1_intake",
@@ -269,4 +272,69 @@ python3 configs/design/bin/design_app_screen.py grade-intake --case <case dir> -
 
 ### Results
 
-(Filled in from the trial runs.)
+**Met the bar, 2026-11-05: every case, 3/3 runs, in a fresh round (t2) graded by the corrected
+grader; 0 invented, 0 unsourced, 0 not verbatim, 100% coverage in all 30 runs.** Stage live as landed
+in `47289ee9` (opus, one model call; the revision step never had to run: 30/30 first drafts were clean).
+Cost about $0.10 (C) to $0.29 (A) a run, 16-74 s. Full run ids, grades and the broken-draft check:
+`~/design-lab/app-screen-workflow/results/intake-trials/`.
+
+**Round t1 (15 runs): 10 passed on the first grade.** All 5 misses were the grader, not the stage:
+
+- A r2, B2 r1-r3: the stage split a compound comment into one requirement per ask ("things like buying
+  power, margin excess net liq" into three; "both left and right collapsible panels ... so it doesn't
+  overload the top" into panels and top), as its checklist says. The grader wanted one requirement
+  holding every part of the key point.
+- C r2, r3: the question "What about the settings page is not nice right now?" is N1 in other words;
+  N1's word list had "nicer" but not "nice".
+
+**H1 (written before the grader change).** Wrong: 5 of 15 runs fail a key point the drafts do meet
+(evidence above, read in the drafts). Change: a key point is met by the requirements on its items
+together, and N1 takes "nice". Expected: the same 15 runs re-graded pass 15/15 with no change in the
+measured counts, and a fresh round on the unchanged stage passes 15/15. Wrong if: the looser grader
+passes a draft that misses a point. Checked with 6 broken copies of real t1 drafts (A: two of the three
+figures dropped; A and D: figures named but never as Safe's replacement; B2: "collapsible" dropped; B2:
+"top" dropped; C: the what-is-wrong question removed): the corrected grader fails all 6. That check
+found one more weak key term: A's and D's Safe groups held "margin", which the figure "margin excess"
+met; they now need "safe" or "tile". Both key changes are dated in the cases' `expected.json`
+(`amended`). **Hit:** t1 re-graded 15/15, t2 15/15.
+
+Seen in the drafts, not a bar: the stage asks a lot (A: 6-9 open questions on 7 comments and 2
+answers). Each is about a real gap and has choices, but the direction gate will need them bundled and
+ranked before they reach the owner; that belongs to the stage that asks them.
+
+| Round | Case | Run | Run id | Coverage | Invented | Unsourced | Not verbatim | Key | C: questions | D: conflict asked / silent picks | Reqs / open qs | First grade (t1) | Grade | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t1 | A | 1 | `2e2f7940` | 100% | 0 | 0 | 0 | 9/9 | - | - | 12 / 8 | pass | pass | $0.29 | 74s |
+| t1 | A | 2 | `a868fe4c` | 100% | 0 | 0 | 0 | 9/9 | - | - | 13 / 8 | fail: K1 not met | pass | $0.29 | 71s |
+| t1 | A | 3 | `0f7a98b7` | 100% | 0 | 0 | 0 | 9/9 | - | - | 11 / 9 | pass | pass | $0.28 | 73s |
+| t1 | B1 | 1 | `8e782d51` | 100% | 0 | 0 | 0 | 4/4 | - | - | 6 / 6 | pass | pass | $0.23 | 58s |
+| t1 | B1 | 2 | `c2f0c49e` | 100% | 0 | 0 | 0 | 4/4 | - | - | 4 / 5 | pass | pass | $0.20 | 46s |
+| t1 | B1 | 3 | `e339b8e1` | 100% | 0 | 0 | 0 | 4/4 | - | - | 5 / 6 | pass | pass | $0.24 | 54s |
+| t1 | B2 | 1 | `71b5e69d` | 100% | 0 | 0 | 0 | 3/3 | - | - | 4 / 3 | fail: K3 not met | pass | $0.14 | 30s |
+| t1 | B2 | 2 | `3a25a2b5` | 100% | 0 | 0 | 0 | 3/3 | - | - | 4 / 3 | fail: K3 not met | pass | $0.15 | 31s |
+| t1 | B2 | 3 | `a3a83b2d` | 100% | 0 | 0 | 0 | 3/3 | - | - | 4 / 4 | fail: K3 not met | pass | $0.14 | 30s |
+| t1 | C | 1 | `2b4c37a6` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | pass | pass | $0.10 | 19s |
+| t1 | C | 2 | `0ba9c415` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | fail: N2 not asked | pass | $0.10 | 16s |
+| t1 | C | 3 | `f9bdeaf2` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | fail: N1 not asked | pass | $0.10 | 17s |
+| t1 | D | 1 | `091c7934` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 11 / 8 | pass | pass | $0.28 | 64s |
+| t1 | D | 2 | `008f1e81` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 12 / 6 | pass | pass | $0.26 | 60s |
+| t1 | D | 3 | `23fcae9c` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 12 / 6 | pass | pass | $0.24 | 54s |
+| t2 | A | 1 | `65bf42dd` | 100% | 0 | 0 | 0 | 9/9 | - | - | 11 / 9 | - | pass | $0.27 | 66s |
+| t2 | A | 2 | `25fc39e2` | 100% | 0 | 0 | 0 | 9/9 | - | - | 12 / 6 | - | pass | $0.29 | 65s |
+| t2 | A | 3 | `79fe0a02` | 100% | 0 | 0 | 0 | 9/9 | - | - | 11 / 9 | - | pass | $0.27 | 68s |
+| t2 | B1 | 1 | `ef58fdcf` | 100% | 0 | 0 | 0 | 4/4 | - | - | 4 / 6 | - | pass | $0.20 | 51s |
+| t2 | B1 | 2 | `a2fa490d` | 100% | 0 | 0 | 0 | 4/4 | - | - | 5 / 6 | - | pass | $0.22 | 54s |
+| t2 | B1 | 3 | `a45097e0` | 100% | 0 | 0 | 0 | 4/4 | - | - | 6 / 6 | - | pass | $0.21 | 51s |
+| t2 | B2 | 1 | `909ad72e` | 100% | 0 | 0 | 0 | 3/3 | - | - | 4 / 3 | - | pass | $0.15 | 32s |
+| t2 | B2 | 2 | `59c1d3f5` | 100% | 0 | 0 | 0 | 3/3 | - | - | 5 / 4 | - | pass | $0.15 | 31s |
+| t2 | B2 | 3 | `e13e655e` | 100% | 0 | 0 | 0 | 3/3 | - | - | 4 / 4 | - | pass | $0.16 | 33s |
+| t2 | C | 1 | `0c47c971` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | - | pass | $0.10 | 19s |
+| t2 | C | 2 | `68c41f09` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | - | pass | $0.10 | 16s |
+| t2 | C | 3 | `2d579327` | 100% | 0 | 0 | 0 | 1/1 | 2/2 | - | 1 / 3 | - | pass | $0.11 | 17s |
+| t2 | D | 1 | `6e18c328` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 12 / 7 | - | pass | $0.28 | 67s |
+| t2 | D | 2 | `991a9d97` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 12 / 6 | - | pass | $0.27 | 62s |
+| t2 | D | 3 | `7ee57dfd` | 100% | 0 | 0 | 0 | 8/8 | - | 1/1 / 0 | 12 / 8 | - | pass | $0.28 | 62s |
+
+Run ids are temper-dev execution ids (first 8 characters; full ids in the results folder). Cost: t1
+$3.05, t2 $3.07. The revision step is proven by the pytest (a fixed bad draft), not yet by a live run,
+since no live draft needed it.

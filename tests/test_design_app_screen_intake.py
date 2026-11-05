@@ -329,6 +329,22 @@ def test_grader_counts_key_questions_conflicts_and_specifics(tmp_path):
     assert any(x.startswith("key K1 not met") for x in graded["misses"])
 
 
+def test_grader_meets_a_key_point_split_over_requirements_on_its_item(tmp_path):
+    """S2's two asks sit in R2 (top) and R3 (bigger): together they meet a point that needs both."""
+    def split_point(case):
+        expected = json.loads((case / "expected.json").read_text())
+        expected["key"] = [{"id": "K1", "what": "Add at the top, bigger", "items": ["S2"], "must": [["top"], ["bigger"]]}]
+        (case / "expected.json").write_text(json.dumps(expected))
+    case, ws = _graded_run(tmp_path / "good", GOOD)
+    split_point(case)
+    assert intake_grade.grade(case, ws)["measures"]["key"] == "1/1"
+
+    case, ws = _graded_run(tmp_path / "bad", _edit(lambda d: d["requirements"][2].update(means="Add changes size.")))
+    split_point(case)
+    graded = intake_grade.grade(case, ws)
+    assert graded["measures"]["key"] == "0/1" and not graded["pass"]
+
+
 # ---------------------------------------------------------------- the workflow files
 def _yaml(rel: str) -> dict:
     return yaml.safe_load((ROOT / rel).read_text())

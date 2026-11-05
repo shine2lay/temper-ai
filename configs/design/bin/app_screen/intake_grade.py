@@ -9,9 +9,10 @@ A case folder holds sources.json (what the run was given) and expected.json, wri
      "conflicts": [{"id": "X1", "items": ["S2", "S10"], "any": ["simulated"]}],
      "specifics": {"forbidden_terms": ["colour", ...], "maps_to_must": ["settings"]}}
 
-A key point is met when one requirement on one of its items has, in its means and maps_to (never his
-quoted words, which would meet it by copying), a term from every must group (case-insensitive parts of
-words). A needed question is met by an open question matching one regex (and about those items). A
+A key point is met when the requirements on its items together have, in their means and maps_to (never
+his quoted words, which would meet it by copying), a term from every must group (case-insensitive parts
+of words): one requirement or several, because the stage splits a compound comment into one requirement
+per ask. A needed question is met by an open question matching one regex (and about those items). A
 conflict is asked when an open question is about all its items and names it; a requirement on a conflict
 item that does not list that question in open_questions is a silent pick. A specific is a forbidden term
 no source says, in a requirement's means or maps_to, or a maps_to without a must word.
@@ -86,9 +87,8 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
     open_qs = [q for q in questions if q.get("status") == "open"]
     key_met = []
     for k in expected.get("key", []):
-        hit = any(r.get("item") in k["items"] and all(any(t.lower() in _stated(r) for t in group) for group in k["must"])
-                  for r in reqs)
-        if hit:
+        stated = " ".join(_stated(r) for r in reqs if r.get("item") in k["items"])
+        if all(any(t.lower() in stated for t in group) for group in k["must"]):
             key_met.append(k["id"])
         else:
             misses.append(f"key {k['id']} not met: {k['what']}")

@@ -1,0 +1,16 @@
+{
+ "tool": "draft-b/check.mjs (quick check, real clicks)",
+ "checks": [
+  {
+   "id": "direction-b-quick",
+   "value": {
+    "exit": 0,
+    "seconds": 11
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop 1440x900 + phone 390x844 click-through (position -> detail -> roll -> send -> pending -> sent -> book), no console errors, no overflow, no text under floor",
+   "element": "option B main flow",
+   "location": "index.html at 1440x900 and 390x844"
+  }
+ ]
+}

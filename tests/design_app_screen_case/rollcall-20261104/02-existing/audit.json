@@ -1,0 +1,4174 @@
+{
+ "source": "Design #170 RollCall mobile current-state read; tools/capture.mjs drives Playwright; tools/measure_in_page.js measures in the page (visible text runs, targets, overflow, truncation, blocks); Show&Tell d_t44rwox5a5",
+ "screens": [
+  {
+   "id": "overview@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/overview@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 4817,
+    "screens_tall": 5.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "attention_list_screens_down": 3.3,
+    "text_runs": 304,
+    "text_runs_under_16px": 268,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 34,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Overview: where the book stands"
+  },
+  {
+   "id": "overview@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/overview@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 5701,
+    "screens_tall": 8.6,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "attention_list_screens_down": 4.8,
+    "text_runs": 304,
+    "text_runs_under_16px": 268,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 35,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Overview: where the book stands"
+  },
+  {
+   "id": "overview@1440",
+   "width": 1440,
+   "state": "normal",
+   "capture": "captures/overview@1440-first.png",
+   "measures": {
+    "layout_width_px": 1440,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2607,
+    "screens_tall": 2.9,
+    "tabbar_rows": 0,
+    "content_px_in_first_view": 789,
+    "attention_list_screens_down": 1.6,
+    "text_runs": 322,
+    "text_runs_under_16px": 285,
+    "distinct_text_sizes": 12,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "My book"
+     },
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "Find a trade"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".brand-v",
+      "text": "v0.1"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     }
+    ],
+    "targets_under_24px": 36,
+    "side_scrolling_boxes": [],
+    "truncated_count": 0,
+    "always_open_blocks": 10
+   },
+   "what": "Overview: where the book stands"
+  },
+  {
+   "id": "positions@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/positions@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 1828,
+    "screens_tall": 2.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 258,
+    "text_runs_under_16px": 255,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 38,
+    "side_scrolling_boxes": [
+     "riskstrip quiet",
+     "table-wrap positions-wrap"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Positions list"
+  },
+  {
+   "id": "positions@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/positions@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 1920,
+    "screens_tall": 2.9,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 258,
+    "text_runs_under_16px": 255,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 39,
+    "side_scrolling_boxes": [
+     "riskstrip quiet",
+     "table-wrap positions-wrap"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Positions list"
+  },
+  {
+   "id": "positions@1440",
+   "width": 1440,
+   "state": "normal",
+   "capture": "captures/positions@1440-first.png",
+   "measures": {
+    "layout_width_px": 1440,
+    "wider_than_screen_px": 0,
+    "page_height_px": 1183,
+    "screens_tall": 1.3,
+    "tabbar_rows": 0,
+    "content_px_in_first_view": 789,
+    "text_runs": 276,
+    "text_runs_under_16px": 272,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "My book"
+     },
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "Find a trade"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".brand-v",
+      "text": "v0.1"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11.5,
+      "area": "topbar",
+      "cls": ".live-dot-word",
+      "text": "Updating"
+     }
+    ],
+    "targets_under_24px": 39,
+    "side_scrolling_boxes": [],
+    "truncated_count": 0,
+    "always_open_blocks": 1
+   },
+   "what": "Positions list"
+  },
+  {
+   "id": "position-detail@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/position-detail@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 1685,
+    "screens_tall": 2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 89,
+    "text_runs_under_16px": 75,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 13,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 7
+   },
+   "what": "One position"
+  },
+  {
+   "id": "position-detail@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/position-detail@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 1859,
+    "screens_tall": 2.8,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 89,
+    "text_runs_under_16px": 75,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 14,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 7
+   },
+   "what": "One position"
+  },
+  {
+   "id": "position-detail@1440",
+   "width": 1440,
+   "state": "normal",
+   "capture": "captures/position-detail@1440-first.png",
+   "measures": {
+    "layout_width_px": 1440,
+    "wider_than_screen_px": 0,
+    "page_height_px": 1030,
+    "screens_tall": 1.1,
+    "tabbar_rows": 0,
+    "content_px_in_first_view": 789,
+    "text_runs": 107,
+    "text_runs_under_16px": 92,
+    "distinct_text_sizes": 10,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "My book"
+     },
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "Find a trade"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".brand-v",
+      "text": "v0.1"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11.5,
+      "area": "topbar",
+      "cls": ".live-dot-word",
+      "text": "Updating"
+     }
+    ],
+    "targets_under_24px": 14,
+    "side_scrolling_boxes": [],
+    "truncated_count": 0,
+    "always_open_blocks": 7
+   },
+   "what": "One position"
+  },
+  {
+   "id": "actions@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/actions@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2867,
+    "screens_tall": 3.4,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 230,
+    "text_runs_under_16px": 220,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 20,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Actions inbox"
+  },
+  {
+   "id": "actions@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/actions@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 3480,
+    "screens_tall": 5.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 230,
+    "text_runs_under_16px": 220,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 21,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Actions inbox"
+  },
+  {
+   "id": "actions@1440",
+   "width": 1440,
+   "state": "normal",
+   "capture": "captures/actions@1440-first.png",
+   "measures": {
+    "layout_width_px": 1440,
+    "wider_than_screen_px": 0,
+    "page_height_px": 1834,
+    "screens_tall": 2,
+    "tabbar_rows": 0,
+    "content_px_in_first_view": 789,
+    "text_runs": 248,
+    "text_runs_under_16px": 237,
+    "distinct_text_sizes": 12,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "My book"
+     },
+     {
+      "size": 10,
+      "area": "other",
+      "cls": ".nav-group",
+      "text": "Find a trade"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".brand-v",
+      "text": "v0.1"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "other",
+      "cls": ".nav-badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11.5,
+      "area": "topbar",
+      "cls": ".live-dot-word",
+      "text": "Updating"
+     }
+    ],
+    "targets_under_24px": 21,
+    "side_scrolling_boxes": [],
+    "truncated_count": 0,
+    "always_open_blocks": 1
+   },
+   "what": "Actions inbox"
+  },
+  {
+   "id": "trade@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/trade@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2653,
+    "screens_tall": 3.1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 160,
+    "text_runs_under_16px": 154,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 17,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Trade hub (roll / open)"
+  },
+  {
+   "id": "trade@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/trade@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 3324,
+    "screens_tall": 5,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 160,
+    "text_runs_under_16px": 154,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 18,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Trade hub (roll / open)"
+  },
+  {
+   "id": "orders@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/orders@390-first.png",
+   "measures": {
+    "layout_width_px": 396,
+    "wider_than_screen_px": 6,
+    "page_height_px": 3145,
+    "screens_tall": 3.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 672,
+    "text_runs": 254,
+    "text_runs_under_16px": 244,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "4"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 10,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Orders with six finished practice rolls"
+  },
+  {
+   "id": "orders@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/orders@320-first.png",
+   "measures": {
+    "layout_width_px": 397,
+    "wider_than_screen_px": 77,
+    "page_height_px": 3632,
+    "screens_tall": 5.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 518,
+    "text_runs": 254,
+    "text_runs_under_16px": 244,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "4"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 10,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Orders with six finished practice rolls"
+  },
+  {
+   "id": "alerts@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/alerts@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2198,
+    "screens_tall": 2.6,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 699,
+    "text_runs": 154,
+    "text_runs_under_16px": 144,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 16,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 6
+   },
+   "what": "Alerts history"
+  },
+  {
+   "id": "alerts@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/alerts@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 2424,
+    "screens_tall": 3.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 516,
+    "text_runs": 154,
+    "text_runs_under_16px": 144,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 17,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 7
+   },
+   "what": "Alerts history"
+  },
+  {
+   "id": "analysis@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/analysis@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 3972,
+    "screens_tall": 4.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 316,
+    "text_runs_under_16px": 293,
+    "distinct_text_sizes": 14,
+    "smallest_text_px": [
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "▲"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".an-exited.muted",
+      "text": "held from before"
+     }
+    ],
+    "targets_under_24px": 29,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet",
+     "table-wrap",
+     "table-wrap"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Analysis"
+  },
+  {
+   "id": "analysis@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/analysis@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 4207,
+    "screens_tall": 6.4,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 316,
+    "text_runs_under_16px": 293,
+    "distinct_text_sizes": 14,
+    "smallest_text_px": [
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "▲"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 9,
+      "area": "main",
+      "cls": ".sort-ind",
+      "text": "⇅"
+     },
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".an-exited.muted",
+      "text": "held from before"
+     }
+    ],
+    "targets_under_24px": 30,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet",
+     "table-wrap",
+     "table-wrap"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Analysis"
+  },
+  {
+   "id": "screener@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/screener@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 72,
+    "text_runs_under_16px": 69,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 10,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Screener"
+  },
+  {
+   "id": "screener@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/screener@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 863,
+    "screens_tall": 1.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 72,
+    "text_runs_under_16px": 69,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 11,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Screener"
+  },
+  {
+   "id": "browse@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/browse@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 62,
+    "text_runs_under_16px": 58,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 9,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Browse one stock"
+  },
+  {
+   "id": "browse@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/browse@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 823,
+    "screens_tall": 1.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 476,
+    "text_runs": 62,
+    "text_runs_under_16px": 58,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 10,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Browse one stock"
+  },
+  {
+   "id": "settings@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/settings@390-first.png",
+   "measures": {
+    "layout_width_px": 436,
+    "wider_than_screen_px": 46,
+    "page_height_px": 25407,
+    "screens_tall": 26.9,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 799,
+    "text_runs": 762,
+    "text_runs_under_16px": 730,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim.active",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".up-rules-ord",
+      "text": "#"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Rule"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Days ≥"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Days ≤"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Gain over basis ≥ %"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Gain over basis < %"
+     }
+    ],
+    "targets_under_24px": 292,
+    "side_scrolling_boxes": [
+     "up-rules-scroll"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Settings"
+  },
+  {
+   "id": "settings@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/settings@320-first.png",
+   "measures": {
+    "layout_width_px": 436,
+    "wider_than_screen_px": 116,
+    "page_height_px": 29547,
+    "screens_tall": 38.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 629,
+    "text_runs": 762,
+    "text_runs_under_16px": 730,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim.active",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".up-rules-ord",
+      "text": "#"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Rule"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Days ≥"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Days ≤"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Gain over basis ≥ %"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Gain over basis < %"
+     }
+    ],
+    "targets_under_24px": 290,
+    "side_scrolling_boxes": [
+     "up-rules-scroll"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Settings"
+  },
+  {
+   "id": "system@390",
+   "width": 390,
+   "state": "normal",
+   "capture": "captures/system@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2315,
+    "screens_tall": 2.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 699,
+    "text_runs": 444,
+    "text_runs_under_16px": 441,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Time"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Actor"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Action"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Entity"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Summary"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Request"
+     }
+    ],
+    "targets_under_24px": 108,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "table-wrap audit-wrap"
+    ],
+    "truncated_count": 40,
+    "always_open_blocks": 1
+   },
+   "what": "System health"
+  },
+  {
+   "id": "system@320",
+   "width": 320,
+   "state": "normal",
+   "capture": "captures/system@320-first.png",
+   "measures": {
+    "layout_width_px": 372,
+    "wider_than_screen_px": 52,
+    "page_height_px": 2405,
+    "screens_tall": 3.6,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 516,
+    "text_runs": 444,
+    "text_runs_under_16px": 441,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Time"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Actor"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Action"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Entity"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Summary"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": "th",
+      "text": "Request"
+     }
+    ],
+    "targets_under_24px": 109,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "table-wrap audit-wrap"
+    ],
+    "truncated_count": 40,
+    "always_open_blocks": 2
+   },
+   "what": "System health"
+  },
+  {
+   "id": "overview-urgent@390",
+   "width": 390,
+   "state": "urgent",
+   "capture": "captures/overview-urgent@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 4840,
+    "screens_tall": 5.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "attention_list_screens_down": 3.3,
+    "text_runs": 301,
+    "text_runs_under_16px": 265,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 35,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Overview with an urgent roll"
+  },
+  {
+   "id": "overview-urgent@320",
+   "width": 320,
+   "state": "urgent",
+   "capture": "captures/overview-urgent@320-first.png",
+   "measures": {
+    "layout_width_px": 388,
+    "wider_than_screen_px": 68,
+    "page_height_px": 5805,
+    "screens_tall": 8.4,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 504,
+    "attention_list_screens_down": 4.6,
+    "text_runs": 301,
+    "text_runs_under_16px": 265,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 35,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Overview with an urgent roll"
+  },
+  {
+   "id": "actions-urgent@390",
+   "width": 390,
+   "state": "urgent",
+   "capture": "captures/actions-urgent@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2338,
+    "screens_tall": 2.8,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 189,
+    "text_runs_under_16px": 181,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 19,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Actions with an urgent roll"
+  },
+  {
+   "id": "actions-urgent@320",
+   "width": 320,
+   "state": "urgent",
+   "capture": "captures/actions-urgent@320-first.png",
+   "measures": {
+    "layout_width_px": 388,
+    "wider_than_screen_px": 68,
+    "page_height_px": 2839,
+    "screens_tall": 4.1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 504,
+    "text_runs": 189,
+    "text_runs_under_16px": 181,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 19,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Actions with an urgent roll"
+  },
+  {
+   "id": "roll-ticket@390",
+   "width": 390,
+   "state": "urgent",
+   "capture": "captures/roll-ticket@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2338,
+    "screens_tall": 2.8,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 474,
+    "text_runs_under_16px": 462,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 20,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet",
+     "pk-body"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Roll ticket opened from the urgent card (not sent)"
+  },
+  {
+   "id": "roll-ticket@320",
+   "width": 320,
+   "state": "urgent",
+   "capture": "captures/roll-ticket@320-first.png",
+   "measures": {
+    "layout_width_px": 388,
+    "wider_than_screen_px": 68,
+    "page_height_px": 2839,
+    "screens_tall": 4.1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 504,
+    "text_runs": 474,
+    "text_runs_under_16px": 462,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "5"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 20,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet",
+     "pk-body"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Roll ticket opened from the urgent card (not sent)"
+  },
+  {
+   "id": "overview-empty@390",
+   "width": 390,
+   "state": "empty",
+   "capture": "captures/overview-empty@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 3799,
+    "screens_tall": 4.5,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "attention_list_screens_down": 3.2,
+    "text_runs": 192,
+    "text_runs_under_16px": 160,
+    "distinct_text_sizes": 10,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     }
+    ],
+    "targets_under_24px": 23,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 12
+   },
+   "what": "Overview, connected but no positions"
+  },
+  {
+   "id": "overview-empty@320",
+   "width": 320,
+   "state": "empty",
+   "capture": "captures/overview-empty@320-first.png",
+   "measures": {
+    "layout_width_px": 380,
+    "wider_than_screen_px": 60,
+    "page_height_px": 4213,
+    "screens_tall": 6.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 490,
+    "attention_list_screens_down": 4.4,
+    "text_runs": 192,
+    "text_runs_under_16px": 160,
+    "distinct_text_sizes": 10,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     }
+    ],
+    "targets_under_24px": 23,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 12
+   },
+   "what": "Overview, connected but no positions"
+  },
+  {
+   "id": "positions-empty@390",
+   "width": 390,
+   "state": "empty",
+   "capture": "captures/positions-empty@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 64,
+    "text_runs_under_16px": 60,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 9,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Positions, none held"
+  },
+  {
+   "id": "positions-empty@320",
+   "width": 320,
+   "state": "empty",
+   "capture": "captures/positions-empty@320-first.png",
+   "measures": {
+    "layout_width_px": 380,
+    "wider_than_screen_px": 60,
+    "page_height_px": 892,
+    "screens_tall": 1.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 490,
+    "text_runs": 64,
+    "text_runs_under_16px": 60,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 9,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Positions, none held"
+  },
+  {
+   "id": "actions-empty@390",
+   "width": 390,
+   "state": "empty",
+   "capture": "captures/actions-empty@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 58,
+    "text_runs_under_16px": 54,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 13,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Actions, nothing to do"
+  },
+  {
+   "id": "actions-empty@320",
+   "width": 320,
+   "state": "empty",
+   "capture": "captures/actions-empty@320-first.png",
+   "measures": {
+    "layout_width_px": 380,
+    "wider_than_screen_px": 60,
+    "page_height_px": 886,
+    "screens_tall": 1.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 490,
+    "text_runs": 58,
+    "text_runs_under_16px": 54,
+    "distinct_text_sizes": 8,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 13,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 3
+   },
+   "what": "Actions, nothing to do"
+  },
+  {
+   "id": "overview-first-login@390",
+   "width": 390,
+   "state": "empty",
+   "capture": "captures/overview-first-login@390-first.png",
+   "measures": {
+    "layout_width_px": 396,
+    "wider_than_screen_px": 6,
+    "page_height_px": 3799,
+    "screens_tall": 4.4,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 672,
+    "attention_list_screens_down": 3.2,
+    "text_runs": 192,
+    "text_runs_under_16px": 160,
+    "distinct_text_sizes": 10,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     }
+    ],
+    "targets_under_24px": 23,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 12
+   },
+   "what": "A new trader's first login"
+  },
+  {
+   "id": "overview-first-login@320",
+   "width": 320,
+   "state": "empty",
+   "capture": "captures/overview-first-login@320-first.png",
+   "measures": {
+    "layout_width_px": 397,
+    "wider_than_screen_px": 77,
+    "page_height_px": 4213,
+    "screens_tall": 6,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 518,
+    "attention_list_screens_down": 4.2,
+    "text_runs": 192,
+    "text_runs_under_16px": 160,
+    "distinct_text_sizes": 10,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     }
+    ],
+    "targets_under_24px": 23,
+    "side_scrolling_boxes": [
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 12
+   },
+   "what": "A new trader's first login"
+  },
+  {
+   "id": "overview-partial@390",
+   "width": 390,
+   "state": "partial",
+   "capture": "captures/overview-partial@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 4611,
+    "screens_tall": 5.5,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "attention_list_screens_down": 3.4,
+    "text_runs": 284,
+    "text_runs_under_16px": 249,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "4"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 33,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Broker withholds buying power and margin excess"
+  },
+  {
+   "id": "overview-partial@320",
+   "width": 320,
+   "state": "partial",
+   "capture": "captures/overview-partial@320-first.png",
+   "measures": {
+    "layout_width_px": 388,
+    "wider_than_screen_px": 68,
+    "page_height_px": 5471,
+    "screens_tall": 7.9,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 504,
+    "attention_list_screens_down": 4.6,
+    "text_runs": 284,
+    "text_runs_under_16px": 249,
+    "distinct_text_sizes": 11,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "4"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-sub",
+      "text": "Wed vs Tue"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": "$5,000.00 paid in"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-flow",
+      "text": ", taken out"
+     }
+    ],
+    "targets_under_24px": 33,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 11
+   },
+   "what": "Broker withholds buying power and margin excess"
+  },
+  {
+   "id": "overview-error@390",
+   "width": 390,
+   "state": "error",
+   "capture": "captures/overview-error@390-first.png",
+   "measures": {
+    "layout_width_px": 396,
+    "wider_than_screen_px": 6,
+    "page_height_px": 857,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 712,
+    "text_runs": 30,
+    "text_runs_under_16px": 26,
+    "distinct_text_sizes": 7,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 2,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 1
+   },
+   "what": "Broker connection failing"
+  },
+  {
+   "id": "overview-error@320",
+   "width": 320,
+   "state": "error",
+   "capture": "captures/overview-error@320-first.png",
+   "measures": {
+    "layout_width_px": 397,
+    "wider_than_screen_px": 77,
+    "page_height_px": 703,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 558,
+    "text_runs": 30,
+    "text_runs_under_16px": 26,
+    "distinct_text_sizes": 7,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 2,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 1
+   },
+   "what": "Broker connection failing"
+  },
+  {
+   "id": "orders-error@390",
+   "width": 390,
+   "state": "error",
+   "capture": "captures/orders-error@390-first.png",
+   "measures": {
+    "layout_width_px": 405,
+    "wider_than_screen_px": 15,
+    "page_height_px": 1115,
+    "screens_tall": 1.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 690,
+    "text_runs": 66,
+    "text_runs_under_16px": 62,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 9,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Order list fails to load"
+  },
+  {
+   "id": "orders-error@320",
+   "width": 320,
+   "state": "error",
+   "capture": "captures/orders-error@320-first.png",
+   "measures": {
+    "layout_width_px": 404,
+    "wider_than_screen_px": 84,
+    "page_height_px": 1238,
+    "screens_tall": 1.7,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 533,
+    "text_runs": 66,
+    "text_runs_under_16px": 62,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 10,
+      "area": "topbar",
+      "cls": ".badge",
+      "text": "7"
+     },
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     }
+    ],
+    "targets_under_24px": 9,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 4
+   },
+   "what": "Order list fails to load"
+  },
+  {
+   "id": "alerts-error@390",
+   "width": 390,
+   "state": "error",
+   "capture": "captures/alerts-error@390-first.png",
+   "measures": {
+    "layout_width_px": 405,
+    "wider_than_screen_px": 15,
+    "page_height_px": 2118,
+    "screens_tall": 2.4,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 730,
+    "text_runs": 148,
+    "text_runs_under_16px": 138,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 16,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 6
+   },
+   "what": "Alert history fails to load"
+  },
+  {
+   "id": "alerts-error@320",
+   "width": 320,
+   "state": "error",
+   "capture": "captures/alerts-error@320-first.png",
+   "measures": {
+    "layout_width_px": 404,
+    "wider_than_screen_px": 84,
+    "page_height_px": 2344,
+    "screens_tall": 3.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 573,
+    "text_runs": 148,
+    "text_runs_under_16px": 138,
+    "distinct_text_sizes": 9,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "topbar",
+      "cls": ".money-chip.sim",
+      "text": "SIMULATED"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     }
+    ],
+    "targets_under_24px": 16,
+    "side_scrolling_boxes": [
+     "fresh neutral",
+     "riskstrip quiet"
+    ],
+    "truncated_count": 1,
+    "always_open_blocks": 7
+   },
+   "what": "Alert history fails to load"
+  },
+  {
+   "id": "overview-loading@390",
+   "width": 390,
+   "state": "loading",
+   "capture": "captures/overview-loading@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2802,
+    "screens_tall": 3.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "attention_list_screens_down": 2.2,
+    "text_runs": 67,
+    "text_runs_under_16px": 53,
+    "distinct_text_sizes": 6,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     }
+    ],
+    "targets_under_24px": 1,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 9
+   },
+   "what": "Overview while the book is read"
+  },
+  {
+   "id": "overview-loading@320",
+   "width": 320,
+   "state": "loading",
+   "capture": "captures/overview-loading@320-first.png",
+   "measures": {
+    "layout_width_px": 320,
+    "wider_than_screen_px": 0,
+    "page_height_px": 2865,
+    "screens_tall": 5,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 383,
+    "attention_list_screens_down": 3.3,
+    "text_runs": 67,
+    "text_runs_under_16px": 53,
+    "distinct_text_sizes": 6,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1D"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1W"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "3M"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "YTD"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "1Y"
+     },
+     {
+      "size": 11,
+      "area": "main",
+      "cls": ".perf-period",
+      "text": "All"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     }
+    ],
+    "targets_under_24px": 1,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 9
+   },
+   "what": "Overview while the book is read"
+  },
+  {
+   "id": "positions-loading@390",
+   "width": 390,
+   "state": "loading",
+   "capture": "captures/positions-loading@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 38,
+    "text_runs_under_16px": 35,
+    "distinct_text_sizes": 5,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Orders"
+     }
+    ],
+    "targets_under_24px": 0,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Positions while the book is read"
+  },
+  {
+   "id": "positions-loading@320",
+   "width": 320,
+   "state": "loading",
+   "capture": "captures/positions-loading@320-first.png",
+   "measures": {
+    "layout_width_px": 320,
+    "wider_than_screen_px": 0,
+    "page_height_px": 710,
+    "screens_tall": 1.3,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 383,
+    "text_runs": 38,
+    "text_runs_under_16px": 35,
+    "distinct_text_sizes": 5,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Orders"
+     }
+    ],
+    "targets_under_24px": 0,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Positions while the book is read"
+  },
+  {
+   "id": "actions-loading@390",
+   "width": 390,
+   "state": "loading",
+   "capture": "captures/actions-loading@390-first.png",
+   "measures": {
+    "layout_width_px": 390,
+    "wider_than_screen_px": 0,
+    "page_height_px": 844,
+    "screens_tall": 1,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 659,
+    "text_runs": 34,
+    "text_runs_under_16px": 31,
+    "distinct_text_sizes": 5,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Orders"
+     }
+    ],
+    "targets_under_24px": 3,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Actions while the book is read"
+  },
+  {
+   "id": "actions-loading@320",
+   "width": 320,
+   "state": "loading",
+   "capture": "captures/actions-loading@320-first.png",
+   "measures": {
+    "layout_width_px": 320,
+    "wider_than_screen_px": 0,
+    "page_height_px": 672,
+    "screens_tall": 1.2,
+    "tabbar_rows": 2,
+    "content_px_in_first_view": 383,
+    "text_runs": 34,
+    "text_runs_under_16px": 31,
+    "distinct_text_sizes": 5,
+    "smallest_text_px": [
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "◎"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Overview"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "▤"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Positions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "☑"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Actions"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "≡"
+     },
+     {
+      "size": 11,
+      "area": "tabbar",
+      "cls": "span",
+      "text": "Orders"
+     }
+    ],
+    "targets_under_24px": 3,
+    "side_scrolling_boxes": [],
+    "truncated_count": 1,
+    "always_open_blocks": 2
+   },
+   "what": "Actions while the book is read"
+  }
+ ],
+ "notes": {
+  "layout_width_px": "window.innerWidth after load; above the phone width means the page is wider than the phone, so it zooms out or slides sideways",
+  "targets_under_24px": "tappable elements under 24x24 px, inline text links excluded (WCAG 2.2 2.5.8)",
+  "text_runs_under_16px": "visible text runs whose computed font-size is under 16 px; body_paragraphs counts paragraph-like runs only",
+  "attention_list_top_px": "Overview's Attention list (what needs the owner) distance from the page top"
+ }
+}

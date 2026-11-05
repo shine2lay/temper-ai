@@ -1,0 +1,189 @@
+{
+ "direction": "a",
+ "round": 1,
+ "page": "index.html",
+ "widths": [
+  1440,
+  390,
+  320
+ ],
+ "screens": [
+  {
+   "id": "alerts",
+   "file": "screens/alerts.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "analysis",
+   "file": "screens/analysis.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "auth",
+   "file": "screens/auth.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "browse",
+   "file": "screens/browse.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "entry",
+   "file": "screens/entry.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "glossary",
+   "file": "screens/glossary.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "howto",
+   "file": "screens/howto.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "ideas",
+   "file": "screens/ideas.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "ladder",
+   "file": "screens/ladder.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "more",
+   "file": "screens/more.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "orders",
+   "file": "screens/orders.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "positions",
+   "file": "screens/positions.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "robinhood",
+   "file": "screens/robinhood.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "screener",
+   "file": "screens/screener.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "settings",
+   "file": "screens/settings.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  },
+  {
+   "id": "system",
+   "file": "screens/system.js",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ]
+  }
+ ],
+ "source": "draft-a snapshot ~22:38 PT 2026-11-04: option A after the owner's v2 comments, gap screens partly drawn (#191/#192/#195/#203 running)"
+}

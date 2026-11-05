@@ -1,0 +1,37 @@
+# @description Design-owned script steps of design_app_screen_v1: runs one step (the eight stages, the
+# review half of checks, the two owner gates and the bookkeeping after the final gate) through
+# bin/design_app_screen.py, which validates the step's output against its contract and fails loud.
+# No model, no network; standard library + jsonschema (temper's own interpreter). Gate answers come
+# from temper's gate response. Docs: docs/design-app-screen.md.
+agent:
+  name: design_app_screen_stage_v1
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    step = os.environ.get("{{ step | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    product = os.environ.get("{{ product | default('', true) | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not step or not workspace:
+        raise SystemExit("app-screen step and workspace required")
+    if mode not in ("real", "fixture"):
+        raise SystemExit("mode is real or fixture")
+    os.environ["APP_SCREEN_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_app_screen.py", step, "--workspace", workspace,
+           "--mode", mode]
+    if product:
+        cmd += ["--product", product]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

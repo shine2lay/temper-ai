@@ -1,0 +1,103 @@
+{
+ "doc_id": "d_kgrxir5ezb",
+ "comments": [
+  {
+   "number": 1,
+   "version": 2,
+   "body": "this is not that useful to me, show something else",
+   "element": "Safe",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "Replaced in v3: the tile is now \"Account\" with buying power, margin excess and net liq (your answer). A warning line shows only if margin gets tight."
+    }
+   ]
+  },
+  {
+   "number": 2,
+   "version": 2,
+   "body": "most of the accounts are real, we dont need to show simulated",
+   "element": "Real money",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "Gone in v3: no Simulated or Real money labels anywhere. The account shows its name and broker only."
+    }
+   ]
+  },
+  {
+   "number": 3,
+   "version": 2,
+   "body": "the top looks off, there's no top",
+   "element": "SIMULATED 10:12 AM · open WED NOV 4 · OPEN TILL 1 PM $1,236 premium at stake this week 4 calls expire Friday M T W T F S",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "v3 has one real top bar on every screen: RollCall name (or back + screen title), the time and market status, a bell for alerts and your account button."
+    }
+   ]
+  },
+  {
+   "number": 4,
+   "version": 2,
+   "body": "show analysis instead of alerts",
+   "element": "Alerts 1",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "Done in v3: the tab is Analysis, built from today's Analysis page: banked this year and all time, return without deposits, value history chart, banked by stock, then \"If you acted today\" and margin interest folded away, and each stock's journey on tap. Alerts moved to the bell at the top."
+    }
+   ]
+  },
+  {
+   "number": 5,
+   "version": 2,
+   "body": "i dont see other screens in more",
+   "element": "More",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "More now lists every other screen of today's RollCall, in three groups: Trade tools (Ladder, Ideas, Screener, Browse), Learn (How to trade, Glossary), Account and setup (Settings, Robinhood connection, System status). Ones not drafted yet open a short card saying what they do."
+    }
+   ]
+  },
+  {
+   "number": 6,
+   "version": 2,
+   "body": "i dont think this should be always present, maybe make it collapsable",
+   "element": "premium at stake this week · $1,842 collected in Nov · $14,760 this year",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "Now folds away: it starts as one line, \"$1,236 at stake this week\", and the arrow opens collected in Nov and this year. It remembers your choice."
+    }
+   ]
+  },
+  {
+   "number": 7,
+   "version": 2,
+   "body": "i need a way to see the full ladder and pick",
+   "element": "Buy back 2 × 11/6 $112 call at $2.75 −$550",
+   "state": "answered",
+   "replies": [
+    {
+     "outcome": "done",
+     "version": 3,
+     "body": "\"Choose another call\" now opens the full ladder: every expiry and strike, each showing the roll's credit or debit and the chance of being called, with your rules and the suggested call marked. Pick one, press \"Use this call\", and Send roll uses it. Same for selling a call on T."
+    }
+   ]
+  }
+ ]
+}

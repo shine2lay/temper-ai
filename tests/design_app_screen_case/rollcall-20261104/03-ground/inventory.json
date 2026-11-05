@@ -1,0 +1,290 @@
+{
+ "design_files": "partial",
+ "screens": [
+  {
+   "id": "today",
+   "name": "Today: what needs you",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ]
+  },
+  {
+   "id": "positions",
+   "name": "Positions list and detail",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/positions.md"
+  },
+  {
+   "id": "position-history",
+   "name": "Position history",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/position-history.md"
+  },
+  {
+   "id": "orders",
+   "name": "Orders",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/orders.md"
+  },
+  {
+   "id": "alerts",
+   "name": "Alerts",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/alerts.md"
+  },
+  {
+   "id": "analysis",
+   "name": "Analysis",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ]
+  },
+  {
+   "id": "more",
+   "name": "More",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ]
+  },
+  {
+   "id": "tickets",
+   "name": "Roll, sell and entry tickets",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/tickets.md"
+  },
+  {
+   "id": "ladder",
+   "name": "Choose another call",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ]
+  },
+  {
+   "id": "settings",
+   "name": "Settings",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/settings.md"
+  },
+  {
+   "id": "ideas",
+   "name": "Ideas",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/ideas.md"
+  },
+  {
+   "id": "screener",
+   "name": "Screener",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/screener.md"
+  },
+  {
+   "id": "browse",
+   "name": "Browse",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/browse.md"
+  },
+  {
+   "id": "howto",
+   "name": "How to trade",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/howto.md"
+  },
+  {
+   "id": "glossary",
+   "name": "Glossary",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/glossary.md"
+  },
+  {
+   "id": "robinhood",
+   "name": "Robinhood connection",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/robinhood.md"
+  },
+  {
+   "id": "system",
+   "name": "System status",
+   "states": [
+    "normal",
+    "loading",
+    "empty",
+    "error",
+    "partial"
+   ],
+   "widths": [
+    1440,
+    390,
+    320
+   ],
+   "spec": "08-handoff/spec/system.md"
+  }
+ ]
+}

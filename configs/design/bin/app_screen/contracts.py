@@ -1,0 +1,239 @@
+"""What each app-screen stage must leave in the workspace, and validate(step, workspace).
+
+One JSON schema per stage output file, plus the files that must exist (captures, pages, specs) and the
+few rules a schema cannot say (a capture an audit names exists, a review's verdict follows its Must
+findings, a gate picks a direction that exists). validate() raises ContractError listing every problem
+as "<file>: <field>: <reason>"; it returns the files it checked. Model-free.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from jsonschema import Draft202012Validator
+
+from .workspace import FOLDERS, Workspace
+
+VERSION = 1
+
+
+class ContractError(ValueError):
+    """A stage's output breaks its contract; the message names each file, field and reason."""
+
+
+# ---------------------------------------------------------------- shared pieces
+TEXT = {"type": "string", "minLength": 1}
+ID = {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]{0,79}$"}
+WIDTH = {"type": "integer", "minimum": 200, "maximum": 4000}
+STATE = {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"}
+REL_PATH = {"type": "string", "minLength": 1, "pattern": r"^(?!/)(?!.*\.\./)[^\\]+$"}
+
+
+def obj(required: dict, optional: dict | None = None, extra: bool = False) -> dict:
+    return {"type": "object", "required": list(required), "properties": {**required, **(optional or {})},
+            "additionalProperties": extra}
+
+
+def items(schema: dict, least: int = 1) -> dict:
+    return {"type": "array", "items": schema, "minItems": least}
+
+
+# A measured check (directions and the checks stage): what was measured, on which element, where, and the proof.
+CHECK = obj({"id": ID, "value": {}, "result": {"enum": ["pass", "fail"]}, "evidence": TEXT,
+             "element": TEXT, "location": TEXT})
+CHECKS = obj({"checks": items(CHECK)}, {"round": {"type": "integer", "minimum": 1}, "tool": TEXT})
+
+SCHEMAS: dict[str, dict] = {
+    # 01-request
+    "requirements": obj({"product": ID, "items": items(obj(
+        {"id": {"type": "string", "pattern": "^R[0-9]{1,3}$"}, "owner_words": TEXT, "source": TEXT,
+         "kind": {"enum": ["goal", "feature", "change", "constraint", "taste"]},
+         "maps_to": items({"type": "string", "minLength": 1})}))}),
+    "questions": obj({"questions": items(obj(
+        {"id": {"type": "string", "pattern": "^Q[0-9]{1,3}$"}, "question": TEXT,
+         "status": {"enum": ["open", "answered"]}},
+        {"answer": {"type": ["string", "null"]}, "answer_source": {"type": ["string", "null"]}}) | {
+        "if": {"properties": {"status": {"const": "answered"}}},
+        "then": {"required": ["answer", "answer_source"],
+                 "properties": {"answer": TEXT, "answer_source": TEXT}}}, least=0)}),
+    # 02-existing
+    "audit": obj({"source": TEXT, "screens": items(obj(
+        {"id": ID, "width": WIDTH, "state": STATE, "capture": REL_PATH,
+         "measures": {"type": "object", "minProperties": 1}}, {"what": TEXT}))}, {"notes": {"type": "object"}}),
+    "journeys": obj({"journeys": items(obj(
+        {"id": {"type": "string", "pattern": "^J[0-9]{1,2}$"}, "name": TEXT, "goal": TEXT,
+         "problems": items(obj({"claim": TEXT, "evidence": items(TEXT)}), least=0)},
+        {"screens": items(ID, least=0), "keep": items(TEXT, least=0)}))}, {"source": TEXT}),
+    # 03-ground
+    "fixture": {"type": "object", "minProperties": 1},
+    "inventory": obj({"design_files": {"enum": ["defined", "partial", "none"]}, "screens": items(obj(
+        {"id": ID, "name": TEXT, "states": items(STATE), "widths": items(WIDTH)}, {"spec": REL_PATH}))}),
+    "tokens": {"type": "object", "minProperties": 1},
+    # 04-directions
+    "directions": obj({"directions": items(obj(
+        {"id": {"type": "string", "pattern": "^[a-z]$"}, "name": TEXT, "idea": TEXT, "page": REL_PATH},
+        {"source": TEXT}), least=2)}),
+    "direction_checks": CHECKS,
+    # 05-build
+    "build": obj({"direction": {"type": "string", "pattern": "^[a-z]$"}, "round": {"type": "integer", "minimum": 1},
+                  "page": REL_PATH, "widths": items(WIDTH), "screens": items(obj(
+                      {"id": ID, "file": REL_PATH}, {"states": items(STATE, least=0)}))}, {"source": TEXT}),
+    # 06-checks/round-<n>
+    "checks": CHECKS,
+    "review": obj({"round": {"type": "integer", "minimum": 1}, "verdict": {"enum": ["revise", "done"]},
+                   "findings": items(obj(
+                       {"id": ID, "element": TEXT, "location": TEXT, "evidence": TEXT,
+                        "severity": {"type": "integer", "minimum": 0, "maximum": 4},
+                        "priority": {"enum": ["must", "should", "could", "wont"]}},
+                       {"reason": TEXT, "check": ID, "suggestion": TEXT}) | {
+                       "if": {"properties": {"priority": {"const": "wont"}}}, "then": {"required": ["reason"]}},
+                       least=0)}, {"source": TEXT}),
+    # 07-show
+    "showtell": obj({"doc_id": {"type": "string", "pattern": "^d_[a-z0-9]{6,20}$"},
+                     "version": {"type": "integer", "minimum": 1},
+                     "url": {"type": "string", "pattern": "^/showtell/#/d/d_[a-z0-9]{6,20}$"}}, {"title": TEXT}),
+    "comments": obj({"doc_id": {"type": "string", "pattern": "^d_[a-z0-9]{6,20}$"}, "comments": items(obj(
+        {"number": {"type": "integer", "minimum": 1}, "version": {"type": "integer", "minimum": 1},
+         "body": TEXT, "element": {"type": "string"}, "state": TEXT},
+        {"replies": items(obj({"outcome": TEXT, "version": {"type": ["integer", "null"]}, "body": TEXT}), least=0)}),
+        least=0)}),
+    # 08-handoff
+    "design_file": obj({"kind": {"enum": ["penpot", "html-prototype"]}, "location": TEXT, "editable": {"type": "boolean"}},
+                       {"note": TEXT}),
+    "followup": obj({"items": items(obj({"id": ID, "what": TEXT, "owner_role": ID, "source": TEXT}), least=0)}),
+    # gates
+    "gate": obj({"gate": {"enum": ["direction", "final"]}, "choice": TEXT, "decided_by": {"enum": ["owner", "design"]},
+                 "owner_words": {"type": "string"}, "source": TEXT, "reason": TEXT,
+                 "prediction": {"type": ["object", "null"]}, "taste": {"enum": ["pending-w5", "saved", "not-taste"]}},
+                {"comments": items({"type": "integer", "minimum": 1}, least=0), "at": TEXT}) | {
+        "if": {"properties": {"decided_by": {"const": "owner"}}},
+        "then": {"properties": {"owner_words": TEXT}}},
+}
+SCHEMAS["gate"]["allOf"] = [{"if": {"properties": {"gate": {"const": "final"}}},
+                             "then": {"properties": {"choice": {"enum": ["approve", "changes"]}}}}]
+
+# What each step must leave: (path relative to the workspace, schema name or file kind, least matches).
+# "<round>" becomes round-<n> of the checks stage.
+FILES: dict[str, list[tuple[str, str, int]]] = {
+    "intake": [("01-request/requirements.json", "requirements", 1), ("01-request/questions.json", "questions", 1)],
+    "existing": [("02-existing/captures/*.png", "png", 1), ("02-existing/audit.json", "audit", 1),
+                 ("02-existing/journeys.json", "journeys", 1)],
+    "ground": [("03-ground/fixture.json", "fixture", 1), ("03-ground/inventory.json", "inventory", 1),
+               ("03-ground/design-files/tokens.json", "tokens", 0), ("03-ground/design-files/DESIGN.md", "md", 0)],
+    "directions": [("04-directions/directions.json", "directions", 1), ("04-directions/*/index.html", "html", 2),
+                   ("04-directions/*/checks.json", "direction_checks", 2)],
+    "gate_direction": [("04-directions/gate_direction.json", "gate", 1)],
+    "build": [("05-build/index.html", "html", 1), ("05-build/build.json", "build", 1),
+              ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1)],
+    "checks": [("06-checks/<round>/checks.json", "checks", 1)],
+    "review": [("06-checks/<round>/review.json", "review", 1)],
+    "show": [("07-show/showtell.json", "showtell", 1), ("07-show/comments.json", "comments", 1)],
+    "gate_final": [("07-show/gate_final.json", "gate", 1)],
+    "gate_final_next": [],
+    "handoff": [("08-handoff/spec/*.md", "md", 1), ("08-handoff/design-file.json", "design_file", 1),
+                ("08-handoff/followup.json", "followup", 1)],
+}
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def _where(error) -> str:
+    return "/".join(str(p) for p in error.absolute_path) or "(top)"
+
+
+def check_json(name: str, data: Any, label: str) -> list[str]:
+    """Schema problems of one parsed file, each "<label>: <field>: <reason>"."""
+    validator = Draft202012Validator(SCHEMAS[name])
+    return [f"{label}: {_where(e)}: {e.message}" for e in sorted(validator.iter_errors(data), key=lambda e: list(e.path))]
+
+
+def _load(path: Path, label: str, problems: list[str]) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        problems.append(f"{label}: (file): not readable JSON ({exc.__class__.__name__}: {exc})")
+        return None
+
+
+def _file_kind(path: Path, kind: str, label: str) -> list[str]:
+    if not path.is_file() or path.stat().st_size == 0:
+        return [f"{label}: (file): empty or not a file"]
+    head = path.read_bytes()[:512]
+    if kind == "png" and not head.startswith(PNG_MAGIC):
+        return [f"{label}: (file): not a PNG"]
+    if kind == "html" and b"<" not in head:
+        return [f"{label}: (file): not HTML"]
+    return []
+
+
+def _rules(step: str, ws: Workspace, data: dict[str, Any]) -> list[str]:
+    """The cross-file rules a schema cannot say."""
+    problems: list[str] = []
+    root = ws.path
+    if step == "existing" and isinstance(data.get("02-existing/audit.json"), dict):
+        for i, s in enumerate(data["02-existing/audit.json"].get("screens") or []):
+            cap = s.get("capture") if isinstance(s, dict) else None
+            if isinstance(cap, str) and not (root / FOLDERS["existing"] / cap).is_file():
+                problems.append(f"02-existing/audit.json: screens/{i}/capture: {cap} is not in 02-existing/")
+    if step == "directions" and isinstance(data.get("04-directions/directions.json"), dict):
+        for i, d in enumerate(data["04-directions/directions.json"].get("directions") or []):
+            page = d.get("page") if isinstance(d, dict) else None
+            if isinstance(page, str) and not (root / FOLDERS["directions"] / page).is_file():
+                problems.append(f"04-directions/directions.json: directions/{i}/page: {page} is not in 04-directions/")
+    if step == "gate_direction" and isinstance(data.get("04-directions/gate_direction.json"), dict):
+        problems += gate_choice_problems(ws, data["04-directions/gate_direction.json"], "04-directions/gate_direction.json")
+    if step == "build" and isinstance(data.get("05-build/build.json"), dict):
+        for i, s in enumerate(data["05-build/build.json"].get("screens") or []):
+            f = s.get("file") if isinstance(s, dict) else None
+            if isinstance(f, str) and not (root / FOLDERS["build"] / f).is_file():
+                problems.append(f"05-build/build.json: screens/{i}/file: {f} is not in 05-build/")
+    if step == "review":
+        rel = f"06-checks/round-{ws.round}/review.json"
+        review = data.get(rel)
+        if isinstance(review, dict) and isinstance(review.get("findings"), list):
+            must = any(isinstance(f, dict) and f.get("priority") == "must" for f in review["findings"])
+            want = "revise" if must else "done"
+            if review.get("verdict") != want:
+                problems.append(f"{rel}: verdict: is {review.get('verdict')!r} but must be {want!r} "
+                                f"({'a Must finding is open' if must else 'no Must finding is open'})")
+    return problems
+
+
+def gate_choice_problems(ws: Workspace, gate: dict, label: str) -> list[str]:
+    path = ws.folder("directions") / "directions.json"
+    try:
+        ids = [d["id"] for d in json.loads(path.read_text())["directions"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [f"{label}: choice: 04-directions/directions.json is missing or broken, so the choice cannot be checked"]
+    if gate.get("choice") not in ids:
+        return [f"{label}: choice: {gate.get('choice')!r} is not a direction ({', '.join(ids)})"]
+    return []
+
+
+def validate(step: str, workspace: Workspace | Path | str) -> list[str]:
+    """Check one step's output in the workspace; raise ContractError with every problem, else return the files."""
+    ws = workspace if isinstance(workspace, Workspace) else Workspace(workspace)
+    if step not in FILES:
+        raise ContractError(f"no contract for step {step!r}; steps are {', '.join(FILES)}")
+    problems: list[str] = []
+    checked: list[str] = []
+    data: dict[str, Any] = {}
+    for pattern, kind, least in FILES[step]:
+        pattern = pattern.replace("<round>", f"round-{ws.round}")
+        found = sorted(p for p in ws.path.glob(pattern) if p.is_file())
+        if len(found) < least:
+            problems.append(f"{pattern}: (file): needs at least {least}, found {len(found)}")
+        for path in found:
+            label = path.relative_to(ws.path).as_posix()
+            checked.append(label)
+            if kind in SCHEMAS:
+                parsed = _load(path, label, problems)
+                if parsed is not None:
+                    data[label] = parsed
+                    problems += check_json(kind, parsed, label)
+            elif kind != "any":
+                problems += _file_kind(path, kind, label)
+    problems += _rules(step, ws, data)
+    if problems:
+        raise ContractError(f"{step}: {len(problems)} problem(s): " + "; ".join(problems))
+    return checked

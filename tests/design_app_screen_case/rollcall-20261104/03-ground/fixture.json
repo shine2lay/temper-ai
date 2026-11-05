@@ -1,0 +1,1000 @@
+{
+ "about": "Invented realistic covered-call book for the RollCall mobile directions (Design #170). Not the owner's holdings; any resemblance is chance. Prices are model prices, not market data.",
+ "as_of": "2026-11-04T10:12:00-08:00",
+ "today": "2026-11-04",
+ "this_friday": "2026-11-06",
+ "account": {
+  "name": "Main account",
+  "broker": "tastytrade",
+  "simulated": false,
+  "market": "open",
+  "market_closes": "Wed 2026-11-04 1:00 PM PT",
+  "as_of": "2026-11-04T10:12:00-08:00",
+  "freshness": "fresh",
+  "net_liq": 152880.0,
+  "stock_value": 200180.0,
+  "calls_owed": 2300.0,
+  "cash": -45000.0,
+  "maintenance_requirement": 50045.0,
+  "margin_excess": 102835.0,
+  "buying_power": 205670.0,
+  "drop_to_call_pct": 68.5,
+  "margin_tier": "green",
+  "covered_lots": 7,
+  "bare_lots": 1,
+  "expiring_this_week": [
+   "AAPL",
+   "KO",
+   "JPM",
+   "XOM"
+  ],
+  "premium_at_stake_this_week": 1236.0,
+  "premium_collected_month_to_date": 1842.0,
+  "premium_collected_year_to_date": 14760.0,
+  "day_change": {
+   "amount": 412.3,
+   "pct": 0.27
+  }
+ },
+ "positions": [
+  {
+   "symbol": "AAPL",
+   "name": "Apple",
+   "shares": 200,
+   "spot": 228.4,
+   "cost_basis_per_share": 214.3,
+   "premium_collected_per_share": 6.85,
+   "adjusted_basis_per_share": 207.45,
+   "stock_value": 45680.0,
+   "unrealized_vs_adjusted": 4190.0,
+   "call": {
+    "label": "11/6 $230 call",
+    "strike": 230,
+    "expiry": "2026-11-06",
+    "days_left": 2,
+    "contracts": 2,
+    "sold_at": 2.1,
+    "mark": 0.97,
+    "bid": 0.96,
+    "ask": 0.98,
+    "delta": 0.36,
+    "intrinsic": 0,
+    "extrinsic": 0.97,
+    "owed": 194.0,
+    "premium_received": 420.0,
+    "premium_kept_if_closed_now": 226.0,
+    "price_cushion_pct": 0.7,
+    "in_the_money": false
+   },
+   "status": "expiring_this_week",
+   "status_why": "expires Friday out of the money"
+  },
+  {
+   "symbol": "MSFT",
+   "name": "Microsoft",
+   "shares": 100,
+   "spot": 512.3,
+   "cost_basis_per_share": 486.1,
+   "premium_collected_per_share": 14.2,
+   "adjusted_basis_per_share": 471.9,
+   "stock_value": 51230.0,
+   "unrealized_vs_adjusted": 4040.0,
+   "call": {
+    "label": "11/20 $520 call",
+    "strike": 520,
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "contracts": 1,
+    "sold_at": 6.4,
+    "mark": 6.47,
+    "bid": 6.42,
+    "ask": 6.52,
+    "delta": 0.4,
+    "intrinsic": 0,
+    "extrinsic": 6.47,
+    "owed": 647.0,
+    "premium_received": 640.0,
+    "premium_kept_if_closed_now": -7.0,
+    "price_cushion_pct": 1.5,
+    "in_the_money": false
+   },
+   "status": "ok",
+   "status_why": "covered, nothing to do"
+  },
+  {
+   "symbol": "KO",
+   "name": "Coca-Cola",
+   "shares": 300,
+   "spot": 68.2,
+   "cost_basis_per_share": 66.9,
+   "premium_collected_per_share": 2.15,
+   "adjusted_basis_per_share": 64.75,
+   "stock_value": 20460.0,
+   "unrealized_vs_adjusted": 1035.0,
+   "call": {
+    "label": "11/6 $70 call",
+    "strike": 70,
+    "expiry": "2026-11-06",
+    "days_left": 2,
+    "contracts": 3,
+    "sold_at": 0.42,
+    "mark": 0.01,
+    "bid": 0.01,
+    "ask": 0.02,
+    "delta": 0.01,
+    "intrinsic": 0,
+    "extrinsic": 0.01,
+    "owed": 3.0,
+    "premium_received": 126.0,
+    "premium_kept_if_closed_now": 123.0,
+    "price_cushion_pct": 2.6,
+    "in_the_money": false
+   },
+   "status": "expiring_this_week",
+   "status_why": "expires Friday out of the money"
+  },
+  {
+   "symbol": "JPM",
+   "name": "JPMorgan Chase",
+   "shares": 100,
+   "spot": 251.8,
+   "cost_basis_per_share": 238.5,
+   "premium_collected_per_share": 5.6,
+   "adjusted_basis_per_share": 232.9,
+   "stock_value": 25180.0,
+   "unrealized_vs_adjusted": 1890.0,
+   "call": {
+    "label": "11/6 $245 call",
+    "strike": 245,
+    "expiry": "2026-11-06",
+    "days_left": 2,
+    "contracts": 1,
+    "sold_at": 3.2,
+    "mark": 7.02,
+    "bid": 6.97,
+    "ask": 7.07,
+    "delta": 0.92,
+    "intrinsic": 6.8,
+    "extrinsic": 0.22,
+    "owed": 702.0,
+    "premium_received": 320.0,
+    "premium_kept_if_closed_now": -382.0,
+    "price_cushion_pct": -2.7,
+    "in_the_money": true
+   },
+   "dividend": 1.5,
+   "ex_dividend": "2026-11-05",
+   "ex_div_days": 1,
+   "status": "assignment_risk",
+   "status_why": "deep in the money the day before it goes ex-dividend; the call's time value is less than the dividend"
+  },
+  {
+   "symbol": "XOM",
+   "name": "Exxon Mobil",
+   "shares": 200,
+   "spot": 114.6,
+   "cost_basis_per_share": 108.2,
+   "premium_collected_per_share": 4.1,
+   "adjusted_basis_per_share": 104.1,
+   "stock_value": 22920.0,
+   "unrealized_vs_adjusted": 2100.0,
+   "call": {
+    "label": "11/6 $112 call",
+    "strike": 112,
+    "expiry": "2026-11-06",
+    "days_left": 2,
+    "contracts": 2,
+    "sold_at": 1.85,
+    "mark": 2.73,
+    "bid": 2.71,
+    "ask": 2.75,
+    "delta": 0.9,
+    "intrinsic": 2.6,
+    "extrinsic": 0.13,
+    "owed": 546.0,
+    "premium_received": 370.0,
+    "premium_kept_if_closed_now": -176.0,
+    "price_cushion_pct": -2.3,
+    "in_the_money": true
+   },
+   "status": "roll_due",
+   "status_why": "in the money and expiring Friday; rolling out a week pays a credit inside the rules"
+  },
+  {
+   "symbol": "PFE",
+   "name": "Pfizer",
+   "shares": 500,
+   "spot": 25.1,
+   "cost_basis_per_share": 26.4,
+   "premium_collected_per_share": 1.35,
+   "adjusted_basis_per_share": 25.05,
+   "stock_value": 12550.0,
+   "unrealized_vs_adjusted": 25.0,
+   "call": {
+    "label": "11/20 $26 call",
+    "strike": 26,
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "contracts": 5,
+    "sold_at": 0.35,
+    "mark": 0.23,
+    "bid": 0.22,
+    "ask": 0.24,
+    "delta": 0.28,
+    "intrinsic": 0,
+    "extrinsic": 0.23,
+    "owed": 115.0,
+    "premium_received": 175.0,
+    "premium_kept_if_closed_now": 60.0,
+    "price_cushion_pct": 3.6,
+    "in_the_money": false
+   },
+   "status": "ok",
+   "status_why": "covered, nothing to do"
+  },
+  {
+   "symbol": "DIS",
+   "name": "Disney",
+   "shares": 100,
+   "spot": 112.4,
+   "cost_basis_per_share": 109.75,
+   "premium_collected_per_share": 3.05,
+   "adjusted_basis_per_share": 106.7,
+   "stock_value": 11240.0,
+   "unrealized_vs_adjusted": 570.0,
+   "call": {
+    "label": "11/13 $115 call",
+    "strike": 115,
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "contracts": 1,
+    "sold_at": 1.65,
+    "mark": 0.93,
+    "bid": 0.92,
+    "ask": 0.94,
+    "delta": 0.31,
+    "intrinsic": 0,
+    "extrinsic": 0.93,
+    "owed": 93.0,
+    "premium_received": 165.0,
+    "premium_kept_if_closed_now": 72.0,
+    "price_cushion_pct": 2.3,
+    "in_the_money": false
+   },
+   "status": "ok",
+   "status_why": "covered, nothing to do"
+  },
+  {
+   "symbol": "T",
+   "name": "AT&T",
+   "shares": 400,
+   "spot": 27.3,
+   "cost_basis_per_share": 25.8,
+   "premium_collected_per_share": 1.1,
+   "adjusted_basis_per_share": 24.7,
+   "stock_value": 10920.0,
+   "unrealized_vs_adjusted": 1040.0,
+   "last_call": "Oct 30 $27 call expired worthless",
+   "status": "uncovered",
+   "status_why": "100s of shares with no call sold against them"
+  }
+ ],
+ "actions": [
+  {
+   "id": "act-xom-roll",
+   "symbol": "XOM",
+   "severity": "do_today",
+   "severity_label": "Do today",
+   "kind": "roll",
+   "due": "2026-11-06",
+   "headline": "Roll XOM: the $112 call is $2.60 in the money and expires Friday.",
+   "suggestion": "Buy back the 11/6 $112 call at $2.75 and sell the 11/20 $114 call at $2.79: +$8 for 2 contracts, strike up $2.",
+   "key_numbers": {
+    "price_cushion_pct": -2.3,
+    "net_credit_total": 8.0,
+    "new_strike": 114,
+    "new_expiry": "2026-11-20"
+   },
+   "primary_action": "Review the roll",
+   "secondary_actions": [
+    "Choose another call",
+    "Let it be called away",
+    "Snooze"
+   ],
+   "alerted_at": "2026-11-04T06:31:00-08:00",
+   "state": "open"
+  },
+  {
+   "id": "act-jpm-assign",
+   "symbol": "JPM",
+   "severity": "this_week",
+   "severity_label": "Today, before close",
+   "kind": "assignment_risk",
+   "due": "2026-11-04",
+   "headline": "JPM may be called away tonight: it goes ex-dividend tomorrow and the call has only $0.22 of time value left, less than the $1.50 dividend.",
+   "suggestion": "If you want to keep the shares and the dividend, roll up and out before the close; otherwise do nothing and the shares sell at $245.",
+   "key_numbers": {
+    "extrinsic": 0.22,
+    "dividend": 1.5,
+    "strike": 245,
+    "spot": 251.8,
+    "if_called_proceeds": 24500,
+    "gain_if_called_vs_adjusted": 1210.0
+   },
+   "primary_action": "See roll choices",
+   "secondary_actions": [
+    "Let it be called",
+    "Snooze"
+   ],
+   "state": "open"
+  },
+  {
+   "id": "act-t-new-call",
+   "symbol": "T",
+   "severity": "this_week",
+   "severity_label": "This week",
+   "kind": "sell_call",
+   "due": "2026-11-06",
+   "headline": "400 T shares have no call: sell 4 of the 11/13 $28 calls at $0.10 for $40.",
+   "suggestion": "The strike is above your $24.70 adjusted basis, so being called away still makes money.",
+   "key_numbers": {
+    "premium_total": 40.0,
+    "strike": 28,
+    "delta": 0.22,
+    "return_pct": 0.37
+   },
+   "primary_action": "Sell the call",
+   "secondary_actions": [
+    "Choose another call",
+    "Snooze"
+   ],
+   "state": "open"
+  },
+  {
+   "id": "act-aapl-expire",
+   "symbol": "AAPL",
+   "severity": "watch",
+   "severity_label": "Watch",
+   "kind": "expiring",
+   "due": "2026-11-06",
+   "headline": "AAPL's $230 call expires Friday $1.60 out of the money: likely to expire and keep $420.",
+   "suggestion": "Nothing to do unless AAPL closes above $230 on Friday.",
+   "primary_action": null,
+   "secondary_actions": [
+    "Close early"
+   ],
+   "state": "open"
+  },
+  {
+   "id": "act-ko-expire",
+   "symbol": "KO",
+   "severity": "watch",
+   "severity_label": "Watch",
+   "kind": "expiring",
+   "due": "2026-11-06",
+   "headline": "KO's $70 call expires Friday; a buy-to-close at $0.03 is working to lock in $117.",
+   "suggestion": "See the working order in Orders.",
+   "primary_action": "See the order",
+   "secondary_actions": [],
+   "state": "open"
+  },
+  {
+   "id": "act-pfe-done",
+   "symbol": "PFE",
+   "severity": "done",
+   "severity_label": "Done",
+   "kind": "sell_call",
+   "headline": "Sold 5 PFE 11/20 $26 calls at $0.35 ($175).",
+   "state": "done",
+   "done_at": "2026-10-28T07:05:00-07:00"
+  }
+ ],
+ "alerts": [
+  {
+   "id": "al-1",
+   "unread": true,
+   "at": "2026-11-04T06:31:00-08:00",
+   "channel": "push",
+   "action_id": "act-xom-roll",
+   "severity": "do_today",
+   "title": "XOM roll due by Friday",
+   "body": "Roll XOM: the $112 call is $2.60 in the money and expires Friday.",
+   "button": "Review the roll"
+  },
+  {
+   "id": "al-2",
+   "unread": false,
+   "at": "2026-11-03T13:02:00-08:00",
+   "channel": "in_app",
+   "action_id": "act-t-new-call",
+   "severity": "this_week",
+   "title": "T shares uncovered",
+   "body": "400 T shares have no call: sell 4 of the 11/13 $28 calls at $0.10 for $40.",
+   "button": "See the call"
+  },
+  {
+   "id": "al-3",
+   "unread": false,
+   "at": "2026-10-28T07:06:00-07:00",
+   "channel": "in_app",
+   "action_id": "act-pfe-done",
+   "severity": "info",
+   "title": "PFE order filled",
+   "body": "Sold 5 PFE 11/20 $26 calls at $0.35 ($175).",
+   "button": null
+  }
+ ],
+ "orders": [
+  {
+   "id": "ord-301",
+   "status": "working",
+   "status_label": "Working",
+   "placed_at": "2026-11-04T09:41:00-08:00",
+   "symbol": "KO",
+   "legs": [
+    {
+     "side": "buy_to_close",
+     "contracts": 3,
+     "option": "11/6 $70 call"
+    }
+   ],
+   "limit": 0.03,
+   "time_in_force": "day",
+   "can_cancel": true,
+   "summary": "Buy to close 3 KO 11/6 $70 calls, limit $0.03 ($9)."
+  },
+  {
+   "id": "ord-298",
+   "status": "filled",
+   "status_label": "Filled",
+   "placed_at": "2026-10-30T06:48:00-07:00",
+   "filled_at": "2026-10-30T06:48:12-07:00",
+   "symbol": "DIS",
+   "legs": [
+    {
+     "side": "sell_to_open",
+     "contracts": 1,
+     "option": "11/13 $115 call"
+    }
+   ],
+   "fill_price": 1.65,
+   "can_cancel": false,
+   "summary": "Sold 1 DIS 11/13 $115 call at $1.65 ($165)."
+  },
+  {
+   "id": "ord-297",
+   "status": "filled",
+   "status_label": "Filled",
+   "placed_at": "2026-10-28T07:05:00-07:00",
+   "filled_at": "2026-10-28T07:05:03-07:00",
+   "symbol": "PFE",
+   "legs": [
+    {
+     "side": "sell_to_open",
+     "contracts": 5,
+     "option": "11/20 $26 call"
+    }
+   ],
+   "fill_price": 0.35,
+   "can_cancel": false,
+   "summary": "Sold 5 PFE 11/20 $26 calls at $0.35 ($175)."
+  },
+  {
+   "id": "ord-296",
+   "status": "cancelled",
+   "status_label": "Cancelled",
+   "placed_at": "2026-10-27T10:12:00-07:00",
+   "symbol": "MSFT",
+   "legs": [
+    {
+     "side": "buy_to_close",
+     "contracts": 1,
+     "option": "11/20 $520 call"
+    },
+    {
+     "side": "sell_to_open",
+     "contracts": 1,
+     "option": "12/18 $530 call"
+    }
+   ],
+   "limit": 0.8,
+   "can_cancel": false,
+   "summary": "Roll MSFT 11/20 $520 to 12/18 $530 for $0.80 credit: cancelled by you."
+  }
+ ],
+ "roll_ticket": {
+  "symbol": "XOM",
+  "current_call": "11/6 $112 call",
+  "contracts": 2,
+  "spot": 114.6,
+  "buy_back_ask": 2.75,
+  "rules": {"max_delta": 0.6, "min_net_per_share": 0.01, "strike_above": 112, "words": "Roll up to a higher strike, for a credit, with a 60% or lower chance of being called."},
+  "suggested": {
+   "expiry": "2026-11-20",
+   "days_left": 16,
+   "strike": 114,
+   "new_call_bid": 2.79,
+   "new_call_delta": 0.56,
+   "net_per_share": 0.04,
+   "net_total": 8.0,
+   "pays": true,
+   "inside_rules": true
+  },
+  "candidates": [
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 112,
+    "new_call_bid": 3.43,
+    "new_call_delta": 0.74,
+    "net_per_share": 0.68,
+    "net_total": 136.0,
+    "pays": true,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 113,
+    "new_call_bid": 2.75,
+    "new_call_delta": 0.66,
+    "net_per_share": 0.0,
+    "net_total": 0.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 114,
+    "new_call_bid": 2.15,
+    "new_call_delta": 0.57,
+    "net_per_share": -0.6,
+    "net_total": -120.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 115,
+    "new_call_bid": 1.64,
+    "new_call_delta": 0.48,
+    "net_per_share": -1.11,
+    "net_total": -222.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 116,
+    "new_call_bid": 1.21,
+    "new_call_delta": 0.4,
+    "net_per_share": -1.54,
+    "net_total": -308.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-13",
+    "days_left": 9,
+    "strike": 117,
+    "new_call_bid": 0.88,
+    "new_call_delta": 0.31,
+    "net_per_share": -1.87,
+    "net_total": -374.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 112,
+    "new_call_bid": 3.99,
+    "new_call_delta": 0.69,
+    "net_per_share": 1.24,
+    "net_total": 248.0,
+    "pays": true,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 113,
+    "new_call_bid": 3.35,
+    "new_call_delta": 0.63,
+    "net_per_share": 0.6,
+    "net_total": 120.0,
+    "pays": true,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 114,
+    "new_call_bid": 2.79,
+    "new_call_delta": 0.56,
+    "net_per_share": 0.04,
+    "net_total": 8.0,
+    "pays": true,
+    "inside_rules": true
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 115,
+    "new_call_bid": 2.27,
+    "new_call_delta": 0.5,
+    "net_per_share": -0.48,
+    "net_total": -96.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 116,
+    "new_call_bid": 1.83,
+    "new_call_delta": 0.43,
+    "net_per_share": -0.92,
+    "net_total": -184.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {
+    "expiry": "2026-11-20",
+    "days_left": 16,
+    "strike": 117,
+    "new_call_bid": 1.46,
+    "new_call_delta": 0.37,
+    "net_per_share": -1.29,
+    "net_total": -258.0,
+    "pays": false,
+    "inside_rules": false
+   },
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 118, "new_call_bid": 0.61, "new_call_delta": 0.24, "net_per_share": -2.14, "net_total": -428.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 118, "new_call_bid": 1.13, "new_call_delta": 0.31, "net_per_share": -1.62, "net_total": -324.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 112, "new_call_bid": 4.47, "new_call_delta": 0.67, "net_per_share": 1.72, "net_total": 344.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 113, "new_call_bid": 3.85, "new_call_delta": 0.62, "net_per_share": 1.1, "net_total": 220.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 114, "new_call_bid": 3.29, "new_call_delta": 0.56, "net_per_share": 0.54, "net_total": 108.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 115, "new_call_bid": 2.78, "new_call_delta": 0.51, "net_per_share": 0.03, "net_total": 6.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 116, "new_call_bid": 2.33, "new_call_delta": 0.45, "net_per_share": -0.42, "net_total": -84.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 117, "new_call_bid": 1.93, "new_call_delta": 0.4, "net_per_share": -0.82, "net_total": -164.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 118, "new_call_bid": 1.58, "new_call_delta": 0.34, "net_per_share": -1.17, "net_total": -234.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 112, "new_call_bid": 4.9, "new_call_delta": 0.66, "net_per_share": 2.15, "net_total": 430.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 113, "new_call_bid": 4.29, "new_call_delta": 0.61, "net_per_share": 1.54, "net_total": 308.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 114, "new_call_bid": 3.73, "new_call_delta": 0.56, "net_per_share": 0.98, "net_total": 196.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 115, "new_call_bid": 3.23, "new_call_delta": 0.51, "net_per_share": 0.48, "net_total": 96.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 116, "new_call_bid": 2.77, "new_call_delta": 0.46, "net_per_share": 0.02, "net_total": 4.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 117, "new_call_bid": 2.36, "new_call_delta": 0.42, "net_per_share": -0.39, "net_total": -78.0, "pays": false, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 118, "new_call_bid": 1.99, "new_call_delta": 0.37, "net_per_share": -0.76, "net_total": -152.0, "pays": false, "inside_rules": false}
+  ],
+  "confirm_copy": "Nothing is sent until you press Send roll. The price may change by the time it reaches the market.",
+  "pending_copy": "Sending your roll\u2026",
+  "sent_copy": "Roll sent. Working at the broker; it shows in Orders."
+ },
+ "sell_ticket": {
+  "symbol": "T",
+  "current_call": null,
+  "contracts": 4,
+  "spot": 27.3,
+  "buy_back_ask": null,
+  "rules": {"max_delta": 0.35, "min_net_per_share": 0.05, "strike_above": 24.7, "words": "Sell above your $24.70 adjusted basis, for at least $0.05 a share, with a 35% or lower chance of being called."},
+  "suggested": {"expiry": "2026-11-13", "days_left": 9, "strike": 28, "new_call_bid": 0.1, "new_call_delta": 0.22, "net_per_share": 0.1, "net_total": 40.0, "pays": true, "inside_rules": true},
+  "candidates": [
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 26.5, "new_call_bid": 0.89, "new_call_delta": 0.85, "net_per_share": 0.89, "net_total": 356.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 27, "new_call_bid": 0.52, "new_call_delta": 0.66, "net_per_share": 0.52, "net_total": 208.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 27.5, "new_call_bid": 0.25, "new_call_delta": 0.42, "net_per_share": 0.25, "net_total": 100.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 28, "new_call_bid": 0.1, "new_call_delta": 0.22, "net_per_share": 0.1, "net_total": 40.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 28.5, "new_call_bid": 0.03, "new_call_delta": 0.09, "net_per_share": 0.03, "net_total": 12.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-13", "days_left": 9, "strike": 29, "new_call_bid": 0.01, "new_call_delta": 0.03, "net_per_share": 0.01, "net_total": 4.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 26.5, "new_call_bid": 0.98, "new_call_delta": 0.79, "net_per_share": 0.98, "net_total": 392.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 27, "new_call_bid": 0.63, "new_call_delta": 0.63, "net_per_share": 0.63, "net_total": 252.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 27.5, "new_call_bid": 0.37, "new_call_delta": 0.45, "net_per_share": 0.37, "net_total": 148.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 28, "new_call_bid": 0.19, "new_call_delta": 0.29, "net_per_share": 0.19, "net_total": 76.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 28.5, "new_call_bid": 0.09, "new_call_delta": 0.16, "net_per_share": 0.09, "net_total": 36.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-20", "days_left": 16, "strike": 29, "new_call_bid": 0.04, "new_call_delta": 0.08, "net_per_share": 0.04, "net_total": 16.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 26.5, "new_call_bid": 1.06, "new_call_delta": 0.75, "net_per_share": 1.06, "net_total": 424.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 27, "new_call_bid": 0.73, "new_call_delta": 0.62, "net_per_share": 0.73, "net_total": 292.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 27.5, "new_call_bid": 0.47, "new_call_delta": 0.47, "net_per_share": 0.47, "net_total": 188.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 28, "new_call_bid": 0.28, "new_call_delta": 0.33, "net_per_share": 0.28, "net_total": 112.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 28.5, "new_call_bid": 0.15, "new_call_delta": 0.21, "net_per_share": 0.15, "net_total": 60.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-11-27", "days_left": 23, "strike": 29, "new_call_bid": 0.08, "new_call_delta": 0.12, "net_per_share": 0.08, "net_total": 32.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 26.5, "new_call_bid": 1.14, "new_call_delta": 0.73, "net_per_share": 1.14, "net_total": 456.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 27, "new_call_bid": 0.81, "new_call_delta": 0.61, "net_per_share": 0.81, "net_total": 324.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 27.5, "new_call_bid": 0.55, "new_call_delta": 0.48, "net_per_share": 0.55, "net_total": 220.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 28, "new_call_bid": 0.35, "new_call_delta": 0.36, "net_per_share": 0.35, "net_total": 140.0, "pays": true, "inside_rules": false},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 28.5, "new_call_bid": 0.21, "new_call_delta": 0.24, "net_per_share": 0.21, "net_total": 84.0, "pays": true, "inside_rules": true},
+   {"expiry": "2026-12-04", "days_left": 30, "strike": 29, "new_call_bid": 0.12, "new_call_delta": 0.16, "net_per_share": 0.12, "net_total": 48.0, "pays": true, "inside_rules": true}
+  ],
+  "confirm_copy": "Nothing is sent until you press Send order. The price may change by the time it reaches the market.",
+  "pending_copy": "Sending your order\u2026",
+  "sent_copy": "Order sent. Working at the broker."
+ },
+ "states": {
+  "normal": {
+   "note": "everything above, fresh as of as_of"
+  },
+  "loading": {
+   "pending": [
+    "account",
+    "positions",
+    "actions",
+    "alerts",
+    "orders"
+   ],
+   "copy": "Reading your book from the broker\u2026",
+   "keep_visible": [
+    "last known as_of",
+    "tab bar",
+    "SIMULATED badge"
+   ],
+   "slow_after_seconds": 8,
+   "slow_copy": "Still reading \u2014 the broker is slow right now."
+  },
+  "empty": {
+   "account": {
+    "name": "Main account",
+    "broker": "tastytrade",
+    "simulated": false,
+    "market": "open",
+    "market_closes": "Wed 2026-11-04 1:00 PM PT",
+    "as_of": "2026-11-04T10:12:00-08:00",
+    "freshness": "fresh",
+    "net_liq": 25000.0,
+    "stock_value": 0,
+    "calls_owed": 0,
+    "cash": 25000.0,
+    "maintenance_requirement": 0,
+    "margin_excess": 25000.0,
+    "buying_power": 50000.0,
+    "drop_to_call_pct": null,
+    "margin_tier": "none",
+    "covered_lots": 0,
+    "bare_lots": 0,
+    "expiring_this_week": [],
+    "premium_at_stake_this_week": 0,
+    "premium_collected_month_to_date": 0,
+    "premium_collected_year_to_date": 0,
+    "day_change": {
+     "amount": 0,
+     "pct": 0
+    }
+   },
+   "positions": [],
+   "actions": [],
+   "alerts": [],
+   "orders": [],
+   "copy": {
+    "positions": "You hold no shares yet. Covered calls start with 100 shares of a stock.",
+    "actions": "Nothing needs you. RollCall checks again at the next scan (11:00 AM PT).",
+    "alerts": "No alerts yet. You'll get one when a call needs a roll or a lot is bare.",
+    "orders": "No orders yet."
+   },
+   "next_action": "Find a stock to start"
+  },
+  "error": {
+   "broker_unreachable": {
+    "copy": "RollCall can't reach tastytrade right now, so these numbers are from 9:41 AM.",
+    "last_good_as_of": "2026-11-04T09:41:00-08:00",
+    "recovery": [
+     "Try again",
+     "Check connection"
+    ],
+    "trading_blocked": true,
+    "blocked_copy": "Sending orders is paused until the broker answers."
+   },
+   "orders_failed": {
+    "copy": "Orders didn't load. Your orders are safe at the broker.",
+    "recovery": [
+     "Try again"
+    ]
+   },
+   "action_failed": {
+    "copy": "The roll wasn't sent: the broker refused the price. Nothing changed in your account.",
+    "recovery": [
+     "Review the roll again"
+    ]
+   }
+  },
+  "partial": {
+   "missing": {
+    "buying_power": "your broker didn't send it this time",
+    "margin_excess": "your broker didn't send it this time",
+    "DIS.quote": "no fresh price since 9:58 AM; DIS shows the last price, marked stale"
+   },
+   "drop_to_call_pct": null,
+   "drop_to_call_copy": "Can't grade margin without your broker's margin figures; last grade 9:41 AM: green.",
+   "stale_symbols": [
+    "DIS"
+   ]
+  }
+ },
+ "coverage": {
+  "J1-glance": [
+   "account",
+   "account.expiring_this_week",
+   "actions[severity!=done]",
+   "states.*"
+  ],
+  "J2-act": [
+   "actions",
+   "alerts[0]",
+   "states.empty.copy.actions"
+  ],
+  "J3-roll": [
+   "roll_ticket",
+   "positions[XOM]",
+   "actions[act-xom-roll]",
+   "states.error.action_failed"
+  ],
+  "J4-position": [
+   "positions",
+   "positions[JPM]",
+   "positions[T]",
+   "actions[act-jpm-assign]",
+   "states.partial.stale_symbols"
+  ],
+  "J5-alerts": [
+   "alerts",
+   "states.empty.copy.alerts"
+  ],
+  "J6-orders": [
+   "orders",
+   "states.error.orders_failed",
+   "states.empty.copy.orders"
+  ]
+ },
+ "analysis": {
+  "counting_from": "2025-11-03",
+  "headline": {"banked_year_to_date": 14760.0, "banked_all_time": 16865.0, "banked_before_this_year": 2105.0, "gain_without_deposits": 22880.0, "return_without_deposits_pct": 17.6, "net_paid_in": 130000.0},
+  "value_history": {
+   "points": [
+    ["2025-11-03", 120000.0, 120000.0], ["2025-11-28", 121150.0, 120000.0], ["2025-12-31", 122100.0, 120000.0], ["2026-01-30", 121600.0, 120000.0],
+    ["2026-02-27", 123300.0, 120000.0], ["2026-03-31", 139800.0, 135000.0], ["2026-04-30", 138900.0, 135000.0], ["2026-05-29", 141900.0, 135000.0],
+    ["2026-06-30", 144100.0, 135000.0], ["2026-07-31", 141800.0, 130000.0], ["2026-08-31", 143900.0, 130000.0], ["2026-09-30", 147600.0, 130000.0],
+    ["2026-10-05", 147950.0, 130000.0], ["2026-10-06", 148647.31, 130000.0], ["2026-10-07", 148353.0, 130000.0], ["2026-10-08", 148216.36, 130000.0],
+    ["2026-10-09", 148869.15, 130000.0], ["2026-10-12", 149260.06, 130000.0], ["2026-10-13", 148613.0, 130000.0], ["2026-10-14", 148669.77, 130000.0],
+    ["2026-10-15", 149391.85, 130000.0], ["2026-10-16", 149389.71, 130000.0], ["2026-10-19", 149349.57, 130000.0], ["2026-10-20", 149978.42, 130000.0],
+    ["2026-10-21", 150720.27, 130000.0], ["2026-10-22", 150441.99, 130000.0], ["2026-10-23", 150176.04, 130000.0], ["2026-10-26", 151021.96, 130000.0],
+    ["2026-10-27", 151221.97, 130000.0], ["2026-10-28", 150604.06, 130000.0], ["2026-10-29", 150605.05, 130000.0], ["2026-10-30", 151300.0, 130000.0],
+    ["2026-11-02", 152258.48, 130000.0], ["2026-11-03", 152467.7, 130000.0], ["2026-11-04", 152880.0, 130000.0]
+   ],
+   "transfers": [
+    {"date": "2025-11-03", "amount": 120000.0, "kind": "deposit"},
+    {"date": "2026-03-02", "amount": 15000.0, "kind": "deposit"},
+    {"date": "2026-07-01", "amount": -5000.0, "kind": "withdrawal"}
+   ],
+   "transfers_read": true
+  },
+  "banked": {
+   "rows": [
+    {"symbol": "AAPL", "shares": 200, "collected": 1370.0, "interest_taken": 210, "per_share": 6.85, "average_cost": 214.3, "adjusted_basis": 207.45, "below_cost_pct": 3.2},
+    {"symbol": "MSFT", "shares": 100, "collected": 1420.0, "interest_taken": 260, "per_share": 14.2, "average_cost": 486.1, "adjusted_basis": 471.9, "below_cost_pct": 2.9},
+    {"symbol": "KO", "shares": 300, "collected": 645.0, "interest_taken": 95, "per_share": 2.15, "average_cost": 66.9, "adjusted_basis": 64.75, "below_cost_pct": 3.2},
+    {"symbol": "JPM", "shares": 100, "collected": 560.0, "interest_taken": 140, "per_share": 5.6, "average_cost": 238.5, "adjusted_basis": 232.9, "below_cost_pct": 2.3},
+    {"symbol": "XOM", "shares": 200, "collected": 820.0, "interest_taken": 170, "per_share": 4.1, "average_cost": 108.2, "adjusted_basis": 104.1, "below_cost_pct": 3.8},
+    {"symbol": "PFE", "shares": 500, "collected": 675.0, "interest_taken": 80, "per_share": 1.35, "average_cost": 26.4, "adjusted_basis": 25.05, "below_cost_pct": 5.1},
+    {"symbol": "DIS", "shares": 100, "collected": 305.0, "interest_taken": 45, "per_share": 3.05, "average_cost": 109.75, "adjusted_basis": 106.7, "below_cost_pct": 2.8},
+    {"symbol": "T", "shares": 400, "collected": 440.0, "interest_taken": 60, "per_share": 1.1, "average_cost": 25.8, "adjusted_basis": 24.7, "below_cost_pct": 4.3}
+   ],
+   "held_total": 6235.0,
+   "exited": [
+    {"symbol": "NVDA", "collected": 4210.0, "exited": "2026-06-12"},
+    {"symbol": "AMD", "collected": 3580.0, "exited": "2026-08-21"},
+    {"symbol": "CVX", "collected": 2840.0, "exited": "2026-09-18"}
+   ],
+   "all_time_total": 16865.0
+  },
+  "margin_interest": {
+   "rate_pct": 6.5,
+   "loan": 45000.0,
+   "month_to_date": 32.52,
+   "month_days": 4,
+   "per_day_now": 8.13,
+   "charged_90d": 702.4,
+   "days_90d": 90,
+   "from": "2026-08-07",
+   "to": "2026-11-04",
+   "bought_with_loan_pct": 22.5,
+   "by_name": [
+    {"symbol": "AAPL", "share_pct": 22.8, "interest": 160.28},
+    {"symbol": "MSFT", "share_pct": 25.6, "interest": 179.76},
+    {"symbol": "KO", "share_pct": 10.2, "interest": 71.79},
+    {"symbol": "JPM", "share_pct": 12.6, "interest": 88.35},
+    {"symbol": "XOM", "share_pct": 11.4, "interest": 80.42},
+    {"symbol": "PFE", "share_pct": 6.3, "interest": 44.04},
+    {"symbol": "DIS", "share_pct": 5.6, "interest": 39.44},
+    {"symbol": "T", "share_pct": 5.5, "interest": 38.32}
+   ],
+   "note": "Already taken out of Collected for each name; this is only the breakdown."
+  },
+  "acted_today": {
+   "rows": [
+    {"symbol": "AAPL", "to_close": 194.0, "calls": 2, "sold_now": 3996.0, "at_expiry": 4510.0, "now": 228.4, "strike": 230, "expiry": "2026-11-06"},
+    {"symbol": "MSFT", "to_close": 647.0, "calls": 1, "sold_now": 3393.0, "at_expiry": 4810.0, "now": 512.3, "strike": 520, "expiry": "2026-11-20"},
+    {"symbol": "KO", "to_close": 3.0, "calls": 3, "sold_now": 1032.0, "at_expiry": 1575.0, "now": 68.2, "strike": 70, "expiry": "2026-11-06"},
+    {"symbol": "JPM", "to_close": 702.0, "calls": 1, "sold_now": 1188.0, "at_expiry": 1210.0, "now": 251.8, "strike": 245, "expiry": "2026-11-06"},
+    {"symbol": "XOM", "to_close": 546.0, "calls": 2, "sold_now": 1554.0, "at_expiry": 1580.0, "now": 114.6, "strike": 112, "expiry": "2026-11-06"},
+    {"symbol": "PFE", "to_close": 115.0, "calls": 5, "sold_now": -90.0, "at_expiry": 475.0, "now": 25.1, "strike": 26, "expiry": "2026-11-20"},
+    {"symbol": "DIS", "to_close": 93.0, "calls": 1, "sold_now": 477.0, "at_expiry": 830.0, "now": 112.4, "strike": 115, "expiry": "2026-11-13"},
+    {"symbol": "T", "to_close": 0.0, "calls": 0, "sold_now": 1040.0, "at_expiry": 1040.0, "now": 27.3, "strike": null, "expiry": null}
+   ],
+   "totals": {"to_close": 2300.0, "calls": 15, "sold_now": 12590.0, "at_expiry": 16030.0}
+  },
+  "journeys": {
+   "XOM": {
+    "symbol": "XOM",
+    "shares": 200,
+    "first_bought": "2026-05-04",
+    "prices": [
+     ["2026-05-04", 108.2], ["2026-05-11", 108.54], ["2026-05-18", 109.75], ["2026-05-25", 109.69],
+     ["2026-06-01", 108.95], ["2026-06-08", 109.12], ["2026-06-15", 110.45], ["2026-06-18", 110.4],
+     ["2026-06-22", 111.9], ["2026-06-29", 112.34], ["2026-07-06", 112.35], ["2026-07-13", 113.46],
+     ["2026-07-14", 114.3], ["2026-07-20", 114.6], ["2026-07-27", 115.02], ["2026-08-03", 114.13],
+     ["2026-08-10", 113.11], ["2026-08-17", 113.31], ["2026-08-21", 113.8], ["2026-08-24", 114.16],
+     ["2026-08-31", 114.03], ["2026-09-07", 112.67], ["2026-09-14", 111.45], ["2026-09-18", 112.1],
+     ["2026-09-21", 110.3], ["2026-09-28", 108.04], ["2026-09-30", 106.4], ["2026-10-05", 108.14],
+     ["2026-10-12", 108.51], ["2026-10-19", 110.2], ["2026-10-26", 111.23], ["2026-11-02", 113.86],
+     ["2026-11-04", 114.6]
+    ],
+    "calls": [
+     {"sold": "2026-05-04", "until": "2026-06-18", "strike": 112, "end": "expired"},
+     {"sold": "2026-06-22", "until": "2026-07-14", "strike": 113, "end": "rolled"},
+     {"sold": "2026-07-14", "until": "2026-08-21", "strike": 116, "end": "expired"},
+     {"sold": "2026-08-24", "until": "2026-09-18", "strike": 115, "end": "expired"},
+     {"sold": "2026-10-19", "until": "2026-11-04", "strike": 112, "end": "open"}
+    ],
+    "steps": [
+     {"date": "2026-05-04", "kind": "buy", "headline": "Bought 200 shares at $108.20", "amount": null},
+     {"date": "2026-05-04", "kind": "sell", "headline": "Sold 2 × 6/18 $112 call", "amount": 150},
+     {"date": "2026-06-18", "kind": "expired", "headline": "6/18 $112 call expired worthless", "amount": null},
+     {"date": "2026-06-22", "kind": "sell", "headline": "Sold 2 × 7/17 $113 call", "amount": 140},
+     {"date": "2026-07-14", "kind": "roll", "headline": "Rolled up and out to the 8/21 $116 call", "amount": 10, "lines": ["Bought back the $113 for −$290", "Sold the 8/21 $116 for +$300"]},
+     {"date": "2026-08-14", "kind": "dividend", "headline": "Dividend, $0.99 a share", "amount": 198},
+     {"date": "2026-08-21", "kind": "expired", "headline": "8/21 $116 call expired worthless", "amount": null},
+     {"date": "2026-08-24", "kind": "sell", "headline": "Sold 2 × 9/18 $115 call", "amount": 122},
+     {"date": "2026-09-18", "kind": "expired", "headline": "9/18 $115 call expired worthless; no call sold while XOM sat under cost", "amount": null},
+     {"date": "2026-10-19", "kind": "sell", "headline": "Sold 2 × 11/6 $112 call", "amount": 370},
+     {"date": "2026-11-04", "kind": "open", "headline": "11/6 $112 call open, $2.60 in the money", "amount": null}
+    ],
+    "interest_taken": 170
+   },
+   "JPM": {
+    "symbol": "JPM",
+    "shares": 100,
+    "first_bought": "2026-08-03",
+    "prices": [
+     ["2026-08-03", 236.0], ["2026-08-10", 236.35], ["2026-08-17", 237.57], ["2026-08-21", 236.9],
+     ["2026-08-24", 238.5], ["2026-08-31", 241.12], ["2026-09-07", 242.19], ["2026-09-14", 244.17],
+     ["2026-09-18", 246.2], ["2026-09-21", 246.72], ["2026-09-28", 248.2], ["2026-10-05", 248.35],
+     ["2026-10-12", 248.09], ["2026-10-19", 249.6], ["2026-10-26", 249.88], ["2026-11-02", 251.9],
+     ["2026-11-04", 251.8]
+    ],
+    "calls": [
+     {"sold": "2026-08-03", "until": "2026-08-21", "strike": 235, "end": "assigned"},
+     {"sold": "2026-08-24", "until": "2026-09-18", "strike": 250, "end": "expired"},
+     {"sold": "2026-10-19", "until": "2026-11-04", "strike": 245, "end": "open"}
+    ],
+    "steps": [
+     {"date": "2026-08-03", "kind": "buy", "headline": "Bought 100 shares at $236.00", "amount": null},
+     {"date": "2026-08-03", "kind": "sell", "headline": "Sold 1 × 8/21 $235 call", "amount": 300},
+     {"date": "2026-08-05", "kind": "dividend", "headline": "Dividend, $1.40 a share", "amount": 140},
+     {"date": "2026-08-21", "kind": "assigned", "headline": "Assigned: 100 shares called away at $235", "amount": -100, "lines": ["Sold at $235, bought at $236: −$100 on the shares"]},
+     {"date": "2026-08-24", "kind": "buy", "headline": "Bought 100 shares back at $238.50", "amount": null},
+     {"date": "2026-08-24", "kind": "sell", "headline": "Sold 1 × 9/18 $250 call", "amount": 40},
+     {"date": "2026-09-18", "kind": "expired", "headline": "9/18 $250 call expired worthless", "amount": null},
+     {"date": "2026-10-19", "kind": "sell", "headline": "Sold 1 × 11/6 $245 call", "amount": 320},
+     {"date": "2026-11-04", "kind": "open", "headline": "11/6 $245 call open, $6.80 in the money", "amount": null}
+    ],
+    "interest_taken": 140
+   }
+  },
+  "states": {
+   "partial": {"transfers_read": false, "note": "Transfer history unavailable; gains may include deposits."},
+   "empty": {"copy": "Your returns by period and a row per stock appear here once RollCall has two nightly values and one trade to count — the first after tonight's close."},
+   "loading": {"copy": "Loading your value history…"}
+  }
+ }
+}

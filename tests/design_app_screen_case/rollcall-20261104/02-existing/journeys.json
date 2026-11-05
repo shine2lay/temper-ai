@@ -1,0 +1,188 @@
+{
+ "source": "Design #170 journeys.md (RollCall answer rm-1b8fb196)",
+ "journeys": [
+  {
+   "id": "J1",
+   "name": "Glance: where my book stands, and whether anything needs me",
+   "goal": "margin cushion (drop to call 68.5%, green) plus how many things need him and the most urgent one (XOM roll, do today).",
+   "problems": [
+    {
+     "claim": "P1 (must, severity 3): What needs you is buried at the bottom of Overview",
+     "evidence": [
+      "findings page d_t44rwox5a5 P1, where: J1, J2",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P2 (must, severity 3): The top of every page doesn't fit a phone",
+     "evidence": [
+      "findings page d_t44rwox5a5 P2, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P3 (should, severity 2): Ten tabs in two rows, and Alerts isn't one of them",
+     "evidence": [
+      "findings page d_t44rwox5a5 P3, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P6 (should, severity 2): Small text in too many sizes",
+     "evidence": [
+      "findings page d_t44rwox5a5 P6, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P7 (should, severity 2): Many tap targets are smaller than a fingertip allows",
+     "evidence": [
+      "findings page d_t44rwox5a5 P7, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P11 (could, severity 1): Loading says \"These numbers are from —.\"",
+     "evidence": [
+      "findings page d_t44rwox5a5 P11, where: loading",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K1",
+    "K2",
+    "K6",
+    "K8"
+   ]
+  },
+  {
+   "id": "J2",
+   "name": "Act on what needs me",
+   "goal": "list of what needs him (3 open: XOM do today; JPM today before the close; T this week; 2 watch items) -> one item -> act (roll, sell a call, let it be called, snooze, mark done).",
+   "problems": [
+    {
+     "claim": "P6 (should, severity 2): Small text in too many sizes",
+     "evidence": [
+      "findings page d_t44rwox5a5 P6, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P7 (should, severity 2): Many tap targets are smaller than a fingertip allows",
+     "evidence": [
+      "findings page d_t44rwox5a5 P7, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P8 (should, severity 2): Action cards and filters are overloaded",
+     "evidence": [
+      "findings page d_t44rwox5a5 P8, where: J2",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K1",
+    "K2"
+   ]
+  },
+  {
+   "id": "J3",
+   "name": "Roll or close a call",
+   "goal": "what the roll pays or costs, and the new strike and date.",
+   "problems": [
+    {
+     "claim": "P4 (must, severity 3): The roll ticket hides the choice it asks you to make",
+     "evidence": [
+      "findings page d_t44rwox5a5 P4, where: J3, the money step",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P9 (should, severity 2): Long explanations are always open",
+     "evidence": [
+      "findings page d_t44rwox5a5 P9, where: J1, J3, J6",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K7"
+   ]
+  },
+  {
+   "id": "J4",
+   "name": "Check one position",
+   "goal": "list of 8 holdings (status first: roll due, assignment risk, expiring, bare, ok) -> detail.",
+   "problems": [
+    {
+     "claim": "P5 (must, severity 3): Positions is a desktop table squeezed onto a phone",
+     "evidence": [
+      "findings page d_t44rwox5a5 P5, where: J4",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P6 (should, severity 2): Small text in too many sizes",
+     "evidence": [
+      "findings page d_t44rwox5a5 P6, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K3"
+   ]
+  },
+  {
+   "id": "J5",
+   "name": "Alerts",
+   "goal": "what happened and when (XOM roll due by Friday, 6:31 AM).",
+   "problems": [
+    {
+     "claim": "P2 (must, severity 3): The top of every page doesn't fit a phone",
+     "evidence": [
+      "findings page d_t44rwox5a5 P2, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P3 (should, severity 2): Ten tabs in two rows, and Alerts isn't one of them",
+     "evidence": [
+      "findings page d_t44rwox5a5 P3, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K4"
+   ]
+  },
+  {
+   "id": "J6",
+   "name": "Check or cancel an order",
+   "goal": "working / filled / cancelled, what it is, the price (KO buy to close 3 at $0.03, working).",
+   "problems": [
+    {
+     "claim": "P2 (must, severity 3): The top of every page doesn't fit a phone",
+     "evidence": [
+      "findings page d_t44rwox5a5 P2, where: every page",
+      "02-existing/audit.json measures"
+     ]
+    },
+    {
+     "claim": "P9 (should, severity 2): Long explanations are always open",
+     "evidence": [
+      "findings page d_t44rwox5a5 P9, where: J1, J3, J6",
+      "02-existing/audit.json measures"
+     ]
+    }
+   ],
+   "keep": [
+    "K7"
+   ]
+  }
+ ]
+}

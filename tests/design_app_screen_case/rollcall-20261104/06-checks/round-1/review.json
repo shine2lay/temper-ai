@@ -1,0 +1,17 @@
+{
+ "round": 1,
+ "verdict": "done",
+ "findings": [
+  {
+   "id": "F1",
+   "element": "Send roll, in the roll ticket reached from Choose another call",
+   "location": "05-build/index.html: ladder -> review -> Check the order -> Send roll, at 1440, 390 and 320",
+   "evidence": "draft-a/check-ladder.mjs exit 1: phone 320 send roll: no pending state right after Send roll; the main roll path shows the pending state at the click (draft-a/check.mjs passes), so this is one path, and its check predates #192's confirm states: severity 2, reach 1",
+   "severity": 2,
+   "priority": "should",
+   "check": "draft-a-check-ladder",
+   "suggestion": "re-run once #192's new ticket confirm states land; if the pending note is really missing on this path, show it at the click as the main roll path does"
+  }
+ ],
+ "source": "Design lead's reading of the snapshot's failed checks for this known case; in the hand run the lead read the PNGs before each share and kept no review file. The owner's comments are in 07-show, RollCall's and Frontend's gap audits in 08-handoff/followup.json"
+}

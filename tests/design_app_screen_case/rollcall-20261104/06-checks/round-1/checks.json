@@ -1,0 +1,171 @@
+{
+ "round": 1,
+ "tool": "draft-a/check*.mjs run on the snapshot",
+ "checks": [
+  {
+   "id": "draft-a-check-alerts-more",
+   "value": {
+    "exit": 0,
+    "seconds": 18
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop 1440x900 and phone 390x844 click through the bell -> Alerts -> Mark all read -> Undo -> XOM roll panel -> close -> More -> Settings -> channel switch -> Check now; no console errors, no overflow, no text under 14px. PNGs: alerts-desktop, alerts-phone, more-desktop, more-phone",
+   "element": "draft-a check-alerts-more flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-analysis",
+   "value": {
+    "exit": 0,
+    "seconds": 17
+   },
+   "result": "pass",
+   "evidence": "PASS: analysis screen at 1440, 390, 320",
+   "element": "draft-a check-analysis flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-browse",
+   "value": {
+    "exit": 0,
+    "seconds": 56
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop, phone390, phone320: More -> Browse search (recent, held tiles) -> live matches, No match (typed and after Enter) -> AAPL (loading at once, price, held) -> 1M/1Y/3M, hover/tap, End/ArrowLeft/Home -> greeks (5 tiles, tip, strike chips) -> chain (high strike top, price line, your call marked, expiry switch, row opens, puts, all 13) -> compare 6 dates -> Open position and back -> CSCO Open this -> confirm -> Sending… -> sent -> loading, no options, partial, error + Try again on ticker and search -> History XOM and JPM add up to Collected, XOM partial (still adds up), loading, error + Try again, AAPL and T \"No history yet\"; no console errors, overflow, clipping, text under the floor or extra primaries. PNGs: browse-*-<size>.png, history-*-<size>.png",
+   "element": "draft-a check-browse flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-howto-glossary",
+   "value": {
+    "exit": 0,
+    "seconds": 317
+   },
+   "result": "pass",
+   "evidence": "PNGs: howto-desktop.png, howto-desktop-step4.png, howto-desktop-loading.png, howto-desktop-empty.png, howto-desktop-error.png, howto-desktop-partial.png, glossary-desktop.png, glossary-desktop-search.png, glossary-desktop-nomatch.png, glossary-desktop-term.png, glossary-desktop-priceline.png, glossary-desktop-letterT.png, glossary-desktop-loading.png, glossary-desktop-loading-term.png, glossary-desktop-empty.png, glossary-desktop-empty-term.png, glossary-desktop-error.png, glossary-desktop-error-term.png, howto-phone.png, howto-phone-loading.png, howto-phone-empty.png, howto-phone-error.png, howto-phone-partial.png, glossary-phone.png, glossary-phone-search.png, glossary-phone-nomatch.png, glossary-phone-term.png, glossary-phone-letters.png, glossary-phone-letterT.png, glossary-phone-loading.png, glossary-phone-loading-term.png, glossary-phone-empty.png, glossary-phone-empty-term.png, glossary-phone-error.png, glossary-phone-error-term.png, howto-phone-320.png, glossary-phone-320.png, glossary-phone-320-term.png, glossary-phone-320-priceline.png",
+   "element": "draft-a check-howto-glossary flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-ideas-screener",
+   "value": {
+    "exit": 0,
+    "seconds": 177
+   },
+   "result": "pass",
+   "evidence": "PASS: numbers agree across fixtures; Ideas (4 ideas with reason/pays/risk, total, Details, Not now + Undo, filter, ladder for XOM/T, entry contract for CSCO/VZ, loading/empty/error + Try again/partial -> Screener) and Screener (rows CSCO VZ MRK HD PEP, hidden line + tip, rows expand to eight checks, Start a position contract, Run -> Starting -> progress -> done, failed -> Run again, stale -> No recent run -> Run, partial, loading, funnel; set aside for later closed with count, grouped by check, price floor never kept, tip, clear one + Undo, clear all confirm + Undo, run skips them, loading/empty/load error + Try again/clear fails) at 1440x900, 390x844, 320x568; one solid primary, no overflow, no text under the floor, no console errors. PNGs: ideas-desktop, ideas-phone, screener-desktop, screener-desktop-open, screener-phone, screener-phone-running, screener-desktop-setaside, screener-phone-setaside, screener-phone-setaside-cleared; all states in /tmp/draft-a-187",
+   "element": "draft-a check-ideas-screener flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-ladder",
+   "value": {
+    "exit": 1,
+    "seconds": 42
+   },
+   "result": "fail",
+   "evidence": "phone 320 send roll: no pending state right after Send roll",
+   "element": "draft-a check-ladder flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-orders-alerts-more",
+   "value": {
+    "exit": 0,
+    "seconds": 39
+   },
+   "result": "pass",
+   "evidence": "PASS: 1440x900, 390x844, 320x568: Orders Unfinished first (PEP, MRK), Continue = entry-open orders/call/group, Abandon confirm says the shares stay, Keep, Undo window + Undo, Abandoning… -> Abandoned, MRK refused then Try again, all settled; load states loading/failed (Try again)/none; Alerts Details closed with a delivery line, open = plain message, technical, rule + id, 5 channel rows with state and time; action-open ids; no console errors, no overflow, no text under 14px, phone targets 44px.",
+   "element": "draft-a check-orders-alerts-more flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-orders",
+   "value": {
+    "exit": 0,
+    "seconds": 17
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop 1440x900 and phone 390x844: Orders -> Cancel order (KO) -> confirm -> Cancelling… at once -> Cancelled; sent XOM roll on top as working +$8 (desktop: cancel puts XOM back on Today); no console errors, no overflow, no text under 14px. PNGs: orders-desktop, orders-desktop-cancel, orders-phone, orders-phone-cancel",
+   "element": "draft-a check-orders flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-positions-more",
+   "value": {
+    "exit": 0,
+    "seconds": 84
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop, phone390, phone320: two lanes in the fixture's order -> Protection, Extrinsic left, If flat match today's meanings (one line on a 390 phone) -> info tips -> all 8 details: call card, open actions, legs and quotes, coming up, journey, History in order; open actions per stock, Done busy at once then Undo, moves to Later and back; Open in Today lands on the card; quotes match; coming-up stops and JPM's dividend warning; XOM and JPM journey marks match History, inside the chart, labels apart; list loading, empty, error + Try again, stale; all needs done -> empty lane with next expiry; desktop keys tip, j/k across lanes, o, Enter, j/k in a detail, d busy then done (detail and row), Esc closes tip then goes back; no console errors, overflow, clipping, text under the floor or extra primaries. PNGs: posmore-*-<size>.png",
+   "element": "draft-a check-positions-more flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-positions",
+   "value": {
+    "exit": 0,
+    "seconds": 35
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop 1440x900 and phone 390x844: Positions tab -> 8 rows most urgent first -> XOM detail -> roll ticket opens and closes -> back (focus kept) -> all 8 details, T last -> click feedback -> tab returns to list; no console errors, no overflow, no text under 14px. PNGs: positions-desktop-list, positions-desktop-detail, positions-phone-list, positions-phone-detail",
+   "element": "draft-a check-positions flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-robinhood-system",
+   "value": {
+    "exit": 0,
+    "seconds": 112
+   },
+   "result": "pass",
+   "evidence": "PASS: Robinhood and System status at 1440, 390, 320",
+   "element": "draft-a check-robinhood-system flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-settings",
+   "value": {
+    "exit": 0,
+    "seconds": 203
+   },
+   "result": "pass",
+   "evidence": "PASS: Settings at 1440x900, 390x844 and 320x568: opened from More; first view, ten sections open and close; backend channel names; channel switch saves at the click; rule edit invalid -> saving -> saved, failed save keeps input; kill switch stops at the click, starting asks; orders destination; arm real money two steps + ARM, disarm, failed, read-only server; \"real money\" only in the arm control; per-channel tests sent/failed; alarms now + tip; brake and rule tips with examples; keys write-only with last four; ports + sending flag; Scan now running/done/failed; loading/empty/error/partial; no console errors, overflow, small text or small phone targets.",
+   "element": "draft-a check-settings flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-shell",
+   "value": {
+    "exit": 0,
+    "seconds": 37
+   },
+   "result": "pass",
+   "evidence": "PASS: phone 390, phone 320, desktop: one top bar per screen, nav Today/Positions/Orders/Analysis/More, no Simulated/Real money text, Account tile with 3 figures, premium line collapsed then expands and is remembered, bell opens Alerts and back returns, 9 More rows open and back returns, no text under 12px (14px unless uppercase), layout width = viewport. PNGs: desktop-today, phone-today, phone-more, phone-alerts",
+   "element": "draft-a check-shell flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check-tickets",
+   "value": {
+    "exit": 0,
+    "seconds": 217
+   },
+   "result": "pass",
+   "evidence": "PASS: entry ticket for CSCO, VZ, MRK, HD, PEP through review -> confirm -> undo -> sent, states and failed send; roll and sell tickets keep banner, terms and confirm; at 1440, 390 and 320",
+   "element": "draft-a check-tickets flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  },
+  {
+   "id": "draft-a-check",
+   "value": {
+    "exit": 0,
+    "seconds": 11
+   },
+   "result": "pass",
+   "evidence": "PASS: desktop 1440x900 and phone 390x844 click through Today -> roll -> Send -> pending -> sent -> back; no console errors, no overflow, no text under 14px. PNGs: desktop-today, desktop-roll, phone-today, phone-roll",
+   "element": "draft-a check flows",
+   "location": "05-build/index.html at 1440x900, 390x844 and 320x568"
+  }
+ ]
+}

@@ -1,0 +1,23 @@
+{
+ "questions": [
+  {
+   "id": "Q1",
+   "question": "Comment #1: what should the Safe tile show instead?",
+   "status": "answered",
+   "answer": "things like buying power, margin excess net liq",
+   "answer_source": "owner in Design lead dialog 2026-11-05T03:29Z (RollCall option A, your comment #1)"
+  },
+  {
+   "id": "Q2",
+   "question": "Comment #4: what should the Analysis tab show?",
+   "status": "answered",
+   "answer": "look at current roll call's analysis page",
+   "answer_source": "owner in Design lead dialog 2026-11-05T03:29Z (RollCall option A, your comment #4)"
+  },
+  {
+   "id": "Q3",
+   "question": "Account figures dropped from Today (cash/loan, leverage, net carry, performance strip, broker's figures): keep them behind a tap?",
+   "status": "open"
+  }
+ ]
+}

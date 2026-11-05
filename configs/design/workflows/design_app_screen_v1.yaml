@@ -1,0 +1,102 @@
+# Design-owned app-screen workflow, v1 (docs/design-app-screen.md): the eight-stage product-design flow
+# Design ran by hand for RollCall and Inkflow, encoded (owner 2026-11-04: "lets try to encode the
+# different stages you had of your flow into temper wf"). Two owner gates for now, direction and final,
+# "to gather information and maybe taste", to be encoded later for full autonomy. Every step's output is
+# validated against its contract (configs/design/bin/app_screen/contracts.py). Until a stage's own task
+# builds it, the stage runs in fixture mode only: it copies a frozen known case's output (packed into the
+# workspace by the host: design_app_screen.py pack) and validates it. Real mode fails at the first
+# unbuilt stage.
+workflow:
+  name: design_app_screen_v1
+  version: 1
+  description: |
+    intake (the owner's request as requirements, his words verbatim, and open questions) -> existing
+    (today's screens captured and measured; journeys with evidence) -> ground (shared fixture, design
+    files, screens x states inventory) -> directions (two or more clickable directions with measured
+    checks) -> DIRECTION gate -> build (the chosen direction, shell + one file per screen) -> checks
+    (measured, by script) -> review (findings rated 0-4, Must/Should/Could/Won't; a Must loops back to
+    build, at most twice) -> show (one Show&Tell share, the owner's comments) -> FINAL gate (approve, or
+    changes: back to build as targeted edits, at most twice) -> handoff (spec per screen, design file,
+    follow-ups). Each gate answer records choice, decided_by (owner or design), the owner's words
+    verbatim, source and reason in gate_<name>.json. mode fixture runs the known case at $0.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+    request_json: {type: string, default: ""}
+  outputs:
+    direction: gate_direction.structured.choice
+    direction_decided_by: gate_direction.structured.decided_by
+    rounds: review.structured.round
+    review_verdict: review.structured.verdict
+    final_verdict: gate_final.structured.verdict
+    final_decided_by: gate_final.structured.decided_by
+  nodes:
+    - name: intake
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: intake, product: input.product, mode: input.mode, data: input.request_json}
+    - name: existing
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [intake]
+      input_map: {step: existing, product: input.product, mode: input.mode}
+    - name: ground
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [existing]
+      input_map: {step: ground, product: input.product, mode: input.mode}
+    - name: directions
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [ground]
+      input_map: {step: directions, product: input.product, mode: input.mode}
+    - name: gate_direction
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions]
+      gate: true
+      input_map: {step: gate_direction, product: input.product, mode: input.mode}
+    - name: build
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [gate_direction]
+      input_map: {step: build, product: input.product, mode: input.mode}
+    - name: checks
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [build]
+      input_map: {step: checks, product: input.product, mode: input.mode}
+    - name: review
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [checks]
+      loop_to: build
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: review.structured.verdict, operator: equals, value: revise}
+      input_map: {step: review, product: input.product, mode: input.mode}
+    - name: show
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [review]
+      input_map: {step: show, product: input.product, mode: input.mode}
+    - name: gate_final
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [show]
+      gate: true
+      input_map: {step: gate_final, product: input.product, mode: input.mode}
+    - name: gate_final_next
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [gate_final]
+      loop_to: build
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: gate_final_next.structured.verdict, operator: equals, value: changes}
+      input_map: {step: gate_final_next, product: input.product, mode: input.mode}
+    - name: handoff
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [gate_final_next]
+      input_map: {step: handoff, product: input.product, mode: input.mode}

@@ -1,0 +1,46 @@
+{
+ "items": [
+  {
+   "id": "F1",
+   "what": "Draw the More rows still stubs at v3: Ideas, Screener, Browse, How to trade, Glossary, Robinhood, System status",
+   "owner_role": "design",
+   "source": "RollCall rm-6ab0ef55 #1"
+  },
+  {
+   "id": "F2",
+   "what": "Settings sections behind disclosure (Trading, Brakes, Margin & carry, Screener, Schedule, Performance, Display, About); rules editable",
+   "owner_role": "design",
+   "source": "RollCall rm-6ab0ef55 #2"
+  },
+  {
+   "id": "F3",
+   "what": "Notification channel names match the backend (ntfy, pushover, telegram, email, inapp)",
+   "owner_role": "design",
+   "source": "RollCall rm-6ab0ef55 #3, Frontend rm-d62781ea #2"
+  },
+  {
+   "id": "F4",
+   "what": "Entry ticket from Screener/Ideas (buy shares + sell call); position history behind a tap",
+   "owner_role": "design",
+   "source": "RollCall rm-6ab0ef55 #4"
+  },
+  {
+   "id": "F5",
+   "what": "Feature audit gaps vs today's app: actions inbox, more action kinds, market-shut and error ticket states, Positions lanes and detail, unfinished orders, alert details, account menu",
+   "owner_role": "design",
+   "source": "RollCall rm-57e6ca43"
+  },
+  {
+   "id": "F6",
+   "what": "Place /actions and the /ladder Trade hub in More or the tabs",
+   "owner_role": "design",
+   "source": "Frontend rm-d62781ea #1"
+  },
+  {
+   "id": "F7",
+   "what": "Build option A v3 drafted screens",
+   "owner_role": "frontend",
+   "source": "Frontend #149-#155 (RollCall rm-c5ab6b1d)"
+  }
+ ]
+}

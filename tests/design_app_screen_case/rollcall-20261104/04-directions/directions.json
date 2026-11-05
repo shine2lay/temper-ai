@@ -1,0 +1,18 @@
+{
+ "directions": [
+  {
+   "id": "a",
+   "name": "What needs you first",
+   "idea": "Opens on a to-do list, \"3 things need you before Friday\", one card each with its action; the book's numbers in a side panel.",
+   "page": "a/index.html",
+   "source": "Show&Tell d_kgrxir5ezb v1 (quick draft shown to the owner)"
+  },
+  {
+   "id": "b",
+   "name": "Your book as a map",
+   "idea": "Opens on a chart: each call in its expiry week, placed above or below a strike line by how close the price is; danger sits visibly below.",
+   "page": "b/index.html",
+   "source": "Show&Tell d_zfzxsxwt4p v1 (quick draft shown to the owner)"
+  }
+ ]
+}

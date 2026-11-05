@@ -28,7 +28,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. Its focus workflow (see "One workflow at a time" below) is the market scan, `scan_market`, which also covers a single sector when its `frame` names one. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
-| `design` | Design | The personas, walks and report stage; model-free full-page web evidence (`capture_page`, a candidate for the shared tool library: untouched first screen, reject-only consent, exact slices, positioned text and honest completeness; [capture contract and library entry](capture-page.md)); measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
+| `design` | Design | The personas, walks and report stage; model-free full-page web evidence (`capture_page`, a candidate for the shared tool library: untouched first screen, reject-only consent, exact slices, positioned text and honest completeness; [capture contract and library entry](capture-page.md)); measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`); the app-screen workflow, stage by stage with a contract per stage and frozen known cases (`design_app_screen_v1`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md), [design-app-screen.md](design-app-screen.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader, and the no-model browser check of the Team's first app or a new build of it (`first_app_check`, its `profile` input). |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -455,7 +455,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_assets/positioning_tools.py` | script |
 | `marketing/bin/gather_evidence.py` | script |
 
-### design (45)
+### design (47)
 
 | Config | Kind |
 |---|---|
@@ -496,6 +496,8 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_homepage_designer_v2.yaml` | agent (full page in HTML/CSS) |
 | `design/agents/design_homepage_craft_critic_v2.yaml` | agent (craft checklist; taste advisory) |
 | `design/agents/design_homepage_reviser_v2.yaml` | agent (bounded revision from the fix list) |
+| `design/workflows/design_app_screen_v1.yaml` | workflow (app screens: eight stages, direction/final owner gates; stages are fixture-only stubs until W1-W5) |
+| `design/agents/design_app_screen_stage_v1.yaml` | agent (script; runs one step and validates its output against its contract) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |
 | `design/agents/design_capture.yaml` | agent (script) |

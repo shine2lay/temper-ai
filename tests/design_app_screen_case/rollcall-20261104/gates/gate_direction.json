@@ -1,0 +1,10 @@
+{
+ "gate": "direction",
+ "choice": "a",
+ "decided_by": "owner",
+ "owner_words": "I like the direction of A better",
+ "source": "owner in Design lead dialog 2026-11-05T00:38Z (RollCall quick drafts: Add screens to one only)",
+ "reason": "the owner picked A and asked to see more of its screens",
+ "prediction": null,
+ "taste": "pending-w5"
+}

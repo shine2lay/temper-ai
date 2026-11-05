@@ -1,0 +1,104 @@
+{
+ "product": "rollcall",
+ "items": [
+  {
+   "id": "R1",
+   "owner_words": "Lets work on improving rollcall project UI/UX especially the mobile format, tell designer to create me something",
+   "source": "owner in COO home chat 2026-11-03 ~13:1x PST, relayed by COO rm-bac94a7a",
+   "kind": "goal",
+   "maps_to": [
+    "all screens",
+    "phone 390 and 320 first",
+    "desktop 1440"
+   ]
+  },
+  {
+   "id": "R2",
+   "owner_words": "always design with UX in mind, and think about first appearance and dont overwhelm users, let them progressively get data, but show the important info first",
+   "source": "owner 2026-11-02 m60552 via Architecture rm-199ac2a1 (standing Design rule)",
+   "kind": "constraint",
+   "maps_to": [
+    "every screen's first view",
+    "disclosures with a one-line summary"
+   ]
+  },
+  {
+   "id": "R3",
+   "owner_words": "Quick version only shows me the one screen ?",
+   "source": "owner in Design lead chat 2026-11-04, on quick drafts d_kgrxir5ezb v1 / d_zfzxsxwt4p v1",
+   "kind": "change",
+   "maps_to": [
+    "Positions",
+    "Orders",
+    "Alerts",
+    "More"
+   ]
+  },
+  {
+   "id": "R4",
+   "owner_words": "this is not that useful to me, show something else",
+   "source": "owner's Show&Tell comment #1 on d_kgrxir5ezb v2 (Safe)",
+   "kind": "change",
+   "maps_to": [
+    "Today: account tile"
+   ]
+  },
+  {
+   "id": "R5",
+   "owner_words": "most of the accounts are real, we dont need to show simulated",
+   "source": "owner's Show&Tell comment #2 on d_kgrxir5ezb v2 (Real money)",
+   "kind": "change",
+   "maps_to": [
+    "shell: account line",
+    "tickets"
+   ]
+  },
+  {
+   "id": "R6",
+   "owner_words": "the top looks off, there's no top",
+   "source": "owner's Show&Tell comment #3 on d_kgrxir5ezb v2 (SIMULATED 10:12 AM · open WED NOV 4 · OPEN TILL 1 PM $1,236 premium at stake this week 4 calls expire Friday M T W T F S)",
+   "kind": "change",
+   "maps_to": [
+    "shell: top bar"
+   ]
+  },
+  {
+   "id": "R7",
+   "owner_words": "show analysis instead of alerts",
+   "source": "owner's Show&Tell comment #4 on d_kgrxir5ezb v2 (Alerts 1)",
+   "kind": "change",
+   "maps_to": [
+    "tab bar",
+    "Analysis"
+   ]
+  },
+  {
+   "id": "R8",
+   "owner_words": "i dont see other screens in more",
+   "source": "owner's Show&Tell comment #5 on d_kgrxir5ezb v2 (More)",
+   "kind": "change",
+   "maps_to": [
+    "More"
+   ]
+  },
+  {
+   "id": "R9",
+   "owner_words": "i dont think this should be always present, maybe make it collapsable",
+   "source": "owner's Show&Tell comment #6 on d_kgrxir5ezb v2 (premium at stake this week · $1,842 collected in Nov · $14,760 this year)",
+   "kind": "change",
+   "maps_to": [
+    "desktop side panel: premium at stake"
+   ]
+  },
+  {
+   "id": "R10",
+   "owner_words": "i need a way to see the full ladder and pick",
+   "source": "owner's Show&Tell comment #7 on d_kgrxir5ezb v2 (Buy back 2 × 11/6 $112 call at $2.75 −$550)",
+   "kind": "change",
+   "maps_to": [
+    "roll ticket",
+    "ladder"
+   ]
+  }
+ ]
+}

@@ -501,3 +501,98 @@ def test_api_health_wants_ok_true(L, monkeypatch):
     assert L.prod_api_health() == "/api/health says ok=False, db_ok=False"
     answer(code=502)
     assert L.prod_api_health() == "/api/health answered HTTP 502"
+
+
+def test_ensure_qa_on_prod_runs_after_deploy_and_reports_failure_without_reverting(L, prod, monkeypatch, capsys):
+    monkeypatch.setattr(L, "_previous_release_info", lambda ref, kind: (OLD_SHA, 120.0, ["feat: alpha"], set()))
+    monkeypatch.setattr(L, "check_prod_scheduler_lock", lambda: ("acquired", 0.0))
+    monkeypatch.setattr(L, "_announce_release", lambda **kw: None)
+
+    def failing_qa():
+        msg = "ensure_qa_on_prod: QA seed check failed (seed script exited 1) — not a revert reason"
+        L.log(f"WARNING: {msg}")
+        L.tell_rollcall(msg)
+        return False
+
+    monkeypatch.setattr(L, "ensure_qa_on_prod", failing_qa)
+    out = L.release_prod(REF, kind="forward", reason="master c0ffee12")
+    said = capsys.readouterr().out
+    assert out["prod_qa"] is False
+    assert prod.image == NEW
+    assert "seed script exited 1" in said
+    assert any("seed script exited 1" in t for t in prod.told)
+
+
+def test_scheduler_lock_held_elsewhere_waits_and_flags_loudly_without_undoing(L, prod, monkeypatch, capsys):
+    monkeypatch.setattr(L, "prod_health_scheduler_lock", lambda: "held_elsewhere")
+    state, waited = L.check_prod_scheduler_lock(wait_s=90.0, poll_s=30.0)
+    said = capsys.readouterr().out
+    assert state == "held_elsewhere" and waited == 90.0
+    assert prod.slept == [30.0, 30.0, 30.0]
+    assert "scheduler_lock=held_elsewhere after 90s" in said
+    assert any("scheduler_lock=held_elsewhere after 90s" in t for t in prod.told)
+
+
+def test_release_prod_announces_every_real_deploy_and_skips_pre_change_refusals(L, prod, monkeypatch, capsys):
+    announced = []
+    monkeypatch.setattr(L, "_announce_release", lambda **kw: announced.append(kw))
+    monkeypatch.setattr(L, "_previous_release_info", lambda ref, kind: (OLD_SHA, 270.0, ["feat: alpha", "fix: beta"], set()))
+    monkeypatch.setattr(L, "check_prod_scheduler_lock", lambda: ("acquired", 0.0))
+    monkeypatch.setattr(L, "ensure_qa_on_prod", lambda: True)
+
+    # 1. Forward success announces deployed
+    L.release_prod(REF, kind="forward", reason="master c0ffee12")
+    assert len(announced) == 1
+    assert announced[-1]["outcome"] == "deployed"
+    assert announced[-1]["kind"] == "deploy"
+    assert announced[-1]["sha"] == REF
+    assert announced[-1]["previous_sha"] == OLD_SHA
+    assert announced[-1]["subjects"] == ["feat: alpha", "fix: beta"]
+    assert announced[-1]["tag"] and announced[-1]["tag"].startswith("prod/")
+
+    # 2. Pre-change refusal (already-live / order guard) does NOT announce a deploy
+    announced.clear()
+    with pytest.raises(SystemExit) as e:
+        L.release_prod(REF, kind="forward", reason="already live")
+    assert e.value.code == L.DEPLOY_ALREADY_LIVE
+    assert announced == []
+
+    prod.image = OLD
+    prod.ancestor_rc = 1
+    with pytest.raises(SystemExit) as e:
+        L.release_prod(REF, kind="forward", reason="out of order")
+    assert e.value.code == L.DEPLOY_REFUSED
+    assert announced == []
+
+    # 3. Undo success announces undo deployed
+    prod.ancestor_rc = 1
+    prod.image = OLD
+    L.release_prod(REF, kind="undo", reason="money test red")
+    assert len(announced) == 1
+    assert announced[-1]["outcome"] == "deployed" and announced[-1]["kind"] == "undo"
+    prod.ancestor_rc = 0
+
+    # 4. Self-undone failure announces failed_self_undone and re-raises SystemExit
+    announced.clear()
+    prod.image = OLD
+    prod.db = "r1"
+    prod.unhealthy.add(NEW)
+    with pytest.raises(SystemExit):
+        L.release_prod(REF, kind="forward", reason="bad release")
+    assert len(announced) == 1
+    assert announced[-1]["outcome"] == "failed_self_undone"
+    assert announced[-1]["health"] == "ok"
+
+    # 5. UNDO INCOMPLETE announces undo_incomplete and re-raises SystemExit
+    announced.clear()
+    prod.unhealthy.clear()
+    prod.image = OLD
+    prod.db = "r1"
+    prod.upgrade = "fails-halfway"
+    prod.restore_ok = False
+    with pytest.raises(SystemExit):
+        L.release_prod(REF, kind="forward", reason="worse release")
+    assert len(announced) == 1
+    assert announced[-1]["outcome"] == "undo_incomplete"
+
+

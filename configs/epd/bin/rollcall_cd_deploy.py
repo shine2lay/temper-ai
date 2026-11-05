@@ -149,11 +149,11 @@ def launch(unit: str, sha: str, reason: str) -> None:
 
 
 def run_release(sha: str, kind: str, reason: str) -> tuple[int, str]:
-    """epd_loop.deploy_prod(sha, kind=RELEASE_KIND[kind], reason=reason) from CHECKOUT, its output passed
+    """epd_loop.release_prod(sha, kind=RELEASE_KIND[kind], reason=reason) from CHECKOUT, its output passed
     through; (exit code, why it ended)."""
     env = dict(os.environ, EPD_REPO_CHECKOUT=str(CHECKOUT), EPD_PROD_HOME=str(PROD_HOME))
     code = ("import sys, epd_loop; "
-            "epd_loop.deploy_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])")
+            "epd_loop.release_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])")
     p = subprocess.Popen([sys.executable, "-c", code, sha, RELEASE_KIND[kind], reason],
                          cwd=BIN, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     tail: collections.deque[str] = collections.deque(maxlen=40)

@@ -2,15 +2,17 @@
 # configs/triggers/epd_cd.yaml.
 #
 # RollCall's master goes live by itself: two minutes after the last land, master's HEAD is released
-# through epd_loop.deploy_prod (backup, up, migrate, health, its own undo), one release at a time, and
-# lands that come in during a release go out together in the next one. The rule, the state and the
-# log are in configs/epd/bin/rollcall_cd_deploy.py; the host does the work, this run only asks.
+# through epd_loop.release_prod / deploy_prod (backup, up, migrate, health, QA seed, owner Telegram
+# ping, its own undo), one release at a time, and lands that come in during a release go out together
+# in the next one. Each tick then runs rollcall_cd_verdict.py to inspect finished master CI runs,
+# rerun a first money-test failure once, and undo to the last green commit if a money test fails
+# again (unless a migration sits between). The host does the work; this run only asks.
 workflow:
   name: epd_cd
-  version: 1
+  version: 2
   description: |
-    One tick of RollCall's continuous deployer: on the host, fetch master, and release its HEAD once
-    it has been quiet for two minutes and no release is running. No model.
+    One tick of RollCall's continuous deployer: on the host, run the debounced deployer tick and then
+    the CI verdict step in one script agent run. No model.
 
   outputs:
     decision: tick.structured.decision
@@ -18,6 +20,7 @@ workflow:
     head: tick.structured.head
     deployed_sha: tick.structured.deployed_sha
     unit: tick.structured.unit
+    verdict: tick.structured.verdict
 
   nodes:
     - name: tick

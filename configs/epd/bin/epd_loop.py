@@ -996,7 +996,10 @@ def ensure_qa_on_prod() -> bool:
     """
     r = sh(["docker", "exec", PROD_CONTAINER, "rollcall", "qa", "ensure", "--live"], check=False)
     if r.returncode != 0:
-        log("could not seed the QA tenant on prod — measure will do signed-in checks on the branch stack")
+        msg = (f"ensure_qa_on_prod: could not seed the QA tenant on {PROD_ENV} "
+               f"(exit {r.returncode}): {_last_line(r.stderr or r.stdout)}")
+        log(f"could not seed the QA tenant on prod — measure will do signed-in checks on the branch stack ({msg})")
+        tell_rollcall(msg)
         return False
     return True
 
@@ -1830,6 +1833,13 @@ def undo_release(ref: str, stage: str, why: str, was_running: str, restore_from:
     problems = [p for p in [prod_mount_problem()] if p] + prod_health_problems()
     state = ("healthy (/api/health ok, database at the head of the code that runs)" if not problems
              else "NOT HEALTHY: " + "; ".join(problems))
+    global _LAST_RELEASE_UNDO
+    _LAST_RELEASE_UNDO = {
+        "ref": ref,
+        "outcome": "undo_incomplete" if left else "failed_self_undone",
+        "health": "ok" if not problems else "failed",
+        "error": f"failed while {stage}: {why}",
+    }
     die(f"release of {ref[:12]} failed while {stage}: {why}. "
         f"{'Undone' if not left else 'UNDO INCOMPLETE'}: {'; '.join(done + left)}. Prod now: {state}.")
 
@@ -1889,7 +1899,7 @@ def planned_mount_problem() -> str | None:
     return None
 
 
-def deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
+def deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> str | None:
     """Put the live product on `ref`; one deploy at a time (DEPLOY_LOCK, DEPLOY_BUSY when taken).
 
     `kind`: forward (a newer commit; the order guard refuses anything else) or undo (an older commit
@@ -1901,7 +1911,143 @@ def deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", ref or ""):
         die(f"deploy_prod: ref must be a full 40-character commit sha, got {ref!r}; nothing was changed")
     with deploy_lock():
-        _deploy_prod(ref, kind, reason)
+        return _deploy_prod(ref, kind, reason)
+
+
+SCHEDULER_LOCK_WAIT_S = float(os.environ.get("EPD_SCHEDULER_LOCK_WAIT_S", "90"))
+SCHEDULER_LOCK_POLL_S = float(os.environ.get("EPD_SCHEDULER_LOCK_POLL_S", "5"))
+_LAST_RELEASE_UNDO: dict | None = None
+
+
+def prod_health_scheduler_lock() -> str | None:
+    """/api/health's `scheduler_lock` field ("acquired", "held_elsewhere", "disabled"); None when absent/unreadable."""
+    try:
+        with urllib.request.urlopen(PROD_URL.rstrip("/") + "/api/health", timeout=15) as resp:
+            body = json.loads(resp.read().decode() or "{}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None
+    val = body.get("scheduler_lock") if isinstance(body, dict) else None
+    return val if isinstance(val, str) and val else None
+
+
+def check_prod_scheduler_lock(wait_s: float | None = None, poll_s: float | None = None) -> tuple[str | None, float]:
+    """Read /api/health's scheduler_lock; when held_elsewhere, wait up to `wait_s` (default 90 s) for the
+    old process to release it. Flag loudly (log + RollCall fyi) if still held_elsewhere; never undo."""
+    limit = SCHEDULER_LOCK_WAIT_S if wait_s is None else wait_s
+    step = SCHEDULER_LOCK_POLL_S if poll_s is None else poll_s
+    waited = 0.0
+    state = prod_health_scheduler_lock()
+    while state == "held_elsewhere" and waited < limit:
+        nap = min(step, max(0.0, limit - waited))
+        if nap <= 0:
+            break
+        time.sleep(nap)
+        waited += nap
+        state = prod_health_scheduler_lock()
+    if state == "held_elsewhere":
+        text = (f"deploy_prod: /api/health reports scheduler_lock=held_elsewhere after {int(round(waited))}s "
+                f"on {PROD_ENV} ({PROD_CONTAINER}); another process still holds the scheduler lock (not undone).")
+        log(f"WARNING: {text}")
+        tell_rollcall(text)
+    return state, waited
+
+
+def _previous_release_info(ref: str, kind: str) -> tuple[str | None, float | None, list[str], set[str]]:
+    """(previous_sha, since_previous_seconds, commit_subjects, existing_tag_names) before a release."""
+    tags = release_tags()
+    named = [name for name, sha in tags.items() if sha]
+    newest_tag = max(named, key=_tag_order) if named else ""
+    prev_sha = tags.get(newest_tag) if newest_tag else None
+    if not prev_sha:
+        running = full_commit(running_commit(prod_labels()))
+        prev_sha = running if len(running) == 40 else None
+    since_s: float | None = None
+    if newest_tag:
+        stamp, _ = _tag_order(newest_tag)
+        if stamp:
+            try:
+                prev_at = dt.datetime.strptime(stamp, "%Y%m%d-%H%M").replace(tzinfo=dt.UTC)
+                since_s = max(0.0, (release_time().astimezone(dt.UTC) - prev_at).total_seconds())
+            except ValueError:
+                since_s = None
+    subjects: list[str] = []
+    if prev_sha and prev_sha != ref and kind != "undo":
+        r = sh(["git", "log", "--format=%s", f"{prev_sha}..{ref}"], cwd=REPO_CHECKOUT, check=False)
+        if r.returncode == 0:
+            subjects = [s.strip() for s in r.stdout.splitlines() if s.strip()]
+    if not subjects:
+        r = sh(["git", "log", "-n", "1", "--format=%s", ref], cwd=REPO_CHECKOUT, check=False)
+        if r.returncode == 0:
+            subjects = [s.strip() for s in r.stdout.splitlines() if s.strip()]
+    return prev_sha, since_s, subjects, set(tags)
+
+
+def _announce_release(**kw) -> None:
+    try:
+        import rollcall_cd_notify
+
+        rollcall_cd_notify.announce_deploy(**kw)
+    except Exception as e:
+        log(f"WARNING: could not send owner deploy ping: {type(e).__name__}: {e}")
+
+
+def release_prod(ref: str, kind: str = "forward", reason: str = "") -> dict:
+    """Wrapper around deploy_prod: runs deploy_prod, seeds QA on prod, checks scheduler_lock, and sends
+    the owner Telegram deploy ping on every deploy (forward, undo, self-undone failure or UNDO INCOMPLETE).
+    Refusals before any change re-raise without an owner ping.
+    """
+    global _LAST_RELEASE_UNDO
+    _LAST_RELEASE_UNDO = None
+    prev_sha, since_s, subjects, before_tags = _previous_release_info(ref, kind)
+    ping_kind = "undo" if kind == "undo" else "deploy"
+    try:
+        tag = deploy_prod(ref, kind=kind, reason=reason)
+    except SystemExit as exc:
+        if exc.code in (DEPLOY_BUSY, DEPLOY_REFUSED, DEPLOY_ALREADY_LIVE):
+            raise
+        undo = _LAST_RELEASE_UNDO
+        if undo is None:
+            msg = str(exc.code) if not isinstance(exc.code, int) else ""
+            if any(p in msg for p in ("nothing was changed", "uncommitted changes", "not the commit being shipped")):
+                raise
+            undo = {
+                "outcome": "undo_incomplete" if "UNDO INCOMPLETE" in msg else "failed_self_undone",
+                "health": "failed",
+                "error": msg or f"deploy_prod exited {exc.code}",
+            }
+        _announce_release(
+            outcome=undo["outcome"],
+            sha=ref,
+            kind=ping_kind,
+            tag=None,
+            previous_sha=prev_sha,
+            restored_sha=prev_sha,
+            subjects=subjects,
+            health=undo["health"],
+            since_previous_seconds=since_s,
+            error=undo["error"],
+        )
+        raise
+    if tag is None:
+        after_tags = release_tags()
+        added = [n for n, s in after_tags.items() if n not in before_tags and s == ref]
+        if added:
+            tag = max(added, key=_tag_order)
+    sched_lock, sched_waited = check_prod_scheduler_lock()
+    qa_ok = ensure_qa_on_prod()
+    _announce_release(
+        outcome="deployed",
+        sha=ref,
+        kind=ping_kind,
+        tag=tag,
+        previous_sha=prev_sha,
+        subjects=subjects,
+        health="ok",
+        scheduler_lock=sched_lock,
+        scheduler_lock_waited_s=sched_waited,
+        since_previous_seconds=since_s,
+    )
+    return {"tag": tag, "prod_qa": qa_ok, "scheduler_lock": sched_lock}
 
 
 def full_commit(sha: str) -> str:
@@ -1913,7 +2059,7 @@ def full_commit(sha: str) -> str:
     return full if r.returncode == 0 and len(full) == 40 else sha
 
 
-def _deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
+def _deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> str | None:
     """Put the live product on `ref`: backup, up, migrate, health check; undone by itself on a failure.
 
     `standee up` on an existing environment updates it in place: same name,
@@ -2011,7 +2157,7 @@ def _deploy_prod(ref: str, kind: str = "forward", reason: str = "") -> None:
     except Exception as e:  # any failure after the first change is undone, expected or not
         undo_release(ref, stage, str(e), was_running, restore_from)
     log(f"release of {ref[:12]} is live and healthy: /api/health ok, database at head ({', '.join(heads)})")
-    tag_release(ref, kind, previous, reason, backups)
+    return tag_release(ref, kind, previous, reason, backups)
 
 
 def prod_mount_problem() -> str | None:
@@ -3668,8 +3814,8 @@ def stage_deploy(st: dict) -> None:
         ship.update(record, merged=True, merge_sha=merge_sha)
         save_state(st)
         log(f"merged into {BASE_BRANCH} as {merge_sha[:12]}")
-        deploy_prod(merge_sha)
-        qa_ok = ensure_qa_on_prod()
+        deployed = release_prod(merge_sha, kind="forward", reason=f"epd_loop PR #{pr_number}")
+        qa_ok = bool(deployed.get("prod_qa"))
         ship.update({"prod_url": PROD_URL, "prod_env": PROD_ENV, "prod_qa": qa_ok,
                      "deployed_at": dt.datetime.now().isoformat()})
         st["status"] = AFTER["deploy"]

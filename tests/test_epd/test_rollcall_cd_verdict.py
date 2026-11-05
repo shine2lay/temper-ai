@@ -58,6 +58,7 @@ class FakeGitHub:
         self.job_answers: dict[int, list] = {}
         self.log_answers: dict[int, str] = {}
         self.calls: list = []
+        self.rerun_error: str | None = None
 
     def runs(self):
         return sorted(self.all_runs, key=lambda r: r.created, reverse=True)
@@ -69,6 +70,10 @@ class FakeGitHub:
     def failed_log(self, run_id):
         self.calls.append(("log", run_id))
         return self.log_answers.get(run_id, "")
+
+    def rerun(self, run_id):
+        self.calls.append(("rerun", run_id))
+        return self.rerun_error
 
 
 class FakeCheck:
@@ -114,6 +119,9 @@ class FakeActions:
         self.calls.append(("owner", text))
         return True
 
+    def rerun_run(self, run_id):
+        self.calls.append(("rerun", run_id))
+
     def of(self, what):
         return [c for c in self.calls if c[0] == what]
 
@@ -151,22 +159,25 @@ class World:
         return self.sha[name]
 
     def run(self, name: str, conclusion: str, *, status: str = "completed", recorded: int | None = None,
-            jobs: list | None = None, log: str = "", event: str = "push") -> int:
+            jobs: list | None = None, log: str = "", event: str = "push", attempt: int = 1) -> int:
         self.runs += 1
         run_id = 1000 + self.runs
         created = self.tick_clock()
         self.gh.all_runs.append(V.Run(run_id, self.sha[name], event, status, conclusion, created,
-                                      f"https://github.com/shine2lay/rollcall/actions/runs/{run_id}", name))
+                                      f"https://github.com/shine2lay/rollcall/actions/runs/{run_id}", name, attempt))
         if recorded is not None:
             jobs, log = RECORDED["jobs"][str(recorded)], RECORDED["logs"].get(str(recorded), "")
         self.gh.job_answers[run_id] = jobs if jobs is not None else []
         self.gh.log_answers[run_id] = log
         return run_id
 
-    def finish(self, run_id: int, conclusion: str, *, recorded: int | None = None) -> None:
+    def finish(self, run_id: int, conclusion: str, *, recorded: int | None = None,
+               status: str = "completed", attempt: int | None = None) -> None:
         old = next(r for r in self.gh.all_runs if r.id == run_id)
-        self.gh.all_runs[self.gh.all_runs.index(old)] = V.Run(old.id, old.head, old.event, "completed", conclusion,
-                                                              old.created, old.url, old.title)
+        self.gh.all_runs[self.gh.all_runs.index(old)] = V.Run(
+            old.id, old.head, old.event, status, conclusion,
+            old.created, old.url, old.title, old.attempt if attempt is None else attempt,
+        )
         if recorded is not None:
             self.gh.job_answers[run_id] = RECORDED["jobs"][str(recorded)]
             self.gh.log_answers[run_id] = RECORDED["logs"].get(str(recorded), "")
@@ -292,6 +303,16 @@ def test_a_red_money_test_puts_the_last_fully_green_commit_back_live(world):
     world.deployed("c1")
     world.deployed("c3", "c1")
 
+    # Attempt 1 requests a failed-job rerun and does not undo yet.
+    code, decisions, _ = world.tick()
+    assert code == 0
+    assert decisions[red]["action"] == "rerun_requested"
+    assert world.verdict()["runs"][str(red)]["rerun_requested"] is True
+    assert [c for c in world.gh.calls if c[0] == "rerun"] == [("rerun", red)]
+    assert world.actions.of("undo") == []
+
+    # Attempt 2 stays money-red -> undo to last green commit.
+    world.finish(red, "failure", attempt=2)
     code, decisions, summary = world.tick()
 
     assert code == 0
@@ -314,6 +335,84 @@ def test_a_red_money_test_puts_the_last_fully_green_commit_back_live(world):
     assert world.verdict()["pending_undo"] is None and summary["live"] == world.sha["c1"][:12]
 
 
+def test_a_flaky_money_red_that_turns_green_on_rerun_does_not_undo_and_tells_the_lander(world):
+    world.commit("c1", "backend: base (Backend #10)")
+    world.run("c1", "success")
+    world.commit("c2", "backend: entry preview (Backend #11)")
+    red = world.run("c2", "failure", recorded=36080431059)
+    world.deployed("c2", "c1")
+
+    code, decisions, _ = world.tick()
+    assert code == 0 and decisions[red]["action"] == "rerun_requested"
+    assert [c for c in world.gh.calls if c[0] == "rerun"] == [("rerun", red)]
+    assert world.actions.of("undo") == [] and world.actions.of("role") == []
+
+    # Second tick before attempt 2 finishes is idempotent: no second rerun.
+    code, decisions, summary = world.tick()
+    assert code == 0 and decisions == {} and summary["waiting"] == 1
+    assert [c for c in world.gh.calls if c[0] == "rerun"] == [("rerun", red)]
+
+    # Attempt 2 turns green: record flake, no undo, lander told.
+    world.finish(red, "success", attempt=2)
+    code, decisions, _ = world.tick()
+    assert code == 0
+    assert decisions[red]["action"] == "flake"
+    assert world.verdict()["runs"][str(red)]["flake"] is True
+    assert world.verdict()["runs"][str(red)]["rerun_requested"] is True
+    assert world.actions.of("undo") == [] and world.state()["undone_shas"] == []
+    (_, role, kind, text), = world.actions.of("role")
+    assert role == "backend" and kind == "request"
+    assert f"flake, no undo, rerun https://github.com/shine2lay/rollcall/actions/runs/{red}" in text
+
+    # A further tick does nothing more.
+    _, decisions, _ = world.tick()
+    assert decisions == {} and len(world.actions.of("role")) == 1
+
+
+def test_a_flaky_money_red_that_turns_non_money_red_on_rerun_does_not_undo_and_tells_the_lander(world):
+    world.commit("c1", "backend: base (Backend #10)")
+    world.run("c1", "success")
+    world.commit("c2", "backend: entry preview (Backend #11)")
+    red = world.run("c2", "failure", recorded=36080431059)
+    world.deployed("c2", "c1")
+
+    world.tick()
+    world.finish(red, "failure", attempt=2, recorded=42004004262)
+    code, decisions, _ = world.tick()
+
+    assert code == 0
+    assert decisions[red]["action"] == "flake"
+    assert world.verdict()["runs"][str(red)]["flake"] is True
+    assert world.actions.of("undo") == [] and world.state()["undone_shas"] == []
+    (_, role, _, text), = world.actions.of("role")
+    assert role == "backend"
+    assert f"flake, no undo, rerun https://github.com/shine2lay/rollcall/actions/runs/{red}" in text
+
+
+def test_a_failed_rerun_call_counts_as_unknown_tells_rollcall_and_does_not_undo(world):
+    world.commit("c1", "backend: base (Backend #10)")
+    world.run("c1", "success")
+    world.commit("c2", "backend: entry preview (Backend #11)")
+    red = world.run("c2", "failure", recorded=36080431059)
+    world.deployed("c2", "c1")
+    world.gh.rerun_error = "HTTP 500: could not rerun"
+
+    code, decisions, _ = world.tick()
+
+    assert code == 0
+    assert decisions[red]["action"] == "notify"
+    assert decisions[red]["money"].startswith("unknown: gh run rerun")
+    assert world.actions.of("undo") == [] and world.state()["undone_shas"] == []
+    texts = {role: text for _, role, _, text in world.actions.of("role")}
+    assert sorted(texts) == ["backend", "rollcall"]
+    assert "no undo done" in texts["rollcall"] and "HTTP 500" in texts["rollcall"]
+
+    # Second tick does not retry the rerun.
+    _, decisions, _ = world.tick()
+    assert decisions == {}
+    assert [c for c in world.gh.calls if c[0] == "rerun"] == [("rerun", red)]
+
+
 def test_a_red_money_qa_walk_undoes_too(world):
     world.commit("c1", "frontend: base (Frontend #1)")
     world.run("c1", "success")
@@ -321,6 +420,9 @@ def test_a_red_money_qa_walk_undoes_too(world):
     red = world.run("c2", "failure", recorded=42081259790, event="schedule")
     world.deployed("c2", "c1")
 
+    _, decisions, _ = world.tick()
+    assert decisions[red]["action"] == "rerun_requested"
+    world.finish(red, "failure", attempt=2)
     _, decisions, _ = world.tick()
 
     assert decisions[red]["action"] == "undo"
@@ -359,6 +461,8 @@ def test_a_migration_between_refuses_the_undo(tmp_path, script_location, migrati
     red = world.run("c2", "failure", recorded=36080431059)
     world.deployed("c2", "c1")
 
+    world.tick()
+    world.finish(red, "failure", attempt=2)
     code, decisions, _ = world.tick()
 
     assert code == 0
@@ -385,6 +489,8 @@ def test_no_fully_green_commit_to_go_back_to_is_a_refusal(world):
     red = world.run("c1", "failure", recorded=36080431059)
     world.deployed("c1", "c0")
 
+    world.tick()
+    world.finish(red, "failure", attempt=2)
     _, decisions, _ = world.tick()
 
     assert decisions[red]["action"] == "refuse" and "no fully green commit" in decisions[red]["why"]
@@ -407,7 +513,10 @@ def test_cancelled_skipped_and_missing_runs_are_not_green(world):
     red = world.run("c5", "failure", recorded=36080431059)
     world.deployed("c5", "c1")
 
-    _, decisions, _ = world.tick()
+    _, first_decisions, _ = world.tick()
+    world.finish(red, "failure", attempt=2)
+    _, second_decisions, _ = world.tick()
+    decisions = {**first_decisions, **second_decisions}
 
     assert decisions[cancelled]["action"] == "ignored" and decisions[skipped]["action"] == "ignored"
     assert decisions[red]["target"] == world.sha["c1"][:12]
@@ -502,11 +611,13 @@ def test_each_run_id_is_acted_on_once(world):
     world.commit("c1", "backend: base (Backend #10)")
     world.run("c1", "success")
     world.commit("c2", "backend: entry (Backend #11)")
-    world.run("c2", "failure", recorded=36080431059)
+    red = world.run("c2", "failure", recorded=36080431059)
     world.commit("c3", "frontend: plain (Frontend #12)")
     world.run("c3", "failure", recorded=42004004262)
     world.deployed("c3", "c1")
 
+    world.tick()
+    world.finish(red, "failure", attempt=2)
     world.tick()
     files = {p.name: p.read_bytes() for p in world.state_dir.iterdir()}
     calls, gh_calls = list(world.actions.calls), list(world.gh.calls)
@@ -526,6 +637,8 @@ def test_a_failed_undo_is_retried_at_the_next_tick_and_nothing_else_repeats(worl
     world.deployed("c2", "c1")
     world.actions.fail_undo = 1
 
+    world.tick()
+    world.finish(red, "failure", attempt=2)
     code, _, summary = world.tick()
     assert code == 1 and "health check failed" in summary["errors"][0]
     assert world.verdict()["pending_undo"] is None
@@ -554,8 +667,8 @@ def test_a_dry_run_writes_nothing_and_prints_each_action(world):
 
     assert {p.name: p.read_bytes() for p in world.state_dir.iterdir()} == before
     printed = [json.loads(line)["dry_run_action"] for line in out.getvalue().splitlines()]
-    assert [a["do"] for a in printed] == ["undo", "role"]
-    assert printed[0]["sha"] == world.sha["c1"]
+    assert [a["do"] for a in printed] == ["rerun"]
+    assert printed[0]["run"] == "1002"
 
 
 # ---------------------------------------------------------------- who landed it

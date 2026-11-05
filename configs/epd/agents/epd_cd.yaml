@@ -1,20 +1,18 @@
-# RollCall's continuous deployer, one tick: ask the host whether master's HEAD is due to go live, and
-# start that release when it is. The decision and the release are the host's
-# (configs/epd/bin/rollcall_cd_deploy.py tick); this node only asks, and reports the answer.
+# RollCall's continuous deployer, one tick: ask the host whether master's HEAD is due to go live
+# (configs/epd/bin/rollcall_cd_deploy.py tick), and then check finished master CI runs for verdicts
+# and money-test undos (configs/epd/bin/rollcall_cd_verdict.py), in one script agent run.
 #
 # Why over ssh: a release needs the host's docker, standee, systemd and the live product's files,
 # none of which this container has. The key is the epd-ship key, pinned to a forced command on the
-# host (local/host-bin/epd-ship-only); that command must admit the fixed line `epd-cd tick` (no
-# arguments, nothing else) before this node can run. Until it does, the host refuses with exit 126
-# and the node fails loud with the host's words.
+# host (local/host-bin/epd-ship-only) that admits `epd-cd tick` and `epd-cd deploy <sha>`.
 #
-# No model (rule 17): one script, one JSON line out. A tick that refuses (the deploy checkout has
-# changes) fails the node, so a stuck deployer shows as failing runs, every minute, until fixed.
+# No model (rule 17): one script, one JSON line out combining the deployer decision and the CI
+# verdict summary (`verdict`). A tick that refuses or fails either step fails the node.
 #
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: epd_cd
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 120
   script_template: |
@@ -37,10 +35,28 @@ agent:
         shinelay@host.docker.internal "epd-cd tick" > /tmp/epd_cd.out 2>&1
     RC=$?
     set -e
-    # The tick prints one JSON line last; anything before it is the host's log.
-    LAST=$(tail -n 1 /tmp/epd_cd.out)
-    if [ "$RC" = 0 ] && printf '%s' "$LAST" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
-      printf '%s\n' "$LAST"
+    # `epd-cd tick` runs rollcall_cd_deploy.py tick then rollcall_cd_verdict.py; merge their JSON lines.
+    if [ "$RC" = 0 ] && COMBINED=$(python3 - /tmp/epd_cd.out <<'PY'
+    import json, sys
+    objs = []
+    with open(sys.argv[1]) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    objs.append(json.loads(line))
+                except ValueError:
+                    pass
+    deploy = next((o for o in reversed(objs) if isinstance(o, dict) and "decision" in o), None)
+    verdict = next((o for o in reversed(objs) if isinstance(o, dict) and "decisions" in o), None)
+    if deploy is None or verdict is None:
+        sys.exit(1)
+    out = dict(deploy)
+    out["verdict"] = verdict
+    print(json.dumps(out))
+    PY
+    ); then
+      printf '%s\n' "$COMBINED"
       exit 0
     fi
-    fail "host tick exited $RC: $(tail -n 3 /tmp/epd_cd.out | tr '\n' ' ')"
+    fail "host tick exited $RC: $(tail -n 5 /tmp/epd_cd.out | tr '\n' ' ')"

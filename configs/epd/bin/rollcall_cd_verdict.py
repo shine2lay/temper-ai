@@ -78,7 +78,7 @@ GH_REPO = "shine2lay/rollcall"
 WORKFLOW = "ci.yml"
 BRANCH = "master"
 RUN_LIST_LIMIT = 100
-RUN_FIELDS = "databaseId,headSha,event,status,conclusion,createdAt,url,displayTitle"
+RUN_FIELDS = "databaseId,headSha,event,status,conclusion,createdAt,url,displayTitle,attempt"
 DEFAULT_STATE_DIR = os.environ.get("ROLLCALL_CD_STATE", "~/.local/state/rollcall-cd")  # as rollcall_cd_notify
 GREEN = "success"
 RED = frozenset({"failure", "timed_out", "startup_failure"})
@@ -135,16 +135,17 @@ class Run:
     created: dt.datetime
     url: str
     title: str
+    attempt: int = 1
 
     @classmethod
     def from_gh(cls, item: dict) -> Run:
         return cls(int(item["databaseId"]), item["headSha"], item["event"], item["status"],
                    item.get("conclusion") or "", parse_ts(item["createdAt"]), item["url"],
-                   item.get("displayTitle") or "")
+                   item.get("displayTitle") or "", int(item.get("attempt") or item.get("run_attempt") or 1))
 
 
 class GitHub:
-    """The three reads this script makes, each one gh call."""
+    """The reads and the one failed-job rerun this script makes, each one gh call."""
 
     def __init__(self, repo: str = GH_REPO, runner: Callable[[Sequence[str]], subprocess.CompletedProcess[str]] = run_command):
         self.repo = repo
@@ -160,6 +161,13 @@ class GitHub:
         if done.returncode != 0:
             raise VerdictError(f"gh run list failed: {done.stderr.strip()[:300]}")
         return [Run.from_gh(item) for item in json.loads(done.stdout) if item["event"] != "pull_request"]
+
+    def rerun(self, run_id: int) -> str | None:
+        """Ask GitHub to rerun the failed jobs of `run_id` once; None when accepted, else the error."""
+        done = self._gh("run", "rerun", str(run_id), "--failed")
+        if done.returncode != 0:
+            return (done.stderr or done.stdout).strip()[:300] or f"exit {done.returncode}"
+        return None
 
     def jobs(self, run_id: int) -> list[dict]:
         done = self._gh("run", "view", str(run_id), "--json", "jobs")
@@ -467,6 +475,9 @@ class Actions:
 
         return rollcall_cd_notify.owner(text)
 
+    def rerun_run(self, run_id: int) -> None:
+        return None
+
 
 class PrintedActions(Actions):
     """--dry-run: each action printed as one JSON line, nothing done."""
@@ -488,6 +499,9 @@ class PrintedActions(Actions):
         self._print(do="owner", text=text)
         return False
 
+    def rerun_run(self, run_id: int) -> None:
+        self._print(do="rerun", run=str(run_id))
+
 
 # ---------------------------------------------------------------- deciding
 
@@ -495,18 +509,26 @@ class PrintedActions(Actions):
 @dataclass
 class Decision:
     run: Run
-    action: str  # green, ignored, before_cd, notify, undo, refuse
+    action: str  # green, ignored, before_cd, notify, rerun_requested, flake, undo, refuse
     why: str
     money: str = ""
     landers: list[str] = field(default_factory=list)
     target: str | None = None
     steps: list[dict] = field(default_factory=list)
+    rerun_requested: bool = False
+    flake: bool = False
 
     def record(self, now: dt.datetime) -> dict:
-        return {"head": self.run.head, "event": self.run.event, "conclusion": self.run.conclusion,
-                "url": self.run.url, "action": self.action, "why": self.why, "money": self.money,
-                "landers": self.landers, "target": self.target, "decided_at": now.isoformat(),
-                "steps": [dict(s, done=False) for s in self.steps], "done": not self.steps}
+        out = {"head": self.run.head, "event": self.run.event, "conclusion": self.run.conclusion,
+               "attempt": self.run.attempt, "url": self.run.url, "action": self.action, "why": self.why,
+               "money": self.money, "landers": self.landers, "target": self.target,
+               "decided_at": now.isoformat(), "steps": [dict(s, done=False) for s in self.steps],
+               "done": not self.steps}
+        if self.rerun_requested or self.action in ("rerun_requested", "flake"):
+            out["rerun_requested"] = True
+        if self.flake or self.action == "flake":
+            out["flake"] = True
+        return out
 
 
 class Tick:
@@ -574,19 +596,38 @@ class Tick:
 
     # -- one run
 
-    def decide(self, run: Run) -> Decision | None:
+    def decide(self, run: Run, prior: dict | None = None, *, dry_run: bool = False) -> Decision | None:
         """The decision for a finished run, or None while it has to wait (still running, not deployed yet)."""
         if run.status != "completed":
             return None
+        already_reran = bool(prior and prior.get("rerun_requested"))
         if run.conclusion == GREEN:
-            return Decision(run, "green", "ci passed")
+            if not already_reran:
+                return Decision(run, "green", "ci passed")
+            commits, _ = self.new_commits(run)
+            by_role: dict[str, list[tuple[str, str]]] = {}
+            for sha, subject in commits:
+                by_role.setdefault(lander_of(subject), []).append((sha, subject))
+            decision = Decision(
+                run, "flake",
+                f"money test red on attempt {prior.get('attempt', 1)}, green on rerun attempt {run.attempt}",
+                money=prior.get("money") or "yes", landers=sorted(by_role),
+                rerun_requested=True, flake=True,
+            )
+            for role in sorted(by_role):
+                decision.steps.append({
+                    "do": "role", "role": role, "kind": "request",
+                    "text": flake_text(run, prior or {}, commits, by_role[role], self.live),
+                })
+            return decision
         jobs = None
         if run.conclusion == "cancelled":
             jobs = self.github.jobs(run.id)
-            if not any(job_started(j) for j in jobs):
+            if not any(job_started(j) for j in jobs) and not already_reran:
                 return Decision(run, "ignored", "cancelled before any job ran (replaced by a newer push, or by hand)")
         elif run.conclusion not in RED:
-            return Decision(run, "ignored", f"conclusion {run.conclusion or 'none'}: not green, not red")
+            if not already_reran:
+                return Decision(run, "ignored", f"conclusion {run.conclusion or 'none'}: not green, not red")
         if not self.repo.has(run.head):
             raise ReadError(f"commit {short(run.head)} of run {run.id} is not in {self.repo.path}; fetch it")
         shipped = self.shipped(run.head)
@@ -598,20 +639,48 @@ class Tick:
         failures = failures_of(jobs, self.github.failed_log(run.id))
         money = money_of(failures, run.head, self.check, self.money_list_text)
         commits, previous = self.new_commits(run)
-        by_role: dict[str, list[tuple[str, str]]] = {}
+        by_role = {}
         for sha, subject in commits:
             by_role.setdefault(lander_of(subject), []).append((sha, subject))
 
         action, why, target, outcome = "notify", f"red; money test: {money.state}", None, ""
         extra: dict[str, list[str]] = {}
         steps: list[dict] = []
-        if money.state == "unknown":
+        flake = False
+        if already_reran and money.state == "no":
+            action = "flake"
+            flake = True
+            why = f"rerun attempt {run.attempt} red without money test; flake, no undo"
+            outcome = f"flake, no undo, rerun {run.url}"
+        elif money.state == "unknown":
             outcome = "money test unknown: no undo; RollCall asked to look"
             extra.setdefault(FALLBACK_ROLE, []).append(unknown_text(run, money))
         elif money.state == "yes":
-            action, why, target, outcome, steps, extra = self.plan_money(run, money)
+            live_holds = bool(self.live and self.repo.has(self.live) and self.repo.is_ancestor(run.head, self.live))
+            already_fixed = bool(live_holds and self.green_since(run.head, self.live) is not None)
+            if live_holds and not already_fixed and not already_reran:
+                if dry_run:
+                    return Decision(
+                        run, "rerun_requested", f"money test red on attempt {run.attempt}; rerun requested",
+                        money=f"yes: {money.why}", landers=sorted(by_role),
+                        steps=[{"do": "rerun", "run": run.id}], rerun_requested=True,
+                    )
+                err = self.github.rerun(run.id)
+                if err is None:
+                    return Decision(
+                        run, "rerun_requested", f"money test red on attempt {run.attempt}; rerun requested",
+                        money=f"yes: {money.why}", landers=sorted(by_role), rerun_requested=True,
+                    )
+                money = Money("unknown", f"gh run rerun {run.id} --failed failed: {err} (money test red: {money.why})")
+                action = "notify"
+                why = "red; money test: unknown (rerun failed)"
+                outcome = "money test unknown (rerun failed): no undo; RollCall asked to look"
+                extra.setdefault(FALLBACK_ROLE, []).append(unknown_text(run, money))
+                already_reran = True
+            else:
+                action, why, target, outcome, steps, extra = self.plan_money(run, money)
         decision = Decision(run, action, why, money=f"{money.state}: {money.why}", landers=sorted(by_role),
-                            target=target)
+                            target=target, rerun_requested=already_reran, flake=flake)
         decision.steps = steps
         for role in sorted(set(by_role) | set(extra)):
             sections = [lander_text(run, failures, money, commits, by_role[role], outcome, previous, self.live)] \
@@ -689,6 +758,19 @@ def lander_text(run: Run, failures: Sequence[Failure], money: Money, commits: Se
     return "\n".join(lines)
 
 
+def flake_text(run: Run, prior: dict, commits: Sequence[tuple[str, str]],
+               yours: Sequence[tuple[str, str]], live: str | None) -> str:
+    lines = [
+        f"rollcall ci money-test flake on master after deploy: run {run.id} attempt {run.attempt} ({run.conclusion}) head {short(run.head)}",
+        f"flake, no undo, rerun {run.url}",
+        f"attempt {prior.get('attempt', 1)} failed: {prior.get('money', 'money test red')}",
+        f"commits this run is first to check: {len(commits)}; yours:",
+    ]
+    lines += [f"  {short(sha)} {subject[:140]}" for sha, subject in yours]
+    lines.append(f"live {short(live)}; next: deflake or fix the money test")
+    return "\n".join(lines)
+
+
 def unknown_text(run: Run, money: Money) -> str:
     return (f"rollcall cd: money test status unknown for red run {run.id} head {short(run.head)}: {money.why[:400]}\n"
             f"url {run.url}\nno undo done; look and decide (hand undo or fix forward)")
@@ -728,6 +810,8 @@ def execute(run_id: str, record: dict, store: Store, actions: Actions, verdict: 
                 step["delivered"] = bool(actions.notify_role(step["role"], step["kind"], step["text"]))
             elif step["do"] == "owner":
                 step["delivered"] = bool(actions.notify_owner(step["text"]))
+            elif step["do"] == "rerun":
+                actions.rerun_run(int(step["run"]))
             else:
                 raise ReadError(f"unknown step {step['do']!r}")
         except Exception as err:  # noqa: BLE001 -- any failure of one step is recorded and retried, never success
@@ -787,10 +871,15 @@ def tick(github: GitHub, repo: Repo, store: Store, actions: Actions, check, *, r
     waiting = decided = 0
     for run in current.runs:
         run_id = str(run.id)
-        if run_id in verdict["runs"]:
-            continue
+        prior = verdict["runs"].get(run_id)
+        if prior is not None:
+            if prior.get("action") != "rerun_requested":
+                continue
+            if run.status != "completed" or run.attempt <= prior.get("attempt", 1):
+                waiting += 1
+                continue
         try:
-            decision = current.decide(run)
+            decision = current.decide(run, prior=prior, dry_run=store.dry_run)
         except ReadError as err:
             errors.append(f"run {run.id}: {err}")
             continue

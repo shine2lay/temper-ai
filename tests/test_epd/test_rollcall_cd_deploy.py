@@ -42,8 +42,14 @@ SEC = dt.timedelta(seconds=1)
 
 @pytest.fixture(autouse=True)
 def no_real_pi_web_ui(tmp_path, monkeypatch):
-    """A role message from any test goes to a pi-web-ui that is not there, never to a real chat."""
+    """A role or owner message from any test goes to a pi-web-ui that is not there, never to a real chat."""
+    fake_node = tmp_path / "node"
+    fake_cli = tmp_path / "pi-web-ui"
+    fake_node.write_text("")
+    fake_cli.write_text("")
     monkeypatch.setenv("ROLLCALL_CD_PI_WEB_UI_DIR", str(tmp_path / "no-pi-web-ui"))
+    monkeypatch.setenv("ROLLCALL_CD_NODE", str(fake_node))
+    monkeypatch.setenv("ROLLCALL_CD_PI_WEB_UI_CLI", str(fake_cli))
 
 
 # ---- the deployer, with the outside world faked ----------------------------------------------------
@@ -101,7 +107,7 @@ def fresh_modules(tmp_path, monkeypatch):
     monkeypatch.setenv("ROLLCALL_CD_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("ROLLCALL_CD_CHECKOUT", str(tmp_path / "rollcall-deploy"))
     monkeypatch.setenv("EPD_PROD_HOME", str(tmp_path / "prod-home"))
-    monkeypatch.setenv("ROLLCALL_CD_TELEGRAM_SENDER", str(tmp_path / "no-sender.mjs"))
+    monkeypatch.delenv("ROLLCALL_CD_NOTIFY_SINK", raising=False)
     monkeypatch.delenv("ROLLCALL_CD_UNIT", raising=False)
     monkeypatch.syspath_prepend(str(BIN))
     for name in ("rollcall_cd_notify", "rollcall_cd_deploy"):
@@ -580,9 +586,9 @@ def test_the_release_runs_deploy_prod_from_the_checkout_with_the_live_home(tmp_p
     monkeypatch.setattr(cd.subprocess, "Popen", P)
     code, why = cd.run_release(A, "undo", "money test failed on bbbbbbbb")
     assert code == 1 and why == "/api/health says ok=False"
-    # --kind undo is deploy_prod's kind undo, the reason goes to its tag; each its own argument
+    # --kind undo is release_prod's kind undo, the reason goes to its tag; each its own argument
     assert seen["cmd"][-3:] == [A, "undo", "money test failed on bbbbbbbb"]
-    assert "epd_loop.deploy_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])" in seen["cmd"][2]
+    assert "epd_loop.release_prod(sys.argv[1], kind=sys.argv[2], reason=sys.argv[3])" in seen["cmd"][2]
     seen.clear()
     cd.run_release(A, "deploy", "master aaaaaaaa")
     assert seen["cmd"][-3:] == [A, "forward", "master aaaaaaaa"]
@@ -731,63 +737,177 @@ def test_a_notice_text_is_made_one_pi_web_ui_takes(tmp_path, monkeypatch):
     assert len(wide.encode("utf-16-le")) // 2 <= 1500 and wide.endswith("...")
 
 
-def test_the_owner_message_uses_the_existing_sender_and_keeps_the_text_off_the_command_line(tmp_path, monkeypatch):
-    sender = tmp_path / "pi-backup.mjs"
-    sender.write_text("export async function sendTelegram() { return true; }\n")
-    monkeypatch.setenv("ROLLCALL_CD_STATE", str(tmp_path / "state"))
-    monkeypatch.syspath_prepend(str(BIN))
-    sys.modules.pop("rollcall_cd_notify", None)
-    monkeypatch.setenv("ROLLCALL_CD_TELEGRAM_SENDER", str(sender))
-    notify = importlib.import_module("rollcall_cd_notify")
+def test_the_owner_message_uses_pi_web_ui_notify_telegram_and_handles_every_exit_code(tmp_path, monkeypatch):
+    _, notify = fresh_modules(tmp_path, monkeypatch)
     calls = []
+    rc_by_msg = {
+        "RollCall's release aaaaaaaa was undone": 0,
+        "msg-exit-2": 2,
+        "msg-exit-3": 3,
+        "msg-exit-4": 4,
+        "msg-exit-5": 5,
+        "msg-after": 0,
+    }
 
-    def run(cmd, **kw):  # Telegram takes the first message and refuses the second
+    def run(cmd, **kw):
         calls.append((cmd, kw))
-        return subprocess.CompletedProcess(cmd, 0 if len(calls) == 1 else 1, "", "telegram: HTTP 401\n")
+        rc = rc_by_msg.get(kw.get("input", ""), 0)
+        return subprocess.CompletedProcess(cmd, rc, '{"ok": true}\n' if rc == 0 else "", f"exit-{rc}\n")
 
+    assert notify.DEFAULT_NODE_BIN == Path("/home/shinelay/.nvm/versions/node/v22.22.0/bin/node")
+    assert notify.DEFAULT_PI_WEB_UI_CLI == Path("/home/shinelay/.nvm/versions/node/v22.22.0/bin/pi-web-ui")
     assert notify.owner("RollCall's release aaaaaaaa was undone", run=run) is True
-    assert notify.owner("second", run=run) is False
     cmd, kw = calls[0]
-    assert cmd[0] == "node" and str(sender) in cmd
+    assert cmd == [str(notify.NODE_BIN), str(notify.PI_WEB_UI_BIN), "notify", "telegram",
+                   "--text", "-", "--from", "RollCall"]
     assert kw["input"] == "RollCall's release aaaaaaaa was undone"
     assert not any("undone" in a for a in cmd)
-    (line,) = [json.loads(x) for x in notify.OUTBOX.read_text().splitlines()]
-    assert line["to"] == "owner" and line["text"] == "second" and "HTTP 401" in line["why"]
+    assert kw["env"]["PI_WEB_DATA_DIR"] == str(notify.PI_WEB_UI_DIR)
+    assert outbox_lines(notify) == []
+
+    # Exit 2, 3, 4 = not sent: logged to outbox and retried on the next call
+    assert notify.owner("msg-exit-2", run=run) is False
+    assert notify.owner("msg-exit-3", run=run) is False
+    assert notify.owner("msg-exit-4", run=run) is False
+    # Exit 5 = maybe sent: logged with uncertain=True and NEVER resent
+    assert notify.owner("msg-exit-5", run=run) is False
+    queued = outbox_lines(notify)
+    assert [(x["text"], x["delivered"], x.get("uncertain", False)) for x in queued] == [
+        ("msg-exit-2", False, False),
+        ("msg-exit-3", False, False),
+        ("msg-exit-4", False, False),
+        ("msg-exit-5", False, True),
+    ]
+    assert "exit 5" in queued[3]["why"] and "maybe sent" in queued[3]["why"]
+
+    rc_by_msg["msg-exit-2"] = 0
+    rc_by_msg["msg-exit-3"] = 0
+    rc_by_msg["msg-exit-4"] = 0
+    calls.clear()
+    assert notify.owner("msg-after", run=run) is True
+    sent_texts = [kw["input"] for _, kw in calls]
+    assert sent_texts == ["msg-exit-2", "msg-exit-3", "msg-exit-4", "msg-after"]
+    assert "msg-exit-5" not in sent_texts
+    remaining = outbox_lines(notify)
+    assert [x["text"] for x in remaining] == ["msg-exit-5"]
+    assert remaining[0]["uncertain"] is True
 
 
-def test_the_owner_message_without_the_sender_lands_in_the_outbox(tmp_path, monkeypatch):
+def test_the_owner_message_without_the_cli_lands_in_the_outbox(tmp_path, monkeypatch):
     _, notify = fresh_modules(tmp_path, monkeypatch)
+    monkeypatch.setattr(notify, "PI_WEB_UI_BIN", tmp_path / "missing-pi-web-ui")
     assert notify.owner("x", run=lambda *a, **k: pytest.fail("must not run")) is False
     assert "is missing" in json.loads(notify.OUTBOX.read_text())["why"]
 
 
-def test_the_owner_message_really_reaches_the_shared_sender(tmp_path, monkeypatch):
-    """Through node, against a stand-in of lib/pi-backup.mjs that records what it was handed."""
-    if subprocess.run(["node", "--version"], capture_output=True).returncode != 0:
-        pytest.skip("node is not installed")
-    got = tmp_path / "got.json"
-    sender = tmp_path / "pi-backup.mjs"
-    sender.write_text(
-        "import { writeFileSync } from 'node:fs';\n"
-        "export async function sendTelegram(text, opts) {\n"
-        f"  writeFileSync({json.dumps(str(got))}, JSON.stringify({{ text, envFile: opts.envFile, "
-        "configFile: opts.configFile }));\n  return true;\n}\n")
-    monkeypatch.setenv("ROLLCALL_CD_STATE", str(tmp_path / "state"))
-    monkeypatch.setenv("ROLLCALL_CD_TELEGRAM_SENDER", str(sender))
-    monkeypatch.setenv("ROLLCALL_CD_TEMPER_ENV", str(tmp_path / "temper.env"))
-    monkeypatch.syspath_prepend(str(BIN))
-    sys.modules.pop("rollcall_cd_notify", None)
-    notify = importlib.import_module("rollcall_cd_notify")
-    assert notify.owner("release cccccccc is live") is True
-    assert json.loads(got.read_text()) == {"text": "release cccccccc is live", "envFile": str(tmp_path / "temper.env"),
-                                           "configFile": str(notify.TELEGRAM_CONFIG)}
+def test_announce_deploy_formats_outcomes_caps_five_subjects_handles_first_deploy_and_never_raises(
+    tmp_path, monkeypatch
+):
+    _, notify = fresh_modules(tmp_path, monkeypatch)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(notify, "owner", lambda text, *, from_name="RollCall", run=subprocess.run: (
+        sent.append((from_name, text)) or True
+    ))
 
+    # 1. First deploy with no previous tag/sha
+    assert notify.announce_deploy(
+        outcome="deployed",
+        kind="forward",
+        sha=A,
+        tag=None,
+        previous_sha=None,
+        subjects=[],
+        health="ok",
+        scheduler_lock="acquired",
+        since_previous_seconds=None,
+    ) is True
+    from_name, text1 = sent[-1]
+    assert from_name == "RollCall"
+    assert "RollCall deploy: aaaaaaaa (no tag) — live" in text1
+    assert "Commits: first tagged deploy (no previous prod tag)" in text1
+    assert "Health: ok (scheduler_lock=acquired)" in text1
+    assert "Since previous deploy: first tagged deploy" in text1
 
-def test_the_real_sender_is_the_one_agent_tools_exports():
-    sender = Path("/home/shinelay/projects/agent-tools/lib/pi-backup.mjs")
-    if not sender.exists():
-        pytest.skip("agent-tools is not on this machine")
-    assert "export async function sendTelegram" in sender.read_text()
+    # 2. Forward deploy with 7 subjects -> 5-subject cap + "+2 more"
+    subjects = [f"commit-{i}" for i in range(1, 8)]
+    assert notify.announce_deploy(
+        outcome="deployed",
+        kind="forward",
+        sha=B,
+        tag="prod/20261105-1805",
+        previous_sha=A,
+        subjects=subjects,
+        health="ok",
+        scheduler_lock="acquired",
+        since_previous_seconds=270.0,
+    ) is True
+    _, text2 = sent[-1]
+    assert "RollCall deploy: bbbbbbbb (prod/20261105-1805) — live" in text2
+    for i in range(1, 6):
+        assert f"• commit-{i}" in text2
+    assert "commit-6" not in text2 and "commit-7" not in text2
+    assert "+2 more" in text2
+    assert "Since previous deploy: 4m 30s" in text2
+
+    # 3. Undo deploy, self-undone failure with held_elsewhere scheduler_lock, and UNDO INCOMPLETE
+    notify.announce_deploy(
+        outcome="deployed",
+        kind="undo",
+        sha=A,
+        tag="prod/20261105-1810",
+        previous_sha=B,
+        subjects=["revert bad change"],
+        health="ok",
+        scheduler_lock="acquired",
+        since_previous_seconds=600.0,
+    )
+    assert "RollCall deploy: undo to aaaaaaaa (prod/20261105-1810) — live" in sent[-1][1]
+
+    notify.announce_deploy(
+        outcome="failed_self_undone",
+        kind="deploy",
+        sha=C,
+        tag=None,
+        previous_sha=A,
+        restored_sha=A,
+        subjects=["bad release"],
+        health="ok",
+        scheduler_lock="held_elsewhere",
+        scheduler_lock_waited_s=90,
+        since_previous_seconds=900.0,
+        error="health check failed",
+    )
+    assert "RollCall deploy: deploy cccccccc (no tag) — FAILED, self-undone (restored aaaaaaaa)" in sent[-1][1]
+    assert "WARNING: scheduler_lock=held_elsewhere after 90s — flagged, not undone" in sent[-1][1]
+    assert "Error: health check failed" in sent[-1][1]
+
+    notify.announce_deploy(
+        outcome="undo_incomplete",
+        kind="deploy",
+        sha=C,
+        tag=None,
+        previous_sha=A,
+        subjects=["broken release"],
+        health="failed",
+        scheduler_lock=None,
+        since_previous_seconds=1200.0,
+    )
+    assert "RollCall deploy: deploy cccccccc (no tag) — UNDO INCOMPLETE" in sent[-1][1]
+
+    # 4. Send failure in owner() is logged/returned False and never raises
+    def raising_owner(*_a, **_kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(notify, "owner", raising_owner)
+    assert notify.announce_deploy(
+        outcome="deployed",
+        kind="forward",
+        sha=A,
+        tag="prod/20261105-1825",
+        previous_sha=LIVE,
+        subjects=["one"],
+        health="ok",
+    ) is False
 
 
 # ---- the workflow and its trigger -------------------------------------------------------------------
@@ -807,6 +927,7 @@ def test_the_workflow_is_one_script_step_with_no_model():
     agent = substitute_env_vars(yaml.safe_load((ROOT / "configs" / "epd" / "agents" / "epd_cd.yaml").read_text()))["agent"]
     assert agent["type"] == "script" and "model" not in agent
     assert '"epd-cd tick"' in agent["script_template"]
+    assert set(flow["outputs"]) == {"decision", "reason", "head", "deployed_sha", "unit", "verdict"}
     store = ConfigStore()
     store.put("epd_cd", "workflow", flow)
     store.put("epd_cd", "agent", agent)

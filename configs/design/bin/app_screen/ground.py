@@ -17,6 +17,13 @@ nor the product repo). Then three script steps around one fenced model step (age
                     fixture invariant, or any problem left, fails the stage loud
 
 Fixture mode: collect and check pass through (model no) and ground copies the known case's output.
+
+Step 4 (reuse): when the host's prepare copied a stored ground to 03-ground/stored/ (decision pending),
+ground_collect settles it by script (ground_delta.py): nothing new or changed -> reused (the stored inventory
+and final check copied, the model skipped, every check run again); else delta: the stored inventory, less
+stale citations, is the base; the model gets only the unplaced and changed items with an added "Already
+placed, keep" section and replies with additions; the merged draft is held to every check, coverage over all
+items, plus the kept check (no stored entry changed).
 """
 from __future__ import annotations
 
@@ -28,10 +35,13 @@ from pathlib import Path
 from . import (
     contracts,
     ground_check,
+    ground_delta,
     ground_fixture,
     ground_sources,
     ground_task,
     model_step,
+    stored_copy,
+    tools_registry,
 )
 from .fixture_stage import run_fixture
 from .workspace import Workspace
@@ -39,6 +49,7 @@ from .workspace import Workspace
 PREP, SOURCES, TASK, DRAFT, FIRST_DRAFT, CHECK, CHECK_FINAL, INVENTORY, FIXTURE, FIXTURE_CHECK = (
     "source/prep.json", "sources.json", "task.md", "draft.json", "draft-first.json", "check.json",
     "check-final.json", "inventory.json", "fixture.json", "fixture-check.json")
+DELTA, FIRST_ADDITIONS = "delta.json", "additions-first.json"
 SHOWN_PROBLEMS = 12
 HOST = "design_app_screen.py ground-prep --product {product} --workspace {workspace}"
 
@@ -127,11 +138,89 @@ def collect(ws: Workspace, raw: str) -> dict:
     _write(folder / FIXTURE_CHECK, fixture_check)
     app = _read(ws, "existing", "app.json", "stage 2's capture writes it")
     questions = _read(ws, "intake", "questions.json", "stage 1 (intake) writes it").get("questions", [])
-    text = ground_task.task(app, status, items, questions)
+    decision = ws.decision("ground")
+    if decision and decision["decision"] == "pending":
+        return _settle(ws, items, app, status, questions, fixture_check["verdict"])
+    text = ground_task.task(app, status, items, questions, tools=tools_registry.task_section("ground"))
     _write(folder / TASK, text)
     kinds = {k: sum(1 for i in items if i["kind"] == k) for k in ground_sources.PLACED + ("seen", "journey")}
     return {"model": "yes", "design_files": status, "fixture": fixture_check["verdict"], **kinds,
             "task_chars": len(text), "task": text}
+
+
+def _settle(ws: Workspace, items: list[dict], app: dict, status: str, questions: list[dict], fixture: str) -> dict:
+    """Reuse or delta over the stored ground prepare copied in (decision pending), by script."""
+    folder, record = ws.folder("ground"), stored_copy.verify(ws, "ground")
+    stored = f"{ground_delta.STORED}/"
+    inventory = _read(ws, "ground", stored + INVENTORY, "prepare copies the stored version", "inventory")
+    old = _read(ws, "ground", stored + SOURCES, "prepare copies the stored version", "ground_sources")["items"]
+    stale = ground_delta.stale_ids(old, items)
+    base, gone = ground_delta.base(ground_check.draft_from(inventory), stale)
+    unplaced = ground_delta.unplaced(base, items)
+    changed = ground_delta.changed_context(old, items)
+    prep = ground_delta.prep_changes(_read(ws, "ground", stored + PREP, "prepare copies the stored version"),
+                                     _prep(ws))
+    where = f"stored v{record['version']} (run {record['source_run']})"
+    _write(folder / ground_delta.BASE, base)
+    summary = {"version": record["version"], "stale": sorted(stale), "left": gone, "prep_changed": prep,
+               "unplaced": [i["id"] for i in unplaced], "changed": [i["id"] for i in changed]}
+    if not (stale or unplaced or changed or prep):
+        for name in (INVENTORY, CHECK_FINAL):
+            shutil.copyfile(folder / stored / name, folder / name)
+        _write(folder / DRAFT, base)
+        _write(folder / DELTA, {**summary, "model": False})
+        ws.decide("ground", "reuse", f"{where}: no source item new, changed or gone",
+                  source_run=record["source_run"], store_version=record["version"])
+        return {"model": "no", "source": where, "design_files": status, "fixture": fixture}
+    model = bool(unplaced or changed)
+    _write(folder / DELTA, {**summary, "model": model})
+    reason = (f"{where}: {len(unplaced)} unplaced item(s), {len(changed)} changed context item(s), "
+              f"{len(stale)} stale citation id(s)" + (f", changed {', '.join(prep)}" if prep else ""))
+    ws.decide("ground", "delta", reason, source_run=record["source_run"], store_version=record["version"])
+    if not model:
+        _write(folder / DRAFT, base)
+        return {"model": "no", "source": where, "stale": len(stale), "design_files": status, "fixture": fixture}
+    text = ground_task.task(app, status, unplaced + changed, questions,
+                            placed=ground_delta.placed_section(base, record["version"]),
+                            tools=tools_registry.task_section("ground"))
+    _write(folder / TASK, text)
+    return {"model": "yes", "design_files": status, "fixture": fixture, "unplaced": len(unplaced),
+            "changed": len(changed), "stale": len(stale), "task_chars": len(text), "task": text}
+
+
+def _delta(ws: Workspace) -> dict | None:
+    """ground_collect's delta record when this run settled reuse or delta over a stored ground."""
+    decision = ws.decision("ground")
+    if not decision or decision["decision"] not in ("reuse", "delta"):
+        return None
+    return _read(ws, "ground", DELTA, "ground_collect writes it")
+
+
+def _merged(ws: Workspace, raw: str, keep_first: bool = False) -> dict:
+    """A delta reply (additions) checked against its contract and merged into the base -> draft.json."""
+    folder = ws.folder("ground")
+    additions = _parse(raw)
+    problems = contracts.check_json("ground_additions", additions, "the reply")
+    if problems:
+        raise GroundError("the delta reply is not a ground_additions object: " + "; ".join(problems[:SHOWN_PROBLEMS]))
+    if keep_first and (folder / ground_delta.ADDITIONS).is_file():
+        shutil.copyfile(folder / ground_delta.ADDITIONS, folder / FIRST_ADDITIONS)
+    _write(folder / ground_delta.ADDITIONS, additions)
+    base = _read(ws, "ground", ground_delta.BASE, "ground_collect writes it")
+    merged = ground_delta.merge(base, additions)
+    _write(folder / DRAFT, merged)
+    return merged
+
+
+def _check(ws: Workspace, ctx: ground_check.Context, draft: dict, delta: dict | None) -> dict:
+    """Every ground check; over a stored base also the kept check (no stored entry changed)."""
+    found = ground_check.check_draft(ctx, draft)
+    if delta is None:
+        return found
+    kept = ground_delta.kept(_read(ws, "ground", ground_delta.BASE, "ground_collect writes it"), draft)
+    problems = found["problems"] + kept
+    return {**found, "verdict": "retry" if problems else found["verdict"], "problems": problems,
+            "counts": {**found["counts"], "kept": len(kept)}}
 
 
 def check(ws: Workspace, raw: str) -> dict:
@@ -139,16 +228,23 @@ def check(ws: Workspace, raw: str) -> dict:
     if ws.mode == "fixture":
         return {"verdict": "ok", "source": "known case"}
     folder = ws.folder("ground")
-    draft = _parse(raw)
-    _write(folder / DRAFT, draft)
-    found = ground_check.check_draft(context(ws), draft)
+    delta = _delta(ws)
+    if delta is not None and not delta["model"]:
+        return {"verdict": "ok", "source": f"stored v{delta['version']}, no model step"}
+    if delta is not None:
+        draft = _merged(ws, raw)
+        reply = (folder / ground_delta.ADDITIONS).read_text(encoding="utf-8")
+    else:
+        draft = _parse(raw)
+        _write(folder / DRAFT, draft)
+        reply = json.dumps(draft, ensure_ascii=False, indent=1)
+    found = _check(ws, context(ws), draft, delta)
     _write(folder / CHECK, _result(found, "draft"))
     out = {"verdict": found["verdict"], "problems": len(found["problems"]), **found["counts"]}
     if found["verdict"] == "retry":
         shutil.copyfile(folder / DRAFT, folder / FIRST_DRAFT)
         task_text = (folder / TASK).read_text(encoding="utf-8")
-        out["revise_task"] = ground_task.revise(task_text, json.dumps(draft, ensure_ascii=False, indent=1),
-                                                found["problems"])
+        out["revise_task"] = ground_task.revise(task_text, reply, found["problems"])
     return out
 
 
@@ -165,24 +261,52 @@ def run(ws: Workspace, raw: str) -> dict:
     if ws.mode == "fixture":
         return run_fixture(ws, "ground")
     folder = ws.folder("ground")
+    delta = _delta(ws)
     revised = bool((raw or "").strip())
-    if revised:
+    if revised and delta is not None:
+        _merged(ws, raw, keep_first=True)
+    elif revised:
         _write(folder / DRAFT, _parse(raw))
     elif not (folder / DRAFT).is_file():
         raise GroundError("03-ground/draft.json is missing: the model step wrote no draft")
     draft = json.loads((folder / DRAFT).read_text(encoding="utf-8"))
     ctx = context(ws)
-    found = ground_check.check_draft(ctx, draft)
+    if delta is not None and ws.decision("ground")["decision"] == "reuse":
+        return _reused(ws, ctx, draft, delta)
+    found = _check(ws, ctx, draft, delta)
     _write(folder / CHECK_FINAL, _result(found, "final"))
     if found["problems"]:
         raise GroundError(model_step.failure(found["problems"], f"03-ground/{CHECK_FINAL}"))
     prep = _prep(ws)
     inventory = ground_check.outputs(ctx, draft, _status(ws), _source(prep))
     _write(folder / INVENTORY, inventory)
+    _fixture_holds(ws)
+    return {"revised": revised, "screens": len(inventory["screens"]),
+            "data_needed": sum(len(s.get("data_needed", [])) for s in inventory["screens"]), **found["counts"],
+            **({"stage_status": "delta"} if delta is not None else {})}
+
+
+def _fixture_holds(ws: Workspace) -> None:
     fixture_check = _read(ws, "ground", FIXTURE_CHECK, "ground_collect writes it", "fixture_check")
     if fixture_check["verdict"] != "pass":
         raise GroundError(f"03-ground/{FIXTURE} breaks {len(fixture_check['problems'])} invariant(s): "
                           + "; ".join(f"{p['check']} {p['where']}: {p['problem']}"
                                       for p in fixture_check["problems"][:SHOWN_PROBLEMS]))
-    return {"revised": revised, "screens": len(inventory["screens"]),
-            "data_needed": sum(len(s.get("data_needed", [])) for s in inventory["screens"]), **found["counts"]}
+
+
+def _reused(ws: Workspace, ctx: ground_check.Context, draft: dict, delta: dict) -> dict:
+    """The stored inventory and final check, copied in by ground_collect: still byte-identical to the store,
+    within contract, and the stored draft still passes every check against today's sources."""
+    folder = ws.folder("ground")
+    stored_copy.verify(ws, "ground")
+    for name in (INVENTORY, CHECK_FINAL):
+        if (folder / name).read_bytes() != (folder / ground_delta.STORED / name).read_bytes():
+            raise GroundError(f"03-ground/{name} differs from the stored copy it was reused from")
+    inventory = _read(ws, "ground", INVENTORY, "ground_collect copies it", "inventory")
+    found = ground_check.check_draft(ctx, draft)
+    if found["problems"]:
+        raise GroundError("the reused inventory no longer passes: "
+                          + model_step.failure(found["problems"], "03-ground/check.json"))
+    _fixture_holds(ws)
+    return {"revised": False, "screens": len(inventory["screens"]), "stage_status": "reused",
+            "source": f"stored v{delta['version']}", **found["counts"]}

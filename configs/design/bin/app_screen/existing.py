@@ -16,14 +16,27 @@ browser). Then four script steps around one fenced model step (agents/design_app
                       clean: journeys.json; any problem left fails the stage loud
 
 Fixture mode: collect, sheet and check pass through (model no) and existing copies the known case's output.
+
+Step 4 (reuse, reuse_host.py): when the host's prepare decided reuse, the stored 02-existing is already here;
+every step checks it is byte-identical to the store (stored_copy.py) and holds to the contracts, and the model
+is skipped (the stage ends reused). A delta (only changed screens captured again) runs as a full read over
+the merged captures, because journeys span screens, and ends delta.
 """
+
 from __future__ import annotations
 
 import base64
 import json
 import shutil
 
-from . import contracts, existing_check, existing_task, model_step
+from . import (
+    contracts,
+    existing_check,
+    existing_task,
+    model_step,
+    stored_copy,
+    tools_registry,
+)
 from .fixture_stage import run_fixture
 from .workspace import Workspace
 
@@ -58,6 +71,22 @@ def _capture_hint(ws: Workspace) -> str:
     return "the host's capture writes it: " + HOST.format(product=ws.run()["product"], workspace=ws.path)
 
 
+def _reused(ws: Workspace) -> dict | None:
+    """prepare's record when it reused the stored stage 2, checked byte-identical and against the contracts."""
+    decision = ws.decision("existing")
+    if not decision or decision["decision"] != "reuse":
+        return None
+    record = stored_copy.verify(ws, "existing")
+    contracts.validate("existing", ws)
+    return {"model": "no", "source": f"stored v{record['version']} (run {record['source_run']})",
+            "files": len(record["files"])}
+
+
+def _status(ws: Workspace) -> dict:
+    decision = ws.decision("existing")
+    return {"stage_status": "delta"} if decision and decision["decision"] == "delta" else {}
+
+
 def context(ws: Workspace) -> existing_check.Context:
     hint = _capture_hint(ws)
     audit = _read(ws, "existing", AUDIT, hint)
@@ -73,12 +102,14 @@ def context(ws: Workspace) -> existing_check.Context:
 def collect(ws: Workspace, raw: str) -> dict:
     if ws.mode == "fixture":
         return {"model": "no", "source": "known case"}
+    if reused := _reused(ws):
+        return reused
     ctx = context(ws)
     if not (ws.folder("existing") / SHEET).is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
     requirements = _read(ws, "intake", "requirements.json", "stage 1 (intake) writes it")
     text = existing_task.task(ctx.audit, json.loads((ws.folder("existing") / TEXTS).read_text(encoding="utf-8")),
-                              ctx.app, requirements)
+                              ctx.app, requirements, tools=tools_registry.task_section("existing"))
     _write(ws.folder("existing") / TASK, text)
     return {"model": "yes", "captures": len(ctx.captures), "screens": len(ctx.screen_ids),
             "requirements": len(requirements.get("items", [])), "task_chars": len(text), "task": text}
@@ -87,6 +118,8 @@ def collect(ws: Workspace, raw: str) -> dict:
 def sheet(ws: Workspace, raw: str) -> dict:
     if ws.mode == "fixture":
         return {"model": "no", "source": "known case"}
+    if reused := _reused(ws):
+        return reused
     path = ws.folder("existing") / SHEET
     if not path.is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
@@ -104,6 +137,8 @@ def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
     if ws.mode == "fixture":
         return {"verdict": "ok", "source": "known case"}
+    if reused := _reused(ws):
+        return {"verdict": "ok", "source": reused["source"]}
     folder = ws.folder("existing")
     draft = _parse(raw)
     _write(folder / DRAFT, draft)
@@ -122,6 +157,8 @@ def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> journeys.json, else fail loud."""
     if ws.mode == "fixture":
         return run_fixture(ws, "existing")
+    if reused := _reused(ws):
+        return {"stage_status": "reused", "source": reused["source"], "files": reused["files"]}
     folder = ws.folder("existing")
     revised = bool((raw or "").strip())
     if revised:
@@ -135,4 +172,4 @@ def run(ws: Workspace, raw: str) -> dict:
     if found["problems"]:
         raise ExistingError(model_step.failure(found["problems"], f"02-existing/{CHECK_FINAL}"))
     _write(folder / JOURNEYS, existing_check.outputs(ctx, draft))
-    return {"revised": revised, **found["counts"]}
+    return {"revised": revised, **found["counts"], **_status(ws)}

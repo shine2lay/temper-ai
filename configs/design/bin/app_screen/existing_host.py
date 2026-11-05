@@ -87,16 +87,9 @@ def audit_from(app: dict, caps: list[dict], raw: dict) -> tuple[dict, dict]:
     return audit, texts
 
 
-def capture(product: str, workspace: str, store: Path | None = None) -> dict:
-    app = product_app.load(product, store)
-    ws = Workspace(workspace)
-    ws.start(product, "real")
-    folder = ws.folder("existing")
-    out_dir = folder / CAPTURES
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
-    caps = product_app.captures(app)
+def shoot(app: dict, caps: list[dict], out_dir: Path) -> tuple[dict, dict]:
+    """Open the given captures on a throwaway copy into out_dir: (raw measurements by capture id, failed ones
+    with why). out_dir/raw.json is left for the caller to move."""
     with tempfile.TemporaryDirectory(prefix="app-screen-capture-") as tmp:
         plan_file = Path(tmp) / "plan.json"
         _write(plan_file, _plan(app, caps, out_dir, Path(tmp)))
@@ -110,18 +103,73 @@ def capture(product: str, workspace: str, store: Path | None = None) -> dict:
             raise CaptureError(f"the browser capture exited {done.returncode}: {(done.stderr or done.stdout)[-600:]}")
     raw_file = out_dir / RAW
     raw = json.loads(raw_file.read_text(encoding="utf-8")) if raw_file.is_file() else {}
-    shutil.move(raw_file, folder / RAW) if raw_file.is_file() else None
     failed = {c["id"]: raw.get(c["id"], {}).get("failed", "not captured") for c in caps
               if c["id"] not in raw or "failed" in raw[c["id"]] or not (out_dir / f"{c['id']}.png").is_file()}
-    record = {"app_file": app["path"], "product": product, "commit": app["app"].get("commit"),
-              "captures": len(caps), "failed": failed, "raw": RAW,
-              "at": datetime.now(UTC).isoformat(timespec="seconds")}
-    _write(folder / RECORD, record)
+    return raw, failed
+
+
+def _record(app: dict, caps: list[dict], failed: dict, **extra) -> dict:
+    return {"app_file": app["path"], "product": app["product"], "commit": app["app"].get("commit"),
+            "captures": len(caps), "failed": failed, "raw": RAW, **extra,
+            "at": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+def _fail(folder: Path, failed: dict, total: int) -> None:
+    _open_to_worker(folder)
+    shown = "; ".join(f"{cid}: {why}" for cid, why in list(failed.items())[:12])
+    raise CaptureError(f"{len(failed)} of {total} capture(s) failed: {shown}")
+
+
+def capture(product: str, workspace: str, store: Path | None = None) -> dict:
+    app = product_app.load(product, store)
+    ws = Workspace(workspace)
+    ws.start(product, "real")
+    folder = ws.folder("existing")
+    out_dir = folder / CAPTURES
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+    caps = product_app.captures(app)
+    raw, failed = shoot(app, caps, out_dir)
+    if (out_dir / RAW).is_file():
+        shutil.move(out_dir / RAW, folder / RAW)
+    _write(folder / RECORD, _record(app, caps, failed))
     if failed:
-        _open_to_worker(folder)
-        shown = "; ".join(f"{cid}: {why}" for cid, why in list(failed.items())[:12])
-        raise CaptureError(f"{len(failed)} of {len(caps)} capture(s) failed: {shown}")
+        _fail(folder, failed, len(caps))
     return write_outputs(app, caps, raw, folder)
+
+
+def recapture(product: str, workspace: str, screens: list[str], store: Path | None = None) -> dict:
+    """Step 4's delta: capture again only the given screens' captures, over a stored capture prepare copied in
+    (captures/ and raw.json); every other capture's PNG and raw measurements stay byte-identical. Then audit,
+    texts, app and sheet are rebuilt over all captures (the kept ones measure the same from the same raw)."""
+    app = product_app.load(product, store)
+    folder = Workspace(workspace).folder("existing")
+    out_dir, raw_file = folder / CAPTURES, folder / RAW
+    if not raw_file.is_file() or not out_dir.is_dir():
+        raise CaptureError(f"{folder}: captures/ and {RAW} must be copied from the store before a delta")
+    caps = product_app.captures(app)
+    known = {c["screen"] for c in caps}
+    if not screens or set(screens) - known:
+        raise CaptureError(f"recapture needs screens of the app file; got {screens}, unknown "
+                           f"{sorted(set(screens) - known)}")
+    todo = [c for c in caps if c["screen"] in screens]
+    kept = json.loads(raw_file.read_text(encoding="utf-8"))
+    missing = [c["id"] for c in caps if c not in todo and (c["id"] not in kept
+                                                         or not (out_dir / f"{c['id']}.png").is_file())]
+    if missing:
+        raise CaptureError(f"the stored capture lacks {len(missing)} kept capture(s): {', '.join(missing[:8])}")
+    with tempfile.TemporaryDirectory(prefix="app-screen-recapture-") as tmp:
+        raw_new, failed = shoot(app, todo, Path(tmp))
+        if failed:
+            _write(folder / RECORD, _record(app, caps, failed, delta=[c["id"] for c in todo]))
+            _fail(folder, failed, len(todo))
+        for c in todo:
+            shutil.copyfile(Path(tmp) / f"{c['id']}.png", out_dir / f"{c['id']}.png")
+    raw = {c["id"]: raw_new[c["id"]] if c in todo else kept[c["id"]] for c in caps}
+    _write(raw_file, raw)
+    _write(folder / RECORD, _record(app, caps, {}, delta=[c["id"] for c in todo], screens=list(screens)))
+    return {**write_outputs(app, caps, raw, folder), "recaptured": [c["id"] for c in todo]}
 
 
 def remeasure(product: str, workspace: str, store: Path | None = None) -> dict:

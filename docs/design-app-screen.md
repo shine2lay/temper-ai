@@ -925,3 +925,167 @@ Lessons (for later stages): a measurable fact the model misses becomes a script 
 not a prompt line (H3-2: a named outcome code must be a state); give the reader the screens' own words,
 not only their names (H3-3); a reader's token ceiling holds thinking and reply together, and a draft cut
 off costs the whole ceiling twice (H3-4: same cost on every run was the tell).
+
+## Reuse and tools (step 4)
+
+Stages 2 and 3 learn the product, and every run redid them: about $0.9 and 3 minutes for existing and
+$1.2-1.6 and 6-8 minutes for ground on RollCall. The owner, 2026-11-04 (m27185): "we should able to skip
+stages if we have prior work done, i don't think we need to figure out what rollcall does again for
+example, and may what tools exists". Step 4 (Design #214) keeps each product's proven stage outputs in a
+store, decides by script before a run whether each of stages 2-3 is reused, re-run only for what changed
+(delta) or run in full, and gives the stages a registry of the design tools that already exist (rule 36:
+use them first).
+
+Where it runs: the same split as stages 1-3 (workers reach neither `~/design-lab` nor the app).
+
+| Step | Kind | Does |
+| --- | --- | --- |
+| host `prepare` | script, on spark, before the run | `design_app_screen.py prepare --product P --workspace W [--force existing,ground]`: reads the product's store, decides existing (reuse, delta, run) with its reason, copies the stored files into `02-existing/` and re-captures only the changed screens (delta) or captures in full (run); runs `ground-prep` fresh (it is cheap and host-only) and puts the stored ground into `03-ground/stored/`; writes each stage's decision into `run.json` |
+| `existing_*` | script steps | reused: no model, no checks; the copied files are re-validated against the stage's contract and fail loud when broken. delta: the host re-captured the changed screens; the one `existing_read` runs over the merged audit (journeys span screens). run: as before |
+| `ground_collect` | script | finishes ground's decision (the requirements are known only after intake): reuse when nothing to place is new; delta: the stored inventory, with citations of changed or removed sources taken out, is the base, and the task holds only the items still unplaced plus what changed on screens already placed, with one added input section, "Already placed, keep"; run: as before |
+| `ground_check`, `ground` | script | delta: the reply's additions are merged into the base by script, then the full `ground_check` runs over the merged inventory (coverage over all items) and a kept check proves every base entry is unchanged (base lists are prefixes of the merged ones) |
+| host `store` | script, on spark, after the run | `design_app_screen.py store --workspace W [--run ID]`: accepts only a completed stage whose final checks pass when re-run on the host (existing: `existing_check` over `journeys.json`; ground: `ground_check` over `inventory.json` and the fixture invariants); anything else is refused loud. Writes a new version (older ones stay), `current.json` and a `history.json` entry |
+
+Modules, one job each: `product_store.py` (read, validate and write `~/design-lab/products/<product>/store/`),
+`reuse.py` (fingerprint and decide; deterministic, no model), `reuse_host.py` (the host commands `prepare`
+and `store`), `ground_delta.py` (ground's base, unplaced items, merge and kept check),
+`tools_registry.py` with `configs/design/knowledge/tools.yaml`, and
+`tests/test_design_app_screen_reuse.py`. `run.json` gains the stage statuses `reused`, `delta` and
+`planned` and keeps each stage's `decision`, `reason`, `source_run` and `store_version`; the contracts are
+extended compatibly (a delta reply's schema, `ground_additions`).
+
+Store layout, beside `app.yaml`: `store/existing/v<N>/` holds `02-existing/` as the workspace had it
+(captures, audit, texts, app summary, sheet, raw measurements, journeys, checks); `store/ground/v<N>/`
+holds `03-ground/` (inventory, sources, fixture and parts, `source/`, `product/`, design files, checks).
+Each version has a `source.json`: product, stage, version, the app file's sha256, the app commit (server)
+or static folder, a sha per UI file and over all of them, a sha over the other files, a sha over the
+screens, sizes and page block, the viewports, date, run id, workspace, workflow commit, the request's ids
+and words, and for ground the existing version it was built on. `current.json` points at each stage's
+version; `history.json` lists each stored request with its run id and every stage's status and reason.
+Gate answers join when the gate stages are built.
+
+Fingerprint: the product file's new optional `ui_globs` (RollCall `frontend/src/**`; Parcelly's static folder
+`**`), hashed per file at the app commit (`git ls-tree`, the repo only read) or over the static folder, the
+files outside the globs hashed together, and the product file's screens, sizes and page block.
+
+Decisions:
+
+- existing: reuse when a valid stored version exists and the fingerprint is unchanged. delta when only UI
+  files changed and every changed file maps to screens: a static page by its route; a server file by its
+  path's folder and file names matching a capability page's component (the stored sources), that page's
+  route to the product file's screens, and the stored inventory's screens citing that page and a captured
+  screen. Only those screens are re-captured and re-measured; the other screens' captures, audit entries
+  and measures stay byte-identical. run when nothing is stored, the store is invalid, the screens, sizes
+  or page block changed, a file outside the UI globs changed, a changed file maps to no screen, or on
+  `--force`; the reason says which.
+- ground: the product part follows the same rule (run for the same reasons). The request part changes with
+  every request, so new requirements are always placed: citations of a requirement (or any placed item)
+  whose words changed, and of removed items, leave the base; an entry left citing nothing leaves with them.
+  reuse (no reader) only when nothing is unplaced, nothing changed on placed screens and the prep (capability
+  map, notes, fixture, design-file status) is the stored one; else delta.
+- intake and the later stages always run.
+
+A reused existing keeps `journeys.json` byte-identical, including the requirement ids its journeys name, which
+belong to the stored run's request (its ids and words are in the version's `source.json`). Nothing after stage
+2 reads those links today (ground's journey items carry no requirement ids), and the proven ground runs read
+journeys written for another request too; stage 5+ should link requirements through ground's placements.
+
+Tool registry: `configs/design/knowledge/tools.yaml`, one entry per existing tool (id, path, job, inputs,
+outputs, proven_on, owner, stages). `tools_registry.check()` fails on a missing path or field;
+`stage_tools(stage)` lists a stage's entries; existing's and ground's task texts get them as the input
+section "Existing tools; use before writing new code". Only directions and build will act on it; the section
+is wired now.
+
+### Bar (written before the first trial run)
+
+Script (`tests/test_design_app_screen_reuse.py`): reuse when unchanged; delta when one route file changes (a
+temporary git repository) re-captures only its screens and keeps the others byte-identical; run when forced,
+when the stored contract is invalid, when the product file's screens change, and when an unmapped file
+changes; ground's base, unplaced items, merge and kept check on fixed inventories; store refuses a failed run;
+the registry fails on a missing path.
+
+On temper-dev:
+
+- RollCall, unchanged app, new request (stage 1 case A's round t2 r2 requirements, 12 items, whose words differ
+  from the stored request's 11): existing reused, its files byte-identical to the store, $0 for the stage;
+  ground delta places every new requirement: final check 0 problems (invented 0, unsourced 0, coverage 0),
+  kept entries unchanged; the grade-ground key on the merged inventory at least 86/95 with pages 19/19; at
+  least 90% of the requirements (11 of 12) placed on a screen the hand-written key expects; 3 of 3 runs,
+  since the ground delta has a model in it.
+- Parcelly delta: a copy of the clean twin (product `parcelly-delta`), stored from a full run, then one page
+  changed (Account gains a "Saved addresses" card with an empty-state message). Existing re-captures only
+  Account (3 captures); every other capture byte-identical to the store and their audit entries equal; the
+  new message in the re-captured screen's words (`texts.json`); ground delta places the new state on Account
+  (a state whose name holds "address"), final check 0 problems, kept unchanged; 3 of 3.
+- Forced (`--force existing,ground`) on the unchanged Parcelly copy: both stages run in full, 1 run.
+- Cost and time recorded, reused against full.
+
+A miss gets a hypothesis here (rule 20); one change; only that is rerun.
+
+### Trial cases
+
+| Case | Store before | Request | Key |
+| --- | --- | --- | --- |
+| R `rollcall` | existing v1 from round t7 run `cfc81378` (workspace `design207-a-r17`), ground v1 from round t4 run `58feecf0` (`design210-t4-a1`), both at `81117dd` | intake t2 r2 (`25fc39e2`, 12 requirements) | `known-cases/reuse/rollcall-r2-placements.json`, below; grade-ground with `a-rollcall-v3` |
+| D `parcelly-delta` | v1 from its own full run, v2 from the forced run | stage 2 case C's | Account re-captured alone, others byte-identical; a state holding "address" on Account |
+| F forced | parcelly-delta v1 | the same | both stages `run` with reason forced |
+
+Expected placements for the 12 requirements (written by hand before the runs, against the stored inventory's
+screens): R1 the Safe tile is not useful -> overview; R2 buying power, margin excess, net liq -> overview; R3
+no need to show simulated -> app-frame or overview; R4 the top looks off, R5 there's no top -> app-frame or
+overview; R6 analysis instead of alerts -> app-frame, analysis or alerts; R7 look at today's analysis page ->
+analysis; R8 other screens in More -> more or app-frame; R9 the premium summary not always present, R10
+collapsible -> overview or app-frame; R11 see the full ladder, R12 and pick -> roll-ticket, actions or trade.
+A requirement is placed on an expected screen when a screen in its set cites it (sources, shows, states or
+actions).
+
+Seeds: RollCall as above. `parcelly-planted`'s existing is seeded from its round t7 run; its ground cannot be
+stored, by design: the planted parcel breaks a fixture invariant, so every P ground run ends failed, and the
+store refuses it.
+
+### Results
+
+Round t1 (2026-11-05, worktree code through a mirror, trial workflow `design_app_screen_v1_reuse_d214` = the
+committed existing and ground nodes; runner `~/design-lab/app-screen-workflow/results/reuse-trials/trial.py`,
+grades in `grades/`). Every run met its bar; no hypothesis was needed.
+
+| Run | Case | existing | ground | Measures | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| `e8759b57` | R | reused, 69 files byte-identical, $0 | delta, 12 unplaced | key 89/95, pages 19/19, placements 12/12, final 0 problems, kept 0 | $0.047 | see note |
+| `8de91d2c` | R | reused, 69 identical, $0 | delta, 12 unplaced | key 89/95, pages 19/19, placements 12/12, 0 problems, kept 0 | $0.114 | see note |
+| `878ba823` | R | reused, 69 identical, $0 | delta, 12 unplaced | key 89/95, pages 19/19, placements 12/12, 0 problems, kept 0 | $0.127 | see note |
+| `1f6ec152` | R (timing) | reused, 69 identical, $0 | delta, 12 unplaced | key 89/95, pages 19/19, placements 12/12, 0 problems, kept 0 | $0.123 | 25 s (prepare 0.3 s) |
+| `7e69ed01` | D0 full | run (nothing stored) | run | final 0 problems; stored as v1 | $0.343 (0.230 + 0.112) | 91 s (prepare 15 s) |
+| `dde8d011` | F forced | run (forced) | run (forced) | both done; stored as v2 | $0.364 (0.246 + 0.118) | 99 s (prepare 15 s) |
+| `c3f60c00` | D1 | delta: Account only | delta | 12 other captures identical, other audit entries equal, new words in texts, state `no-saved-addresses` on Account, 0 problems, kept 0 | $0.265 (0.224 + 0.042) | 63 s (prepare 4.4 s) |
+| `4db30897` | D2 | delta: Account only | delta | the same | $0.273 (0.227 + 0.045) | 67 s (prepare 4.4 s) |
+| `05064063` | D3 | delta: Account only | delta | the same | $0.291 (0.250 + 0.042) | 72 s (prepare 4.6 s) |
+
+Round total $1.95 for 9 runs (one D0 start lost at once to a model-account error, $0, run again).
+
+Reused against full, RollCall: stages 2-3 cost $0.05-0.13 and took 25 s, against about $0.9 and 3 minutes
+(existing) plus $1.22-1.56 and 376-494 s (ground) when run in full (stages 2 t7 and 3 t4). Note: R1-R3's
+`ground_read` waited 1 h 53 min on the model account's five-hour limit, so their wall time (6,800 s) is not
+the stage's; R4 was run after it reset for the time.
+
+What the runs showed:
+
+- R's ground was a delta, not a reuse, for two true reasons the decision named: the new request (its 11
+  ids R1-R11 carry new words, so their old citations left the base: 11 stale ids, 37 citations) and a
+  changed prep: two fixture parts (`glossary`, `analysis_more`) in the draft-a folder changed since t4.
+  Reusing would have kept an inventory built on old words. 17 of the 23 screens are byte-identical to the
+  store; the other 6 differ only where the old request's citations left and the new ones were placed (the
+  kept check, 0 problems, proves no other part of a stored entry changed).
+- Parcelly delta re-captured the 3 Account views; 2 changed bytes (1440, 390) and 320 came out identical (its
+  first view ends above the new card), and all 12 other captures stayed byte-identical. Ground had nothing
+  unplaced; the 4-6 changed context items (Account's seen words, and journeys from the new `existing_read`)
+  went to the reader, which put the new state on Account each time.
+- An existing delta costs about what a full existing does ($0.22-0.25 on Parcelly), because its one
+  `existing_read` reads the whole merged audit (journeys span screens). It saves the capture time only.
+  Backlog: a journey-scoped read (only journeys crossing a changed screen) would cut it, if a later product
+  makes that worth a hypothesis.
+
+Stores after the round: `rollcall` existing v1 + ground v1 (seeds), `parcelly-planted` existing v1,
+`parcelly-delta` v1 (D0) and v2 (F); all validate (`design_app_screen.py validate-store --product P`). The
+Parcelly copy keeps its planted Account card (`known-cases/existing/apps/parcelly-delta/account.html`), so a
+new `prepare` against v2 is a delta again. Tool registry: 21 entries, `check-tools` passes.

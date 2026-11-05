@@ -3,6 +3,11 @@
 Every stage reads and writes only inside the workspace. run.json is the run's own record:
     {"product": "rollcall", "mode": "fixture", "round": 1,
      "stages": {"intake": {"status": "done", "at": "..."}, ...}}
+
+Step 4 (reuse): the host's prepare writes the decision for stages 2-3 into their entries before the run
+(status planned, with decision, reason, source_run, store_version and the screens a delta re-captures); the
+entry keeps those fields through later marks, and a stage that reused or redid only what changed ends reused
+or delta instead of done.
 """
 from __future__ import annotations
 
@@ -20,7 +25,9 @@ STEPS = STAGES + ("intake_collect", "intake_check", "existing_collect", "existin
 FOLDERS = {"intake": "01-request", "existing": "02-existing", "ground": "03-ground", "directions": "04-directions",
            "build": "05-build", "checks": "06-checks", "show": "07-show", "handoff": "08-handoff"}
 MODES = ("real", "fixture")
-STATUSES = ("running", "done", "failed")
+STATUSES = ("running", "done", "failed", "planned", "reused", "delta")
+DECISIONS = ("reuse", "delta", "run", "pending")       # pending: ground's, finished by ground_collect
+DECISION_KEYS = ("decision", "reason", "source_run", "store_version", "screens")
 PRODUCT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 KNOWN_CASE = "known-case"
 
@@ -82,9 +89,34 @@ class Workspace:
         if step not in STEPS or status not in STATUSES:
             raise WorkspaceError(f"cannot mark {step!r} {status!r}")
         data = self.run()
-        data["stages"][step] = {"status": status, "at": datetime.now(UTC).isoformat(timespec="seconds"), **extra}
+        before = data["stages"].get(step) or {}
+        kept = {k: before[k] for k in DECISION_KEYS if k in before and k not in extra}
+        data["stages"][step] = {"status": status, "at": datetime.now(UTC).isoformat(timespec="seconds"), **kept,
+                                **extra}
         self._save(data)
         return data
+
+    def decide(self, stage: str, decision: str, reason: str, **fields) -> dict:
+        """Record stage 2's or 3's reuse decision (prepare, or ground_collect finishing ground's)."""
+        if stage not in ("existing", "ground") or decision not in DECISIONS or not reason:
+            raise WorkspaceError(f"cannot record decision {decision!r} for {stage!r} (needs a reason)")
+        unknown = set(fields) - set(DECISION_KEYS)
+        if unknown:
+            raise WorkspaceError(f"unknown decision field(s): {', '.join(sorted(unknown))}")
+        # planned until the stage's own step ends it reused, delta or done: store accepts only a finished stage
+        data = self.run()
+        data["stages"][stage] = {"status": "planned", "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                                 "decision": decision, "reason": reason,
+                                 **{k: v for k, v in fields.items() if v is not None}}
+        self._save(data)
+        return data
+
+    def decision(self, stage: str) -> dict | None:
+        """Stage 2's or 3's recorded decision ({decision, reason, ...}), or None (no prepare: run as before)."""
+        entry = self.run()["stages"].get(stage) or {}
+        if entry.get("decision") not in DECISIONS:
+            return None
+        return {k: entry[k] for k in DECISION_KEYS if k in entry}
 
     def next_round(self) -> int:
         data = self.run()

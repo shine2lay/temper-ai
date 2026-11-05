@@ -32,7 +32,9 @@ from app_screen import (  # noqa: E402
     ground_sources,
     ground_task,
     product_app,
+    stored_copy,
 )
+from app_screen.product_store import ProductStore  # noqa: E402
 from app_screen.workspace import Workspace  # noqa: E402
 
 MAP = """# What demo can do
@@ -389,6 +391,71 @@ def test_a_broken_invariant_fails_the_stage_after_the_inventory_is_written(tmp_p
     with pytest.raises(ground.GroundError, match="breaks 1 invariant"):
         ground.run(w, "")
     assert (folder / "03-ground/inventory.json").is_file()
+
+
+# --- step 4: over a stored ground (reuse, delta) -------------------------------------------------------------
+
+def _stored_ground(tmp_path, ws) -> ProductStore:
+    ground.collect(ws, "")
+    assert ground.check(ws, json.dumps(GOOD))["verdict"] == "ok"
+    ground.run(ws, "")
+    ws.mark("ground", "done")
+    ps = ProductStore("demo", tmp_path / "lab")
+    assert ps.add("ground", ws.folder("ground"), {"fingerprint": {}, "run": "run-1"}) == (1, True)
+    return ps
+
+
+def _over_store(tmp_path, store, ps, name, requirements=REQUIREMENTS) -> Workspace:
+    """A new run's workspace as prepare leaves it with ground pending: fresh prep, the stored copy beside it."""
+    folder = tmp_path / name
+    folder.mkdir()
+    ground_host.prep("demo", folder, store=store)
+    _stage_inputs(folder)
+    _write(folder / "01-request/requirements.json", requirements)
+    w = Workspace(folder)
+    files = ps.copy_out("ground", 1, stored_copy.folder(w, "ground"))
+    stored_copy.write(w, {"ground": {"version": 1, "source_run": "run-1", "files": files}})
+    w.decide("ground", "pending", "stored v1", source_run="run-1", store_version=1)
+    return w
+
+
+def test_nothing_new_reuses_the_stored_inventory_without_the_model(tmp_path, store, ws):
+    ps = _stored_ground(tmp_path, ws)
+    w = _over_store(tmp_path, store, ps, "again")
+    assert ground.collect(w, "")["model"] == "no"
+    assert w.decision("ground")["decision"] == "reuse"
+    assert ground.check(w, "")["verdict"] == "ok"
+    out = ground.run(w, "")
+    assert out["stage_status"] == "reused"
+    assert (w.folder("ground") / "inventory.json").read_bytes() == \
+        (ps.version_dir("ground", 1) / "inventory.json").read_bytes()
+    contracts.validate("ground", w)
+
+
+def test_a_new_requirement_is_placed_by_a_delta_and_the_stored_entries_stay(tmp_path, store, ws):
+    ps = _stored_ground(tmp_path, ws)
+    request = copy.deepcopy(REQUIREMENTS)
+    request["items"].append({"id": "R3", "item": "S3", "owner_words": "remind me on the day", "kind": "feature",
+                             "maps_to": ["home"]})
+    w = _over_store(tmp_path, store, ps, "new-request", request)
+    out = ground.collect(w, "")
+    assert out["model"] == "yes" and out["unplaced"] == 1 and w.decision("ground")["decision"] == "delta"
+    assert f"## {ground_task.PLACED_TITLE}" in out["task"] and "req:R3" in out["task"]
+    assert "api:POST /api/dev/reset" not in out["task"].split(ground_task.PLACED_TITLE)[1].split("excluded already")[0]
+    nothing = {"screens": [], "excluded": []}
+    assert ground.check(w, json.dumps(nothing))["verdict"] == "retry"
+    additions = {"screens": [{"id": "today", "name": "Today", "sources": ["req:R3"], "states": [],
+                              "actions": [{"id": "remind", "what": "set a reminder for the day",
+                                           "states": ["pending", "done", "error"], "sources": ["req:R3"]}]}],
+                 "excluded": []}
+    done = ground.run(w, json.dumps(additions))
+    assert done["stage_status"] == "delta" and done["revised"] is True
+    inventory = json.loads((w.folder("ground") / "inventory.json").read_text())
+    stored = json.loads((ps.version_dir("ground", 1) / "inventory.json").read_text())
+    today = inventory["screens"][0]
+    assert "req:R3" in today["sources"] and [a["id"] for a in today["actions"]] == ["water", "remind"]
+    assert inventory["screens"][1] == stored["screens"][1]
+    assert (w.folder("ground") / "additions-first.json").is_file()
 
 
 # --- the trial grader ------------------------------------------------------------------------------------------

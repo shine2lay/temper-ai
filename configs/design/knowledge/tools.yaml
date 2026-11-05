@@ -1,0 +1,175 @@
+# Design's existing tools: what a design_app_screen_v1 stage uses before writing new code (AGENTS.md rule 36).
+# Read by configs/design/bin/app_screen/tools_registry.py: check() fails loud on a missing field, an unknown stage
+# or a path that does not exist; stage_tools(stage) lists a stage's entries for its task text.
+# path: relative to the temper-ai repo; url: a local HTTP API instead of a file.
+# stages: the app-screen stages the tool is for (intake, existing, ground, directions, build, checks, review,
+# show, handoff).
+tools:
+  - id: capture_page
+    path: configs/design/bin/capture_page.py
+    job: Model-free preflight, full-page capture of a live page, then independent evidence verification.
+    inputs: URL, viewports, cookie policy
+    outputs: full-page PNGs, capture record JSON (statuses, limits, verification)
+    proven_on: live on temper-dev; homepage answer key v1 (70 views)
+    owner: design
+    stages: [existing, checks, review]
+  - id: design_measure
+    path: configs/design/bin/design_measure.js
+    job: In-page measures of a rendered view (type sizes, contrast, spacing, targets, overflow) as JSON.
+    inputs: a loaded Playwright page
+    outputs: measures JSON per view
+    proven_on: design_review and craft-v1 benchmarks
+    owner: design
+    stages: [checks, review]
+  - id: design_page_checks
+    path: configs/design/bin/design_page_checks.py
+    job: Judges design_page_checks.js's in-page raw facts against frozen thresholds; one named problem line per check for a critic (facts.md).
+    inputs: raw facts from design_page_checks.js, design_page_checks_thresholds.json
+    outputs: problem lines (check, element, evidence)
+    proven_on: homepage v2 bar, design_review
+    owner: design
+    stages: [checks, review]
+  - id: throwaway_app
+    path: configs/design/bin/app_screen/throwaway_app.py
+    job: Starts a throwaway copy of a product's app (server checkout at a pinned commit, or a static folder) and stops it after.
+    inputs: the product's app.yaml (app block)
+    outputs: a base URL on a free local port
+    proven_on: app-screen stage 2 rounds t1-t7 (RollCall, Parcelly)
+    owner: design
+    stages: [existing, build, checks]
+  - id: product_app
+    path: configs/design/bin/app_screen/product_app.py
+    job: Loads and validates a product's app.yaml and lists every capture (screen x width x state, with steps).
+    inputs: product id (~/design-lab/products/<product>/app.yaml)
+    outputs: app dict, capture list
+    proven_on: app-screen stages 2-3 (RollCall, Parcelly)
+    owner: design
+    stages: [existing, ground, build, checks]
+  - id: existing_capture
+    path: configs/design/bin/app_screen/existing_capture.mjs
+    job: Playwright capture of a plan of screens and states (login, steps, delayed APIs for loading) into PNGs plus raw in-page measures.
+    inputs: capture plan JSON (captures, base URL, login)
+    outputs: captures/<id>.png, raw.json
+    proven_on: app-screen stage 2 round t7 3/3 on RollCall and Parcelly
+    owner: design
+    stages: [existing, checks]
+  - id: measure_in_page
+    path: configs/design/bin/app_screen/measure_in_page.js
+    job: Per-view measures run inside the page by existing_capture (text sizes, tap targets, overflow, first-view words).
+    inputs: a loaded page
+    outputs: measures JSON per capture
+    proven_on: app-screen stage 2 round t7
+    owner: design
+    stages: [existing, checks]
+  - id: existing_sheet
+    path: configs/design/bin/app_screen/existing_sheet.py
+    job: Contact sheet of captures (labelled tiles at one width) for a model or a person to read at a glance.
+    inputs: list of (capture id, PNG), sheet width
+    outputs: sheet.png, sheet.json (tile positions)
+    proven_on: app-screen stage 2 round t7
+    owner: design
+    stages: [existing, show]
+  - id: design_files
+    path: configs/design/bin/design_files.py
+    job: Design-file registry (DESIGN.md + tokens.json per product, configs/design/products.yaml) - status and pack.
+    inputs: product id
+    outputs: status defined/partial/none, packed design files
+    proven_on: app-screen stage 3 round t4 (status exact on A, P, clean)
+    owner: design
+    stages: [ground, directions, build]
+  - id: capabilities
+    path: configs/epd/bin/capabilities.py
+    job: The app's capability map (pages, API routes, groups, where each is declared), derived or read at a pinned commit.
+    inputs: repo, commit, map path
+    outputs: capability items (kind, key, group, intent, where)
+    proven_on: app-screen stage 3 round t4 (RollCall pages 19/19)
+    owner: docs
+    stages: [ground, directions, build]
+  - id: html_to_penpot
+    path: configs/design/bin/html_to_penpot.py
+    job: Converts rendered HTML into an editable Penpot file (flex/grid layouts, growing text, state variants).
+    inputs: HTML page, Penpot target (penpot-automation skill)
+    outputs: Penpot file, export PNGs
+    proven_on: design_homepage_v2 (editable Penpot deliverables)
+    owner: design
+    stages: [build, handoff]
+  - id: design_pairwise_judge
+    path: configs/design/bin/design_pairwise_judge.py
+    job: Validates and summarises a blind pairwise judge's verdict.json (neutral single-letter labels); advice only, never the deciding grade.
+    inputs: workspace with the laid-out pair and judge/verdict.json
+    outputs: checked verdict summary
+    proven_on: homepage scoreboard (advice)
+    owner: design
+    stages: [review]
+  - id: design_critic
+    path: configs/design/agents/design_critic.yaml
+    job: design_review's critic agent - heuristic and accessibility findings rated 0-4 with element + evidence.
+    inputs: captures, measures, product patterns
+    outputs: findings JSON
+    proven_on: design_review_grade
+    owner: design
+    stages: [review]
+  - id: design_verify
+    path: configs/design/agents/design_verify.yaml
+    job: design_review's verify agent - re-checks each critic finding against the evidence, drops unsupported ones.
+    inputs: critic findings, captures
+    outputs: verified findings JSON
+    proven_on: design_review_grade
+    owner: design
+    stages: [review]
+  - id: design_merge
+    path: configs/design/agents/design_merge.yaml
+    job: design_review's merge agent - merges evaluators' findings into one ranked list (severity x reach).
+    inputs: verified findings from each evaluator
+    outputs: merged findings JSON
+    proven_on: design_review_grade
+    owner: design
+    stages: [review]
+  - id: design_research
+    path: configs/design/bin/design_research.py
+    job: The design research step's script stages - read the product's source pack and design files, decide defined/partial/none, check and assemble research when not defined.
+    inputs: source pack and design files copied in by design_files.py pack
+    outputs: design-file status, checked research pack
+    proven_on: homepage direction research
+    owner: design
+    stages: [directions]
+  - id: showtell_pictures
+    url: http://127.0.0.1:8650/api/pictures
+    job: Show&Tell picture upload (POST a PNG, get a picture URL to embed in a shared document).
+    inputs: PNG bytes
+    outputs: picture URL
+    proven_on: Design #170 RollCall review pages
+    owner: design
+    stages: [show]
+  - id: check_integration
+    path: configs/design/bin/app_screen/checks_pattern/check-integration.mjs
+    job: Whole-prototype check on live CSS - leaked shared selectors, handler coverage, every open clicked 2 levels deep, figures vs fixture, 12px floor, overflow at 1440/390/320, console errors.
+    inputs: a built multi-screen prototype (index.html), fixture.json
+    outputs: INTEGRATION.md, pass/fail per check
+    proven_on: RollCall draft-a (Design #204)
+    owner: design
+    stages: [checks]
+  - id: check_showtell
+    path: configs/design/bin/app_screen/checks_pattern/check_showtell.mjs
+    job: Look-only check that a published Show&Tell page draws in the real viewer at 1440 and 390 (images load, no console errors, loading/empty switch).
+    inputs: Show&Tell doc id
+    outputs: screenshots, pass/fail JSON
+    proven_on: Design #170
+    owner: design
+    stages: [show]
+  - id: contact_sheet
+    path: configs/design/bin/app_screen/checks_pattern/contact-sheet.mjs
+    job: Contact sheet of every screen's first view at 1440 and 390 from a built prototype.
+    inputs: a built prototype (index.html)
+    outputs: contact-1440.png, contact-390.png
+    proven_on: RollCall draft-a
+    owner: design
+    stages: [checks, show]
+  - id: type_size_walker
+    path: configs/design/bin/app_screen/checks_pattern/check-shell.mjs
+    job: Walks every visible text node's computed font size (uppercase counted) against the 12px floor, plus top bar, nav and layout width per screen.
+    inputs: a built prototype (index.html)
+    outputs: pass/fail per screen with offending elements
+    proven_on: RollCall draft-a
+    owner: design
+    stages: [checks]

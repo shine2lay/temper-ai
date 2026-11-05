@@ -158,6 +158,13 @@ SCHEMAS: dict[str, dict] = {
         {"id": ID, "name": TEXT, "sources": items(GROUND_REF), "states": items(GROUND_STATE)},
         {"shows": items(GROUND_SHOW, least=0), "actions": items(GROUND_ACTION, least=0)})),
         "excluded": items(GROUND_EXCLUDED, least=0)}, {"notes": TEXT}),
+    # A delta reply (step 4, ground_delta.py): the same shape, holding only what the unplaced items add; an entry
+    # with a stored screen's id adds to it, so its sources and states may be empty. Merged by script, then the
+    # merged draft is held to ground_draft and every check.
+    "ground_additions": obj({"screens": items(obj(
+        {"id": ID, "name": TEXT, "sources": items(GROUND_REF, least=0), "states": items(GROUND_STATE, least=0)},
+        {"shows": items(GROUND_SHOW, least=0), "actions": items(GROUND_ACTION, least=0)}), least=0),
+        "excluded": items(GROUND_EXCLUDED, least=0)}, {"notes": TEXT}),
     "ground_check": STEP_CHECK,
     "inventory": obj({"design_files": {"enum": ["defined", "partial", "none"]}, "screens": items(obj(
         {"id": ID, "name": TEXT, "states": items(STATE), "widths": items(WIDTH)},
@@ -331,7 +338,8 @@ def validate(step: str, workspace: Workspace | Path | str) -> list[str]:
     checked: list[str] = []
     data: dict[str, Any] = {}
     for pattern, kind, least in FILES[step]:
-        pattern = pattern.replace("<round>", f"round-{ws.round}")
+        if "<round>" in pattern:
+            pattern = pattern.replace("<round>", f"round-{ws.round}")
         found = sorted(p for p in ws.path.glob(pattern) if p.is_file())
         if len(found) < least:
             problems.append(f"{pattern}: (file): needs at least {least}, found {len(found)}")

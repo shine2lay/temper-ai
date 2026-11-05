@@ -58,6 +58,10 @@ INVARIANTS = obj({}, {
     "same_value": items(obj({"key": DATA_PATH, "field": DATA_PATH})),
     "totals": items(obj({"total": DATA_PATH, "plus": items(DATA_PATH)}, {"minus": items(DATA_PATH)}))})
 FIXTURE = obj({"file": SOURCE_PATH}, {"parts": SOURCE_PATH, "invariants": INVARIANTS})
+# Step 4 (reuse, reuse.py): the app's UI files, as globs relative to the repo (server) or the static folder; "**"
+# crosses folders. A change only there can be a delta (re-capture the screens the files map to); a change anywhere
+# else runs stage 2 in full. Left out, every file counts as outside, so any change runs in full.
+UI_GLOB = {"type": "string", "minLength": 1, "pattern": r"^(?!/)(?!.*\.\./)[^\\]+$"}
 APP_FILE = obj({
     "product": ID, "name": TEXT, "job": TEXT, "app": {"oneOf": [SERVER, STATIC]},
     "page": obj({"main": TEXT}, {
@@ -76,7 +80,7 @@ APP_FILE = obj({
 }, {"login": obj({"path": {"type": "string", "pattern": "^/"}, "fields": {"type": "object", "minProperties": 1,
                                                                       "additionalProperties": {"type": "string"}},
                   "submit": TEXT, "wait_for": TEXT}),
-    "capabilities": SOURCE_PATH, "notes": items(SOURCE_PATH), "fixture": FIXTURE})
+    "capabilities": SOURCE_PATH, "notes": items(SOURCE_PATH), "fixture": FIXTURE, "ui_globs": items(UI_GLOB)})
 
 
 def _where(error) -> str:

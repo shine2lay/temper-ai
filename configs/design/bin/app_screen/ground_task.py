@@ -4,6 +4,9 @@ task() lays out the product's job and design-file status, then every source item
 cites: the capability map's pages and API routes (grouped as the map groups them), the screens stage 2
 captured with their states and the words each shows, stage 1's requirements, stage 2's journeys, and the lines of the product's knowledge
 files. The rules and the reply's shape are in the agent's system prompt; the facts are all here.
+Over a stored ground (step 4's delta) the items are only the unplaced and changed ones, and an "Already placed,
+keep" section (ground_delta.placed_section) lists what the stored inventory holds. The registry's existing
+tools for the stage close the text (tools_registry.task_section).
 revise() adds the previous draft and the check's problems for the one revision.
 """
 from __future__ import annotations
@@ -39,7 +42,11 @@ def _lines(kind: str, entries: list[dict]) -> list[str]:
     return [f"- {i['id']}: {i['text']}" for i in entries]
 
 
-def task(app: dict, status: str, sources: list[dict], questions: list[dict]) -> str:
+PLACED_TITLE = "Already placed, keep"
+
+
+def task(app: dict, status: str, sources: list[dict], questions: list[dict], placed: list[str] | None = None,
+         tools: list[str] | None = None) -> str:
     counts = {k: sum(1 for i in sources if i["kind"] == k) for k in ORDER}
     widths = ", ".join(str(w) for w in sorted((int(w) for w in app.get("sizes", {})), reverse=True))
     parts = [f"# Ground: everything the {app['name']} design must cover",
@@ -50,6 +57,8 @@ def task(app: dict, status: str, sources: list[dict], questions: list[dict]) -> 
                  f"{counts['req']} requirements, {counts['journey']} journeys, {counts['note']} knowledge lines. "
                  "Every page, API route, requirement and knowledge line is cited by a screen or excluded with a "
                  "reason; every captured screen is cited by a screen."]
+    if placed:
+        parts += ["", f"## {PLACED_TITLE}"] + placed
     for kind in ORDER:
         entries = [i for i in sources if i["kind"] == kind]
         if entries:
@@ -57,6 +66,7 @@ def task(app: dict, status: str, sources: list[dict], questions: list[dict]) -> 
     if questions:
         parts += ["", "## Open questions from stage 1 (context; do not answer them)"]
         parts += [f"- {q['id']}: {q['question']}" for q in questions if q.get("status") != "answered"]
+    parts += tools or []
     return "\n".join(parts) + "\n"
 
 

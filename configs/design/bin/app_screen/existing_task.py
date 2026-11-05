@@ -4,6 +4,7 @@ task() lays out, from what the host's capture wrote and stage 1's requirements: 
 requirements, the screens, every capture with its measures (a "!" after each value on the problem side of its
 line, existing_measures.PROBLEM_WHEN), each screen state's visible text, and the per-width totals. The model
 sees the contact sheet beside it; the words and numbers it may cite are all here.
+The registry's existing tools for the stage close the text (tools_registry.task_section).
 revise() adds the previous draft and the check's problems for the one revision.
 """
 from __future__ import annotations
@@ -42,7 +43,7 @@ def _text(runs: list[str], limit: int = TEXT_CHARS) -> str:
     return " | ".join(out)
 
 
-def task(audit: dict, texts: dict, app: dict, requirements: dict) -> str:
+def task(audit: dict, texts: dict, app: dict, requirements: dict, tools: list[str] | None = None) -> str:
     lines = [f"# {app['name']} as it is today", "", f"Product's job: {app['job']}", "",
              "## Requirements (stage 1: the owner's words, verbatim, and what each means)"]
     for r in requirements.get("items", []):
@@ -85,6 +86,7 @@ def task(audit: dict, texts: dict, app: dict, requirements: dict) -> str:
         t = texts.get(cap["id"], {})
         lines.append(f"{cap['id']} [first view]: {_text(t.get('first_view', []), 600)}")
         lines.append(f"{cap['id']} [all]: {_text(t.get('all', []))}")
+    lines += tools or []
     lines += ["", "Write the journeys and problems now, as one JSON object, exactly the shape you were given."]
     return "\n".join(lines) + "\n"
 

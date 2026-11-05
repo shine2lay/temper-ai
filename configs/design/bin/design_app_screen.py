@@ -12,6 +12,13 @@
     design_app_screen.py grade-existing --case DIR --workspace W                (host, stage 2 trials)
     design_app_screen.py ground-prep --product P --workspace W                  (host, before stage 3)
     design_app_screen.py grade-ground --case DIR --workspace W                  (host, stage 3 trials)
+    design_app_screen.py prepare --product P --workspace W [--force existing,ground]
+        (host, before a run: reuse the product's stored stages 2-3, redo only what changed, or run them in
+        full; replaces capture + ground-prep; app_screen/reuse_host.py)
+    design_app_screen.py store --workspace W --run RUN [--stages existing,ground] [--workflow-commit SHA]
+        (host, after a run: keep the stages that passed in the product store; refuses the rest)
+    design_app_screen.py validate-store --product P                            (host)
+    design_app_screen.py check-tools                                           (host or worker: the tool registry)
 
 Steps: intake_collect, intake_check, intake, existing_collect, existing_sheet, existing_check, existing,
 ground_collect, ground_check, ground, directions, gate_direction, build, checks, review, show, gate_final,
@@ -55,7 +62,9 @@ from app_screen.fixture_stage import NotBuiltError  # noqa: E402
 from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa: E402
 
 HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
-                 "ground-prep", "grade-ground")
+                 "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools")
+# A stage step may end reused or delta instead of done (step 4: its output says which in stage_status).
+STAGE_STATUSES = ("reused", "delta")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
         "existing_collect": existing.collect, "existing_sheet": existing.sheet, "existing_check": existing.check,
         "existing": existing.run, "ground_collect": ground.collect, "ground_check": ground.check,
@@ -82,7 +91,10 @@ def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str
     except FAILURES as exc:
         ws.mark(step, "failed", reason=str(exc)[:500])
         raise
-    ws.mark(step, "done")
+    status = result.get("stage_status", "done")
+    if status not in ("done",) + STAGE_STATUSES:
+        raise WorkspaceError(f"{step} returned stage_status {status!r}; it is one of {', '.join(STAGE_STATUSES)}")
+    ws.mark(step, status)
     return {"step": step, "mode": ws.mode, "valid": True, "checked": len(files), **result}
 
 
@@ -138,7 +150,28 @@ def ground_prep(args: argparse.Namespace) -> dict:
     return ground_host.prep(args.product, args.workspace)
 
 
+def reuse_command(command: str, args: argparse.Namespace) -> dict:
+    """Host: step 4's prepare, store and validate-store (app_screen/reuse_host.py), and the tool registry."""
+    if command == "check-tools":
+        from app_screen import tools_registry
+        return tools_registry.check()
+    from app_screen import reuse_host
+    if command == "validate-store":
+        if not args.product:
+            raise WorkspaceError("validate-store needs --product")
+        return reuse_host.validate(args.product)
+    if not args.workspace:
+        raise WorkspaceError(f"{command} needs --workspace W")
+    if command == "prepare":
+        if not args.product:
+            raise WorkspaceError("prepare needs --product")
+        return reuse_host.prepare(args.product, args.workspace, args.force)
+    return reuse_host.store(args.workspace, args.run, args.stages, args.workflow_commit)
+
+
 def host(command: str, args: argparse.Namespace) -> dict:
+    if command in ("prepare", "store", "validate-store", "check-tools"):
+        return reuse_command(command, args)
     if command == "collect":
         return collect(args)
     if command == "capture":
@@ -181,6 +214,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--record", action="append")
     parser.add_argument("--history", action="store_true")
     parser.add_argument("--out")
+    parser.add_argument("--force", help="prepare: stages to run in full, e.g. existing,ground")
+    parser.add_argument("--run", help="store: the temper run id the workspace's outputs came from")
+    parser.add_argument("--stages", help="store: which stages to keep (default existing,ground)")
+    parser.add_argument("--workflow-commit", help="store: the temper-ai commit the run used")
     args = parser.parse_args(argv)
     started = time.monotonic()
     try:

@@ -9,7 +9,8 @@ for each step's output and the first known case. A stage that is still a stub co
 output in fixture mode and has it checked against its contract; in real mode it fails at once with "the
 real stage is not built yet". Each stage's own task replaces its stub and keeps its contract, one stage
 at a time (owner, 2026-11-04: "lets run one stage a time after setting up the skeleton, so we can really
-hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake").
+hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), and stage 2,
+existing (Design #207; see "Stage 2: existing").
 
 Files, one job each:
 
@@ -29,6 +30,19 @@ Files, one job each:
 | `configs/design/bin/app_screen/intake_grade.py` | grade an intake run against a trial case's answer key (host) |
 | `configs/design/agents/design_app_screen_intake_v1.yaml` | intake's model step: the owner's words -> draft requirements and questions |
 | `configs/design/workflows/design_app_screen_v1_intake.yaml` | stage 1 alone (the same nodes), for intake's trials |
+| `configs/design/bin/app_screen/product_app.py` | the product file (`~/design-lab/products/<product>/app.yaml`): load, check, the capture list |
+| `configs/design/bin/app_screen/throwaway_app.py` | start a throwaway copy of the product (pinned commit, own folder, loopback port, seed) or a static folder, and stop it |
+| `configs/design/bin/app_screen/existing_capture.mjs` | Playwright on the host: log in, follow the screen's steps, measure in the page, screenshot the first view (look-only) |
+| `configs/design/bin/app_screen/measure_in_page.js` | the in-page measurement (layout width, text sizes, targets, cut text, side scrollers, key regions, errors, text runs) |
+| `configs/design/bin/app_screen/existing_measures.py` | one capture's measurement -> the audit's flat measures, which side of each line is a problem, totals per width |
+| `configs/design/bin/app_screen/existing_sheet.py` | the contact sheet: every first view at one width, labelled, in one PNG under the image budget |
+| `configs/design/bin/app_screen/existing_host.py` | host `capture`: start the copy, run the capture, write the audit, texts, app summary and sheet |
+| `configs/design/bin/app_screen/existing_task.py` | the model's task text (job, requirements, measures with problem marks, visible text) and the revise text |
+| `configs/design/bin/app_screen/existing_check.py` | stage 2's measured checks on the model's draft, journeys by refs, and the final `journeys.json` |
+| `configs/design/bin/app_screen/existing_grade.py` | grade a stage-2 run against a case's answer key (host `grade-existing`) |
+| `configs/design/agents/design_app_screen_existing_v1.yaml` | existing's model step: the contact sheet (image) + task text -> draft journeys and problems |
+| `configs/design/workflows/design_app_screen_v1_existing.yaml` | stage 2 alone (the same nodes), for existing's trials |
+| `tests/test_design_app_screen_existing.py` | existing's checks, steps, product file, measures and grader, on fixed drafts and broken copies |
 | `tests/test_design_app_screen_contracts.py` | contracts, gates, freeze and the CLI, on the known case |
 | `tests/test_design_app_screen_intake.py` | intake's checks, steps, collector and grader, on fixed drafts |
 | `tests/design_app_screen_case/rollcall-20261104/` | the known case's JSON and Markdown outputs (the pictures and pages stay in the lab) |
@@ -38,7 +52,7 @@ Files, one job each:
 | # | Stage | Steps (workflow nodes) | Leaves | Built by |
 | --- | --- | --- | --- | --- |
 | 1 | intake | `intake_collect`, `intake_read` (model), `intake_check`, `intake_revise` (model, only on a failed check), `intake` | the owner's words as requirements (verbatim) and the clarification questions (rule 33) | #206 |
-| 2 | existing | `existing` | today's screens captured and measured; the user journeys, each problem with evidence | W2 |
+| 2 | existing | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
 | 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | W2 |
 | 4 | directions | `directions`, then `gate_direction` | two or more clickable directions, each with its quick checks; the owner picks one | W3, W5 |
 | 5 | build | `build` | the chosen direction: a shell and one file per screen | W3 |
@@ -186,7 +200,8 @@ Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it
 | Stage | Real stage | Task |
 | --- | --- | --- |
 | 1 intake | real; met its bar 2026-11-05, 3/3 runs on every case (Stage 1, Results) | #206 |
-| the other seven, both gates | stub: fixture mode only | one task per stage |
+| 2 existing | real; see Stage 2, Results | #207 |
+| the other six, both gates | stub: fixture mode only | one task per stage |
 
 ## Tests
 
@@ -203,6 +218,18 @@ the collector on a plain request, Show&Tell comments and dialog answers (with fa
 passes through; the grader's key, question, conflict and specifics counts, and a key point split over
 two requirements on its item (met together; unmet when one part is gone); the trial workflow's nodes
 equal the whole workflow's; the agent is fenced (no tools block, JSON-only draft).
+
+`python3 -m pytest -q tests/test_design_app_screen_existing.py`: existing's script checks, each with a
+good and a bad fixed draft (unknown capture, measure the capture lacks, a number the audit doesn't hold, a
+number no ref shows, text not on the capture, a measured kind without its measure, a measure that
+contradicts the claim, an orphan problem, an unknown screen or requirement, a suggestion field); a clean
+draft becomes `journeys.json` and turns back into the same draft; journeys get the problems seen on their
+screens; a bad draft retries, then fails loud; the product file loader and its refusals (no route or steps, a
+width not in sizes, a login without an account, a checkout inside the repo, an unknown field); the measures' problem sides, totals and the
+missing-value rule; the grader on a good run and broken copies (an unsupported number, a missing evidence
+id, a claim on the clean twin, a missed planted defect, a failed capture), and a key held to its bar, not
+to every entry; the trial workflow's nodes equal the whole workflow's; the agent is fenced (no tools, one
+image, JSON only).
 
 ## Stage 1: intake
 
@@ -338,3 +365,249 @@ ranked before they reach the owner; that belongs to the stage that asks them.
 Run ids are temper-dev execution ids (first 8 characters; full ids in the results folder). Cost: t1
 $3.05, t2 $3.07. The revision step is proven by the pytest (a fixed bad draft), not yet by a live run,
 since no live draft needed it.
+
+## Stage 2: existing
+
+Existing reads the product as it is today: it captures every screen and state at 1440, 390 and 320,
+measures each capture by script, and has one fenced model call write the user journeys and the problems
+in them. Every problem is tied to a capture and a measure or the capture's visible text. Later stages
+design from this read, so a missed problem or an invented one spoils the redesign. In the hand-run
+RollCall redesign (#170) this read found 23 of 26 phone screens wider than 320 px and the attention list
+3.3 screens down; those findings drove the redesign.
+
+| Step | Kind | Does |
+| --- | --- | --- |
+| host `capture` | script, on spark | `design_app_screen.py capture --product P --workspace W`: reads the product file, starts a throwaway copy (or a static folder), logs in, opens every screen x width x state look-only, measures it in the page and screenshots its first view. Writes `02-existing/captures/<screen>-<width>-<state>.png`, `raw.json`, `capture.json` (what was captured, what failed), `audit.json` (flat measures per capture, totals per width), `texts.json` (each capture's visible text), `app.json` (the screens) and `sheet.png` (the contact sheet). Workers reach neither the app nor a browser, so this runs on the host before the workflow. |
+| `existing_collect` | script | checks the capture is there and complete, writes `task.md`: the product's job, the stage-1 requirements, every capture's measures with a `!` on each value on its problem side, the visible text, the totals |
+| `existing_sheet` | script | passes `sheet.png` on as the model's one image (Temper's tool-free image input takes one PNG per call; a script's output is capped at 256,000 characters, so the sheet is kept under 180,000 bytes) |
+| `existing_read` | model (`design_app_screen_existing_v1`, anthropic `claude-opus-5-5` on token label `roamee`, no tools, no temperature) | the sheet + `task.md` -> `draft.json`: journeys (name, goal, screens, steps, requirement ids, keep items with evidence) and problems (claim, severity 0-4, kind, evidence refs). Fenced checklist in the prompt: journeys from the job and the requirements, one goal per journey, a screen with its own job its own journey; each problem an observation with evidence, no suggestions; walk every state; Nielsen severity; name what works; cite refs of fixed shapes; never claim what a measure contradicts; state only numbers the refs show; JSON only |
+| `existing_check` | script | the measured checks below -> `check.json`; any problem -> `retry` |
+| `existing_revise` | model, only on `retry` | the same agent fixes exactly the problems in `check.json` (one revision) |
+| `existing` | script | the same checks on the final draft -> `check-final.json`; clean: `journeys.json`, each journey with every problem seen on its screens (by the refs, a script fact, not the model's word); any problem left fails the stage loud |
+
+A ref is one of `{"capture", "measure", "value"}`, `{"capture", "text"}` or `{"total": "<measure>@<width>",
+"value", "of"}`. The checks (`existing_check.py`): schema; ids (unique, journeys name problems that exist,
+requirement ids exist); screens (journeys name app screens); refs (the capture exists, the measure is the
+capture's, the total exists); values (a measure ref's value equals the audit's exactly); texts (a text ref
+is visible in that capture); unsupported (a problem cites no capture, or a measured kind cites none of its
+kind's measures on the problem side); contradicted (a problem's measures of its kind all sit on the OK
+side, or a keep item cites a problem-side measure); invented (a claim states a number none of its refs,
+the capture's size, the screen sizes or a fixed threshold shows); orphan (a problem no journey names).
+Which side of a line is a problem lives in one place, `existing_measures.PROBLEM_WHEN`, used by the task
+text's `!` marks, the checks, the totals and the grader.
+
+Measures per capture (`existing_measures.measures`, from `measure_in_page.js`): layout width and how much
+wider than the screen; page height and screens tall; tab bar height and rows; content left in the first
+view; text runs, runs under 12 and 16 px, sentence-length runs under 16 px, distinct sizes, smallest size;
+tap targets under 24x24 (inline links excluded, WCAG 2.2 2.5.8); sideways-scrolling boxes and the widest
+one's content and box width; cut text (ellipsis, clamp, clipping); always-open blocks; error messages
+with no button or link beside them; page errors; each key region's top and screens down (regions named
+in the product file); missing values (a dash where a sentence needs a value, "These numbers are from
+—.").
+
+### Product file
+
+`~/design-lab/products/<product>/app.yaml`, checked by `product_app.py` (a broken file fails loud with
+every problem): `product`, `name`, `job`; `app`: a `server` (repo, pinned commit, its own checkout
+folder never inside the repo, loopback port, build commands, env, seed and serve commands, ready path)
+or `static` (folder, port); `login` (form fields with `{account}`, submit, wait-for); `page` (the main
+region, chrome regions, key regions, loading text, error selector, the delayed-API trick for loading
+states); `sizes` (width -> height, phone or not); `sheet_width`; and `screens`, each with an `id`, a
+`name`, a `route` or `steps` (`goto`, `follow_first_link`, `click_first` with a text pattern; anything
+that would send, place, confirm, submit or delete is never clicked), its `states` (each with its account,
+`what` and widths) and its `widths`. Step 4 adds reuse and skip.
+
+RollCall's file pins commit `81117dd`, exported with `git archive` to `/tmp/app-screen/rollcall-81117dd`
+(the repo itself is never touched), with a fresh SQLite database seeded by `rollcall dev seed` with the
+invented QA books, throwaway keys beside the database, live trading off, on port 8174 (the plan said
+8171, #170's port; Frontend's task chats now start RollCall on 8171 and 8172, so stage 2 keeps clear).
+Never the live server, the owner's book or client data; tickets open, nothing is sent.
+
+Reuse (rule 36): the capture, the in-page measurement and the measures are #170's tools
+(`results/rollcall-mobile-redesign-20261104/current/tools/`: `capture.mjs`, `measure_in_page.js`,
+`build_measurements.py`), made product-agnostic and moved into the stage; #170's folder is left as it
+was, and the stage's modules are the one copy from now on. `capture_page` (live on temper-dev) is not
+reused: it captures public pages through the Playwright MCP server with a cookie policy and occlusion
+checks, and has no login, no click steps, no throwaway app and no per-state accounts, which every app
+screen here needs.
+
+### Bar (written before the first trial run)
+
+Per run, on 3 of 3 runs per case (rule 16): capture 0 failed, every listed screen x width x state
+captured; unsupported claims 0 (the final `journeys.json`, turned back into its draft, passes every
+check again); case A: every measure in the measured key exact, key recall at least 15 of 17, journeys at
+least 5 of 6 matched; case P: recall 6 of 6; clean twin: 0 problems at severity 2 or more, and any lower
+one backed by a measure on its problem side.
+
+The grader (`design_app_screen.py grade-existing --case DIR --workspace W`, `existing_grade.py`) measures
+all of it from the run's files; no model judges. A key journey is matched one to one to a draft journey
+that names one of its screens and holds one of its terms in its name or goal; a key problem entry is met
+when the matched journey's problems together hold a term of every group (intake's H1 rule). A planted
+defect is found when a problem cites a capture of its screens and either one of its measures on the
+problem side, or its kind and one of its terms. Entries and defects missed within the bar are reported as
+notes; only bar failures fail the run.
+
+The grader was proven on broken copies of real drafts (`results/existing-trials/broken_copies.py`): an
+unsupported number, a missing evidence id and a number no ref shows (P), and a claim on the clean twin
+(C) each fail; the untouched copies pass.
+
+### Trial cases
+
+In `~/design-lab/app-screen-workflow/known-cases/existing/<case>/`: `requirements.json` (stage 1's
+output the run gets) and `expected.json` (the answer key, written before any run; later key changes are
+dated in its `changed`).
+
+| Case | Product | Key |
+| --- | --- | --- |
+| A `a-rollcall` | RollCall at `81117dd` on the invented QA books, 26 screens and states, 56 captures | measured: #170's numbers (`measured.json` from its `measurements.json`): layout width of all 52 phone captures, 23 of 26 wider than 320, the roll ticket's strike list 821 px in a 356 px box, Overview's attention list 3.3 screens down at 390. Journeys and problems: the known case's `02-existing/journeys.json` (6 journeys, 17 problem entries) as must-term groups |
+| P `p-planted` | Parcelly, a 4-screen static app (home, parcels, parcel, account, plus the parcels error state; 14 captures) built by `build_parcelly.py`, with one planted defect each: layout wider than 320 (account), 10 px body text (account), 18 px tap targets (parcels), the key status line clamped (parcel), the main status 3 screens down at 390 (home), an error with no recovery (parcels error) | recall 6 of 6 |
+| C `c-clean` | Parcelly's clean twin: the same screens without the six defects | 0 problems at severity 2 or more |
+
+A trial run: `results/existing-trials/trial.py` (`prep` runs the host capture into a fresh workspace,
+`clone` copies a capture to re-run the model part on the same pictures, `start`, `wait`, `grade`); the
+trial workflow `design_app_screen_v1_existing` runs the same nodes as the whole workflow.
+
+Capture check against #170 (case A, first capture): all 56 captured, 0 failed, 3 min 14 s; layout width
+equal on all 56; 23 of 26 wider at 320; the roll ticket's `pk-body` 821 of 356 px; Overview's attention
+list 3.3 screens down at 390 (4.8 at 320, 1.6 at 1440). Drift only where the data or the clock moves:
+the empty Overview, the alerts list's height, the system page's audit log.
+
+### Results
+
+**Met the bar, 2026-11-05: every case, 3/3 runs, in one fresh round (t7) on the landed config.** A: key
+17, 17 and 15 of 17, journeys 6, 6 and 5 of 6, all 56 measures exact; P: 6/6 planted defects on every run,
+no other findings; clean twin: 0 problems on every run; unsupported claims 0 and capture failures 0 on
+all 9. Cost about $0.90 (A), $0.28 (P), $0.11-0.21 (clean) a run, 28-198 s, plus the host capture (A 3
+min 14 s, Parcelly about 20 s). Seven rounds, 48 runs, $21.98 in all. Full run ids and grades:
+`~/design-lab/app-screen-workflow/results/existing-trials/` (`runs.json`, `grades/`, `table.py`).
+
+Captures: the host capture ran 3 times per case on fresh workspaces (A: `a-r1`..`a-r3`; P and C:
+`p-r4`..`p-r6`, `c-r4`..`c-r6`, after H2-1), 0 failed each time, every measure in A's key exact each time.
+Later rounds re-ran the model part on those same captures (`trial.py clone`), so each round's change is
+the only thing that moved; H2-5's new measure was added by re-measuring the stored raw measurement
+(`existing_host.remeasure`), no new browser run.
+
+What each round changed, with its hypothesis (rule 20), written before the round ran:
+
+- **t1, first build.** P 3/3. A 0/3: key 13-14 of 17, Alerts and Orders merged into one journey on all 3,
+  the loading state's blank date (P11) missed on all 3. C 1/3: c-r2 and c-r3 raised real flaws that were in
+  both Parcelly twins by my own mistake (Home's tip says "add a note" but no screen lets you; a parcel id
+  shown as a tab; the arrival window in three formats).
+- **H2-1 (the case, not the stage).** Wrong: the clean twin wasn't clean (evidence above, read in the
+  drafts). Change: fix those three in both twins (an Edit notes button, three tabs, one window format);
+  planted defects unchanged; recapture. Expected C 0 problems 3/3 and P still 6/6. Wrong if the model
+  still raised severity 2+ on the fixed twin. **Hit** (t2: C 0, 0, 0; P 6/6 x3).
+- **H2-2 (prompt).** Wrong: the prompt asked for "4 to 8" journeys, and the model joined jobs ("Review
+  orders and alerts") to fit. Change: no count; one goal per journey, a goal joining two jobs with "and" is
+  two journeys. Expected journeys 6/6 on 3/3. Wrong if journeys still merged. **Hit on journeys** (t3: 6/6
+  x3), key 15, 14, 16.
+- **G1 (grader bug, found in t3).** The grader failed a run for any single unmet key entry, stricter than
+  the written bar (15 of 17, 5 of 6): a-r4 (15/17, 6/6) graded fail. Fix: a missed entry within the bar
+  is a note, only a bar failure is a miss; t1 and t3 re-graded; the broken copies still fail.
+- **H2-3 (prompt).** Wrong: P11 ("These numbers are from —." while loading) missed in 6 of 6 runs; the
+  model seemed to skip non-normal states. Change: "walk every state too", naming them. Expected P11 3/3.
+  Wrong if still missed. **Miss** (t4: 1 of 3). Learned: the model now read the loading captures (its
+  keep items cite them) but judged the skeleton fine; the blank date is in the text as a lone dash and it
+  didn't see it as missing. That is a measurable fact, so it went to a script.
+- **H2-4 (script).** Wrong: problems seen on a journey's screen were often not named in that journey (the
+  tab bar problem not in the Glance journey). Where a problem was seen is a fact of its refs (rule 17).
+  Change: `existing_check.journey_problems` adds to each journey every problem with a ref to a capture of
+  its screens. Expected more key entries met, none lost. Checked offline on all 9 A drafts so far
+  (`rederive.py`): +1, +2 and +2 on three runs, none lost. **Hit.**
+- **H2-5 (measure).** Change: a `missing_values` measure (a lone dash after a word that needs a value,
+  such as "from", "of", "the"), marked in the task text like any measure. Flags only Overview's loading
+  captures on A, nothing on P or C (7 test cases, including the false hit "rate of 6.25% — set your"
+  the first version made). Expected P11 met 3/3. **Hit** (t5: 3 of 3). t5: P 3/3, C 3/3, A 2/3 (14,
+  15, 15).
+- **H2-6 (script) and G2 (key).** Wrong in t5: a problem citing a per-width total (23 of 26 wider at 320)
+  reached no journey through H2-4; and two runs said "Orders opens with practice-broker explanations
+  before the order list", the known case's "two practice-broker notices fill the first screen" in other
+  words, which P9's second term group lacked. Change: a total ref counts as seen on every capture that
+  total flags; P9's second group gains "opens on", "opens with", "before the order" (dated in the case's
+  `changed`; a key change made after reading outputs, so stated here). Offline on t5: 16, 16, 15. **Hit.**
+- **t6** on that config: P 3/3, C 3/3, A 1/3 (17, 14, 14): two runs put the Alerts screen among the
+  screens of "See what needs me" ("What do I have to do today: rolls, closes..."), so the key's Alerts
+  journey matched nothing and lost its two entries. Merges since H2-2: 4 of 12 runs, steady, not noise.
+- **H2-7 (prompt).** Wrong: the goal never names alerts, yet the journey lists the screen. Change: every
+  screen is in a journey whose goal is what that screen is for; a screen with a job of its own (a history,
+  a log, settings) that a goal doesn't name is its own journey, not a stop on another. Expected Alerts
+  matched 3/3 and A 3/3; P and C unchanged. Wrong if alerts still folded in. **Hit** (t7: an alerts journey
+  in 3 of 3; A, P and C all 3/3).
+
+Still missed within the bar, worth knowing: the roll ticket's long opening note (P9 in the roll journey)
+is called jargon, not length, in most runs; a-r18 folded the roll ticket into "Act on what needs me"
+(5 of 6 journeys). The revision step runs on most real drafts (first drafts had 1-7 problems, mostly a
+number the refs don't show or a text ref cut short) and every revision came back clean.
+
+The lead's look (cited captures): `~/temper-ai/workspaces/design207-a-r17/02-existing/journeys.json`
+(A, 17/17) and `~/temper-ai/workspaces/design207-p-r14/02-existing/journeys.json` (P, 6/6), each problem's
+`refs` naming its captures in `02-existing/captures/`.
+
+Run ids are temper-dev execution ids (first 8 characters). Grades are by the grader as it stood from G1
+on; t5's A rows are as first graded (before H2-6 and G2).
+
+| Round | Case | Run | Run id | Capture failed | Unsupported | Result | Journeys / problems (sev 0/1/2/3/4) | Revised (first-draft problems) | Grade | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t1 | A | a-r1 | `d04b1d70` | 0 | 0 | key 14/17, journeys 5/6, measures exact (56) | 8 / 19 (0/4/11/4/0) | yes (2) | fail: key recall 14/17 | $0.82 | 156s |
+| t1 | A | a-r2 | `c2b09323` | 0 | 0 | key 14/17, journeys 5/6, measures exact (56) | 8 / 17 (0/2/10/5/0) | yes (1) | fail: key recall 14/17 | $0.90 | 182s |
+| t1 | A | a-r3 | `0923cfa2` | 0 | 0 | key 13/17, journeys 5/6, measures exact (56) | 8 / 17 (0/1/9/7/0) | yes (3) | fail: key recall 13/17 | $0.98 | 219s |
+| t1 | P | p-r1 | `c02c07d9` | 0 | 0 | recall 6/6 | 5 / 6 (0/0/3/3/0) | yes (1) | pass | $0.28 | 66s |
+| t1 | P | p-r2 | `361340f5` | 0 | 0 | recall 6/6 | 5 / 6 (0/0/3/3/0) | yes (2) | pass | $0.26 | 63s |
+| t1 | P | p-r3 | `28f9bb54` | 0 | 0 | recall 6/6 | 5 / 6 (0/0/3/3/0) | yes (1) | pass | $0.26 | 59s |
+| t1 | C | c-r1 | `887503f6` | 0 | 0 | severity 2+ 0 | 5 / 0 | yes (2) | pass | $0.21 | 50s |
+| t1 | C | c-r2 | `7bc17ed7` | 0 | 0 | severity 2+ 1 | 6 / 1 (0/0/1/0/0) | yes (2) | fail: severe 1 | $0.25 | 61s |
+| t1 | C | c-r3 | `b4d37606` | 0 | 0 | severity 2+ 1, low unmeasured 2 | 5 / 3 (0/2/1/0/0) | yes (2) | fail: severe 1, 2 lows unmeasured | $0.24 | 56s |
+| t2 | P | p-r4 | `f5d714a2` | 0 | 0 | recall 6/6 | 6 / 6 (0/0/3/3/0) | yes (1) | pass | $0.27 | 61s |
+| t2 | P | p-r5 | `29bdd985` | 0 | 0 | recall 6/6 | 5 / 7 (0/0/4/3/0) | yes (1) | pass | $0.31 | 79s |
+| t2 | P | p-r6 | `078c7d8f` | 0 | 0 | recall 6/6 | 6 / 6 (0/0/3/3/0) | yes (1) | pass | $0.30 | 74s |
+| t2 | C | c-r4 | `809359a7` | 0 | 0 | severity 2+ 0 | 5 / 0 | yes (2) | pass | $0.20 | 44s |
+| t2 | C | c-r5 | `f6828eed` | 0 | 0 | severity 2+ 0 | 5 / 0 | yes (1) | pass | $0.20 | 46s |
+| t2 | C | c-r6 | `270d7c47` | 0 | 0 | severity 2+ 0 | 5 / 0 | yes (2) | pass | $0.20 | 43s |
+| t3 | A | a-r4 | `12723d7d` | 0 | 0 | key 15/17, journeys 6/6, measures exact (56) | 10 / 19 (0/2/11/6/0) | yes (3) | pass | $0.92 | 196s |
+| t3 | A | a-r5 | `85c917e8` | 0 | 0 | key 14/17, journeys 6/6, measures exact (56) | 10 / 17 (0/2/11/4/0) | no | fail: key recall 14/17 | $0.49 | 128s |
+| t3 | A | a-r6 | `13ffd021` | 0 | 0 | key 16/17, journeys 6/6, measures exact (56) | 9 / 17 (0/2/10/5/0) | yes (3) | pass | $0.82 | 161s |
+| t4 | A | a-r7 | `86c396e8` | 0 | 0 | key 12/17, journeys 5/6, measures exact (56) | 8 / 20 (0/4/12/4/0) | yes (6) | fail: key recall 12/17 | $0.85 | 175s |
+| t4 | A | a-r8 | `15c53493` | 0 | 0 | key 15/17, journeys 6/6, measures exact (56) | 10 / 18 (0/2/10/6/0) | yes (3) | pass | $0.92 | 197s |
+| t4 | A | a-r9 | `0aa6b7c4` | 0 | 0 | key 13/17, journeys 6/6, measures exact (56) | 11 / 22 (0/2/16/4/0) | yes (1) | fail: key recall 13/17 | $0.86 | 166s |
+| t5 | A | a-r10 | `7c4034a8` | 0 | 0 | key 14/17, journeys 6/6, measures exact (56) | 10 / 21 (0/3/11/7/0) | yes (7) | fail: key recall 14/17 | $1.06 | 239s |
+| t5 | A | a-r11 | `86dca942` | 0 | 0 | key 15/17, journeys 6/6, measures exact (56) | 10 / 21 (0/3/14/4/0) | yes (3) | pass | $0.88 | 180s |
+| t5 | A | a-r12 | `e9d6d81f` | 0 | 0 | key 15/17, journeys 5/6, measures exact (56) | 10 / 19 (0/3/11/5/0) | yes (1) | pass | $0.89 | 185s |
+| t5 | P | p-r7 | `e8668b70` | 0 | 0 | recall 6/6 | 4 / 6 (0/0/3/3/0) | yes (2) | pass | $0.24 | 52s |
+| t5 | P | p-r8 | `9d47ccdb` | 0 | 0 | recall 6/6 | 3 / 6 (0/0/3/3/0) | yes (1) | pass | $0.24 | 53s |
+| t5 | P | p-r9 | `1fc9c79b` | 0 | 0 | recall 6/6 | 3 / 6 (0/0/3/3/0) | yes (1) | pass | $0.26 | 59s |
+| t5 | C | c-r7 | `57a3b7d2` | 0 | 0 | severity 2+ 0 | 4 / 0 | no | pass | $0.09 | 23s |
+| t5 | C | c-r8 | `b61403ba` | 0 | 0 | severity 2+ 0 | 3 / 0 | no | pass | $0.09 | 23s |
+| t5 | C | c-r9 | `b51d369c` | 0 | 0 | severity 2+ 0 | 5 / 0 | no | pass | $0.10 | 26s |
+| t6 | A | a-r13 | `c52a3bee` | 0 | 0 | key 17/17, journeys 6/6, measures exact (56) | 11 / 19 (0/4/10/5/0) | no | pass | $0.48 | 122s |
+| t6 | A | a-r14 | `aeb5839c` | 0 | 0 | key 14/17, journeys 5/6, measures exact (56) | 8 / 20 (0/2/12/6/0) | yes (2) | fail: key recall 14/17 | $0.95 | 198s |
+| t6 | A | a-r15 | `a2609a48` | 0 | 0 | key 14/17, journeys 5/6, measures exact (56) | 9 / 18 (0/2/13/3/0) | yes (5) | fail: key recall 14/17 | $0.96 | 207s |
+| t6 | P | p-r10 | `e455912f` | 0 | 0 | recall 6/6 | 4 / 6 (0/0/3/3/0) | yes (2) | pass | $0.25 | 58s |
+| t6 | P | p-r11 | `8c747d0b` | 0 | 0 | recall 6/6 | 3 / 6 (0/0/3/3/0) | yes (2) | pass | $0.28 | 65s |
+| t6 | P | p-r12 | `965d76ef` | 0 | 0 | recall 6/6 | 3 / 6 (0/0/3/3/0) | yes (1) | pass | $0.25 | 58s |
+| t6 | C | c-r10 | `a030615e` | 0 | 0 | severity 2+ 0 | 3 / 0 | no | pass | $0.09 | 21s |
+| t6 | C | c-r11 | `81f47c63` | 0 | 0 | severity 2+ 0 | 5 / 0 | no | pass | $0.10 | 23s |
+| t6 | C | c-r12 | `0f10c367` | 0 | 0 | severity 2+ 0 | 3 / 0 | no | pass | $0.10 | 25s |
+| **t7** | A | a-r16 | `75538cde` | 0 | 0 | key 17/17, journeys 6/6, measures exact (56) | 10 / 22 (0/4/15/3/0) | yes (2) | **pass** | $0.94 | 198s |
+| **t7** | A | a-r17 | `cfc81378` | 0 | 0 | key 17/17, journeys 6/6, measures exact (56) | 10 / 22 (0/2/13/7/0) | yes (5) | **pass** | $0.88 | 176s |
+| **t7** | A | a-r18 | `1b6f35cc` | 0 | 0 | key 15/17, journeys 5/6, measures exact (56) | 9 / 22 (0/2/13/7/0) | yes (1) | **pass** | $0.92 | 194s |
+| **t7** | P | p-r13 | `ea0a40d4` | 0 | 0 | recall 6/6 | 5 / 7 (0/0/4/3/0) | yes (1) | **pass** | $0.29 | 68s |
+| **t7** | P | p-r14 | `1e1684c3` | 0 | 0 | recall 6/6 | 5 / 6 (0/0/3/3/0) | yes (1) | **pass** | $0.28 | 66s |
+| **t7** | P | p-r15 | `ee311ef0` | 0 | 0 | recall 6/6 | 5 / 6 (0/0/3/3/0) | yes (1) | **pass** | $0.29 | 68s |
+| **t7** | C | c-r13 | `ae3cc08d` | 0 | 0 | severity 2+ 0 | 4 / 0 | yes (2) | **pass** | $0.21 | 50s |
+| **t7** | C | c-r14 | `e2bcae09` | 0 | 0 | severity 2+ 0 | 4 / 0 | yes (2) | **pass** | $0.21 | 48s |
+| **t7** | C | c-r15 | `7e13e4e9` | 0 | 0 | severity 2+ 0 | 4 / 0 | no | **pass** | $0.11 | 28s |
+
+Cost by round: t1 $4.19, t2 $1.48, t3 $2.23, t4 $2.63, t5 $3.86, t6 $3.45, t7 $4.13; all $21.98.
+
+
+### Backlog (seen here, for later stages)
+
+- Intake's A drafts carry 6-11 open questions. Many are designer decisions or are answered by the current
+  app (what the analysis page holds, for example). The direction stage must answer those from evidence,
+  from this stage's journeys and captures, and bring the owner only owner-only ones.
+- Journeys now carry every problem seen on their screens (H2-4, H2-6), so product-wide problems (page
+  wider than the phone, small text) appear in nearly every journey. That is true, but the direction stage
+  should rank them by severity times reach once, not once per journey.
+- The model reads words from the task text, not the small tiles; a screen whose problem is only visual
+  (overlap, a hidden column) relies on the measures. A second image per call (a zoomed tile) needs
+  Temper's image input to take more than one PNG.

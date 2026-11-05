@@ -7,6 +7,7 @@ shows_problem() applies it. totals() counts per width how many captures each rul
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -38,7 +39,30 @@ PROBLEM_WHEN: dict[str, Rule] = {
     "error_messages_without_action": ("above 0: an error with no button or link beside it",
                                       lambda v, c: _num(v) and v > 0),
     "page_errors": ("above 0: script errors on the page", lambda v, c: _num(v) and v > 0),
+    "missing_values": ("above 0: a dash where a sentence needs a value", lambda v, c: _num(v) and v > 0),
 }
+
+# A dash run stands in for a missing value when the text before it ends on a word a sentence can't end on
+# ("These numbers are from", "the default rate of") and the text after it goes on with punctuation or a
+# lowercase word (". Press that date", "set your rate"); a dash between a label and a value ("roll into",
+# "CRCL") or between two items ("bell", "open alert") is not.
+DASH = re.compile(r"^(?:[-\u2013\u2014]{1,3}|\u2026)$")
+NEEDS_A_VALUE = {"a", "an", "the", "of", "from", "at", "to", "by", "on", "in", "for", "with", "is", "are", "was",
+                 "were", "than", "as", "and", "or", "your", "our", "its"}
+
+
+def missing_values(runs: list[dict]) -> list[str]:
+    """The dashes in a capture's text runs (page order) that stand in for a value mid-sentence, with their context."""
+    found = []
+    for i, run in enumerate(runs):
+        if not DASH.match(run["text"].strip()) or i == 0:
+            continue
+        before = runs[i - 1]["text"].strip()
+        after = runs[i + 1]["text"].strip() if i + 1 < len(runs) else ""
+        last = before.split()[-1].lower() if before.split() else ""
+        if last in NEEDS_A_VALUE and (not after or after[0] in ".,;:)" or after[0].islower()):
+            found.append(f"{before[-40:]} {run['text'].strip()} {after[:40]}".strip())
+    return found
 REGION_RULE: Rule = ("1 or more: the region starts below the first screen", lambda v, c: _num(v) and v >= 1)
 
 
@@ -96,6 +120,9 @@ def measures(raw: dict[str, Any], width: int) -> dict[str, Any]:
         "error_messages_without_action": sum(1 for e in errors if not e["actions"]),
         "page_errors": len(raw.get("pageErrors") or []),
     }
+    blanks = missing_values(raw.get("runs") or [])
+    out["missing_values"] = len(blanks)
+    out["missing_value_text"] = blanks[:5]
     for name, region in (raw.get("keyRegions") or {}).items():
         out[f"{name}_top_px"] = region["top"] if region else None
         out[f"{name}_screens_down"] = round(region["top"] / vh, 1) if region else None
@@ -140,5 +167,7 @@ NOTES = {
     "side_scroll_content_px": "the widest sideways-scrolling box in main (else anywhere): its content width; "
                               "side_scroll_visible_px its box; side_scrolling_boxes lists every one with its area",
     "error_messages_without_action": "error messages (page.error_selector) with no button or link in their parent",
+    "missing_values": "dashes standing in for a value mid-sentence (after 'from', 'of', 'the'...; before punctuation "
+                      "or a lowercase word); missing_value_text gives each with its words around it",
     "totals": "per width, how many captures each rule flags (problem side in existing_measures.PROBLEM_WHEN)",
 }

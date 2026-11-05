@@ -65,7 +65,7 @@ def _best_match(fits: list[list[int]], scores: list[dict[int, int]]) -> list[int
     return best[2]
 
 
-def _key(expected: dict, journeys: list[dict], misses: list[str]) -> dict:
+def _key(expected: dict, journeys: list[dict], notes: list[str]) -> dict:
     groups = expected.get("problems", {})
     key_journeys = expected.get("journeys", [])
     texts = [_problem_text({"claim": " ".join(_problem_text(p) for p in j.get("problems") or [])})
@@ -89,7 +89,7 @@ def _key(expected: dict, journeys: list[dict], misses: list[str]) -> dict:
     for k, j in zip(key_journeys, picked, strict=True):
         entries += len(k["problems"])
         if j is None:
-            misses.append(f"journey {k['id']} ({k['name']}) matched by no draft journey")
+            notes.append(f"journey {k['id']} ({k['name']}) matched by no draft journey")
             detail[k["id"]] = None
             continue
         got = met(k, j)
@@ -97,7 +97,7 @@ def _key(expected: dict, journeys: list[dict], misses: list[str]) -> dict:
         detail[k["id"]] = {"journey": journeys[j].get("id"), "met": got}
         for pid in k["problems"]:
             if pid not in got:
-                misses.append(f"key {k['id']}/{pid} not met in {journeys[j].get('id')}: {groups[pid]['what']}")
+                notes.append(f"key {k['id']}/{pid} not met in {journeys[j].get('id')}: {groups[pid]['what']}")
     matched = sum(1 for j in picked if j is not None)
     return {"key": f"{entries_met}/{entries}", "key_met": entries_met, "journeys_matched": f"{matched}/{len(key_journeys)}",
             "journeys_matched_n": matched, "key_detail": detail}
@@ -148,7 +148,8 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
         raise ValueError(f"{case_dir}: needs requirements.json and expected.json")
     bars = expected["bars"]
     folder = ws.folder("existing")
-    misses: list[str] = []
+    misses: list[str] = []   # the bars a run fails: any one fails it
+    notes: list[str] = []    # what a bar with room counted as unmet (key entries, journeys, planted defects)
     if _read(ws.folder("intake") / "requirements.json") != case_requirements:
         misses.append("the run's 01-request/requirements.json is not the case's requirements.json")
     record = _read(folder / "capture.json") or {}
@@ -182,7 +183,7 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
     if bars.get("measures_exact"):
         measures.update(_measures_exact(case_dir, expected, audit, misses))
     if "key_recall_min" in bars:
-        measures.update(_key(expected, journeys, misses))
+        measures.update(_key(expected, journeys, notes))
         if measures["key_met"] < bars["key_recall_min"]:
             misses.append(f"key recall {measures['key']} (bar {bars['key_recall_min']})")
         if measures["journeys_matched_n"] < bars["journeys_min"]:
@@ -194,7 +195,7 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
         recalled = [d for d, ps in hits.items() if ps]
         other = [p["id"] for p in problems if not any(p["id"] in ps for ps in hits.values())]
         measures.update({"recall": f"{len(recalled)}/{len(planted)}", "planted_found": hits, "other_findings": other})
-        misses += [f"planted {d['id']} ({d['kind']}) not found: {d['what']}" for d in planted if not hits[d["id"]]]
+        notes += [f"planted {d['id']} ({d['kind']}) not found: {d['what']}" for d in planted if not hits[d["id"]]]
         if len(recalled) < bars["recall_min"]:
             misses.append(f"recall {len(recalled)}/{len(planted)} (bar {bars['recall_min']})")
     if "severe_max" in bars:
@@ -206,7 +207,7 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
                                                 captures[r["capture"]])
             for r in p.get("refs") or [])] if bars.get("low_need_measure") else []
         measures.update({"severe": len(severe), "low_unmeasured": len(unmeasured)})
-        misses += [f"clean twin: {p['id']} severity {p.get('severity')}: {p['claim'][:120]}" for p in severe]
+        notes += [f"clean twin: {p['id']} severity {p.get('severity')}: {p['claim'][:120]}" for p in severe]
         misses += [f"clean twin: {p['id']} severity {p.get('severity')} cites no measure on its problem side: "
                    f"{p['claim'][:120]}" for p in unmeasured]
         if len(severe) > bars["severe_max"]:
@@ -214,4 +215,5 @@ def grade(case_dir: Path | str, workspace: Path | str) -> dict:
     first = _read(folder / "draft-first.json")
     if first is not None:
         measures["first_draft_problems"] = len(existing_check.check_draft(existing.context(ws), first)["problems"])
-    return {"case": expected.get("case", case_dir.name), "pass": not misses, "measures": measures, "misses": misses}
+    return {"case": expected.get("case", case_dir.name), "pass": not misses, "measures": measures, "misses": misses,
+            "notes": notes}

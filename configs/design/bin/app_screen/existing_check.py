@@ -269,15 +269,40 @@ def render(ref: dict) -> str:
     return f"{ref['capture']}: {ref['measure']} = {json.dumps(ref['value'], ensure_ascii=False)}"
 
 
+def journey_problems(ctx: Context, draft: dict) -> dict[str, list[str]]:
+    """Each journey's problems: the ones the model named, then every other problem seen on a screen the journey
+    passes through (a ref to a capture of that screen, or to a total that flags a capture of it), in the draft's
+    order. Where a problem was seen is a fact of its refs, so the script applies it (rule 17); the model only
+    judges what hurts where else."""
+    screen_of = {s["id"]: s.get("screen") for s in ctx.audit["screens"]}
+
+    def seen(ref: dict) -> set:
+        if "capture" in ref:
+            return {screen_of.get(ref["capture"])}
+        measure, _, width = str(ref.get("total", "")).rpartition("@")
+        return {s.get("screen") for s in ctx.audit["screens"]
+                if str(s["width"]) == width and existing_measures.shows_problem(measure, s["measures"].get(measure), s)}
+
+    seen_on = {p["id"]: set().union(*[seen(r) for r in p["evidence"] if isinstance(r, dict)]) - {None}
+               for p in draft["problems"]}
+    out = {}
+    for j in draft["journeys"]:
+        named = list(j["problems"])
+        out[j["id"]] = named + [p["id"] for p in draft["problems"]
+                                 if p["id"] not in named and seen_on[p["id"]] & set(j["screens"])]
+    return out
+
+
 def outputs(ctx: Context, draft: dict) -> dict:
     """journeys.json from a draft that passed check_draft."""
     problems = {p["id"]: p for p in draft["problems"]}
+    hurts = journey_problems(ctx, draft)
     journeys = []
     for j in draft["journeys"]:
         out = {"id": j["id"], "name": j["name"], "goal": j["goal"], "screens": j["screens"],
                "problems": [{"id": pid, "claim": problems[pid]["claim"], "severity": problems[pid]["severity"],
                              "kind": problems[pid]["kind"], "evidence": [render(r) for r in problems[pid]["evidence"]],
-                             "refs": problems[pid]["evidence"]} for pid in j["problems"]],
+                             "refs": problems[pid]["evidence"]} for pid in hurts[j["id"]]],
                "keep": [f"{k['what']} ({'; '.join(render(r) for r in k['evidence'])})" for k in j["keep"]],
                "keep_refs": j["keep"]}
         for key in ("steps", "requirements"):

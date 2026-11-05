@@ -209,6 +209,22 @@ def test_measures_flag_the_problem_side_and_totals_count_per_width(tmp_path):
     assert existing_measures.measures(RAW["list-390-error"], 390)["error_messages_without_action"] == 1
 
 
+@pytest.mark.parametrize("before, dash, after, blank", [
+    ("These numbers are from", "\u2014", ". Press that date at the top of the page", True),
+    ("Your plan renews on the", "-", "", True),
+    ("the default rate of", "\u2014", "set your broker's rate in Settings", True),
+    ("the default rate of 6.25%", "\u2014", "set your broker's rate in Settings", False),
+    ("Choose the call to roll into", "\u2014", "CRCL", False),
+    ("Told you Sun 13:21 \u00b7 bell", "\u2014", "open alert", False),
+    ("Drop to call", "\u2014", "Nothing on the book can be called away", False),
+])
+def test_missing_values_finds_a_dash_standing_in_for_a_value(before, dash, after, blank):
+    runs = [{"text": t} for t in (before, dash, after) if t]
+    found = existing_measures.missing_values(runs)
+    assert bool(found) is blank, found
+    assert existing_measures.shows_problem("missing_values", len(found), {"width": 390, "height": 844}) is blank
+
+
 # --- measured checks on the model's draft --------------------------------------------------------------------
 
 def test_good_draft_passes(ws):
@@ -286,6 +302,20 @@ def test_check_then_final_write_journeys_with_refs(ws):
     p2 = journeys["journeys"][0]["problems"][1]
     assert p2["evidence"] == ["home-320-normal: layout_width_px = 333"] and p2["refs"][0]["value"] == 333
     assert existing_check.draft_from_journeys(journeys)["problems"] == GOOD["problems"]
+
+
+def test_a_journey_gets_every_problem_seen_on_its_screens_through_a_capture_or_a_total(ws):
+    draft = copy.deepcopy(GOOD)
+    draft["journeys"][0]["problems"] = ["P1"]
+    draft["journeys"][1]["problems"] = ["P4"]
+    draft["problems"].append({"id": "P5", "claim": "Small tap targets on 1 of 3 phone captures.", "severity": 2,
+                              "kind": "tap-target", "evidence": [
+                                  {"total": "targets_under_24px@390", "value": 1, "of": 3},
+                                  {"capture": "home-390-normal", "text": "Water today"}]})
+    hurts = existing_check.journey_problems(existing.context(ws), draft)
+    # P2 (home-320 capture) joins J1; P3 (list capture) and P5 (its total flags list-390-normal) join J2;
+    # P5's home capture puts it on J1 too.
+    assert hurts == {"J1": ["P1", "P2", "P5"], "J2": ["P4", "P3", "P5"]}
 
 
 def test_retry_keeps_the_first_draft_and_a_still_broken_revision_fails_loud(ws):
@@ -387,7 +417,29 @@ def test_grader_fails_a_missed_planted_defect_and_a_failed_capture(tmp_path, ws)
     result = existing_grade.grade(_case(tmp_path, {"capture_failed": 0, "recall_min": 2}, planted=PLANTED), ws.path)
     assert not result["pass"]
     joined = " ".join(result["misses"])
-    assert "planted D2" in joined and "recall 1/2" in joined and "capture failed 1" in joined
+    assert "recall 1/2" in joined and "capture failed 1" in joined
+    assert any(n.startswith("planted D2") for n in result["notes"]), result["notes"]
+
+
+def test_grader_holds_the_key_to_its_bar_not_to_every_entry(tmp_path, ws):
+    """A run that meets the key bar (here 2 of 3) passes with the unmet entry noted; one below it fails."""
+    _final(ws, GOOD)
+    key = copy.deepcopy(KEY)
+    key["problems"]["P3"] = {"what": "never said", "groups": [["zebra"]]}
+    key["journeys"][0]["problems"].append("P3")
+    at_bar = existing_grade.grade(_case(tmp_path, {"unsupported": 0, "key_recall_min": 2, "journeys_min": 1}, **key),
+                                  ws.path)
+    assert at_bar["pass"], at_bar["misses"]
+    assert at_bar["measures"]["key"] == "2/3" and any(n.startswith("key J1/P3 not met") for n in at_bar["notes"])
+    below = existing_grade.grade(_case(tmp_path, {"unsupported": 0, "key_recall_min": 3, "journeys_min": 1}, **key),
+                                 ws.path)
+    assert not below["pass"] and below["misses"] == ["key recall 2/3 (bar 3)"]
+    key["journeys"].append({"id": "J9", "name": "Nowhere", "screens": ["nowhere"], "terms": ["nowhere"],
+                            "problems": []})
+    unmatched = existing_grade.grade(_case(tmp_path, {"unsupported": 0, "key_recall_min": 2, "journeys_min": 2},
+                                           **key), ws.path)
+    assert not unmatched["pass"] and unmatched["misses"] == ["journeys matched 1/2 (bar 2)"]
+    assert any(n.startswith("journey J9") for n in unmatched["notes"])
 
 
 def test_grader_fails_a_run_without_final_output(tmp_path, ws):

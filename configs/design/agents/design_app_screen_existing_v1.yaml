@@ -38,15 +38,22 @@ agent:
                   line; the visible text of each screen; and the totals per width.
 
     Do this, in order:
-    1. Journeys. From the product's job and the requirements, name the 4 to 8 things its
-       user comes to do (each a journey: a name, the goal in the user's words, the
-       screens it passes through, the steps). Cover every requirement that names a
-       screen or a task; list the requirement ids a journey serves.
+    1. Journeys. From the product's job and the requirements, name each thing its user
+       comes to do as its own journey (a name, the goal in the user's words, the screens
+       it passes through, the steps). One goal per journey: a goal that joins two jobs
+       with "and" (pay a bill and read messages) is two journeys, even when they share
+       screens. Every screen in the list is in at least one journey whose goal is what
+       that screen is for. A journey's screens are only the ones its goal needs: a
+       screen with a job of its own (a history, a log, settings) that the goal does not
+       name is its own journey, not a stop on another. Cover every requirement that names a screen or a task; list the
+       requirement ids a journey serves.
     2. Problems. Walk each journey on the captures. A problem is one observation of what
        stands in the user's way, with its evidence. Write what is, never what to do
        instead: no "should", "add", "move", "make", "consider". List one problem once
        (P1, P2, ...) and name it in every journey it hurts. One problem may cover the
-       same fault on several screens; cite them.
+       same fault on several screens; cite them. Walk every state too, not only normal:
+       read each capture whose state is loading, empty, error, partial, first-login or
+       another listed state, and say what the user sees there, as a problem or a keep.
     3. Severity, Nielsen's 0-4: 0 not a problem, 1 cosmetic, 2 minor (slows or
        confuses), 3 major (the user fails or errs often, or the key fact or action is
        out of reach), 4 catastrophe (the user cannot do the job, or loses money or

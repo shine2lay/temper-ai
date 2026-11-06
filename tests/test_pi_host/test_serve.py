@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -179,6 +180,64 @@ def test_the_socket_folder_must_be_private(host, served, case):
 
 
 @pytest.mark.timeout(60)
+def test_two_doors_are_served_and_both_sockets_go_at_stop(host, served):
+    """With a pools door: the main socket 0600, the pools socket 0666 (its uid check does the
+    serving), neither folder touched; the pools door hands out a token and refuses status;
+    both sockets go at stop; no login in the log."""
+    pools = host.pools()
+    s = serve(host, served, pools=pools)
+    assert s.wait_ready()
+    for path, mode in ((s.socket, 0o600), (pools["socket"], 0o666)):
+        st = os.lstat(path)
+        assert stat.S_ISSOCK(st.st_mode) and stat.S_IMODE(st.st_mode) == mode, path
+    assert stat.S_IMODE(os.stat(host.sock_dir).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(host.pools_dir).st_mode) == 0o711
+    assert tph.ask(pools["socket"], f"token {SLOT} 1800", timeout=30) == "ok " + host.canary
+    assert tph.ask(pools["socket"], "status", timeout=30) == "denied the request is not one this door serves"
+    assert s.ask(f"token {SLOT}") == "ok " + host.canary  # the main door still serves
+    assert s.stop() == 0
+    assert not os.path.exists(s.socket) and not os.path.exists(pools["socket"])
+    log = s.log()
+    assert f", pools door {pools['socket']} for uid {os.getuid()}" in log
+    requests = [ln for ln in log.splitlines() if " verb=" in ln]
+    assert [ln.endswith(" door=pools") for ln in requests] == [True, True, False]
+    assert host.canary not in log and host.canary_refresh not in log
+
+
+@pytest.mark.parametrize("case", ["missing", "listable", "writable", "not_a_folder"])
+def test_the_pools_folder_may_be_entered_but_never_listed_or_written(host, served, case):
+    pools = host.pools()
+    if case == "missing":
+        pools["socket"] = str(host.root / "nope" / "p.sock")
+        expected = f"the pools socket folder {host.root / 'nope'} does not exist"
+    elif case == "listable":
+        host.pools_dir.chmod(0o715)
+        expected = f"the pools socket folder {host.pools_dir} must be mode 0711 or tighter (it is 0715)"
+    elif case == "writable":
+        host.pools_dir.chmod(0o731)
+        expected = f"the pools socket folder {host.pools_dir} must be mode 0711 or tighter (it is 0731)"
+    else:
+        (host.root / "file").write_text("")
+        pools["socket"] = str(host.root / "file" / "p.sock")
+        expected = f"the pools socket folder {host.root / 'file'} is not a folder"
+    s = serve(host, served, pools=pools)
+    assert s.proc.wait(timeout=30) == 2
+    assert f"refused to start: {expected}" in s.log()
+    assert not os.path.exists(s.socket)  # refused before either door is bound
+    assert not os.path.exists(host.root / "nope")
+
+
+@pytest.mark.timeout(60)
+def test_a_pools_door_that_cannot_be_bound_leaves_no_main_door(host, served):
+    pools = host.pools()
+    Path(pools["socket"]).write_text("")  # not a socket
+    s = serve(host, served, pools=pools)
+    assert s.proc.wait(timeout=30) == 2
+    assert f"refused to start: {pools['socket']} exists and is not a socket" in s.log()
+    assert not os.path.exists(s.socket)
+
+
+@pytest.mark.timeout(60)
 def test_one_helper_per_socket_and_a_stale_socket_is_replaced(host, served):
     first = serve(host, served, "first")
     assert first.wait_ready()
@@ -220,6 +279,25 @@ def test_check(host):
     report = json.loads(done.stdout)
     assert report["bridge"]["state"] == "refused" and "expected" in report["bridge"]["why"]
     assert "imported" not in host.events()[1:]
+    assert "pools" not in report
+
+
+@pytest.mark.timeout(60)
+def test_check_reports_the_pools_door(host):
+    def check(name: str) -> tuple[int, dict]:
+        config = host.write_config(host.config(pools=host.pools(uid=999)), name)
+        done = subprocess.run([sys.executable, str(SCRIPT), "check", "--config", str(config)],
+                              capture_output=True, text=True, timeout=60, check=False)
+        return done.returncode, json.loads(done.stdout)
+
+    code, report = check("good.json")
+    assert code == 0 and report["ok"] is True
+    assert report["pools"] == {"socket": str(host.pools_dir / "p.sock"), "uid": 999, "socket_folder": "ok"}
+    host.pools_dir.chmod(0o755)
+    code, report = check("open.json")
+    assert code == 1 and report["ok"] is False
+    assert report["pools"]["socket_folder"] == (f"the pools socket folder {host.pools_dir} must be mode "
+                                                "0711 or tighter (it is 0755)")
 
 
 @pytest.mark.timeout(60)

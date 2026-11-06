@@ -48,6 +48,32 @@ after it was seen when no reset time came with it). A figure under the line neve
 The figures live in Redis (`temper:week_usage`), so what one run's box saw steers every other
 run, the server and the worker. Without Redis each process keeps what it saw itself.
 
+## Where the logins come from
+
+temper's Claude logins are pi's own: the slots in `pools.logins.slots` of the pools file
+(below), named as pi names them (`anthropic`, `anthropic-2`). `temper_ai/llm/pi_logins.py`
+reads that list (again on the next call after the file changes) and, for each call, asks the
+host helper temper-pi-host (docs/pi-host-helper.md) for that slot's current login, good for at
+least the call's time plus five minutes (`token <slot> <seconds>`, 1800 to 14400). The helper
+reads it through pi's own SDK and login store and refreshes it under pi's lock when it would
+expire too soon. temper keeps no copy: not in its environment, a file or a log. Signing an
+account in or out of pi, or renewing it, is the only step; removing one from temper is one line
+here (and in the helper's `allowed_slots`).
+
+The calls run in run boxes, which are copies of the server container (uid 999). They reach the
+helper through its pools door: a second socket that serves only `token`, only to that uid
+(`pools` in the helper's config). docker-compose.yml mounts its folder read-only into the server
+as `/app/pi-logins` and sets `TEMPER_PI_LOGINS_SOCKET=/app/pi-logins/pools.sock`; each box
+inherits both (`configs/boxes/env.yaml` lets the name through).
+
+There is no fallback. When the helper isn't answering, the call fails with
+`temper's Claude logins come from pi through temper-pi-host at <socket>, which is not answering
+(...)`; when it refuses a slot (signed out, not served), the refusal names the slot and the
+picker treats that account as unusable for the call.
+
+The pickers move onto this source in the change after the helper's pools door is live; until
+then they read the `CLAUDE_CODE_OAUTH_TOKEN*` variables above.
+
 ## Setting the line
 
 `configs/pools/pools.yaml`:
@@ -55,6 +81,8 @@ run, the server and the worker. Without Redis each process keeps what it saw its
 ```yaml
 pools:
   week_line: 0.90
+  logins:
+    slots: [anthropic, anthropic-2]
 ```
 
 A copy in `configs/pools/local/pools.yaml` (git-ignored) wins. The default is 0.90: above 90% of

@@ -167,7 +167,8 @@ def test_the_profile_records_no_key_views_and_pins_every_grant(install):
     assert all(g["pin"]["ino"] for g in doc["grants"])
     assert [t for t, g in targets.items() if not g["read_only"]] == [str(install.run_a)]
     for gone in ("/app/repo", "/app/workspaces", "/app/.env", "/app/standee-ssh",
-                 "/app/github-deploy", "/app/.claude/.credentials.json", "/app/command-center",
+                 "/app/github-deploy", "/app/.claude/.credentials.json", "/app/pi-logins",
+                 "/app/command-center",
                  "/var/run/docker.sock", "/opt/claude/versions", "/app/local/standee-ssh"):
         assert gone in doc["runtime"]["absent"], gone
     args = list(docker.runs[0].args)

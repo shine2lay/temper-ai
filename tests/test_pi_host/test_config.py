@@ -34,6 +34,8 @@ def test_the_example_parses_once_its_placeholders_are_filled():
     assert cfg.bridge is not None and cfg.bridge.sdk_package == tph.DEFAULT_SDK_PACKAGE
     assert cfg.pi_state_root.endswith("/.local/state/temper/pi/runs")
     assert len(cfg.socket.encode()) < tph.SOCKET_PATH_LIMIT
+    assert cfg.pools is not None and cfg.pools.uid == 999
+    assert cfg.pools.socket.endswith("/.local/state/temper/pi/logins/pools.sock")
 
 
 def test_the_example_names_every_key_the_helper_reads():
@@ -74,6 +76,7 @@ def test_defaults(host):
     assert cfg.allowed_slots == () and cfg.project_roots == () and cfg.bridge is None
     assert cfg.branch_enabled is False and cfg.tokens_per_hour == 120 and cfg.token_timeout_s == 30.0
     assert cfg.pi_cli == ("pi",)
+    assert cfg.pools is None  # one door unless the config asks for the pools door
     assert tph.parse_config({k: v for k, v in raw.items() if k != "base_provider"}).base_provider == "anthropic"
 
 
@@ -121,6 +124,36 @@ def test_bridge_refused(host, bridge_over, expected):
     raw["bridge"].update(bridge_over)
     problems = problems_of(raw)
     assert any(expected in p for p in problems), problems
+
+
+def test_the_pools_door_is_read(host):
+    pools = str(host.root / "logins" / "pools.sock")
+    cfg = host.cfg(pools={"socket": pools, "uid": 999, "_note": "anything"})
+    assert cfg.pools == tph.PoolsDoor(socket=pools, uid=999)
+    assert host.cfg(pools=None).pools is None
+
+
+@pytest.mark.parametrize("pools, expected", [
+    ([], "pools must be an object with socket and uid"),
+    ({"socket": "/x/p.sock"}, "pools.uid must be a whole number"),
+    ({"socket": "/x/p.sock", "uid": True}, "pools.uid must be a whole number"),
+    ({"socket": "/x/p.sock", "uid": -1}, "pools.uid must be a whole number"),
+    ({"socket": "/x/p.sock", "uid": "999"}, "pools.uid must be a whole number"),
+    ({"uid": 999}, "pools.socket must be an absolute, normalized path"),
+    ({"socket": "p.sock", "uid": 999}, "pools.socket must be an absolute, normalized path"),
+    ({"socket": "/x/../p.sock", "uid": 999}, "pools.socket must be an absolute, normalized path"),
+    ({"socket": "/x/" + "s" * 100, "uid": 999}, "pools.socket must be shorter than 100 bytes"),
+    ({"socket": "/x/p.sock", "uid": 999, "verbs": ["status"]}, "unknown key pools.verbs"),
+])
+def test_pools_refused(host, pools, expected):
+    problems = problems_of(host.config(pools=pools))
+    assert any(expected in p for p in problems), problems
+
+
+def test_the_pools_door_may_not_share_the_main_doors_folder(host):
+    """The main door's folder stays 0700; the pools door's may be entered by others."""
+    problems = problems_of(host.config(pools={"socket": str(host.sock_dir / "pools.sock"), "uid": 999}))
+    assert problems == ["pools.socket must be in another folder than socket"]
 
 
 def test_every_problem_is_named_at_once(host):

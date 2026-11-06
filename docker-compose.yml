@@ -187,8 +187,17 @@ services:
       # inprocess, the rollback), and a read-only mount of a folder it never
       # writes costs nothing when they don't.
       - ${ROAMEE_READER_DIR:-${HOME}/.temper/roamee-reader}:/app/roamee-reader:ro
+      # The host helper temper-pi-host's pools door: temper's Claude logins are pi's, one
+      # per call (temper_ai/llm/pi_logins.py, docs/pools.md). Here, not on the worker,
+      # because every run box is a copy of this container (same uid 999, same mounts):
+      # source and target differ so each box inherits it, and read-only still lets a box
+      # connect. The helper serves this door to uid 999 only, the token verb only. The
+      # folder must exist on the host first (made by Ops, 0711), or docker creates it
+      # root-owned and the helper refuses to open the door.
+      - ${TEMPER_PI_LOGINS_DIR:-${HOME}/.local/state/temper/pi/logins}:/app/pi-logins:ro
     environment:
       HOME: /app
+      TEMPER_PI_LOGINS_SOCKET: /app/pi-logins/pools.sock
       PYTHONDONTWRITEBYTECODE: "1"
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
       # Redis: live chunk streaming (worker_protocol_v1 phase 4+).

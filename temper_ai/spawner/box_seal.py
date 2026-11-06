@@ -52,6 +52,7 @@ CLAUDE_BIN = "/app/.local/bin/claude"
 MAIN_REPO_TARGET = "/app/repo"
 WORKSPACES_ALIAS = "/app/workspaces"
 CLAUDE_STATE = "/app/.claude"
+PI_LOGINS_TARGET = "/app/pi-logins"
 #: Always absent from a sealed box, whatever the template mounts.
 ALWAYS_ABSENT = (MAIN_REPO_TARGET, WORKSPACES_ALIAS, "/app/.env")
 TMPFS = ("/tmp:rw,exec,nosuid,nodev,mode=1777",
@@ -78,8 +79,10 @@ def mount_class(source: str, target: str, workspace_dir: str | None) -> str:
         return "private code and keys"
     if target == MAIN_REPO_TARGET:
         return "main repo copy"
+    if target == PI_LOGINS_TARGET or target.startswith(PI_LOGINS_TARGET + "/"):
+        return "login"
     said = f"{source} {target}".lower()
-    if ".credentials" in said or "/.claude" in said:
+    if ".credentials" in said or "/.claude" in said or "pi-logins" in said or "/pi/logins" in said:
         return "login"
     if _KEYISH.search(said):
         return "keys"

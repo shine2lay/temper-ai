@@ -75,8 +75,11 @@ class Host:
         self.sdk_root = self.root / "sdk"
         self.auth = self.agent / "auth.json"
         self.stub_pi = self.root / "stub_pi.py"
+        self.pools_dir = self.root / "logins"
         for folder in (self.sock_dir, self.state, self.agent):
             folder.mkdir(mode=0o700)
+        self.pools_dir.mkdir()
+        self.pools_dir.chmod(0o711)  # as Ops makes it: others may enter, never list or write
         tph.write_stub_sdk(self.sdk_root, base=BASE, version=SDK_VERSION)
         tph.write_stub_pi(self.stub_pi, PI_VERSION)
         self.register(2, 3)
@@ -140,6 +143,11 @@ class Host:
         raw.update(over)
         return raw
 
+    def pools(self, uid: int | None = None) -> dict:
+        """A ``pools`` config value: the pools door in its own folder, for ``uid`` (default:
+        this process's, so the tests are its peer)."""
+        return {"socket": str(self.pools_dir / "p.sock"), "uid": os.getuid() if uid is None else uid}
+
     def cfg(self, **over: Any) -> Any:
         return tph.parse_config(self.config(**over))
 
@@ -158,13 +166,14 @@ class Host:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-def ask_in_process(helper: Any, line: str) -> str:
-    """One request to an in-process helper over a socket pair (its peer is this process)."""
+def ask_in_process(helper: Any, line: str, door: str = "main") -> str:
+    """One request to an in-process helper's ``door`` over a socket pair (its peer is this
+    process)."""
     ours, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     with ours, theirs:
         theirs.sendall((line + "\n").encode())
         theirs.shutdown(socket.SHUT_WR)
-        helper.handle(ours)
+        helper.handle(ours, door)
         ours.shutdown(socket.SHUT_WR)
         theirs.settimeout(10)
         data = b""

@@ -25,5 +25,10 @@
   "branch_enabled": false,
   "branch_max_bytes": 104857600,
   "tokens_per_hour": 120,
-  "token_timeout_s": 30
+  "token_timeout_s": 30,
+  "_pools": "optional: the pools door, a second socket serving only the token verb to one other uid (the uid temper's run boxes run as), for temper's Claude calls (docs/pools.md). Its folder must be this user's and 0711 or tighter, and not the main socket's folder. Leave it out for one door.",
+  "pools": {
+    "socket": "/home/<user>/.local/state/temper/pi/logins/pools.sock",
+    "uid": 999
+  }
 }

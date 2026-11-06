@@ -118,7 +118,7 @@ whose uid is not `uid` gets `denied uid <n> is not served` and nothing else.
 
 | request | answers |
 |---|---|
-| `token <slot>` | `ok <token>` or `denied <why, naming the slot>` |
+| `token <slot> [<seconds>]` | `ok <token>` or `denied <why, naming the slot>` |
 | `status` | `ok <json>` |
 | `usage <slot>` | `ok <json>` (fresh reading or fixed unavailable reason), or `denied <why>` |
 | `branch <repo> <leader git dir> <commit> <trial id>` | `made`, `exists` or `denied <why>` |
@@ -139,9 +139,16 @@ the helper started (now <found>, expected <expected>); auth.json was not read or
 <expected>` (a bridge restarted after a timeout found another SDK),
 `slot <s>: no token within <n> s`, `slot <s>: the hourly token ceiling (<n>) is reached`,
 `slot <s>: no auth bridge is configured`, `slot <s>: the auth bridge stopped`,
-`slot <s>: the auth bridge gave an unusable answer`, and for a malformed name
-`the slot name is missing or malformed`. A token is handed out with at least 30 minutes
-left on it. The ceiling counts the requests that reach the bridge over the last hour; past
+`slot <s>: the auth bridge gave an unusable answer`,
+`slot <s>: the asked login validity is not a whole number of seconds from 1800 to 14400`,
+and for a malformed name `the slot name is missing or malformed`. A token is handed out
+with at least 30 minutes left on it, or with at least `<seconds>` left when the request
+asks for that (a whole number from 1800 to 14400, so a long model call does not outlive its
+login; the top stays well under a login's ~8 h life, since a floor near it would refresh the
+owner's chat login on almost every hand-out; Anthropic's logins last about 8 h). When even a
+just-refreshed login ends before the asked floor, the SDK keeps the refresh in pi's store and
+the hand-out is refused (`refresh_failed`), never served short. The helper checks the number before the
+ceiling and the bridge; the bridge checks it again. The ceiling counts the requests that reach the bridge over the last hour; past
 it every token request is refused and a `tripwire` line is logged.
 
 When a request times out, the bridge is told to stop at its next safe point (never in the
@@ -289,8 +296,8 @@ with the base provider's built-in OAuth flow, and checks that Pi's multi-pass su
 list the slot. The base slot (account 1) is the runtime's own built-in provider, used
 untouched: nothing is registered and multi-pass.json is not read for it. For either, the
 bridge checks that auth.json holds an OAuth login for the slot, then asks
-`ModelRuntime.getAuth(<slot>, {minOAuthValidityMs: 1800000})`. A login that expires within
-30 minutes is refreshed by the SDK's credential-modify path: under auth.json's lock it
+`ModelRuntime.getAuth(<slot>, {minOAuthValidityMs: <the asked floor, default 1800000>})`.
+A login that expires within that floor (30 minutes by default) is refreshed by the SDK's credential-modify path: under auth.json's lock it
 reads the file again and refreshes only if the login still expires soon, so the chats and
 the helper refresh once between them, and both get the same new login. Only what the SDK
 resolved as an OAuth login is served: the base slot's built-in provider also takes an API
@@ -305,8 +312,8 @@ any content:
 ```text
 temper-pi-host: serving <socket> for uid <uid>: pi <version>, sdk <package> <version>, slots <slots>, branch off, ceiling 120/h
 temper-pi-host: verb=status result=ok ms=<n> pi=<version> sdk=<version> peer=<pid>
-temper-pi-host: verb=token slot=<slot> result=ok ms=<n> pi=<version> sdk=<version> peer=<pid>
-temper-pi-host: verb=token slot=<slot> result=denied why=<code> ms=<n> pi=<version> sdk=<version> peer=<pid>
+temper-pi-host: verb=token slot=<slot> result=ok validity=<s> ms=<n> pi=<version> sdk=<version> peer=<pid>
+temper-pi-host: verb=token slot=<slot> result=denied why=<code> validity=<s> ms=<n> pi=<version> sdk=<version> peer=<pid>
 temper-pi-host: verb=usage slot=<slot> result=ok windows=<n> ms=<n> pi=<version> sdk=<version> peer=<pid>
 temper-pi-host: verb=usage slot=<slot> result=unavailable why=<code> ms=<n> pi=<version> sdk=<version> peer=<pid>
 temper-pi-host: verb=branch repo=<repo> ref=team/<trial id> result=made ms=<n> pi=<version> sdk=<version> peer=<pid>
@@ -321,7 +328,8 @@ With `host_helper_socket` set in the Pi worker box config, a worker's login hand
 the helper for the run's pinned slot (`BoxSpec.slot`) and nothing else, and the box config
 no longer needs `host_node` or `host_pi`; without it, a live box config still needs both
 and the hand-off runs the host Pi CLI as before (host-process instances, tests). The client
-is `temper_ai/pi_agent/host_helper.py`. A hand-off with no pinned slot does not ask the
+is `temper_ai/pi_agent/host_helper.py` (`token(path, slot, min_validity_s=None)`; it never
+sends a floor outside 1800..14400). A hand-off with no pinned slot does not ask the
 helper. A refusal hands the worker nothing; the turn's receipt records `handoff_slot`
 (the slot label, exactly) and `handoff_refused` (the helper's words, naming the slot), and
 a failed turn shows that refusal first. The token goes to the turn's redactor before the

@@ -44,10 +44,11 @@ def sdk_versions() -> tuple[str, str]:
 class FakeTokenEndpoint:
     """A local stand-in for the OAuth token endpoint: counts refreshes, answers after a delay."""
 
-    def __init__(self, delay_s: float = 0.8, fail: bool = False):
+    def __init__(self, delay_s: float = 0.8, fail: bool = False, expires_in: int = 3600):
         self.calls: list[dict] = []
         self.delay_s = delay_s
         self.fail = fail
+        self.expires_in = expires_in
         endpoint = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -60,7 +61,7 @@ class FakeTokenEndpoint:
                     data, code = b"SECRET-BODY-from-the-endpoint", 400
                 else:
                     data, code = json.dumps({"access_token": f"new-access-{n}", "refresh_token": f"new-refresh-{n}",
-                                             "expires_in": 3600}).encode(), 200
+                                             "expires_in": endpoint.expires_in}).encode(), 200
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
@@ -192,6 +193,39 @@ def test_a_fresh_login_is_served_without_the_network(host, endpoint, bridges):
     bridge.start()
     assert bridge.request("token", SLOT, 20) == {"id": 1, "ok": True, "slot": SLOT, "token": "old-access"}
     assert endpoint.calls == []
+    assert not lock_dir(host).exists()
+
+
+def test_an_asked_validity_reaches_the_real_sdk_floor(host, endpoint, bridges):
+    """The stored login has 2 h left. An asked 1 h floor hands it out as it is; an asked 4 h
+    floor makes the real SDK refresh it first, once, under auth.json's lock (the endpoint
+    issues 8 h logins, as Anthropic's do); the new login then meets the floor without another
+    refresh."""
+    endpoint.expires_in = 8 * 3600
+    bridge = real_bridge(host, endpoint, bridges)
+    bridge.start()
+    assert bridge.request("token", SLOT, 20, min_validity_ms=3600 * 1000) == {
+        "id": 1, "ok": True, "slot": SLOT, "token": "old-access"}
+    assert endpoint.calls == []
+    assert bridge.request("token", SLOT, 20, min_validity_ms=4 * 3600 * 1000) == {
+        "id": 2, "ok": True, "slot": SLOT, "token": "new-access-1"}
+    assert bridge.request("token", SLOT, 20, min_validity_ms=4 * 3600 * 1000) == {
+        "id": 3, "ok": True, "slot": SLOT, "token": "new-access-1"}
+    assert [call["refresh_token"] for call in endpoint.calls] == ["old-refresh"]
+    assert host.read_auth()[SLOT]["access"] == "new-access-1"
+    assert not lock_dir(host).exists()
+
+
+def test_a_floor_longer_than_a_fresh_login_lasts_is_refused_not_served_short(host, endpoint, bridges):
+    """The real SDK holds an explicit floor after refreshing: when the new login (1 h here)
+    still ends before an asked 4 h, the hand-out is refused, never served short. The refresh
+    itself is kept in pi's store, so the chats get the new login."""
+    bridge = real_bridge(host, endpoint, bridges)
+    bridge.start()
+    assert bridge.request("token", SLOT, 20, min_validity_ms=4 * 3600 * 1000) == {
+        "id": 1, "ok": False, "slot": SLOT, "reason": "refresh_failed"}
+    assert [call["refresh_token"] for call in endpoint.calls] == ["old-refresh"]
+    assert host.read_auth()[SLOT]["access"] == "new-access-1"
     assert not lock_dir(host).exists()
 
 

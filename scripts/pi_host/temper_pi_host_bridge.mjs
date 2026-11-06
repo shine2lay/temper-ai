@@ -11,7 +11,8 @@
 //   - the base slot is the SDK's built-in provider, used untouched: nothing is registered;
 //   - an alias is registered on the SDK's ModelRuntime with the base provider's built-in
 //     OAuth flow under the slot's own auth key, as pi-multi-pass registers it;
-//   - the login is read with ModelRuntime.getAuth(slot, { minOAuthValidityMs }), whose
+//   - the login is read with ModelRuntime.getAuth(slot, { minOAuthValidityMs }) (the request's
+//     min_validity_ms when given, from --min-validity-ms up to 4 h; else --min-validity-ms), whose
 //     refresh runs inside the auth storage's credential-modify path: under auth.json's lock
 //     it reads the file again and refreshes only if the login still expires soon, so the
 //     chats and this bridge refresh once between them.
@@ -36,7 +37,7 @@
 // Protocol:
 //   hello:   {"bridge":1,"ok":true,"package","version","loaded_version","ai_package","ai_version","node"}
 //            {"bridge":1,"ok":false,"reason":"sdk_version_mismatch"|"sdk_unreadable"|"sdk_surface"|"bad_args",...}
-//   request: {"id":N,"op":"token","slot":"<slot>"} | {"id":N,"op":"status"}
+//   request: {"id":N,"op":"token","slot":"<slot>"[,"min_validity_ms":M]} | {"id":N,"op":"status"}
 //            {"id":N,"op":"usage","slot":"<slot>"}
 //   answer:  {"id":N,"ok":true,"slot","token"} | {"id":N,"ok":false,"slot","reason",...}
 //            {"id":N,"ok":true,"state":"ready"|"sdk_changed"|"sdk_unreadable","slots":{...}}
@@ -52,6 +53,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 const AI_PACKAGE = "@earendil-works/pi-ai";
+// The longest login floor a token request may ask for (temper_pi_host.py VALIDITY_S_RANGE).
+const MAX_VALIDITY_MS = 4 * 3600 * 1000;
 const WORD = /^[A-Za-z0-9_.+:-]{1,64}$/;
 const NEEDED = ["sdk-root", "sdk-package", "sdk-version", "agent-dir", "base-provider", "slots",
   "min-validity-ms", "timeout-ms"];
@@ -322,8 +325,12 @@ function bearer(headers) {
   return /^Bearer\s+(.+)$/iu.exec(typeof value === "string" ? value : "")?.[1];
 }
 
-async function mint(slot) {
+async function mint(slot, askedValidityMs) {
   const refuse = (reason, extra = {}) => ({ ok: false, slot, reason, ...extra });
+  const validityMs = askedValidityMs ?? minValidityMs;
+  if (!Number.isInteger(validityMs) || validityMs < minValidityMs || validityMs > MAX_VALIDITY_MS) {
+    return refuse("bad_validity");
+  }
   const before = slotRefusal(slot);
   if (before) return refuse(before);
   const change = sdkChange();
@@ -340,7 +347,7 @@ async function mint(slot) {
   versionRefusal = null;
   let auth;
   try {
-    auth = await rt.getAuth(slot, { minOAuthValidityMs: minValidityMs, signal });
+    auth = await rt.getAuth(slot, { minOAuthValidityMs: validityMs, signal });
   } catch (error) {
     if (versionRefusal) return refuse(versionRefusal.reason, versionRefusal);
     // Never pass the SDK's error text on: a refresh error can carry the token endpoint's reply.
@@ -582,7 +589,7 @@ async function handle(line) {
   const id = request?.id ?? null;
   const slot = typeof request?.slot === "string" ? request.slot : "";
   try {
-    if (request?.op === "token") return { id, ...(await mint(slot)) };
+    if (request?.op === "token") return { id, ...(await mint(slot, request.min_validity_ms)) };
     if (request?.op === "status") return { id, ...(await status()) };
     if (request?.op === "usage") return { id, ...(await usage(slot)) };
     return { id, ok: false, reason: "bad_request" };

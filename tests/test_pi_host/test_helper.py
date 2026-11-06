@@ -121,6 +121,53 @@ def test_token_refusals_from_the_bridge(host, helpers, capsys, setup, slot, answ
 
 
 @needs_node
+def test_a_longer_asked_validity_refreshes_a_login_that_would_expire_sooner(host, helpers, capsys):
+    """The stored login has 2 h left.  The default floor (30 min) and an asked 1 h hand it out
+    as it is; an asked 4 h refreshes it first through the SDK's own path and hands out the
+    new one.  Every hand-out's log line names its floor; no token in any line."""
+    nxt = "CANARY-NEXT-" + os.urandom(8).hex()
+    host.control(next_access=nxt, expires_in_s=8 * 3600)
+    helper = helper_for(host, helpers)
+    assert ask_in_process(helper, f"token {SLOT}") == "ok " + host.canary
+    assert ask_in_process(helper, f"token {SLOT} 3600") == "ok " + host.canary
+    assert host.refreshes() == 0
+    assert ask_in_process(helper, f"token {SLOT} 14400") == "ok " + nxt
+    assert host.refreshes() == 1
+    assert ask_in_process(helper, f"token {SLOT} 14400") == "ok " + nxt  # now 8 h left
+    assert host.refreshes() == 1
+    lines = log_lines(capsys)
+    assert [ln.split(" validity=")[1].split(" ")[0] for ln in lines] == ["1800", "3600", "14400", "14400"]
+    assert all(f" verb=token slot={SLOT} " in ln and " result=ok " in ln for ln in lines)
+    text = "\n".join(lines)
+    assert host.canary not in text and nxt not in text
+
+
+@needs_node
+@pytest.mark.parametrize("validity", ["1799", "14401", "0", "-1", "3600.0", "1e4", "9999999", "x"])
+def test_an_asked_validity_out_of_range_is_refused_before_the_bridge(host, helpers, capsys, validity):
+    helper = helper_for(host, helpers)
+    assert ask_in_process(helper, f"token {SLOT} {validity}") == (
+        f"denied slot {SLOT}: the asked login validity is not a whole number of seconds from 1800 to 14400")
+    assert helper.ceiling.used() == 0 and helper.bridge.proc is None
+    lines = log_lines(capsys)
+    assert len(lines) == 1 and " why=bad_validity " in lines[0]
+
+
+@needs_node
+@pytest.mark.parametrize("asked", [60_000, 14_400_001, 3600.5, "3600000"])
+def test_the_bridge_refuses_a_validity_out_of_range_on_its_own(host, helpers, asked):
+    """The bridge checks the floor again (defence in depth): asked past the Python check, an
+    out-of-range or non-integer floor never reaches getAuth."""
+    host.control(next_access="NEVER-" + os.urandom(4).hex(), expires_in_s=8 * 3600)
+    helper = helper_for(host, helpers)
+    helper.bridge.start()
+    before = host.auth_state()
+    answer = helper.bridge.request("token", SLOT, 20.0, min_validity_ms=asked)
+    assert answer == {"id": answer["id"], "ok": False, "slot": SLOT, "reason": "bad_validity"}
+    assert host.refreshes() == 0 and host.auth_state() == before
+
+
+@needs_node
 def test_a_changed_sdk_refuses_the_token_and_names_both_versions(host, helpers):
     helper = helper_for(host, helpers)
     assert ask_in_process(helper, f"token {SLOT}") == "ok " + host.canary
@@ -227,7 +274,7 @@ def test_status_without_a_bridge(host, helpers):
 # --- requests, the uid check -------------------------------------------------------------
 
 
-@pytest.mark.parametrize("line", ["frobnicate", "token", f"token {SLOT} extra", "status now", "branch a b",
+@pytest.mark.parametrize("line", ["frobnicate", "token", f"token {SLOT} 1800 extra", "status now", "branch a b",
                                   "", "x" * 5000])
 def test_requests_it_does_not_know(host, helpers, line):
     helper = helper_for(host, helpers, bridge=None)
@@ -240,6 +287,58 @@ def test_only_the_configured_uid_is_served(host, helpers, capsys):
     assert ask_in_process(helper, "status") == f"denied uid {os.getuid()} is not served"
     line = log_lines(capsys)[0]
     assert " result=denied why=uid " in line and f" uid={os.getuid()} " in line
+
+
+# --- the pools door ------------------------------------------------------------------------
+
+
+@needs_node
+def test_the_pools_door_serves_a_token_to_its_uid_with_a_door_word_in_the_log(host, helpers, capsys):
+    """Main door and pools door each hand out the slot's login; only the pools door's line
+    says door=pools (at its end, so the main door's lines keep their words).  No token in any
+    line."""
+    helper = helper_for(host, helpers, uid=os.getuid() + 1, pools=host.pools())
+    assert ask_in_process(helper, f"token {SLOT} 3600", "pools") == "ok " + host.canary
+    assert helper.ceiling.used() == 1  # the same hourly ceiling as the main door
+    lines = log_lines(capsys)
+    assert len(lines) == 1 and f" verb=token slot={SLOT} result=ok validity=3600 " in lines[0]
+    assert lines[0].endswith(" door=pools")
+    assert host.canary not in lines[0]
+
+
+@pytest.mark.parametrize("line", ["status", f"usage {SLOT}", "branch /a /b " + "0" * 40 + " 0123456789ab",
+                                  "frobnicate", ""])
+def test_the_pools_door_serves_the_token_verb_only(host, helpers, capsys, line):
+    helper = helper_for(host, helpers, pools=host.pools())
+    assert ask_in_process(helper, line, "pools") == "denied the request is not one this door serves"
+    assert helper.ceiling.used() == 0 and helper.bridge.proc is None
+    entry = log_lines(capsys)[0]
+    assert " result=denied why=door " in entry and entry.endswith(" door=pools")
+
+
+def test_the_pools_door_serves_its_own_uid_only(host, helpers, capsys):
+    """Each door checks its own uid: the main door's uid is refused at the pools door, and the
+    pools door's uid at the main door."""
+    me = os.getuid()
+    helper = helper_for(host, helpers, bridge=None, pools=host.pools(uid=me + 1))
+    assert ask_in_process(helper, f"token {SLOT}", "pools") == f"denied uid {me} is not served"
+    other_main = helper_for(host, helpers, bridge=None, uid=me + 1, pools=host.pools())
+    assert ask_in_process(other_main, "status") == f"denied uid {me} is not served"
+    lines = log_lines(capsys)
+    assert " result=denied why=uid " in lines[0] and lines[0].endswith(" door=pools")
+    assert " result=denied why=uid " in lines[1] and "door=" not in lines[1]
+
+
+def test_no_pools_door_configured_means_no_pools_requests(host, helpers):
+    helper = helper_for(host, helpers, bridge=None)
+    with pytest.raises(ValueError, match="no pools door is configured"):
+        ask_in_process(helper, f"token {SLOT}", "pools")
+
+
+def test_status_names_the_pools_uid_only_with_a_pools_door(host, helpers):
+    words = json.loads(ask_in_process(helper_for(host, helpers, bridge=None, pools=host.pools(uid=999)), "status")[3:])
+    assert words["pools_uid"] == 999
+    assert "pools_uid" not in json.loads(ask_in_process(helper_for(host, helpers, bridge=None), "status")[3:])
 
 
 def test_peer_cred_names_this_process():
@@ -256,3 +355,27 @@ def test_log_lines_are_one_line_of_words():
     with contextlib.redirect_stderr(err):
         tph.log(verb="token", slot="a b\nc", result="ok")
     assert err.getvalue() == "temper-pi-host: verb=token slot=a_b_c result=ok\n"
+
+
+def test_slow_byte_trickle_is_bounded_by_one_total_read_deadline(monkeypatch):
+    """A peer trickling 1 byte per recv cannot stretch read_request beyond one total deadline (E-1)."""
+    clock = [100.0]
+    monkeypatch.setattr(tph.time, "monotonic", lambda: clock[0])
+    seen_timeouts: list[float] = []
+
+    class TrickleConn:
+        def settimeout(self, timeout: float) -> None:
+            seen_timeouts.append(timeout)
+
+        def recv(self, _bufsize: int) -> bytes:
+            clock[0] += 2.0
+            return b"t"
+
+        def sendall(self, _data: bytes) -> None:
+            raise AssertionError("expired send deadline must not send")
+
+    assert tph.read_request(TrickleConn(), deadline=105.0) is None
+    assert len(seen_timeouts) == 3
+    assert seen_timeouts == [5.0, 3.0, 1.0]
+    tph._send(TrickleConn(), "denied test", deadline=clock[0] - 0.1)
+

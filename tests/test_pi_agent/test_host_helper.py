@@ -267,6 +267,29 @@ def test_the_client_gives_up_on_a_silent_helper(host):
         fake.close()
 
 
+@pytest.mark.parametrize("validity, line", [(1800, b"token acme-2 1800\n"), (14400, b"token acme-2 14400\n"),
+                                             (5400, b"token acme-2 5400\n")])
+def test_the_client_asks_for_a_login_validity_in_range(host, validity, line):
+    fake = OneAnswer(host.sock_dir / "fake.sock", b"ok tok-123\n")
+    try:
+        assert host_helper.token(fake.path, "acme-2", min_validity_s=validity) == ("tok-123", "")
+        assert fake.lines == [line]
+    finally:
+        fake.close()
+
+
+@pytest.mark.parametrize("validity", [1799, 14401, 0, -5, True, 3600.0, "3600"])
+def test_the_client_never_sends_a_validity_out_of_range(host, validity):
+    fake = OneAnswer(host.sock_dir / "fake.sock", b"ok tok\n")
+    try:
+        token, why = host_helper.token(fake.path, "acme-2", min_validity_s=validity)
+        assert token == "" and fake.lines == []
+        assert why == ("slot acme-2: the asked login validity must be whole seconds from 1800 to 14400; "
+                       "the host helper was not asked")
+    finally:
+        fake.close()
+
+
 @pytest.mark.parametrize("slot", ["", "acme 2", "acme-2\ntoken acme-3", "../x"])
 def test_the_client_never_sends_a_malformed_slot(host, slot):
     fake = OneAnswer(host.sock_dir / "fake.sock", b"ok tok\n")

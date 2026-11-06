@@ -1050,11 +1050,12 @@ def test_a_git_worktree_of_an_outside_repository_is_refused(install, monkeypatch
 
 
 @pytest.mark.parametrize("target", ["/app/standee-ssh", "/app/repo", "/app/workspaces",
-                                    "/var/run/docker.sock", "/app/nowhere"])
+                                    "/var/run/docker.sock", "/app/pi-logins", "/app/nowhere"])
 def test_declared_data_that_is_not_data_is_refused(install, monkeypatch, target):
     _sealed(monkeypatch)
     (install.configs / "boxes" / "data.yaml").write_text(f"data:\n  sealed_probe: [{target}]\n")
-    _refused_before_docker(install, str(install.run_a))
+    expect = ("is login: never data",) if target == "/app/pi-logins" else ()
+    _refused_before_docker(install, str(install.run_a), *expect)
 
 
 def test_every_box_classifies_its_launch_again_and_never_downgrades(install, monkeypatch):

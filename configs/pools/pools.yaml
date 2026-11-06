@@ -12,5 +12,13 @@
 #
 # Read by the next pick in every process, without a restart. A copy in
 # configs/pools/local/pools.yaml (git-ignored) wins over this one.
+#
+# logins.slots: the pi slots temper's Claude calls use, in order (temper_ai/llm/pi_logins.py,
+# docs/pools.md "Where the logins come from"). Each call asks the host helper
+# temper-pi-host for that slot's current login; temper keeps none of its own. Adding or
+# removing an account is one line here plus the same slot in the helper's allowed_slots
+# (~/.config/temper/pi-host.json); the next call follows, without a restart.
 pools:
   week_line: 0.90
+  logins:
+    slots: [anthropic, anthropic-2]

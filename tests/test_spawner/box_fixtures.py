@@ -224,6 +224,7 @@ class Install:
         self.local = r / "src" / "local"
         self.versions = r / "claude-versions"
         self.creds = r / "creds" / ".credentials.json"
+        self.pi_logins = r / "pi" / "logins"
         self.repo = r / "repo"
         self.workspaces = r / "workspaces"
         self.run_a = self.workspaces / "run-a"
@@ -264,6 +265,8 @@ class Install:
             _write(self.versions / version, f"#!/bin/sh\necho fake-claude {version}\n", 0o755)
         _write(self.versions / "latest-download.tmp", "not a version\n")
         _write(self.creds, json.dumps({"claudeAiOauth": {"accessToken": SYNTHETIC_MARK}}))
+        self.pi_logins.mkdir(parents=True, exist_ok=True)
+        self.pi_logins.chmod(0o711)
         _write(self.repo / ".env", f"TEMPER_SECRET_KEY={SYNTHETIC_MARK}\n")
         _write(self.repo / "README.md", "the main repo copy\n")
         _write(self.data / "readme.txt", "declared data\n")
@@ -279,7 +282,8 @@ class Install:
         _write(self.configs / "probe_plan.json", json.dumps({
             "absent": [
                 str(self.repo), "/app/repo", "/app/.env", "/app/workspaces", str(self.creds),
-                "/app/.claude/.credentials.json", "/app/standee-ssh", "/app/github-deploy",
+                "/app/.claude/.credentials.json", str(self.pi_logins), "/app/pi-logins",
+                "/app/standee-ssh", "/app/github-deploy",
                 "/app/local/standee-ssh", "/app/local/github-deploy", "/app/local/README.md",
                 str(self.command_center), "/app/command-center", "/var/run/docker.sock",
                 str(self.local), str(self.versions), "/opt/claude/versions",
@@ -299,6 +303,7 @@ class Install:
             return {"Type": "bind", "Source": str(source), "Destination": target, "RW": rw}
         return [
             bind(self.creds, "/app/.claude/.credentials.json"),
+            bind(self.pi_logins, "/app/pi-logins"),
             bind(self.repo, "/app/repo"),
             bind(self.local / "standee-ssh", "/app/standee-ssh"),
             bind(self.workspaces, str(self.workspaces), rw=True),

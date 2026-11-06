@@ -5,10 +5,13 @@ Stdlib-only Python, one file plus its auth bridge ``temper_pi_host_bridge.mjs`` 
 Node script, delivered beside it).  It serves one Unix socket: one request line per
 connection, one answer line back, one request at a time.
 
-    token <slot>                                         ok <token> | denied <why>
+    token <slot> [<min validity s>]                      ok <token> | denied <why>
     status                                               ok <json>  | denied <why>
     usage <slot>                                         ok <json>  | denied <why>
     branch <repo> <leader git dir> <commit> <trial id>   made | exists | denied <why>
+
+With ``pools`` in its config it also serves a second socket, the pools door, for Temper's
+Claude calls in its run boxes (docs/pools.md): ``token`` only, to one other uid only.
 
 Everything deployment-specific (the socket, the served uid, the Pi state root, the allowed
 slots, the bridge and the Pi SDK it must load, the project roots, branch on/off, the hourly
@@ -17,7 +20,9 @@ token ceiling) comes from a private JSON config file given with ``--config``.
 What it can touch (docs/pi-host-helper.md says the same, in more words):
 - it reads its config file;
 - it binds the socket named there, inside a folder that must already exist, belong to this
-  user and be mode 0700 (it never creates, chmods or chowns a folder);
+  user and be mode 0700 (it never creates, chmods or chowns a folder); with ``pools``, also
+  the pools door's socket (mode 0666, served to its one uid only), inside another folder of
+  this user's that others may enter but not list or write (0711 or tighter);
 - it runs the host ``pi`` CLI for its version and the read-only ``auth check --no-refresh``;
 - it runs the auth bridge, which reads (and, when a login is due, refreshes) Pi logins
   through the pinned Pi SDK's own auth storage, for the allowed slots only: the base
@@ -68,6 +73,11 @@ DEFAULT_BASE_PROVIDER = "anthropic"
 DEFAULT_SDK_PACKAGE = "@earendil-works/pi-coding-agent"
 AI_PACKAGE = "@earendil-works/pi-ai"
 MIN_VALIDITY_MS = 30 * 60 * 1000  # a handed-out login stays good for at least 30 minutes
+# A caller may ask for a longer floor (``token <slot> <seconds>``), so a long model call does
+# not outlive its login.  The top stays well under a login's ~8 h life: a floor near it would
+# refresh the owner's chat login on almost every hand-out.
+VALIDITY_S_RANGE = (MIN_VALIDITY_MS // 1000, 4 * 3600)
+VALIDITY_RE = re.compile(r"^[0-9]{1,6}$")
 SOCKET_PATH_LIMIT = 100  # bytes; the socket path must be shorter
 MAX_REQUEST = 4096
 MAX_BRIDGE_LINE = 1 << 16
@@ -93,13 +103,17 @@ BAD_PATH_CHARS = re.compile(r"[\s\x00-\x1f\x7f]")
 
 TOP_KEYS = {"socket", "uid", "pi_state_root", "home", "pi_agent_dir", "path", "pi_cli",
             "base_provider", "allowed_slots", "bridge", "project_roots", "branch_enabled",
-            "branch_max_bytes", "tokens_per_hour", "token_timeout_s"}
+            "branch_max_bytes", "tokens_per_hour", "token_timeout_s", "pools"}
+POOLS_KEYS = {"socket", "uid"}
+# The pools door serves this verb only.
+POOLS_VERBS = ("token",)
 BRIDGE_KEYS = {"node", "script", "sdk_root", "sdk_package", "sdk_version", "ai_version",
                "start_timeout_s", "stop_grace_s"}
 
 # What a token refusal says.  Every one names the slot; none carries text from the Pi SDK.
 REFUSALS = {
     "bad_slot": "the slot name is missing or malformed",
+    "bad_validity": "slot {slot}: the asked login validity is not a whole number of seconds from {low} to {high}",
     "not_alias": "slot {slot} is not an alias of {base}",
     "not_served": "slot {slot} is not one this helper serves",
     "not_registered": "slot {slot} is not registered in Pi's multi-pass subscriptions",
@@ -158,6 +172,13 @@ class BridgeConfig:
 
 
 @dataclass(frozen=True)
+class PoolsDoor:
+    """The second socket, for Temper's Claude calls (``token`` only, to ``uid`` only)."""
+    socket: str
+    uid: int
+
+
+@dataclass(frozen=True)
 class Config:
     socket: str
     pi_state_root: str
@@ -174,6 +195,7 @@ class Config:
     branch_max_bytes: int = 100 * 1024 * 1024
     tokens_per_hour: int = 120
     token_timeout_s: float = 30.0
+    pools: PoolsDoor | None = None
 
 
 def alias_pattern(base: str) -> re.Pattern[str]:
@@ -279,13 +301,39 @@ def parse_config(raw: Any) -> Config:
     if isinstance(timeout, bool) or not isinstance(timeout, int | float) or not 1 <= timeout <= 120:
         problems.append("token_timeout_s must be a number of seconds from 1 to 120")
         timeout = 30
+    pools = None
+    if raw.get("pools") is not None:
+        pools = _parse_pools(raw["pools"], sock, problems)
     if problems:
         raise ConfigError(problems)
     return Config(socket=sock, pi_state_root=state_root, uid=uid, home=home, pi_agent_dir=agent_dir,
                   path=tuple(path_dirs), pi_cli=tuple(pi_cli), base_provider=base,
                   allowed_slots=tuple(slots), bridge=bridge, project_roots=tuple(roots),
                   branch_enabled=branch_enabled, branch_max_bytes=branch_max,
-                  tokens_per_hour=per_hour, token_timeout_s=float(timeout))
+                  tokens_per_hour=per_hour, token_timeout_s=float(timeout), pools=pools)
+
+
+def _parse_pools(praw: Any, main_socket: str, problems: list[str]) -> PoolsDoor | None:
+    if not isinstance(praw, dict):
+        problems.append("pools must be an object with socket and uid")
+        return None
+    before = len(problems)
+    for key in sorted(k for k in praw if k not in POOLS_KEYS and not k.startswith("_")):
+        problems.append(f"unknown key pools.{key}")
+    sock = praw.get("socket")
+    if not clean_abs_path(sock):
+        problems.append("pools.socket must be an absolute, normalized path")
+    elif len(sock.encode()) >= SOCKET_PATH_LIMIT:
+        problems.append(f"pools.socket must be shorter than {SOCKET_PATH_LIMIT} bytes")
+    elif main_socket and os.path.dirname(sock) == os.path.dirname(main_socket):
+        # The main door's folder stays 0700; the pools door's folder may be entered by others.
+        problems.append("pools.socket must be in another folder than socket")
+    uid = praw.get("uid")
+    if isinstance(uid, bool) or not isinstance(uid, int) or not 0 <= uid <= 2**31 - 1:
+        problems.append("pools.uid must be a whole number from 0 to 2147483647")
+    if len(problems) > before:
+        return None
+    return PoolsDoor(socket=str(sock), uid=int(uid))
 
 
 def _parse_bridge(braw: dict, problems: list[str]) -> BridgeConfig | None:
@@ -508,7 +556,7 @@ class Bridge:
         self.hello = hello
         return hello
 
-    def request(self, op: str, slot: str, timeout: float) -> dict:
+    def request(self, op: str, slot: str, timeout: float, min_validity_ms: int | None = None) -> dict:
         self.reap()
         if self.proc is None or self.proc.poll() is not None:
             self.start()
@@ -517,7 +565,10 @@ class Bridge:
         self.next_id += 1
         rid = self.next_id
         try:
-            proc.stdin.write((json.dumps({"id": rid, "op": op, "slot": slot}) + "\n").encode())
+            ask: dict[str, Any] = {"id": rid, "op": op, "slot": slot}
+            if min_validity_ms is not None:
+                ask["min_validity_ms"] = min_validity_ms
+            proc.stdin.write((json.dumps(ask) + "\n").encode())
             proc.stdin.flush()
         except OSError:
             self.stop_now()
@@ -811,7 +862,8 @@ def make_branch(cfg: Config, repo: str, leader: str, commit: str, trial_id: str)
 def refusal(code: str, slot: str, cfg: Config, **extra: Any) -> str:
     values: dict[str, Any] = {"slot": slot, "base": cfg.base_provider, "found": "unknown",
                               "expected": "unknown", "timeout": int(cfg.token_timeout_s),
-                              "limit": cfg.tokens_per_hour}
+                              "limit": cfg.tokens_per_hour, "low": VALIDITY_S_RANGE[0],
+                              "high": VALIDITY_S_RANGE[1]}
     values.update({k: v for k, v in extra.items() if v is not None})
     return REFUSALS.get(code, "slot {slot}: refused").format(**values)
 
@@ -871,10 +923,14 @@ def peer_cred(conn: socket.socket) -> tuple[int, int]:
     return pid, uid
 
 
-def read_request(conn: socket.socket) -> str | None:
+def read_request(conn: socket.socket, deadline: float | None = None) -> str | None:
     data = b""
     try:
         while b"\n" not in data and len(data) <= MAX_REQUEST:
+            rem = REQUEST_READ_TIMEOUT_S if deadline is None else deadline - time.monotonic()
+            if rem <= 0:
+                return None
+            conn.settimeout(rem)
             chunk = conn.recv(MAX_REQUEST + 1)
             if not chunk:
                 break
@@ -890,8 +946,12 @@ def read_request(conn: socket.socket) -> str | None:
         return None
 
 
-def _send(conn: socket.socket, answer: str) -> None:
+def _send(conn: socket.socket, answer: str, deadline: float | None = None) -> None:
     try:
+        rem = REQUEST_READ_TIMEOUT_S if deadline is None else deadline - time.monotonic()
+        if rem <= 0:
+            return
+        conn.settimeout(rem)
         conn.sendall((answer + "\n").encode())
     except OSError:
         pass
@@ -907,23 +967,33 @@ class Helper:
     def sdk_word(self) -> str:
         return word(self.bridge.hello.get("version"), "-") if self.bridge else "-"
 
-    def handle(self, conn: socket.socket) -> None:
+    def handle(self, conn: socket.socket, door: str = "main") -> None:
+        """One request on ``door``: "main" (every verb, to the config's uid) or "pools" (the
+        pools door: ``token`` only, to its own uid)."""
         started = time.monotonic()
-        conn.settimeout(REQUEST_READ_TIMEOUT_S)
+        read_deadline = started + REQUEST_READ_TIMEOUT_S
+        pools = door == "pools"
+        if pools and self.cfg.pools is None:
+            raise ValueError("no pools door is configured")
+        door_word = {"door": "pools"} if pools else {}
+        served_uid = self.cfg.pools.uid if pools and self.cfg.pools else self.cfg.uid
         try:
             pid, uid = peer_cred(conn)
         except OSError:
-            log(verb="-", result="denied", why="no_peer")
+            log(verb="-", result="denied", why="no_peer", **door_word)
             return
-        if uid != self.cfg.uid:
-            _send(conn, f"denied uid {uid} is not served")
-            log(verb="-", result="denied", why="uid", uid=uid, peer=pid)
+        if uid != served_uid:
+            _send(conn, f"denied uid {uid} is not served", read_deadline)
+            log(verb="-", result="denied", why="uid", uid=uid, peer=pid, **door_word)
             return
-        line = read_request(conn)
+        line = read_request(conn, read_deadline)
         parts = line.split(" ") if line else []
         verb = parts[0] if parts and parts[0] in ("token", "status", "usage", "branch") else "-"
-        if verb == "token" and len(parts) == 2:
-            answer, fields = self.token(parts[1])
+        if pools and verb not in POOLS_VERBS:
+            answer, fields = ("denied the request is not one this door serves",
+                              {"result": "denied", "why": "door"})
+        elif verb == "token" and len(parts) in (2, 3):
+            answer, fields = self.token(parts[1], parts[2] if len(parts) == 3 else None)
         elif verb == "usage" and len(parts) == 2:
             answer, fields = self.usage(parts[1])
         elif verb == "status" and len(parts) == 1:
@@ -932,19 +1002,28 @@ class Helper:
             answer, fields = make_branch(self.cfg, parts[1], parts[2], parts[3], parts[4])
         else:
             answer, fields = "denied the request is not one this helper knows", {"result": "denied", "why": "request"}
-        conn.settimeout(REQUEST_READ_TIMEOUT_S)
-        _send(conn, answer)
+        send_deadline = time.monotonic() + REQUEST_READ_TIMEOUT_S
+        _send(conn, answer, send_deadline)
         log(verb=verb, **fields, ms=int((time.monotonic() - started) * 1000), pi=self.pi,
-            sdk=self.sdk_word(), peer=pid)
+            sdk=self.sdk_word(), peer=pid, **door_word)
 
-    def token(self, slot: str) -> tuple[str, dict]:
+    def token(self, slot: str, validity: str | None = None) -> tuple[str, dict]:
+        """The slot's login, good for at least ``validity`` seconds (default 30 minutes)."""
         cfg = self.cfg
         shown = slot if WORD_RE.match(slot) else "-"
         fields: dict[str, Any] = {"slot": shown}
+        tail: dict[str, Any] = {}  # logged after the result, so earlier log words keep their places
 
         def denied(code: str, **extra: Any) -> tuple[str, dict]:
-            return "denied " + refusal(code, shown, cfg, **extra), {**fields, "result": "denied", "why": code}
+            return "denied " + refusal(code, shown, cfg, **extra), {**fields, "result": "denied", "why": code, **tail}
 
+        low, high = VALIDITY_S_RANGE
+        validity_s = low
+        if validity is not None:
+            if not VALIDITY_RE.match(validity) or not low <= int(validity) <= high:
+                return denied("bad_validity")
+            validity_s = int(validity)
+        tail["validity"] = validity_s
         problem = slot_problem(cfg, slot)
         if problem:
             return denied(problem)
@@ -955,7 +1034,8 @@ class Helper:
             return denied("ceiling")
         expected = self.bridge.bcfg.sdk_version
         try:
-            answer = self.bridge.request("token", slot, cfg.token_timeout_s)
+            answer = self.bridge.request("token", slot, cfg.token_timeout_s,
+                                         min_validity_ms=validity_s * 1000)
         except BridgeTimeout:
             return denied("timeout")
         except BridgeRefused as exc:
@@ -964,7 +1044,7 @@ class Helper:
         if answer.get("ok") is True:
             token = answer.get("token")
             if answer.get("slot") == slot and isinstance(token, str) and TOKEN_RE.match(token):
-                return "ok " + token, {**fields, "result": "ok"}
+                return "ok " + token, {**fields, "result": "ok", **tail}
             return denied("bad_answer")
         code = word(answer.get("reason"), "bad_answer")
         return denied(code if code in REFUSALS else "bad_answer",
@@ -1023,6 +1103,8 @@ class Helper:
                                  "git": git_version(cfg), "branch": "on" if cfg.branch_enabled else "off",
                                  "tokens_last_hour": self.ceiling.used(),
                                  "tokens_per_hour": cfg.tokens_per_hour}
+        if cfg.pools is not None:
+            words["pools_uid"] = cfg.pools.uid
         bridge_slots: dict[str, str] = {}
         words["bridge"] = self._bridge_words(bridge_slots) if self.bridge else {"state": "not_configured"}
         words["slots"] = {slot: {"pi": pi_check_words(cfg, slot), "bridge": bridge_slots.get(slot, "unknown")}
@@ -1079,7 +1161,25 @@ def socket_dir_problem(path: str) -> str | None:
     return None
 
 
-def bind_socket(path: str) -> socket.socket:
+def pools_dir_problem(path: str) -> str | None:
+    """The pools door's folder: this user's, and others may enter it (to reach the socket
+    through a container's mount) but never list or write it: 0711 or tighter."""
+    folder = os.path.dirname(path)
+    try:
+        st = os.lstat(folder)
+    except OSError:
+        return f"the pools socket folder {folder} does not exist"
+    if not stat.S_ISDIR(st.st_mode):
+        return f"the pools socket folder {folder} is not a folder"
+    if st.st_uid != os.getuid():
+        return f"the pools socket folder {folder} does not belong to this user"
+    if st.st_mode & 0o066:
+        return (f"the pools socket folder {folder} must be mode 0711 or tighter "
+                f"(it is {stat.S_IMODE(st.st_mode):04o})")
+    return None
+
+
+def bind_socket(path: str, mode: int = 0o600) -> socket.socket:
     if os.path.lexists(path):
         if not stat.S_ISSOCK(os.lstat(path).st_mode):
             raise StartError(f"{path} exists and is not a socket")
@@ -1101,7 +1201,7 @@ def bind_socket(path: str) -> socket.socket:
         listener.bind(path)
     finally:
         os.umask(old)
-    os.chmod(path, 0o600)
+    os.chmod(path, mode)
     listener.listen(16)
     listener.settimeout(0.5)
     return listener
@@ -1113,7 +1213,7 @@ def serve(config_path: str) -> int:
     except ConfigError as exc:
         say("refused to start: " + "; ".join(exc.problems))
         return 2
-    problem = socket_dir_problem(cfg.socket)
+    problem = socket_dir_problem(cfg.socket) or (pools_dir_problem(cfg.pools.socket) if cfg.pools else None)
     if problem:
         say(f"refused to start: {problem}")
         return 2
@@ -1125,9 +1225,18 @@ def serve(config_path: str) -> int:
         except BridgeRefused as exc:
             say(f"refused to start: {start_refusal(cfg, exc)}; the bridge stopped before reading any login")
             return 2
+    # (door, socket path, mode): the main door first; the pools door is served to its one uid
+    # by the peer check, so its socket may be connected to by anyone who can reach it.
+    doors = [("main", cfg.socket, 0o600)]
+    if cfg.pools is not None:
+        doors.append(("pools", cfg.pools.socket, 0o666))
+    listeners: dict[socket.socket, tuple[str, str, int]] = {}
     try:
-        listener = bind_socket(cfg.socket)
+        for door, path, mode in doors:
+            listener = bind_socket(path, mode)
+            listeners[listener] = (door, path, os.stat(path).st_ino)
     except (StartError, OSError) as exc:
+        _close_doors(listeners)
         if helper.bridge is not None:
             helper.bridge.stop_all()
         say(f"refused to start: {exc if isinstance(exc, StartError) else 'the socket could not be bound'}")
@@ -1135,33 +1244,44 @@ def serve(config_path: str) -> int:
     stopping: list[int] = []
     signal.signal(signal.SIGTERM, lambda signum, _frame: stopping.append(signum))
     signal.signal(signal.SIGINT, lambda signum, _frame: stopping.append(signum))
-    inode = os.stat(cfg.socket).st_ino
+    pools_words = f", pools door {cfg.pools.socket} for uid {cfg.pools.uid}" if cfg.pools else ""
     say(f"serving {cfg.socket} for uid {cfg.uid}: pi {helper.pi}, sdk "
         f"{cfg.bridge.sdk_package + ' ' + helper.sdk_word() if cfg.bridge else 'none'}, slots "
         f"{','.join(cfg.allowed_slots) or '-'}, branch {'on' if cfg.branch_enabled else 'off'}, "
-        f"ceiling {cfg.tokens_per_hour}/h")
+        f"ceiling {cfg.tokens_per_hour}/h{pools_words}")
     try:
         while not stopping:
             try:
-                conn, _ = listener.accept()
-            except (TimeoutError, InterruptedError):
+                ready, _, _ = select.select(list(listeners), [], [], 0.5)
+            except InterruptedError:
                 continue
-            with conn:
+            for listener in ready:
                 try:
-                    helper.handle(conn)
-                except Exception as exc:  # one bad request never stops the helper
-                    log(verb="-", result="error", why=type(exc).__name__)
+                    conn, _ = listener.accept()
+                except (BlockingIOError, TimeoutError, InterruptedError):
+                    continue
+                with conn:
+                    try:
+                        helper.handle(conn, listeners[listener][0])
+                    except Exception as exc:  # one bad request never stops the helper
+                        log(verb="-", result="error", why=type(exc).__name__)
     finally:
-        listener.close()
-        try:
-            if os.stat(cfg.socket).st_ino == inode:
-                os.unlink(cfg.socket)
-        except OSError:
-            pass
+        _close_doors(listeners)
         if helper.bridge is not None:
             helper.bridge.stop_all()
         say("stopped")
     return 0
+
+
+def _close_doors(listeners: dict[socket.socket, tuple[str, str, int]]) -> None:
+    """Close each listener and remove its socket, unless another helper has replaced it."""
+    for listener, (_door, path, inode) in listeners.items():
+        listener.close()
+        try:
+            if os.stat(path).st_ino == inode:
+                os.unlink(path)
+        except OSError:
+            pass
 
 
 def check_config(config_path: str) -> int:
@@ -1179,6 +1299,11 @@ def check_config(config_path: str) -> int:
                               "tokens_per_hour": cfg.tokens_per_hour}
     if report["socket_folder"] != "ok":
         report["ok"] = False
+    if cfg.pools is not None:
+        report["pools"] = {"socket": cfg.pools.socket, "uid": cfg.pools.uid,
+                           "socket_folder": pools_dir_problem(cfg.pools.socket) or "ok"}
+        if report["pools"]["socket_folder"] != "ok":
+            report["ok"] = False
     if cfg.bridge is None:
         report["bridge"] = {"state": "not_configured"}
     else:

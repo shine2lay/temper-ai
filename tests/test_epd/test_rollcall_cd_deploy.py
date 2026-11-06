@@ -933,10 +933,11 @@ def test_announce_deploy_formats_outcomes_caps_five_subjects_handles_first_deplo
 # ---- the workflow and its trigger -------------------------------------------------------------------
 
 
-def test_the_trigger_ticks_every_minute_and_lands_switched_off():
+def test_the_trigger_ticks_every_minute_and_is_switched_on():
+    # Switched on at RollCall's go (rm-2badded3, 2026-11-05); owner pings stay off by default.
     raw = yaml.safe_load((ROOT / "configs" / "triggers" / "epd_cd.yaml").read_text())
     trigger = parse_trigger(raw, "epd_cd.yaml")
-    assert trigger.enabled is False
+    assert trigger.enabled is True
     assert trigger.workflow == "epd_cd" and trigger.source == "schedule"
     p = scheduler.plan(trigger)
     assert p.every == dt.timedelta(minutes=1) and p.catch_up is False

@@ -3,11 +3,12 @@
 # in one script-agent run (configs/epd/workflows/epd_cd.yaml, configs/epd/bin/rollcall_cd_deploy.py,
 # configs/epd/bin/rollcall_cd_verdict.py).
 #
-# Off until RollCall says go: `enabled: true` switches it on (read on every tick, no restart).
+# Switched on at RollCall's go (rm-2badded3, 2026-11-05). `enabled: false` switches it off again
+# (read on every tick, no restart). Owner Telegram pings stay off (ROLLCALL_CD_OWNER_PING default never).
 trigger:
   name: epd_cd
   source: schedule
-  enabled: false
+  enabled: true
   on:
     every: 1m
     catch_up: false

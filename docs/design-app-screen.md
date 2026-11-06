@@ -9,8 +9,10 @@ for each step's output and the first known case. A stage that is still a stub co
 output in fixture mode and has it checked against its contract; in real mode it fails at once with "the
 real stage is not built yet". Each stage's own task replaces its stub and keeps its contract, one stage
 at a time (owner, 2026-11-04: "lets run one stage a time after setting up the skeleton, so we can really
-hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), and stage 2,
-existing (Design #207; see "Stage 2: existing").
+hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
+(Design #207; see "Stage 2: existing"), stage 3, ground (Design #210; see "Stage 3: ground"), step 4,
+reuse/store/tools (Design #214), stage 5a, build's deterministic scaffold and checks (Design #219; see
+"Stage 5: build"), and stage 6a, measured checks (Design #216; see "Stage 6a: checks").
 
 Files, one job each:
 
@@ -42,6 +44,10 @@ Files, one job each:
 | `configs/design/bin/app_screen/existing_grade.py` | grade a stage-2 run against a case's answer key (host `grade-existing`) |
 | `configs/design/agents/design_app_screen_existing_v1.yaml` | existing's model step: the contact sheet (image) + task text -> draft journeys and problems |
 | `configs/design/workflows/design_app_screen_v1_existing.yaml` | stage 2 alone (the same nodes), for existing's trials |
+| `configs/design/bin/app_screen/build_scaffold.py` | stage 5a's deterministic writer: shell, hash router, per-screen files, tokens CSS, fixture copy and `build.json` |
+| `configs/design/bin/app_screen/build_check.py` | stage 5's measured checks on a written `05-build/` against ground and direction inputs |
+| `configs/design/workflows/design_app_screen_v1_build.yaml` | stage 5 alone (the same node), for build's trials |
+| `tests/test_design_app_screen_build.py` | build's scaffold, input guards, planted faults, determinism and stage-6a structural checks |
 | `tests/test_design_app_screen_existing.py` | existing's checks, steps, product file, measures and grader, on fixed drafts and broken copies |
 | `tests/test_design_app_screen_contracts.py` | contracts, gates, freeze and the CLI, on the known case |
 | `tests/test_design_app_screen_intake.py` | intake's checks, steps, collector and grader, on fixed drafts |
@@ -53,10 +59,10 @@ Files, one job each:
 | --- | --- | --- | --- | --- |
 | 1 | intake | `intake_collect`, `intake_read` (model), `intake_check`, `intake_revise` (model, only on a failed check), `intake` | the owner's words as requirements (verbatim) and the clarification questions (rule 33) | #206 |
 | 2 | existing | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
-| 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | W2 |
+| 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
 | 4 | directions | `directions`, then `gate_direction` | two or more clickable directions, each with its quick checks; the owner picks one | W3, W5 |
-| 5 | build | `build` | the chosen direction: a shell and one file per screen | W3 |
-| 6 | checks | `checks`, then `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | W4 |
+| 5 | build | `build` | the chosen direction: a shell and one file per screen | #219 (5a), W3 (5b) |
+| 6 | checks | `checks`, then `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), W4 (6b) |
 | 7 | show | `show`, then `gate_final`, `gate_final_next` | one Show&Tell share and the owner's comments; approve, or changes back to build as targeted edits | W4, W5 |
 | 8 | handoff | `handoff` | a spec per screen, the design file, the follow-ups for other roles | W4 |
 
@@ -1138,6 +1144,131 @@ Landed in temper-ai `2ce846d9` (land 235-11cb76; pre-commit suite 1951 passed). 
 workflow after the land: `873fd775`, all 19 nodes completed at $0 (gates answered as Design, the known case's
 choices).
 
+## Stage 5: build
+
+Stage 5 writes the prototype that Stage 6a measures and Stage 6b reviews. Because it is the largest stage in
+`design_app_screen_v1`, it is split by rule 17 (deterministic steps first, a model only where judgement is
+needed):
+
+- **Stage 5a (Design #219, built):** everything a script can do. Reads `03-ground/` and `04-directions/`,
+  validates all boundary inputs loud and fast (rule 36), writes the complete, contract-valid prototype
+  skeleton into `05-build/` with a marked placeholder per screen (`data-build-placeholder="<screen-id>"`),
+  and verifies the build with `build_check.py`. $0.00 model cost.
+- **Stage 5b (planned):** the one model step that replaces each screen's `data-build-placeholder="<screen-id>"`
+  region with the screen's real layout and words for the chosen direction, while keeping `build_check.py` and
+  Stage 6a green.
+
+### What Stage 5a reads and validates
+
+`build_scaffold.validate_build_inputs(ws)` validates inputs at the boundary before writing anything
+(rule 36, fail loud and fast) and raises `BuildInputError` naming the exact missing or malformed file or
+field:
+
+- `03-ground/inventory.json`: must exist, parse as a JSON object, name `design_files` (`defined`, `partial`
+  or `none`), and carry a non-empty `screens[]` list with unique slug `id`s, non-empty `name`, non-empty
+  `states[]` (slugs) and valid `widths[]`. It never invents a screen or a state.
+- `03-ground/fixture.json`: must exist and parse as a non-empty JSON object holding the product's figures. It
+  never invents a figure.
+- `03-ground/design-files/tokens.json`: must exist and hold at least one colour, font or size token (`color` /
+  `colours`, `font` / `fonts` / `typography`, `size` / `sizes` / `type`, `space`, `radius`, or
+  `css_root_vars`); when `design_files` is `defined` or `partial`, `03-ground/design-files/DESIGN.md` must
+  also be present and non-empty.
+- `04-directions/directions.json` and `04-directions/gate_direction.json`: `directions.json` must hold at
+  least two directions and each direction's quick checks (`04-directions/<id>/checks.json`) must exist; the
+  chosen direction comes from `gate_direction.json`'s `choice` (or `directions.json`'s `chosen`) and must
+  match one of `directions[].id`.
+- `01-request/requirements.json` (when present): requirement `id`s (`R1...`) and `maps_to[]` screen mappings
+  are read so every requirement mapped to a screen is wired onto that screen's `[data-req]` attributes.
+
+### What Stage 5a writes
+
+`build_scaffold.write_scaffold(ws)` writes a deterministic `05-build/` folder:
+
+| File | Job |
+| --- | --- |
+| `05-build/index.html` | the prototype shell: links `styles/tokens.css`, loads `shell/router.js` and every `screens/<screen-id>.js` in inventory order, embeds `fixture.json` as `#rc-fixture-data` for offline `file://` and static HTTP serving, renders the global screen navigation (`href="#<screen>/<default-state>"`), and mounts the active screen inside `#rc-screen-host` |
+| `05-build/shell/router.js` | hash router (`#<screen>/<state>`, `#<screen>` -> default state) that mounts exactly one `[data-screen]` root at a time and wires `[data-action]` click handlers so every action updates its `[data-action-feedback]` region immediately before any server reply |
+| `05-build/styles/tokens.css` | CSS custom properties generated deterministically from `03-ground/design-files/tokens.json` (`--token-*` plus derived `--rc-bg`, `--rc-surface`, `--rc-fg`, `--rc-fg-muted`, `--rc-border`, `--rc-primary`, `--rc-primary-fg`, `--rc-focus`, `--rc-font-sans`, `--rc-font-mono`, `--rc-size-body`, `--rc-size-title`, `--rc-size-meta`), plus the responsive shell and placeholder layout rules |
+| `05-build/screens/<screen-id>.js` | one self-contained module per inventory screen: registers `window.__APP_SCREENS__["<screen-id>"]` with the screen's `states`, `routes` (`#<screen>/<state>`), `regions`, `actions`, `req_fields` (fixture paths), `requirements` (`R...` ids) and `render(state, fixture)`. Renders `<section data-screen="<screen-id>" data-view-state="<state>" data-route="#<screen-id>/<state">`, state navigation links, regions, `[data-action]` buttons, `[data-req]` elements, and `<div class="rc-placeholder" data-build-placeholder="<screen-id>" data-placeholder-state="<state>">` reading figures at runtime from `fixture.json` |
+| `05-build/fixture.json` | exact deterministic copy of `03-ground/fixture.json` as the single source of figures |
+| `05-build/build.json` | `direction`, `round`, `page` (`"index.html"`), `widths` (`[1440, 390, 320]`), `screens[]` (`{id, file, states}`) and `views[]` (`{screen, state, open: {hash: "#<screen>/<state>"}}` for every screen x state) |
+
+### Checks (`build_check.py`) and planted faults
+
+`build_check.check_workspace(ws)` runs after `write_scaffold(ws)` and verifies 9 rules on `05-build/` before
+`contracts.validate("build", ws)`:
+
+1. `screen_file_per_inventory_screen`: every screen in `03-ground/inventory.json` has `05-build/screens/<id>.js`
+   and an entry in `05-build/build.json`'s `screens[]`.
+2. `shell_loads_every_screen_file`: `05-build/index.html` has a `<script src="screens/<id>.js">` tag for every
+   screen and loads `shell/router.js`.
+3. `view_per_screen_state`: `05-build/build.json`'s `views[]` has a view for every `screen x state` in the
+   inventory.
+4. `view_has_routing_target`: every `build.json` view has `open.hash == "#<screen>/<state>"` and that hash is
+   registered in `screens/<screen>.js` and reachable from the shell.
+5. `screen_has_data_screen_root`: every `screens/<id>.js` carries `data-screen="<id>"`, `data-view-state`,
+   `data-build-placeholder="<id>"`, and never uses banned `data-state` or `data-st-state` attributes.
+6. `routing_reaches_every_view`: `shell/router.js` listens to `hashchange` and every state of every screen has
+   an `<a href="#<screen>/<state>" data-route-target="#<screen>/<state>">` link in `screens/<id>.js`.
+7. `data_req_in_fixture`: every `data-req` token in `05-build/` either resolves in `05-build/fixture.json`
+   (top-level key, dotted path or `slices.<state>`) or is a valid requirement id in
+   `01-request/requirements.json`, and `05-build/fixture.json` matches `03-ground/fixture.json`.
+8. `no_hardcoded_figures`: no money (`$1,234.56`), percent (`12.3%`) or formatted count (`1,234`, `12.34`)
+   literal is hardcoded inside `05-build/screens/*.js` or `05-build/index.html` markup.
+9. `tokens_from_product_file`: `05-build/styles/tokens.css` is linked by `05-build/index.html` and every expected
+   `--token-*` custom property from `03-ground/design-files/tokens.json` has its exact value in `tokens.css`.
+
+All six required planted faults are caught on the frozen `rollcall-20261104` build (`tests/test_design_app_screen_build.py`
+and `~/design-lab/app-screen-workflow/results/build-trials/temper-results.json`):
+
+| Planted fault | Mutation on `05-build/` | Caught by | Location | Message |
+| --- | --- | --- | --- | --- |
+| Screen file missing from inventory | delete `05-build/screens/positions.js` | `screen_file_per_inventory_screen` | `05-build/screens/positions.js` | `screen 'positions' in inventory.json has no screen file at 05-build/screens/positions.js` |
+| `build.json` view with no routing target | set `views[0].open.hash` to `#today/unreachable-view` | `view_has_routing_target` | `05-build/build.json:views[0]` | `view (today/normal) open.hash is '#today/unreachable-view', expected '#today/normal'` |
+| `data-req` naming a field absent from fixture | replace `data-req="today"` with `data-req="today.nonexistent_metric"` in `screens/today.js` | `data_req_in_fixture` | `05-build/screens/today.js` | `data-req 'today.nonexistent_metric' names a field absent from fixture.json` |
+| Hardcoded figure in a screen file | inject `$148,320.00` into `screens/today.js` | `no_hardcoded_figures` | `05-build/screens/today.js` | `hardcoded figure '$148,320.00' in 05-build/screens/today.js; figures must come from fixture.json` |
+| Screen with no `data-screen` root | remove `data-screen="today"` from `screens/today.js` | `screen_has_data_screen_root` | `05-build/screens/today.js` | `screen 'today' has no data-screen="today" root element` |
+| State unreachable by `#<screen>/<state>` | change `href="#today/error"` to `href="#today/broken"` in `screens/today.js` | `routing_reaches_every_view` | `05-build/screens/today.js` | `state 'error' of screen 'today' has no #today/error link in 05-build/screens/today.js` |
+
+### Results on temper-dev
+
+Run on temper-dev through the stage-alone workflow `design_app_screen_v1_build.yaml` (trial mirror
+`design_app_screen_v1_build_d219`, runner `~/design-lab/app-screen-workflow/results/build-trials/temper_trial.py`,
+full output in `~/design-lab/app-screen-workflow/results/build-trials/temper-results.json`) against the frozen
+`rollcall-20261104` ground + direction inputs (17 screens, 5 states each = 85 views, direction `a`):
+
+| Run | Workflow | Mode | Outcome | Cost | Time | `05-build/` SHA-256 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `fd7d1d93` (`fd7d1d93-018b-4c91-91d2-ee9998a87720`) | `design_app_screen_v1_build` | `real` | `completed`; 22 files written, `build_check` 0 problems, contract valid | $0.00 | 0.34 s | `c72931f5ca0061cd74e70bd284f8f8f77def3e7348db42a40a8be3ced208be8a` |
+| `0e5b11d1` (`0e5b11d1-3fca-4565-89ae-ce5dcc81e134`) | `design_app_screen_v1_build` | `real` | `completed`; all 22 files byte-identical to `fd7d1d93` | $0.00 | 0.57 s | `c72931f5ca0061cd74e70bd284f8f8f77def3e7348db42a40a8be3ced208be8a` |
+| `1845c1f6` (`1845c1f6-8a30-49a9-bdbc-331c63634f2e`) | `design_app_screen_v1_checks` | `real` | `completed` over `fd7d1d93`'s `05-build/`; 255 views measured (17 screens x 5 states x 3 widths), 0 blockers, 0 shoulds | $0.00 | 733.0 s | - |
+
+Stage 6a (`1845c1f6`) per-family rows over the Stage 5a skeleton (255 views = 17 screens x 5 states x 3 widths
+`1440`/`390`/`320`), establishing Stage 5b's baseline:
+
+| Family | Kind | Result | Failing rows | Severity | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| `render` (`render.open`, `render.console`, `render.request`) | structural | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `contract` (`contract.marks`, `contract.screen`, `contract.state`, `contract.state_attr`) | structural | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `coverage` (`coverage.view`, `coverage.action`, `coverage.feedback`, `coverage.requirement`) | structural | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `figures` (`figures.invented`) | structural | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `integration` (`integration.duplicate_id`, `integration.dead_link`, `integration.two_screens`, `integration.handler`) | structural | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `overflow` (`overflow.layout_width`, `overflow.horizontal`, `overflow.element`, `overflow.truncated`, `overflow.label`) | layout baseline (5b) | `pass` | 0 | blocker / should | `no failure over 255 view(s)` |
+| `type` (`type.floor`, `type.body`) | layout baseline (5b) | `pass` | 0 | blocker / should | `no failure over 255 view(s)` |
+| `contrast` (`contrast.text`, `contrast.ui`) | layout baseline (5b) | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `targets` (`targets.size`) | layout baseline (5b) | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `focus` (`focus.ring`, `focus.none`) | layout baseline (5b) | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `axe` (`axe.violation`) | layout baseline (5b) | `pass` | 0 | blocker | `no failure over 255 view(s)` |
+| `hierarchy` (`hierarchy.sizes`, `hierarchy.levels`, `hierarchy.primary`) | layout baseline (5b) | `pass` | 0 | should | `no failure over 255 view(s)` |
+| `tokens` (`tokens.colour`, `tokens.font`, `tokens.size`) | layout baseline (5b) | `skipped` | 0 | should | `design_files: partial` in `rollcall-20261104/03-ground/inventory.json` (passes with 0 failing rows when `design_files: defined`, tested in `tests/test_design_app_screen_build.py`) |
+
+### What Stage 5b still has to do
+
+Stage 5a leaves each screen's body as `<div class="rc-placeholder" data-build-placeholder="<screen-id>" data-placeholder-state="<state>">`. Stage 5b will add the model step that reads the screen's spec, journeys,
+fixture slice and chosen direction, replaces `data-build-placeholder="<screen-id>"` with the screen's real
+layout and words for each state, and re-runs `build_check.py` and Stage 6a so no structural or layout
+regression enters `05-build/`.
+
 ## Stage 6a: checks
 
 The `checks` step, model-free: it opens every view of the round's build in a real browser and measures it,
@@ -1450,8 +1581,9 @@ ended with the handoff. The runner is
 case, starts the run and answers each gate as it opens. A gate answer's `comments` must be a list, even
 when empty.
 
-What this does not prove: the checks have never been run on a build that the `build` step wrote (stage 5 is
-still a stub), so the contract is proven only against prototypes written by hand to it. The `figures`,
-`tokens` and `coverage` families are proven on the planted cases alone, because neither real prototype has
-a fixture, design files or `data-screen` marks.
+What this does not prove: stage 5a (`fd7d1d93`, `0e5b11d1`) and stage 6a (`1845c1f6`) now prove the deterministic
+build scaffold (`index.html`, `shell/router.js`, `styles/tokens.css`, `screens/<id>.js`, `fixture.json`,
+`build.json`) and every structural check family across all 255 views of `rollcall-20261104`, with placeholder
+screen bodies (`data-build-placeholder="<screen-id>"`). Stage 5b (the model step that writes each screen's real
+layout and words inside its placeholder) and Stage 6b (the model review over `checks.json`) remain to be built.
 

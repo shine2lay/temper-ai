@@ -1089,3 +1089,7 @@ Stores after the round: `rollcall` existing v1 + ground v1 (seeds), `parcelly-pl
 `parcelly-delta` v1 (D0) and v2 (F); all validate (`design_app_screen.py validate-store --product P`). The
 Parcelly copy keeps its planted Account card (`known-cases/existing/apps/parcelly-delta/account.html`), so a
 new `prepare` against v2 is a delta again. Tool registry: 21 entries, `check-tools` passes.
+
+Landed in temper-ai `2ce846d9` (land 235-11cb76; pre-commit suite 1951 passed). Fixture run of the whole
+workflow after the land: `873fd775`, all 19 nodes completed at $0 (gates answered as Design, the known case's
+choices).

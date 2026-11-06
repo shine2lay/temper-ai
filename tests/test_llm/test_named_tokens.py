@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from temper_ai.llm import pi_logins
 from temper_ai.llm.fallback import (
     FallbackTarget,
     is_capacity_error,
@@ -24,7 +25,7 @@ from temper_ai.llm.fallback import (
 from temper_ai.llm.models import CallContext, LLMResponse
 from temper_ai.llm.providers import anthropic as mod
 from temper_ai.llm.service import LLMService
-from temper_ai.llm.token_pool import TokenCooling, TokenPool, named_tokens_from_env
+from temper_ai.llm.token_pool import TokenCooling, TokenPool
 from temper_ai.observability import EventType, get_events
 
 from .conftest import MockProvider
@@ -32,6 +33,7 @@ from .conftest import MockProvider
 TOK_A = "sk-ant-oat01-aaaa"
 TOK_B = "sk-ant-oat01-bbbb"
 TOK_C = "sk-ant-oat01-cccc"
+LOGINS = {"anthropic": TOK_A, "anthropic-2": TOK_B, "anthropic-3": TOK_C}
 
 
 def _text(content="Done", model="mock-model"):
@@ -80,22 +82,15 @@ class TestParseToken:
 # -- which name is which token --
 
 
-class TestNamesFromTheEnvironment:
-    def test_an_account_names_its_token_and_the_variable_does_when_there_is_none(self, monkeypatch):
-        monkeypatch.setenv("T", "tok-1")
-        monkeypatch.setenv("T_ACCOUNT", "aungshine")
-        monkeypatch.setenv("T_2", "tok-2")
-        found = named_tokens_from_env("T")
-        assert [(n.variable, n.account, n.label) for n in found] == [
-            ("T", "aungshine", "aungshine"), ("T_2", None, "T_2")]
-
-    def test_the_pool_logs_the_account_not_the_slot_or_the_token(self):
-        p = TokenPool(name="p", tokens=["tok-1", "tok-2"], labels=["aungshine", ""])
-        assert p.label_of("tok-1") == "aungshine"
+class TestNamesInThePool:
+    def test_the_pool_logs_the_slot_label_not_the_token(self):
+        p = TokenPool(name="p", tokens=["tok-1", "tok-2"], labels=["anthropic", ""])
+        assert p.label_of("tok-1") == "anthropic"
         assert p.label_of("tok-2") == "slot 1"
+        assert "named_tokens_from_env" not in dir(mod)
 
 
-# -- the Anthropic provider: the call goes out on the named token only --
+# -- the Anthropic provider: the call goes out on the named pi slot only --
 
 
 class _RateLimited(Exception):
@@ -122,16 +117,10 @@ class _Messages:
 
 @pytest.fixture
 def accounts(monkeypatch):
-    """Three pooled subscriptions: aungshine, wai2shine and one without an account."""
-    for var in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN_BACKUP"):
-        monkeypatch.delenv(var, raising=False)
-    for i in range(2, 10):
-        monkeypatch.delenv(f"CLAUDE_CODE_OAUTH_TOKEN_{i}", raising=False)
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", TOK_A)
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_ACCOUNT", "aungshine")
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_2", TOK_B)
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT", "wai2shine")
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_3", TOK_C)
+    """Three pooled pi slots: anthropic, anthropic-2 and anthropic-3."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(pi_logins, "configured_slots", lambda: list(LOGINS))
+    monkeypatch.setattr(pi_logins, "fetch", lambda slot, _s=1800: LOGINS[slot])
     sent: list[tuple[str, dict[str, Any]]] = []
     _Messages.limited = set()
 
@@ -149,8 +138,9 @@ def _ask(llm, **kwargs):
 
 class TestAPinnedCall:
     @pytest.mark.parametrize("name, token", [
-        ("wai2shine", TOK_B), ("CLAUDE_CODE_OAUTH_TOKEN_2", TOK_B),
-        ("aungshine", TOK_A), ("CLAUDE_CODE_OAUTH_TOKEN_3", TOK_C),
+        ("anthropic-2", TOK_B),
+        ("anthropic", TOK_A),
+        ("anthropic-3", TOK_C),
     ])
     def test_goes_out_on_the_token_it_names(self, accounts, name, token):
         llm, sent = accounts
@@ -160,25 +150,25 @@ class TestAPinnedCall:
 
     def test_the_name_is_not_sent_to_the_api(self, accounts):
         llm, sent = accounts
-        _ask(llm, token="wai2shine")
+        _ask(llm, token="anthropic-2")
         assert "token" not in sent[0][1]
 
     def test_a_limit_is_not_rotated_past_but_raised_as_out_of_capacity(self, accounts):
         llm, sent = accounts
         _Messages.limited = {TOK_B}
         with pytest.raises(TokenCooling) as err:
-            _ask(llm, token="wai2shine")
+            _ask(llm, token="anthropic-2")
         assert [t for t, _ in sent] == [TOK_B], "no other account was tried"
         assert is_capacity_error(err.value)
-        assert "wai2shine" in str(err.value) and TOK_B not in str(err.value)
+        assert "anthropic-2" in str(err.value) and TOK_B not in str(err.value)
 
     def test_the_limit_cools_the_token_for_the_calls_that_rotate(self, accounts):
         llm, sent = accounts
         _Messages.limited = {TOK_B}
         with pytest.raises(TokenCooling):
-            _ask(llm, token="wai2shine")
-        assert llm.token_cooling_until("wai2shine", "claude-opus-5-5") > time.time()
-        assert llm.token_cooling_until("wai2shine", "claude-sonnet-5") is None, "per model family"
+            _ask(llm, token="anthropic-2")
+        assert llm.token_cooling_until("anthropic-2", "claude-opus-5-5") > time.time()
+        assert llm.token_cooling_until("anthropic-2", "claude-sonnet-5") is None, "per model family"
         sent.clear()
         for i in range(6):
             _ask(llm, execution_id=f"run-{i}", agent_name="a")
@@ -188,18 +178,18 @@ class TestAPinnedCall:
         llm, sent = accounts
         _Messages.limited = {TOK_B}
         with pytest.raises(TokenCooling):
-            _ask(llm, token="wai2shine")
+            _ask(llm, token="anthropic-2")
         sent.clear()
         with pytest.raises(TokenCooling, match="rate limited for opus"):
-            _ask(llm, token="wai2shine")
+            _ask(llm, token="anthropic-2")
         assert sent == []
 
     def test_an_unknown_name_lists_the_names_there_are_and_no_token(self, accounts):
         llm, _ = accounts
-        with pytest.raises(ValueError, match="no Anthropic token is called 'wai2shien'") as err:
-            llm.check_token("wai2shien")
+        with pytest.raises(ValueError, match="no Anthropic token is called 'anthropic-9'") as err:
+            llm.check_token("anthropic-9")
         says = str(err.value)
-        assert "aungshine" in says and "wai2shine" in says and "CLAUDE_CODE_OAUTH_TOKEN_3" in says
+        assert "anthropic" in says and "anthropic-2" in says and "anthropic-3" in says
         assert not any(t in says for t in (TOK_A, TOK_B, TOK_C))
 
     def test_an_api_key_has_no_named_tokens(self, monkeypatch):

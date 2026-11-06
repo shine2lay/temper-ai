@@ -175,12 +175,12 @@ def explicit_refusal(exc: Exception, observation: NativeObservation, control: ss
 
 
 class NativePooledAttempt:
-    """Implements NativeAttempt; selected credential is volatile, never a receipt."""
+    """Implements NativeAttempt; the selected slot's client (carrying its login) is volatile, never a receipt."""
 
-    def __init__(self, provider: AnthropicLLM, *, selected_slot: int, credential: str) -> None:
+    def __init__(self, provider: AnthropicLLM, *, selected_slot: int, client: Any) -> None:
         self.provider = provider
         self.selected_slot = selected_slot
-        self._credential = credential
+        self._client = client
         self.cooldown_until: float | None = None
 
     def send_once(self, request: PrivateJSON, *, reservation: SendReservation,
@@ -198,7 +198,7 @@ class NativePooledAttempt:
                         or control.expected is not request or control.capability != capability):
                     raise PrivateDraftFailure(Code.CONFIGURATION_INVALID)
                 body = request.open_private()
-                shared = self.provider._client_for(self._credential)
+                shared = self._client
                 send_native_once(shared, body, control, response, observation, _single_send_usage_never_raises)
                 # Output parsing is terminal, never a reason to call a second model.
                 private = PrivateJSON((response.content or "").encode("utf-8"))

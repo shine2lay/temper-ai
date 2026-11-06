@@ -38,15 +38,13 @@ The figures come from the claude tool's own calls; see
 temper_ai.llm.week_usage.
 
 A token can also be asked for by name, which takes it out of the rotation for
-that call: an agent or a fallback entry that says `token: wai2shine` goes out
-on that account and no other (see temper_ai.llm.fallback). The name is the
-account's, set beside the token in the environment --
+that call: an agent or a fallback entry that says `token: anthropic-2` goes out
+on that account and no other (see temper_ai.llm.fallback).
 
-    CLAUDE_CODE_OAUTH_TOKEN_2=sk-ant-oat01-...
-    CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine
-
--- or the variable's own name when no account is given. The account name also
-stands in for "slot 2" in what the pool logs.
+What the entries are is the provider's business. The Anthropic provider's are
+pi's slot names (anthropic, anthropic-2), never logins: it fetches each slot's
+login per call (temper_ai.llm.pi_logins), so the pool, its coolings and the
+week figures all go by the slot's name.
 
 The Claude Code CLI provider (local/providers/claude_code.py) grew this
 first, for the same reasons; this is that design made provider-agnostic so
@@ -57,7 +55,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import random
 import threading
 import time
@@ -94,48 +91,6 @@ def model_family(model: str | None) -> str:
         return ANY_MODEL
     lowered = model.lower()
     return next((f for f in KNOWN_FAMILIES if f in lowered), lowered)
-
-
-# Beside a token's variable, the account it belongs to: CLAUDE_CODE_OAUTH_TOKEN_2
-# is named by CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT. Not a secret.
-ACCOUNT_SUFFIX = "_ACCOUNT"
-
-
-@dataclass(frozen=True)
-class NamedToken:
-    """One configured token: the variable it came from and the account it is."""
-
-    variable: str
-    token: str
-    account: str | None = None
-
-    @property
-    def label(self) -> str:
-        """What logs and events call it. Never the token."""
-        return self.account or self.variable
-
-
-def named_tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",),
-                          limit: int = 10) -> list[NamedToken]:
-    """Every token configured under `base`: BASE, BASE_BACKUP, BASE_2..BASE_9.
-
-    Order is stable and duplicates are dropped (the first variable holding a
-    token keeps it), so the same env produces the same slot for the same
-    sticky key on every process start.
-    """
-    names = [base, *[f"{base}_{s}" for s in extra_suffixes], *[f"{base}_{i}" for i in range(2, limit)]]
-    found: dict[str, NamedToken] = {}
-    for name in names:
-        token = (os.environ.get(name) or "").strip()
-        if token and token not in found:
-            account = (os.environ.get(name + ACCOUNT_SUFFIX) or "").strip() or None
-            found[token] = NamedToken(variable=name, token=token, account=account)
-    return list(found.values())
-
-
-def tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",), limit: int = 10) -> list[str]:
-    """The tokens of `named_tokens_from_env`, without their names."""
-    return [n.token for n in named_tokens_from_env(base, extra_suffixes, limit)]
 
 
 def sticky_key_from_kwargs(kwargs: dict) -> str | None:

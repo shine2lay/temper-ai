@@ -116,20 +116,26 @@ def _init_llm_providers() -> dict:
             return OllamaLLM(model=_env("OLLAMA_MODEL", "llama3.2"), base_url=ollama_url)
         _try_init_provider(providers, "ollama", _make_ollama, f"Ollama provider initialized at {ollama_url}")
 
-    # Either an API key or an OAuth token brings the provider up; the provider
-    # itself decides how each is sent (see providers/anthropic.py).
+    # An API key, or pi's Claude logins (the pools file lists a slot), brings the
+    # provider up; the provider itself decides how each is sent (see
+    # providers/anthropic.py).
+    from temper_ai.llm.pi_logins import PiLoginsMisconfigured
     from temper_ai.llm.providers.anthropic import resolve_credential
-    anthropic_key, anthropic_mode = resolve_credential()
-    if anthropic_key:
+    try:
+        _anthropic_key, anthropic_mode = resolve_credential()
+    except PiLoginsMisconfigured as exc:
+        # Loud, but only this provider stays down: the server serves everything else.
+        logger.error("Anthropic provider not started: %s", exc)
+        anthropic_mode = "none"
+    if anthropic_mode != "none":
         def _make_anthropic():
             from temper_ai.llm.providers.anthropic import DEFAULT_MODEL, AnthropicLLM
             # The credential is resolved above only to decide whether to bring the
             # provider up at all; it is deliberately not passed on. The provider
-            # reads the same environment itself, and treats a credential handed to
-            # it as a caller's explicit choice -- "use this one, do not go looking
-            # for siblings" -- which switches off the multi-subscription pool. So
-            # forwarding it here quietly disabled pooling everywhere it matters:
-            # the server is the only thing that builds the production provider.
+            # resolves it again itself, and treats a credential handed to it as a
+            # caller's explicit choice -- "use this one" -- which switches off the
+            # pool of pi's logins. So forwarding it here would disable pooling
+            # everywhere it matters: the server builds the production provider.
             return AnthropicLLM(model=_env("ANTHROPIC_MODEL", DEFAULT_MODEL))
         _try_init_provider(
             providers, "anthropic", _make_anthropic,

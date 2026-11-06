@@ -21,25 +21,32 @@ access token (``sk-ant-oat…``) is sent as a bearer token, which is how the
 Anthropic SDK itself carries OAuth credentials (``auth_token=``).
 
 Resolution order: an explicit ``api_key`` argument, then
-``ANTHROPIC_API_KEY``, then ``CLAUDE_CODE_OAUTH_TOKEN``. The API key wins
-when both are set, because it is this provider's native credential; the
-opposite order is a documented source of confusion elsewhere.
+``ANTHROPIC_API_KEY``, then pi's own Claude logins. The API key wins when
+it is set, because it is this provider's native credential.
 
 Several subscriptions, one cache
 -------------------------------
-OAuth tokens are pooled: ``CLAUDE_CODE_OAUTH_TOKEN``, ``_BACKUP`` and
-``_2``…``_9`` are separate subscriptions with separate rate-limit windows.
-The pool rotates *between* agents and never *within* one — an agent's calls
-in a given run all go out on the same token, because Anthropic's prompt
-cache is per credential and a tool-using run re-sends its transcript every
-iteration. A token that answers 429 is cooled until its reset and the call
-is retried on another; the sticky agent then loses its warm cache, which is
-why failover is a fallback and not the normal path. See
-``temper_ai.llm.token_pool``.
+Without an API key the provider uses pi's Claude logins: the pi slots the
+pools file lists (``pools.logins.slots``, e.g. ``anthropic``,
+``anthropic-2``; see ``temper_ai.llm.pi_logins`` and docs/pools.md). Temper
+holds no login of its own: each call asks temper-pi-host for its slot's
+current login, good for the call's timeout, and keeps it for that call only.
+The slot list is read again on each call, so a slot taken out of the file is
+never picked again, without a restart; the provider itself comes up only when
+the file lists at least one slot at start. When the helper can't be reached the
+call fails at once, naming it; there is no other source.
 
-A call can instead name its token (``token: wai2shine``, by the account set in
-``<VARIABLE>_ACCOUNT`` or by the variable itself). It then goes out on that
-token only: a limit there is not retried on another account but raised as
+The slots are separate subscriptions with separate rate-limit windows. The
+pool rotates *between* agents and never *within* one — an agent's calls in a
+given run all go out on the same slot, because Anthropic's prompt cache is per
+account and a tool-using run re-sends its transcript every iteration. A slot
+that answers 429 is cooled until its reset and the call is retried on another;
+the sticky agent then loses its warm cache, which is why failover is a fallback
+and not the normal path. A slot whose login pi refuses is cooled for a while
+and the call goes on another. See ``temper_ai.llm.token_pool``.
+
+A call can instead name its slot (``token: anthropic-2``). It then goes out on
+that slot only: a limit there is not retried on another account but raised as
 ``TokenCooling``, and the agent's fallback list says where to go next.
 
 Anthropic treats a bare bearer request from a third-party client

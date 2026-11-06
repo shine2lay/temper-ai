@@ -26,14 +26,13 @@ in which order.
 
     agent:
       model: claude-opus-5-5
-      token: aungshine                 # this account and no other
+      token: anthropic                 # this account and no other
       fallback:
-        - {model: claude-opus-5-5, token: wai2shine}
+        - {model: claude-opus-5-5, token: anthropic-2}
         - claude-sonnet-5              # no token: any account, as the pool picks
 
-A token is named by its account (`CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine`
-in the environment) or by the variable that holds it; never by the token
-itself. An entry does not inherit the agent's token: one without a `token`
+A token is named by pi's slot name (pools.logins.slots in the pools file); never
+by the login itself. An entry does not inherit the agent's token: one without a `token`
 rotates across the pool.
 
 Only a capacity failure moves down the list. A bad request, an auth failure or

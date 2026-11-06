@@ -1,12 +1,12 @@
 # Claude account pools and the week line
 
-temper spreads its Claude work over several subscriptions (the `CLAUDE_CODE_OAUTH_TOKEN`,
-`_BACKUP` and `_2`..`_9` variables, each named by its `_ACCOUNT` variable). Two pickers choose
-the account for each call, and both work the same way:
+temper spreads its Claude work over pi's own subscriptions: the slots listed in
+`pools.logins.slots` of `configs/pools/pools.yaml` (`anthropic`, `anthropic-2`). Two pickers
+choose the slot for each call, and both work the same way:
 
-- `TokenPool.pick` in `temper_ai/llm/token_pool.py`, for the direct providers (`anthropic`);
-- `_pick_token` in temper-local's `providers/claude_code.py` and its `claude_code_v2.py` twin,
-  for the claude tool (`claude`, the Claude Code CLI).
+- `TokenPool.pick` in `temper_ai/llm/token_pool.py`, for the direct provider (`anthropic`);
+- `_pick_slot` in temper-local's `providers/claude_code.py`, for the claude tool (`claude`, the
+  Claude Code CLI; `claude_v2` is an alias for the same provider).
 
 ## How an account is picked
 
@@ -71,8 +71,8 @@ There is no fallback. When the helper isn't answering, the call fails with
 (...)`; when it refuses a slot (signed out, not served), the refusal names the slot and the
 picker treats that account as unusable for the call.
 
-The pickers move onto this source in the change after the helper's pools door is live; until
-then they read the `CLAUDE_CODE_OAUTH_TOKEN*` variables above.
+Both pickers (`anthropic` and `claude`) use this source; `CLAUDE_CODE_OAUTH_TOKEN*` variables are
+never read.
 
 ## Setting the line
 

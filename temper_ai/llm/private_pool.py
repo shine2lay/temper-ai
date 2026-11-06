@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from temper_ai.agent.private_media import NativePrivateMedia
+from temper_ai.llm import pi_logins
 from temper_ai.llm import single_send as ss
 from temper_ai.llm.private_attempt import (
     NativePooledAttempt,
@@ -71,8 +72,10 @@ def invoke_private_pool(
                 guard()
 
             check()
-            pool = getattr(provider, "_private_pool", None)
-            if type(provider) is not AnthropicLLM or provider.auth_mode != "oauth" or pool is None or not pool.tokens:
+            pool = (provider.pool_now()
+                    if type(provider) is AnthropicLLM and provider.auth_mode == "oauth"
+                    and provider._private_pool is not None else None)
+            if pool is None or not pool.tokens:
                 return attempt_result("before_reserve", code=Code.POOL_UNAVAILABLE)
             prepared = prepare_private_request(provider, request, context=lease.open_private(), capability=capability, media=media)
             return _run_attempts(provider, prepared, pool=pool, lease=lease, service=service,
@@ -106,6 +109,18 @@ def _run_attempts(provider: AnthropicLLM, request: PrivateJSON, *, pool: Any, le
                                             request=request, capability=capability, media=media)
             control.check()
             check()
+            # The pool holds pi slot names; the slot's login comes from pi for this
+            # attempt only, before any reservation. A slot whose login pi refuses is
+            # left out of this invocation; a helper that can't be reached ends it
+            # before_reserve. Either way nothing was sent.
+            try:
+                client = provider._client_for_slot(credential)
+            except pi_logins.PiLoginRefused:
+                excluded = excluded | {credential}
+                credential = None
+                continue
+        except pi_logins.PiLoginsUnreachable:
+            return last if last is not None else attempt_result("before_reserve", code=Code.POOL_UNAVAILABLE)
         except PoolExhausted as exc:
             exhausted = last if last is not None else attempt_result("before_reserve", code=Code.POOL_EXHAUSTED)
             # Existing picker metadata, not a probe or authorization to retry.
@@ -136,7 +151,7 @@ def _run_attempts(provider: AnthropicLLM, request: PrivateJSON, *, pool: Any, le
                     or reservation.runner_generation != lease.binding.runner_generation
                     or reservation.deadline_at != lease.binding.deadline_at):
                 raise PrivateDraftFailure(Code.SEND_AMBIGUOUS)
-            attempt = NativePooledAttempt(provider, selected_slot=selected_slot, credential=credential)
+            attempt = NativePooledAttempt(provider, selected_slot=selected_slot, client=client)
             result = attempt.send_once(request, reservation=reservation, control=control, capability=capability)
             durable = True
             try:

@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from temper_ai.llm import pi_logins
 from temper_ai.llm.providers import anthropic as mod
 from temper_ai.llm.providers.anthropic import (
     AnthropicLLM,
@@ -28,13 +29,14 @@ from temper_ai.llm.providers.anthropic import (
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     monkeypatch.delenv(mod.API_KEY_ENV, raising=False)
-    monkeypatch.delenv(mod.OAUTH_TOKEN_ENV, raising=False)
+    monkeypatch.setattr(pi_logins, "configured_slots", lambda: [])
     register_oauth_shaper(None)
     yield
     register_oauth_shaper(None)
 
 
-def test_nothing_configured_means_no_provider():
+def test_nothing_configured_means_no_provider(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ignored")
     assert resolve_credential() == (None, "none")
 
 
@@ -43,9 +45,9 @@ def test_an_api_key_is_an_api_key(monkeypatch):
     assert resolve_credential() == ("sk-ant-api03-abc", "api_key")
 
 
-def test_an_oauth_token_is_recognised_by_prefix(monkeypatch):
-    monkeypatch.setenv(mod.OAUTH_TOKEN_ENV, "sk-ant-oat01-xyz")
-    assert resolve_credential() == ("sk-ant-oat01-xyz", "oauth")
+def test_pis_slots_mean_oauth_mode_without_a_stored_token(monkeypatch):
+    monkeypatch.setattr(pi_logins, "configured_slots", lambda: ["anthropic", "anthropic-2"])
+    assert resolve_credential() == (None, "oauth")
 
 
 def test_an_oauth_token_in_the_api_key_slot_is_still_oauth(monkeypatch):
@@ -56,7 +58,7 @@ def test_an_oauth_token_in_the_api_key_slot_is_still_oauth(monkeypatch):
 
 def test_the_api_key_wins_when_both_are_set(monkeypatch):
     monkeypatch.setenv(mod.API_KEY_ENV, "sk-ant-api03-abc")
-    monkeypatch.setenv(mod.OAUTH_TOKEN_ENV, "sk-ant-oat01-xyz")
+    monkeypatch.setattr(pi_logins, "configured_slots", lambda: ["anthropic", "anthropic-2"])
     assert resolve_credential() == ("sk-ant-api03-abc", "api_key")
 
 

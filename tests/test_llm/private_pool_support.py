@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from temper_ai.agent.private_media import NativePrivateMedia
-from temper_ai.llm import shared_cooldowns, single_send, week_usage
+from temper_ai.llm import pi_logins, shared_cooldowns, single_send, week_usage
 from temper_ai.llm.private_pool import invoke_private_pool
 from temper_ai.llm.providers.anthropic import AnthropicLLM
 from temper_ai.private_context.contracts import (
@@ -109,11 +109,11 @@ class Rig:
         self.guard_action = None
         self.account_action = None
         self.http_action = None
-        tokens = ["sk-ant-oat01-" + ipd1.canaries()[2].decode() + str(i) for i in range(count)]
-        for index, token in enumerate(tokens):
-            name = "CLAUDE_CODE_OAUTH_TOKEN" + ("" if index == 0 else "_" + str(index + 1))
-            monkeypatch.setenv(name, token)
-            monkeypatch.setenv(name + "_ACCOUNT", "test-slot-" + str(index))
+        self.tokens = ["sk-ant-oat01-" + ipd1.canaries()[2].decode() + str(i) for i in range(count)]
+        slots = ["test-slot-" + str(i) for i in range(count)]
+        logins = dict(zip(slots, self.tokens, strict=True))
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: list(slots))
+        monkeypatch.setattr(pi_logins, "fetch", lambda slot, call_seconds=None: logins[slot])
         self.provider = AnthropicLLM(model=MODEL)
         if self.provider._private_pool is not None:
             self.provider._private_pool._default_slot = 0
@@ -149,8 +149,7 @@ class Rig:
         self.safe_wire.append({"selection": images == [item["data_base64"] for item in attachments],
                                "temperature": body.get("temperature", "absent"), "tools_absent": "tools" not in body,
                                "native_oauth": request.headers.get("authorization", "").startswith("Bearer sk-ant-oat01-") and "x-api-key" not in request.headers})
-        pool = self.provider._private_pool
-        self.sent_slots.append(pool.tokens.index(request.headers["authorization"][7:]))
+        self.sent_slots.append(self.tokens.index(request.headers["authorization"][7:]))
         logging.getLogger("httpx").warning("%s", ipd1.canaries()[3].decode())
         if self.http_action:
             self.http_action()

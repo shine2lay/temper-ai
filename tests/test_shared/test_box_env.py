@@ -135,10 +135,14 @@ def test_the_committed_list_loads_and_drops_what_only_the_server_reads():
                     "TEMPER_SPAWNER", "TEMPER_EXECUTION_MODE",
                     # M4 SW-42: Pi steps never run in a run box
                     "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE",
-                    "TEMPER_PI_DRAIN_MARK"):
+                    "TEMPER_PI_DRAIN_MARK",
+                    # Claude pools use pi's logins via TEMPER_PI_LOGINS_SOCKET, never .env tokens
+                    "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN_ACCOUNT",
+                    "CLAUDE_CODE_OAUTH_TOKEN_BACKUP", "CLAUDE_CODE_OAUTH_TOKEN_2"):
         assert not env.allows(dropped), dropped
+    assert env.allows("TEMPER_PI_LOGINS_SOCKET")
     assert {"PATH", "HOME", "WORKSPACE_DIR", "TEMPER_API"} <= env.agent_tools
-    assert not {"TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY"} & env.agent_tools
+    assert not {"TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY", "TEMPER_PI_LOGINS_SOCKET"} & env.agent_tools
 
 
 def test_temper_check_names_a_broken_list(tmp_path, capsys):

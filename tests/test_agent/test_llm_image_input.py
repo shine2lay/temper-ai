@@ -22,7 +22,7 @@ from temper_ai.agent import create_agent
 from temper_ai.agent.llm_agent import LLMAgent
 from temper_ai.llm import single_send
 from temper_ai.llm.providers.anthropic import AnthropicLLM
-from temper_ai.llm.token_pool import NamedToken
+from temper_ai.llm.token_pool import TokenPool
 from temper_ai.observability import EventType
 from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.stage.agent_node import AgentNode
@@ -121,13 +121,14 @@ def rig(monkeypatch, *, payload=None, status=200, on_send=None, refuse_temperatu
     counters = {"resolve": 0, "credential": 0, "prepare": 0, "hook": 0, "send": 0, "close": 0}
     provider = AnthropicLLM.__new__(AnthropicLLM)
     provider.auth_mode, provider.model = "oauth", "claude-opus-5-5"
-    provider._pool = None
+    monkeypatch.setattr("temper_ai.llm.pi_logins.configured_slots", lambda: list(provider._pool.tokens) if provider._pool else [])
+    provider._pool = TokenPool(name="anthropic-oauth", tokens=["FAKE-named"], labels=["FAKE-named"])
+    provider._private_pool = provider._pool
     provider.api_key = "sk-ant-oat-FAKE"
     provider.max_tokens, provider.temperature = 1000, 0.0
     provider.cache_ttl = None
     provider.effort = provider.thinking_budget = None
     provider.stream_retry_seconds = 0
-    provider._named = {"FAKE-named": NamedToken(token="sk-ant-oat-FAKE", variable="FAKE_VAR", account="FAKE-named")}
     seen = {}
 
     def handler(request):
@@ -165,6 +166,7 @@ def rig(monkeypatch, *, payload=None, status=200, on_send=None, refuse_temperatu
         counters["credential"] += 1
         return sdk
     provider._client_for = credential
+    provider._client_for_slot = credential
 
     def shaper():
         counters["prepare"] += 1
@@ -357,7 +359,7 @@ def test_provider_or_policy_veto_zero_http(monkeypatch, kind):
     elif kind == "wrong_provider":
         ctx.llm_providers["anthropic"] = SimpleNamespace(provider_name="anthropic", complete=deny)
     elif kind == "unknown_token":
-        provider._named = {}
+        provider._pool = provider._private_pool = TokenPool(name="anthropic-oauth", tokens=["other"], labels=["other"])
     elif kind == "cancelled":
         ctx.cancel_event.set()
     elif kind == "expired":

@@ -698,18 +698,16 @@ then decides which account is spent, and in what order:
 agent:
   provider: anthropic
   model: claude-opus-5-5
-  token: aungshine                 # this account only
+  token: anthropic                 # this account only
   fallback:
-    - token: wai2shine             # the same model on another account
-    - {model: claude-opus-5-5, token: shinelay}
+    - token: anthropic-2           # the same model on another account
     - claude-sonnet-5              # no token: any account, as the pool picks
 ```
 
-- A token is named by its account, set beside it in the environment
-  (`CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine`), or by the name of the
-  variable that holds it (`CLAUDE_CODE_OAUTH_TOKEN_2`). It is never
-  written into the config itself; a value that looks like a credential is
-  refused.
+- A token is named by pi's slot name, as the pools file lists it
+  (`pools.logins.slots` in configs/pools/pools.yaml; docs/pools.md). The
+  login itself is never written into the config; a value that looks like
+  a credential is refused.
 - An entry doesn't inherit the agent's token. Without one it rotates across
   the pool as usual.
 - A name that no token has fails the run before its first call, listing

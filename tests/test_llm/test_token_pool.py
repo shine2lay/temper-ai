@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from temper_ai.llm import pi_logins
 from temper_ai.llm import service as service_mod
 from temper_ai.llm import token_pool as pool_mod
 from temper_ai.llm.token_pool import (
@@ -19,7 +20,6 @@ from temper_ai.llm.token_pool import (
     PoolExhausted,
     TokenPool,
     sticky_key_from_kwargs,
-    tokens_from_env,
 )
 
 TOKENS = [f"sk-ant-oat-{i}" for i in range(4)]
@@ -119,19 +119,134 @@ class TestStickyKey:
         assert sticky_key_from_kwargs({}) is None
 
 
-class TestTokensFromEnv:
-    def test_collects_base_backup_and_numbered(self, monkeypatch):
-        monkeypatch.setenv("T", "a")
-        monkeypatch.setenv("T_BACKUP", "b")
-        monkeypatch.setenv("T_2", "c")
-        monkeypatch.setenv("T_5", "d")
-        assert tokens_from_env("T") == ["a", "b", "c", "d"]
+class TestPiLoginsInProvider:
+    def test_pis_logins_happy_path_fetches_per_call_ignores_env_and_never_keeps_a_token(
+        self, monkeypatch, caplog
+    ):
+        from temper_ai.llm.providers import anthropic as mod
 
-    def test_blank_and_duplicate_entries_do_not_become_slots(self, monkeypatch):
-        monkeypatch.setenv("T", "a")
-        monkeypatch.setenv("T_2", "  ")
-        monkeypatch.setenv("T_3", "a")
-        assert tokens_from_env("T") == ["a"]
+        env_secret = "sk-ant-oat01-stale-env-secret"
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", env_secret)
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_2", "sk-ant-oat01-stale-env-2")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: ["anthropic", "anthropic-2"])
+
+        n = {"calls": 0}
+        minted: list[str] = []
+        asked: list[tuple[str, float]] = []
+        seen_creds: list[str] = []
+
+        def fake_fetch(slot: str, call_seconds: float = 1800) -> str:
+            n["calls"] += 1
+            tok = f"sk-ant-oat01-live-{slot}-turn-{n['calls']}"
+            minted.append(tok)
+            asked.append((slot, call_seconds))
+            return tok
+
+        def fake_anthropic(**kw):
+            cred = kw.get("auth_token") or kw.get("api_key")
+            seen_creds.append(cred)
+            client = MagicMock()
+            client.messages.create.return_value = MagicMock(
+                content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"
+            )
+            return client
+
+        monkeypatch.setattr(pi_logins, "fetch", fake_fetch)
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+
+        with caplog.at_level("DEBUG"):
+            provider = mod.AnthropicLLM(model="claude-opus-5", timeout=2400.0)
+            provider.complete([{"role": "user", "content": "one"}], execution_id="r1", agent_name="a")
+            provider.complete([{"role": "user", "content": "two"}], execution_id="r1", agent_name="a")
+
+        assert provider.api_key is None
+        assert provider._clients == {}
+        assert provider._pool is not None and provider._pool.tokens == ["anthropic", "anthropic-2"]
+        assert len(asked) == 2 and asked[0][0] == asked[1][0], "sticky to one slot across turns"
+        assert asked[0][1] == 2400.0
+        assert seen_creds == minted and seen_creds[0] != seen_creds[1], "fresh token fetched per call"
+        assert env_secret not in seen_creds
+        for secret in [*minted, env_secret]:
+            assert secret not in caplog.text
+            assert secret not in repr(provider._pool.state())
+
+    def test_helper_down_fails_loud_with_no_env_fallback(self, monkeypatch):
+        from temper_ai.llm.providers import anthropic as mod
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-env-must-not-be-used")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: ["anthropic", "anthropic-2"])
+
+        def down(_slot: str, _s: float = 1800) -> str:
+            raise pi_logins.PiLoginsUnreachable("pi's login helper is not running at /tmp/none.sock")
+
+        called = []
+        monkeypatch.setattr(pi_logins, "fetch", down)
+        monkeypatch.setattr(mod, "_ensure_anthropic",
+                            lambda: MagicMock(Anthropic=lambda **kw: called.append(kw)))
+        provider = mod.AnthropicLLM(model="claude-opus-5")
+        with pytest.raises(pi_logins.PiLoginsUnreachable, match="not running"):
+            provider.complete([{"role": "user", "content": "hi"}], execution_id="r1", agent_name="a")
+        assert called == []
+
+    def test_a_refused_pi_login_cools_its_slot_and_fails_over_to_the_next(self, monkeypatch):
+        from temper_ai.llm.providers import anthropic as mod
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: ["anthropic", "anthropic-2"])
+        first_slot = TokenPool(name="t", tokens=["anthropic", "anthropic-2"]).pick("r1-a")
+
+        def fetch_one_bad(slot: str, _s: float = 1800) -> str:
+            if slot == first_slot:
+                raise pi_logins.PiLoginRefused(slot, "refresh_failed")
+            return f"sk-ant-oat01-good-{slot}"
+
+        seen: list[str] = []
+
+        def fake_anthropic(**kw):
+            seen.append(kw.get("auth_token"))
+            client = MagicMock()
+            client.messages.create.return_value = MagicMock(
+                content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"
+            )
+            return client
+
+        monkeypatch.setattr(pi_logins, "fetch", fetch_one_bad)
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+        provider = mod.AnthropicLLM(model="claude-opus-5")
+        provider.complete([{"role": "user", "content": "hi"}], execution_id="r1", agent_name="a")
+
+        other = "anthropic-2" if first_slot == "anthropic" else "anthropic"
+        assert seen == [f"sk-ant-oat01-good-{other}"]
+        assert provider.token_cooling_until(first_slot, "claude-opus-5") is not None
+        assert provider.token_cooling_until(first_slot, "claude-sonnet-5") is not None
+
+    def test_removing_a_slot_from_the_pools_file_drops_it_live_and_keeps_cooldowns(self, monkeypatch):
+        from temper_ai.llm.providers import anthropic as mod
+
+        slots = ["anthropic", "anthropic-2", "anthropic-3"]
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: list(slots))
+        monkeypatch.setattr(pi_logins, "fetch", lambda slot, _s=1800: f"sk-ant-oat01-{slot}")
+        seen: list[str] = []
+
+        def fake_anthropic(**kw):
+            seen.append(kw.get("auth_token"))
+            client = MagicMock()
+            client.messages.create.return_value = MagicMock(
+                content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"
+            )
+            return client
+
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+        provider = mod.AnthropicLLM(model="claude-opus-5")
+        provider._pool.cool("anthropic", until=time.time() + 600)
+        slots[:] = ["anthropic", "anthropic-2"]
+
+        provider.complete([{"role": "user", "content": "hi"}], execution_id="r1", agent_name="a")
+        assert provider.pool_now().tokens == ["anthropic", "anthropic-2"]
+        assert seen == ["sk-ant-oat01-anthropic-2"]
 
 
 class TestPromptCaching:
@@ -145,7 +260,6 @@ class TestPromptCaching:
     def _sent(self, monkeypatch, **provider_kwargs):
         from temper_ai.llm.providers import anthropic as mod
 
-        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         sent: list[dict] = []
 
@@ -158,7 +272,7 @@ class TestPromptCaching:
             return client
 
         monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
-        provider = mod.AnthropicLLM(model="claude-opus-5", **provider_kwargs)
+        provider = mod.AnthropicLLM(model="claude-opus-5", api_key="sk-ant-oat-only", **provider_kwargs)
         return provider, sent
 
     def test_every_request_asks_for_caching(self, monkeypatch):
@@ -231,7 +345,6 @@ class TestThinkingControl:
     def _sent(self, monkeypatch, **provider_kwargs):
         from temper_ai.llm.providers import anthropic as mod
 
-        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         sent: list[dict] = []
 
@@ -245,7 +358,7 @@ class TestThinkingControl:
 
         monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
         model = provider_kwargs.pop("model", "claude-opus-5")
-        provider = mod.AnthropicLLM(model=model, **provider_kwargs)
+        provider = mod.AnthropicLLM(model=model, api_key="sk-ant-oat-only", **provider_kwargs)
         provider.complete([{"role": "user", "content": "hi"}])
         return sent[-1]
 
@@ -428,7 +541,6 @@ class TestPerAgentMaxTokens:
     def test_an_agent_may_ask_for_more_room_than_the_shared_provider(self, monkeypatch):
         from temper_ai.llm.providers import anthropic as mod
 
-        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         sent: list[dict] = []
 
@@ -441,7 +553,7 @@ class TestPerAgentMaxTokens:
             return client
 
         monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
-        provider = mod.AnthropicLLM(model="claude-opus-5")
+        provider = mod.AnthropicLLM(model="claude-opus-5", api_key="sk-ant-oat-only")
 
         provider.complete([{"role": "user", "content": "hi"}])
         assert sent[-1]["max_tokens"] == 32_000, "the default is no longer a 2023 ceiling"
@@ -450,34 +562,30 @@ class TestPerAgentMaxTokens:
         assert sent[-1]["max_tokens"] == 64_000
 
 
-    """The provider side: one agent-run pins to one client, a 429 moves it on."""
+    """The provider side: one agent-run pins to one subscription, a 429 moves it on."""
 
     def _provider(self, monkeypatch, n=3):
         from temper_ai.llm.providers import anthropic as mod
 
-        # Every other token name is set empty, not deleted: once any test in the process has run the
-        # CLI's load_dotenv(override=False), the real .env refills a missing name (its _BACKUP token
-        # made this pool 4, not 3, under xdist). See tests/test_llm/test_pool_is_live_in_the_server.py.
-        for name in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN_BACKUP",
-                     *[f"CLAUDE_CODE_OAUTH_TOKEN_{i}" for i in range(2, 10)]):
-            monkeypatch.setenv(name, "")
-        for i in range(n):
-            monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN" if i == 0 else f"CLAUDE_CODE_OAUTH_TOKEN_{i+1}",
-                               f"sk-ant-oat-{i}")
+        slots = ["anthropic" if i == 0 else f"anthropic-{i+1}" for i in range(n)]
+        logins = {slot: f"sk-ant-oat-{i}" for i, slot in enumerate(slots)}
+        by_cred = {v: k for k, v in logins.items()}
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(pi_logins, "configured_slots", lambda: list(slots))
+        monkeypatch.setattr(pi_logins, "fetch", lambda slot, _s=1800: logins[slot])
         made: dict[str, MagicMock] = {}
-        # The side effect must be installed by the factory: clients are built
-        # lazily, so a test that wires them up afterwards only ever reaches the
-        # one client that existed at construction.
         on_create = kwargs_holder = {}
 
         def fake_anthropic(**kw):
-            client = MagicMock()
             credential = kw.get("auth_token") or kw.get("api_key")
-            client._credential = credential
+            slot = by_cred.get(credential, credential)
+            client = made.get(slot)
+            if client is None:
+                client = MagicMock()
+                client._credential = slot
+                made[slot] = client
             if on_create.get("fn"):
-                client.messages.create.side_effect = lambda **c: on_create["fn"](credential, **c)
-            made[credential] = client
+                client.messages.create.side_effect = lambda s=slot, **c: on_create["fn"](s, **c)
             return client
 
         monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))

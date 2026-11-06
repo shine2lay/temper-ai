@@ -15,25 +15,32 @@ access token (``sk-ant-oat…``) is sent as a bearer token, which is how the
 Anthropic SDK itself carries OAuth credentials (``auth_token=``).
 
 Resolution order: an explicit ``api_key`` argument, then
-``ANTHROPIC_API_KEY``, then ``CLAUDE_CODE_OAUTH_TOKEN``. The API key wins
-when both are set, because it is this provider's native credential; the
-opposite order is a documented source of confusion elsewhere.
+``ANTHROPIC_API_KEY``, then pi's own Claude logins. The API key wins when
+it is set, because it is this provider's native credential.
 
 Several subscriptions, one cache
 -------------------------------
-OAuth tokens are pooled: ``CLAUDE_CODE_OAUTH_TOKEN``, ``_BACKUP`` and
-``_2``…``_9`` are separate subscriptions with separate rate-limit windows.
-The pool rotates *between* agents and never *within* one — an agent's calls
-in a given run all go out on the same token, because Anthropic's prompt
-cache is per credential and a tool-using run re-sends its transcript every
-iteration. A token that answers 429 is cooled until its reset and the call
-is retried on another; the sticky agent then loses its warm cache, which is
-why failover is a fallback and not the normal path. See
-``temper_ai.llm.token_pool``.
+Without an API key the provider uses pi's Claude logins: the pi slots the
+pools file lists (``pools.logins.slots``, e.g. ``anthropic``,
+``anthropic-2``; see ``temper_ai.llm.pi_logins`` and docs/pools.md). Temper
+holds no login of its own: each call asks temper-pi-host for its slot's
+current login, good for the call's timeout, and keeps it for that call only.
+The slot list is read again on each call, so a slot taken out of the file is
+never picked again, without a restart; the provider itself comes up only when
+the file lists at least one slot at start. When the helper can't be reached the
+call fails at once, naming it; there is no other source.
 
-A call can instead name its token (``token: wai2shine``, by the account set in
-``<VARIABLE>_ACCOUNT`` or by the variable itself). It then goes out on that
-token only: a limit there is not retried on another account but raised as
+The slots are separate subscriptions with separate rate-limit windows. The
+pool rotates *between* agents and never *within* one — an agent's calls in a
+given run all go out on the same slot, because Anthropic's prompt cache is per
+account and a tool-using run re-sends its transcript every iteration. A slot
+that answers 429 is cooled until its reset and the call is retried on another;
+the sticky agent then loses its warm cache, which is why failover is a fallback
+and not the normal path. A slot whose login pi refuses is cooled for a while
+and the call goes on another. See ``temper_ai.llm.token_pool``.
+
+A call can instead name its slot (``token: anthropic-2``). It then goes out on
+that slot only: a limit there is not retried on another account but raised as
 ``TokenCooling``, and the agent's fallback list says where to go next.
 
 Anthropic treats a bare bearer request from a third-party client
@@ -57,14 +64,13 @@ from typing import Any, Protocol
 
 import httpx
 
+from temper_ai.llm import pi_logins
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
 from temper_ai.llm.token_pool import (
-    NamedToken,
     PoolExhausted,
     TokenCooling,
     TokenPool,
-    named_tokens_from_env,
     sticky_key_from_kwargs,
 )
 
@@ -78,7 +84,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 OAUTH_TOKEN_PREFIX = "sk-ant-oat"  # noqa: S105 - a prefix, not a secret
 API_KEY_ENV = "ANTHROPIC_API_KEY"
-OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
+# The pool's name: coolings are shared under it by every temper process.
+POOL_NAME = "anthropic-oauth"
+_NO_SLOT = ("the pools file lists no pi slot (pools.logins.slots), so temper has no Claude "
+            "login (docs/pools.md, 'Where the logins come from')")
 # How long, in all, a call whose stream broke keeps waiting to send it again
 # (`stream_retry_budget_s`). An overload burst outlasts a few seconds: with the
 # base class's three attempts (1 s, then 2 s) one ended its agent 30 minutes in.
@@ -170,17 +179,19 @@ def _thinking_rejected(exc: Exception) -> bool:
 def resolve_credential(api_key: str | None = None) -> tuple[str | None, AuthMode]:
     """The credential this provider would use, and what kind it is.
 
-    Returns ``(None, "none")`` when nothing is configured, so callers can
-    decide whether to initialise the provider at all.
+    An API key (the argument, then ``ANTHROPIC_API_KEY``) is used as it is.
+    Without one, pi's Claude logins when the pools file lists any slot:
+    ``(None, "oauth")``, no fixed credential, each call fetches its slot's
+    login. ``(None, "none")`` when neither is configured, so callers can
+    decide whether to initialise the provider at all. A malformed slot list
+    raises ``pi_logins.PiLoginsMisconfigured``.
     """
-    key = (
-        (api_key or "").strip()
-        or os.environ.get(API_KEY_ENV, "").strip()
-        or os.environ.get(OAUTH_TOKEN_ENV, "").strip()
-    )
-    if not key:
-        return None, "none"
-    return key, ("oauth" if key.startswith(OAUTH_TOKEN_PREFIX) else "api_key")
+    key = (api_key or "").strip() or os.environ.get(API_KEY_ENV, "").strip()
+    if key:
+        return key, ("oauth" if key.startswith(OAUTH_TOKEN_PREFIX) else "api_key")
+    if pi_logins.configured_slots():
+        return None, "oauth"
+    return None, "none"
 
 
 class OAuthRequestShaper(Protocol):
@@ -446,44 +457,74 @@ class AnthropicLLM(BaseLLM):
         self._base_url = base_url if base_url != "https://api.anthropic.com" else None
         self._clients: dict[str, Any] = {}
         self._clients_lock = threading.Lock()
+        # One connection pool shared across per-call pi-login clients, holding no login.
+        self._slot_http: Any = None
 
-        # Pool only the env-configured OAuth subscriptions, and only when this
-        # provider is actually using one: an explicitly passed credential (a
-        # test's, a caller's) is the one to use, not a hint to go looking for
-        # siblings of it in the environment.
-        named: list[NamedToken] = []
-        if self.auth_mode == "oauth" and not (api_key or "").strip():
-            named = [n for n in named_tokens_from_env(OAUTH_TOKEN_ENV) if n.token.startswith(OAUTH_TOKEN_PREFIX)]
-        pooled = [n.token for n in named]
-        self._pool = (TokenPool(name="anthropic-oauth", tokens=pooled, labels=[n.label for n in named])
-                      if len(pooled) > 1 else None)
-        # Explicit private mode must use the real picker even with one slot.
-        # Keep legacy singleton/named behavior intact; never synthesize a pool
-        # from api_key, a named-token lookup or a credential outside this list.
-        self._private_pool = self._pool if self._pool is not None else (
-            TokenPool(name="anthropic-oauth", tokens=pooled, labels=[n.label for n in named]) if pooled else None)
-
-        # What `token:` may name: each token's account, and its variable.
-        self._named: dict[str, NamedToken] = {}
-        for n in named:
-            for key in (n.account, n.variable):
-                if key and self._named.setdefault(key, n) is not n:
-                    logger.warning("Anthropic: two tokens are called %r; `token: %s` means %s",
-                                   key, key, self._named[key].variable)
+        # Pool pi's logins only when this provider has no fixed credential: an
+        # explicitly passed one (a test's, a caller's) or an API key is the one to
+        # use. Its entries are pi slot names, never logins; every slot, even a
+        # single one, goes through the real picker (the private path relies on it).
+        slots = pi_logins.configured_slots() if credential is None and self.auth_mode == "oauth" else []
+        self._pool = TokenPool(name=POOL_NAME, tokens=slots, labels=list(slots)) if slots else None
+        self._private_pool = self._pool
 
         self._client = self._client_for(credential) if credential else None
         logger.info(
             "Anthropic provider: auth mode %s%s",
             self.auth_mode,
-            f", {len(self._pool)} pooled subscriptions" if self._pool else "",
+            f", pi's logins: {', '.join(slots)}" if self._pool else "",
         )
 
-    def _client_for(self, credential: str):
-        """The SDK client for one credential, created once and reused.
+    def pool_now(self) -> TokenPool | None:
+        """The pi-login pool, holding the slots the pools file lists now.
 
-        One client per token rather than one per call: the SDK holds an HTTP
+        Read again on every call, so a slot taken out of the file is never
+        picked or asked for again, and one put in is used, without a restart;
+        a slot's coolings stay with its name. None when the provider has a
+        fixed credential. A malformed list raises PiLoginsMisconfigured.
+        """
+        pool = self._pool
+        if pool is None:
+            return None
+        if not hasattr(pool, "tokens"):
+            return pool
+        slots = pi_logins.configured_slots()
+        if slots != pool.tokens:
+            with self._clients_lock:
+                logger.info("Anthropic: pi's logins now %s (were %s)",
+                            ", ".join(slots) or "none", ", ".join(pool.tokens) or "none")
+                pool.tokens, pool.labels = list(slots), list(slots)
+        return pool
+
+    def _client_for_slot(self, slot: str):
+        """An SDK client carrying pi slot `slot`'s current login, for one call.
+
+        The login comes from pi (temper_ai.llm.pi_logins.fetch), good for this
+        provider's timeout plus a margin, and lives in the returned client
+        only: nothing here keeps it. Real SDK clients share one HTTP connection
+        pool (holding no login), so a fresh login costs no TLS handshake.
+        Raises PiLoginsUnreachable or PiLoginRefused.
+        """
+        login = pi_logins.fetch(slot, self.timeout)
+        extra: dict[str, Any] = {}
+        if getattr(self._anthropic.Anthropic, "__module__", "").startswith("anthropic"):
+            with self._clients_lock:
+                if self._slot_http is None and hasattr(self._anthropic, "DefaultHttpxClient"):
+                    self._slot_http = self._anthropic.DefaultHttpxClient(timeout=self.timeout)
+                if self._slot_http is not None:
+                    extra["http_client"] = self._slot_http
+        # Bearer, not x-api-key: the SDK's own way of carrying OAuth.
+        return self._anthropic.Anthropic(
+            base_url=self._base_url, timeout=self.timeout, auth_token=login, api_key=None, **extra)
+
+    def _client_for(self, credential: str):
+        """The SDK client for one fixed credential (an API key, or a token handed
+        in), created once and reused.
+
+        One client per credential rather than one per call: the SDK holds an HTTP
         connection pool, and rebuilding it for every request of a 60-iteration
-        run costs a TLS handshake each time.
+        run costs a TLS handshake each time. Pi's logins never come here: they
+        change, and go through _client_for_slot.
         """
         with self._clients_lock:
             client = self._clients.get(credential)
@@ -502,55 +543,60 @@ class AnthropicLLM(BaseLLM):
 
     # -- named tokens (see BaseLLM) -----------------------------------------
 
-    def _named_token(self, name: str) -> NamedToken:
-        found = self._named.get(name)
-        if found is not None:
-            return found
-        if not self._named:
+    def names_slot(self, name: str) -> bool:
+        """Whether `token: <name>` names one of pi's slots this provider uses now."""
+        pool = self.pool_now()
+        if pool is None:
+            return False
+        slots = pool.tokens if hasattr(pool, "tokens") else pi_logins.configured_slots()
+        return name in slots
+
+    def _pinned_slot(self, name: str) -> tuple[TokenPool, str]:
+        pool = self.pool_now()
+        if pool is None:
             raise ValueError(f"no Anthropic token is called {name!r}: this provider is not using "
                              f"pooled subscriptions (auth mode {self.auth_mode})")
-        known = ", ".join(sorted({n.label for n in self._named.values()}))
-        raise ValueError(f"no Anthropic token is called {name!r}; the tokens are {known}")
+        slots = pool.tokens if hasattr(pool, "tokens") else pi_logins.configured_slots()
+        if name not in slots:
+            raise ValueError(f"no Anthropic token is called {name!r}; pi's slots are "
+                             f"{', '.join(slots) or 'none'}")
+        return pool, name
 
     def check_token(self, name: str) -> None:
-        self._named_token(name)
+        self._pinned_slot(name)
 
     def token_cooling_until(self, name: str, model: str | None = None) -> float | None:
-        found = self._named.get(name)
-        if found is None or self._pool is None:
+        if not self.names_slot(name):
             return None
-        return self._pool.cooling_until(found.token, model)
+        return self._pool.cooling_until(name, model) if self._pool is not None else None
 
     def _call_pinned(self, name: str, run, model: str | None, *, single_send: bool = False) -> Any:
-        """Run `run(client)` on the one token the call names, with no rotation.
+        """Run `run(client)` on the one slot the call names, with no rotation.
 
         The call asked for this account, so a limit on it is not retried on
         another: it is raised as TokenCooling -- a capacity failure -- and the
-        agent's fallback list decides where to go next. The token is still
+        agent's fallback list decides where to go next. The slot is still
         cooled in the pool, so the calls that do rotate stop landing on it, and
-        a token already known to be cooling is refused without a request.
+        a slot already known to be cooling is refused without a request. A
+        login pi refuses cools the slot the same way.
         """
-        entry = self._named_token(name)
-        if self._pool is not None:
-            until = self._pool.cooling_until(entry.token, model)
-            if until:
-                raise TokenCooling(entry.label, model, until)
+        pool, slot = self._pinned_slot(name)
+        until = pool.cooling_until(slot, model)
+        if until:
+            raise TokenCooling(slot, model, until)
         try:
-            return run(self._client_for(entry.token))
+            client = self._client_for_slot(slot)
+        except pi_logins.PiLoginRefused as exc:
+            reset = pool.cool(slot, reason="pi refused its login")
+            raise TokenCooling(slot, model, reset, detail=exc.why[:200]) from None
+        try:
+            return run(client)
         except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
             if not _is_rate_limit(exc):
                 raise
-            reset = _reset_epoch(exc)
-            if self._pool is not None:
-                reset = self._pool.cool(entry.token, until=reset, model=model)
+            reset = pool.cool(slot, until=_reset_epoch(exc), model=model)
             detail = type(exc).__name__ if single_send else str(exc)[:200]
-            raise TokenCooling(entry.label, model, reset, detail=detail) from exc
-
-    def _credential_for_call(self, kwargs: dict[str, Any], model: str | None = None) -> str | None:
-        """Which subscription this call goes out on (see the module docstring)."""
-        if self._pool is None:
-            return self.api_key
-        return self._pool.pick(sticky_key_from_kwargs(kwargs), model=model)
+            raise TokenCooling(slot, model, reset, detail=detail) from exc
 
     def _send(self, create_kwargs: dict[str, Any], kwargs: dict[str, Any], run) -> Any:
         """One request, surviving a subscription limit and a rejected knob.
@@ -600,24 +646,42 @@ class AnthropicLLM(BaseLLM):
         model family, and cooling all of them stops work that had quota left.
 
         A call that names its token goes out on that one only (_call_pinned).
+        Each attempt asks pi for its slot's login; a slot whose login pi
+        refuses is cooled for a while and the call goes on another, and when
+        pi refused every slot the call fails with pi's words. When the helper
+        can't be reached the call fails at once (PiLoginsUnreachable).
         """
         if kwargs.get("token"):
             return self._call_pinned(kwargs["token"], run, model)
-        attempts = len(self._pool) if self._pool else 1
-        last_error: Exception | None = None
-        for _ in range(max(attempts, 1)):
-            credential = self._credential_for_call(kwargs, model=model)
-            if credential is None:
+        pool = self.pool_now()
+        if pool is None:
+            if self.api_key is None:
                 raise RuntimeError("Anthropic provider has no credential configured")
+            return run(self._client_for(self.api_key))
+        if not pool.tokens:
+            raise RuntimeError(f"Anthropic provider: {_NO_SLOT}")
+        last_error: Exception | None = None
+        refused: dict[str, str] = {}
+        for _ in range(len(pool)):
+            slot = pool.pick(sticky_key_from_kwargs(kwargs), model=model)
             try:
-                return run(self._client_for(credential))
-            except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
-                if self._pool is None or not _is_rate_limit(exc):
-                    raise
-                self._pool.cool(credential, until=_reset_epoch(exc), model=model)
+                client = self._client_for_slot(slot)
+            except pi_logins.PiLoginRefused as exc:
+                pool.cool(slot, reason="pi refused its login")
+                refused[slot] = exc.why
                 last_error = exc
-        raise PoolExhausted(len(self._pool) if self._pool else 0,
-                            self._pool.soonest_reset(model) if self._pool else None) from last_error
+                continue
+            try:
+                return run(client)
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
+                if not _is_rate_limit(exc):
+                    raise
+                pool.cool(slot, until=_reset_epoch(exc), model=model)
+                last_error = exc
+        if refused and set(refused) == set(pool.tokens):
+            raise RuntimeError("Anthropic provider: pi refused every Claude login temper may use: "
+                               + "; ".join(refused.values())) from None
+        raise PoolExhausted(len(pool), pool.soonest_reset(model)) from last_error
 
     def _build_create_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         """The ``messages.create`` payload, shaped for the credential in use."""
@@ -776,7 +840,7 @@ class AnthropicLLM(BaseLLM):
             control = ss.strict_control(kwargs)
             try:
                 token = kwargs.get("token")
-                if self.auth_mode != "oauth" or not isinstance(token, str) or not token or token not in self._named:
+                if self.auth_mode != "oauth" or not isinstance(token, str) or not token or not self.names_slot(token):
                     raise ss.SingleSendError("auth")
                 self.check_token(token)
                 body = self._build_single_send_kwargs(messages, **kwargs)

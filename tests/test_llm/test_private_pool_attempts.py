@@ -191,7 +191,7 @@ def test_lost_durability_or_accounting_never_retries(monkeypatch, phase):
 def test_singleton_is_real_picker_and_cools(monkeypatch):
     rig = Rig(monkeypatch, count=1, schedule=(429, 200))
     result = rig.run()
-    require(rig.provider._pool is None and len(rig.provider._private_pool) == 1)
+    require(len(rig.provider._private_pool) == 1)
     require(rig.picks == 2 and rig.calls == 1 and result.outcome.transmission == "refused")
     require(bool(rig.provider._private_pool._cooldown))
 
@@ -199,7 +199,6 @@ def test_singleton_is_real_picker_and_cools(monkeypatch):
 def test_zero_pool_cannot_fall_back_to_api_key_or_named_account(monkeypatch):
     rig = Rig(monkeypatch, count=0)
     rig.provider.api_key = "sk-ant-oat01-" + ipd1.canaries()[2].decode()
-    rig.provider._named = {"pretend": object()}
     rig.provider._client_for = deny
     result = rig.run()
     require(rig.calls == 0 and not rig.custody.reservations)

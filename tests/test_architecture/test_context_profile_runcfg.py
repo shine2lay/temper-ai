@@ -29,7 +29,7 @@ import temper_ai.agent as agents
 from temper_ai.agent import single_call_agent as single_call
 from temper_ai.config.helpers import substitute_env_vars
 from temper_ai.config.importer import config_files, parse_yaml
-from temper_ai.llm import providers, token_pool
+from temper_ai.llm import pi_logins, providers, token_pool
 from temper_ai.llm.providers import anthropic, factory, openai
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage import agent_node, dispatch_validation
@@ -94,11 +94,10 @@ OFFLINE = [
     (factory, "create_provider"),
     (providers, "create_provider"),
     (anthropic, "resolve_credential"),
-    (anthropic, "named_tokens_from_env"),
     (anthropic.AnthropicLLM, "check_token"),
-    (anthropic.AnthropicLLM, "_named_token"),
-    (token_pool, "named_tokens_from_env"),
-    (token_pool, "tokens_from_env"),
+    (anthropic.AnthropicLLM, "_pinned_slot"),
+    (pi_logins, "configured_slots"),
+    (pi_logins, "fetch"),
     (token_pool.TokenPool, "__init__"),
     (openai, "resolve_credential"),
     (anthropic.AnthropicLLM, "__init__"),

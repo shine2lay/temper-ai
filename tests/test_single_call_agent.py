@@ -146,24 +146,26 @@ def anthropic_events(answer=ANSWER, stop="end_turn", *, reasoning=None):
 def fake_anthropic(monkeypatch, handler):
     from temper_ai.llm import single_send
     from temper_ai.llm.providers.anthropic import AnthropicLLM
-    from temper_ai.llm.token_pool import NamedToken
+    from temper_ai.llm.token_pool import TokenPool
 
     # __new__ avoids environment resolution, JWT files, pool env and startup logs.
     provider = AnthropicLLM.__new__(AnthropicLLM)
     provider.auth_mode = "oauth"
     provider.model = "claude-opus-5-5"
-    provider._pool = None
+    provider._pool = TokenPool(name="anthropic-oauth", tokens=["FAKE-named"], labels=["FAKE-named"])
+    provider._private_pool = provider._pool
+    monkeypatch.setattr("temper_ai.llm.pi_logins.configured_slots",
+                        lambda: list(getattr(provider._pool, "tokens", ("FAKE-named",))) if provider._pool else [])
     provider.api_key = "sk-ant-oat-FAKE"
     provider.max_tokens, provider.temperature = 1000, 0.0
     provider.cache_ttl = None
     provider.effort = provider.thinking_budget = None
     provider.stream_retry_seconds = 0
-    named = NamedToken(token="sk-ant-oat-FAKE", variable="FAKE_VAR", account="FAKE-named")
-    provider._named = {"FAKE-named": named}
     sdk = anthropic.Anthropic(auth_token="sk-ant-oat-FAKE", api_key="FAKE-NOT-A-KEY",
         base_url="https://api.anthropic.com", http_client=httpx.Client(
             transport=httpx.MockTransport(handler), trust_env=False))
     provider._client_for = lambda credential: sdk
+    provider._client_for_slot = lambda slot: sdk
     provider._test_sdk = sdk
     import temper_ai.llm.providers.anthropic as module
     monkeypatch.setattr(module, "get_oauth_shaper", lambda: None)
@@ -662,7 +664,7 @@ def test_strict_sdk_retry_option_learned_set_skip_and_no_cache(tmp_path, monkeyp
                     and body.get("thinking", {}).get("budget_tokens") == 64)
         return httpx.Response(200, content=anthropic_events(), headers={"content-type": "text/event-stream"})
     provider = fake_anthropic(monkeypatch, handler)
-    shared = provider._client_for(provider._named["FAKE-named"].token)
+    shared = provider._client_for_slot("FAKE-named")
     original = shared.with_options
     def with_options(**kwargs):
         options.append(kwargs.get("max_retries"))

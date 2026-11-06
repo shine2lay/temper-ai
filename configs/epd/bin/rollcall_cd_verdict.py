@@ -22,7 +22,8 @@ Terms:
                skipped, missing or still running is not green; a commit GitHub replaced while pending has no
                run of its own, and the next run covers it.
   red          conclusion failure, timed_out or startup_failure; also a cancelled run one of whose jobs had
-               started (stopped by its time limit or by hand), since its tests never finished.
+               started (stopped by its time limit or by hand, not replaced by a newer push before any failure),
+               since its tests never finished.
   deployed     a commit some deploy put live: deploys.jsonl holds a record with result ok whose sha is that
                commit or, with a from_sha, a descendant of it that from_sha is not. A red run waits until its
                head is deployed. Commits already live before CD's first deploy are never acted on.
@@ -205,6 +206,9 @@ class Repo:
     def has(self, sha: str) -> bool:
         return self._git("cat-file", "-e", f"{sha}^{{commit}}").returncode == 0
 
+    def fetch(self, branch: str = BRANCH) -> bool:
+        return self._git("fetch", "--quiet", "origin", branch).returncode == 0
+
     def is_ancestor(self, older: str, newer: str) -> bool:
         """older == newer counts."""
         done = self._git("merge-base", "--is-ancestor", older, newer)
@@ -282,6 +286,13 @@ def job_started(job: dict) -> bool:
     return any(s.get("conclusion") not in (None, "", "skipped") for s in job.get("steps") or [])
 
 
+def has_prior_failure(jobs: Sequence[dict]) -> bool:
+    return any(
+        job.get("conclusion") in RED or any(s.get("conclusion") in RED for s in job.get("steps") or [])
+        for job in jobs
+    )
+
+
 def failures_of(jobs: Sequence[dict], log_text: str) -> list[Failure]:
     """One Failure per failing (or stopped) step; a failed job with no step that ran is one Failure too."""
     logs = parse_failed_log(log_text)
@@ -292,7 +303,7 @@ def failures_of(jobs: Sequence[dict], log_text: str) -> list[Failure]:
         name = job["name"]
         log = logs.get(name, JobLog())
         steps = job.get("steps") or []
-        failed = [s for s in steps if s.get("conclusion") == "failure"]
+        failed = [s for s in steps if s.get("conclusion") in RED]
         stopped = not failed and job.get("conclusion") == "cancelled"
         if stopped:
             failed = [s for s in steps if s.get("conclusion") == "cancelled"]
@@ -540,6 +551,7 @@ class Tick:
         self.shipped_records = sorted((r for r in records if r.get("result") in SHIPPED_RESULTS and r.get("sha")),
                                       key=lambda r: r["_ts"])
         self.live = live
+        self._fetched_origin = False
 
     # -- what was deployed
 
@@ -565,6 +577,21 @@ class Tick:
 
     def _earlier(self, run: Run) -> list[Run]:
         return [r for r in reversed(self.runs) if r.created < run.created and r.status == "completed"]
+
+    def superseded_by_newer_push(self, run: Run) -> bool:
+        """True when a newer run on master is for a descendant commit of `run.head`."""
+        newer = [
+            r for r in self.runs
+            if r.id != run.id and r.head != run.head and (r.created >= run.created or r.id > run.id)
+        ]
+        if not newer:
+            return False
+        if (not self.repo.has(run.head) or any(not self.repo.has(r.head) for r in newer)) and not self._fetched_origin:
+            self._fetched_origin = True
+            self.repo.fetch(BRANCH)
+        if not self.repo.has(run.head):
+            return False
+        return any(self.repo.has(r.head) and self.repo.is_ancestor(run.head, r.head) for r in newer)
 
     def green_since(self, head: str, live: str) -> Run | None:
         """A green run on a commit after `head` that live holds: live already has a proven fix."""
@@ -625,6 +652,8 @@ class Tick:
             jobs = self.github.jobs(run.id)
             if not any(job_started(j) for j in jobs) and not already_reran:
                 return Decision(run, "ignored", "cancelled before any job ran (replaced by a newer push, or by hand)")
+            if not already_reran and not has_prior_failure(jobs) and self.superseded_by_newer_push(run):
+                return Decision(run, "ignored", "cancelled by a newer push")
         elif run.conclusion not in RED:
             if not already_reran:
                 return Decision(run, "ignored", f"conclusion {run.conclusion or 'none'}: not green, not red")

@@ -556,6 +556,71 @@ def test_a_cancelled_run_whose_tests_had_started_is_red_with_money_unknown(world
     assert roles == ["backend", "rollcall"]
 
 
+def test_a_mid_job_cancelled_run_superseded_by_a_newer_push_without_prior_failure_is_ignored(world, tmp_path):
+    world.commit("c1", "backend: base (Backend #10)")
+    world.run("c1", "success")
+    world.commit("c2", "frontend: mid-job cancelled by concurrency (Frontend #190)")
+    qa_mid_job_cancelled = [
+        {"name": "select", "status": "completed", "conclusion": "success", "steps": [
+            {"name": "Set up job", "conclusion": "success"}, {"name": "Select suites", "conclusion": "success"}]},
+        {"name": "frontend", "status": "completed", "conclusion": "success", "steps": [
+            {"name": "Set up job", "conclusion": "success"}, {"name": "Unit tests (vitest)", "conclusion": "success"}]},
+        {"name": "backend", "status": "completed", "conclusion": "success", "steps": [
+            {"name": "Set up job", "conclusion": "success"}, {"name": "Tests (pytest)", "conclusion": "success"}]},
+        {"name": "qa", "status": "completed", "conclusion": "cancelled", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "The Screener tab's happy path", "conclusion": "success"},
+            {"name": "The Trade Hub journey", "conclusion": "cancelled"},
+            {"name": "The Positions tab's happy path", "conclusion": "skipped"}]},
+    ]
+    superseded = world.run("c2", "cancelled", jobs=qa_mid_job_cancelled)
+    world.deployed("c2", "c1")
+
+    # Push a descendant commit c3 on origin before the local checkout fetches it; newer run 42152615033 starts.
+    upstream = tmp_path / "upstream"
+    subprocess.run([*GIT, "clone", "-q", str(world.dir), str(upstream)], check=True)
+    world.git("remote", "add", "origin", str(upstream))
+    (upstream / "c3.txt").write_text("c3")
+    subprocess.run([*GIT, "-C", str(upstream), "add", "-A"], check=True)
+    subprocess.run([*GIT, "-C", str(upstream), "commit", "-q", "-m", "backend: next push (Backend #191)"], check=True)
+    c3_sha = subprocess.run([*GIT, "-C", str(upstream), "rev-parse", "HEAD"], check=True,
+                            capture_output=True, text=True).stdout.strip()
+    world.sha["c3"] = c3_sha
+    newer = world.run("c3", "", status="in_progress")
+
+    code, decisions, summary = world.tick()
+
+    assert code == 0
+    assert decisions[superseded]["action"] == "ignored"
+    assert decisions[superseded]["why"] == "cancelled by a newer push"
+    assert newer not in decisions and summary["waiting"] == 1
+    assert world.actions.calls == []
+
+
+@pytest.mark.parametrize("prior_conclusion", ["failure", "timed_out", "startup_failure"])
+def test_a_mid_job_cancelled_run_with_prior_failure_stays_red_even_when_superseded(world, prior_conclusion):
+    world.commit("c1", "backend: base (Backend #10)")
+    world.run("c1", "success")
+    world.commit("c2", "frontend: broke before cancel (Frontend #190)")
+    jobs = [
+        {"name": "frontend", "status": "completed", "conclusion": "cancelled", "steps": [
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Typecheck (tsc)", "conclusion": prior_conclusion},
+            {"name": "Unit tests (vitest)", "conclusion": "cancelled"}]},
+    ]
+    stopped = world.run("c2", "cancelled", jobs=jobs)
+    world.commit("c3", "backend: newer push (Backend #191)")
+    world.run("c3", "success")
+    world.deployed("c3", "c1")
+
+    code, decisions, _ = world.tick()
+
+    assert code == 0
+    assert decisions[stopped]["action"] == "notify"
+    assert decisions[stopped]["landers"] == ["frontend"]
+    assert [c[1] for c in world.actions.of("role")] == ["frontend"]
+
+
 def test_unknown_money_asks_rollcall_and_undoes_nothing(world):
     world.commit("c1", "frontend: base (Frontend #1)")
     world.run("c1", "success")

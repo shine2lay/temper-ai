@@ -117,9 +117,9 @@ open objects:
 | `fixture.json` | any JSON object: the product's shared sample data |
 | `inventory.json` | `design_files` (defined, partial, none); `screens[]`: `id`, `name`, `states[]`, `widths[]`, optional `spec` |
 | `directions.json` | `directions[]`: `id`, `name`, `idea`, `page` (an HTML file in 04-directions/); at least two |
-| `<id>/checks.json`, `round-<n>/checks.json` | `checks[]`: `id`, `value`, `result` (pass, fail), `evidence`, `element`, `location` |
+| `<id>/checks.json`, `round-<n>/checks.json` | `checks[]`: `id`, `value`, `result` (pass, fail), `evidence`, `element`, `location`; optional `severity` (blocker, should), `screen`, `state`, `width`, `view`, `count` |
 | `review.json` | `round`, `verdict` (done, revise); `findings[]`: `id`, `element`, `location`, `evidence`, `severity` 0-4, `priority` (must, should, could, wont) |
-| `build.json` | `direction`, `round`, `page`, `widths[]`, `screens[]`: `id`, `file` (in 05-build/), optional `states[]` |
+| `build.json` | `direction`, `round`, `page`, `widths[]`, `screens[]`: `id`, `file` (in 05-build/), optional `states[]`; optional `views[]` (see Prototype contract) |
 | `showtell.json` | `doc_id`, `version`, `url` |
 | `comments.json` | `doc_id`; `comments[]`: `number`, `version`, `body`, `element`, `state`, optional `replies[]` |
 | `gate_<name>.json` | see Gates; no fields beyond these |
@@ -127,6 +127,50 @@ open objects:
 | `followup.json` | `items[]`: `id`, `what`, `owner_role`, `source` |
 
 Change a contract only together with the stage that writes the file, and keep the known case passing.
+
+## Prototype contract
+
+What stages 4 (directions) and 5 (build) must leave behind, so stage 6a can measure it and 6b can review
+it. It is the seam between the stages that draw and the stage that judges; a prototype that follows it
+can be opened view by view by script, and every measured failure can be named by screen, state and width.
+
+- **One self-contained HTML prototype** per build, at `05-build/index.html` (a direction's draft at
+  `04-directions/<id>/index.html`). Self-contained means it opens from `file://` or a plain static
+  server with no backend: its own CSS and JS, its figures from the run's `03-ground/fixture.json`.
+- **Screen roots** carry `data-screen="<inventory screen id>"`: the element that holds one screen of
+  `03-ground/inventory.json`.
+- **States** carry `data-view-state="loading|empty|normal|error|<inventory state>"` on the screen root or
+  inside it. Never `data-state` or `data-st-state` below `html`/`body`: Show&Tell's state helper hides
+  those elements, so a page that uses them goes blank for the owner.
+- **A view opens by its hash**: `#<screen>/<state>` shows that screen in that state, from a cold load.
+  `#<screen>` alone means its `normal` state.
+- **Requirements**: every element that meets a requirement carries `data-req="R3 R7"` (ids from
+  `01-request/requirements.json`, space-separated).
+- **Actions**: every action of `inventory.json` carries `data-action="<action id>"` on the control that
+  performs it, and the control shows visible feedback on click before any server reply (AGENTS.md
+  Design checklist: "when i click on something there should be feedback that its been clicked even if
+  backend hasn't responded yet").
+- **Figures** (money, percent, count) come from `03-ground/fixture.json`, never invented.
+
+`build.json` may name the views directly, which is the compatible extension a prototype that cannot
+follow the hash convention needs (an older build, or a direction draft that opens its screens by
+clicking):
+
+```
+"views": [{"screen": "overview", "state": "normal", "open": {"hash": "#overview/normal"}},
+          {"screen": "positions", "state": "normal",
+           "open": {"steps": [{"click": "[data-nav=\"positions\"]"}, {"wait": 400}]}}]
+```
+
+`open` is `{"hash": "#..."}`, or `{"steps": [...]}` of `{"click": "<css selector>"}`, `{"goto": "<url or
+hash>"}` and `{"wait": <ms>}`. Without `views[]` the views are `inventory.json`'s screens x states x
+widths, opened by the hash convention. `views[]` is optional, so an older `build.json` stays valid.
+
+**A prototype that carries no `data-screen` mark at all does not claim this contract.** The checks step
+still measures everything it can see (render, overflow, type, contrast, targets, focus, axe, hierarchy,
+tokens, figures, integration) but cannot prove coverage, so each coverage check writes one Should row
+saying so instead of a blocker per missing mark. This is what lets a prototype built before the contract
+(the `rollcall-20261104` known case's draft A) be measured honestly rather than failed 64 times over.
 
 ## Gates
 
@@ -1093,3 +1137,315 @@ new `prepare` against v2 is a delta again. Tool registry: 21 entries, `check-too
 Landed in temper-ai `2ce846d9` (land 235-11cb76; pre-commit suite 1951 passed). Fixture run of the whole
 workflow after the land: `873fd775`, all 19 nodes completed at $0 (gates answered as Design, the known case's
 choices).
+
+## Stage 6a: checks
+
+The `checks` step, model-free: it opens every view of the round's build in a real browser and measures it,
+writing one `06-checks/round-<n>/checks.json`. Stage 6b (the review) reads those measured facts first, so a
+model judges taste and language only, never what a script can measure (AGENTS.md rule 17). $0 of model cost.
+
+**Where it runs.** Inside the Temper run, in the worker, like the Design role's other capture: the worker
+serves `05-build/` over HTTP on its own address and drives temper's `playwright-mcp` service
+(`http://playwright-mcp:8931/mcp`). `configs/design/bin/design_capture.py`'s `serve`, `run`, `result`,
+`FOCUS_FN`, `AXE_TAGS` and its axe build are imported, not copied; the in-page measuring is
+`design_measure.js` (contrast, targets by WCAG 2.5.8 in full, reflow, type styles, graphics without a name)
+and `app_screen/measure_in_page.js` (truncation, the type histogram, visible text runs), both as they are.
+`app_screen/checks_measure.js` is new and holds only what neither measures: the contract marks, the figures
+in the rendered text, token use, the hierarchy counts and labels that split.
+
+**What it opens.** `checks_views.py` builds the view list from `05-build/build.json`'s `views[]` when it has
+one, else from `03-ground/inventory.json`'s screens x states x the build's widths, opened by the hash
+convention (Prototype contract). Every view is measured at every width; focus order and action feedback are
+walked once per screen and state, at the widest width, because a Tab walk and a click per action at every
+width buys nothing and costs minutes.
+
+**The checks.** `checks_rules.py` turns measures into rows: one row per failing element, plus one summary row
+per check per view. Each row is `{id, value, result, evidence, element, location}` with `severity`
+(`blocker` or `should`), `screen`, `state`, `width` and `view`.
+
+| id | what it measures | severity |
+| --- | --- | --- |
+| `render.open` | the view opened and drew | blocker |
+| `render.console` | a console or page error while opening the view | blocker |
+| `render.request` | a request the page made that failed (404, refused). The browser's own favicon request is answered by the harness, so a prototype is never judged for it | blocker |
+| `contract.marks` | no view carries a `data-screen` root, so the contract checks cannot be read | blocker |
+| `contract.screen` | the visible screen is not the one the view opened | blocker |
+| `contract.state` | the view's state is not what `data-view-state` says | blocker |
+| `contract.state_attr` | `data-state` or `data-st-state` below `body`, which the Show&Tell helper hides | blocker |
+| `coverage.view` | every inventory screen x state is present and opens | blocker |
+| `coverage.action` | every inventory action has a `data-action` element | blocker |
+| `coverage.feedback` | that element answers a click visibly, before any server reply | blocker |
+| `coverage.requirement` | every requirement mapped to a screen has a visible `data-req` element at every width | blocker |
+| `overflow.layout_width` | the layout viewport is wider than the screen (the page widened itself) | blocker |
+| `overflow.horizontal` | the page scrolls sideways | blocker |
+| `overflow.element` | an element past the viewport that no scrolling box clips | blocker |
+| `overflow.truncated` | text cut by ellipsis, clipping or line-clamp | blocker |
+| `overflow.label` | a control label wrapped onto a second line although its row has the room to show it on one line | should |
+| `type.floor` | visible text below the product's floor (12 px) | blocker |
+| `type.body` | a sentence-length run in the body below the body size (16 px) | should |
+| `contrast.text` | text below WCAG 2.2 AA 4.5:1 (3:1 large), on its computed background | blocker |
+| `contrast.ui` | a field or control boundary below 3:1 (1.4.11) | blocker |
+| `targets.size` | a target under 24x24 that the spacing exception does not save (2.5.8) | blocker |
+| `focus.ring` | a Tab stop with no focus ring (2.4.11, 2.4.7) | blocker |
+| `focus.none` | nothing takes focus on a screen that has controls | blocker |
+| `axe.violation` | axe-core 4.13.0, WCAG 2.0-2.2 A/AA rules | blocker |
+| `hierarchy.sizes` | more than 3 text sizes in one view | should |
+| `hierarchy.levels` | more than 3 text contrast levels in one view, counted by strength against the background (12:1, 7:1, 4.5:1, 3:1), not by hue | should |
+| `hierarchy.primary` | more than one solid primary action in one view | should |
+| `tokens.colour`, `tokens.font`, `tokens.size` | a colour, font or size that `tokens.json` does not hold (only when `inventory.json` says `design_files: defined`) | should |
+| `figures.invented` | a money, percent or count in the rendered text that `fixture.json` does not hold or derive | blocker |
+| `integration.duplicate_id` | the same element id twice, which breaks hash opening and labels | blocker |
+| `integration.dead_link` | a link to a view the build does not have | blocker |
+| `integration.two_screens` | two screen roots visible at once | blocker |
+| `integration.handler` | a `data-action` control the click could not reach | blocker |
+
+Blocker rows are 6b's Must input, Should rows its Should input; 6b still rates and may demote with a reason,
+but it may not invent a measured fact. Thresholds live in `app_screen/checks_thresholds.json`, frozen before
+the first run: the AA ratios 4.5 and 3.0 are the same numbers `design_page_checks_thresholds.json` uses, the
+type floors come from the Design checklist ("body, messages and inputs 16px or more ... 12px floor only for
+uppercase eyebrows"), and the hierarchy limits from the notebook ("max 3 text sizes + 3 contrast levels per
+view", "one solid primary per view"). They are never loosened to make a case pass.
+
+**Figures.** A figure is a money token (`$1,234.56`), a percent (`12.3%`) or a number with a thousands
+separator or two decimals. It passes when `fixture.json` holds a number it matches after rounding to the
+decimals shown, or one of the derivations the step allows (absolute value, x100 or /100 for a ratio shown as
+a percent, /1,000 for `k`, /1,000,000 for `M`), or when the figure's exact text sits in one of the fixture's
+strings. Dates, times, ordinals and bare counts under 100 are not figures. The tolerance follows the
+decimals shown, as `checks_pattern/check-integration.mjs` does it.
+
+### Bar (written before the first trial run)
+
+- **Planted:** 100% of the planted faults caught, by the right check id, at the right screen and width.
+- **The real-prototype case** (`c-inkflow-onboarding`, see "Trial cases"): 0 blocker rows that a hand read
+  finds false; every failing row read and recorded as real or false.
+- **Deterministic:** 3 runs give identical `checks.json`, ignoring times and run ids.
+- **u-unseen** (a real prototype the checks never saw): at least 90% of its failing rows real on a hand read,
+  and at least 80% of the by-eye list caught (the obvious problems written down from its screenshots before
+  the first run).
+- Runs in real mode inside temper-dev as the `checks` step of `design_app_screen_v1_checks`, $0 model cost;
+  the runtime recorded.
+
+A miss gets a written hypothesis (rule 20), one change, and only that case re-run.
+
+### Trial cases
+
+Under `~/design-lab/app-screen-workflow/known-cases/checks/`, each a case folder the host copies into a
+run workspace (`01-request/requirements.json`, `03-ground/{inventory.json, fixture.json,
+design-files/tokens.json}`, `05-build/`, `expected.json`), frozen once with `FREEZE.json`:
+
+- `base-clean`: a small Parcelly prototype that follows the Prototype contract in full (2 screens, 7 states,
+  widths 1440/390/320, so 21 views) and is meant to pass every check. It is also the worked example of the
+  contract for stage 5, and the clean twin every planted copy is measured against.
+- 23 planted copies of `base-clean` (`p01-console-error` ... `p23-two-screens`), one planted fault each,
+  covering all 13 check families, written by `build_cases.py` next to them: one exact string edit of
+  `05-build/index.html` per copy, with `expected.json` (check id, screen, state, width) written before any
+  run. Where one plant honestly trips a second rule (an off-token grey is both low contrast and off the
+  palette), `expect.allow` names that rule and `expect.allow_why` says why.
+- `c-inkflow-onboarding`: the false-positive test, a real hand-built prototype where every failing row is
+  read by hand and recorded as real or false in `expected.json`'s `read` block, one entry per rule with the
+  reason; the grader then fails the case if a rule was left unread or a blocker rule was read as false. It
+  is Inkflow's mobile onboarding and client tracker
+  (Design #165, 2026-11-02, shown to the owner), copied from
+  `~/design-lab/results/inkflow-mobile-onboarding-20261102/inkflow-mobile-onboarding-prototype.html`, with
+  `build.json` naming its 10 views.
+  - **Why not the planned `c-rollcall`:** the `rollcall-20261104` known case's `05-build/` is draft A, a
+    device-framed mock: one page that draws a phone and a desk frame (`?view=phone|desk`), with no hash
+    routing, no state marks and screens reached only by clicking `data-act` buttons. There is no way to
+    open one screen in one state, so the measured checks could not be pointed at it without rewriting it,
+    which this task may not do (the frozen case is copy-only). A real prototype that does route by hash is
+    the same test and an honest one, so the Design lead swapped the case and recorded it here.
+- `u-unseen`: a real prototype the checks never saw, with `expected-by-eye.md` written from its screenshots
+  before the first run: Inkflow's UI refresh (Design #164, 2026-11-01), copied from
+  `~/design-lab/results/inkflow-ui-refresh-20261101/inkflow-prototype.html`, 12 views named in `build.json`.
+- Neither real case carries `data-screen` marks (both were built before the prototype contract), so each
+  gives exactly one true `contract.marks` blocker and the whole `coverage` family is skipped and says so;
+  neither has a run fixture or tokens, so `figures` and `tokens` are skipped too. What they really test is
+  render, overflow, type, contrast, targets, focus, axe, hierarchy and integration on a real page.
+
+`checks_host.py` (CLI `prep-checks`) copies a case into a fresh workspace and marks the build done at round
+1; `checks_grade.py` (CLI `grade-checks`) grades the run against `expected.json` and gives the digest three
+runs are compared by. `~/design-lab/app-screen-workflow/results/checks-trials/trial.py` runs cases on the
+host against the same `playwright-mcp` service (`CHECKS_BROWSER`, `CHECKS_SITE_HOST`) for quick rounds; the
+proof of record is the temper-dev run of `design_app_screen_v1_checks`.
+
+### Hypotheses (rule 20)
+
+**H6a-1: the small-targets plant was wrong, not the check.** `p09-small-targets` planted 18 px nav links
+and the targets check passed. Reading WCAG 2.5.8 back: links that far apart pass, because their 24 px
+circles never meet, so the plant was not a fault. Change: plant two 18x18 icon buttons 2 px apart at the
+end of every parcel row, with `font-family: inherit; font-size: 16px` so no token row rides along. Expect:
+`targets.size` catches it at every width, 0 unexplained rows. Wrong if it still passes, which would mean
+the spacing measure is broken. **Hit** (t5): caught 1/1, 27 rows, 0 false. It also found a real engine bug:
+`design_measure.js` reports `small_targets[].hit` as a word (`target`, `circle`), and the row builder read
+it as a number, so the step crashed; it now reads the neighbour's `edge`.
+
+**H6a-2: a wrapped control label is craft, not a blocker.** On `c-inkflow-onboarding`, `overflow.label`
+gave 149 of 309 rows from 16 distinct labels, every one of them an intentional, fully readable two-line
+chip or tab (`Clients (4)`, `1. Studio & Deposit`). A hand read calls all of them false Musts, which would
+fail the "0 false Must" bar, and raising the line limit to 2 would lose `p05-wrapped-label`, whose plant
+wraps to exactly 2 lines as well. The Design checklist's own rule is that wrapping is the accepted remedy
+and only cut or clamped text blocks. Change: `overflow.label` moves from blocker to should. Expect:
+`c-inkflow` keeps the rows as craft feedback, its blocker count drops by about 149, and `p05` is still
+caught (the grader matches the check id, not the class). Wrong if `p05` stops being caught, or if a hand
+read finds cut text that only `overflow.label` saw. **Hit** (t7/t8).
+
+**H6a-3: the click step lost controls because it looked for them by CSS path.** Six
+`integration.handler` rows on `c-inkflow` said "could not be clicked" with no reason at all; a probe
+(`/tmp/checks-probe/probe.py`) re-opened the view and found the recorded paths
+(`... > button.chip-btn.active:nth-of-type(1)`) no longer matched, because the prototype re-renders those
+panels between the measure and the click, so classes and indexes move. The controls are real and
+clickable. Change: `checks_measure.js` records each action's `idx` among the elements carrying the same
+`data-action`, and the click step finds it again as `[data-action="<id>"]`.nth(idx), keeping the CSS path
+as evidence only; the click's answer is now the control's own state plus the page's text and route, so a
+control that re-renders itself away still counts as feedback. Expect: the 6 handler rows go, and
+`p16-missing-action` and `p17-no-click-feedback` are still caught. Wrong if those plants stop being
+caught, or if the handler rows come back. **Hit** (t7/t8).
+
+**H6a-4: the font 404s were my case, not the prototype.** Seven `render.request`/`render.console` rows on
+`c-inkflow` were 404s for `assets/fonts/...`: the prototype loads them from a sibling folder I had not
+copied into the case. Change: copy `~/design-lab/results/inkflow-mobile-onboarding-20261102/assets` into
+the case's `05-build/`. Expect: the render rows go and the type rows shift slightly (the real fonts are
+wider). Wrong if the 404s remain, which would mean the prototype itself points at a missing file. **Hit**
+(t8).
+
+**H6a-5: a row of dots is not text below the floor.** `c-inkflow` gave 3 `type.floor` blockers for
+`"● ● ● ● ●"`, an 11 px step-dot row. Nobody reads dots, so the row is a false Must: the check is meant
+to find text too small to read. Change: the type floor skips a run with no letter and no digit. Expect:
+the 3 dot rows go, the 43 real 11 px eyebrow and caption rows stay, and `p06-tiny-type` is still caught.
+Wrong if `p06` stops being caught, or if a real small label is dropped because it is written in symbols.
+**Hit** (t10/t11).
+
+**H6a-6: a control the view already shows as chosen has answered the click before it.** `c-inkflow` gave 2
+`coverage.feedback` blockers for `All drafts (3)` and `All clients (4)`: both are the filter chip that is
+already active, so a click cannot change anything, and the view already says so. Change: the click step
+records `already_on` (`aria-pressed="true"`, `aria-current`, or an `active`/`selected`/`current` class
+before the click) and the rule does not ask for a change from a control that is already the chosen one.
+Expect: those 2 rows go and `p17-no-click-feedback` is still caught (its plant is not a selected control).
+Wrong if `p17` stops being caught, or if a dead control that happens to carry `.active` escapes.
+**Hit** (t10/t11).
+
+**H6a-9: a contrast level is a strength, not a hue.** The too-many-levels check counted distinct text
+colours, so it fired on all 30 `c-inkflow` views ("5 text colours in one view"), counting a purple link and
+a green status word as levels of their own although they stand as strongly as the body text beside them.
+The eye sorts text by how strongly it stands out, not by its hue, so those rows are false. Change: the
+measure puts every text run in a contrast band against its own background (12:1, 7:1, 4.5:1, 3:1 ->
+strongest, strong, normal, soft, faint) and the check counts bands. Expect: views that really use one dark
+and one grey keep passing, the hue-only rows go, and a view with four true strengths still fires. Wrong if
+the rows stay at the same volume, or if a view with five obvious strengths now passes. **Hit** (t16/t17:
+`c-inkflow` 30 -> 0, the planted size and primary cases unchanged).
+
+**H6a-8: a label that wraps in a full row is the layout, not a flaw.** The split-label check fired 149
+times on `c-inkflow` and about as often on `u-unseen`, always for a nav chip, tab or step name taking two
+full lines ("Clients (4)", "Settings / Setup", "1. Studio & Deposit"). Those controls sit in a column or a
+row that is already full, so there is nowhere for the label to go: a hand read calls them false, and at
+that volume they would drown the real rows. Demoting the check to a Should (H6a-2) kept the noise. The
+planted fault is different in a way a browser can measure: a 64 px button in a row with 120 px to spare.
+Change: the measure compares what the label needs laid end to end (a `Range` over its line pieces) with
+the control's content width plus what its row has left beside it, and reports only a label that would fit
+on one line if the control used the room its row already has. Expect: `p05-wrapped-label` is still caught,
+and the `c-inkflow` and `u-unseen` split-label rows drop to the few controls that really are too narrow.
+Wrong if `p05` is lost, or if the two real prototypes still give dozens of split-label rows. **Hit**
+(t13/t14/t15: `p05` caught, `c-inkflow` 149 -> 0, `u-unseen` 150 -> 5).
+
+**H6a-7: scrolling to what the control points at is visible feedback.** `u-unseen` gave 3
+`coverage.feedback` blockers for `For Mara's message at 10:42 am ↓`, a jump link that scrolls the thread to
+that message: the page sign held text, classes, style and route, but not the scroll position, so the
+answer was invisible to the measure. Change: the page sign includes `window.scrollY`. Expect: those 3 rows
+go and the plants still fail. Wrong if a control that does nothing now passes because the page happened to
+scroll. **Hit** (t12).
+
+**H6a-10: a view the row contract cannot hold is refused before the browser opens.** The unseen case's
+`build.json` named the state `not_sent`; the step rendered all 36 views, wrote `checks.json`, and only
+then failed in `contracts.validate` with 18 messages about `checks/41/state`, after six minutes of work
+(run `1915449c`). Change: `checks_views.plan` checks every screen and state id against the row contract
+first and names the field (`05-build/build.json: 1 problem(s): views/0/state: 'not_sent' is not an id`);
+the hash that opens a view stays free text, so the case keeps `?state=not_sent` under the id `not-sent`.
+Expect: a build the contract cannot hold is refused in under a second, and a build with slug ids runs as
+before. Wrong if a build that used to run is now refused. **Hit** (`47490cb9` ran the fixed case through
+in 365 s; the bad id is now refused in under a second, and the 64 pytest cases still pass).
+
+### Results
+
+All of these are temper-dev runs of `design_app_screen_v1_checks` as the `checks` step, in real mode, with
+no model call: **$0.00** on every run. The host runner
+(`~/design-lab/app-screen-workflow/results/checks-trials/trial.py`) was used for the rounds in between; the
+figures below are the proof runs on temper-dev
+(`.../checks-trials/temper_trial.py`, results in `.../checks-trials/temper-results/`).
+
+**Planted: 23 of 23 faults caught by the right check, at the right screen and width, with no other row.**
+The clean base gives no row at all.
+
+| Case | Run | Caught | Other rows | Digest |
+| - | - | - | - | - |
+| `base-clean` | `d4c3f1ad` | - | 0 | `4f53cda18c2baa0c` |
+| `p01-console-error` | `75494bcf` | `render.console` | 0 | `ec01b8febdafc87b` |
+| `p02-failed-request` | `038ecf63` | `render.request` | 0 | `d5922e1f8bc30950` |
+| `p03-sideways-scroll` | `3360884d` | `overflow.horizontal` | 0 | `722202780d1056e9` |
+| `p04-truncated-meta` | `c3e62ef2` | `overflow.truncated` | 0 | `b8f18d8498ae5637` |
+| `p05-wrapped-label` | `98c4a436` | `overflow.label` | 0 | `6daf97eb8ef212cd` |
+| `p06-tiny-type` | `3acb8e80` | `type.floor` | 0 | `861b843231bf4e31` |
+| `p07-grey-on-white` | `0b9aab7a` | `contrast.text` | 0 | `49abc756d6530065` |
+| `p08-faint-field` | `6f57eb0c` | `contrast.ui` | 0 | `aeb893ece0fb95c6` |
+| `p09-small-targets` | `bdae1bfd` | `targets.size` | 0 | `d42e2818feb953e1` |
+| `p10-no-focus-ring` | `5dee6806` | `focus.ring` | 0 | `497bf163ce02ebc0` |
+| `p11-unlabelled-field` | `f46acf72` | `axe.violation` | 0 | `d3ff3bbf0e110ab6` |
+| `p12-size-soup` | `da00a6f3` | `hierarchy.sizes` | 0 | `12587e5b32a1239b` |
+| `p13-two-primaries` | `2cd272ac` | `hierarchy.primary` | 0 | `907b1e1eedfb440f` |
+| `p14-off-palette` | `a4f1e449` | `tokens.colour` | 0 | `6d26d80e55c3a0b7` |
+| `p15-missing-state` | `39d00202` | `contract.state` | 0 | `87a9c192e36adb88` |
+| `p16-missing-action` | `0c925aa9` | `coverage.action` | 0 | `fd8f76f90e064ee3` |
+| `p17-no-click-feedback` | `d15616f7` | `coverage.feedback` | 0 | `a51eda59383356da` |
+| `p18-missing-requirement` | `73c9d5ff` | `coverage.requirement` | 0 | `b13f5c3110f68ee6` |
+| `p19-invented-figure` | `858436fb` | `figures.invented` | 0 | `c256ffd19a00582a` |
+| `p20-dead-link` | `a87b0870` | `integration.dead_link` | 0 | `1bb6b92d8e056482` |
+| `p21-duplicate-id` | `ab92387b` | `integration.duplicate_id` | 0 | `3fcfaf209c5be90d` |
+| `p22-banned-state-attr` | `9576b0e9` | `contract.state_attr` | 0 | `e23176c7417be01d` |
+| `p23-two-screens` | `b533b873` | `integration.two_screens` | 0 | `e5eb46c13792f660` |
+
+"Other rows" counts rows the case did not plant and did not allow. Each case allows the rules that see the
+same fault a second time, named with the reason in its `expected.json` (for one, `p07` allows
+`axe.violation` and `tokens.colour`: the same grey text, read by axe's own rule and by the palette).
+
+Each planted run opens 21 views (3 screens x 3 screen-states x 3 widths, 320/390/1440) in **about 59 s**.
+Every digest matches the host runner's digest for the same case.
+
+**The real prototype (`c-inkflow-onboarding`): 120 rows, 44 blockers, 0 false on a hand read.** Runs
+`6a3562e6`, `1ba1bd6b`, `a2d0ea0a` (and `89bd351a` before the last two fixes), 30 views, **about 180 s**.
+Every one of the four runs wrote a byte-identical `checks.json`
+(md5 `18832341f712a3e428cb68dc38f6c60f`), so the **determinism bar is met**: 3 runs, no difference at all,
+not even in ordering.
+
+The hand read is recorded rule by rule in the case's `expected.json` `read` block, and the grader fails the
+case if any failing rule is unread:
+
+| Rule | Rows | Read as | Why |
+| - | - | - | - |
+| `contract.marks` | 1 | real | built 2026-11-02, before the prototype contract, so no `data-screen` root |
+| `type.floor` | 43 | real | 11 px eyebrows, brand caption and tracker eyebrow against the 12 px floor |
+| `type.body` | 30 | real | 13-14 px sentence text where the product's body size is 16 px |
+| `hierarchy.sizes` | 30 | real | 8 to 11 text sizes in one view, against a limit of 3 |
+| `overflow.label` | 15 | real | wizard-rail labels split in two although their row has the room |
+| `hierarchy.primary` | 1 | real | wizard-3 at 1440 shows two solid purple controls |
+
+**The unseen prototype (`u-unseen`, Inkflow's UI refresh): precision 191/191 rows real (100%).** Run
+`47490cb9`, 36 views, **365 s**. Rows: `type.floor` 118, `type.body` 36, `hierarchy.sizes` 36,
+`contract.marks` 1; the hand read is in its `expected.json`.
+
+Its by-eye list (`expected-by-eye.md`, written from the screenshots before the first run) graded out at
+**4 of 10 caught**, and the grade of each item is written back under that list. Six of the ten were my own
+eye being wrong on high-DPR screenshots, each struck by a measurement, not by a loosened threshold: the
+strip links measure 74x32 px, the timestamps 6.7:1, the row arrow is a span inside a clickable row, the
+chips carry 16 px text, the disclosure is 358x44 px, and at 320 the page does not widen. Of the four items
+that really are faults, the run caught all four, and it found a family the list had not thought of (36
+`type.body` rows). So the recall bar is met against the real items (4/4) and missed against the list as
+written (4/10); the fault is the list, and the lesson (read type sizes and contrast from the measure,
+never from a scaled screenshot) is in the Design checklist.
+
+**The whole workflow still runs in fixture mode** (every node completes): see the fixture run recorded
+below with the stage-alone workflow.
+
+What this does not prove: the checks have never been run on a build that the `build` step wrote (stage 5 is
+still a stub), so the contract is proven only against prototypes written by hand to it. The `figures`,
+`tokens` and `coverage` families are proven on the planted cases alone, because neither real prototype has
+a fixture, design files or `data-screen` marks.
+

@@ -1,0 +1,31 @@
+# Stage 6a (checks) of design_app_screen_v1 on its own (rule 16: each stage tested alone on known cases):
+# the same checks node as the whole workflow, ending at 06-checks/round-1/checks.json. Used for the stage's
+# trials and re-runs (docs/design-app-screen.md, "Stage 6a: checks"). Before a run the host puts a frozen
+# checks case into the workspace (design_app_screen.py prep-checks --case DIR --workspace W): 01-request/,
+# 03-ground/ and the prototype in 05-build/, with the build marked done at round 1. Afterwards the host
+# grades it (design_app_screen.py grade-checks --case DIR --workspace W). No model runs in this workflow.
+# Keep its node identical to the whole workflow's, since a trial proves the stage only while they match
+# (tests/test_design_app_screen_checks.py checks that they do).
+workflow:
+  name: design_app_screen_v1_checks
+  version: 1
+  description: |
+    Stage 6a of design_app_screen_v1 alone: the round's prototype in 05-build/ opened at every view the
+    prototype contract names (screen x state x width) in a real browser -> render, overflow, type floor,
+    contrast, target size, focus, axe (WCAG 2.2 AA), hierarchy, tokens, coverage (every screen, state,
+    action and requirement), figures (against the run's fixture) and integration measured by script ->
+    06-checks/round-<n>/checks.json: one row per failing element and a summary row per check, each with
+    its severity class for the review (blocker = a Must input, should). No model, $0.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+  outputs:
+    verdict: checks.structured.verdict
+    blockers: checks.structured.blockers
+    rows: checks.structured.rows
+    views: checks.structured.views
+  nodes:
+    - name: checks
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: checks, product: input.product, mode: input.mode}

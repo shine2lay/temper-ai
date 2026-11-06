@@ -3,7 +3,8 @@
 
     design_app_screen.py <step> --workspace W [--product P --mode real|fixture]   (the workflow's script agent)
     design_app_screen.py pack --case DIR --workspace W                          (host, before a fixture run)
-    design_app_screen.py freeze --case DIR --product P --source TEXT            (host, once per known case)
+    design_app_screen.py freeze --case DIR --product P --source TEXT [--stages checks]
+        (host, once per known case)
     design_app_screen.py verify --case DIR                                      (host)
     design_app_screen.py collect --product P --description TEXT [--request TEXT --request-source TEXT]
         [--doc d_x[@2,3]] [--record dr-x[:q1,q2]] [--history] (--out FILE | --workspace W)   (host, intake)
@@ -18,6 +19,8 @@
     design_app_screen.py store --workspace W --run RUN [--stages existing,ground] [--workflow-commit SHA]
         (host, after a run: keep the stages that passed in the product store; refuses the rest)
     design_app_screen.py validate-store --product P                            (host)
+    design_app_screen.py prep-checks --case DIR --workspace W                  (host, stage 6a trials)
+    design_app_screen.py grade-checks --case DIR --workspace W                 (host, stage 6a trials)
     design_app_screen.py check-tools                                           (host or worker: the tool registry)
 
 Steps: intake_collect, intake_check, intake, existing_collect, existing_sheet, existing_check, existing,
@@ -62,7 +65,8 @@ from app_screen.fixture_stage import NotBuiltError  # noqa: E402
 from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa: E402
 
 HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
-                 "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools")
+                 "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools",
+                 "prep-checks", "grade-checks")
 # A stage step may end reused or delta instead of done (step 4: its output says which in stage_status).
 STAGE_STATUSES = ("reused", "delta")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
@@ -75,7 +79,7 @@ RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake"
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
             intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
-            ground_sources.SourcesError, OSError, ValueError, KeyError, RuntimeError)
+            ground_sources.SourcesError, checks.ChecksError, OSError, ValueError, KeyError, RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:
@@ -183,7 +187,9 @@ def host(command: str, args: argparse.Namespace) -> dict:
     if command == "freeze":
         if not args.product or not args.source:
             raise WorkspaceError("freeze needs --product and --source")
-        record = known_case.freeze(args.case, args.product, args.source)
+        from app_screen import checks_host  # noqa: PLC0415
+        record = known_case.freeze(args.case, args.product, args.source,
+                                   checks_host.CASE_FOLDERS if args.stages == "checks" else None)
         return {"case": record["case"], "files": len(record["files"])}
     if command == "verify":
         record = known_case.verify(args.case)
@@ -196,6 +202,12 @@ def host(command: str, args: argparse.Namespace) -> dict:
         return existing_grade.grade(args.case, args.workspace)
     if command == "grade-ground":
         return ground_grade.grade(args.case, args.workspace)
+    if command == "prep-checks":
+        from app_screen import checks_host
+        return checks_host.prep(args.case, args.workspace)
+    if command == "grade-checks":
+        from app_screen import checks_grade
+        return checks_grade.grade(args.case, args.workspace)
     return known_case.pack(args.case, args.workspace)
 
 
@@ -216,7 +228,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out")
     parser.add_argument("--force", help="prepare: stages to run in full, e.g. existing,ground")
     parser.add_argument("--run", help="store: the temper run id the workspace's outputs came from")
-    parser.add_argument("--stages", help="store: which stages to keep (default existing,ground)")
+    parser.add_argument("--stages", help="store: which stages to keep (default existing,ground); "
+                                        "freeze: 'checks' for a case that feeds the checks step alone")
     parser.add_argument("--workflow-commit", help="store: the temper-ai commit the run used")
     args = parser.parse_args(argv)
     started = time.monotonic()

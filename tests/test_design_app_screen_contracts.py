@@ -186,7 +186,7 @@ BROKEN = [
     ("directions", "04-directions/directions.json", _del("directions", 0, "page"),
      "04-directions/directions.json: directions/0: 'page' is a required property"),
     ("directions", "04-directions/a/checks.json", _set(True, "checks", 0, "result"),
-     "04-directions/a/checks.json: checks/0/result: True is not one of ['pass', 'fail']"),
+     "04-directions/a/checks.json: checks/0/result: True is not one of ['pass', 'fail', 'skipped']"),
     ("gate_direction", "04-directions/gate_direction.json", _set("z", "choice"),
      "04-directions/gate_direction.json: choice: 'z' is not a direction (a, b)"),
     ("gate_direction", "04-directions/gate_direction.json", _del("source"),

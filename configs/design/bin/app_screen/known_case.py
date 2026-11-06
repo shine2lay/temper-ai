@@ -41,14 +41,22 @@ def _files(root: Path) -> dict[str, Path]:
     return out
 
 
-def freeze(case_dir: Path | str, product: str, source: str) -> dict:
-    """Write FREEZE.json for a case folder (once: an existing freeze is never rewritten)."""
+def freeze(case_dir: Path | str, product: str, source: str, needs: tuple[str, ...] | None = None) -> dict:
+    """Write FREEZE.json for a case folder (once: an existing freeze is never rewritten).
+
+    A whole-job case holds every stage folder. A case that feeds one stage holds only the folders that
+    stage reads, named in `needs` (the checks cases, for one, hold 01-request, 03-ground and 05-build).
+    """
     root = Path(case_dir)
     if (root / FREEZE).exists():
         raise KnownCaseError(f"{root / FREEZE} exists; a frozen case is never re-frozen, make a new case")
     if not PRODUCT_ID.match(product or ""):
         raise KnownCaseError(f"product {product!r} is not a lowercase id")
-    missing = [f for f in FOLDERS.values() if not (root / f).is_dir()]
+    wanted = tuple(needs) if needs else tuple(FOLDERS.values())
+    unknown = [f for f in wanted if f not in FOLDERS.values()]
+    if unknown:
+        raise KnownCaseError(f"{root}: {', '.join(unknown)} is not a stage folder")
+    missing = [f for f in wanted if not (root / f).is_dir()]
     if missing:
         raise KnownCaseError(f"{root}: stage folders missing: {', '.join(missing)}")
     files = {rel: _sha256(p) for rel, p in _files(root).items()}

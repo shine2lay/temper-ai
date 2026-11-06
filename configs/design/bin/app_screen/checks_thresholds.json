@@ -1,0 +1,46 @@
+{
+ "version": 1,
+ "status": "frozen",
+ "frozen": "2026-11-05T00:00:00-08:00",
+ "decided": "Design #216, before any trial run of stage 6a. The AA ratios are WCAG 2.2 AA and the same numbers configs/design/bin/design_page_checks_thresholds.json already uses (text_over_image normal 4.5, large 3.0); the type floors are the Design quality checklist (body, messages and inputs 16px or more, labels 14px, 12px floor only for uppercase eyebrows); the hierarchy limits are the Design notebook (max 3 text sizes + 3 contrast levels per view, one solid primary per view); the target rule is WCAG 2.5.8 (24x24 or the spacing exception). Never loosened to make a case pass.",
+ "type": {
+  "floor_px": 12,
+  "body_px": 16,
+  "body_run_chars": 40
+ },
+ "contrast": {
+  "text": 4.5,
+  "large_text": 3.0,
+  "large_px": 24,
+  "large_bold_px": 18.66,
+  "ui": 3.0
+ },
+ "targets": {
+  "min_px": 24
+ },
+ "hierarchy": {
+  "max_text_sizes": 3,
+  "max_contrast_levels": 3,
+  "contrast_levels": [12, 7, 4.5, 3],
+  "contrast_level_step": 0.5,
+  "primary_per_view": 1
+ },
+ "overflow": {
+  "slack_px": 1,
+  "label_lines": 1,
+  "label_max_words": 4
+ },
+ "figures": {
+  "min_bare_count": 100,
+  "max_rows": 40
+ },
+ "axe": {
+  "tags": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
+ },
+ "limits": {
+  "rows_per_check_per_view": 25,
+  "rows_per_check": 300,
+  "tab_stops": 60,
+  "actions_per_screen": 24
+ }
+}

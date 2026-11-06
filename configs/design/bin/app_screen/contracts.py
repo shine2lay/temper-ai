@@ -40,9 +40,16 @@ def items(schema: dict, least: int = 1) -> dict:
 
 
 # A measured check (directions and the checks stage): what was measured, on which element, where, and the proof.
-CHECK = obj({"id": ID, "value": {}, "result": {"enum": ["pass", "fail"]}, "evidence": TEXT,
-             "element": TEXT, "location": TEXT})
-CHECKS = obj({"checks": items(CHECK)}, {"round": {"type": "integer", "minimum": 1}, "tool": TEXT})
+# Stage 6a adds where it was measured and what class of finding it is for the review (6b), all optional so an
+# older checks.json stays valid: severity blocker (a Must input) or should, and the view it was measured in.
+CHECK = obj({"id": ID, "value": {}, "result": {"enum": ["pass", "fail", "skipped"]}, "evidence": TEXT,
+             "element": TEXT, "location": TEXT},
+            {"severity": {"enum": ["blocker", "should"]}, "screen": ID, "state": STATE, "width": WIDTH,
+             "view": TEXT, "count": {"type": "integer", "minimum": 0}, "summary": {"type": "boolean"}})
+CHECKS = obj({"checks": items(CHECK)}, {"round": {"type": "integer", "minimum": 1}, "tool": TEXT,
+                                        "views": {"type": "integer", "minimum": 0},
+                                        "blockers": {"type": "integer", "minimum": 0},
+                                        "shoulds": {"type": "integer", "minimum": 0}})
 
 # 01-request: a source item (the owner's words, one request, comment or answer), and what intake makes of it.
 SOURCE_ID = {"type": "string", "pattern": "^S[0-9]{1,3}$"}
@@ -85,6 +92,13 @@ GROUND_ACTION = obj({"id": ID, "what": TEXT, "states": items(STATE), "sources": 
 GROUND_EXCLUDED = obj({"source": GROUND_REF, "reason": TEXT})
 CAPABILITY = obj({"kind": {"enum": ["http", "page", "cli"]}, "key": TEXT, "group": {"type": "string"},
                   "intent": {"type": "string"}}, {"where": TEXT})
+
+# 05-build, the prototype contract: one view of the build, and how the checks step opens it. A hash
+# (#<screen>/<state>) or steps to click through, for a build that cannot route by hash.
+STEP = {"anyOf": [obj({"click": TEXT}), obj({"goto": TEXT}), obj({"wait": {"type": "integer", "minimum": 0,
+                                                                          "maximum": 10000}})]}
+OPEN = {"anyOf": [obj({"hash": {"type": "string", "pattern": "^#"}}), obj({"steps": items(STEP)})]}
+VIEW = obj({"screen": ID, "state": STATE, "open": OPEN}, {"widths": items(WIDTH, least=0), "what": TEXT})
 
 SCHEMAS: dict[str, dict] = {
     # 01-request
@@ -181,10 +195,13 @@ SCHEMAS: dict[str, dict] = {
         {"id": {"type": "string", "pattern": "^[a-z]$"}, "name": TEXT, "idea": TEXT, "page": REL_PATH},
         {"source": TEXT}), least=2)}),
     "direction_checks": CHECKS,
-    # 05-build
+    # 05-build. views[] is the compatible extension of the prototype contract: the views to open, when the
+    # build cannot follow the #<screen>/<state> hash convention. Without it they come from the inventory.
     "build": obj({"direction": {"type": "string", "pattern": "^[a-z]$"}, "round": {"type": "integer", "minimum": 1},
                   "page": REL_PATH, "widths": items(WIDTH), "screens": items(obj(
-                      {"id": ID, "file": REL_PATH}, {"states": items(STATE, least=0)}))}, {"source": TEXT}),
+                      {"id": ID, "file": REL_PATH}, {"states": items(STATE, least=0)}))},
+                 {"source": TEXT, "views": items(VIEW, least=0), "main": TEXT,
+                  "areas": {"type": "object", "additionalProperties": TEXT}}),
     # 06-checks/round-<n>
     "checks": CHECKS,
     "review": obj({"round": {"type": "integer", "minimum": 1}, "verdict": {"enum": ["revise", "done"]},
@@ -245,7 +262,7 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "gate_direction": [("04-directions/gate_direction.json", "gate", 1)],
     "build": [("05-build/index.html", "html", 1), ("05-build/build.json", "build", 1),
               ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1)],
-    "checks": [("06-checks/<round>/checks.json", "checks", 1)],
+    "checks": [("06-checks/<round>/checks.json", "checks", 1), ("06-checks/<round>/views/*.png", "png", 0)],
     "review": [("06-checks/<round>/review.json", "review", 1)],
     "show": [("07-show/showtell.json", "showtell", 1), ("07-show/comments.json", "comments", 1)],
     "gate_final": [("07-show/gate_final.json", "gate", 1)],

@@ -403,7 +403,7 @@ def test_a_release_that_dies_lets_go_of_the_lock(L, prod, capsys):
 
 
 def test_the_lock_is_the_one_the_continuous_deployer_names(L):
-    """The CD reads the same exit code; the lock lives in its state directory by default."""
+    """wt deploy's release hook passes the same exit code on; the lock lives in its state directory by default."""
     from pathlib import Path
 
     bin_dir = Path(L.__file__).parent

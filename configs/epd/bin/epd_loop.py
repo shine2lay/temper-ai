@@ -131,8 +131,8 @@ os.environ["ROLLCALL_HOME"] = str(PROD_HOME)
 # The live server's env file: its compose reads it (PROD_HOME/.env, deploy/compose.live.yaml), so a
 # secret put here reaches the container without ever appearing in a command line.
 PROD_ENV_FILE = Path(os.environ.get("EPD_PROD_ENV_FILE", str(PROD_HOME / ".env")))
-# One production deploy at a time on this machine: the loop's own deploy after a merge and temper's
-# continuous deployer (configs/epd/bin/rollcall_cd_deploy.py) both go through deploy_prod, which
+# One production deploy at a time on this machine: the loop's own deploy after a merge and `wt deploy`'s
+# release hook (configs/epd/bin/rollcall_cd_deploy.py deploy) both go through deploy_prod, which
 # holds this lock for the whole release, undo included, and refuses to start while another holds it.
 DEPLOY_LOCK = Path(os.environ.get("EPD_DEPLOY_LOCK", str(Path.home() / ".local" / "state" / "rollcall-cd" / "deploy.lock")))
 #: deploy_prod's exit code when another deploy holds DEPLOY_LOCK, or another standee command held standee's

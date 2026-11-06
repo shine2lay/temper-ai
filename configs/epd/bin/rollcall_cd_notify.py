@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Messages from RollCall's continuous deployer: one job, deliver a line and say whether it went.
+"""Messages from RollCall's production release (epd_loop.deploy_prod): one job, deliver a line and say whether it went.
 
     import rollcall_cd_notify as notify
     notify.role("rollcall", "fyi", "deployed ca76f3c1 -> 5243d892: ok")   # -> bool
     notify.owner("RollCall's release 5243d892 was undone: ...")           # -> bool
 
-Shared with the money-test undo (RollCall CD 2): the deployer and the undo both speak through this
-module, so the routes live in one place.
+epd_loop uses it for the release's own notes (tell_rollcall when a healthy release could not be tagged, and
+_announce_release). `wt deploy` (agent-tools) sends its own notices about what it decides; the interim
+deployer and money-test undo that also spoke through here were retired in Systems #112.
 
 owner(text): the owner's Telegram, sent through pi-web-ui's CLI (`pi-web-ui notify telegram --text -
 --from RollCall`, Ops #783, pi-web-ui docs/script-notice.md). The subprocess runs under spark's Node 22

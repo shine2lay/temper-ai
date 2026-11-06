@@ -33,7 +33,7 @@ role tests and lands a change.
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
-| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, RollCall's continuous deployer (`epd_cd`: master goes live two minutes after the last land, one release at a time, [below](#rollcalls-continuous-deployer)), temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
+| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, RollCall's release hook for `wt deploy` (master goes live two minutes after the last land, one release at a time, [below](#rollcalls-continuous-deployer)), temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
 | `docs` | Docs | The knowledge-folder check (`.temper/`) and capability maps; next, a docs grader, a doc step for builds, changelogs. |
@@ -264,17 +264,27 @@ with its attempt, agent, round and the paths it named, never their contents;
 
 ## RollCall's continuous deployer
 
-`epd_cd` (systems) puts RollCall's master live by itself: two minutes
-after the last land, master's HEAD is released through `epd_loop.deploy_prod`
-(backup, up, migrate, health, its own undo), one release at a time, and lands
-that come in during a release go out together in the next one (owner,
-2026-11-05). Its trigger, `configs/triggers/epd_cd.yaml`, ticks every minute
-and lands switched off; RollCall switches it on.
+agent-tools' `wt deploy` (its docs/wt-deploy.md; `repos.rollcall.deploy` in
+agent-tools' wt.yaml) puts RollCall's master live by itself: two minutes
+after the last land, master's HEAD is released, one release at a time, and
+lands that come in during a release go out together in the next one (owner,
+2026-11-05). It also reads master's CI and undoes a release whose money tests
+fail. It is switched on (`enabled: true`, RollCall rm-2badded3) and Ops runs
+its user timers (`wt-deploy-tick.timer`, `wt-deploy-alive.timer`). The interim
+`epd_cd` trigger, workflow and verdict script it replaced are gone (Systems
+#112); its state in `~/.local/state/rollcall-cd/` was imported once into
+`~/.local/state/wt/deploy/rollcall/`.
 
-- The rule, the state and the log: `configs/epd/bin/rollcall_cd_deploy.py`
-  (`tick`, one decision; `deploy --sha S --kind deploy|undo --reason TEXT`,
-  one release). State and log in `~/.local/state/rollcall-cd/` (`state.json`,
-  `deploys.jsonl`), shared with the money-test undo.
+What stays here, as `wt deploy`'s hooks:
+
+- The release: `configs/epd/bin/rollcall_cd_deploy.py deploy --sha S --kind
+  deploy|undo --reason TEXT` (wt.yaml's `run` and `undo`), one release of S
+  through `epd_loop.deploy_prod` (backup, up, migrate, health, its own undo).
+  Exit 0 live (or live already, deploy_prod's 77), 75 busy, 76 out of order,
+  1 failed; `wt deploy` reads them.
+- Which failures are money tests: `configs/epd/bin/rollcall_cd_money.py
+  critical --repo --run --head --list` (wt.yaml's `ci.critical_check`), by
+  RollCall's `scripts/money-tests.toml`.
 - It builds from its own plain clone, `/home/shinelay/rollcall-deploy`,
   detached at the commit and clean; the live data stays where it is,
   `/home/shinelay/rollcall/var` at `/data` (rollcall's
@@ -288,7 +298,7 @@ and lands switched off; RollCall switches it on.
 - Order guard: before any change, `deploy_prod` refuses (exit 76) a commit
   the live one is not an ancestor of (`git merge-base --is-ancestor`), unless
   `kind="undo"` (`--kind undo`), and the commit already live (exit 77, which
-  the deployer counts as done). The live commit is the container's
+  the hook counts as done). The live commit is the container's
   `org.opencontainers.image.revision` label, else `standee.commit`.
 - Which code runs: `standee up` gets `GIT_SHA=<sha>`; rollcall's
   `deploy/Dockerfile` puts it in the image as `ROLLCALL_COMMIT` (`/api/health`'s
@@ -301,8 +311,10 @@ and lands switched off; RollCall switches it on.
   shine2lay/rollcall from the deploy checkout, an annotated tag saying its
   kind (forward or undo), the commit live before, the reason and its backups.
   A failed tag push leaves the release live and tells RollCall. Shas, not
-  tags, stay the deployer's keys.
-- Messages: `configs/epd/bin/rollcall_cd_notify.py`. `role` is a note in a
+  tags, stay the deployer's keys. `wt deploy` makes no tags of its own for
+  RollCall (`tag_prefix: ""`).
+- Messages: `wt deploy` sends its own notices. deploy_prod's own go through
+  `configs/epd/bin/rollcall_cd_notify.py`. `role` is a note in a
   role's home chat through pi-web-ui's `script_notice` route (its
   docs/script-notice.md); `owner` is the owner's Telegram through
   agent-tools' `sendTelegram`. What does not go waits in
@@ -703,7 +715,6 @@ change Project 2's `first_app_shared.host_row`. Tests:
 
 | Config | Kind |
 |---|---|
-| `epd/workflows/epd_cd.yaml` | workflow |
 | `epd/workflows/epd_deploy.yaml` | workflow |
 | `epd/workflows/epd_leftovers.yaml` | workflow |
 | `epd/workflows/epd_probe.yaml` | workflow |
@@ -718,7 +729,6 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `agents/gate_smoke_ask.yaml` | agent (script) |
 | `agents/gate_smoke_use.yaml` | agent (script) |
 | `agents/smoke_echo.yaml` | agent (script) |
-| `epd/agents/epd_cd.yaml` | agent (script) |
 | `epd/agents/epd_deploy.yaml` | agent (script) |
 | `epd/agents/epd_leftovers.yaml` | agent (script) |
 | `epd/agents/epd_ship.yaml` | agent (script) |
@@ -733,8 +743,8 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/agents/task_worktree.yaml` | agent (script) |
 | `epd/bin/leftovers.py` | script |
 | `epd/bin/rollcall_cd_deploy.py` | script |
+| `epd/bin/rollcall_cd_money.py` | script |
 | `epd/bin/rollcall_cd_notify.py` | script |
-| `triggers/epd_cd.yaml` | trigger |
 
 ### security (3)
 

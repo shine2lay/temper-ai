@@ -1,5 +1,5 @@
 """rollcall_cd_money (configs/epd/bin/rollcall_cd_money.py): `critical` CLI subcommand and shared CI log/money
-classification used by `wt deploy`'s `ci.critical_check` and configs/epd/bin/rollcall_cd_verdict.py.
+classification used by `wt deploy`'s `ci.critical_check`.
 
 Checks:
   1. `critical` returns `"yes"`, `"no"`, and `"unknown"` on fixed job/log fixtures:
@@ -7,8 +7,10 @@ Checks:
      - qa walk money failure (`positions_journey`, `trade_hub_journey` by command and by step name)
      - non-money failure (plain backend test, non-money qa walk, frontend failure)
      - job not started / log unreadable / missing list / gh error -> `"unknown"`
-  2. Replay against tests/test_epd/rollcall_cd_verdict_recorded.json and a 10-run recorded/replay sequence matches
-     configs/epd/bin/rollcall_cd_verdict.py's `failures_of` + `money_of` classification run for run.
+  2. Replay against tests/test_epd/rollcall_cd_verdict_recorded.json and a 10-run recorded/replay sequence gives
+     the states the retired rollcall_cd_verdict.py gave run for run (#108 proved them equal), and `critical`
+     answers exactly what `failures_of` + `money_of` classify. (agent-tools test/deploy-ci-verdict.test.mjs
+     reads the same recorded file.)
   3. CLI `rollcall_cd_money.py critical --help`, `rollcall_cd_money.py critical --repo ... --run ... --head ...
      --list ...`, and existing `rollcall_cd_money.py REPO HEAD [TEST_ID ...]` hand mode work end to end.
 """
@@ -29,7 +31,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "configs" / "epd" / "bin"
 MONEY_SCRIPT = ROOT / "configs/epd/bin/rollcall_cd_money.py"
-VERDICT_SCRIPT = ROOT / "configs/epd/bin/rollcall_cd_verdict.py"
 RECORDED_PATH = ROOT / "tests/test_epd/rollcall_cd_verdict_recorded.json"
 RECORDED = json.loads(RECORDED_PATH.read_text())
 GIT = [
@@ -50,17 +51,7 @@ def _load_money():
     return module
 
 
-def _load_verdict():
-    spec = importlib.util.spec_from_file_location("rollcall_cd_verdict", VERDICT_SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 M = _load_money()
-V = _load_verdict()
 
 UPDATED_MONEY_TOML = """version = 1
 
@@ -390,7 +381,7 @@ def test_critical_returns_unknown_when_job_not_started_or_log_unreadable(standin
 # ---------------------------------------------------------------- replay against recorded fixture & 10-run suite
 
 
-def test_replay_against_recorded_fixture_and_ten_runs_matches_verdict_run_for_run(standin_check):
+def test_replay_against_recorded_fixture_and_ten_runs_gives_the_recorded_states(standin_check):
     # All 4 recorded runs from tests/test_epd/rollcall_cd_verdict_recorded.json plus 6 additional
     # runs covering the 10-run replay window from #98 (frontend red, plain backend reds, trade_hub_journey,
     # confirm/ladder money red, stopped qa walk).
@@ -410,14 +401,10 @@ def test_replay_against_recorded_fixture_and_ten_runs_matches_verdict_run_for_ru
     assert {run_id for run_id, _, _, _ in ten_runs[:4]} == {int(k) for k in RECORDED["jobs"]}
 
     for run_id, jobs, log_text, expected_state in ten_runs:
-        verdict_failures = V.failures_of(jobs, log_text)
-        verdict_money = V.money_of(verdict_failures, "head", standin_check, None)
-
         money_failures = M.failures_of(jobs, log_text)
         money_direct = M.money_of(money_failures, "head", standin_check, None)
-        assert money_direct.state == verdict_money.state == expected_state
-        assert money_direct.why == verdict_money.why
-        assert money_direct.ids == verdict_money.ids
+        assert money_direct.state == expected_state, run_id
+        assert money_direct.why
 
         def fake_runner(args, _jobs=jobs, _log=log_text):
             if "--json" in args and "jobs" in args:
@@ -431,9 +418,9 @@ def test_replay_against_recorded_fixture_and_ten_runs_matches_verdict_run_for_ru
         # Verify via critical_of and via _critical_main JSON stdout line
         res = M.critical_of("/nowhere", run_id, "head", check=standin_check, runner=fake_runner)
         assert res == {
-            "critical": verdict_money.state,
-            "tests": verdict_money.ids,
-            "why": verdict_money.why,
+            "critical": money_direct.state,
+            "tests": money_direct.ids,
+            "why": money_direct.why,
         }
 
 

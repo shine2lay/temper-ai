@@ -2,8 +2,8 @@
 """rollcall_cd_money: which failing RollCall ci tests are money tests, by RollCall's scripts/money-tests.toml.
 
 One job: given a commit, the backend test ids and the qa step that failed in its ci run, say which are on the
-money list and why. rollcall_cd_verdict.py and `wt deploy`'s `ci.critical_check` (`rollcall_cd_money.py critical`)
-ask it after a red run on a deployed commit. No model; python3 stdlib only; reads the rollcall repository and
+money list and why. `wt deploy`'s `ci.critical_check` (`rollcall_cd_money.py critical`) asks it after a red run on
+a deployed commit. No model; python3 stdlib only; reads the rollcall repository and
 never changes it.
 
 The list (RollCall owns it) has two parts:

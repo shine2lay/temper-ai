@@ -132,6 +132,13 @@ def cd(tmp_path, monkeypatch):
     monkeypatch.setattr(cd, "launch", w.launch)
     monkeypatch.setattr(cd, "run_release", w.run_release)
     monkeypatch.setattr(cd, "live_commit", lambda: w.live)
+    w.verdict_rc, w.verdict_runs = 0, 0
+
+    def fake_verdict() -> int:
+        w.verdict_runs += 1
+        return w.verdict_rc
+
+    monkeypatch.setattr(cd, "run_verdict", fake_verdict)
     return cd
 
 
@@ -430,6 +437,38 @@ def test_the_cli_exits_non_zero_on_a_refusal(cd, capsys):
     cd.world.t = T0 + 2 * MIN
     assert cd.main(["tick"]) == 1
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["decision"] == "refused"
+
+
+def test_the_cli_tick_runs_the_verdict_after_deciding_and_fails_when_it_fails(cd, capsys):
+    assert cd.main(["tick"]) == 0 and cd.world.verdict_runs == 1
+    cd.world.verdict_rc = 1
+    assert cd.main(["tick"]) == 1 and cd.world.verdict_runs == 2
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[0])["decision"] == "waiting"
+
+
+def test_the_tick_finds_host_tools_without_a_login_path(tmp_path, monkeypatch):
+    # temper's tick comes over ssh as a forced command: no ~/.local/bin on PATH (standee, gh live there).
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    cd, _ = fresh_modules(tmp_path, monkeypatch)
+    assert str(Path.home() / ".local" / "bin") in os.environ["PATH"].split(os.pathsep)
+    assert cd.VERDICT == BIN / "rollcall_cd_verdict.py" and cd.VERDICT.exists()
+
+
+def test_the_agent_merges_the_deploy_line_and_the_verdicts_real_lines(tmp_path):
+    agent = yaml.safe_load((ROOT / "configs" / "epd" / "agents" / "epd_cd.yaml").read_text())["agent"]
+    merge = agent["script_template"].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    out = tmp_path / "epd_cd.out"
+    out.write_text("\n".join([
+        json.dumps({"decision": "wait", "reason": "quiet", "head": A}),
+        json.dumps({"run": 1, "head": "a" * 12, "action": "green", "steps": []}),
+        json.dumps({"summary": {"runs": 1, "decided": 1, "waiting": 0, "live": None, "dry_run": False,
+                                "errors": []}}),
+    ]) + "\n")
+    r = subprocess.run([sys.executable, "-c", merge, str(out)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    merged = json.loads(r.stdout)
+    assert merged["decision"] == "wait" and merged["verdict"]["summary"]["decided"] == 1
+    assert [d["run"] for d in merged["verdict"]["decisions"]] == [1]
 
 
 @pytest.mark.parametrize("sha, kind, reason, match", [

@@ -2,8 +2,10 @@
 """RollCall's continuous deployer: one job, decide when master goes live and run that deploy.
 
     rollcall_cd_deploy.py tick
-        One decision, printed as one JSON line. temper's epd_cd workflow runs it every minute
-        (configs/triggers/epd_cd.yaml). Exit 0 for every decision but `refused`.
+        One decision, printed as one JSON line, then rollcall_cd_verdict.py on the deploy checkout
+        (its per-run lines and its summary line). temper's epd_cd workflow runs it every minute over
+        ssh (configs/triggers/epd_cd.yaml). Exit 0 for every decision but `refused`, when the verdict
+        exits 0 too.
     rollcall_cd_deploy.py deploy --sha S --kind deploy|undo --reason TEXT
         One release of S through epd_loop.deploy_prod (backup, up, migrate, health, its own undo),
         from the deploy checkout. What a tick starts, in a systemd unit of its own; the money-test
@@ -67,6 +69,15 @@ import sys
 from pathlib import Path
 
 import rollcall_cd_notify as notify
+
+# temper's tick arrives over ssh as a forced command (epd-ship-only), whose environment has no
+# ~/.local/bin: no `standee` (live_commit) and no `gh` (the verdict). As epd_loop.EXTRA_PATH: the
+# PATH a program needs is part of the program. Children (the verdict, release units) inherit it.
+EXTRA_PATH = [str(Path.home() / ".local" / "bin"), "/usr/local/bin", "/usr/bin", "/bin"]
+os.environ["PATH"] = os.pathsep.join(
+    dict.fromkeys([p for p in os.environ.get("PATH", "").split(os.pathsep) if p] + EXTRA_PATH)
+)
+VERDICT = Path(__file__).resolve().parent / "rollcall_cd_verdict.py"
 
 BIN = Path(__file__).resolve().parent
 STATE_DIR = notify.STATE_DIR  # one directory for the deployer, the undo and their outbox
@@ -488,6 +499,12 @@ def deploy(sha: str, kind: str, reason: str) -> int:
     return code
 
 
+def run_verdict() -> int:
+    """rollcall_cd_verdict.py on the deploy checkout (fetched by this tick), its lines on our stdout."""
+    return subprocess.run([sys.executable, str(VERDICT), "--repo", str(CHECKOUT),
+                           "--state-dir", str(STATE_DIR)]).returncode
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -499,8 +516,9 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "tick":
         out = tick()
-        print(json.dumps(out))
-        return 1 if out["decision"] == "refused" else 0
+        print(json.dumps(out), flush=True)
+        verdict_rc = run_verdict()
+        return 1 if out["decision"] == "refused" or verdict_rc != 0 else 0
     return deploy(a.sha, a.kind, a.reason)
 
 

@@ -13,6 +13,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -100,10 +101,25 @@ def _sheet(caps, out):
     return {"file": out.name, "bytes": len(PNG), "width": 1, "height": 1, "tiles": [c for c, _ in caps]}
 
 
+CAPTURED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+class StoppedClock:
+    """existing_host's datetime, stopped. audit.json's source line names the moment of the capture and
+    journeys.json quotes it, so two workspaces captured either side of a second boundary hold different bytes
+    and "the same files" would stop meaning the same files (the store dedupes on every file's sha256)."""
+
+    @staticmethod
+    def now(tz=None):
+        assert tz is UTC, f"the stopped clock stands in for datetime.now(UTC) only, got {tz!r}"
+        return CAPTURED_AT
+
+
 @pytest.fixture()
 def lab(tmp_path: Path, monkeypatch) -> dict:
-    """A static demo app, its product file, and the host's browser replaced by a stub: a capture of the app's
-    current files writes NEW_PNG and a raw entry that names the page's first line."""
+    """A static demo app, its product file, the host's browser replaced by a stub (a capture of the app's
+    current files writes NEW_PNG and a raw entry that names the page's first line), and the capture clock
+    stopped, so what a capture writes depends on the app's files alone."""
     root = tmp_path / "app"
     _write(root / "index.html", "<main>Water today</main>")
     _write(root / "list.html", "<main>Plants</main>")
@@ -122,6 +138,7 @@ def lab(tmp_path: Path, monkeypatch) -> dict:
         _write(out_dir / existing_host.RAW, raw)
         return raw, {}
 
+    monkeypatch.setattr(existing_host, "datetime", StoppedClock)
     monkeypatch.setattr(existing_host, "shoot", shoot)
     monkeypatch.setattr(existing_host.existing_sheet, "build", _sheet)
     monkeypatch.setattr(reuse_host.ground_host, "prep", lambda product, workspace, products=None: {"product": product})
@@ -297,6 +314,17 @@ def test_store_refuses_a_failed_or_unchecked_stage(lab):
     with pytest.raises(StoreError, match="only a passed stage is stored"):
         reuse_host.store(str(w.path), "run-2", "existing", None, lab["products"])
     assert not (lab["products"] / "demo" / "store" / "current.json").exists()
+
+
+def test_two_captures_of_the_same_app_write_the_same_bytes(lab):
+    """What the dedupe below rests on: the capture writes the time it ran into audit.json's source line, and
+    journeys.json quotes it, so the stopped clock is what makes two workspaces of one app byte-identical."""
+    assert existing_host.datetime.now(UTC) == CAPTURED_AT
+    first, second = _finished_existing(lab, "ws-clock-a"), _finished_existing(lab, "ws-clock-b")
+    for name in ("audit.json", "journeys.json"):
+        assert (first.folder("existing") / name).read_bytes() == (second.folder("existing") / name).read_bytes()
+    assert CAPTURED_AT.isoformat(timespec="seconds") in json.loads(
+        (first.folder("existing") / "audit.json").read_text())["source"]
 
 
 def test_same_files_add_no_version_and_older_versions_stay(lab):

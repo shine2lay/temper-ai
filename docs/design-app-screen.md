@@ -1441,8 +1441,14 @@ that really are faults, the run caught all four, and it found a family the list 
 written (4/10); the fault is the list, and the lesson (read type sizes and contrast from the measure,
 never from a scaled screenshot) is in the Design checklist.
 
-**The whole workflow still runs in fixture mode** (every node completes): see the fixture run recorded
-below with the stage-alone workflow.
+**The whole workflow still runs in fixture mode.** Run `47f81ee9` of `design_app_screen_v1` on the frozen
+`rollcall-20261104` case: 19 nodes completed, 18.0 s, $0.00, the 6 skipped ones being the reader and
+reviser nodes that fixture mode never calls. Both gates were answered as this doc says (`gate_direction`
+choice `a`, `gate_final` `approve`), the `checks` node wrote `06-checks/round-1/checks.json`, and the run
+ended with the handoff. The runner is
+`~/design-lab/app-screen-workflow/results/fixture_run.py` (`start`, then `watch <tag>`), which packs the
+case, starts the run and answers each gate as it opens. A gate answer's `comments` must be a list, even
+when empty.
 
 What this does not prove: the checks have never been run on a build that the `build` step wrote (stage 5 is
 still a stub), so the contract is proven only against prototypes written by hand to it. The `figures`,

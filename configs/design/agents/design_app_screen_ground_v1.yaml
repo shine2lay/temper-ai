@@ -14,7 +14,7 @@ agent:
   version: 1
   type: llm
   provider: anthropic
-  token: roamee
+  token: anthropic-2  # roamee slot in pools.logins.slots (d7626b11)
   model: claude-opus-5-5
   tools: []
   provider_config: {max_tokens: 128000, effort: high}

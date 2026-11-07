@@ -555,7 +555,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_homepage_designer_v2.yaml` | agent (full page in HTML/CSS) |
 | `design/agents/design_homepage_craft_critic_v2.yaml` | agent (craft checklist; taste advisory) |
 | `design/agents/design_homepage_reviser_v2.yaml` | agent (bounded revision from the fix list) |
-| `design/workflows/design_app_screen_v1.yaml` | workflow (app screens: eight stages, direction/final owner gates; intake, existing and ground real, the rest fixture-only stubs until built) |
+| `design/workflows/design_app_screen_v1.yaml` | workflow (app screens: all eight stages real — intake, existing, ground, directions, build, checks/review, show, handoff — plus direction/final owner gates with deterministic prediction and taste encoding) |
 | `design/workflows/design_app_screen_v1_intake.yaml` | workflow (trial: the intake stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_existing.yaml` | workflow (trial: the existing stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_ground.yaml` | workflow (trial: the ground stage's nodes alone, equal to the whole workflow's) |

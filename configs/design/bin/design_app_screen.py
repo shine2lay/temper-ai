@@ -68,7 +68,7 @@ from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa
 
 HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
                  "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools",
-                 "prep-checks", "grade-checks", "prep-review", "grade-review")
+                 "prep-checks", "grade-checks", "prep-review", "grade-review", "prep-show")
 # A stage step may end reused or delta instead of done (step 4: its output says which in stage_status).
 STAGE_STATUSES = ("reused", "delta")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
@@ -188,6 +188,16 @@ def host(command: str, args: argparse.Namespace) -> dict:
         return capture(args)
     if command == "ground-prep":
         return ground_prep(args)
+    if command == "prep-show":
+        if not args.workspace:
+            raise WorkspaceError("prep-show needs --workspace W")
+        ws = Workspace(args.workspace)
+        doc_id = args.doc[0] if args.doc else None
+        comments = None
+        if args.source:
+            src_doc = json.loads(Path(args.source).read_text(encoding="utf-8"))
+            comments = src_doc.get("comments") if isinstance(src_doc, dict) else src_doc
+        return show.prep_show(ws, doc_id=doc_id, title=args.description, comments=comments)
     if not args.case:
         raise WorkspaceError(f"{command} needs --case DIR")
     if command == "freeze":

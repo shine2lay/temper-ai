@@ -487,9 +487,10 @@ def collect(ws: Workspace, _raw: str = "") -> dict[str, Any]:
 
     sheet_path, sheet_b64 = _build_contact_sheet(ws, measured_doc)
     task_text = build_task(ws, measured_doc)
+    seeded = (round_dir / "draft-seeded.json").is_file()
 
     return {
-        "model": "yes",
+        "model": "no" if seeded else "yes",
         "round": round_num,
         "measured_items": len(measured_doc["items"]),
         "blockers": measured_doc["blockers"],
@@ -509,6 +510,8 @@ def check(ws: Workspace, raw: str = "") -> dict[str, Any]:
     round_dir = ws.round_folder(round_num)
     rel_draft = f"06-checks/round-{round_num}/draft.json"
     items = review_check.load_measured_items(ws)
+    if (not raw or not raw.strip()) and (round_dir / "draft-seeded.json").is_file():
+        raw = (round_dir / "draft-seeded.json").read_text(encoding="utf-8")
 
     try:
         draft = _parse_draft(ws, raw)

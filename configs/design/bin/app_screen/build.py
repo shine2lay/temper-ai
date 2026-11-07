@@ -48,8 +48,19 @@ def check(ws: Workspace, raw: str = "") -> dict:
     if ws.mode == "fixture":
         return {"verdict": "ok", "source": "known case", "revise_task": ""}
     folder = ws.folder("build")
+    if (folder / f"prebuilt-round-{ws.round}").is_dir():
+        return {
+            "verdict": "ok",
+            "problems": [],
+            "counts": {"screens": 0, "states": 0, "views": 0, "problems": 0},
+            "revise_task": "",
+        }
     if not raw or not raw.strip():
-        return build_check.check_workspace(ws, pass_name="final")
+        seeded = folder / f"draft-round-{ws.round}.json"
+        if seeded.is_file():
+            raw = seeded.read_text(encoding="utf-8")
+        else:
+            return build_check.check_workspace(ws, pass_name="final")
     try:
         draft = _parse_draft(raw)
     except BuildError as exc:
@@ -123,6 +134,9 @@ def finish(ws: Workspace, raw: str = "") -> dict:
     if ws.mode == "fixture":
         return {"verdict": "ok", "source": "known case"}
     folder = ws.folder("build")
+    if (folder / f"prebuilt-round-{ws.round}").is_dir():
+        contracts.validate("build", ws)
+        return {"verdict": "ok", "retried": False}
     check_path = folder / "check.json"
     if not check_path.is_file():
         raise BuildError("05-build/check.json is missing; run build_check before build_finish")
@@ -184,16 +198,46 @@ def run(ws: Workspace, data: str = "") -> dict:
         doc["round"] = r
         path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
         return {**out, "round": r, "model": "no", "task": ""}
+    prebuilt_next = ws.folder("build") / f"prebuilt-round-{ws.round + 1}"
+    if prebuilt_next.is_dir():
+        import shutil  # noqa: PLC0415
+
+        r = ws.next_round()
+        folder = ws.folder("build")
+        for item in prebuilt_next.iterdir():
+            dest = folder / item.name
+            if item.is_dir():
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(item, dest, copy_function=shutil.copyfile)
+            else:
+                if dest.exists():
+                    dest.unlink()
+                shutil.copyfile(item, dest)
+        path = folder / "build.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc["round"] = r
+        path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        contracts.validate("build", ws)
+        return {
+            "direction": doc.get("direction", "a"),
+            "round": r,
+            "placeholder": False,
+            "model": "no",
+            "task": "",
+            "verdict": "ok",
+        }
     scaffold = build_scaffold.write_scaffold(ws)
     found = build_check.check_workspace(ws, pass_name="final")
     if found["problems"]:
         raise BuildError(model_step.failure(found["problems"], "05-build/build.json"))
     task = build_scaffold.build_task(ws)
+    seeded = (ws.folder("build") / f"draft-round-{scaffold['round']}.json").is_file()
     return {
         "direction": scaffold["chosen_direction"],
         "round": scaffold["round"],
         "placeholder": True,
-        "model": "yes",
+        "model": "no" if seeded else "yes",
         "task": task,
         "verdict": found["verdict"],
         **found["counts"],

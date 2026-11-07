@@ -22,7 +22,6 @@ BIN = ROOT / "configs/design/bin"
 sys.path.insert(0, str(BIN))
 
 from app_screen import contracts, gates, known_case  # noqa: E402
-from app_screen.fixture_stage import NotBuiltError  # noqa: E402
 from app_screen.workspace import (  # noqa: E402
     FOLDERS,
     STAGES,
@@ -307,8 +306,11 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
 
 
 def test_real_mode_stage_fails_loud_until_built(tmp_path):
-    with pytest.raises(NotBuiltError, match="show: the real stage is not built yet"):
+    with pytest.raises(contracts.ContractError, match="show: 05-build/index.html: missing Stage 5 prototype HTML"):
         CLI.run_step("show", str(tmp_path), "rollcall", "real", "")
     assert Workspace(tmp_path).run()["stages"]["show"]["status"] == "failed"
+    with pytest.raises(contracts.ContractError, match="handoff: 07-show/gate_final.json: missing final gate record"):
+        CLI.run_step("handoff", str(tmp_path), None, "real", "")
+    assert Workspace(tmp_path).run()["stages"]["handoff"]["status"] == "failed"
     with pytest.raises(WorkspaceError, match="run.json says mode real, the step was called with fixture"):
         CLI.run_step("ground", str(tmp_path), None, "fixture", "")

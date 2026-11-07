@@ -265,16 +265,29 @@ SCHEMAS: dict[str, dict] = {
     # 07-show
     "showtell": obj({"doc_id": {"type": "string", "pattern": "^d_[a-z0-9]{6,20}$"},
                      "version": {"type": "integer", "minimum": 1},
-                     "url": {"type": "string", "pattern": "^/showtell/#/d/d_[a-z0-9]{6,20}$"}}, {"title": TEXT}),
+                     "url": {"type": "string", "pattern": "^/showtell/#/d/d_[a-z0-9]{6,20}$"}},
+                    {"title": TEXT, "bundle": REL_PATH,
+                     "kept_lines": {"type": "integer", "minimum": 0},
+                     "prev_non_blank_lines": {"type": "integer", "minimum": 0},
+                     "kept_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+                     "change_note": TEXT}),
     "comments": obj({"doc_id": {"type": "string", "pattern": "^d_[a-z0-9]{6,20}$"}, "comments": items(obj(
         {"number": {"type": "integer", "minimum": 1}, "version": {"type": "integer", "minimum": 1},
          "body": TEXT, "element": {"type": "string"}, "state": TEXT},
-        {"replies": items(obj({"outcome": TEXT, "version": {"type": ["integer", "null"]}, "body": TEXT}), least=0)}),
+        {"id": TEXT, "replies": items(obj({"outcome": TEXT, "version": {"type": ["integer", "null"]}, "body": TEXT}), least=0)}),
         least=0)}),
+    "show_check": obj({"stage": {"const": "show"}, "round": {"type": "integer", "minimum": 1},
+                       "passed": {"type": "boolean"}, "rules": {"type": "object"},
+                       "problems": items(TEXT, least=0)}),
     # 08-handoff
     "design_file": obj({"kind": {"enum": ["penpot", "html-prototype"]}, "location": TEXT, "editable": {"type": "boolean"}},
                        {"note": TEXT}),
-    "followup": obj({"items": items(obj({"id": ID, "what": TEXT, "owner_role": ID, "source": TEXT}), least=0)}),
+    "followup": obj({"items": items(obj(
+        {"id": ID, "what": TEXT, "owner_role": ID, "source": TEXT},
+        {"screen": ID, "detail": TEXT}), least=0)}),
+    "handoff_check": obj({"stage": {"const": "handoff"}, "round": {"type": "integer", "minimum": 1},
+                          "passed": {"type": "boolean"}, "rules": {"type": "object"},
+                          "problems": items(TEXT, least=0)}),
     # gates
     "gate": obj({"gate": {"enum": ["direction", "final"]}, "choice": TEXT, "decided_by": {"enum": ["owner", "design"]},
                  "owner_words": {"type": "string"}, "source": TEXT, "reason": TEXT,
@@ -327,11 +340,12 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "review_check": [("06-checks/<round>/check.json", "review_check", 0)],
     "review": [("06-checks/<round>/review.json", "review", 1),
                ("06-checks/<round>/check-final.json", "review_check", 0)],
-    "show": [("07-show/showtell.json", "showtell", 1), ("07-show/comments.json", "comments", 1)],
+    "show": [("07-show/showtell.json", "showtell", 1), ("07-show/comments.json", "comments", 1),
+             ("07-show/bundle.html", "html", 0), ("07-show/check.json", "show_check", 0)],
     "gate_final": [("07-show/gate_final.json", "gate", 1)],
     "gate_final_next": [],
     "handoff": [("08-handoff/spec/*.md", "md", 1), ("08-handoff/design-file.json", "design_file", 1),
-                ("08-handoff/followup.json", "followup", 1)],
+                ("08-handoff/followup.json", "followup", 1), ("08-handoff/check.json", "handoff_check", 0)],
 }
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 

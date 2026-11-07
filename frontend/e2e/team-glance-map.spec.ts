@@ -324,6 +324,7 @@ for (const theme of ['dark', 'light'] as const) {
       if (wide) await holdDots(page);
       await goTo(page, state, 'map_burst');
       await expect(hourList(page).locator('li[data-pair]').first()).toContainText('builder and lead: 4 messages', { timeout: 12_000 });
+      await glanceFontsSettled(page);
       expect(await rows(page)).toEqual([
         ['builder|lead', on, 'builder and lead: 4 messages', 'last 4 s ago'],
         ['checker|lead', on, 'checker and lead: 4 messages', 'last 4 s ago'],
@@ -849,6 +850,8 @@ test('contract: an ended run has no Animate switch at any width, and its lines k
     await serveMap(page, 'map_ended');
     await page.goto(`/app/team/runs/${read('map_ended').execution_id as string}`);
     await expect(page.getByTestId('glance-page')).toHaveAttribute('data-phase', 'done');
+    await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
+    await glanceFontsSettled(page);
     await expect(animate(page)).toHaveCount(0);
     await expect(page.getByTestId('glance-motion-note')).toHaveCount(0);
     const on = width >= 768 ? 'true' : 'false';

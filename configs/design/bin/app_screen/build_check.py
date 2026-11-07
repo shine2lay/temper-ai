@@ -52,7 +52,24 @@ HARDCODED_FIG_RE = re.compile(
     r"|\b[0-9]+\.[0-9]+\b"
     r"|\b[0-9]{2,}\b"
 )
+BANNED_COPY_RE = re.compile(
+    r"\b(?:lorem\s+ipsum|dolor\s+sit\s+amet|tbd|todo|placeholder(?:\s+text|\s+copy)?|"
+    r"coming\s+soon|sample\s+text|insert\s+copy\s+here|foo\s+bar)\b",
+    re.I,
+)
 REQ_ID_RE = re.compile(r"^R[0-9]+$")
+
+
+def has_hardcoded_figure(text: str) -> re.Match[str] | None:
+    """Return a match if text contains a hardcoded figure (ignoring R1/S1/ID codes)."""
+    cleaned = re.sub(r"\b[A-Z]{1,4}-[0-9]+\b", "ID", str(text or ""))
+    cleaned = re.sub(r"\b[RS][0-9]+\b", "R", cleaned)
+    return HARDCODED_FIG_RE.search(cleaned)
+
+
+def has_banned_copy(text: str) -> re.Match[str] | None:
+    """Return a match if text contains banned filler or placeholder copy."""
+    return BANNED_COPY_RE.search(str(text or ""))
 
 
 def _prob(check_name: str, where: str, problem: str) -> dict[str, str]:
@@ -659,3 +676,206 @@ def check_workspace(
         require_built=require_built,
         draft=draft,
     )
+
+
+def validate_screen_draft_spec(
+    inv_screen: dict[str, Any],
+    draft_screen: dict[str, Any],
+    fixture: dict[str, Any],
+    where: str,
+    *,
+    state_check: str = "every_screen_state_designed",
+    show_check: str = "every_show_covered",
+    field_check: str = "data_req_in_fixture",
+    quality_check: str = "state_and_action_quality",
+    require_error_recovery: bool = False,
+) -> list[dict[str, str]]:
+    """Shared validator for one screen draft against its inventory screen and fixture."""
+    problems: list[dict[str, str]] = []
+    sid = str(inv_screen.get("id") or "")
+    req_states = list(dict.fromkeys([*(inv_screen.get("states") or []), "normal", "loading", "empty", "error"]))
+    if not inv_screen.get("states"):
+        req_states = ["normal", "loading", "empty", "error"]
+    else:
+        req_states = [str(st) for st in inv_screen.get("states") or []]
+        for base_st in ("normal", "loading", "empty", "error"):
+            if base_st not in req_states:
+                req_states.append(base_st)
+
+    for top_key in ("title", "lead"):
+        top_val = str(draft_screen.get(top_key) or "").strip()
+        if not top_val:
+            problems.append(_prob(quality_check, f"{where}.{top_key}", f"screen {sid!r} is missing non-empty {top_key}"))
+            continue
+        m_ban = has_banned_copy(top_val)
+        if m_ban:
+            problems.append(_prob(
+                quality_check,
+                f"{where}.{top_key}",
+                f"banned filler copy {m_ban.group(0)!r} in {where}.{top_key}",
+            ))
+        m_fig = has_hardcoded_figure(top_val)
+        if m_fig:
+            problems.append(_prob(
+                quality_check,
+                f"{where}.{top_key}",
+                f"hardcoded figure {m_fig.group(0)!r} in {where}.{top_key}; bind figures via fields[] paths",
+            ))
+
+    d_states = draft_screen.get("states") if isinstance(draft_screen.get("states"), dict) else {}
+    seen_headlines: dict[str, str] = {}
+    seen_summaries: dict[str, str] = {}
+    for st in req_states:
+        st_spec = d_states.get(st)
+        headline = str((st_spec or {}).get("headline") or "").strip() if isinstance(st_spec, dict) else ""
+        summary = str((st_spec or {}).get("summary") or "").strip() if isinstance(st_spec, dict) else ""
+        if not headline or not summary:
+            problems.append(_prob(
+                state_check,
+                f"{where}.states.{st}",
+                f"screen {sid!r} state {st!r} is missing a non-empty headline or summary",
+            ))
+            continue
+        norm_h = headline.lower()
+        norm_s = summary.lower()
+        if norm_h in seen_headlines:
+            problems.append(_prob(
+                quality_check,
+                f"{where}.states.{st}.headline",
+                f"screen {sid!r} state {st!r} repeats headline of state {seen_headlines[norm_h]!r}",
+            ))
+        else:
+            seen_headlines[norm_h] = st
+        if norm_s in seen_summaries:
+            problems.append(_prob(
+                quality_check,
+                f"{where}.states.{st}.summary",
+                f"screen {sid!r} state {st!r} repeats summary of state {seen_summaries[norm_s]!r}",
+            ))
+        else:
+            seen_summaries[norm_s] = st
+
+        for key in ("headline", "summary", "badge"):
+            val = str(st_spec.get(key) or "")
+            m_ban = has_banned_copy(val)
+            if m_ban:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.states.{st}.{key}",
+                    f"banned filler copy {m_ban.group(0)!r} in {where}.states.{st}.{key}",
+                ))
+            m_fig = has_hardcoded_figure(val)
+            if m_fig:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.states.{st}.{key}",
+                    f"hardcoded figure {m_fig.group(0)!r} in {where}.states.{st}.{key}; bind figures via fields[] paths",
+                ))
+
+    inv_shows = inv_screen.get("shows") or []
+    expected_refs = [f"S{idx}" for idx in range(1, max(1, len(inv_shows)) + 1)]
+    expected_ref_set = set(expected_refs)
+    d_shows = draft_screen.get("shows") if isinstance(draft_screen.get("shows"), list) else []
+    covered_refs: set[str] = set()
+    for sh_idx, sh in enumerate(d_shows):
+        if not isinstance(sh, dict):
+            continue
+        ref = str(sh.get("ref") or "").strip()
+        heading = str(sh.get("heading") or "").strip()
+        copy_txt = str(sh.get("copy") or "").strip()
+        fields = [f.strip() for f in (sh.get("fields") or []) if isinstance(f, str) and f.strip()]
+        if ref not in expected_ref_set:
+            problems.append(_prob(
+                show_check,
+                f"{where}.shows[{sh_idx}].ref",
+                f"show ref {ref!r} on screen {sid!r} is not in inventory shows {expected_refs}",
+            ))
+        elif heading and copy_txt and fields:
+            covered_refs.add(ref)
+        if not fields:
+            problems.append(_prob(
+                field_check,
+                f"{where}.shows[{sh_idx}].fields",
+                f"show {ref or sh_idx!r} on screen {sid!r} has no fixture fields[] paths",
+            ))
+        for fpath in fields:
+            found, _ = resolve_fixture_field(fixture, fpath)
+            if not found:
+                problems.append(_prob(
+                    field_check,
+                    f"{where}.shows[{sh_idx}].fields",
+                    f"draft field {fpath!r} on screen {sid!r} is absent from fixture.json",
+                ))
+        for key, val in (("heading", heading), ("copy", copy_txt)):
+            m_ban = has_banned_copy(val)
+            if m_ban:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.shows[{sh_idx}].{key}",
+                    f"banned filler copy {m_ban.group(0)!r} in {where}.shows[{sh_idx}].{key}",
+                ))
+            m_fig = has_hardcoded_figure(val)
+            if m_fig:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.shows[{sh_idx}].{key}",
+                    f"hardcoded figure {m_fig.group(0)!r} in {where}.shows[{sh_idx}].{key}; bind figures via fields[] paths",
+                ))
+    missing_refs = [r for r in expected_refs if r not in covered_refs]
+    if missing_refs:
+        problems.append(_prob(
+            show_check,
+            f"{where}.shows",
+            f"screen {sid!r} draft is missing shows[] refs {missing_refs} (expected {expected_refs})",
+        ))
+
+    d_actions = [a for a in (draft_screen.get("actions") or []) if isinstance(a, dict)]
+    primaries = [a.get("id") for a in d_actions if a.get("kind") == "primary"]
+    if len(primaries) == 0:
+        problems.append(_prob(
+            quality_check,
+            f"{where}.actions",
+            f"screen {sid!r} has no primary action (kind='primary')",
+        ))
+    elif len(primaries) > 1:
+        problems.append(_prob(
+            quality_check,
+            f"{where}.actions",
+            f"screen {sid!r} has {len(primaries)} primary actions ({primaries}); exactly 1 primary action per screen is allowed",
+        ))
+    if require_error_recovery and "error" in req_states:
+        has_error_action = any(
+            "error" in [str(st) for st in (a.get("states") or [])]
+            for a in d_actions
+        )
+        if not has_error_action:
+            problems.append(_prob(
+                quality_check,
+                f"{where}.actions",
+                f"screen {sid!r} has no error recovery action with 'error' in actions[].states",
+            ))
+    for a_idx, act in enumerate(d_actions):
+        for key in ("label", "feedback"):
+            val = str(act.get(key) or "").strip()
+            if not val:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.actions[{a_idx}].{key}",
+                    f"screen {sid!r} action {act.get('id')!r} is missing non-empty {key}",
+                ))
+                continue
+            m_ban = has_banned_copy(val)
+            if m_ban:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.actions[{a_idx}].{key}",
+                    f"banned filler copy {m_ban.group(0)!r} in {where}.actions[{a_idx}].{key}",
+                ))
+            m_fig = has_hardcoded_figure(val)
+            if m_fig:
+                problems.append(_prob(
+                    quality_check,
+                    f"{where}.actions[{a_idx}].{key}",
+                    f"hardcoded figure {m_fig.group(0)!r} in {where}.actions[{a_idx}].{key}; bind figures via fields[] paths",
+                ))
+    return problems

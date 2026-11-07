@@ -1,0 +1,48 @@
+# Stage 4 (directions) standalone workflow for testing and stage-by-stage trials (rule 16).
+# Uses the exact same five Stage 4 nodes (`directions_collect` -> `directions_read` -> `directions_check`
+# -> `directions_revise` -> `directions`) as `design_app_screen_v1.yaml`.
+workflow:
+  name: design_app_screen_v1_directions
+  version: 1
+  description: |
+    Stage 4 of design_app_screen_v1 alone: reads 01-request/requirements.json, 02-existing/journeys.json,
+    and 03-ground/{inventory.json,fixture.json,design-files/}, calls the fenced directions writer
+    (design_app_screen_directions_v1) to produce 04-directions/draft.json, validates it with
+    directions_check (with one bounded revision pass if needed), compiles each direction <id> into a
+    clickable prototype in 04-directions/<id>/, runs quick measured checks into 04-directions/<id>/checks.json,
+    and writes 04-directions/directions.json.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+  outputs:
+    directions: directions.structured.directions
+    blockers: directions.structured.blockers
+    recommended: directions.structured.recommended
+  nodes:
+    - name: directions_collect
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: directions_collect, product: input.product, mode: input.mode}
+    - name: directions_read
+      type: agent
+      agent: design_app_screen_directions_v1
+      depends_on: [directions_collect]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: directions_collect.structured.task}
+    - name: directions_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions_read]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {step: directions_check, product: input.product, mode: input.mode, data: directions_read.output}
+    - name: directions_revise
+      type: agent
+      agent: design_app_screen_directions_v1
+      depends_on: [directions_check]
+      condition: {source: directions_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: directions_check.structured.revise_task}
+    - name: directions
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions_revise]
+      input_map: {step: directions, product: input.product, mode: input.mode, data: directions_revise.output}

@@ -11,7 +11,7 @@ real stage is not built yet". Each stage's own task replaces its stub and keeps 
 at a time (owner, 2026-11-04: "lets run one stage a time after setting up the skeleton, so we can really
 hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
 (Design #207; see "Stage 2: existing"), stage 3, ground (Design #210; see "Stage 3: ground"), step 4,
-reuse/store/tools (Design #214), stage 5, build (Design #219 5a scaffold + Design #221 5b model screen writer; see
+reuse/store/tools (Design #214), stage 4, directions (Design #223; see "Stage 4: directions"), stage 5, build (Design #219 5a scaffold + Design #221 5b model screen writer; see
 "Stage 5: build"), stage 6a, measured checks (Design #216; see "Stage 6a: checks"), and stage 6b, fenced design
 and UX review + build-loop proof (Design #222; see "Stage 6b: review").
 
@@ -45,7 +45,12 @@ Files, one job each:
 | `configs/design/bin/app_screen/existing_grade.py` | grade a stage-2 run against a case's answer key (host `grade-existing`) |
 | `configs/design/agents/design_app_screen_existing_v1.yaml` | existing's model step: the contact sheet (image) + task text -> draft journeys and problems |
 | `configs/design/workflows/design_app_screen_v1_existing.yaml` | stage 2 alone (the same nodes), for existing's trials |
-| `configs/design/bin/app_screen/build_scaffold.py` | stage 5's deterministic writer and draft compiler: shell, hash router, per-screen files, tokens CSS, fixture copy, `build_task(ws)`, `render_draft(ws, draft)` and `build.json` |
+| `configs/design/bin/app_screen/directions.py` | stage 4's deterministic collector (`04-directions/task.md`), draft checker wrapper, prototype compiler (`04-directions/<id>/`), quick measured check runner (`04-directions/<id>/checks.json`), and `04-directions/directions.json` writer |
+| `configs/design/bin/app_screen/directions_check.py` | stage 4's 5 deterministic checks on `04-directions/draft.json` (schema, distinct directions, entry screen coverage, show/field grounding, state/action quality) |
+| `configs/design/agents/design_app_screen_directions_v1.yaml` | directions' fenced model step: `task.md` -> `draft.json` with 2-3 distinct directions (`claude-opus-5-5`, token `anthropic-2` / `roamee`, no tools, no temperature) |
+| `configs/design/workflows/design_app_screen_v1_directions.yaml` | stage 4 alone (`directions_collect` -> `directions_read` -> `directions_check` -> `directions_revise` -> `directions`), for directions' trials |
+| `tests/test_design_app_screen_directions.py` | directions' 15 planted-fault checks, retry loop, prototype compilation, quick measured checks (`04-directions/<id>/checks.json`), and Stage 5 `build_task` handoff |
+| `configs/design/bin/app_screen/build_scaffold.py` | stage 5's deterministic writer and draft compiler (also shared with stage 4): shell, hash router, per-screen files, tokens CSS, fixture copy, `select_entry_screens`, `compile_direction_prototype`, `build_task(ws)`, `render_draft(ws, draft)` and `build.json` |
 | `configs/design/bin/app_screen/build_check.py` | stage 5's measured checks on a written `05-build/` and `draft.json` against ground and direction inputs (9 5a + 5 5b rules) |
 | `configs/design/agents/design_app_screen_build_v1.yaml` | build's fenced model step: `task.md` -> `draft.json` per-screen, per-state design specs (`claude-opus-5-5`, token `anthropic-2` / `roamee`) |
 | `configs/design/workflows/design_app_screen_v1_build.yaml` | stage 5 alone (`build` -> `build_read` -> `build_check` -> `build_revise` -> `build_finish`), for build's trials |
@@ -68,7 +73,7 @@ Files, one job each:
 | 1 | intake | `intake_collect`, `intake_read` (model), `intake_check`, `intake_revise` (model, only on a failed check), `intake` | the owner's words as requirements (verbatim) and the clarification questions (rule 33) | #206 |
 | 2 | existing | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
 | 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
-| 4 | directions | `directions`, then `gate_direction` | two or more clickable directions, each with its quick checks; the owner picks one | W3, W5 |
+| 4 | directions | `directions_collect`, `directions_read` (model), `directions_check`, `directions_revise` (model, only on a failed check), `directions`, then `gate_direction` | two or more genuinely distinct clickable directions (`04-directions/<id>/index.html`), each with its measured `04-directions/<id>/checks.json` and `04-directions/directions.json`; the owner picks one | #223, W5 |
 | 5 | build | `build`, `build_read` (model), `build_check`, `build_revise` (model, only on a failed check), `build_finish` | the chosen direction: a shell and one compiled file per screen with real per-state layout, copy, action controls and `fixture.json` figure bindings | #219 (5a), #221 (5b) |
 | 6 | checks | `checks`, then `review_collect`, `review_read` (model), `review_check`, `review_revise` (model, only on a failed check), `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), #222 (6b) |
 | 7 | show | `show`, then `gate_final`, `gate_final_next` | one Show&Tell share and the owner's comments; approve, or changes back to build as targeted edits | W4, W5 |
@@ -1154,6 +1159,101 @@ new `prepare` against v2 is a delta again. Tool registry: 21 entries, `check-too
 Landed in temper-ai `2ce846d9` (land 235-11cb76; pre-commit suite 1951 passed). Fixture run of the whole
 workflow after the land: `873fd775`, all 19 nodes completed at $0 (gates answered as Design, the known case's
 choices).
+
+## Stage 4: directions
+
+Stage 4 (`directions`, Design #223) generates two or three genuinely distinct, clickable HTML direction
+prototypes (`04-directions/<id>/index.html`, `<id>` in `a`, `b`, `c`) for the product's primary entry
+screens before `gate_direction`, measures each direction with deterministic quick checks
+(`04-directions/<id>/checks.json`), and writes `04-directions/directions.json`. When Stage 5 (`build`)
+runs after `gate_direction`, `build_scaffold.build_task(ws)` reads the chosen direction's `name`, `idea`,
+and `04-directions/draft.json` screen layout and copy as the starting direction for all screens.
+
+### How Stage 4 works (rule 17: fenced JSON draft + shared HTML/JS compiler + quick measured checks)
+
+`directions` remains the final node of Stage 4 in `design_app_screen_v1.yaml` and
+`design_app_screen_v1_directions.yaml` so `gate_direction` (`depends_on: [directions]`) works unchanged:
+
+1. `directions_collect` (script, `design_app_screen_stage_v1`, `depends_on: [ground]`): in `fixture` mode
+   returns `model: "no"`. In `real` mode reads `01-request/requirements.json`, `02-existing/journeys.json`,
+   and `03-ground/{inventory.json,fixture.json,design-files/}`, selects the primary entry screens from
+   `inventory.json` (`build_scaffold.select_entry_screens`, first 1-2 screens so directions focus on the
+   opening experience), writes `04-directions/task.md`, and returns `model: "yes"`, `task`.
+2. `directions_read` (fenced LLM agent `configs/design/agents/design_app_screen_directions_v1.yaml`:
+   `anthropic / claude-opus-5-5`, `token: anthropic-2` (`roamee` slot), `tools: []`, no `temperature`,
+   `max_tokens: 64000`, `total_timeout: 1800`, `condition: directions_collect.structured.model == "yes"`):
+   outputs ONE JSON object (`04-directions/draft.json`, schema `directions_draft` in `contracts.py`) with
+   2-3 distinct directions (`id` in `"a"`, `"b"`, `"c"`, `name`, `idea`, `screens[]` reusing the shared
+   `BUILD_SHOW` / `BUILD_ACTION` / `BUILD_STATE` schemas from `contracts.py`).
+3. `directions_check` (script, `design_app_screen_stage_v1`, `condition: directions_collect.structured.model == "yes"`):
+   runs `directions_check.py` over `04-directions/draft.json`, reusing `build_check.validate_screen_draft_spec`
+   for screen/state/show/field/action/copy rules (rule 36) plus Stage 4 direction rules. Writes
+   `04-directions/check.json` (`verdict: "ok" | "retry"`), and on `"retry"` prepares `revise_task`.
+4. `directions_revise` (same agent `design_app_screen_directions_v1`, `condition: directions_check.structured.verdict == "retry"`):
+   one bounded revision pass fixing any reported problems.
+5. `directions` (script, `design_app_screen_stage_v1`, `depends_on: [directions_revise]`): in `fixture`
+   mode runs `run_fixture(ws, "directions")`. In `real` mode applies the revised draft if any, runs final
+   `directions_check` -> `04-directions/check-final.json` (fails loud on any remaining problem), compiles
+   each direction `<id>` into `04-directions/<id>/` (`index.html`, `styles/tokens.css`, `shell/router.js`,
+   `screens/*.js`, `fixture.json`, `build.json`) via `build_scaffold.compile_direction_prototype`, runs
+   quick measured checks (`directions.measure_direction_checks`, reusing `checks_rules.py` and `build_check.py`)
+   to write `04-directions/<id>/checks.json` (`direction_checks` with 0 blockers), writes
+   `04-directions/directions.json`, and validates `contracts.validate("directions", ws)`.
+
+### Checks (`directions_check.py`) and planted faults
+
+`directions_check.check_workspace(ws)` enforces 5 rule families over `04-directions/draft.json`:
+
+1. `directions_draft_schema`: valid JSON matching `directions_draft` with at least 2 directions and unique
+   slug ids (`a`, `b`, `c`).
+2. `distinct_directions`: each direction has a distinct `name`, a distinct `idea`, and differs from the
+   other directions in primary screen `layout` (`ledger`, `board`, `split`, `stack`, `detail`, `form`) and
+   normal-state `headline`.
+3. `entry_screen_coverage`: every direction covers all target entry screens and every required state
+   (`normal`, `loading`, `empty`, `error`, plus any screen-specific state) with non-empty `headline` and
+   `summary`.
+4. `show_and_field_grounding`: every `shows[]` ref (`S1..Sn`) on an entry screen is covered and every
+   `shows[].fields[]` path resolves in `03-ground/fixture.json`.
+5. `state_and_action_quality`: distinct state headlines/summaries within each screen, exactly 1 primary
+   action (`kind: "primary"`), at least 1 error-recovery action (`"error"` in `actions[].states`), no
+   hardcoded figures (`build_check.has_hardcoded_figure`), and no banned filler copy
+   (`build_check.has_banned_copy`).
+
+All 15 planted faults are caught in `tests/test_design_app_screen_directions.py`:
+
+| Planted fault | Mutation on `04-directions/draft.json` | Caught by | Message |
+| --- | --- | --- | --- |
+| `single_direction` | keep only 1 direction in `directions[]` | `directions_draft_schema` | `directions[] has 1 direction(s); at least 2 distinct directions are required` |
+| `duplicate_direction_id` | set `directions[1].id = "a"` | `directions_draft_schema` | `duplicate direction id 'a'; each direction must have a distinct id ('a', 'b', 'c', ...)` |
+| `duplicate_direction_name` | copy `directions[0].name` to `directions[1].name` | `distinct_directions` | `direction 'b' repeats name 'Morning Ledger Band' of direction 'a'` |
+| `duplicate_direction_idea` | copy `directions[0].idea` to `directions[1].idea` | `distinct_directions` | `direction 'b' repeats idea of direction 'a'` |
+| `duplicate_primary_layout` | set `directions[1].screens[0].layout` equal to `directions[0]` | `distinct_directions` | `direction 'b' primary screen layout 'ledger' duplicates direction 'a'; directions must use different layouts` |
+| `duplicate_normal_headline` | copy `directions[0]` normal headline to `directions[1]` | `distinct_directions` | `direction 'b' normal-state headline ... duplicates direction 'a'` |
+| `missing_entry_screen` | drop the second entry screen from `directions[1].screens` | `entry_screen_coverage` | `direction 'b' is missing target entry screen 'positions'` |
+| `missing_required_state` | delete `error` state from `directions[0].screens[0].states` | `entry_screen_coverage` | `screen 'today' state 'error' is missing a non-empty headline or summary` |
+| `missing_show_ref` | empty `directions[0].screens[0].shows` | `show_and_field_grounding` | `screen 'today' draft is missing shows[] refs ['S1']` |
+| `ungrounded_field_path` | set `fields` to `["invented.nonexistent.field"]` | `show_and_field_grounding` | `draft field 'invented.nonexistent.field' on screen 'today' is absent from fixture.json` |
+| `duplicate_state_headline` | copy `normal` headline into `loading` headline | `state_and_action_quality` | `screen 'today' state 'loading' repeats headline of state 'normal'` |
+| `missing_primary_action` | change all actions on `today` to `kind: "secondary"` | `state_and_action_quality` | `screen 'today' has no primary action (kind='primary')` |
+| `missing_error_recovery` | remove `"error"` from all `actions[].states` on `today` | `state_and_action_quality` | `screen 'today' has no error recovery action with 'error' in actions[].states` |
+| `hardcoded_figure` | inject `"$500 across 12 contracts"` into `normal.summary` | `state_and_action_quality` | `hardcoded figure '$500' in ...states.normal.summary; bind figures via fields[] paths` |
+| `banned_filler_copy` | inject `"TBD placeholder text coming soon"` into `shows[0].copy` | `state_and_action_quality` | `banned filler copy 'TBD' in ...shows[0].copy` |
+
+### Results on temper-dev
+
+Run on `temper-dev` through `design_app_screen_v1_directions.yaml` (runner
+`~/design-lab/app-screen-workflow/results/directions-trials/temper_trial_4.py`, full results in
+`~/design-lab/app-screen-workflow/results/directions-trials/summary.json`):
+
+| Case | Run | Execution ID | Status | Draft / final problems | Revise | Directions (`id`: name / layout / views / blockers) | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `parcelly-clean` | 1 | `239b1ef4-596a-4641-8564-bff2e0acc458` | `completed` | 0 / 0 | skipped | `a`: Today First Stack (`stack`, 24 views, 0 blockers); `b`: Delivery Desk Split (`split`, 24 views, 0 blockers) | $0.0985 | 33.5 s |
+| `parcelly-clean` | 2 | `7f6158e1-abe7-411d-af09-997c9adc2a44` | `completed` | 0 / 0 | skipped | `a`: Today First Stack (`stack`, 24 views, 0 blockers); `b`: Delivery Desk Split (`split`, 24 views, 0 blockers) | $0.0828 | 35.6 s |
+| `parcelly-clean` | 3 | `84a4f499-0dec-40b1-9f72-24c781081a3a` | `completed` | 0 / 0 | skipped | `a`: Today First Stack (`stack`, 24 views, 0 blockers); `b`: Split Desk (`split`, 24 views, 0 blockers) | $0.0869 | 43.0 s |
+| `rollcall-20261104` | 1 | `a3b97266-961b-4ea9-a3c2-22fea1f12b66` | `completed` | 0 / 0 | skipped | `a`: Tide Table Stack (`stack`, 30 views, 0 blockers); `b`: Friday Split (`split`, 30 views, 0 blockers) | $0.1219 | 41.3 s |
+| `rollcall-20261104` | 2 | `3c6eca27-13db-4f96-bbe6-ab1e11a459ea` | `completed` | 0 / 0 | skipped | `a`: Tide Table (`stack`, 30 views, 0 blockers); `b`: Urgency Board (`board`, 30 views, 0 blockers) | $0.0822 | 39.5 s |
+| `rollcall-20261104` | 3 | `e313a33d-bee9-475c-82c6-93fe126025b5` | `completed` | 0 / 0 | skipped | `a`: Tide Table (`stack`, 30 views, 0 blockers); `b`: Harbour Board (`split`, 30 views, 0 blockers) | $0.0781 | 34.9 s |
+| Whole workflow (`fixture`) | 1 | `6e004623-be4d-4d62-bf84-c1c6e8590d11` | `completed` | 0 / 0 | skipped | 37 nodes (25 completed + 12 reader/reviser nodes skipped in fixture mode; gates `direction="a"`, `final="approve"`) | $0.0000 | 14.1 s |
 
 ## Stage 5: build
 

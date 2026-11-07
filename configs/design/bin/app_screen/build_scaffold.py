@@ -1440,6 +1440,22 @@ def build_task(ws: Workspace) -> str:
             chosen_dir_obj = d
             break
 
+    chosen_draft_screens: list[dict[str, Any]] = []
+    directions_draft_path = ws.folder("directions") / "draft.json"
+    if directions_draft_path.is_file():
+        try:
+            ddoc = json.loads(directions_draft_path.read_text(encoding="utf-8"))
+            for d in ddoc.get("directions") or []:
+                if isinstance(d, dict) and d.get("id") == chosen_direction:
+                    if not chosen_dir_obj.get("name") and d.get("name"):
+                        chosen_dir_obj = {**chosen_dir_obj, "name": d["name"]}
+                    if not chosen_dir_obj.get("idea") and d.get("idea"):
+                        chosen_dir_obj = {**chosen_dir_obj, "idea": d["idea"]}
+                    chosen_draft_screens = [s for s in (d.get("screens") or []) if isinstance(s, dict)]
+                    break
+        except (OSError, json.JSONDecodeError):
+            pass
+
     design_md_path = ws.folder("ground") / "design-files" / "DESIGN.md"
     design_md_summary = ""
     if design_md_path.is_file():
@@ -1504,6 +1520,20 @@ def build_task(ws: Workspace) -> str:
         f"- Direction ID: `{chosen_direction}`",
         f"- Name: {chosen_dir_obj.get('name', chosen_direction)}",
         f"- Idea: {chosen_dir_obj.get('idea', 'Clean, high-contrast hierarchy with progressive disclosure.')}",
+        f"- Direction prototype: `04-directions/{chosen_direction}/index.html`",
+        *(
+            [
+                f"- Starting screen layout and copy from `04-directions/{chosen_direction}/` (`04-directions/draft.json`):",
+                *[
+                    f"  - Screen `{ds.get('id')}`: layout=`{ds.get('layout')}`, title={ds.get('title')!r}, "
+                    f"lead={ds.get('lead')!r}, normal_headline={((ds.get('states') or {}).get('normal') or {}).get('headline')!r}, "
+                    f"normal_summary={((ds.get('states') or {}).get('normal') or {}).get('summary')!r}"
+                    for ds in chosen_draft_screens
+                ],
+            ]
+            if chosen_draft_screens
+            else []
+        ),
         "",
         "## Product Design Summary (`DESIGN.md` & Tokens)",
         design_md_summary or "(Follow semantic tokens from tokens.json)",
@@ -1583,8 +1613,10 @@ def render_built_screen_js(
     }
     compiled_actions: list[dict[str, Any]] = []
     primary_used = False
+    seen_action_ids: set[str] = set()
     for idx, inv_act in enumerate(inv_actions):
         aid = inv_act["id"]
+        seen_action_ids.add(aid)
         d_act = draft_actions_by_id.get(aid, {})
         kind = str(d_act.get("kind") or ("primary" if idx == 0 else "secondary"))
         if kind == "primary":
@@ -1595,6 +1627,29 @@ def render_built_screen_js(
         label = str(d_act.get("label") or inv_act["label"])
         feedback = str(d_act.get("feedback") or f"Action triggered: {aid}")
         act_states = [str(st) for st in (d_act.get("states") or inv_act.get("states") or states)]
+        compiled_actions.append({
+            "id": aid,
+            "label": label,
+            "kind": kind,
+            "states": act_states,
+            "feedback": feedback,
+        })
+    for d_act in draft_screen.get("actions") or []:
+        if not isinstance(d_act, dict) or not d_act.get("id"):
+            continue
+        aid = str(d_act["id"]).strip()
+        if not aid or aid in seen_action_ids:
+            continue
+        seen_action_ids.add(aid)
+        kind = str(d_act.get("kind") or "secondary")
+        if kind == "primary":
+            if primary_used:
+                kind = "secondary"
+            else:
+                primary_used = True
+        label = str(d_act.get("label") or aid.replace("-", " ").capitalize())
+        feedback = str(d_act.get("feedback") or f"Action triggered: {aid}")
+        act_states = [str(st) for st in (d_act.get("states") or states)]
         compiled_actions.append({
             "id": aid,
             "label": label,
@@ -1876,3 +1931,164 @@ def render_draft(ws: Workspace, draft: dict[str, Any]) -> dict[str, Any]:
         encoding="utf-8",
     )
     return bdoc
+
+
+def default_screen_draft(inv_screen: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
+    """Build a valid baseline screen draft dict from an inventory screen entry and fixture."""
+    sid = str(inv_screen.get("id") or "home")
+    sname = str(inv_screen.get("name") or sid.capitalize())
+    states = [str(st) for st in (inv_screen.get("states") or ["normal", "loading", "empty", "error"])]
+    req_fields = _default_req_fields_for_screen(inv_screen, fixture)
+    if not req_fields:
+        all_paths = [p["path"] for p in _collect_fixture_field_paths(fixture)]
+        req_fields = all_paths[:2]
+
+    shows_out: list[dict[str, Any]] = []
+    for idx, sh in enumerate(inv_screen.get("shows") or [], start=1):
+        what = str((sh.get("what") if isinstance(sh, dict) else sh) or sname)
+        clean_what = re.sub(r"\d+", "several", what)
+        shows_out.append({
+            "ref": f"S{idx}",
+            "heading": f"{sname} focus {chr(64 + idx)}",
+            "copy": f"Shows grounded details for {clean_what.lower().rstrip('.')}.",
+            "fields": list(req_fields[:2]),
+        })
+    if not shows_out:
+        shows_out.append({
+            "ref": "S1",
+            "heading": f"{sname} overview",
+            "copy": f"Grounded overview metrics and status for {sname.lower()}.",
+            "fields": list(req_fields[:2]),
+        })
+
+    actions_out: list[dict[str, Any]] = []
+    for idx, act in enumerate(_actions_for_screen(inv_screen)):
+        aid = act["id"]
+        label = re.sub(r"\d+", "", act["label"]).strip() or aid.replace("-", " ").capitalize()
+        actions_out.append({
+            "id": aid,
+            "label": label,
+            "kind": "primary" if idx == 0 else "secondary",
+            "states": list(states),
+            "feedback": f"Running {label.lower()} for {sname.lower()} now.",
+        })
+
+    states_out: dict[str, dict[str, str]] = {}
+    for st in states:
+        states_out[st] = {
+            "headline": f"{sname} in {st} view",
+            "summary": f"Showing the {st} state for {sname.lower()} with clear next steps.",
+            "badge": st.capitalize(),
+        }
+
+    return {
+        "id": sid,
+        "title": sname,
+        "layout": "ledger",
+        "lead": f"Grounded view of {sname.lower()} with primary figures and actions.",
+        "shows": shows_out,
+        "actions": actions_out,
+        "states": states_out,
+    }
+
+
+def select_entry_screens(inventory: dict[str, Any], max_screens: int = 2) -> list[dict[str, Any]]:
+    """Select the primary entry screen(s) from 03-ground/inventory.json (first 1-2 screens)."""
+    screens = [s for s in (inventory.get("screens") or []) if isinstance(s, dict)]
+    return screens[: max(1, max_screens)]
+
+
+def compile_direction_prototype(
+    ws: Workspace,
+    direction_draft: dict[str, Any],
+    out_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Compile one Stage 4 direction draft into 04-directions/<id>/ clickable prototype."""
+    ground_dir = ws.folder("ground")
+    intake_dir = ws.folder("intake")
+    inventory = _read_json_file(ground_dir / "inventory.json", "03-ground/inventory.json")
+    fixture = _read_json_file(ground_dir / "fixture.json", "03-ground/fixture.json")
+    tokens_path = ground_dir / "design-files" / "tokens.json"
+    if not tokens_path.is_file():
+        tokens_path = ground_dir / "tokens.json"
+    tokens = _read_json_file(tokens_path, "03-ground/design-files/tokens.json")
+    req_path = intake_dir / "requirements.json"
+    requirements_doc = _read_json_file(req_path, "01-request/requirements.json") if req_path.is_file() else {"items": []}
+
+    all_screens: list[dict[str, Any]] = inventory.get("screens") or []
+    reqs_by_screen = _requirements_by_screen(all_screens, requirements_doc)
+
+    dir_id = str(direction_draft.get("id") or "a").strip()
+    dir_name = str(direction_draft.get("name") or f"Direction {dir_id.upper()}").strip()
+    dir_idea = str(direction_draft.get("idea") or "").strip()
+
+    draft_by_id = {
+        str(s.get("id")): s
+        for s in (direction_draft.get("screens") or [])
+        if isinstance(s, dict) and isinstance(s.get("id"), str)
+    }
+    target_screens = [s for s in all_screens if s.get("id") in draft_by_id]
+    if not target_screens:
+        target_screens = select_entry_screens(inventory)
+
+    proto_dir = out_dir or (ws.folder("directions") / dir_id)
+    styles_dir = proto_dir / "styles"
+    shell_dir = proto_dir / "shell"
+    screens_dir = proto_dir / "screens"
+    styles_dir.mkdir(parents=True, exist_ok=True)
+    shell_dir.mkdir(parents=True, exist_ok=True)
+    screens_dir.mkdir(parents=True, exist_ok=True)
+
+    src_product = (inventory.get("source") or {}).get("product") if isinstance(inventory.get("source"), dict) else None
+    ws_product = ws.run().get("product") if ws.run_file.is_file() else None
+    product = str(inventory.get("product") or src_product or fixture.get("product") or ws_product or "product")
+
+    tokens_css = render_tokens_css(tokens)
+    (styles_dir / "tokens.css").write_text(tokens_css, encoding="utf-8")
+    (proto_dir / "fixture.json").write_text(
+        json.dumps(fixture, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (shell_dir / "router.js").write_text(render_router_js(target_screens), encoding="utf-8")
+
+    for s in target_screens:
+        sid = s["id"]
+        req_fields = _default_req_fields_for_screen(s, fixture)
+        d_screen = draft_by_id.get(sid)
+        if d_screen:
+            js_code = render_built_screen_js(s, d_screen, req_fields, reqs_by_screen.get(sid, []), fixture)
+        else:
+            js_code = render_screen_js(s, req_fields, reqs_by_screen.get(sid, []))
+        (screens_dir / f"{sid}.js").write_text(js_code, encoding="utf-8")
+
+    index_html = render_index_html(product, dir_id, target_screens, fixture)
+    (proto_dir / "index.html").write_text(index_html, encoding="utf-8")
+
+    bdoc = build_manifest(dir_id, target_screens, round_num=1)
+    bdoc["placeholder"] = False
+    bdoc["areas"] = {
+        "shell": ".rc-shell__header",
+        "screen": "[data-screen]",
+        "content": "[data-built-screen]",
+    }
+    bdoc["direction_meta"] = {"id": dir_id, "name": dir_name, "idea": dir_idea}
+    bdoc["source"] = (
+        f"stage 4 compiled direction {dir_id}: clickable prototype compiled from "
+        "04-directions/draft.json, styles/tokens.css, fixture.json and build.json; zero placeholders"
+    )
+    (proto_dir / "build.json").write_text(
+        json.dumps(bdoc, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    primary_layout = "stack"
+    if target_screens and target_screens[0]["id"] in draft_by_id:
+        primary_layout = str(draft_by_id[target_screens[0]["id"]].get("layout") or "stack")
+    return {
+        "id": dir_id,
+        "name": dir_name,
+        "idea": dir_idea,
+        "page": f"{dir_id}/index.html",
+        "layout": primary_layout,
+        "screens": [s["id"] for s in target_screens],
+        "manifest": bdoc,
+    }

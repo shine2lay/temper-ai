@@ -122,11 +122,34 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [ground_revise]
       input_map: {step: ground, product: input.product, mode: input.mode, data: ground_revise.output}
-    - name: directions
+    - name: directions_collect
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [ground]
-      input_map: {step: directions, product: input.product, mode: input.mode}
+      input_map: {step: directions_collect, product: input.product, mode: input.mode}
+    - name: directions_read
+      type: agent
+      agent: design_app_screen_directions_v1
+      depends_on: [directions_collect]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: directions_collect.structured.task}
+    - name: directions_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions_read]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {step: directions_check, product: input.product, mode: input.mode, data: directions_read.output}
+    - name: directions_revise
+      type: agent
+      agent: design_app_screen_directions_v1
+      depends_on: [directions_check]
+      condition: {source: directions_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: directions_check.structured.revise_task}
+    - name: directions
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions_revise]
+      input_map: {step: directions, product: input.product, mode: input.mode, data: directions_revise.output}
     - name: gate_direction
       type: agent
       agent: design_app_screen_stage_v1

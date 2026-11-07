@@ -105,6 +105,16 @@ BUILD_SHOW = obj({"ref": {"type": "string", "pattern": "^S[1-9][0-9]*$"}, "headi
 BUILD_ACTION = obj({"id": ID, "label": TEXT, "kind": {"enum": ["primary", "secondary"]},
                     "states": items(STATE), "feedback": TEXT})
 BUILD_STATE = obj({"headline": TEXT, "summary": TEXT}, {"badge": TEXT})
+BUILD_SCREEN_DRAFT = obj(
+    {"id": ID, "title": TEXT, "layout": {"enum": BUILD_LAYOUTS}, "lead": TEXT,
+     "shows": items(BUILD_SHOW, least=0), "actions": items(BUILD_ACTION, least=0),
+     "states": {"type": "object", "minProperties": 1, "propertyNames": STATE,
+                "additionalProperties": BUILD_STATE}},
+    {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}})
+DIRECTION_DRAFT = obj(
+    {"id": {"type": "string", "pattern": "^[a-z]$"}, "name": TEXT, "idea": TEXT,
+     "screens": items(BUILD_SCREEN_DRAFT, least=1)},
+    {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}})
 
 SCHEMAS: dict[str, dict] = {
     # 01-request
@@ -197,19 +207,21 @@ SCHEMAS: dict[str, dict] = {
          "excluded": items(GROUND_EXCLUDED, least=0)}),
     "tokens": {"type": "object", "minProperties": 1},
     # 04-directions
+    "directions_draft": obj({"directions": items(DIRECTION_DRAFT, least=2)},
+                            {"recommended": {"type": "string", "pattern": "^[a-z]$"},
+                             "notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}),
+    "directions_check": obj({"verdict": {"enum": ["ok", "retry"]}, "counts": {"type": "object"},
+                             "problems": items(obj({"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)},
+                            {"pass": {"enum": ["draft", "final"]}, "checks": items(TEXT, least=0)}),
     "directions": obj({"directions": items(obj(
         {"id": {"type": "string", "pattern": "^[a-z]$"}, "name": TEXT, "idea": TEXT, "page": REL_PATH},
-        {"source": TEXT}), least=2)}),
+        {"source": TEXT, "layout": {"enum": BUILD_LAYOUTS}, "screens": items(ID, least=1)}), least=2)},
+        {"recommended": {"type": "string", "pattern": "^[a-z]$"}, "source": TEXT}),
     "direction_checks": CHECKS,
     # 05-build. views[] is the compatible extension of the prototype contract: the views to open, when the
     # build cannot follow the #<screen>/<state> hash convention. Without it they come from the inventory.
-    "build_draft": obj({"screens": items(obj(
-        {"id": ID, "title": TEXT, "layout": {"enum": BUILD_LAYOUTS}, "lead": TEXT,
-         "shows": items(BUILD_SHOW, least=0), "actions": items(BUILD_ACTION, least=0),
-         "states": {"type": "object", "minProperties": 1, "propertyNames": STATE,
-                    "additionalProperties": BUILD_STATE}},
-        {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}))},
-        {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}),
+    "build_draft": obj({"screens": items(BUILD_SCREEN_DRAFT)},
+                       {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}),
     "build_check": obj({"verdict": {"enum": ["ok", "retry"]}, "counts": {"type": "object"},
                         "problems": items(obj({"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)},
                        {"pass": {"enum": ["draft", "final"]}, "checks": items(TEXT, least=0)}),
@@ -295,8 +307,11 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "ground": [("03-ground/fixture.json", "fixture", 1), ("03-ground/inventory.json", "inventory", 1),
                ("03-ground/design-files/tokens.json", "tokens", 0), ("03-ground/design-files/DESIGN.md", "md", 0),
                ("03-ground/check-final.json", "ground_check", 0)],
+    "directions_collect": [("04-directions/task.md", "md", 0)],
+    "directions_check": [("04-directions/check.json", "directions_check", 0)],
     "directions": [("04-directions/directions.json", "directions", 1), ("04-directions/*/index.html", "html", 2),
-                   ("04-directions/*/checks.json", "direction_checks", 2)],
+                   ("04-directions/*/checks.json", "direction_checks", 2),
+                   ("04-directions/check-final.json", "directions_check", 0)],
     "gate_direction": [("04-directions/gate_direction.json", "gate", 1)],
     "build": [("05-build/index.html", "html", 1), ("05-build/build.json", "build", 1),
               ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1),

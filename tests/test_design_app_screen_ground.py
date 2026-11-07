@@ -549,7 +549,7 @@ def test_trial_workflow_runs_the_same_ground_nodes_as_the_whole_workflow():
             expected.pop("depends_on")
         assert node == expected, node["name"]
     assert [n["name"] for n in trial] == ["ground_collect", "ground_read", "ground_check", "ground_revise", "ground"]
-    assert whole["directions"]["depends_on"] == ["ground"]
+    assert whole["directions_collect"]["depends_on"] == ["ground"]
 
 
 def test_reader_agent_is_tool_free_text_only_without_temperature():

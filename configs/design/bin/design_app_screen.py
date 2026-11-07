@@ -74,7 +74,8 @@ STAGE_STATUSES = ("reused", "delta")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
         "existing_collect": existing.collect, "existing_sheet": existing.sheet, "existing_check": existing.check,
         "existing": existing.run, "ground_collect": ground.collect, "ground_check": ground.check,
-        "ground": ground.run, "directions": directions.run,
+        "ground": ground.run, "directions_collect": directions.collect,
+        "directions_check": directions.check_step, "directions": directions.run,
         "gate_direction": lambda ws, raw: gates.answer(ws, "direction", raw), "build": build.run,
         "build_check": build.check, "build_finish": build.finish,
         "checks": checks.run, "review_collect": review.collect, "review_check": review.check,
@@ -83,8 +84,8 @@ RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake"
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
             intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
-            ground_sources.SourcesError, build.BuildError, checks.ChecksError, review.ReviewError,
-            OSError, ValueError, KeyError, RuntimeError)
+            ground_sources.SourcesError, directions.DirectionsError, build.BuildError, checks.ChecksError,
+            review.ReviewError, OSError, ValueError, KeyError, RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:

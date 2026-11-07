@@ -514,7 +514,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_assets/positioning_tools.py` | script |
 | `marketing/bin/gather_evidence.py` | script |
 
-### design (47)
+### design (49)
 
 | Config | Kind |
 |---|---|
@@ -559,10 +559,12 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/workflows/design_app_screen_v1_intake.yaml` | workflow (trial: the intake stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_existing.yaml` | workflow (trial: the existing stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_ground.yaml` | workflow (trial: the ground stage's nodes alone, equal to the whole workflow's) |
+| `design/workflows/design_app_screen_v1_directions.yaml` | workflow (trial: the directions stage's nodes alone, equal to the whole workflow's) |
 | `design/agents/design_app_screen_stage_v1.yaml` | agent (script; runs one step and validates its output against its contract) |
 | `design/agents/design_app_screen_intake_v1.yaml` | agent (one fenced read: the request's sources into sourced requirements and questions; JSON only) |
 | `design/agents/design_app_screen_existing_v1.yaml` | agent (one fenced read of the existing app's contact sheet into evidenced journeys and problems; JSON only) |
 | `design/agents/design_app_screen_ground_v1.yaml` | agent (one fenced read: every capability, requirement and seen screen into the screens x states x actions inventory; JSON only) |
+| `design/agents/design_app_screen_directions_v1.yaml` | agent (one fenced read: entry screen inventory and requirements into 2-3 distinct clickable direction drafts; JSON only) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |
 | `design/agents/design_capture.yaml` | agent (script) |

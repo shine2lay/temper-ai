@@ -21,8 +21,9 @@ STAGES = ("intake", "existing", "ground", "directions", "build", "checks", "show
 # steps (their model steps are agents of their own), existing's sheet step, the two owner gates, the review half of
 # the checks stage, and the bookkeeping step after the final gate.
 STEPS = STAGES + ("intake_collect", "intake_check", "existing_collect", "existing_sheet", "existing_check",
-                  "ground_collect", "ground_check", "gate_direction", "build_check", "build_finish",
-                  "review_collect", "review_check", "review", "gate_final", "gate_final_next")
+                  "ground_collect", "ground_check", "directions_collect", "directions_check", "gate_direction",
+                  "build_check", "build_finish", "review_collect", "review_check", "review",
+                  "gate_final", "gate_final_next")
 FOLDERS = {"intake": "01-request", "existing": "02-existing", "ground": "03-ground", "directions": "04-directions",
            "build": "05-build", "checks": "06-checks", "show": "07-show", "handoff": "08-handoff"}
 MODES = ("real", "fixture")

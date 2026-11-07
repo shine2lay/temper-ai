@@ -196,17 +196,28 @@ def _hash_directory(directory: Path) -> tuple[str, dict[str, str]]:
 
 
 def test_build_workflow_yaml_matches_main_workflow():
-    """The per-stage trial workflow design_app_screen_v1_build.yaml matches the build node in main workflow."""
+    """The per-stage trial workflow design_app_screen_v1_build.yaml matches all 5 build nodes in main workflow."""
     assert BUILD_WF.is_file()
     main_doc = yaml.safe_load(MAIN_WF.read_text())["workflow"]
     build_doc = yaml.safe_load(BUILD_WF.read_text())["workflow"]
 
-    main_node = next(n for n in main_doc["nodes"] if n["name"] == "build")
-    trial_node = next(n for n in build_doc["nodes"] if n["name"] == "build")
+    expected_names = ["build", "build_read", "build_check", "build_revise", "build_finish"]
+    trial_names = [n["name"] for n in build_doc["nodes"]]
+    assert trial_names == expected_names
 
-    assert trial_node["type"] == main_node["type"] == "agent"
-    assert trial_node["agent"] == main_node["agent"] == "design_app_screen_stage_v1"
-    assert trial_node["input_map"] == main_node["input_map"]
+    main_by_name = {n["name"]: n for n in main_doc["nodes"]}
+    for trial_node in build_doc["nodes"]:
+        name = trial_node["name"]
+        assert name in main_by_name
+        main_node = main_by_name[name]
+        assert trial_node["type"] == main_node["type"] == "agent"
+        assert trial_node["agent"] == main_node["agent"]
+        assert trial_node["input_map"] == main_node["input_map"]
+        if "condition" in main_node:
+            assert trial_node["condition"] == main_node["condition"]
+
+    checks_node = main_by_name["checks"]
+    assert checks_node["depends_on"] == ["build_finish"]
 
 
 def test_build_fixture_mode_preserved(tmp_path: Path):
@@ -517,7 +528,245 @@ def test_build_determinism_byte_identical_across_two_runs(tmp_path: Path):
 
     assert files1 == files2
     assert digest1 == digest2
-    assert len(files1) == 22  # index.html, build.json, fixture.json, styles/tokens.css, shell/router.js + 17 screens
+    assert len(files1) == 23  # index.html, build.json, fixture.json, task.md, styles/tokens.css, shell/router.js + 17 screens
+
+
+FIXED_BUILD_DRAFT = {
+    "screens": [
+        {
+            "id": "parcels",
+            "title": "Parcels",
+            "layout": "ledger",
+            "lead": "Track active shipments and delivery exceptions in one calm view.",
+            "shows": [
+                {
+                    "ref": "S1",
+                    "heading": "Active shipments and exceptions",
+                    "copy": "Live parcel worth and weight figures bound from the grounded shipment fixture.",
+                    "fields": ["parcels.0.worth", "parcels.0.weight_kg"],
+                }
+            ],
+            "actions": [
+                {
+                    "id": "refresh-parcels",
+                    "label": "Refresh shipments",
+                    "kind": "primary",
+                    "states": ["normal", "partial"],
+                    "feedback": "Refreshing shipment ledger from carrier feed.",
+                }
+            ],
+            "states": {
+                "normal": {
+                    "headline": "Active shipments on schedule",
+                    "summary": "Review current parcel worth and weight before the afternoon pickup window.",
+                    "badge": "On schedule",
+                },
+                "loading": {
+                    "headline": "Fetching latest shipment updates",
+                    "summary": "Syncing carrier scans and depot handoffs for your active parcels.",
+                    "badge": "Syncing",
+                },
+                "empty": {
+                    "headline": "No parcels in transit right now",
+                    "summary": "New shipments appear here automatically as soon as a label is scanned.",
+                    "badge": "Clear",
+                },
+                "error": {
+                    "headline": "Carrier feed temporarily unavailable",
+                    "summary": "We could not refresh live scans. Use Refresh shipments to retry.",
+                    "badge": "Needs retry",
+                },
+                "partial": {
+                    "headline": "Depot scans loaded with delayed courier feed",
+                    "summary": "Showing last verified parcel worth and weight while live courier scans catch up.",
+                    "badge": "Partial feed",
+                },
+            },
+        },
+        {
+            "id": "account",
+            "title": "Account",
+            "layout": "split",
+            "lead": "Review your billing plan, monthly spend, and open shipment allocation.",
+            "shows": [
+                {
+                    "ref": "S1",
+                    "heading": "Billing plan and monthly parcel spend",
+                    "copy": "Current monthly spend, plan share, and open shipment count from your account ledger.",
+                    "fields": ["account.spend", "account.share", "account.open_shipments"],
+                }
+            ],
+            "actions": [
+                {
+                    "id": "export-statement",
+                    "label": "Export statement",
+                    "kind": "primary",
+                    "states": ["normal"],
+                    "feedback": "Preparing statement export for download.",
+                }
+            ],
+            "states": {
+                "normal": {
+                    "headline": "Monthly account statement ready",
+                    "summary": "Your billing plan and parcel spend are balanced for the current cycle.",
+                    "badge": "Current",
+                },
+                "loading": {
+                    "headline": "Loading billing ledger",
+                    "summary": "Gathering monthly spend and shipment allocation totals.",
+                    "badge": "Loading",
+                },
+                "empty": {
+                    "headline": "No billing activity recorded yet",
+                    "summary": "Your first statement will appear once a shipment completes delivery.",
+                    "badge": "New account",
+                },
+                "error": {
+                    "headline": "Statement service could not be reached",
+                    "summary": "Billing figures are temporarily unavailable. Retry from the account bar.",
+                    "badge": "Offline",
+                },
+                "partial": {
+                    "headline": "Statement loaded with pending carrier charges",
+                    "summary": "Core spend totals are visible while recent depot surcharges settle.",
+                    "badge": "Pending settlement",
+                },
+            },
+        },
+    ]
+}
+
+
+def test_stage_5b_build_task_check_and_finish_end_to_end(tmp_path: Path):
+    """Stage 5b pipeline (`build` -> `build_check` -> `build_finish`) compiles draft.json and leaves 0 placeholders."""
+    ws = _setup_fixed_workspace(tmp_path)
+    out_build = cli.run_step("build", str(ws.path), None, "real", "")
+    assert out_build["model"] == "yes"
+    assert "parcels" in out_build["task"]
+    assert "S1" in out_build["task"]
+    assert (ws.folder("build") / "task.md").is_file()
+
+    out_check = cli.run_step("build_check", str(ws.path), None, "real", json.dumps(FIXED_BUILD_DRAFT))
+    assert out_check["valid"] is True
+    assert out_check["verdict"] == "ok"
+    assert out_check["problems"] == []
+    assert out_check["revise_task"] == ""
+
+    out_finish = cli.run_step("build_finish", str(ws.path), None, "real", "")
+    assert out_finish["valid"] is True
+    assert out_finish["verdict"] == "ok"
+
+    bdoc = json.loads((ws.folder("build") / "build.json").read_text())
+    assert bdoc["placeholder"] is False
+    for sid in ("parcels", "account"):
+        js_text = (ws.folder("build") / f"screens/{sid}.js").read_text()
+        assert "data-build-placeholder" not in js_text
+        assert 'data-built-screen="' in js_text
+
+
+def test_stage_5b_planted_fault_leftover_placeholder(tmp_path: Path):
+    """Leaving data-build-placeholder in a built screen is caught by no_placeholder_left."""
+    ws = _setup_fixed_workspace(tmp_path)
+    build.run(ws)
+    build.check(ws, json.dumps(FIXED_BUILD_DRAFT))
+    spath = ws.folder("build") / "screens/parcels.js"
+    spath.write_text(spath.read_text() + '\n// <div data-build-placeholder="parcels"></div>\n')
+
+    res = build_check.check_workspace(ws, require_built=True)
+    assert res["verdict"] == "retry"
+    caught = [p for p in res["problems"] if p["check"] == "no_placeholder_left"]
+    assert caught, f"expected no_placeholder_left, got {res['problems']}"
+
+
+def test_stage_5b_planted_fault_missing_show_item(tmp_path: Path):
+    """Omitting a shows[] item from draft.json is caught by every_show_covered."""
+    ws = _setup_fixed_workspace(tmp_path)
+    build.run(ws)
+    bad_draft = json.loads(json.dumps(FIXED_BUILD_DRAFT))
+    bad_draft["screens"][0]["shows"] = []
+
+    res = build.check(ws, json.dumps(bad_draft))
+    assert res["verdict"] == "retry"
+    caught = [p for p in res["problems"] if p["check"] == "every_show_covered"]
+    assert caught, f"expected every_show_covered, got {res['problems']}"
+    assert "S1" in caught[0]["problem"]
+
+
+def test_stage_5b_planted_fault_missing_state_design(tmp_path: Path):
+    """Omitting a state design from draft.json is caught by every_screen_state_designed."""
+    ws = _setup_fixed_workspace(tmp_path)
+    build.run(ws)
+    bad_draft = json.loads(json.dumps(FIXED_BUILD_DRAFT))
+    del bad_draft["screens"][1]["states"]["partial"]
+
+    res = build.check(ws, json.dumps(bad_draft))
+    assert res["verdict"] == "retry"
+    caught = [p for p in res["problems"] if p["check"] == "every_screen_state_designed"]
+    assert caught, f"expected every_screen_state_designed, got {res['problems']}"
+    assert "partial" in caught[0]["problem"]
+
+
+def test_stage_5b_planted_fault_two_primary_actions(tmp_path: Path):
+    """Two primary actions on one screen in draft.json is caught by single_primary_action."""
+    ws = _setup_fixed_workspace(tmp_path)
+    inv_path = ws.folder("ground") / "inventory.json"
+    inv = json.loads(inv_path.read_text())
+    inv["screens"][0]["actions"].append(
+        {"id": "archive-parcels", "what": "Archive delivered parcels", "states": ["normal"], "sources": ["req:R1"]}
+    )
+    inv_path.write_text(json.dumps(inv, indent=2) + "\n")
+
+    build.run(ws)
+    bad_draft = json.loads(json.dumps(FIXED_BUILD_DRAFT))
+    bad_draft["screens"][0]["actions"].append(
+        {
+            "id": "archive-parcels",
+            "label": "Archive parcels",
+            "kind": "primary",
+            "states": ["normal"],
+            "feedback": "Archiving delivered parcels.",
+        }
+    )
+
+    res = build.check(ws, json.dumps(bad_draft))
+    assert res["verdict"] == "retry"
+    caught = [p for p in res["problems"] if p["check"] == "single_primary_action"]
+    assert caught, f"expected single_primary_action, got {res['problems']}"
+
+
+def test_stage_5b_planted_fault_hardcoded_figure_in_draft_copy(tmp_path: Path):
+    """A hardcoded figure in draft.json prose is caught by no_hardcoded_figures."""
+    ws = _setup_fixed_workspace(tmp_path)
+    build.run(ws)
+    bad_draft = json.loads(json.dumps(FIXED_BUILD_DRAFT))
+    bad_draft["screens"][0]["states"]["normal"]["summary"] = "Total parcel worth is $9,999.99 across 450 items."
+
+    res = build.check(ws, json.dumps(bad_draft))
+    assert res["verdict"] == "retry"
+    caught = [p for p in res["problems"] if p["check"] == "no_hardcoded_figures"]
+    assert caught, f"expected no_hardcoded_figures, got {res['problems']}"
+
+
+def test_stage_5b_broken_draft_retry_and_revise_finish(tmp_path: Path):
+    """A broken first draft triggers retry + revise_task, and build_finish succeeds with the revised draft."""
+    ws = _setup_fixed_workspace(tmp_path)
+    build.run(ws)
+
+    bad_draft = json.loads(json.dumps(FIXED_BUILD_DRAFT))
+    del bad_draft["screens"][0]["states"]["error"]
+    check_out = build.check(ws, json.dumps(bad_draft))
+    assert check_out["verdict"] == "retry"
+    assert "every_screen_state_designed" in check_out["revise_task"]
+
+    with pytest.raises(build.BuildError, match="every_screen_state_designed"):
+        build.finish(ws, "")
+
+    finish_out = cli.run_step("build_finish", str(ws.path), None, "real", json.dumps(FIXED_BUILD_DRAFT))
+    assert finish_out["valid"] is True
+    assert finish_out["verdict"] == "ok"
+    final_check = json.loads((ws.folder("build") / "check-final.json").read_text())
+    assert final_check["verdict"] == "ok"
+    assert final_check["problems"] == []
 
 
 def test_stage_6a_structural_checks_pass_over_scaffold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

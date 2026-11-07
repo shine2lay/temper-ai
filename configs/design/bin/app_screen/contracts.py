@@ -99,6 +99,12 @@ STEP = {"anyOf": [obj({"click": TEXT}), obj({"goto": TEXT}), obj({"wait": {"type
                                                                           "maximum": 10000}})]}
 OPEN = {"anyOf": [obj({"hash": {"type": "string", "pattern": "^#"}}), obj({"steps": items(STEP)})]}
 VIEW = obj({"screen": ID, "state": STATE, "open": OPEN}, {"widths": items(WIDTH, least=0), "what": TEXT})
+BUILD_LAYOUTS = ["ledger", "board", "split", "stack", "detail", "form"]
+BUILD_SHOW = obj({"ref": {"type": "string", "pattern": "^S[1-9][0-9]*$"}, "heading": TEXT, "copy": TEXT,
+                  "fields": items(TEXT, least=1)}, {"reqs": items(REQ_ID, least=0)})
+BUILD_ACTION = obj({"id": ID, "label": TEXT, "kind": {"enum": ["primary", "secondary"]},
+                    "states": items(STATE), "feedback": TEXT})
+BUILD_STATE = obj({"headline": TEXT, "summary": TEXT}, {"badge": TEXT})
 
 SCHEMAS: dict[str, dict] = {
     # 01-request
@@ -197,10 +203,20 @@ SCHEMAS: dict[str, dict] = {
     "direction_checks": CHECKS,
     # 05-build. views[] is the compatible extension of the prototype contract: the views to open, when the
     # build cannot follow the #<screen>/<state> hash convention. Without it they come from the inventory.
+    "build_draft": obj({"screens": items(obj(
+        {"id": ID, "title": TEXT, "layout": {"enum": BUILD_LAYOUTS}, "lead": TEXT,
+         "shows": items(BUILD_SHOW, least=0), "actions": items(BUILD_ACTION, least=0),
+         "states": {"type": "object", "minProperties": 1, "propertyNames": STATE,
+                    "additionalProperties": BUILD_STATE}},
+        {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}))},
+        {"notes": {"anyOf": [TEXT, items(TEXT, least=0)]}}),
+    "build_check": obj({"verdict": {"enum": ["ok", "retry"]}, "counts": {"type": "object"},
+                        "problems": items(obj({"check": TEXT, "where": TEXT, "problem": TEXT}), least=0)},
+                       {"pass": {"enum": ["draft", "final"]}, "checks": items(TEXT, least=0)}),
     "build": obj({"direction": {"type": "string", "pattern": "^[a-z]$"}, "round": {"type": "integer", "minimum": 1},
                   "page": REL_PATH, "widths": items(WIDTH), "screens": items(obj(
                       {"id": ID, "file": REL_PATH}, {"states": items(STATE, least=0)}))},
-                 {"source": TEXT, "views": items(VIEW, least=0), "main": TEXT,
+                 {"source": TEXT, "views": items(VIEW, least=0), "main": TEXT, "placeholder": {"type": "boolean"},
                   "areas": {"type": "object", "additionalProperties": TEXT}}),
     # 06-checks/round-<n>
     "checks": CHECKS,
@@ -261,7 +277,12 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
                    ("04-directions/*/checks.json", "direction_checks", 2)],
     "gate_direction": [("04-directions/gate_direction.json", "gate", 1)],
     "build": [("05-build/index.html", "html", 1), ("05-build/build.json", "build", 1),
-              ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1)],
+              ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1),
+              ("05-build/task.md", "md", 0)],
+    "build_check": [("05-build/check.json", "build_check", 0)],
+    "build_finish": [("05-build/index.html", "html", 1), ("05-build/build.json", "build", 1),
+                     ("05-build/shell/*", "any", 1), ("05-build/screens/*", "any", 1),
+                     ("05-build/check-final.json", "build_check", 0)],
     "checks": [("06-checks/<round>/checks.json", "checks", 1), ("06-checks/<round>/views/*.png", "png", 0)],
     "review": [("06-checks/<round>/review.json", "review", 1)],
     "show": [("07-show/showtell.json", "showtell", 1), ("07-show/comments.json", "comments", 1)],
@@ -318,7 +339,7 @@ def _rules(step: str, ws: Workspace, data: dict[str, Any]) -> list[str]:
                 problems.append(f"04-directions/directions.json: directions/{i}/page: {page} is not in 04-directions/")
     if step == "gate_direction" and isinstance(data.get("04-directions/gate_direction.json"), dict):
         problems += gate_choice_problems(ws, data["04-directions/gate_direction.json"], "04-directions/gate_direction.json")
-    if step == "build" and isinstance(data.get("05-build/build.json"), dict):
+    if step in ("build", "build_finish") and isinstance(data.get("05-build/build.json"), dict):
         for i, s in enumerate(data["05-build/build.json"].get("screens") or []):
             f = s.get("file") if isinstance(s, dict) else None
             if isinstance(f, str) and not (root / FOLDERS["build"] / f).is_file():

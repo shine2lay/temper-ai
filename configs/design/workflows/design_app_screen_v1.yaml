@@ -138,10 +138,32 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [gate_direction]
       input_map: {step: build, product: input.product, mode: input.mode}
+    - name: build_read
+      type: agent
+      agent: design_app_screen_build_v1
+      depends_on: [build]
+      condition: {source: build.structured.model, operator: equals, value: "yes"}
+      input_map: {task: build.structured.task}
+    - name: build_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [build_read]
+      input_map: {step: build_check, product: input.product, mode: input.mode, data: build_read.output}
+    - name: build_revise
+      type: agent
+      agent: design_app_screen_build_v1
+      depends_on: [build_check]
+      condition: {source: build_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: build_check.structured.revise_task}
+    - name: build_finish
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [build_revise]
+      input_map: {step: build_finish, product: input.product, mode: input.mode, data: build_revise.output}
     - name: checks
       type: agent
       agent: design_app_screen_stage_v1
-      depends_on: [build]
+      depends_on: [build_finish]
       input_map: {step: checks, product: input.product, mode: input.mode}
     - name: review
       type: agent

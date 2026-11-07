@@ -1,30 +1,47 @@
-# Stage 5a (build, deterministic half) of design_app_screen_v1 on its own (rule 16: each stage tested alone
-# on known cases): the same build node as the whole workflow, ending at 05-build/build.json. Used for the
-# stage's trials and re-runs (docs/design-app-screen.md, "Stage 5: build"). Before a run the workspace holds
-# 01-request/, 03-ground/ and 04-directions/ (with gate_direction.json). No model runs in Stage 5a.
-# Keep its node identical to the whole workflow's, since a trial proves the stage only while they match
-# (tests/test_design_app_screen_build.py checks that they do).
+# Stage 5 (build) standalone workflow for testing and stage-by-stage trials (rule 16).
+# Uses the exact same five Stage 5 nodes (`build` -> `build_read` -> `build_check` -> `build_revise` -> `build_finish`)
+# as `design_app_screen_v1.yaml`.
 workflow:
   name: design_app_screen_v1_build
   version: 1
   description: |
-    Stage 5a (build, deterministic half) of design_app_screen_v1 alone: stage 3's 03-ground/ (inventory.json,
-    fixture.json, design-files/tokens.json, DESIGN.md) and stage 4's 04-directions/ (directions.json,
-    gate_direction.json) validated at the boundary -> deterministic prototype scaffold written to 05-build/
-    (index.html shell, styles/tokens.css, shell/router.js, screens/<screen-id>.js one file per screen with
-    data-build-placeholder="<screen-id>", fixture.json and build.json) -> verified by build_check.py (screen
-    files, routing targets, data-req fields in fixture.json, no hardcoded figures, tokens from product file).
-    No model, $0.
+    Stage 5 of design_app_screen_v1 alone: validates 03-ground/ and 04-directions/, writes the base
+    HTML/JS shell, router, and tokens.css, calls the fenced model screen writer (design_app_screen_build_v1)
+    to produce 05-build/draft.json, compiles real per-state screens in 05-build/screens/<id>.js, and
+    runs deterministic build_check (with one revision pass if needed).
   inputs:
     product: {type: string, required: true}
     mode: {type: string, default: real}
   outputs:
-    verdict: build.structured.verdict
     direction: build.structured.direction
+    round: build.structured.round
     screens: build.structured.screens
     views: build.structured.views
+    verdict: build_finish.structured.verdict
   nodes:
     - name: build
       type: agent
       agent: design_app_screen_stage_v1
       input_map: {step: build, product: input.product, mode: input.mode}
+    - name: build_read
+      type: agent
+      agent: design_app_screen_build_v1
+      depends_on: [build]
+      condition: {source: build.structured.model, operator: equals, value: "yes"}
+      input_map: {task: build.structured.task}
+    - name: build_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [build_read]
+      input_map: {step: build_check, product: input.product, mode: input.mode, data: build_read.output}
+    - name: build_revise
+      type: agent
+      agent: design_app_screen_build_v1
+      depends_on: [build_check]
+      condition: {source: build_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: build_check.structured.revise_task}
+    - name: build_finish
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [build_revise]
+      input_map: {step: build_finish, product: input.product, mode: input.mode, data: build_revise.output}

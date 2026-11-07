@@ -34,6 +34,10 @@ CHECKS = (
     "data_req_in_fixture",
     "no_hardcoded_figures",
     "tokens_from_product_file",
+    "no_placeholder_left",
+    "every_screen_state_designed",
+    "every_show_covered",
+    "single_primary_action",
 )
 
 SPEC_RE = re.compile(r"const\s+SCREEN_SPEC\s*=\s*(\{.*?\n\});", re.S)
@@ -83,6 +87,8 @@ def _strip_spec_widths(js_text: str) -> str:
     cleaned = re.sub(r'"req_fields"\s*:\s*\[[^\]]*\]', '"req_fields": []', cleaned)
     cleaned = re.sub(r'data-req="[^"]*"', 'data-req=""', cleaned)
     cleaned = re.sub(r'resolveFixtureField\(fixture,\s*"[^"]*"\)', 'resolveFixtureField(fixture, "")', cleaned)
+    cleaned = re.sub(r'"ref"\s*:\s*"S[0-9]+"', '"ref": "S"', cleaned)
+    cleaned = re.sub(r'"fields"\s*:\s*\[[^\]]*\]', '"fields": []', cleaned)
     return cleaned
 
 
@@ -93,6 +99,8 @@ def check(
     tokens: dict[str, Any],
     requirements: dict[str, Any] | None = None,
     pass_name: str = "final",
+    require_built: bool = False,
+    draft: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run all deterministic Stage 5a build checks against 05-build/."""
     problems: list[dict[str, str]] = []
@@ -266,12 +274,39 @@ def check(
                 where,
                 f"screen {sid!r} has no data-view-state attribute on its root element",
             ))
-        if f'data-build-placeholder="{sid}"' not in js_text:
+        if not require_built and f'data-build-placeholder="{sid}"' not in js_text and f'data-built-screen="{sid}"' not in js_text:
             problems.append(_prob(
                 "screen_has_data_screen_root",
                 where,
                 f"screen {sid!r} has no data-build-placeholder=\"{sid}\" placeholder element",
             ))
+
+    # 5b. no_placeholder_left (when require_built=True)
+    if require_built:
+        if build_doc.get("placeholder") is not False:
+            problems.append(_prob(
+                "no_placeholder_left",
+                "05-build/build.json",
+                "build.json still has placeholder != false after Stage 5b render",
+            ))
+        for s in inv_screens:
+            sid = s["id"]
+            js_text = screen_js_by_id.get(sid, "")
+            if not js_text:
+                continue
+            where = f"05-build/screens/{sid}.js"
+            if "data-build-placeholder" in js_text:
+                problems.append(_prob(
+                    "no_placeholder_left",
+                    where,
+                    f"screen {sid!r} still has a data-build-placeholder element in {where}",
+                ))
+            elif f'data-built-screen="{sid}"' not in js_text:
+                problems.append(_prob(
+                    "no_placeholder_left",
+                    where,
+                    f"screen {sid!r} is missing data-built-screen=\"{sid}\" rendered body in {where}",
+                ))
 
     # 6. routing_reaches_every_view
     for s in inv_screens:
@@ -424,8 +459,10 @@ def check(
             continue
         where = f"05-build/screens/{sid}.js"
         cleaned = _strip_spec_widths(js_text)
-        # Remove requirement IDs like "R12" and stage comments like "5a" so only real figure literals match
-        cleaned = re.sub(r"\bR[0-9]+\b", "R", cleaned)
+        # Remove requirement IDs like "R12", show refs like "S1", identifier codes like "PX-2041", and stage comments like "5a"/"5b"
+        cleaned = re.sub(r"\b[A-Z]{1,4}-[0-9]+\b", "ID", cleaned)
+        cleaned = re.sub(r"\b[RS][0-9]+\b", "R", cleaned)
+        cleaned = re.sub(r"\b5[ab]\b", "five", cleaned)
         for m in HARDCODED_FIG_RE.finditer(cleaned):
             fig = m.group(0)
             problems.append(_prob(
@@ -434,6 +471,120 @@ def check(
                 f"hardcoded figure {fig!r} in {where}; figures must come from fixture.json",
             ))
             break
+
+    # 8b. Stage 5b draft checks: every_screen_state_designed, every_show_covered, single_primary_action, draft figures
+    active_draft = draft
+    if active_draft is None and require_built:
+        draft_path = build_dir / "draft.json"
+        if draft_path.is_file():
+            try:
+                parsed_d = json.loads(draft_path.read_text(encoding="utf-8"))
+                if isinstance(parsed_d, dict):
+                    active_draft = parsed_d
+            except (OSError, json.JSONDecodeError):
+                active_draft = None
+
+    if require_built:
+        draft_screens = {
+            s["id"]: s
+            for s in ((active_draft or {}).get("screens") or [])
+            if isinstance(s, dict) and isinstance(s.get("id"), str)
+        }
+        for s in inv_screens:
+            sid = s["id"]
+            where = f"05-build/draft.json:screens[{sid}]"
+            ds = draft_screens.get(sid)
+            if not ds:
+                problems.append(_prob(
+                    "every_screen_state_designed",
+                    where,
+                    f"screen {sid!r} is missing from 05-build/draft.json",
+                ))
+                continue
+            d_states = ds.get("states") if isinstance(ds.get("states"), dict) else {}
+            for st in s.get("states") or []:
+                st_spec = d_states.get(st)
+                if not isinstance(st_spec, dict) or not str(st_spec.get("headline") or "").strip() or not str(st_spec.get("summary") or "").strip():
+                    problems.append(_prob(
+                        "every_screen_state_designed",
+                        f"{where}.states.{st}",
+                        f"screen {sid!r} state {st!r} is missing a non-empty headline or summary in draft.json",
+                    ))
+                else:
+                    for key in ("headline", "summary", "badge"):
+                        val = str(st_spec.get(key) or "")
+                        cleaned_val = re.sub(r"\b[A-Z]{1,4}-[0-9]+\b", "ID", val)
+                        cleaned_val = re.sub(r"\b[RS][0-9]+\b", "R", cleaned_val)
+                        m = HARDCODED_FIG_RE.search(cleaned_val)
+                        if m:
+                            problems.append(_prob(
+                                "no_hardcoded_figures",
+                                f"{where}.states.{st}.{key}",
+                                f"hardcoded figure {m.group(0)!r} in {where}.states.{st}.{key}; bind figures via fields[] paths instead of prose",
+                            ))
+                            break
+
+            inv_shows = s.get("shows") or []
+            expected_refs = [f"S{idx}" for idx in range(1, len(inv_shows) + 1)]
+            d_shows = ds.get("shows") if isinstance(ds.get("shows"), list) else []
+            covered_refs: set[str] = set()
+            for sh_idx, sh in enumerate(d_shows):
+                if not isinstance(sh, dict):
+                    continue
+                ref = str(sh.get("ref") or "").strip()
+                heading = str(sh.get("heading") or "").strip()
+                copy_txt = str(sh.get("copy") or "").strip()
+                if ref and heading and copy_txt:
+                    covered_refs.add(ref)
+                for key, val in (("heading", heading), ("copy", copy_txt)):
+                    cleaned_val = re.sub(r"\b[A-Z]{1,4}-[0-9]+\b", "ID", val)
+                    cleaned_val = re.sub(r"\b[RS][0-9]+\b", "R", cleaned_val)
+                    m = HARDCODED_FIG_RE.search(cleaned_val)
+                    if m:
+                        problems.append(_prob(
+                            "no_hardcoded_figures",
+                            f"{where}.shows[{sh_idx}].{key}",
+                            f"hardcoded figure {m.group(0)!r} in {where}.shows[{sh_idx}].{key}; bind figures via fields[] paths instead of prose",
+                        ))
+                        break
+                for fpath in sh.get("fields") or []:
+                    if isinstance(fpath, str) and fpath.strip():
+                        found, _ = resolve_fixture_field(active_fixture, fpath.strip())
+                        if not found:
+                            problems.append(_prob(
+                                "data_req_in_fixture",
+                                f"{where}.shows[{sh_idx}].fields",
+                                f"draft field {fpath!r} on screen {sid!r} is absent from fixture.json",
+                            ))
+            missing_refs = [r for r in expected_refs if r not in covered_refs]
+            if missing_refs:
+                problems.append(_prob(
+                    "every_show_covered",
+                    f"{where}.shows",
+                    f"screen {sid!r} draft is missing shows[] refs {missing_refs} (expected {expected_refs})",
+                ))
+
+            d_actions = [a for a in (ds.get("actions") or []) if isinstance(a, dict)]
+            primaries = [a.get("id") for a in d_actions if a.get("kind") == "primary"]
+            if len(primaries) > 1:
+                problems.append(_prob(
+                    "single_primary_action",
+                    f"{where}.actions",
+                    f"screen {sid!r} has {len(primaries)} primary actions ({primaries}); at most 1 primary action per screen is allowed",
+                ))
+            for a_idx, act in enumerate(d_actions):
+                for key in ("label", "feedback"):
+                    val = str(act.get(key) or "")
+                    cleaned_val = re.sub(r"\b[A-Z]{1,4}-[0-9]+\b", "ID", val)
+                    cleaned_val = re.sub(r"\b[RS][0-9]+\b", "R", cleaned_val)
+                    m = HARDCODED_FIG_RE.search(cleaned_val)
+                    if m:
+                        problems.append(_prob(
+                            "no_hardcoded_figures",
+                            f"{where}.actions[{a_idx}].{key}",
+                            f"hardcoded figure {m.group(0)!r} in {where}.actions[{a_idx}].{key}; bind figures via fields[] paths instead of prose",
+                        ))
+                        break
 
     # 9. tokens_from_product_file
     tokens_css_path = build_dir / "styles" / "tokens.css"
@@ -480,7 +631,12 @@ def check(
     }
 
 
-def check_workspace(ws: Workspace, pass_name: str = "final") -> dict[str, Any]:
+def check_workspace(
+    ws: Workspace,
+    pass_name: str = "final",
+    require_built: bool = False,
+    draft: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load ground/request inputs and run check() against ws.folder('build')."""
     ground_dir = ws.folder("ground")
     inv_path = ground_dir / "inventory.json"
@@ -500,4 +656,6 @@ def check_workspace(ws: Workspace, pass_name: str = "final") -> dict[str, Any]:
         tokens=tokens,
         requirements=requirements,
         pass_name=pass_name,
+        require_built=require_built,
+        draft=draft,
     )

@@ -74,12 +74,14 @@ RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake"
         "existing": existing.run, "ground_collect": ground.collect, "ground_check": ground.check,
         "ground": ground.run, "directions": directions.run,
         "gate_direction": lambda ws, raw: gates.answer(ws, "direction", raw), "build": build.run,
+        "build_check": build.check, "build_finish": build.finish,
         "checks": checks.run, "review": checks.review, "show": show.run,
         "gate_final": lambda ws, raw: gates.answer(ws, "final", raw),
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
             intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
-            ground_sources.SourcesError, checks.ChecksError, OSError, ValueError, KeyError, RuntimeError)
+            ground_sources.SourcesError, build.BuildError, checks.ChecksError, OSError, ValueError, KeyError,
+            RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:

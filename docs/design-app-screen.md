@@ -11,7 +11,7 @@ real stage is not built yet". Each stage's own task replaces its stub and keeps 
 at a time (owner, 2026-11-04: "lets run one stage a time after setting up the skeleton, so we can really
 hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
 (Design #207; see "Stage 2: existing"), stage 3, ground (Design #210; see "Stage 3: ground"), step 4,
-reuse/store/tools (Design #214), stage 5a, build's deterministic scaffold and checks (Design #219; see
+reuse/store/tools (Design #214), stage 5, build (Design #219 5a scaffold + Design #221 5b model screen writer; see
 "Stage 5: build"), and stage 6a, measured checks (Design #216; see "Stage 6a: checks").
 
 Files, one job each:
@@ -44,10 +44,11 @@ Files, one job each:
 | `configs/design/bin/app_screen/existing_grade.py` | grade a stage-2 run against a case's answer key (host `grade-existing`) |
 | `configs/design/agents/design_app_screen_existing_v1.yaml` | existing's model step: the contact sheet (image) + task text -> draft journeys and problems |
 | `configs/design/workflows/design_app_screen_v1_existing.yaml` | stage 2 alone (the same nodes), for existing's trials |
-| `configs/design/bin/app_screen/build_scaffold.py` | stage 5a's deterministic writer: shell, hash router, per-screen files, tokens CSS, fixture copy and `build.json` |
-| `configs/design/bin/app_screen/build_check.py` | stage 5's measured checks on a written `05-build/` against ground and direction inputs |
-| `configs/design/workflows/design_app_screen_v1_build.yaml` | stage 5 alone (the same node), for build's trials |
-| `tests/test_design_app_screen_build.py` | build's scaffold, input guards, planted faults, determinism and stage-6a structural checks |
+| `configs/design/bin/app_screen/build_scaffold.py` | stage 5's deterministic writer and draft compiler: shell, hash router, per-screen files, tokens CSS, fixture copy, `build_task(ws)`, `render_draft(ws, draft)` and `build.json` |
+| `configs/design/bin/app_screen/build_check.py` | stage 5's measured checks on a written `05-build/` and `draft.json` against ground and direction inputs (9 5a + 5 5b rules) |
+| `configs/design/agents/design_app_screen_build_v1.yaml` | build's fenced model step: `task.md` -> `draft.json` per-screen, per-state design specs (`claude-opus-5-5`, token `anthropic-2` / `roamee`) |
+| `configs/design/workflows/design_app_screen_v1_build.yaml` | stage 5 alone (`build` -> `build_read` -> `build_check` -> `build_revise` -> `build_finish`), for build's trials |
+| `tests/test_design_app_screen_build.py` | build's scaffold, input guards, 5a + 5b planted faults, broken-draft retry loop, determinism and stage-6a checks |
 | `tests/test_design_app_screen_existing.py` | existing's checks, steps, product file, measures and grader, on fixed drafts and broken copies |
 | `tests/test_design_app_screen_contracts.py` | contracts, gates, freeze and the CLI, on the known case |
 | `tests/test_design_app_screen_intake.py` | intake's checks, steps, collector and grader, on fixed drafts |
@@ -61,7 +62,7 @@ Files, one job each:
 | 2 | existing | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
 | 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
 | 4 | directions | `directions`, then `gate_direction` | two or more clickable directions, each with its quick checks; the owner picks one | W3, W5 |
-| 5 | build | `build` | the chosen direction: a shell and one file per screen | #219 (5a), W3 (5b) |
+| 5 | build | `build`, `build_read` (model), `build_check`, `build_revise` (model, only on a failed check), `build_finish` | the chosen direction: a shell and one compiled file per screen with real per-state layout, copy, action controls and `fixture.json` figure bindings | #219 (5a), #221 (5b) |
 | 6 | checks | `checks`, then `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), W4 (6b) |
 | 7 | show | `show`, then `gate_final`, `gate_final_next` | one Show&Tell share and the owner's comments; approve, or changes back to build as targeted edits | W4, W5 |
 | 8 | handoff | `handoff` | a spec per screen, the design file, the follow-ups for other roles | W4 |
@@ -252,7 +253,8 @@ Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it
 | 1 intake | real; met its bar 2026-11-05, 3/3 runs on every case (Stage 1, Results) | #206 |
 | 2 existing | real; see Stage 2, Results | #207 |
 | 3 ground | real; met its bar 2026-11-05, round t4, 3/3 runs on every case (Stage 3, Results) | #210 |
-| the other five, both gates | stub: fixture mode only | one task per stage |
+| 5 build | real (5a scaffold + 5b fenced model screen writer); met its bar 2026-11-06, 3/3 runs on `parcelly-clean` and 3/3 runs on `rollcall-20261104` with 0 Stage 6a blockers (Stage 5, Results) | #219, #221 |
+| the other four, both gates | stub: fixture mode only | one task per stage |
 
 ## Tests
 
@@ -1262,12 +1264,168 @@ Stage 6a (`1845c1f6`) per-family rows over the Stage 5a skeleton (255 views = 17
 | `hierarchy` (`hierarchy.sizes`, `hierarchy.levels`, `hierarchy.primary`) | layout baseline (5b) | `pass` | 0 | should | `no failure over 255 view(s)` |
 | `tokens` (`tokens.colour`, `tokens.font`, `tokens.size`) | layout baseline (5b) | `skipped` | 0 | should | `design_files: partial` in `rollcall-20261104/03-ground/inventory.json` (passes with 0 failing rows when `design_files: defined`, tested in `tests/test_design_app_screen_build.py`) |
 
-### What Stage 5b still has to do
+### Stage 5b: fenced model screen writer and Stage 6a layout proof
 
-Stage 5a leaves each screen's body as `<div class="rc-placeholder" data-build-placeholder="<screen-id>" data-placeholder-state="<state>">`. Stage 5b will add the model step that reads the screen's spec, journeys,
-fixture slice and chosen direction, replaces `data-build-placeholder="<screen-id>"` with the screen's real
-layout and words for each state, and re-runs `build_check.py` and Stage 6a so no structural or layout
-regression enters `05-build/`.
+Stage 5b (Design #221) completes Stage 5 (`build`) by adding the fenced model screen writer and deterministic
+HTML/JS compiler that replace each screen's `<div class="rc-placeholder" data-build-placeholder="<screen-id>">`
+with its real per-state layout, hierarchy, copy, action controls, and `fixture.json` figure bindings for the
+chosen direction, while keeping `build_check.py` (all 14 rules: 9 from 5a + 5 from 5b) and Stage 6a (`checks`,
+all 13 families across `1440`, `390`, `320`) green at 0 blockers.
+
+#### How Stage 5b works (rule 17: fenced JSON draft + deterministic HTML/JS compiler + script checks)
+
+`build` remains the first node of Stage 5 in `design_app_screen_v1.yaml` and `design_app_screen_v1_build.yaml`
+so `review` (`loop_to: build`) and `gate_final_next` (`loop_to: build`) need no target change:
+
+1. `build` (script, `design_app_screen_stage_v1`): in `fixture` mode copies the known case and returns
+   `model: "no"`, `verdict: "ok"`, `problems: 0`. In `real` mode validates `03-ground/` and `04-directions/`
+   (`build_scaffold.validate_inputs`), writes the base scaffold (`write_scaffold`), builds `05-build/task.md`
+   (`build_scaffold.build_task`: chosen direction idea, `DESIGN.md` summary, token names, per-screen inventory
+   `shows[]` with `S1..Sn` refs, `states[]`, `actions[]`, mapped `R...` requirements, available `fixture.json`
+   field paths with sample types, and on round > 1 only the screens touched by open Must findings or owner
+   comments), and returns `model: "yes"`, `task`.
+2. `build_read` (fenced LLM agent `configs/design/agents/design_app_screen_build_v1.yaml`:
+   `anthropic / claude-opus-5-5`, `token: anthropic-2` (`roamee` slot), `tools: []`, no `temperature`,
+   `max_tokens: 128000`, `total_timeout: 2400`, `condition: build.structured.model == "yes"`): outputs ONE JSON
+   object (`05-build/draft.json`, schema `build_draft` in `contracts.py`) with per-screen, per-state design
+   specs: `layout` pattern, `headline`, `subhead`, per-state user-facing copy (`states.<state>.{title, summary,
+   callout, badge}`), `shows[]` coverage cards (`{ref, title, summary, fields[]}` binding figures by
+   `fixture.json` field path, never literal numbers in prose), `actions[]` (`{id, label, kind, feedback}` with
+   at most one `"primary"` per screen), and `notes`.
+3. `build_check` (script, `design_app_screen_stage_v1`, `condition: build.structured.model == "yes"`): parses
+   `build_read.output` -> `05-build/draft-first.json` and `05-build/draft.json`, compiles the screens into
+   `05-build/screens/<id>.js` via `build_scaffold.render_draft(ws, draft)` (replacing every
+   `data-build-placeholder` with semantic, token-styled per-state sections `.rc-built-state`, `.rc-shows-grid`
+   cards, `.rc-kv-band` key-value figure bindings resolved at runtime from `fixture.json`, and `.rc-callout`
+   banners, plus visible `[data-req]` coverage on `.rc-screen__header`), and runs `build_check.py` with
+   `require_5b=True` (all 9 Stage 5a rules PLUS 5 Stage 5b rules). Writes `05-build/check.json`
+   (`verdict: "ok" | "retry"`), and on `"retry"` prepares `revise_task`.
+4. `build_revise` (same agent `design_app_screen_build_v1`, `condition: build_check.structured.verdict == "retry"`):
+   one bounded revision pass fixing the reported problems.
+5. `build_finish` (script, `design_app_screen_stage_v1`, `depends_on: [build_revise]`): in `fixture` mode
+   validates `05-build/` and writes `05-build/check-final.json`; in `real` mode applies the revised draft if
+   `build_revise` ran, runs final `build_check.check_workspace(ws, draft=draft, require_5b=True)` ->
+   `05-build/check-final.json` (fails loud on any remaining problem), and validates
+   `contracts.validate("build", ws)`. In `design_app_screen_v1.yaml`, `checks` now `depends_on: [build_finish]`.
+
+#### Stage 5b checks (`build_check.py`) and planted faults
+
+In addition to the 9 Stage 5a rules, `build_check.check_workspace(ws, draft=draft, require_5b=True)` enforces 5
+Stage 5b rules:
+
+10. `no_placeholder_left`: zero `data-build-placeholder` attributes remain anywhere in `05-build/screens/*.js`
+    or `05-build/index.html`.
+11. `every_screen_state_designed`: every `screen x state` in `03-ground/inventory.json` has a non-empty state
+    entry (`title` and `summary`) in `05-build/draft.json` and a compiled `data-state-panel="<state>"` section
+    in `05-build/screens/<id>.js`.
+12. `every_show_covered`: every `shows[]` item (`S1..Sn`, or `S1` when `shows` is empty) on a screen in
+    `03-ground/inventory.json` is cited in that screen's `draft.json` `shows[]` with non-empty `title`,
+    `summary`, and valid `fields[]`.
+13. `single_primary_action`: at most 1 action has `kind: "primary"` per screen in `05-build/draft.json` and at
+    most 1 `.rc-btn--primary` is rendered per screen in `05-build/screens/<id>.js`.
+14. `no_hardcoded_figures` (draft + compiled JS) & `data_req_in_fixture` (draft `shows[].fields`): no money
+    (`$1,234.56`), percent (`12.3%`) or formatted count (`1,234`, `12.34`) literal appears in any `draft.json`
+    copy field (`headline`, `subhead`, `states.*`, `shows[].{title,summary}`, `actions[].{label,feedback}`) or
+    compiled `05-build/screens/*.js`, and every field path in `shows[].fields` resolves in `05-build/fixture.json`.
+
+All 5 new Stage 5b planted faults (11 planted faults total across 5a + 5b) are tested in
+`tests/test_design_app_screen_build.py`:
+
+| Planted fault (5b) | Mutation on `draft.json` / `05-build/` | Caught by | Location | Message |
+| --- | --- | --- | --- | --- |
+| Leftover `data-build-placeholder` | re-inject `data-build-placeholder="today"` into `05-build/screens/today.js` | `no_placeholder_left` | `05-build/screens/today.js` | `screen 'today' still contains data-build-placeholder in 05-build/screens/today.js` |
+| Missing `shows[]` item | drop `S2` from `today`'s `shows[]` in `draft.json` | `every_show_covered` | `05-build/draft.json:screens[today].shows` | `screen 'today' draft is missing shows[] ref 'S2'` |
+| Missing state design | remove `error` from `today`'s `states` in `draft.json` | `every_screen_state_designed` | `05-build/draft.json:screens[today].states` | `screen 'today' state 'error' is missing from draft states` |
+| Two primary actions on one screen | set two actions on `today` to `kind: "primary"` | `single_primary_action` | `05-build/draft.json:screens[today].actions` | `screen 'today' has 2 primary actions in draft (at most 1 primary action allowed per view)` |
+| Hardcoded figure in draft copy | inject `$148,320.00` into `today.states.normal.summary` | `no_hardcoded_figures` | `05-build/draft.json:screens[today]` | `hardcoded figure '$148,320.00' in draft copy for screen 'today'; bind figures via fixture.json fields instead` |
+
+#### Stage 5b bar (written before trials, rule 16)
+
+- Every planted fault in `build_check.py` (6 from 5a + 5 from 5b = 11) is caught by the right check.
+- Case P (`parcelly-clean`, 4 screens, 16 screen-states = 48 views across `1440`, `390`, `320`,
+  `design_files: "defined"` so Stage 6a `tokens.colour`, `tokens.font`, `tokens.size` run in full): 3/3 runs on
+  temper-dev pass `build_finish` with 0 problems and 0 placeholders left, and Stage 6a (`checks`) over the
+  built `05-build/` passes with 0 blocker rows and 0 should rows across all 48 views.
+- Case A (`rollcall-20261104`, 17 screens, 85 screen-states = 255 views across `1440`, `390`, `320`): 3/3 runs
+  on temper-dev pass `build_finish` with 0 problems and 0 placeholders left, and Stage 6a (`checks`) over the
+  built `05-build/` passes with 0 blocker rows and 0 should rows across all 255 views.
+- Whole-workflow fixture run (`design_app_screen_v1` in `fixture` mode) completes all 29 nodes at $0.00.
+
+#### Hypotheses tested during Stage 5b calibration (rule 20)
+
+- **Hypothesis H1 (first-pass `build_draft` schema compliance).**
+  - *What was wrong and evidence:* On the first `parcelly-clean` probe run, `build_read` emitted `notes` as a
+    JSON array of strings instead of a string and used `pattern` instead of `layout` on screen entries because
+    `task.md` described the required keys in prose without an inline JSON example.
+  - *One change and why:* Include a concrete one-screen `build_draft` JSON skeleton inside both
+    `design_app_screen_build_v1.yaml` and `build_scaffold.build_task(ws)` showing the exact key names and scalar
+    types (`layout`, `notes: "..."`, `shows[].{ref,title,summary,fields}`, `actions[].{id,label,kind,feedback}`).
+  - *Expected result and measure:* `build_read` passes `contracts.validate_data("build_draft", draft)` on the
+    first pass (`build_check` verdict `"ok"`, 0 retries) on 3/3 `parcelly-clean` and 3/3 `rollcall-20261104`
+    runs.
+  - *What would prove it wrong:* Any trial run failing `build_draft` schema validation in `build_check`.
+  - *Outcome:* **Hit** — 6/6 trial runs (`parcelly-r1..r3`, `rollcall-r1..r3`) passed `build_draft` schema
+    validation on the first pass (`build_revise` skipped on all 6 runs).
+- **Hypothesis H2 (Stage 6a `tokens.font`, `hierarchy.sizes`, and `coverage.requirement` over model-built screens).**
+  - *What was wrong and evidence:* On the initial `parcelly-clean` Stage 6a probe (`6dbc9e30`), Stage 6a
+    reported 3 failures: (1) `coverage.requirement` on `home` (`R1`) because `R1` was declared on `home`'s
+    action (`source: "req:R1"`) while `requirements.json` had `maps_to: []`, and `.rc-req-strip` used
+    `sr-only` (`1x1 px`, invisible to `checks_measure.js`'s `visible(el)` check); (2) `tokens.font` because
+    `tokens.json` defined `family: "Inter, system-ui, sans-serif"`, and when `Inter` is not installed locally
+    Chromium resolves `getComputedStyle(el).fontFamily` to `system-ui`, which was absent from `tokens.css`; and
+    (3) `hierarchy.sizes` (`4 > 3`) because `.rc-screen__title` (`24px`), `.rc-state-panel__title` (`18px`),
+    body (`16px`) and meta (`13px`) created 4 distinct font sizes per view.
+  - *One change and why:* (1) Map action `source: "req:R*"` onto the screen's requirements and place
+    `data-req="<R...>"` on the visible `.rc-screen__header`; (2) append `, system-ui, sans-serif` to `--rc-font-sans`
+    in `tokens.css` so the fallback font matches `tokens.css`; and (3) unify card/section headings onto
+    `var(--rc-size-body)` (`16px` with `font-weight: 600`) so every view uses at most 3 distinct font sizes
+    (`title`, `body`, `meta`).
+  - *Expected result and measure:* Stage 6a `checks` reports 0 blockers and 0 shoulds across all 48 views of
+    `parcelly-clean` (`design_files: "defined"`) and all 255 views of `rollcall-20261104`.
+  - *What would prove it wrong:* Any `coverage.requirement`, `tokens.font`, or `hierarchy.sizes` row failing
+    on `parcelly-clean` or `rollcall-20261104`.
+  - *Outcome:* **Hit** — 0 blockers and 0 shoulds across all 3 `parcelly-clean` runs (48 views each) and all 3
+    `rollcall-20261104` runs (255 views each).
+- **Hypothesis H3 (empty `shows[]` in `inventory.json` + full `fixture.json` field coverage on 17-screen products).**
+  - *What was wrong and evidence:* On `rollcall-20261104`, `03-ground/inventory.json` has `shows: []` on its
+    screens and 90+ scalar paths in `fixture.json`. When `build_task(ws)` printed `S1..S0: (none)` and truncated
+    available fixture paths at 60, `build_read` invented fixture paths for screens 8–17 (`orders`, `alerts`,
+    `tickets`, `analysis`).
+  - *One change and why:* When `shows` is empty on a screen, synthesize `ref S1` (`Primary overview and key
+    figures for <screen>`) in `build_task(ws)` and include every screen's `default_fields` in the listed
+    `Available Fixture Field Paths` instructing the model to copy paths from `Default fixture field paths for
+    this screen`.
+  - *Expected result and measure:* 3/3 `rollcall-20261104` runs pass `build_check` and `build_finish` on the
+    first pass with 0 `data_req_in_fixture` or `every_show_covered` problems.
+  - *What would prove it wrong:* Any `rollcall-20261104` run needing a retry or failing `build_finish`.
+  - *Outcome:* **Hit** — 3/3 `rollcall-20261104` runs (`c533be4a`, `7d809d61`, `c97d2d44`) passed `build_check`
+    and `build_finish` on the first pass with 0 problems.
+
+#### Stage 5b results on temper-dev
+
+Run on temper-dev via `~/design-lab/app-screen-workflow/results/build-trials/temper_trial_5b.py` (full output in
+`~/design-lab/app-screen-workflow/results/build-trials/temper-5b-results.json`):
+
+| Case | Run # | `build` execution id | `build` status | `build_finish` problems | `build` cost | `build` time | `checks` execution id | Views measured | Stage 6a blockers | Stage 6a shoulds | `checks` time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `parcelly-clean` (4 screens, 16 states, `design_files: defined`) | 1 | `d002f36d-267e-48d8-8f98-1eb06eb69a74` | `completed` | 0 | $0.0585 | 25.0 s | `fb6cf643-786d-40db-b6fd-f437e7a59ac3` | 48 (16 x 3 widths) | 0 | 0 | 145.6 s |
+| `parcelly-clean` (4 screens, 16 states, `design_files: defined`) | 2 | `97aa4292-0718-4ab1-adef-e4f169de8011` | `completed` | 0 | $0.0574 | 21.8 s | `a1a9407f-2d62-4bf6-b27d-4dcffed3efbe` | 48 (16 x 3 widths) | 0 | 0 | 146.5 s |
+| `parcelly-clean` (4 screens, 16 states, `design_files: defined`) | 3 | `bdadccae-cb15-4a76-b7a2-bb76df332f7d` | `completed` | 0 | $0.0590 | 22.9 s | `063358d3-3d6c-4a6c-af37-50c63718d36f` | 48 (16 x 3 widths) | 0 | 0 | 145.6 s |
+| `rollcall-20261104` (17 screens, 85 states, `design_files: partial`) | 1 | `c533be4a-1d2c-48f9-9f4e-16089988073e` | `completed` | 0 | $0.2228 | 69.4 s | `b1a8af69-ae98-4679-8c6b-6c5e6caef564` | 255 (85 x 3 widths) | 0 | 0 | 714.2 s |
+| `rollcall-20261104` (17 screens, 85 states, `design_files: partial`) | 2 | `7d809d61-19b8-4d4d-8326-53af66fb5f98` | `completed` | 0 | $0.2265 | 69.7 s | `dbf2232f-7ccc-42fc-bd77-046da88e4371` | 255 (85 x 3 widths) | 0 | 0 | 714.6 s |
+| `rollcall-20261104` (17 screens, 85 states, `design_files: partial`) | 3 | `c97d2d44-ed2f-42df-96a5-8b46a6af137f` | `completed` | 0 | $0.2240 | 69.2 s | `3ba45019-89ce-4061-9cc6-951cc489ae80` | 255 (85 x 3 widths) | 0 | 0 | 716.4 s |
+| Whole-workflow fixture (`rollcall-20261104`) | 1 | `d155d8d1-2646-4039-b60f-aadd9fbc843f` | `completed` (29/29 nodes) | 0 | $0.0000 | 10.0 s | (inside `d155d8d1`) | 85 (fixture `1440`) | 0 | 0 | - |
+
+Stage 5b bar table:
+
+| Bar | Measure | Target | Actual | Pass/Fail | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| Planted faults in `build_check.py` (5a + 5b) | faults caught by exact check name | 11 / 11 | 11 / 11 | **PASS** | `tests/test_design_app_screen_build.py` (69 tests pass) |
+| `parcelly-clean` Stage 5b `build_finish` | runs with 0 problems & 0 placeholders | 3 / 3 | 3 / 3 (`d002f36d`, `97aa4292`, `bdadccae`) | **PASS** | `05-build/check-final.json` (`verdict: "ok"`, `problems: []`) |
+| `parcelly-clean` Stage 6a `checks` (all 13 families incl. `tokens.*`) | blocker rows / should rows across 48 views (`1440`/`390`/`320`) | 0 blockers, 0 shoulds on 3 / 3 | 0 blockers, 0 shoulds on 3 / 3 (`fb6cf643`, `a1a9407f`, `063358d3`) | **PASS** | `06-checks/round-1/checks.json` |
+| `rollcall-20261104` Stage 5b `build_finish` | runs with 0 problems & 0 placeholders | 3 / 3 | 3 / 3 (`c533be4a`, `7d809d61`, `c97d2d44`) | **PASS** | `05-build/check-final.json` (`verdict: "ok"`, `problems: []`) |
+| `rollcall-20261104` Stage 6a `checks` | blocker rows / should rows across 255 views (`1440`/`390`/`320`) | 0 blockers on 3 / 3 | 0 blockers, 0 shoulds on 3 / 3 (`b1a8af69`, `dbf2232f`, `3ba45019`) | **PASS** | `06-checks/round-1/checks.json` |
+| Whole-workflow fixture run (`design_app_screen_v1`) | nodes completed & model cost | 29 / 29 nodes, $0.00 | 29 / 29 nodes, $0.00 (`d155d8d1-2646-4039-b60f-aadd9fbc843f`) | **PASS** | `temper-5b-results.json` (`whole-workflow-fixture`) |
 
 ## Stage 6a: checks
 

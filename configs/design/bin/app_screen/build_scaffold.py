@@ -358,6 +358,13 @@ def _requirements_by_screen(
                 rid = src.split(":", 1)[1].strip()
                 if rid and rid not in by_screen[sid]:
                     by_screen[sid].append(rid)
+        for act in s.get("actions") or []:
+            if isinstance(act, dict):
+                for src in act.get("sources") or []:
+                    if isinstance(src, str) and src.startswith("req:"):
+                        rid = src.split(":", 1)[1].strip()
+                        if rid and rid not in by_screen[sid]:
+                            by_screen[sid].append(rid)
 
     items = requirements_doc.get("items") if isinstance(requirements_doc, dict) else None
     if isinstance(items, list):
@@ -450,6 +457,7 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
     )
     text_secondary = (
         token_vars.get("--color-ink-600")
+        or token_vars.get("--color-muted")
         or token_vars.get("--text-secondary")
         or text_primary
     )
@@ -461,6 +469,8 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
     )
     border_color = (
         token_vars.get("--color-ink-600")
+        or token_vars.get("--color-muted")
+        or token_vars.get("--color-line")
         or token_vars.get("--border-subtle")
         or text_secondary
     )
@@ -584,6 +594,8 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
         "",
         ".rc-shell__nav-link, .rc-screen__state-link {",
         "  display: inline-flex;",
+        "  flex: 0 0 auto;",
+        "  max-width: 100%;",
         "  align-items: center;",
         "  justify-content: center;",
         "  min-height: 32px;",
@@ -596,11 +608,12 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
         "  text-decoration: none;",
         "  font-size: var(--size-body);",
         "  line-height: 1.35;",
+        "  overflow-wrap: anywhere;",
         "}",
         "",
         ".rc-shell__nav-link[aria-current=\"page\"], .rc-screen__state-link[aria-current=\"true\"] {",
         "  background-color: var(--bg-elevated);",
-        "  color: var(--accent-primary);",
+        "  color: var(--text-primary);",
         "  border-color: var(--accent-primary);",
         "  font-weight: 600;",
         "}",
@@ -722,6 +735,8 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
         "",
         ".rc-action-btn {",
         "  display: inline-flex;",
+        "  flex: 0 0 auto;",
+        "  max-width: 100%;",
         "  align-items: center;",
         "  justify-content: center;",
         "  min-height: 36px;",
@@ -736,6 +751,7 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
         "  line-height: 1.35;",
         "  font-weight: 500;",
         "  cursor: pointer;",
+        "  overflow-wrap: anywhere;",
         "}",
         "",
         ".rc-action-btn--primary {",
@@ -752,10 +768,98 @@ def render_tokens_css(tokens_doc: dict[str, Any]) -> str:
         ".rc-action-feedback {",
         "  padding: 8px 12px;",
         "  border-radius: 8px;",
-        "  background-color: var(--bg-elevated);",
+        "  background-color: var(--bg-surface);",
+        "  border: 1px solid var(--border-color);",
         "  color: var(--text-primary);",
         "  font-size: var(--size-body);",
         "  line-height: 1.35;",
+        "}",
+        "",
+        ".rc-state-banner {",
+        "  padding: 16px;",
+        "  background-color: var(--bg-surface);",
+        "  border: 1px solid var(--border-color);",
+        "  border-radius: 12px;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 8px;",
+        "}",
+        "",
+        ".rc-state-banner__top {",
+        "  display: flex;",
+        "  flex-wrap: wrap;",
+        "  align-items: center;",
+        "  justify-content: space-between;",
+        "  gap: 8px;",
+        "}",
+        "",
+        ".rc-state-banner__headline {",
+        "  margin: 0;",
+        "  font-family: var(--font-heading);",
+        "  font-size: var(--size-title);",
+        "  font-weight: 600;",
+        "  line-height: 1.3;",
+        "  color: var(--text-primary);",
+        "}",
+        "",
+        ".rc-state-banner__badge {",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  padding: 4px 8px;",
+        "  border-radius: 8px;",
+        "  border: 1px solid var(--border-color);",
+        "  background-color: var(--bg-surface);",
+        "  color: var(--text-secondary);",
+        "  font-size: var(--size-body);",
+        "  line-height: 1.35;",
+        "}",
+        "",
+        ".rc-state-banner__summary {",
+        "  margin: 0;",
+        "  color: var(--text-secondary);",
+        "  font-size: var(--size-body);",
+        "  line-height: 1.45;",
+        "  max-width: 68ch;",
+        "}",
+        "",
+        ".rc-show-grid {",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 16px;",
+        "}",
+        "",
+        ".rc-show-card {",
+        "  padding: 16px;",
+        "  background-color: var(--bg-surface);",
+        "  border: 1px solid var(--border-color);",
+        "  border-radius: 12px;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 12px;",
+        "}",
+        "",
+        ".rc-show-card__heading {",
+        "  margin: 0;",
+        "  font-family: var(--font-heading);",
+        "  font-size: var(--size-title);",
+        "  font-weight: 600;",
+        "  line-height: 1.3;",
+        "  color: var(--text-primary);",
+        "}",
+        "",
+        ".rc-show-card__copy {",
+        "  margin: 0;",
+        "  color: var(--text-secondary);",
+        "  font-size: var(--size-body);",
+        "  line-height: 1.45;",
+        "  max-width: 68ch;",
+        "}",
+        "",
+        "@media (max-width: 480px) {",
+        "  .rc-shell__header { padding: 12px 16px; }",
+        "  .rc-shell__main { padding: 16px; }",
+        "  .rc-screen__header, .rc-screen__region, .rc-state-banner, .rc-show-card { padding: 12px; }",
+        "  .rc-placeholder__figures { grid-template-columns: 1fr; }",
         "}",
         "",
     ])
@@ -842,6 +946,7 @@ def render_screen_js(
     actions_expr = " +\n".join(action_lines) if action_lines else '""'
 
     req_attr_str = " ".join(req_ids)
+    header_req_attr = f' data-req="{req_attr_str}"' if req_attr_str else ""
     req_coverage_line = (
         f'\'<div class="rc-screen__reqs" data-req="{req_attr_str}" hidden></div>\''
         if req_attr_str
@@ -937,7 +1042,7 @@ def render_screen_js(
 
     return (
       '<section class="rc-screen" data-screen="{sid}" data-view-state="' + esc(state) + '" data-route="' + esc(routeHash) + '">' +
-        '<header class="rc-screen__header">' +
+        '<header class="rc-screen__header"{header_req_attr}>' +
           '<h1 class="rc-screen__title">' + esc(SCREEN_SPEC.name) + "</h1>" +
           '<p class="rc-screen__purpose">' + esc(SCREEN_SPEC.purpose) + "</p>" +
           '<nav class="rc-screen__states" aria-label="Screen states">' + stateLinksHtml + "</nav>" +
@@ -1247,3 +1352,502 @@ def write_scaffold(ws: Workspace) -> dict[str, Any]:
         "round": manifest["round"],
         "req_fields_by_screen": req_fields_by_screen,
     }
+
+
+def _collect_fixture_field_paths(node: Any, prefix: str = "", out: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
+    if out is None:
+        out = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "about":
+                continue
+            path = f"{prefix}.{k}" if prefix else str(k)
+            if isinstance(v, (int, float, str, bool)) and v is not None:
+                out.append({"path": path, "type": type(v).__name__, "sample": str(v)[:40]})
+            elif isinstance(v, dict):
+                out.append({"path": path, "type": "object", "sample": f"keys={list(v.keys())[:4]}"})
+                _collect_fixture_field_paths(v, path, out)
+            elif isinstance(v, list) and v:
+                out.append({"path": path, "type": f"list[{len(v)}]", "sample": f"len={len(v)}"})
+                _collect_fixture_field_paths(v[0], f"{path}.0", out)
+    return out
+
+
+def _open_round_feedback(ws: Workspace, round_num: int) -> list[str]:
+    notes: list[str] = []
+    if round_num <= 1:
+        return notes
+    prev_round = ws.folder("checks") / f"round-{round_num - 1}" / "review.json"
+    if prev_round.is_file():
+        try:
+            rev = json.loads(prev_round.read_text(encoding="utf-8"))
+            for f in rev.get("findings") or []:
+                if isinstance(f, dict) and f.get("priority") == "must":
+                    notes.append(f"Must finding ({f.get('screen', 'all')}): {f.get('what', '')}")
+        except (OSError, json.JSONDecodeError):
+            pass
+    comments_path = ws.folder("show") / "comments.json"
+    if comments_path.is_file():
+        try:
+            cdoc = json.loads(comments_path.read_text(encoding="utf-8"))
+            for item in cdoc.get("items") or []:
+                if isinstance(item, dict) and item.get("text"):
+                    notes.append(f"Owner comment ({item.get('where', 'general')}): {item.get('text')}")
+        except (OSError, json.JSONDecodeError):
+            pass
+    return notes
+
+
+def build_task(ws: Workspace) -> str:
+    """Build 05-build/task.md prompt for the Stage 5b fenced screen-writer model."""
+    validated = validate_inputs(ws)
+    inventory = validated["inventory"]
+    fixture = validated["fixture"]
+    tokens = validated["tokens"]
+    chosen_direction = validated["chosen_direction"]
+    directions_doc = validated["directions"]
+    requirements_doc = validated["requirements"]
+
+    screens: list[dict[str, Any]] = inventory["screens"]
+    reqs_by_screen = _requirements_by_screen(screens, requirements_doc)
+
+    chosen_dir_obj: dict[str, Any] = {}
+    for d in directions_doc.get("directions") or []:
+        if isinstance(d, dict) and d.get("id") == chosen_direction:
+            chosen_dir_obj = d
+            break
+
+    design_md_path = ws.folder("ground") / "design-files" / "DESIGN.md"
+    design_md_summary = ""
+    if design_md_path.is_file():
+        raw_md = design_md_path.read_text(encoding="utf-8").strip()
+        design_md_summary = "\n".join(raw_md.splitlines()[:35])
+
+    token_vars = extract_token_vars(tokens)
+    all_fixture_paths = _collect_fixture_field_paths(fixture)
+    round_num = ws.round if (ws.run_file.is_file() and ws.round >= 1) else 1
+    feedback_lines = _open_round_feedback(ws, round_num)
+
+    screen_blocks: list[str] = []
+    used_default_fields: set[str] = set()
+    for s in screens:
+        sid = s["id"]
+        sname = s.get("name") or sid
+        states = [str(st) for st in (s.get("states") or [])]
+        shows = s.get("shows") or []
+        show_lines: list[str] = []
+        for idx, sh in enumerate(shows, start=1):
+            what = sh.get("what") if isinstance(sh, dict) else str(sh)
+            show_lines.append(f"  - ref `S{idx}`: {what}")
+        if not show_lines:
+            show_lines.append(f"  - ref `S1`: Primary overview and key figures for {sname}")
+        shows_count = len(show_lines)
+        actions = _actions_for_screen(s)
+        action_lines = [
+            f"  - id `{a['id']}` (default label: {a['label']!r}, states: {a.get('states') or states})"
+            for a in actions
+        ]
+        default_fields = _default_req_fields_for_screen(s, fixture)
+        used_default_fields.update(default_fields)
+        mapped_reqs = reqs_by_screen.get(sid, [])
+        screen_blocks.append(
+            f"### Screen `{sid}` — {sname}\n"
+            f"- States required (design EVERY one in `states` object): {json.dumps(states)}\n"
+            f"- Mapped requirements: {json.dumps(mapped_reqs)}\n"
+            f"- Default fixture field paths for this screen (use these in `shows[].fields`): {json.dumps(default_fields)}\n"
+            f"- `shows[]` items to cover (your `shows` array MUST include one object per ref `S1`..`S{shows_count}`): \n"
+            + "\n".join(show_lines)
+            + "\n- `actions[]` controls:\n"
+            + ("\n".join(action_lines) if action_lines else "  - (none)")
+        )
+
+    fixture_paths = [
+        fp for idx, fp in enumerate(all_fixture_paths)
+        if idx < 100 or fp["path"] in used_default_fields
+    ]
+    fixture_lines = [
+        f"- `{fp['path']}` ({fp['type']})"
+        for fp in fixture_paths
+    ]
+
+    lines = [
+        "# Stage 5b Task: Screen Design Spec (`05-build/draft.json`)",
+        "",
+        "Return ONE valid JSON object matching schema `build_draft` (`{\"screens\": [...], \"notes\": [...]}`).",
+        "Each screen object in `screens[]` MUST have ONLY the keys `id`, `title`, `lead`, `layout` (`\"ledger\" | \"board\" | \"split\" | \"stack\" | \"detail\" | \"form\"`), `states` (`{\"<state>\": {\"headline\": \"...\", \"summary\": \"...\", \"badge\": \"...\"}}`), `shows` (`[{\"ref\": \"S1\", \"heading\": \"...\", \"copy\": \"...\", \"fields\": [\"...\"]}]`), and `actions` (`[{\"id\": \"...\", \"label\": \"...\", \"kind\": \"primary\" | \"secondary\", \"feedback\": \"...\", \"states\": [...]}]`).",
+        "Do NOT wrap in markdown explanations outside the JSON.",
+        "",
+        "## Chosen Direction",
+        f"- Direction ID: `{chosen_direction}`",
+        f"- Name: {chosen_dir_obj.get('name', chosen_direction)}",
+        f"- Idea: {chosen_dir_obj.get('idea', 'Clean, high-contrast hierarchy with progressive disclosure.')}",
+        "",
+        "## Product Design Summary (`DESIGN.md` & Tokens)",
+        design_md_summary or "(Follow semantic tokens from tokens.json)",
+        f"- Available CSS token variables: {', '.join(sorted(token_vars.keys())[:30])}",
+        "",
+        "## Hard Rules Checked by `build_check.py` (Violations Fail the Build)",
+        "1. `every_screen_state_designed`: Every screen in `inventory.json` must appear in `screens[]`, and its `states` object must have an entry for EVERY state listed for that screen (`headline` and `summary` non-empty strings, optional `badge`).",
+        "2. `every_show_covered`: Every screen's `shows[]` array must include one item for EVERY `S1`..`SN` ref listed for that screen, with `ref` (`\"S1\"`, `\"S2\"`, ...), `heading`, `copy`, and `fields` (non-empty array of valid `fixture.json` field paths).",
+        "3. `single_primary_action`: In each screen's `actions[]` array, at most ONE action may have `\"kind\": \"primary\"`; all other actions on that screen MUST have `\"kind\": \"secondary\"`.",
+        "4. `no_hardcoded_figures`: NEVER write any digits (`0`-`9`), dollar amounts (`$...`), percentages (`...%`), decimals, or multi-digit numbers in `title`, `lead`, `heading`, `copy`, `headline`, `summary`, `badge`, `label`, or `feedback`! Spell out any small count in words (e.g. `\"ten\"`, `\"two\"`, `\"monthly\"`, `\"quarterly\"`) and bind all figures via `fields[]` paths from `fixture.json`.",
+        "5. `data_req_in_fixture`: Every path in `shows[].fields` MUST be an exact path from the Available Fixture Field Paths list below.",
+        "6. Concise copy: Keep every string concise (`headline` <= 8 words, `summary` <= 18 words, `copy` <= 18 words, `feedback` <= 12 words), list 1-2 field paths per `shows[]` item, and keep `notes` to 1-2 short strings.",
+        "",
+        "## Available Fixture Field Paths (`03-ground/fixture.json`)",
+        *fixture_lines,
+        "",
+    ]
+    if feedback_lines:
+        lines.extend([
+            f"## Round {round_num} Open Feedback to Address",
+            *[f"- {fb}" for fb in feedback_lines],
+            "",
+        ])
+    lines.extend([
+        "## Screens to Design",
+        *screen_blocks,
+    ])
+    task_text = "\n".join(lines) + "\n"
+    build_dir = ws.folder("build")
+    build_dir.mkdir(parents=True, exist_ok=True)
+    (build_dir / "task.md").write_text(task_text, encoding="utf-8")
+    return task_text
+
+
+def _clean_field_label(field_path: str) -> str:
+    label = (
+        field_path.replace("_30d", " monthly")
+        .replace("_90d", " quarterly")
+        .replace(".", " ")
+        .replace("_", " ")
+    )
+    label = re.sub(r"\b\d+\b", "", label).strip()
+    return re.sub(r"\s+", " ", label) or "metric"
+
+
+def render_built_screen_js(
+    screen: dict[str, Any],
+    draft_screen: dict[str, Any],
+    req_fields: list[str],
+    req_ids: list[str],
+    fixture: dict[str, Any],
+) -> str:
+    """Compile a screen's Stage 5b draft spec into 05-build/screens/<id>.js with zero placeholders."""
+    sid = screen["id"]
+    sname = str(draft_screen.get("title") or screen.get("name") or sid)
+    purpose = str(draft_screen.get("lead") or screen.get("purpose") or screen.get("primary_question") or sname)
+    layout = str(draft_screen.get("layout") or "stack")
+    states = [str(st) for st in screen["states"]]
+    routes = {f"#{sid}/{st}": st for st in states}
+    regions = _regions_for_screen(screen)
+    inv_actions = _actions_for_screen(screen)
+
+    draft_shows = [sh for sh in (draft_screen.get("shows") or []) if isinstance(sh, dict)]
+    all_fields: list[str] = list(req_fields)
+    for sh in draft_shows:
+        for fp in sh.get("fields") or []:
+            if isinstance(fp, str) and fp.strip() and fixture_field_exists(fixture, fp.strip()):
+                if fp.strip() not in all_fields:
+                    all_fields.append(fp.strip())
+
+    draft_actions_by_id = {
+        str(a.get("id")): a
+        for a in (draft_screen.get("actions") or [])
+        if isinstance(a, dict) and a.get("id")
+    }
+    compiled_actions: list[dict[str, Any]] = []
+    primary_used = False
+    for idx, inv_act in enumerate(inv_actions):
+        aid = inv_act["id"]
+        d_act = draft_actions_by_id.get(aid, {})
+        kind = str(d_act.get("kind") or ("primary" if idx == 0 else "secondary"))
+        if kind == "primary":
+            if primary_used:
+                kind = "secondary"
+            else:
+                primary_used = True
+        label = str(d_act.get("label") or inv_act["label"])
+        feedback = str(d_act.get("feedback") or f"Action triggered: {aid}")
+        act_states = [str(st) for st in (d_act.get("states") or inv_act.get("states") or states)]
+        compiled_actions.append({
+            "id": aid,
+            "label": label,
+            "kind": kind,
+            "states": act_states,
+            "feedback": feedback,
+        })
+
+    draft_states = draft_screen.get("states") if isinstance(draft_screen.get("states"), dict) else {}
+    compiled_states: dict[str, dict[str, str]] = {}
+    for st in states:
+        st_obj = draft_states.get(st) if isinstance(draft_states.get(st), dict) else {}
+        compiled_states[st] = {
+            "headline": str(st_obj.get("headline") or f"{sname} ({st})"),
+            "summary": str(st_obj.get("summary") or purpose),
+            "badge": str(st_obj.get("badge") or st),
+        }
+
+    compiled_shows: list[dict[str, Any]] = []
+    for idx, sh in enumerate(draft_shows, start=1):
+        valid_f = [
+            fp.strip()
+            for fp in (sh.get("fields") or [])
+            if isinstance(fp, str) and fp.strip() and fixture_field_exists(fixture, fp.strip())
+        ]
+        if not valid_f:
+            valid_f = list(all_fields[:2])
+        compiled_shows.append({
+            "ref": str(sh.get("ref") or f"S{idx}"),
+            "heading": str(sh.get("heading") or sname),
+            "copy": str(sh.get("copy") or purpose),
+            "fields": valid_f,
+        })
+
+    spec_obj = {
+        "id": sid,
+        "name": sname,
+        "purpose": purpose,
+        "layout": layout,
+        "states": states,
+        "routes": routes,
+        "regions": regions,
+        "actions": compiled_actions,
+        "req_fields": all_fields,
+        "requirements": req_ids,
+        "state_specs": compiled_states,
+        "shows": compiled_shows,
+    }
+    spec_json = json.dumps(spec_obj, indent=2, sort_keys=True)
+
+    state_link_lines: list[str] = []
+    for st in states:
+        href = f"#{sid}/{st}"
+        state_link_lines.append(
+            f'      \'<a class="rc-screen__state-link" href="{href}" data-route-target="{href}"\' + (state === {json.dumps(st)} ? \' aria-current="true"\' : "") + ">{st}</a>"'
+        )
+    state_links_expr = " +\n".join(state_link_lines) if state_link_lines else '""'
+
+    show_card_lines: list[str] = []
+    for sh in compiled_shows:
+        ref = sh["ref"]
+        heading_js = json.dumps(sh["heading"])
+        copy_js = json.dumps(sh["copy"])
+        metric_items: list[str] = []
+        for fp in sh["fields"]:
+            flabel = _clean_field_label(fp)
+            metric_items.append(
+                f'          \'<div class="rc-placeholder__metric"><dt class="rc-placeholder__field">{html.escape(flabel)}</dt>\' +\n'
+                f'          \'<dd class="rc-placeholder__value" data-req="{html.escape(fp)}">\' + esc(formatFixtureValue(resolveFixtureField(fixture, {json.dumps(fp)}))) + "</dd></div>"'
+            )
+        metrics_card_expr = " +\n".join(metric_items) if metric_items else '""'
+        show_card_lines.append(
+            f'      \'<article class="rc-show-card" data-show-ref="{html.escape(ref)}">\' +\n'
+            f'        \'<h3 class="rc-show-card__heading">\' + esc({heading_js}) + "</h3>" +\n'
+            f'        \'<p class="rc-show-card__copy">\' + esc({copy_js}) + "</p>" +\n'
+            f'        \'<dl class="rc-placeholder__figures">\' +\n{metrics_card_expr} +\n'
+            f'        "</dl>" +\n'
+            f'      "</article>"'
+        )
+    shows_expr = " +\n".join(show_card_lines) if show_card_lines else '""'
+
+    region_lines: list[str] = []
+    for idx, region_id in enumerate(regions):
+        if idx == 0:
+            region_lines.append(
+                f'      \'<section class="rc-screen__region" data-region="{region_id}">\' + builtBodyHtml + "</section>"'
+            )
+        else:
+            region_lines.append(
+                f'      \'<section class="rc-screen__region" data-region="{region_id}"><p class="rc-screen__purpose">\' + esc(stateSpec.summary) + "</p></section>"'
+            )
+    regions_expr = " +\n".join(region_lines) if region_lines else '""'
+
+    action_lines: list[str] = []
+    for act in compiled_actions:
+        cls = "rc-action-btn rc-action-btn--primary" if act["kind"] == "primary" else "rc-action-btn"
+        aid = html.escape(act["id"])
+        alabel = html.escape(act["label"])
+        fb = html.escape(act["feedback"])
+        action_lines.append(
+            f'      \'<button type="button" class="{cls}" data-action="{aid}" data-action-message="{fb}">{alabel}</button>\''
+        )
+    actions_expr = " +\n".join(action_lines) if action_lines else '""'
+
+    req_attr_str = " ".join(req_ids)
+    header_req_attr = f' data-req="{req_attr_str}"' if req_attr_str else ""
+    req_coverage_line = (
+        f'\'<div class="rc-screen__reqs" data-req="{req_attr_str}" hidden></div>\''
+        if req_attr_str
+        else '""'
+    )
+
+    return f"""/* Generated deterministically by Stage 5b build_scaffold.py for screen {sid!r} */
+(function () {{
+  "use strict";
+
+  const SCREEN_SPEC = {spec_json};
+
+  function resolveFixtureField(fixture, fieldPath) {{
+    if (!fixture || typeof fixture !== "object" || !fieldPath) return undefined;
+    if (Object.prototype.hasOwnProperty.call(fixture, fieldPath)) return fixture[fieldPath];
+    const parts = String(fieldPath).split(".");
+    let cur = fixture;
+    for (let i = 0; i < parts.length; i += 1) {{
+      const part = parts[i];
+      if (cur && typeof cur === "object" && Object.prototype.hasOwnProperty.call(cur, part)) {{
+        cur = cur[part];
+      }} else if (Array.isArray(cur) && /^\\d+$/.test(part)) {{
+        const idx = Number(part);
+        cur = idx >= 0 && idx < cur.length ? cur[idx] : undefined;
+      }} else {{
+        return undefined;
+      }}
+    }}
+    return cur;
+  }}
+
+  function firstScalarFromNode(node) {{
+    if (node === null || node === undefined) return "";
+    if (typeof node === "number" || typeof node === "string" || typeof node === "boolean") {{
+      return String(node);
+    }}
+    if (Array.isArray(node)) {{
+      for (let i = 0; i < node.length; i += 1) {{
+        const sub = firstScalarFromNode(node[i]);
+        if (sub !== "") return sub;
+      }}
+      return "";
+    }}
+    if (typeof node === "object") {{
+      const keys = Object.keys(node);
+      for (let i = 0; i < keys.length; i += 1) {{
+        const val = node[keys[i]];
+        if (typeof val === "number" || typeof val === "string") return String(val);
+      }}
+    }}
+    return "";
+  }}
+
+  function formatFixtureValue(val) {{
+    return firstScalarFromNode(val);
+  }}
+
+  function esc(text) {{
+    return String(text === undefined || text === null ? "" : text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }}
+
+  function render(requestedState, fixture) {{
+    const state = SCREEN_SPEC.states.indexOf(requestedState) !== -1
+      ? requestedState
+      : SCREEN_SPEC.states[0];
+    const routeHash = "#" + SCREEN_SPEC.id + "/" + state;
+    const stateSpec = (SCREEN_SPEC.state_specs && SCREEN_SPEC.state_specs[state]) || {{
+      headline: SCREEN_SPEC.name,
+      summary: SCREEN_SPEC.purpose,
+      badge: state
+    }};
+
+    const stateLinksHtml =
+{state_links_expr};
+
+    const showsHtml =
+{shows_expr};
+
+    const builtBodyHtml =
+      '<div class="rc-built-screen" data-built-screen="{sid}" data-layout="' + esc(SCREEN_SPEC.layout) + '">' +
+        '<div class="rc-state-banner" data-state-banner="' + esc(state) + '">' +
+          '<div class="rc-state-banner__top">' +
+            '<h2 class="rc-state-banner__headline">' + esc(stateSpec.headline) + "</h2>" +
+            '<span class="rc-state-banner__badge">' + esc(stateSpec.badge) + "</span>" +
+          "</div>" +
+          '<p class="rc-state-banner__summary">' + esc(stateSpec.summary) + "</p>" +
+        "</div>" +
+        '<div class="rc-show-grid">' + showsHtml + "</div>" +
+      "</div>";
+
+    const regionsHtml =
+{regions_expr};
+
+    const actionsHtml =
+{actions_expr};
+
+    const reqCoverageHtml = {req_coverage_line};
+
+    return (
+      '<section class="rc-screen" data-screen="{sid}" data-view-state="' + esc(state) + '" data-route="' + esc(routeHash) + '">' +
+        '<header class="rc-screen__header"{header_req_attr}>' +
+          '<h1 class="rc-screen__title">' + esc(SCREEN_SPEC.name) + "</h1>" +
+          '<p class="rc-screen__purpose">' + esc(SCREEN_SPEC.purpose) + "</p>" +
+          '<nav class="rc-screen__states" aria-label="Screen states">' + stateLinksHtml + "</nav>" +
+        "</header>" +
+        '<div class="rc-screen__regions">' + regionsHtml + "</div>" +
+        '<footer class="rc-screen__actions" data-region="screen-actions">' +
+          actionsHtml +
+          '<output class="rc-action-feedback" data-action-feedback="{sid}" aria-live="polite">Ready (' + esc(state) + ")</output>" +
+        "</footer>" +
+        reqCoverageHtml +
+      "</section>"
+    );
+  }}
+
+  window.__APP_SCREENS__ = window.__APP_SCREENS__ || {{}};
+  window.__APP_SCREENS__[SCREEN_SPEC.id] = {{
+    spec: SCREEN_SPEC,
+    render: render
+  }};
+}})();
+"""
+
+
+def render_draft(ws: Workspace, draft: dict[str, Any]) -> dict[str, Any]:
+    """Compile 05-build/draft.json into 05-build/screens/<id>.js and update 05-build/build.json."""
+    validated = validate_inputs(ws)
+    inventory = validated["inventory"]
+    fixture = validated["fixture"]
+    requirements_doc = validated["requirements"]
+    screens: list[dict[str, Any]] = inventory["screens"]
+    reqs_by_screen = _requirements_by_screen(screens, requirements_doc)
+
+    draft_by_id = {
+        str(s.get("id")): s
+        for s in (draft.get("screens") or [])
+        if isinstance(s, dict) and isinstance(s.get("id"), str)
+    }
+
+    build_dir = ws.folder("build")
+    screens_dir = build_dir / "screens"
+    screens_dir.mkdir(parents=True, exist_ok=True)
+
+    for s in screens:
+        sid = s["id"]
+        req_fields = _default_req_fields_for_screen(s, fixture)
+        d_screen = draft_by_id.get(sid)
+        if d_screen:
+            js_code = render_built_screen_js(s, d_screen, req_fields, reqs_by_screen.get(sid, []), fixture)
+            (screens_dir / f"{sid}.js").write_text(js_code, encoding="utf-8")
+
+    build_json_path = build_dir / "build.json"
+    if build_json_path.is_file():
+        bdoc = json.loads(build_json_path.read_text(encoding="utf-8"))
+    else:
+        bdoc = build_manifest(validated["chosen_direction"], screens, round_num=ws.round or 1)
+    bdoc["placeholder"] = False
+    bdoc["areas"] = {
+        "shell": ".rc-shell__header",
+        "screen": "[data-screen]",
+        "content": "[data-built-screen]",
+    }
+    bdoc["source"] = (
+        "stage 5b compiled prototype: shell, per-screen files compiled from 05-build/draft.json, "
+        "tokens.css, fixture.json and build.json; zero placeholders"
+    )
+    build_json_path.write_text(
+        json.dumps(bdoc, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return bdoc

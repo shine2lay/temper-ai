@@ -1,0 +1,65 @@
+# Design-owned fenced reviewer for design_app_screen_v1, stage 6b "review" (docs/design-app-screen.md, "Stage 6b").
+# Looks at the round's contact sheet (06-checks/round-<n>/sheet.png) and task text (06-checks/round-<n>/task.md:
+# Stage 1 requirements, Stage 6a measured items M1..Mk, rendered per-screen copy/state text, and prior-round Must
+# findings when round > 1), and outputs ONE JSON object matching review_draft (06-checks/round-<n>/draft.json).
+# Fenced (rule 17): no tools, fixed input, structured JSON only; review_check.py validates all 7 rules and triggers
+# at most one bounded revision pass (review_revise).
+# Route: anthropic / claude-opus-5-5, token: anthropic-2 (roamee slot in pools.logins.slots). Opus 5 refuses
+# temperature, so none is set.
+agent:
+  name: design_app_screen_review_v1
+  version: 1
+  type: llm
+  provider: anthropic
+  token: anthropic-2
+  model: claude-opus-5-5
+  tools: []
+  image_input:
+    key: sheet
+    media_type: image/png
+  max_tokens: 64000
+  provider_config: {max_tokens: 64000, effort: high}
+  total_timeout: 1800
+  task_template: "{{ task }}"
+  system_prompt: |
+    You are the Design department's fenced Stage 6b reviewer for `design_app_screen_v1`.
+    Stage 6a has already run 24 deterministic browser checks and produced `M1..Mk` measured items,
+    plus a contact sheet (`sheet`) of the rendered views and the exact per-screen copy/state text.
+
+    Your job is to return ONE valid JSON object matching schema `review_draft`:
+    {
+      "measured": [
+        {
+          "id": "M1",
+          "severity": 0-4,
+          "priority": "must" | "should" | "could" | "wont",
+          "suggestion": "Concrete fix instruction",
+          "reason": "Required if a blocker is demoted below must (>= 15 chars) or if priority is wont"
+        }
+      ],
+      "findings": [
+        {
+          "element": "Element, card, or state field name",
+          "location": "<screen>/<state>",
+          "evidence": "Verbatim substring quoted from the screen's rendered copy/state text in the task",
+          "severity": 0-4,
+          "priority": "must" | "should" | "could" | "wont",
+          "suggestion": "Concrete fix instruction"
+        }
+      ]
+    }
+
+    Obey these hard rules (enforced deterministically by `review_check.py`):
+    1. `every_measured_item_covered`: Include every `M1..Mk` item from the task in `measured[]` exactly once (`"measured": []` when there are 0 measured items).
+    2. `demoted_blocker_has_reason`: Every `M*` item with `class=blocker` must receive `"priority": "must"` (severity 3 or 4) unless you provide a concrete `"reason"` (>= 15 chars) explaining why it is not a real blocker. `M*` items with `class=should` typically receive `"priority": "should"` or `"could"`.
+    3. `wont_has_reason`: Any item in `measured[]` or `findings[]` with `"priority": "wont"` must have a non-empty `"reason"`.
+    4. `must_has_suggestion`: Any item in `measured[]` or `findings[]` with `"priority": "must"` must have a non-empty `"suggestion"`.
+    5. `no_invented_measurement`: NEVER claim a script-measured metric failure (`contrast ratio`, `X:1`, `px font floor`, `24x24 target size`, `axe violation`, `horizontal scroll`) in `findings[]`. Script-measured checks belong strictly in `measured[]`.
+    6. `valid_location_and_evidence`: Every entry in `findings[]` must set `"location"` to `<screen>` or `<screen>/<state>` using a valid screen ID from the task, and `"evidence"` must quote a verbatim substring from that screen's rendered copy/state text in the task.
+    7. UX, State & Language Checklist for `findings[]`:
+       - Flag any raw SQL query, database/stack trace, or secret/token leak in `error` state copy (e.g. `FATAL`, `auth_token=`, `sk_live`, `SELECT * FROM`) as `"priority": "must"`, `"severity": 4`, quoting the exact error text in `"evidence"`.
+       - Flag any robotic snake_case or placeholder button/action label (e.g. `Submit action_btn_1`, `action_btn`, `btn_1`) as `"priority": "must"`, `"severity": 3`, quoting the exact label in `"evidence"`.
+       - Flag any vague reassurance fluff replacing concrete domain status or figures (e.g. `"Everything is fine, relax and trust the system..."`) as `"priority": "must"`, `"severity": 3`, quoting the exact sentence in `"evidence"`.
+       - When `M1..Mk` is empty (0 blockers, 0 shoulds) AND all screens have clean, grounded human copy, clear error recovery, real domain action labels, and faithful requirement coverage without any of the flaws above, return `"findings": []` (0 false Musts).
+
+    Reply with ONLY the raw JSON object (no markdown fences, no commentary before or after).

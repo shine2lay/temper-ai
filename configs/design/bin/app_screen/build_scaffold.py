@@ -1288,7 +1288,11 @@ def write_scaffold(ws: Workspace) -> dict[str, Any]:
     screens: list[dict[str, Any]] = inventory["screens"]
     ws_product = ws.run().get("product") if ws.run_file.is_file() else None
     if ws.run_file.is_file():
-        if ws.round == 0 or (ws.round_folder() / "checks.json").is_file():
+        if (
+            ws.round == 0
+            or (ws.round_folder() / "checks.json").is_file()
+            or (ws.round_folder() / "review.json").is_file()
+        ):
             ws.next_round()
     round_num = ws.round if (ws.run_file.is_file() and ws.round >= 1) else 1
     src_product = (inventory.get("source") or {}).get("product") if isinstance(inventory.get("source"), dict) else None
@@ -1383,16 +1387,35 @@ def _open_round_feedback(ws: Workspace, round_num: int) -> list[str]:
             rev = json.loads(prev_round.read_text(encoding="utf-8"))
             for f in rev.get("findings") or []:
                 if isinstance(f, dict) and f.get("priority") == "must":
-                    notes.append(f"Must finding ({f.get('screen', 'all')}): {f.get('what', '')}")
+                    fid = f.get("id") or "F?"
+                    loc = f.get("location") or f.get("screen") or "all"
+                    screen = f.get("screen") or (str(loc).split("/")[0].split(":")[0].split("@")[0].strip() if loc else "all")
+                    elem = f.get("element") or ""
+                    evid = f.get("evidence") or f.get("what") or ""
+                    sugg = f.get("suggestion") or ""
+                    line = (
+                        f"Must finding {fid} (screen={screen}, location={loc}, element={elem}): "
+                        f"evidence={evid!r}"
+                    )
+                    if sugg:
+                        line += f" -> suggestion: {sugg}"
+                    notes.append(line)
         except (OSError, json.JSONDecodeError):
             pass
     comments_path = ws.folder("show") / "comments.json"
     if comments_path.is_file():
         try:
             cdoc = json.loads(comments_path.read_text(encoding="utf-8"))
-            for item in cdoc.get("items") or []:
-                if isinstance(item, dict) and item.get("text"):
-                    notes.append(f"Owner comment ({item.get('where', 'general')}): {item.get('text')}")
+            for item in (cdoc.get("comments") or cdoc.get("items") or []):
+                if isinstance(item, dict):
+                    text = item.get("body") or item.get("text")
+                    where = (
+                        item.get("where")
+                        or "/".join(str(x) for x in (item.get("element"), item.get("state")) if x)
+                        or "general"
+                    )
+                    if text:
+                        notes.append(f"Owner comment ({where}): {text}")
         except (OSError, json.JSONDecodeError):
             pass
     return notes
@@ -1500,7 +1523,9 @@ def build_task(ws: Workspace) -> str:
     ]
     if feedback_lines:
         lines.extend([
+            f"## Must Findings From Round {round_num - 1} To Fix",
             f"## Round {round_num} Open Feedback to Address",
+            "Every item below blocked the previous round and MUST be fixed in this round's `draft.json` (do NOT repeat any flagged error trace, secret, robotic placeholder label, or reassurance fluff; still obey `no_hardcoded_figures` — spell out any small count in words, never write digits 0-9 in prose, and bind figures via `shows[].fields`):",
             *[f"- {fb}" for fb in feedback_lines],
             "",
         ])

@@ -1,0 +1,49 @@
+# Stage 6b (review) of design_app_screen_v1 on its own (rule 16: each stage tested alone on known
+# cases): the same five nodes as the whole workflow's review stage, ending at 06-checks/round-<n>/review.json.
+# Used for Stage 6b trials and loop verification (docs/design-app-screen.md, "Stage 6b: review").
+workflow:
+  name: design_app_screen_v1_review
+  version: 1
+  description: |
+    Stage 6b (review) of design_app_screen_v1 alone: groups Stage 6a failing check rows into M1..Mk,
+    builds the round contact sheet (sheet.png) and task text (task.md) -> fenced review model
+    (design_app_screen_review_v1, claude-opus-5-5) outputs draft.json -> review_check validates all 7
+    rules (every M* covered, demoted blocker reason, wont reason, must suggestion, no invented
+    measurement, valid screen location and grounded evidence) -> one bounded revision if needed ->
+    review merges M* and findings[] into 06-checks/round-<n>/review.json and sets verdict = "revise"
+    iff any priority == "must" else "done".
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+  outputs:
+    round: review.structured.round
+    verdict: review.structured.verdict
+    must: review.structured.must
+    findings: review.structured.findings
+  nodes:
+    - name: review_collect
+      type: agent
+      agent: design_app_screen_stage_v1
+      input_map: {step: review_collect, product: input.product, mode: input.mode}
+    - name: review_read
+      type: agent
+      agent: design_app_screen_review_v1
+      depends_on: [review_collect]
+      condition: {source: review_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: review_collect.structured.task, sheet: review_collect.structured.sheet}
+    - name: review_check
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [review_read]
+      input_map: {step: review_check, product: input.product, mode: input.mode, data: review_read.output}
+    - name: review_revise
+      type: agent
+      agent: design_app_screen_review_v1
+      depends_on: [review_collect, review_check]
+      condition: {source: review_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: review_check.structured.revise_task, sheet: review_collect.structured.sheet}
+    - name: review
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [review_revise]
+      input_map: {step: review, product: input.product, mode: input.mode, data: review_revise.output}

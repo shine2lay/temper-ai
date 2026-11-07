@@ -22,7 +22,7 @@ STAGES = ("intake", "existing", "ground", "directions", "build", "checks", "show
 # the checks stage, and the bookkeeping step after the final gate.
 STEPS = STAGES + ("intake_collect", "intake_check", "existing_collect", "existing_sheet", "existing_check",
                   "ground_collect", "ground_check", "gate_direction", "build_check", "build_finish",
-                  "review", "gate_final", "gate_final_next")
+                  "review_collect", "review_check", "review", "gate_final", "gate_final_next")
 FOLDERS = {"intake": "01-request", "existing": "02-existing", "ground": "03-ground", "directions": "04-directions",
            "build": "05-build", "checks": "06-checks", "show": "07-show", "handoff": "08-handoff"}
 MODES = ("real", "fixture")

@@ -12,7 +12,8 @@ at a time (owner, 2026-11-04: "lets run one stage a time after setting up the sk
 hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
 (Design #207; see "Stage 2: existing"), stage 3, ground (Design #210; see "Stage 3: ground"), step 4,
 reuse/store/tools (Design #214), stage 5, build (Design #219 5a scaffold + Design #221 5b model screen writer; see
-"Stage 5: build"), and stage 6a, measured checks (Design #216; see "Stage 6a: checks").
+"Stage 5: build"), stage 6a, measured checks (Design #216; see "Stage 6a: checks"), and stage 6b, fenced design
+and UX review + build-loop proof (Design #222; see "Stage 6b: review").
 
 Files, one job each:
 
@@ -48,6 +49,12 @@ Files, one job each:
 | `configs/design/bin/app_screen/build_check.py` | stage 5's measured checks on a written `05-build/` and `draft.json` against ground and direction inputs (9 5a + 5 5b rules) |
 | `configs/design/agents/design_app_screen_build_v1.yaml` | build's fenced model step: `task.md` -> `draft.json` per-screen, per-state design specs (`claude-opus-5-5`, token `anthropic-2` / `roamee`) |
 | `configs/design/workflows/design_app_screen_v1_build.yaml` | stage 5 alone (`build` -> `build_read` -> `build_check` -> `build_revise` -> `build_finish`), for build's trials |
+| `configs/design/bin/app_screen/review.py` | stage 6b's deterministic collector (`measured_items.json`, `sheet.png`, `task.md`), draft checker wrapper, and final `review.json` merger + deterministic `verdict` (`revise` iff `must > 0` else `done`) |
+| `configs/design/bin/app_screen/review_check.py` | stage 6b's 7 deterministic checks on `06-checks/round-<n>/draft.json` (measured coverage, demotion/wont reasons, must suggestions, no invented measurements, grounded locations/evidence) |
+| `configs/design/bin/app_screen/review_grade.py` | stage 6b's trial workspace builder and grader (`clean-parcelly`, `measured-inkflow`, `taste-planted`, `loop-round-2`, host `prep-review` / `grade-review`) |
+| `configs/design/agents/design_app_screen_review_v1.yaml` | review's fenced model step: contact sheet (`sheet.png`) + `task.md` -> `draft.json` (`claude-opus-5-5`, token `anthropic-2` / `roamee`, no tools, no temperature) |
+| `configs/design/workflows/design_app_screen_v1_review.yaml` | stage 6b alone (`review_collect` -> `review_read` -> `review_check` -> `review_revise` -> `review`), for review's trials |
+| `tests/test_design_app_screen_review.py` | review's 7 planted-fault checks, retry loop, round-level measured grouping, 2-round `review -> build -> checks -> review` loop, and grader |
 | `tests/test_design_app_screen_build.py` | build's scaffold, input guards, 5a + 5b planted faults, broken-draft retry loop, determinism and stage-6a checks |
 | `tests/test_design_app_screen_existing.py` | existing's checks, steps, product file, measures and grader, on fixed drafts and broken copies |
 | `tests/test_design_app_screen_contracts.py` | contracts, gates, freeze and the CLI, on the known case |
@@ -63,7 +70,7 @@ Files, one job each:
 | 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
 | 4 | directions | `directions`, then `gate_direction` | two or more clickable directions, each with its quick checks; the owner picks one | W3, W5 |
 | 5 | build | `build`, `build_read` (model), `build_check`, `build_revise` (model, only on a failed check), `build_finish` | the chosen direction: a shell and one compiled file per screen with real per-state layout, copy, action controls and `fixture.json` figure bindings | #219 (5a), #221 (5b) |
-| 6 | checks | `checks`, then `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), W4 (6b) |
+| 6 | checks | `checks`, then `review_collect`, `review_read` (model), `review_check`, `review_revise` (model, only on a failed check), `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), #222 (6b) |
 | 7 | show | `show`, then `gate_final`, `gate_final_next` | one Show&Tell share and the owner's comments; approve, or changes back to build as targeted edits | W4, W5 |
 | 8 | handoff | `handoff` | a spec per screen, the design file, the follow-ups for other roles | W4 |
 
@@ -254,7 +261,9 @@ Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it
 | 2 existing | real; see Stage 2, Results | #207 |
 | 3 ground | real; met its bar 2026-11-05, round t4, 3/3 runs on every case (Stage 3, Results) | #210 |
 | 5 build | real (5a scaffold + 5b fenced model screen writer); met its bar 2026-11-06, 3/3 runs on `parcelly-clean` and 3/3 runs on `rollcall-20261104` with 0 Stage 6a blockers (Stage 5, Results) | #219, #221 |
-| the other four, both gates | stub: fixture mode only | one task per stage |
+| 6a checks | real (24 measured Playwright + axe + contrast + token checks); met its bar 2026-11-06 (Stage 6a, Results) | #216 |
+| 6b review | real (fenced review over `checks.json`, contact sheet and rendered copy + deterministic `review -> build -> checks -> review` loop); met its bar 2026-11-07, 3/3 runs on `clean-parcelly`, `measured-inkflow`, and `taste-planted`, plus 2-round loop proof on `temper-dev` (Stage 6b, Results) | #222 |
+| stages 4, 7, 8, both gates | stub: fixture mode only | one task per stage |
 
 ## Tests
 
@@ -1739,9 +1748,133 @@ ended with the handoff. The runner is
 case, starts the run and answers each gate as it opens. A gate answer's `comments` must be a list, even
 when empty.
 
-What this does not prove: stage 5a (`fd7d1d93`, `0e5b11d1`) and stage 6a (`1845c1f6`) now prove the deterministic
+What this does not prove: stage 5a (`fd7d1d93`, `0e5b11d1`) and stage 6a (`1845c1f6`) proved the deterministic
 build scaffold (`index.html`, `shell/router.js`, `styles/tokens.css`, `screens/<id>.js`, `fixture.json`,
-`build.json`) and every structural check family across all 255 views of `rollcall-20261104`, with placeholder
-screen bodies (`data-build-placeholder="<screen-id>"`). Stage 5b (the model step that writes each screen's real
-layout and words inside its placeholder) and Stage 6b (the model review over `checks.json`) remain to be built.
+`build.json`) and every structural check family across all 255 views of `rollcall-20261104`. Stage 5b (#221) and
+Stage 6b (#222, below) subsequently built and proved the real screen writer and the fenced review + `review -> build -> checks -> review` fix loop.
+
+## Stage 6b: review
+
+Stage 6b (`review`, Design #222) is the fenced design, UX, hierarchy, state, and language review that sits right
+after Stage 6a (`checks`) and drives the `review -> build -> checks -> review` loop when any finding has
+`priority == "must"`.
+
+### Architecture (rule 17: deterministic script steps first, fenced model only where judgment is needed)
+
+`review` stays the final node of Stage 6 in `design_app_screen_v1.yaml` so its existing `loop_to: build`
+(`max_loops: 2`, `loop_condition: review.structured.verdict == "revise"`) works without changing downstream
+edges. Both `design_app_screen_v1.yaml` and the stage-alone trial workflow `design_app_screen_v1_review.yaml`
+run the same 5-node Stage 6b pipeline:
+
+1. `review_collect` (`design_app_screen_stage_v1`, `depends_on: [checks]` in the full workflow):
+   - In `fixture` mode, returns `model: "no"` so the model nodes are skipped at $0.00.
+   - In `real` mode, validates `06-checks/round-<n>/checks.json`, `05-build/build.json`,
+     `01-request/requirements.json`, and `03-ground/inventory.json`; groups failing Stage 6a check rows by
+     `(check_id, screen)` into numbered measured items `M1..Mk` (`06-checks/round-<n>/measured_items.json`,
+     blockers ordered first); builds a 12-panel contact sheet `06-checks/round-<n>/sheet.png` (`<= 1568 px`,
+     `<= 180,000 bytes`, canonical RGB PNG via `existing_sheet.py`) from `06-checks/round-<n>/views/*.png`; and
+     writes `06-checks/round-<n>/task.md` containing the product requirements, rendered per-screen state
+     headlines/summaries, card copy/figure bindings, action labels/feedback, `M1..Mk`, and (when `round > 1`)
+     the previous round's Must findings to verify fixed.
+2. `review_read` (`configs/design/agents/design_app_screen_review_v1.yaml`: `anthropic / claude-opus-5-5`,
+   `token: anthropic-2` / `roamee`, `image_input: review_collect.structured.sheet_path`, `tools: []`, no
+   `temperature`, `max_tokens: 64000`, `total_timeout: 1800`, `condition: review_collect.structured.model == "yes"`):
+   outputs one JSON object (`06-checks/round-<n>/draft.json`, schema `review_draft` in `contracts.py`) with:
+   - `measured[]`: one decision per `M1..Mk` item (`id`, `severity` 0-4, `priority` `must|should|could|wont`,
+     `suggestion`, and `reason` required whenever a Stage 6a `blocker` is demoted below `must` or any item is
+     rated `wont`).
+   - `findings[]`: UX, taste, hierarchy, state recovery, and language findings (`element`, `location`, verbatim
+     `evidence`, `severity` 0-4, `priority` `must|should|could|wont`, `suggestion`, optional `reason`).
+3. `review_check` (`design_app_screen_stage_v1`, `condition: review_collect.structured.model == "yes"`):
+   runs `review_check.py` over `06-checks/round-<n>/draft.json` against 7 deterministic rules, writes
+   `06-checks/round-<n>/check.json` (`verdict: "ok" | "retry"`), and on `"retry"` prepares `revise_task`.
+4. `review_revise` (`design_app_screen_review_v1`, `condition: review_check.structured.verdict == "retry"`):
+   one bounded revision pass when `review_check` finds any rule violation.
+5. `review` (`design_app_screen_stage_v1`, `depends_on: [review_revise]`):
+   - In `fixture` mode, copies the known case's `review.json`.
+   - In `real` mode, applies the revised draft if `review_check` returned `"retry"`, runs final `review_check`
+     (`06-checks/round-<n>/check-final.json`, failing loud on any remaining problem), merges `measured[]`
+     (carrying each `M*` item's exact `element`, `location`, `evidence`, and `check` from `measured_items.json`)
+     and `findings[]` into `06-checks/round-<n>/review.json` (`F1..Fn`), computes deterministic
+     `verdict = "revise"` iff any finding has `priority == "must"` else `"done"`, and validates
+     `contracts.validate("review", ws)`.
+- Round-2 build feedback wiring (`build_scaffold.build_task(ws)`): when `ws.round > 1` and
+  `06-checks/round-<ws.round - 1>/review.json` has `priority == "must"` findings (or `07-show/comments.json` has
+  owner change requests), `05-build/task.md` includes a `"Must Findings From Round <n-1> To Fix"` section naming
+  each Must finding's screen, element, location, evidence, and suggestion so `build_read` repairs them on Round 2.
+
+### Deterministic draft checks (`review_check.py`) and planted-fault proof
+
+Every rule in `review_check.py` is proven by a dedicated planted-fault test in
+`tests/test_design_app_screen_review.py`:
+
+| # | Check ID | What it checks | Planted fault in `test_design_app_screen_review.py` | Caught |
+| --- | --- | --- | --- | --- |
+| 1 | `review_draft_schema` | Valid JSON matching `review_draft` (`measured[]`, `findings[]`, severity 0-4, priority `must\|should\|could\|wont`) | Non-JSON or schema-invalid draft | **PASS** (`test_planted_fault_1_schema_invalid`) |
+| 2 | `every_measured_item_covered` | Every `M1..Mk` item in `measured_items.json` appears exactly once in `measured[]` | Omit `M2` or duplicate `M1` in `measured[]` | **PASS** (`test_planted_fault_2_missing_or_duplicate_measured_item`) |
+| 3 | `demoted_blocker_has_reason` | Any Stage 6a `blocker` item in `M1..Mk` rated below `must` has a non-empty `reason` (`>= 15` chars) | Demote blocker `M1` to `should` without `reason` | **PASS** (`test_planted_fault_3_demoted_blocker_without_reason`) |
+| 4 | `wont_has_reason` | Every `measured[]` or `findings[]` entry with `priority == "wont"` has a non-empty `reason` (`>= 10` chars) | Rate `M2` or a finding `wont` with empty `reason` | **PASS** (`test_planted_fault_4_wont_without_reason`) |
+| 5 | `must_has_suggestion` | Every `measured[]` or `findings[]` entry with `priority == "must"` has a non-empty `suggestion` (`>= 10` chars) | Rate `M1` or a finding `must` with empty `suggestion` | **PASS** (`test_planted_fault_5_must_without_suggestion`) |
+| 6 | `no_invented_measurement` | No `findings[]` entry claims a script-measured metric failure (`4.5:1` contrast ratio, sub-floor `px` font size, `24x24` target size, `axe` violation, horizontal overflow) that passed in `checks.json` | Finding claims `"Body text is 11px and fails 4.5:1 contrast ratio"` when `checks.json` passed both | **PASS** (`test_planted_fault_6_invented_measurement_claim`) |
+| 7 | `valid_location_and_evidence` | Every finding's `location` names a valid screen in `05-build/build.json` and quotes grounded text/elements from the build | Finding cites unknown screen `checkout/normal` or ungrounded quote `"Quantum flux capacitor offline"` | **PASS** (`test_planted_fault_7_unknown_screen_or_ungrounded_evidence`) |
+
+### Bar (written before trials, rules 16, 17, 19)
+
+| Check / Trial case | Bar | Measured result | Status |
+| --- | --- | --- | --- |
+| `review_check.py` planted faults (7 rules) | 7 / 7 planted faults caught by their named check ID; retry loop recovers on valid revised draft and fails loud on still-broken draft | 7 / 7 caught (`tests/test_design_app_screen_review.py`, 13 passed) | **PASS** |
+| Case 1: `clean-parcelly` (4 screens, 48 Stage 6a views, 0 blockers, 0 shoulds, clean copy) | 3 / 3 runs on `temper-dev` pass `review` with `verdict: "done"`, `must: 0`, 0 false Musts | 3 / 3 passed (`c37bd955`, `7f9f9e57`, `b3fd5a7b`): `verdict: "done"`, `must: 0`, `findings: 0` | **PASS** |
+| Case 2: `measured-inkflow` (`c-inkflow-onboarding`, 30 views, 44 blocker rows + 76 should rows grouped into `M1..M12`) | 3 / 3 runs on `temper-dev` pass `review` with `verdict: "revise"`, 12 / 12 `M*` items accounted for, 0 invented measurements | 3 / 3 passed (`1a8be65f`, `3ae6f2ca`, `b5c58c4b`): `verdict: "revise"`, 12 / 12 `M*` covered, `must: 5` | **PASS** |
+| Case 3: `taste-planted` (`parcelly-clean` passing all 24 Stage 6a checks across 48 views with 0 blockers/shoulds, with 3 planted UX/language flaws on `home`: `T1` raw SQL + `auth_token=sk_live_9981_parcelly` leak with no recovery in `error`, `T2` robotic button label `Submit action_btn_1`, `T3` reassurance fluff replacing parcel figures on `home`) | 3 / 3 runs on `temper-dev` catch all 3 planted UX/language flaws (`recall == 1.0`) and output `verdict: "revise"` (`must >= 3`) | 3 / 3 passed (`615815bb`, `d141fd47`, `4072f854`): `verdict: "revise"`, 3 / 3 planted flaws caught as `must` on every run (`recall: 1.0`) | **PASS** |
+| Case 4: 2-round `review -> build -> checks -> review` fix loop on `temper-dev` | Starting from `taste-planted` Round 1 (`verdict: "revise"`), Round 2 `build` fixes all Round 1 Must findings, Round 2 `checks` passes with 0 blockers/shoulds across 48 views, and Round 2 `review` outputs `verdict: "done"` (`must: 0`) | Round 1 `review` `615815bb` (`revise`, 7 Musts) -> Round 2 `build` `c6a67792` -> Round 2 `checks` `bc070a36` (48 views, 0 blockers, 0 shoulds) -> Round 2 `review` `3dc56eb6` (`done`, `must: 0`, `findings: 0`) | **PASS** |
+| Whole-workflow fixture run (`design_app_screen_v1`, `mode: "fixture"`) | Completes all 33 nodes on `temper-dev` at $0.00 | `c55cf237-52f6-43d2-8b68-374280167426`: 33 / 33 nodes completed in 11.20 s at $0.00 | **PASS** |
+
+### Hypothesis log (rule 20)
+
+- **Hypothesis H6b-1 (Round-level Stage 6a check rows with `screen: null` and `location: "the round"`).**
+  - *What was wrong and evidence:* On the first `measured-inkflow` probe (`62b70f19-d3f3-43d1-9e87-9981f9e37e2d`),
+    `review_collect` failed contract validation before calling the model:
+    `06-checks/round-1/measured_items.json: items/0/screen: 'the round' does not match '^[A-Za-z0-9][A-Za-z0-9_.@-]{0,79}$'`.
+    Stage 6a's `contract.marks` check is a round-level check with `"screen": null` and `"location": "the round"`,
+    and `review._row_screen()` returned the raw location prefix `"the round"` even when it was not an `_ID` slug.
+  - *The one change and why it should fix it:* In `configs/design/bin/app_screen/review.py:_row_screen()`, accept
+    `screen` or a location prefix only when it matches `_ID` (`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,79}$`) or a known
+    screen ID in `05-build/build.json`; otherwise assign the round-level row to the first screen ID in
+    `valid_screens` (or `"round"` if empty).
+  - *Expected result and measure:* `review_collect` writes contract-valid `measured_items.json` (`M1..M12`) on
+    `c-inkflow-onboarding`, and 3 / 3 `measured-inkflow` runs complete on `temper-dev` with 12 / 12 `M*` items
+    covered.
+  - *What would prove us wrong:* Any schema error on `measured_items.json` or any uncovered `M*` item.
+  - *Outcome:* **HIT** — 3 / 3 `measured-inkflow` runs (`1a8be65f`, `3ae6f2ca`, `b5c58c4b`) completed with
+    12 / 12 `M*` items covered and `verdict: "revise"`, plus unit test
+    `test_group_measured_items_maps_round_level_location_to_valid_id`.
+
+### Results on `temper-dev`
+
+Stage 6b trial results are saved in `~/design-lab/app-screen-workflow/results/review-trials/temper-6b-results.json`:
+
+| Case | Run # | Execution ID | Status | Verdict | Findings (`must`) | Measured covered | Planted recall | Cost (USD) | Duration |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `clean-parcelly` (4 screens, 48 views, 0 Stage 6a issues) | 1 | `c37bd955-d33a-403a-8744-c906a636eb71` | `completed` | `done` | 0 (`0`) | 0 / 0 | — | $0.0328 | 4.87 s |
+| `clean-parcelly` (4 screens, 48 views, 0 Stage 6a issues) | 2 | `7f9f9e57-c214-4b20-8d28-6f6a7afc23ce` | `completed` | `done` | 0 (`0`) | 0 / 0 | — | $0.0323 | 4.44 s |
+| `clean-parcelly` (4 screens, 48 views, 0 Stage 6a issues) | 3 | `b3fd5a7b-7978-41e2-b09e-e27b6f007a36` | `completed` | `done` | 0 (`0`) | 0 / 0 | — | $0.0325 | 4.11 s |
+| `measured-inkflow` (30 views, 44 blockers + 76 shoulds -> `M1..M12`) | 1 | `1a8be65f-4d04-4b03-9f30-4990efc86bb0` | `completed` | `revise` | 18 (`5`) | 12 / 12 | — | $0.0871 | 24.37 s |
+| `measured-inkflow` (30 views, 44 blockers + 76 shoulds -> `M1..M12`) | 2 | `3ae6f2ca-dcf7-4de1-95f1-e8debfb92a10` | `completed` | `revise` | 19 (`5`) | 12 / 12 | — | $0.0950 | 26.82 s |
+| `measured-inkflow` (30 views, 44 blockers + 76 shoulds -> `M1..M12`) | 3 | `b5c58c4b-4a59-47f2-b03c-82268198aa63` | `completed` | `revise` | 18 (`5`) | 12 / 12 | — | $0.0882 | 24.27 s |
+| `taste-planted` (Stage 6a base `feca9df3`: 48 views, 0 blockers/shoulds; 3 planted UX/copy flaws) | 1 | `615815bb-a719-4d28-a224-c83fb02ae2aa` | `completed` | `revise` | 7 (`7`) | 0 / 0 | 3 / 3 (100%) | $0.0501 | 11.98 s |
+| `taste-planted` (Stage 6a base `feca9df3`: 48 views, 0 blockers/shoulds; 3 planted UX/copy flaws) | 2 | `d141fd47-5642-4a14-bf5d-c66241771adc` | `completed` | `revise` | 7 (`7`) | 0 / 0 | 3 / 3 (100%) | $0.0491 | 10.52 s |
+| `taste-planted` (Stage 6a base `feca9df3`: 48 views, 0 blockers/shoulds; 3 planted UX/copy flaws) | 3 | `4072f854-b73f-478d-8b23-55b46cc2b46d` | `completed` | `revise` | 8 (`7`) | 0 / 0 | 3 / 3 (100%) | $0.0516 | 11.29 s |
+
+2-round `review -> build -> checks -> review` fix loop proof on `temper-dev` (workspace
+`/home/shinelay/temper-ai/workspaces/design222-loop-proof-1794049119`):
+
+| Round & Stage | Workflow | Execution ID | Status | Key output / result | Cost (USD) | Duration |
+| --- | --- | --- | --- | --- | --- | --- |
+| Round 1 `checks` | `design_app_screen_v1_checks` | `feca9df3-6aaf-4093-843a-7e057d57ad60` | `completed` | 48 views measured, 0 blockers, 0 shoulds | $0.0000 | 182.97 s |
+| Round 1 `review` | `design_app_screen_v1_review` | `615815bb-a719-4d28-a224-c83fb02ae2aa` | `completed` | `verdict: "revise"`, 7 Must findings (`F1..F7`) catching `T1`, `T2`, `T3` | $0.0501 | 11.98 s |
+| Round 2 `build` | `design_app_screen_v1_build` | `c6a67792-9168-4c82-b72d-ebc05bf9c318` | `completed` | Read `"Must Findings From Round 1 To Fix"`, replaced leaked SQL/token error with recovery copy, renamed `Submit action_btn_1` to `"Track today's parcel"`, restored grounded parcel delivery window/shop copy | $0.1268 | 40.04 s |
+| Round 2 `checks` | `design_app_screen_v1_checks` | `bc070a36-0a48-4ee3-8697-b0381ee43562` | `completed` | 48 views measured in `06-checks/round-2/views/`, 0 blockers, 0 shoulds | $0.0000 | 183.38 s |
+| Round 2 `review` | `design_app_screen_v1_review` | `3dc56eb6-bad8-475b-8ea2-e4ec4f99b7b4` | `completed` | `verdict: "done"`, `must: 0`, `findings: 0`, all Round 1 Musts verified fixed | $0.0357 | 4.35 s |
+| Whole-workflow fixture | `design_app_screen_v1` (`fixture`) | `c55cf237-52f6-43d2-8b68-374280167426` | `completed` | 33 / 33 nodes completed (including `review_collect` -> `review_read` -> `review_check` -> `review_revise` -> `review`) | $0.0000 | 11.20 s |
+
 

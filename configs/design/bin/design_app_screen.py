@@ -59,6 +59,8 @@ from app_screen import (  # noqa: E402
     intake_grade,
     intake_sources,
     known_case,
+    review,
+    review_grade,
     show,
 )
 from app_screen.fixture_stage import NotBuiltError  # noqa: E402
@@ -66,7 +68,7 @@ from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa
 
 HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
                  "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools",
-                 "prep-checks", "grade-checks")
+                 "prep-checks", "grade-checks", "prep-review", "grade-review")
 # A stage step may end reused or delta instead of done (step 4: its output says which in stage_status).
 STAGE_STATUSES = ("reused", "delta")
 RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake": intake.run,
@@ -75,13 +77,14 @@ RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake"
         "ground": ground.run, "directions": directions.run,
         "gate_direction": lambda ws, raw: gates.answer(ws, "direction", raw), "build": build.run,
         "build_check": build.check, "build_finish": build.finish,
-        "checks": checks.run, "review": checks.review, "show": show.run,
+        "checks": checks.run, "review_collect": review.collect, "review_check": review.check,
+        "review": review.run, "show": show.run,
         "gate_final": lambda ws, raw: gates.answer(ws, "final", raw),
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
 FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
             intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
-            ground_sources.SourcesError, build.BuildError, checks.ChecksError, OSError, ValueError, KeyError,
-            RuntimeError)
+            ground_sources.SourcesError, build.BuildError, checks.ChecksError, review.ReviewError,
+            OSError, ValueError, KeyError, RuntimeError)
 
 
 def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:
@@ -210,6 +213,10 @@ def host(command: str, args: argparse.Namespace) -> dict:
     if command == "grade-checks":
         from app_screen import checks_grade
         return checks_grade.grade(args.case, args.workspace)
+    if command == "prep-review":
+        return review_grade.prepare_trial_workspace(args.case, args.workspace)
+    if command == "grade-review":
+        return review_grade.grade(args.case, args.workspace)
     return known_case.pack(args.case, args.workspace)
 
 

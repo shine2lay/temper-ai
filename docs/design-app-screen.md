@@ -74,19 +74,21 @@ Files, one job each:
 
 ## Stages
 
-| # | Stage | Steps (workflow nodes) | Leaves | Built by |
+In `configs/design/workflows/design_app_screen_v1.yaml`, each stage is a `type: stage` composite container (`intake`, `existing`, `ground`, `directions`, `build`, `checks`, `review`, `show`, `handoff`) with `gate_direction` and `gate_final` as top-level gate nodes between them, and distinct child node names (`*_finish`, `build_collect`) so parent/child IDs never collide in the DAG view.
+
+| # | Stage (`type: stage`) | Child steps (`nodes:`) | Leaves | Built by |
 | --- | --- | --- | --- | --- |
-| 1 | intake | `intake_collect`, `intake_read` (model), `intake_check`, `intake_revise` (model, only on a failed check), `intake` | the owner's words as requirements (verbatim) and the clarification questions (rule 33) | #206 |
-| 2 | existing | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
-| 3 | ground | `ground` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
-| 4 | directions | `directions_collect`, `directions_read` (model), `directions_check`, `directions_revise` (model, only on a failed check), `directions`, then `gate_direction` | two or more genuinely distinct clickable directions (`04-directions/<id>/index.html`), each with its measured `04-directions/<id>/checks.json` and `04-directions/directions.json`; the owner picks one | #223, W5 |
-| 5 | build | `build`, `build_read` (model), `build_check`, `build_revise` (model, only on a failed check), `build_finish` | the chosen direction: a shell and one compiled file per screen with real per-state layout, copy, action controls and `fixture.json` figure bindings | #219 (5a), #221 (5b) |
-| 6 | checks | `checks`, then `review_collect`, `review_read` (model), `review_check`, `review_revise` (model, only on a failed check), `review` | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), #222 (6b) |
-| 7 | show | `show`, then `gate_final`, `gate_final_next` | one self-contained Show&Tell bundle (`07-show/bundle.html`), `showtell.json`, `comments.json`, and `07-show/check.json`; approve, or changes back to build as targeted edits | #224 |
-| 8 | handoff | `handoff` | a spec per screen (`08-handoff/spec/<screen-id>.md`), `design-file.json`, `followup.json`, and `08-handoff/check.json` | #224 |
+| 1 | `intake` | `intake_collect`, `intake_read` (model), `intake_check`, `intake_revise` (model, only on a failed check), `intake_finish` | the owner's words as requirements (verbatim) and the clarification questions (rule 33) | #206 |
+| 2 | `existing` | host `capture`, then `existing_collect`, `existing_sheet`, `existing_read` (model), `existing_check`, `existing_revise` (model, only on a failed check), `existing_finish` | today's screens captured and measured; the user journeys, each problem with evidence | #207 |
+| 3 | `ground` | `ground_collect`, `ground_read` (model), `ground_check`, `ground_revise` (model, only on a failed check), `ground_finish` | one shared fixture, the product's design files, the screens x states inventory | #210, #214 |
+| 4 | `directions` + `gate_direction` | `directions_collect`, `directions_read` (model), `directions_check`, `directions_revise` (model, only on a failed check), `directions_finish`, then top-level `gate_direction` | two or more genuinely distinct clickable directions (`04-directions/<id>/index.html`), each with its measured `04-directions/<id>/checks.json` and `04-directions/directions.json`; the owner picks one | #223, W5 |
+| 5 | `build` | `build_collect`, `build_read` (model), `build_check`, `build_revise` (model, only on a failed check), `build_finish` | the chosen direction: a shell and one compiled file per screen with real per-state layout, copy, action controls and `fixture.json` figure bindings | #219 (5a), #221 (5b) |
+| 6 | `checks` + `review` | `checks` (`checks_finish`), then `review` (`review_collect`, `review_read` (model), `review_check`, `review_revise` (model, only on a failed check), `review_finish`) | measured checks by script, then findings rated 0-4 and Must/Should/Could/Won't; a Must loops back to build | #216 (6a), #222 (6b) |
+| 7 | `show` + `gate_final` | `show` (`show_finish`), then top-level `gate_final` | one self-contained Show&Tell bundle (`07-show/bundle.html`), `showtell.json`, `comments.json`, and `07-show/check.json`; approve, or changes back to build as targeted edits | #224 |
+| 8 | `handoff` | `handoff_finish` | a spec per screen (`08-handoff/spec/<screen-id>.md`), `design-file.json`, `followup.json`, and `08-handoff/check.json` | #224 |
 
 Loops: `review` goes back to `build` while its verdict is `revise` (a Must finding is open), and
-`gate_final_next` goes back to `build` when the final answer is `changes`. Each loop runs at most twice
+`gate_final` goes back to `build` when the final answer is `changes`. Each loop runs at most twice
 (`max_loops: 2`); a third time fails the run (`on_max_loops: fail`), it does not hand off a design that
 still has an open Must. Each pass through `checks` starts a new `06-checks/round-<n>/`.
 

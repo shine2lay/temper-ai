@@ -700,7 +700,10 @@ def test_the_main_workflow_still_has_the_checks_step_in_the_review_loop():
                             ).read_text())["workflow"]
     names = [n["name"] for n in whole["nodes"]]
     assert "checks" in names and names.index("checks") < names.index("review")
-    mine = next(n for n in whole["nodes"] if n["name"] == "checks")
+    stage = next(n for n in whole["nodes"] if n["name"] == "checks")
+    assert stage["type"] == "stage" and stage["depends_on"] == ["build"]
+    mine = stage["nodes"][0]
+    assert mine["name"] == "checks_finish"
     # the trial proves the stage only while the stage-alone node matches the whole workflow's
     assert mine["agent"] == alone["nodes"][0]["agent"]
     assert mine["input_map"]["step"] == alone["nodes"][0]["input_map"]["step"]

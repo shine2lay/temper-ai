@@ -543,13 +543,17 @@ def _nodes(name: str) -> list[dict]:
 def test_trial_workflow_runs_the_same_ground_nodes_as_the_whole_workflow():
     trial = _nodes("design_app_screen_v1_ground")
     whole = {n["name"]: n for n in _nodes("design_app_screen_v1")}
+    stage = whole["ground"]
+    assert stage["type"] == "stage" and stage["depends_on"] == ["existing"]
+    children = {n["name"]: n for n in stage["nodes"]}
+    assert list(children) == ["ground_collect", "ground_read", "ground_check", "ground_revise", "ground_finish"]
     for node in trial:
-        expected = dict(whole[node["name"]])
-        if node["name"] == "ground_collect":
-            expected.pop("depends_on")
+        child_name = "ground_finish" if node["name"] == "ground" else node["name"]
+        expected = dict(children[child_name])
+        expected["name"] = node["name"]
         assert node == expected, node["name"]
     assert [n["name"] for n in trial] == ["ground_collect", "ground_read", "ground_check", "ground_revise", "ground"]
-    assert whole["directions_collect"]["depends_on"] == ["ground"]
+    assert whole["directions"]["depends_on"] == ["ground"]
 
 
 def test_reader_agent_is_tool_free_text_only_without_temperature():

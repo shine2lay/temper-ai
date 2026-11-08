@@ -456,10 +456,15 @@ def _nodes(name: str) -> list[dict]:
 def test_trial_workflow_runs_the_same_existing_nodes_as_the_whole_workflow():
     trial = _nodes("design_app_screen_v1_existing")
     whole = {n["name"]: n for n in _nodes("design_app_screen_v1")}
+    stage = whole["existing"]
+    assert stage["type"] == "stage" and stage["depends_on"] == ["intake"]
+    children = {n["name"]: n for n in stage["nodes"]}
+    assert list(children) == ["existing_collect", "existing_sheet", "existing_read", "existing_check",
+                              "existing_revise", "existing_finish"]
     for node in trial:
-        expected = dict(whole[node["name"]])
-        if node["name"] == "existing_collect":
-            expected.pop("depends_on")
+        child_name = "existing_finish" if node["name"] == "existing" else node["name"]
+        expected = dict(children[child_name])
+        expected["name"] = node["name"]
         assert node == expected, node["name"]
     assert [n["name"] for n in trial] == ["existing_collect", "existing_sheet", "existing_read", "existing_check",
                                          "existing_revise", "existing"]

@@ -206,18 +206,30 @@ def test_build_workflow_yaml_matches_main_workflow():
     assert trial_names == expected_names
 
     main_by_name = {n["name"]: n for n in main_doc["nodes"]}
+    build_stage = main_by_name["build"]
+    assert build_stage["type"] == "stage"
+    assert build_stage["depends_on"] == ["gate_direction"]
+    child_by_name = {n["name"]: n for n in build_stage["nodes"]}
+    assert list(child_by_name) == ["build_collect", "build_read", "build_check", "build_revise", "build_finish"]
     for trial_node in build_doc["nodes"]:
-        name = trial_node["name"]
-        assert name in main_by_name
-        main_node = main_by_name[name]
+        name = "build_collect" if trial_node["name"] == "build" else trial_node["name"]
+        assert name in child_by_name
+        main_node = child_by_name[name]
         assert trial_node["type"] == main_node["type"] == "agent"
         assert trial_node["agent"] == main_node["agent"]
-        assert trial_node["input_map"] == main_node["input_map"]
+        if name == "build_read":
+            assert main_node["input_map"] == {"task": "build_collect.structured.task"}
+            assert trial_node["input_map"] == {"task": "build.structured.task"}
+        else:
+            assert trial_node["input_map"] == main_node["input_map"]
         if "condition" in main_node:
-            assert trial_node["condition"] == main_node["condition"]
+            expected_cond = dict(main_node["condition"])
+            if expected_cond.get("source") == "build_collect.structured.model":
+                expected_cond["source"] = "build.structured.model"
+            assert trial_node["condition"] == expected_cond
 
     checks_node = main_by_name["checks"]
-    assert checks_node["depends_on"] == ["build_finish"]
+    assert checks_node["depends_on"] == ["build"]
 
 
 def test_build_fixture_mode_preserved(tmp_path: Path):

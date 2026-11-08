@@ -159,10 +159,18 @@ def test_agent_and_workflow_yaml_contracts():
 
     main_wf = yaml.safe_load(wf_main_path.read_text(encoding="utf-8"))["workflow"]
     main_by_name = {n["name"]: n for n in main_wf["nodes"]}
-    for node_name in stage_nodes:
-        assert node_name in main_by_name, f"missing {node_name} in design_app_screen_v1.yaml"
-    assert main_by_name["directions_collect"]["depends_on"] == ["ground"]
-    assert main_by_name["directions"]["depends_on"] == ["directions_revise"]
+    directions_stage = main_by_name["directions"]
+    assert directions_stage["type"] == "stage"
+    assert directions_stage["depends_on"] == ["ground"]
+    child_by_name = {n["name"]: n for n in directions_stage["nodes"]}
+    assert list(child_by_name) == [
+        "directions_collect",
+        "directions_read",
+        "directions_check",
+        "directions_revise",
+        "directions_finish",
+    ]
+    assert child_by_name["directions_finish"]["depends_on"] == ["directions_revise"]
     assert main_by_name["gate_direction"]["depends_on"] == ["directions"]
 
 

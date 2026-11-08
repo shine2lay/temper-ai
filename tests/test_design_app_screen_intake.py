@@ -354,9 +354,15 @@ def test_trial_workflow_runs_the_whole_workflows_intake_nodes_unchanged():
     whole = {n["name"]: n for n in _yaml("configs/design/workflows/design_app_screen_v1.yaml")["workflow"]["nodes"]}
     alone = _yaml("configs/design/workflows/design_app_screen_v1_intake.yaml")["workflow"]["nodes"]
     assert [n["name"] for n in alone] == ["intake_collect", "intake_read", "intake_check", "intake_revise", "intake"]
+    stage = whole["intake"]
+    assert stage["type"] == "stage"
+    children = {n["name"]: n for n in stage["nodes"]}
+    assert list(children) == ["intake_collect", "intake_read", "intake_check", "intake_revise", "intake_finish"]
     for node in alone:
-        assert node == whole[node["name"]], node["name"]
-    assert whole["existing_collect"]["depends_on"] == ["intake"]
+        child_name = "intake_finish" if node["name"] == "intake" else node["name"]
+        expected = {**node, "name": child_name}
+        assert expected == children[child_name], node["name"]
+    assert whole["existing"]["depends_on"] == ["intake"]
 
 
 def test_intake_agent_is_fenced():

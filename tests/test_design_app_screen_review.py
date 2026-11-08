@@ -154,11 +154,14 @@ def test_review_agent_and_workflow_parity():
     assert [n["name"] for n in review_nodes] == expected_names
 
     main_by_name = {n["name"]: n for n in main_nodes}
-    for name in expected_names:
-        assert name in main_by_name
-    assert main_by_name["review"]["loop_to"] == "build"
-    assert main_by_name["review"]["max_loops"] == 2
-    assert main_by_name["review"]["loop_condition"] == {
+    review_stage = main_by_name["review"]
+    assert review_stage["type"] == "stage"
+    assert review_stage["depends_on"] == ["checks"]
+    child_by_name = {n["name"]: n for n in review_stage["nodes"]}
+    assert list(child_by_name) == ["review_collect", "review_read", "review_check", "review_revise", "review_finish"]
+    assert review_stage["loop_to"] == "build"
+    assert review_stage["max_loops"] == 2
+    assert review_stage["loop_condition"] == {
         "source": "review.structured.verdict",
         "operator": "equals",
         "value": "revise",

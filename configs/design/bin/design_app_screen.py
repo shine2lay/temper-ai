@@ -175,6 +175,7 @@ def capture(args: argparse.Namespace) -> dict:
         base_url=args.base_url,
         credentials=creds,
         version=args.version,
+        stack_commit=args.stack_commit,
     )
 
 
@@ -210,6 +211,7 @@ def reuse_command(command: str, args: argparse.Namespace) -> dict:
             base_url=args.base_url,
             credentials=creds,
             version=args.version,
+            stack_commit=args.stack_commit,
         )
     return reuse_host.store(args.workspace, args.run, args.stages, args.workflow_commit,
                             store_root=args.store_dir)
@@ -274,6 +276,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--product")
     parser.add_argument("--repo", help="product repository path containing .temper/design/app.yaml")
     parser.add_argument("--base-url", help="capture/prepare: provisioned product instance base URL")
+    parser.add_argument("--stack-commit", help="capture/prepare/existing_collect: stack_up_ref commit SHA to verify against health")
     parser.add_argument("--credentials", help="capture/prepare: JSON object or @file mapping account -> password")
     parser.add_argument("--version", help="capture/prepare: optional version override")
     parser.add_argument("--store-dir", help="prepare/store/validate-store: store directory path")
@@ -299,6 +302,12 @@ def main(argv: list[str] | None = None) -> None:
         else:
             if not args.workspace:
                 raise WorkspaceError(f"{args.step} needs --workspace W")
+            if args.base_url:
+                os.environ["APP_SCREEN_BASE_URL"] = args.base_url
+            if args.stack_commit:
+                os.environ["APP_SCREEN_STACK_COMMIT"] = args.stack_commit
+            if args.credentials:
+                os.environ["APP_SCREEN_CREDENTIALS"] = args.credentials
             result = run_step(args.step, args.workspace, args.product, os.environ.get("APP_SCREEN_DATA", ""))
     except FAILURES as exc:
         # Our own messages only; never environment or session data.

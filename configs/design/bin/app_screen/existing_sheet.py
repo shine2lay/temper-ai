@@ -9,12 +9,22 @@ from __future__ import annotations
 
 import io
 import math
+import sys
 from pathlib import Path
 
 try:  # host only: the capture's other modules stay importable where Pillow is not installed (tests, workers)
     from PIL import Image, ImageDraw, ImageFont
-except ImportError:  # pragma: no cover - build() fails loud instead
-    Image = ImageDraw = ImageFont = None
+except ImportError:  # pragma: no cover - try container shared venv, else build() fails loud
+    for _cand in (
+        "/app/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
+        "/home/shinelay/temper-ai/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
+    ):
+        if Path(_cand).is_dir() and _cand not in sys.path:
+            sys.path.insert(0, _cand)
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        Image = ImageDraw = ImageFont = None
 
 LONG_EDGE = 1568          # the model provider's long-edge size before it downsamples
 BUDGET = 180_000          # raw PNG bytes: base64 (4/3) plus JSON must stay under the 256,000-character output cap

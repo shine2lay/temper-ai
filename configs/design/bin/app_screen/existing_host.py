@@ -134,7 +134,11 @@ def shoot(instance_or_app: app_instance.AppInstance | dict[str, Any],
         inst = instance_or_app
     else:
         base_url = instance_or_app.get("base_url") or os.environ.get("APP_SCREEN_BASE_URL", "")
-        creds = instance_or_app.get("credentials") or os.environ.get("APP_SCREEN_CREDENTIALS")
+        creds = (
+            instance_or_app.get("credentials")
+            or os.environ.get("APP_SCREEN_CREDENTIALS")
+            or os.environ.get("ROLLCALL_QA_PASSWORD")
+        )
         inst = app_instance.AppInstance(instance_or_app, base_url, creds)
     try:
         raw, failed_summary = inst.shoot(caps, out_dir)
@@ -175,18 +179,28 @@ def _resolve_instance(app: dict[str, Any], *,
                       base_url: str | None = None,
                       credentials: dict[str, str] | str | None = None,
                       version: str | None = None,
+                      stack_commit: str | None = None,
                       health_opener: Any = None,
                       opener: Any = None,
                       instance: app_instance.AppInstance | None = None) -> app_instance.AppInstance:
     if instance is not None:
+        eff_commit = (stack_commit or os.environ.get("APP_SCREEN_STACK_COMMIT") or "").strip()
+        if eff_commit:
+            app_instance.verify_stack_commit(eff_commit, instance.commit, base_url=instance.base_url)
         return instance
     eff_url = base_url or app.get("base_url") or os.environ.get("APP_SCREEN_BASE_URL", "")
-    eff_creds = credentials if credentials is not None else os.environ.get("APP_SCREEN_CREDENTIALS")
+    eff_creds = (
+        credentials
+        if credentials is not None
+        else (os.environ.get("APP_SCREEN_CREDENTIALS") or os.environ.get("ROLLCALL_QA_PASSWORD"))
+    )
+    eff_commit = (stack_commit or os.environ.get("APP_SCREEN_STACK_COMMIT") or "").strip() or None
     return app_instance.AppInstance(
         app,
         eff_url,
         eff_creds,
         version=version,
+        stack_commit=eff_commit,
         health_opener=health_opener or opener,
     )
 
@@ -195,6 +209,7 @@ def capture(product: str | Path, workspace: str | Path, store: Path | None = Non
             base_url: str | None = None,
             credentials: dict[str, str] | str | None = None,
             version: str | None = None,
+            stack_commit: str | None = None,
             health_opener: Any = None,
             opener: Any = None,
             instance: app_instance.AppInstance | None = None) -> dict[str, Any]:
@@ -204,6 +219,7 @@ def capture(product: str | Path, workspace: str | Path, store: Path | None = Non
         base_url=base_url,
         credentials=credentials,
         version=version,
+        stack_commit=stack_commit,
         health_opener=health_opener,
         opener=opener,
         instance=instance,
@@ -236,6 +252,7 @@ def recapture(product: str | Path, workspace: str | Path, screens: list[str], st
               base_url: str | None = None,
               credentials: dict[str, str] | str | None = None,
               version: str | None = None,
+              stack_commit: str | None = None,
               health_opener: Any = None,
               opener: Any = None,
               instance: app_instance.AppInstance | None = None,
@@ -266,6 +283,7 @@ def recapture(product: str | Path, workspace: str | Path, screens: list[str], st
         base_url=base_url,
         credentials=credentials,
         version=version,
+        stack_commit=stack_commit,
         health_opener=health_opener,
         opener=opener,
         instance=instance,

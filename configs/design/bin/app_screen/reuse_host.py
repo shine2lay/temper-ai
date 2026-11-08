@@ -79,6 +79,7 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
             base_url: str | None = None,
             credentials: dict[str, str] | str | None = None,
             version: str | None = None,
+            stack_commit: str | None = None,
             health_opener: Any = None,
             opener: Any = None,
             instance: app_instance.AppInstance | None = None) -> dict[str, Any]:
@@ -92,7 +93,12 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
             raise StoreError(f"{ws.folder(stage)} is not empty; prepare needs a fresh workspace")
 
     eff_url = base_url or app.get("base_url") or os.environ.get("APP_SCREEN_BASE_URL", "")
-    eff_creds = credentials if credentials is not None else os.environ.get("APP_SCREEN_CREDENTIALS")
+    eff_creds = (
+        credentials
+        if credentials is not None
+        else (os.environ.get("APP_SCREEN_CREDENTIALS") or os.environ.get("ROLLCALL_QA_PASSWORD"))
+    )
+    eff_commit = (stack_commit or os.environ.get("APP_SCREEN_STACK_COMMIT") or "").strip() or None
     inst = instance
     if inst is None and eff_url:
         inst = app_instance.AppInstance(
@@ -100,8 +106,11 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
             eff_url,
             eff_creds,
             version=version,
+            stack_commit=eff_commit,
             health_opener=health_opener or opener,
         )
+    elif inst is not None and eff_commit:
+        app_instance.verify_stack_commit(eff_commit, inst.commit, base_url=inst.base_url)
     if inst is not None:
         app["base_url"] = inst.base_url
         app["commit"] = inst.commit

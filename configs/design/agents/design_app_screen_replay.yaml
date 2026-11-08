@@ -33,7 +33,7 @@ agent:
         )
     else:
         proc = subprocess.run(
-            [sys.executable, cli, "replay", "--step", step, "--workspace", workspace],
+            [sys.executable, cli, "replay", "--step", step, "--workspace", workspace, "--product", product],
             capture_output=True,
             text=True,
             check=True,

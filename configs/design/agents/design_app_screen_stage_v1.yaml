@@ -20,14 +20,33 @@ agent:
     workspace = os.environ.get("{{ workspace_path | env }}", "")
     product = os.environ.get("{{ product | default('', true) | env }}", "")
     raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    base_url = os.environ.get("{{ base_url | default('', true) | env }}", "")
+    stack_commit = os.environ.get("{{ stack_commit | default('', true) | env }}", "")
+    stack_env_name = os.environ.get("{{ stack_env_name | default('', true) | env }}", "")
+    stack_reused = os.environ.get("{{ stack_reused | default('', true) | env }}", "")
+    credentials = os.environ.get("{{ credentials | default('', true) | env }}", "")
     {% if gate is defined %}
     raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
     {% endif %}
     if not step or not workspace:
         raise SystemExit("app-screen step and workspace required")
     os.environ["APP_SCREEN_DATA"] = raw
+    if base_url:
+        os.environ["APP_SCREEN_BASE_URL"] = base_url
+    if stack_commit:
+        os.environ["APP_SCREEN_STACK_COMMIT"] = stack_commit
+    if stack_env_name:
+        os.environ["APP_SCREEN_STACK_ENV_NAME"] = stack_env_name
+    if stack_reused:
+        os.environ["APP_SCREEN_STACK_REUSED"] = stack_reused
+    if credentials:
+        os.environ["APP_SCREEN_CREDENTIALS"] = credentials
     cmd = [sys.executable, "/app/configs/design/bin/design_app_screen.py", step, "--workspace", workspace]
     if product:
         cmd += ["--product", product]
+    if base_url:
+        cmd += ["--base-url", base_url]
+    if stack_commit:
+        cmd += ["--stack-commit", stack_commit]
     subprocess.run(cmd, env=os.environ, check=True)
     PYEOF

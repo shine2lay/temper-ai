@@ -69,17 +69,34 @@ workflow:
           depends_on: [intake_revise]
           input_map: {step: intake, product: input.product}
 
-    # Stage 2, existing (built, Design #207): captures & sheet -> fenced model read -> measured checks
-    # -> optional revision -> final checks, 02-existing/journeys.json.
+    # Stage 2, existing (built, Design #207/#233/#237): stack_up_ref -> stack_seed -> captures & sheet ->
+    # fenced model read -> measured checks -> optional revision -> final checks, 02-existing/journeys.json.
     - name: existing
       type: stage
       depends_on: [intake]
-      input_map: {product: input.product}
+      input_map: {product: input.product, credentials: input.credentials}
       nodes:
+        - name: stack_up_ref
+          type: agent
+          agent: stack_up_ref
+          input_map: {product: input.product, ref: origin/master, slug: design}
+        - name: stack_seed
+          type: agent
+          agent: stack_seed
+          depends_on: [stack_up_ref]
+          input_map: {env_name: stack_up_ref.structured.env_name, product: input.product, slug: design}
         - name: existing_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: existing_collect, product: input.product}
+          depends_on: [stack_seed]
+          input_map:
+            step: existing_collect
+            product: input.product
+            base_url: stack_up_ref.structured.base_url
+            stack_commit: stack_up_ref.structured.commit
+            stack_env_name: stack_up_ref.structured.env_name
+            stack_reused: stack_up_ref.structured.reused
+            credentials: input.credentials
         - name: existing_sheet
           type: agent
           agent: design_app_screen_stage_v1
@@ -301,3 +318,11 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           input_map: {step: handoff, product: input.product}
+
+    # Stack teardown (Design #237): runs on both success and failure to guarantee zero leaked dev stacks/volumes.
+    - name: stack_down
+      type: agent
+      agent: stack_down
+      depends_on: [handoff]
+      run_after_failure: true
+      input_map: {product: input.product, slug: design}

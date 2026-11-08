@@ -25,11 +25,15 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shutil
+from typing import Any
 
 from . import (
+    app_instance,
     contracts,
     existing_check,
+    existing_host,
     existing_task,
     model_step,
     stored_copy,
@@ -96,18 +100,109 @@ def context(ws: Workspace) -> existing_check.Context:
     return existing_check.Context(audit, texts, app, {r["id"] for r in requirements.get("items", [])})
 
 
-def collect(ws: Workspace, raw: str) -> dict:
+def collect(
+    ws: Workspace,
+    raw: str = "",
+    *,
+    base_url: str | None = None,
+    stack_commit: str | None = None,
+    credentials: dict[str, str] | str | None = None,
+    health_opener: Any = None,
+    instance: app_instance.AppInstance | None = None,
+) -> dict[str, Any]:
+    eff_url = (base_url if base_url is not None else os.environ.get("APP_SCREEN_BASE_URL", "")).strip()
+    eff_commit = (stack_commit if stack_commit is not None else os.environ.get("APP_SCREEN_STACK_COMMIT", "")).strip()
+    eff_creds = (
+        credentials
+        if credentials is not None
+        else (os.environ.get("APP_SCREEN_CREDENTIALS") or os.environ.get("ROLLCALL_QA_PASSWORD"))
+    )
+    folder = ws.folder("existing")
+    has_prepared_capture = (
+        (folder / AUDIT).is_file()
+        and (folder / TEXTS).is_file()
+        and (folder / APP).is_file()
+        and (folder / SHEET).is_file()
+    )
+
     if reused := _reused(ws):
+        if eff_commit:
+            audit_doc = _read(ws, "existing", AUDIT, _capture_hint(ws))
+            recorded_commit = str(audit_doc.get("commit") or "").strip()
+            if eff_url and (health_opener is not None or instance is not None or not recorded_commit):
+                try:
+                    health = (
+                        instance.read_health()
+                        if instance is not None
+                        else app_instance.fetch_health(eff_url, stack_commit=eff_commit, opener=health_opener)
+                    )
+                    recorded_commit = health["commit"]
+                except app_instance.AppInstanceError as exc:
+                    raise ExistingError(str(exc)) from None
+            if recorded_commit:
+                try:
+                    app_instance.verify_stack_commit(eff_commit, recorded_commit, base_url=eff_url)
+                except app_instance.AppInstanceError as exc:
+                    raise ExistingError(str(exc)) from None
         return reused
+
+    if (eff_url or instance is not None) and not has_prepared_capture:
+        product = ws.run()["product"]
+        try:
+            existing_host.capture(
+                product,
+                ws.path,
+                base_url=eff_url or None,
+                credentials=eff_creds,
+                stack_commit=eff_commit or None,
+                health_opener=health_opener,
+                instance=instance,
+            )
+        except (existing_host.CaptureError, app_instance.AppInstanceError) as exc:
+            raise ExistingError(str(exc)) from None
+
     ctx = context(ws)
+    if eff_commit:
+        recorded_commit = str(ctx.audit.get("commit") or ctx.app.get("commit") or "").strip()
+        if eff_url and (health_opener is not None or instance is not None):
+            try:
+                health = (
+                    instance.read_health()
+                    if instance is not None
+                    else app_instance.fetch_health(eff_url, stack_commit=eff_commit, opener=health_opener)
+                )
+                recorded_commit = health["commit"]
+            except app_instance.AppInstanceError as exc:
+                raise ExistingError(str(exc)) from None
+        if recorded_commit:
+            try:
+                app_instance.verify_stack_commit(
+                    eff_commit,
+                    recorded_commit,
+                    base_url=eff_url or str(ctx.audit.get("base_url") or ""),
+                )
+            except app_instance.AppInstanceError as exc:
+                raise ExistingError(str(exc)) from None
     if not (ws.folder("existing") / SHEET).is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
     requirements = _read(ws, "intake", "requirements.json", "stage 1 (intake) writes it")
     text = existing_task.task(ctx.audit, json.loads((ws.folder("existing") / TEXTS).read_text(encoding="utf-8")),
                               ctx.app, requirements, tools=tools_registry.task_section("existing"))
     _write(ws.folder("existing") / TASK, text)
-    return {"model": "yes", "captures": len(ctx.captures), "screens": len(ctx.screen_ids),
-            "requirements": len(requirements.get("items", [])), "task_chars": len(text), "task": text}
+    out: dict[str, Any] = {
+        "model": "yes",
+        "captures": len(ctx.captures),
+        "screens": len(ctx.screen_ids),
+        "requirements": len(requirements.get("items", [])),
+        "task_chars": len(text),
+        "task": text,
+    }
+    if ctx.audit.get("commit"):
+        out["commit"] = ctx.audit["commit"]
+    base = ctx.audit.get("base_url") or ctx.app.get("base_url") or eff_url
+    if base:
+        out["base_url"] = base
+    return out
 
 
 def sheet(ws: Workspace, raw: str) -> dict:

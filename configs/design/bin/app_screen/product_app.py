@@ -212,9 +212,23 @@ def _resolve_from_products_yaml(product: str) -> Path | None:
         data = yaml.safe_load(PRODUCTS_YAML.read_text(encoding="utf-8")) or {}
         entry = (data.get("products") or {}).get(product)
         if isinstance(entry, dict):
-            repo = entry.get("repo")
+            repo = entry.get("repo") or (entry.get("location") or {}).get("repo")
             if repo:
-                return Path(str(repo)).expanduser().resolve()
+                repos_map = data.get("repos") or {}
+                mapped = repos_map.get(str(repo), repo)
+                candidate = Path(str(mapped)).expanduser().resolve()
+                if (candidate / DESIGN_SUBDIR / SPEC_FILENAME).is_file() or candidate.exists():
+                    return candidate
+    for ws_root in (
+        os.environ.get("TEMPER_WORKSPACES_DIR"),
+        str(HERE.parents[3] / "workspaces"),
+        "/app/workspaces",
+        "/home/shinelay/temper-ai/workspaces",
+    ):
+        if ws_root:
+            ws_repo = Path(ws_root).expanduser() / "repos" / product / "main"
+            if (ws_repo / DESIGN_SUBDIR / SPEC_FILENAME).is_file():
+                return ws_repo.resolve()
     cwd = Path.cwd().resolve()
     if (cwd / DESIGN_SUBDIR / SPEC_FILENAME).is_file():
         return cwd

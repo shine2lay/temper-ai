@@ -14,7 +14,7 @@ if str(DESIGN_BIN) not in sys.path:
 
 from app_screen_harness.cases import DEFAULT_CASE_DIR, prepare_workspace  # noqa: E402, I001
 from app_screen_harness.parity import compare_parity, grade_workspace  # noqa: E402
-from app_screen_harness.replay import MODEL_STEPS, draft_for_step  # noqa: E402
+from app_screen_harness.replay import MODEL_STEPS, STACK_STEPS, draft_for_step, replay_stack_step  # noqa: E402
 from app_screen_harness.runner import answer_gate, run_all, run_stage, run_step  # noqa: E402
 
 
@@ -66,6 +66,9 @@ def main(argv: list[str] | None = None) -> int:
                 draft_path.parent.mkdir(parents=True, exist_ok=True)
                 draft_path.write_text(text + "\n", encoding="utf-8")
             print(text)
+        elif args.step in STACK_STEPS:
+            res = replay_stack_step(args.step, args.workspace, product=args.product)
+            print(json.dumps(res, ensure_ascii=False))
         else:
             res = run_step(args.step, args.workspace, product=args.product)
             print(json.dumps(res, ensure_ascii=False))

@@ -33,8 +33,9 @@ def _ensure_pillow() -> bool:
     if existing_sheet.Image is not None:
         return True
     for extra in (
-        "/home/shinelay/.local/lib/python3.12/site-packages",
+        "/app/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
         "/home/shinelay/temper-ai/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
+        "/home/shinelay/.local/lib/python3.12/site-packages",
     ):
         if Path(extra).is_dir() and extra not in sys.path:
             sys.path.append(extra)

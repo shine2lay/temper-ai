@@ -14,6 +14,8 @@ HERE = Path(__file__).resolve().parent
 RECORDED_ROOT = HERE / "recorded"
 
 MODEL_STEPS: tuple[str, ...] = ("intake", "existing", "ground", "directions", "build", "review")
+STACK_STEPS: tuple[str, ...] = ("stack_up_ref", "stack_seed", "stack_down")
+BENCH_DEFAULT_COMMIT = "81117dd000000000000000000000000000000000"
 
 
 class HarnessReplayError(ValueError):
@@ -309,3 +311,45 @@ def draft_for_step(step: str, ws_path: str | Path, case_name: str = "rollcall-20
     if key == "review":
         return {"measured": [], "findings": []}
     raise HarnessReplayError(f"unknown model-boundary step {step!r}")
+
+
+def replay_stack_step(step: str, ws_path: str | Path, product: str = "rollcall") -> dict[str, Any]:
+    """Return the deterministic harness output for Systems' stack lifecycle agents in _bench."""
+    prod = (product or "rollcall").strip() or "rollcall"
+    env_name = f"{prod}-dev-design"
+    ws_p = Path(ws_path).expanduser().resolve()
+    audit_path = ws_p / "02-existing/audit.json"
+    commit = BENCH_DEFAULT_COMMIT
+    if audit_path.is_file():
+        try:
+            doc = json.loads(audit_path.read_text(encoding="utf-8"))
+            if doc.get("commit"):
+                commit = str(doc["commit"])
+        except Exception:
+            pass
+    if step == "stack_up_ref":
+        url = f"https://design.dev.{prod}.wai2shine.com"
+        return {
+            "status": "up",
+            "env_name": env_name,
+            "base_url": url,
+            "url": url,
+            "commit": commit,
+            "short_commit": commit[:12],
+            "ref": "origin/master",
+            "product": prod,
+            "reused": True,
+        }
+    if step == "stack_seed":
+        return {
+            "status": "seeded",
+            "env_name": env_name,
+        }
+    if step == "stack_down":
+        return {
+            "status": "down",
+            "env_name": env_name,
+            "volumes_left": "none",
+            "leftover_volumes_removed": [],
+        }
+    raise HarnessReplayError(f"unknown stack step {step!r}")

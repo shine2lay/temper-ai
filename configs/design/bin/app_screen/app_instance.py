@@ -8,11 +8,18 @@ written to files or error messages.
 """
 from __future__ import annotations
 
+import http.client
+import http.cookies
+import http.server
 import json
 import os
 import re
+import secrets
+import socket
+import ssl
 import subprocess
 import tempfile
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -77,6 +84,87 @@ def normalize_credentials(credentials: dict[str, str] | str | None) -> dict[str,
     raise AppInstanceError("credentials must be a dict or string")
 
 
+def verify_stack_commit(stack_commit: str | None, health_commit: str | None, *, base_url: str = "") -> str:
+    """Assert stack_up_ref's commit matches GET {base_url}/api/health's commit; fail loud naming both if not."""
+    hc = str(health_commit or "").strip()
+    if not hc or not COMMIT_RE.match(hc):
+        raise AppInstanceError(f"health response is missing a valid commit for {base_url or 'instance'}: {hc!r}")
+    sc = str(stack_commit or "").strip()
+    if not sc:
+        return hc
+    if not COMMIT_RE.match(sc):
+        raise AppInstanceError(
+            f"stack_up_ref commit {sc!r} is not a valid commit SHA (health commit={hc!r}, base_url={base_url})"
+        )
+    if sc.lower() != hc.lower():
+        raise AppInstanceError(
+            f"commit mismatch for {base_url or 'instance'}: "
+            f"stack_up_ref commit {sc!r} != health commit {hc!r}"
+        )
+    return hc
+
+
+def _resolve_gateway_ip(hostname: str, timeout: float = 5.0) -> str | None:
+    """Resolve hostname via DoH or sibling gateway host when container DNS lacks a new wildcard record."""
+    host = (hostname or "").strip().lower()
+    if not host or not host.endswith(".wai2shine.com"):
+        return None
+    try:
+        doh_url = f"https://1.1.1.1/dns-query?name={urllib.parse.quote(host)}&type=A"
+        req = urllib.request.Request(doh_url, headers={"Accept": "application/dns-json"}, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            doc = json.loads(resp.read().decode("utf-8", errors="replace"))
+        for ans in doc.get("Answer") or []:
+            if ans.get("type") == 1 and ans.get("data"):
+                return str(ans["data"]).strip()
+    except Exception:
+        pass
+    for fallback_host in ("temper-dev.wai2shine.com", "rollcall.wai2shine.com"):
+        try:
+            ip = socket.gethostbyname(fallback_host)
+            if ip:
+                return ip
+        except OSError:
+            continue
+    return None
+
+
+def _request_via_ip(
+    url: str,
+    ip: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout: float = 15.0,
+) -> tuple[int, list[tuple[str, str]], bytes]:
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    req_headers = dict(headers or {})
+    req_headers["Host"] = host if not parsed.port else f"{host}:{parsed.port}"
+    req_headers.setdefault("Accept-Encoding", "identity")
+    sock = socket.create_connection((ip, port), timeout=timeout)
+    if parsed.scheme == "https":
+        ctx = ssl.create_default_context()
+        sock = ctx.wrap_socket(sock, server_hostname=host)
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    conn.sock = sock
+    try:
+        conn.request(method, path, body=body, headers=req_headers)
+        resp = conn.getresponse()
+        data = resp.read()
+        return int(resp.status), list(resp.getheaders()), data
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _read_health_url(url: str, base: str, opener: Any = None, timeout: float = 15.0) -> str:
     if opener is None:
         req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
@@ -91,6 +179,20 @@ def _read_health_url(url: str, base: str, opener: Any = None, timeout: float = 1
         except urllib.error.HTTPError as exc:
             raise AppInstanceError(f"GET {url} returned HTTP {exc.code} (base_url={base})") from None
         except Exception as exc:
+            parsed = urllib.parse.urlsplit(url)
+            gw_ip = _resolve_gateway_ip(parsed.hostname or "", timeout=min(timeout, 5.0))
+            if gw_ip:
+                try:
+                    status, _, raw_bytes = _request_via_ip(
+                        url, gw_ip, method="GET", headers={"Accept": "application/json"}, timeout=timeout
+                    )
+                    if status >= 400:
+                        raise AppInstanceError(f"GET {url} returned HTTP {status} (base_url={base})")
+                    return raw_bytes.decode("utf-8", errors="replace")
+                except AppInstanceError:
+                    raise
+                except Exception as inner_exc:
+                    raise AppInstanceError(f"GET {url} is unreachable for base_url {base}: {inner_exc}") from None
             raise AppInstanceError(f"GET {url} is unreachable for base_url {base}: {exc}") from None
 
     try:
@@ -126,6 +228,7 @@ def _read_health_url(url: str, base: str, opener: Any = None, timeout: float = 1
 
 
 def fetch_health(base_url: str, *, version: str | None = None,
+                 stack_commit: str | None = None,
                  opener: Any = None, timeout: float = 15.0) -> dict[str, Any]:
     """Fetch GET {base_url}/api/health -> {base_url, health_url, commit, version, ok}."""
     base = validate_base_url(base_url)
@@ -142,6 +245,7 @@ def fetch_health(base_url: str, *, version: str | None = None,
     commit = str(data.get("commit") or "").strip()
     if not commit or not COMMIT_RE.match(commit):
         raise AppInstanceError(f"{url} response is missing a valid 'commit' field (base_url={base})")
+    verify_stack_commit(stack_commit, commit, base_url=base)
     resolved_version = str(version or data.get("version") or "").strip() or commit[:7]
     return {
         "base_url": base,
@@ -180,6 +284,7 @@ class AppInstance:
                  base_url: str | None = None,
                  credentials: dict[str, str] | str | None = None,
                  version: str | None = None,
+                 stack_commit: str | None = None,
                  opener: Any = None,
                  health_opener: Any = None,
                  timeout: float = 15.0) -> None:
@@ -196,19 +301,29 @@ class AppInstance:
         self._credentials = normalize_credentials(resolved_creds)
         self._opener = health_opener or opener
         self._version_override = version
+        self._stack_commit = (stack_commit or os.environ.get("APP_SCREEN_STACK_COMMIT") or "").strip() or None
         self._timeout = timeout
         self._health: dict[str, Any] | None = None
         if self._opener is not None:
-            self._health = fetch_health(self.base_url, version=version, opener=self._opener, timeout=timeout)
+            self._health = fetch_health(
+                self.base_url,
+                version=version,
+                stack_commit=self._stack_commit,
+                opener=self._opener,
+                timeout=timeout,
+            )
 
     def read_health(self) -> dict[str, Any]:
         if self._health is None:
             self._health = fetch_health(
                 self.base_url,
                 version=self._version_override,
+                stack_commit=self._stack_commit,
                 opener=self._opener,
                 timeout=self._timeout,
             )
+        elif self._stack_commit:
+            verify_stack_commit(self._stack_commit, self._health.get("commit"), base_url=self.base_url)
         return self._health
 
     @property
@@ -360,6 +475,9 @@ class AppInstance:
             plan_file = tmp_path / "plan.json"
             plan_file.write_text(json.dumps(plan_doc, indent=2) + "\n", encoding="utf-8")
 
+            if CAPTURE_JS == HERE / "existing_capture.mjs" and not _local_node_playwright_available():
+                return self._shoot_via_mcp(plan_doc, creds, out_dir)
+
             env = dict(os.environ)
             creds_json = json.dumps(creds)
             env["APP_SCREEN_CREDENTIALS"] = creds_json
@@ -411,3 +529,445 @@ class AppInstance:
                 if isinstance(entry, dict) and entry.get("failed"):
                     failed.setdefault(str(cid), _scrub(str(entry["failed"]), secrets))
             return raw_data, failed
+
+    def _shoot_via_mcp(
+        self,
+        plan_doc: dict[str, Any],
+        creds: dict[str, str],
+        out_dir: Path,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Capture via playwright-mcp when running inside a Temper worker/stage container."""
+        from . import checks_render
+
+        secrets_list = self._secrets()
+        measure_src = Path(plan_doc.get("measure_script") or MEASURE_JS).read_text(encoding="utf-8")
+        token = secrets.token_hex(16)
+        parsed_base = urllib.parse.urlsplit(self.base_url)
+        base_host = parsed_base.hostname or ""
+        gw_ip = _resolve_gateway_ip(base_host)
+        account_cookies: dict[str, dict[str, str]] = {}
+        raw_holder: dict[str, Any] = {}
+        lock = threading.Lock()
+
+        class _ProxyHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, fmt: str, *args: Any) -> None:
+                return
+
+            def _read_body(self) -> bytes:
+                length = int(self.headers.get("Content-Length") or 0)
+                return self.rfile.read(length) if length > 0 else b""
+
+            def _handle_all(self, method: str) -> None:
+                body = self._read_body()
+                if self.path == f"/__app_screen_creds__/{token}":
+                    payload = json.dumps(creds).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                if self.path.startswith(f"/__app_screen_png__/{token}/"):
+                    cid = urllib.parse.unquote(self.path.split(f"/__app_screen_png__/{token}/", 1)[1])
+                    if "/" not in cid and ".." not in cid:
+                        (out_dir / f"{cid}.png").write_bytes(body)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"ok":true}')
+                    return
+                if self.path == f"/__app_screen_raw__/{token}":
+                    with lock:
+                        raw_holder["raw"] = body.decode("utf-8", errors="replace")
+                    (out_dir / "raw.json").write_bytes(body)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"ok":true}')
+                    return
+
+                acct = (self.headers.get("X-App-Screen-Account") or "").strip()
+                fwd_headers: dict[str, str] = {}
+                for k, v in self.headers.items():
+                    kl = k.lower()
+                    if kl in ("host", "content-length", "connection", "accept-encoding", "x-app-screen-account"):
+                        continue
+                    fwd_headers[k] = v
+                if acct:
+                    with lock:
+                        jar = dict(account_cookies.get(acct) or {})
+                    if jar:
+                        existing_cookie = fwd_headers.get("Cookie") or fwd_headers.get("cookie") or ""
+                        jar_str = "; ".join(f"{ck}={cv}" for ck, cv in jar.items())
+                        fwd_headers["Cookie"] = f"{existing_cookie}; {jar_str}".strip("; ") if existing_cookie else jar_str
+
+                target_url = f"{plan_doc['base_url']}{self.path}"
+                try:
+                    if gw_ip:
+                        status, resp_headers, resp_body = _request_via_ip(
+                            target_url, gw_ip, method=method, headers=fwd_headers, body=body if body else None, timeout=30.0
+                        )
+                    else:
+                        req = urllib.request.Request(
+                            target_url, data=body if body else None, headers=fwd_headers, method=method
+                        )
+                        with urllib.request.urlopen(req, timeout=30.0) as resp:
+                            status = int(getattr(resp, "status", 200))
+                            resp_headers = list(resp.headers.items())
+                            resp_body = resp.read()
+                except urllib.error.HTTPError as exc:
+                    status = int(exc.code)
+                    resp_headers = list(exc.headers.items()) if exc.headers else []
+                    resp_body = exc.read() if hasattr(exc, "read") else b""
+                except Exception as exc:
+                    err_bytes = str(exc).encode("utf-8", errors="replace")
+                    self.send_response(502)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err_bytes)))
+                    self.end_headers()
+                    self.wfile.write(err_bytes)
+                    return
+
+                if acct:
+                    for hk, hv in resp_headers:
+                        if hk.lower() == "set-cookie":
+                            sc = http.cookies.SimpleCookie()
+                            try:
+                                sc.load(hv)
+                                with lock:
+                                    bucket = account_cookies.setdefault(acct, {})
+                                    for morsel_key, morsel in sc.items():
+                                        bucket[morsel_key] = morsel.value
+                            except Exception:
+                                pass
+
+                self.send_response(status)
+                for hk, hv in resp_headers:
+                    if hk.lower() in ("transfer-encoding", "content-encoding", "content-length", "connection"):
+                        continue
+                    self.send_header(hk, hv)
+                self.send_header("Content-Length", str(len(resp_body)))
+                self.end_headers()
+                self.wfile.write(resp_body)
+
+            def do_GET(self) -> None:
+                self._handle_all("GET")
+
+            def do_POST(self) -> None:
+                self._handle_all("POST")
+
+            def do_PUT(self) -> None:
+                self._handle_all("PUT")
+
+            def do_DELETE(self) -> None:
+                self._handle_all("DELETE")
+
+            def do_PATCH(self) -> None:
+                self._handle_all("PATCH")
+
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), _ProxyHandler)
+        port = server.server_address[1]
+        proxy_host = _local_container_ip()
+        proxy_url = f"http://{proxy_host}:{port}"
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            js_code = _build_mcp_capture_js(plan_doc, measure_src, proxy_url, token)
+            res = _run_mcp_js(checks_render, js_code)
+        except Exception as exc:
+            clean = _scrub(str(exc), secrets_list)
+            raise AppInstanceError(f"playwright-mcp capture failed against {self.base_url}: {clean}") from None
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        failed: dict[str, str] = {}
+        if isinstance(res, dict):
+            failed_raw = res.get("failed") or {}
+            if isinstance(failed_raw, dict):
+                for cid, why in failed_raw.items():
+                    w = _scrub(str(why), secrets_list)
+                    if str(cid).startswith("login:"):
+                        acct = str(cid).split(":", 1)[1]
+                        raise AppInstanceError(f"login failed for account {acct!r} on {self.base_url}: {w}")
+                    failed[str(cid)] = w
+
+        raw_path = out_dir / "raw.json"
+        if not raw_path.is_file():
+            raise AppInstanceError(f"playwright-mcp capture did not write {raw_path}")
+        raw_data = json.loads(_scrub(raw_path.read_text(encoding="utf-8"), secrets_list))
+        for cid, entry in raw_data.items():
+            if isinstance(entry, dict) and entry.get("failed"):
+                failed.setdefault(str(cid), _scrub(str(entry["failed"]), secrets_list))
+        return raw_data, failed
+
+
+def _local_node_playwright_available() -> bool:
+    try:
+        proc = subprocess.run(
+            ["node", "-e", "import('playwright').then(()=>process.exit(0)).catch(()=>process.exit(1))"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def _local_container_ip() -> str:
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return "127.0.0.1"
+
+
+def _format_exc(exc: BaseException) -> str:
+    sub = getattr(exc, "exceptions", None)
+    if sub:
+        return "; ".join(_format_exc(item) for item in sub)
+    return str(exc)
+
+
+def _run_mcp_js(checks_render_mod: Any, js_code: str) -> Any:
+    import asyncio  # noqa: PLC0415
+
+    browser_url = os.environ.get("CHECKS_BROWSER") or checks_render_mod.BROWSER
+    dc = checks_render_mod._design_capture()
+    from mcp import ClientSession  # noqa: PLC0415
+    from mcp.client.streamable_http import streamablehttp_client  # noqa: PLC0415
+
+    async def _go() -> Any:
+        async with streamablehttp_client(browser_url) as (r, w, _):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                out = await dc.run(s, js_code)
+                await s.call_tool("browser_close", {})
+                return out
+
+    try:
+        return asyncio.run(_go())
+    except BaseException as exc:
+        if isinstance(exc, Exception) and not hasattr(exc, "exceptions"):
+            raise
+        raise RuntimeError(_format_exc(exc)) from None
+
+
+def _build_mcp_capture_js(plan_doc: dict[str, Any], measure_src: str, proxy_url: str, token: str) -> str:
+    parsed = urllib.parse.urlsplit(str(plan_doc.get("base_url") or ""))
+    base_origin = f"{parsed.scheme}://{parsed.netloc}"
+    return (
+        "async (rootPage) => {\n"
+        f"  const plan = {json.dumps(plan_doc)};\n"
+        f"  const measureSrc = {json.dumps(measure_src)};\n"
+        f"  const proxyUrl = {json.dumps(proxy_url)};\n"
+        f"  const token = {json.dumps(token)};\n"
+        f"  const baseOrigin = {json.dumps(base_origin)};\n"
+        "  const BASE = String(plan.base_url || '').replace(/\\/$/, '');\n"
+        "  const PAGE = plan.page || {};\n"
+        "  const NEVER_SRC = 'send|place|confirm|submit|delete|cancel order';\n"
+        "  const browser = rootPage.context().browser();\n"
+        "  const credResp = await rootPage.context().request.fetch(`${proxyUrl}/__app_screen_creds__/${token}`);\n"
+        "  const creds = await credResp.json();\n"
+        "  const states = {};\n"
+        "  const raw = {};\n"
+        "  const failed = {};\n"
+        "  const matchDelay = (rel, delay) => {\n"
+        "    if (!delay) return false;\n"
+        "    if (typeof delay === 'string') return rel.includes(delay);\n"
+        "    if (delay.except && rel.includes(delay.except)) return false;\n"
+        "    const m = String(delay.match || '/api/');\n"
+        "    const needle = m.replace(/^\\*+/, '').replace(/\\*+$/, '') || '/api/';\n"
+        "    return rel.includes(needle);\n"
+        "  };\n"
+        "  const attachProxy = async (ctx, pageForWait, account, delay) => {\n"
+        "    await ctx.route(`${baseOrigin}/**`, async (route) => {\n"
+        "      const req = route.request();\n"
+        "      const rawUrl = req.url();\n"
+        "      const withoutOrigin = rawUrl.startsWith(baseOrigin) ? rawUrl.slice(baseOrigin.length) : rawUrl.replace(/^https?:\\/\\/[^/]+/, '');\n"
+        "      const hashIdx = withoutOrigin.indexOf('#');\n"
+        "      const rel = (hashIdx >= 0 ? withoutOrigin.slice(0, hashIdx) : withoutOrigin) || '/';\n"
+        "      if (matchDelay(rel, delay)) {\n"
+        "        const ms = (typeof delay === 'object' && delay.delay_ms) ? delay.delay_ms : 8000;\n"
+        "        try { await pageForWait.waitForTimeout(ms); } catch (_e) { return; }\n"
+        "      }\n"
+        "      const headers = Object.assign({}, await req.allHeaders());\n"
+        "      delete headers['host'];\n"
+        "      delete headers['content-length'];\n"
+        "      if (account) headers['x-app-screen-account'] = account;\n"
+        "      const postBuf = req.postDataBuffer();\n"
+        "      try {\n"
+        "        const resp = await ctx.request.fetch(`${proxyUrl}${rel}`, {\n"
+        "          method: req.method(),\n"
+        "          headers,\n"
+        "          data: postBuf || undefined,\n"
+        "          maxRedirects: 0,\n"
+        "          timeout: 25000,\n"
+        "        });\n"
+        "        await route.fulfill({ response: resp });\n"
+        "      } catch (_e) {\n"
+        "        try { await route.abort(); } catch (_e2) {}\n"
+        "      }\n"
+        "    });\n"
+        "  };\n"
+        "  const settle = async (p) => {\n"
+        "    if (PAGE.main) await p.waitForSelector(PAGE.main, { timeout: 20000 }).catch(() => {});\n"
+        "    await p.waitForTimeout(PAGE.settle_ms ?? 1800);\n"
+        "    if (!PAGE.loading_text) return;\n"
+        "    for (let i = 0; i < 16; i++) {\n"
+        "      const loading = await p.evaluate(([sel, re]) => new RegExp(re).test(document.querySelector(sel)?.innerText || ''), [PAGE.main || 'body', PAGE.loading_text]);\n"
+        "      if (!loading) break;\n"
+        "      await p.waitForTimeout(500);\n"
+        "    }\n"
+        "  };\n"
+        "  const followFirstLink = async (p, prefix) => {\n"
+        "    const href = await p.evaluate(([main, pref]) => {\n"
+        "      const a = [...document.querySelectorAll(`${main} a[href^=\"${pref}\"]`)].find((x) => x.getAttribute('href') !== pref && x.offsetParent);\n"
+        "      return a ? a.getAttribute('href') : null;\n"
+        "    }, [PAGE.main || 'body', prefix]);\n"
+        "    if (!href) throw new Error(`no ${prefix} link on ${p.url()}`);\n"
+        "    await p.goto(BASE + href, { waitUntil: 'load', timeout: 25000 });\n"
+        "    await settle(p);\n"
+        "    return href;\n"
+        "  };\n"
+        "  const clickFirst = async (p, spec) => {\n"
+        "    const clicked = await p.evaluate(([main, text, not, never]) => {\n"
+        "      const words = new RegExp(text, 'i');\n"
+        "      const notRe = not ? new RegExp(not, 'i') : null;\n"
+        "      const neverRe = new RegExp(never, 'i');\n"
+        "      const btn = [...document.querySelectorAll(`${main} button, ${main} a`)].find((b) => {\n"
+        "        const t = (b.innerText || '').trim();\n"
+        "        return b.offsetParent && words.test(t) && !(notRe && notRe.test(t)) && !neverRe.test(t);\n"
+        "      });\n"
+        "      if (!btn) return null;\n"
+        "      btn.click();\n"
+        "      return (btn.innerText || '').trim().slice(0, 40);\n"
+        "    }, [PAGE.main || 'body', spec.text, spec.not || null, NEVER_SRC]);\n"
+        "    if (!clicked) throw new Error(`nothing to click matching ${spec.text} on ${p.url()}`);\n"
+        "    await p.waitForTimeout(2000);\n"
+        "    return clicked;\n"
+        "  };\n"
+        "  const loginState = async (account) => {\n"
+        "    if (!plan.login || !account || account === 'none') return undefined;\n"
+        "    if (states[account]) return states[account];\n"
+        "    if (failed[`login:${account}`]) throw new Error(failed[`login:${account}`]);\n"
+        "    const short = String(account).split('@')[0];\n"
+        "    const password = creds[account] || creds[short] || creds['*'] || creds.default || creds.password || '';\n"
+        "    if (!password) {\n"
+        "      failed[`login:${account}`] = `missing runtime credentials for account ${account}`;\n"
+        "      throw new Error(failed[`login:${account}`]);\n"
+        "    }\n"
+        "    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });\n"
+        "    const p = await ctx.newPage();\n"
+        "    try {\n"
+        "      await attachProxy(ctx, p, account, null);\n"
+        "      await p.goto(BASE + plan.login.path, { waitUntil: 'load', timeout: 25000 });\n"
+        "      for (const [sel, tmpl] of Object.entries(plan.login.fields || {})) {\n"
+        "        const s = String(tmpl);\n"
+        "        const val = (s.includes('{account}@') && account.includes('@')) ? account : s.replaceAll('{account}', account);\n"
+        "        await p.fill(sel, val);\n"
+        "      }\n"
+        "      const userSel = plan.login.user_selector || plan.login.email_field || plan.login.user_field;\n"
+        "      if (userSel && !(plan.login.fields && userSel in plan.login.fields)) {\n"
+        "        const val = (account.includes('@') || plan.login.fields) ? account : `${account}@rollcall.test`;\n"
+        "        await p.fill(userSel, val);\n"
+        "      }\n"
+        "      const pwdSel = plan.login.password_selector || plan.login.password_field;\n"
+        "      if (pwdSel) await p.fill(pwdSel, password);\n"
+        "      await p.click(plan.login.submit);\n"
+        "      await p.waitForSelector(plan.login.wait_for, { timeout: 20000 });\n"
+        "      await p.waitForTimeout(1000);\n"
+        "      const st = await ctx.storageState();\n"
+        "      states[account] = st;\n"
+        "      return st;\n"
+        "    } catch (err) {\n"
+        "      const msg = `login failed for account ${account} at ${BASE}${plan.login.path}: ${err && err.message ? err.message : err}`;\n"
+        "      failed[`login:${account}`] = msg;\n"
+        "      const e = new Error(msg);\n"
+        "      e.loginFailed = true;\n"
+        "      throw e;\n"
+        "    } finally {\n"
+        "      await ctx.close();\n"
+        "    }\n"
+        "  };\n"
+        "  for (const cap of (plan.captures || [])) {\n"
+        "    let ctx = null;\n"
+        "    try {\n"
+        "      const storageState = await loginState(cap.account);\n"
+        "      ctx = await browser.newContext({\n"
+        "        viewport: { width: cap.width, height: cap.height },\n"
+        "        deviceScaleFactor: 2,\n"
+        "        isMobile: Boolean(cap.phone),\n"
+        "        hasTouch: Boolean(cap.phone),\n"
+        "        storageState,\n"
+        "      });\n"
+        "      const p = await ctx.newPage();\n"
+        "      const delay = cap.delay_api ? PAGE.delay_api : null;\n"
+        "      await attachProxy(ctx, p, cap.account || '', delay);\n"
+        "      const errors = [];\n"
+        "      p.on('pageerror', (e) => errors.push(String(e && e.message ? e.message : e).slice(0, 160)));\n"
+        "      const did = [];\n"
+        "      const steps = cap.steps || [];\n"
+        "      for (let i = 0; i < steps.length; i++) {\n"
+        "        const step = steps[i];\n"
+        "        const last = i === steps.length - 1;\n"
+        "        if (step.goto) {\n"
+        "          await p.goto(BASE + step.goto, { waitUntil: 'load', timeout: 25000 });\n"
+        "          if (delay && last) await p.waitForTimeout(delay.wait_ms ?? 400);\n"
+        "          else await settle(p);\n"
+        "          did.push(`goto ${step.goto}`);\n"
+        "        } else if (step.follow_first_link) {\n"
+        "          did.push(`follow ${await followFirstLink(p, step.follow_first_link)}`);\n"
+        "        } else if (step.click_first) {\n"
+        "          if (typeof step.click_first === 'string') {\n"
+        "            await p.locator(step.click_first).first().click({ timeout: 10000 });\n"
+        "            did.push(`click ${step.click_first}`);\n"
+        "          } else {\n"
+        "            did.push(`click \"${await clickFirst(p, step.click_first)}\"`);\n"
+        "          }\n"
+        "        } else if (step.click) {\n"
+        "          await p.click(step.click, { timeout: 10000 });\n"
+        "          did.push(`click ${step.click}`);\n"
+        "        } else if (step.fill) {\n"
+        "          await p.fill(step.fill.selector, step.fill.value, { timeout: 10000 });\n"
+        "          did.push(`fill ${step.fill.selector}`);\n"
+        "        } else if (step.wait_for) {\n"
+        "          await p.waitForSelector(step.wait_for, { state: 'visible', timeout: 15000 });\n"
+        "        } else if (step.wait_ms) {\n"
+        "          await p.waitForTimeout(step.wait_ms);\n"
+        "        }\n"
+        "      }\n"
+        "      await p.evaluate(() => window.scrollTo(0, 0));\n"
+        "      await p.waitForTimeout(200);\n"
+        "      const cfg = {\n"
+        "        main: PAGE.main || 'body',\n"
+        "        areas: PAGE.areas || {},\n"
+        "        key_regions: PAGE.key_regions || PAGE.areas || {},\n"
+        "        loading_text: PAGE.loading_text || null,\n"
+        "        error_selector: PAGE.error_selector || null,\n"
+        "      };\n"
+        "      const measured = await p.evaluate(`(${measureSrc})(${JSON.stringify(cfg)})`);\n"
+        "      const png = await p.screenshot({ fullPage: false });\n"
+        "      await ctx.request.fetch(`${proxyUrl}/__app_screen_png__/${token}/${encodeURIComponent(cap.id)}`, {\n"
+        "        method: 'POST',\n"
+        "        headers: { 'content-type': 'image/png' },\n"
+        "        data: png,\n"
+        "      });\n"
+        "      raw[cap.id] = Object.assign({}, measured, { steps: did, pageErrors: errors });\n"
+        "    } catch (err) {\n"
+        "      const msg = String(err && err.message ? err.message : err).slice(0, 300);\n"
+        "      failed[cap.id] = msg;\n"
+        "      raw[cap.id] = { failed: msg };\n"
+        "      if (err && err.loginFailed) break;\n"
+        "    } finally {\n"
+        "      if (ctx) await ctx.close();\n"
+        "    }\n"
+        "  }\n"
+        "  await rootPage.context().request.fetch(`${proxyUrl}/__app_screen_raw__/${token}`, {\n"
+        "    method: 'POST',\n"
+        "    headers: { 'content-type': 'application/json' },\n"
+        "    data: JSON.stringify(raw, null, 2),\n"
+        "  });\n"
+        "  return { captures: (plan.captures || []).length, ok: (plan.captures || []).length - Object.keys(failed).length, failed };\n"
+        "}"
+    )

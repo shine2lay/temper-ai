@@ -42,6 +42,8 @@ class _RepoConfigResolver:
     def get(self, name: str, config_type: str) -> dict[str, Any]:
         subdir = "workflows" if config_type == "workflow" else "agents"
         path = ROOT / "configs/design" / subdir / f"{name}.yaml"
+        if not path.is_file():
+            path = ROOT / "configs/epd" / subdir / f"{name}.yaml"
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         return doc.get(config_type, doc)
 
@@ -104,6 +106,7 @@ def test_bench_workflow_and_replay_agent_replace_only_model_boundary():
 
     replay_nodes = {
         "intake_read", "intake_revise",
+        "stack_up_ref", "stack_seed",
         "existing_read", "existing_revise",
         "ground_read", "ground_revise",
         "directions_read", "directions_revise",
@@ -118,6 +121,9 @@ def test_bench_workflow_and_replay_agent_replace_only_model_boundary():
                     assert child["agent"] == "design_app_screen_replay"
                 else:
                     assert child["agent"] == "design_app_screen_stage_v1"
+        elif node["name"] == "stack_down":
+            assert node["agent"] == "design_app_screen_replay"
+            assert node["run_after_failure"] is True
 
 
 def test_replay_draft_for_step_emits_valid_json_for_all_six_model_steps(tmp_path: Path):

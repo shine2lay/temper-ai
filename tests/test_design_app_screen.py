@@ -17,6 +17,8 @@ class _RepoConfigResolver:
     def get(self, name: str, config_type: str) -> dict:
         subdir = "workflows" if config_type == "workflow" else "agents"
         path = ROOT / "configs/design" / subdir / f"{name}.yaml"
+        if not path.is_file():
+            path = ROOT / "configs/epd" / subdir / f"{name}.yaml"
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         return doc.get(config_type, doc)
 
@@ -32,11 +34,14 @@ EXPECTED_TOP_LEVEL = [
     "show",
     "gate_final",
     "handoff",
+    "stack_down",
 ]
 
 EXPECTED_STAGE_CHILDREN = {
     "intake": ["intake_collect", "intake_read", "intake_check", "intake_revise", "intake_finish"],
     "existing": [
+        "stack_up_ref",
+        "stack_seed",
         "existing_collect",
         "existing_sheet",
         "existing_read",
@@ -76,6 +81,12 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
             assert node["type"] == "agent"
             assert node["gate"] is True
             assert "mode" not in node["input_map"]
+        elif name == "stack_down":
+            assert node["type"] == "agent"
+            assert node["agent"] == "stack_down"
+            assert node["depends_on"] == ["handoff"]
+            assert node["run_after_failure"] is True
+            assert node["input_map"] == {"product": "input.product", "slug": "design"}
         else:
             assert node["type"] == "stage", f"{name} must be type: stage"
             assert node["input_map"]["product"] == "input.product"

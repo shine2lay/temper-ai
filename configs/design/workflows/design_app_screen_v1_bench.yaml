@@ -54,12 +54,29 @@ workflow:
     - name: existing
       type: stage
       depends_on: [intake]
-      input_map: {product: input.product}
+      input_map: {product: input.product, credentials: input.credentials}
       nodes:
+        - name: stack_up_ref
+          type: agent
+          agent: design_app_screen_replay
+          input_map: {step: stack_up_ref, product: input.product, ref: origin/master, slug: design}
+        - name: stack_seed
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [stack_up_ref]
+          input_map: {step: stack_seed, env_name: stack_up_ref.structured.env_name, product: input.product, slug: design}
         - name: existing_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: existing_collect, product: input.product}
+          depends_on: [stack_seed]
+          input_map:
+            step: existing_collect
+            product: input.product
+            base_url: stack_up_ref.structured.base_url
+            stack_commit: stack_up_ref.structured.commit
+            stack_env_name: stack_up_ref.structured.env_name
+            stack_reused: stack_up_ref.structured.reused
+            credentials: input.credentials
         - name: existing_sheet
           type: agent
           agent: design_app_screen_stage_v1
@@ -268,3 +285,10 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           input_map: {step: handoff, product: input.product}
+
+    - name: stack_down
+      type: agent
+      agent: design_app_screen_replay
+      depends_on: [handoff]
+      run_after_failure: true
+      input_map: {step: stack_down, product: input.product, slug: design}

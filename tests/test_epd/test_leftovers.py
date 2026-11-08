@@ -455,3 +455,27 @@ def test_the_workflows_that_keep_their_task_are_the_ones_it_knows():
             if isinstance(node, dict) and (node.get("input_map") or {}).get("keep") is True:
                 keeping.add(wf["name"])
     assert keeping - {"epd_loop"} == leftovers.KEEPS_TASK
+
+
+def test_department_from_claim_is_preserved_on_claim_worktree_and_branch(world, capsys):
+    app = world["repos"] / "app"
+    slug = "design-screen-run-1"
+    wt = app / "worktrees" / slug
+    git("worktree", "add", "-q", "-b", slug, str(wt), "origin/master", cwd=world["main"])
+    (app / "claims" / f"{slug}.json").write_text(json.dumps({
+        "status": "worktree_ready",
+        "task_slug": slug,
+        "branch": slug,
+        "run_id": "r-done",
+        "department": "design",
+        "claimed_at": iso(NOW - dt.timedelta(days=1)),
+        "root": str(app),
+    }))
+    code, result, _ = run(world, capsys)
+    assert code == 0
+    for kind in ("claim", "worktree", "branch"):
+        found = item(result, kind, slug)
+        assert (found["class"], found["fix_owner"]) == ("leftover", "systems")
+        assert found["department"] == "design"
+        assert found["evidence"]["department"] == "design"
+

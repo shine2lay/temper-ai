@@ -464,10 +464,12 @@ def audit(repos_root: Path, runs: Runs, standee: Standee, now: dt.datetime) -> d
     repos = sorted(p for p in repos_root.iterdir() if p.is_dir())
 
     def add(kind: str, repo: str, name: str, slug: str | None, v: dict, age: float | None, **extra) -> None:
+        dept = v["evidence"].get("department")
+        dept_kw = {"department": dept} if dept else {}
         items.append({"kind": kind, "repo": repo, "name": name, "slug": slug, "class": v["class"],
                       "reason": v["reason"], "fix_owner": v["fix_owner"] if v["class"] == "leftover"
                       or v["class"] == "kept_by_design" else None,
-                      "age_days": age, **extra, "evidence": v["evidence"]})
+                      "age_days": age, **dept_kw, **extra, "evidence": v["evidence"]})
 
     def owner_of(repo: str, slug: str) -> dict | None:
         m = EPD_SLUG.match(slug)
@@ -490,6 +492,8 @@ def audit(repos_root: Path, runs: Runs, standee: Standee, now: dt.datetime) -> d
             v = bet_verdict(workspaces, repo, m.group(1)) if m else run_verdict(runs, claim.get("run_id") or "")
             v["evidence"].update({"claim_path": str(path), "claim_run_id": claim.get("run_id"),
                                   "claimed_at": claim.get("claimed_at"), "claim_status": claim.get("status")})
+            if claim.get("department"):
+                v["evidence"]["department"] = claim.get("department")
             claims[slug] = {"claim": claim, "verdict": v, "branch": claim.get("branch") or slug}
             claimed = parse_time(claim.get("claimed_at")) or mtime(path)
             add("claim", repo, path.stem, slug, v, days(claimed, now))
@@ -506,6 +510,8 @@ def audit(repos_root: Path, runs: Runs, standee: Standee, now: dt.datetime) -> d
                 v = verdict("unknown", f"worktree {wt}: {facts['why']}", path=str(wt))
                 if base:
                     v["evidence"]["claim_or_bet"] = base["class"]
+                    if base["evidence"].get("department"):
+                        v["evidence"]["department"] = base["evidence"]["department"]
             elif base:
                 v = follow(base, "bet" if EPD_SLUG.match(slug) else "claim")
             else:

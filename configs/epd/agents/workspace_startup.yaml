@@ -1,0 +1,61 @@
+# System engineering: provision or reuse an isolated git worktree for a workflow run (workspace_startup).
+#
+# Reuses Systems' task_claim + task_worktree contract via configs/epd/bin/workspace_lifecycle.py:
+#   - Resolves repo_url or product (rollcall, temper-ai, inkflow, roamee, standee, ...)
+#   - Creates or re-enters <workspaces_root>/<repo>/claims/<task_slug>.json
+#   - Clones or fetches <workspaces_root>/<repo>/main and creates/reuses worktree
+#     <workspaces_root>/<repo>/worktrees/<task_slug> off origin/<base_branch>
+#   - Adds .epd/ and any exclude_dirs to <main>/.git/info/exclude
+#   - Creates <worktree>/.temper and (when department is set) <worktree>/.temper/<department>
+#
+# Emits JSON on stdout:
+#   {"status": "ready", "repo": "...", "repo_url": "...", "task_slug": "...", "root": "...",
+#    "worktree_path": "...", "temper_path": "...", "department_path": "..."|null,
+#    "department": "..."|null, "main_repo": "...", "branch": "...", "base_branch": "...",
+#    "head": "...", "base_head": "...", "claim_path": "...", "worktree": "...", "clone": "..."}
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: workspace_startup
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -eu
+    REPO_URL="{{ repo_url | default('') }}"
+    PRODUCT="{{ product | default('') }}"
+    RUN_SLUG="{{ run_slug | default('') }}"
+    TASK_NAME="{{ task_name | default('') }}"
+    TASK_SLUG="{{ task_slug | default('') }}"
+    DEPARTMENT="{{ department | default('') }}"
+    BASE_BRANCH="{{ base_branch | default('') }}"
+    EXCLUDE_DIRS="{{ exclude_dirs | default('') }}"
+    FORCE="{{ force | default('false') }}"
+    RUN_ID="{{ run_id | default('') }}"
+    WORKSPACES_ROOT="{{ workspaces_root | default('') }}"
+    [ "$REPO_URL" = None ] && REPO_URL=""
+    [ "$PRODUCT" = None ] && PRODUCT=""
+    [ "$RUN_SLUG" = None ] && RUN_SLUG=""
+    [ "$TASK_NAME" = None ] && TASK_NAME=""
+    [ "$TASK_SLUG" = None ] && TASK_SLUG=""
+    [ "$DEPARTMENT" = None ] && DEPARTMENT=""
+    [ "$BASE_BRANCH" = None ] && BASE_BRANCH=""
+    [ "$EXCLUDE_DIRS" = None ] && EXCLUDE_DIRS=""
+    if [ -z "$FORCE" ] || [ "$FORCE" = None ]; then FORCE="false"; fi
+    [ "$RUN_ID" = None ] && RUN_ID=""
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    BIN=/app/configs/epd/bin/workspace_lifecycle.py
+    [ -f "$BIN" ] || BIN=configs/epd/bin/workspace_lifecycle.py
+    exec python3 -u "$BIN" startup \
+      --repo-url="$REPO_URL" \
+      --product="$PRODUCT" \
+      --run-slug="$RUN_SLUG" \
+      --task-name="$TASK_NAME" \
+      --task-slug="$TASK_SLUG" \
+      --department="$DEPARTMENT" \
+      --base-branch="$BASE_BRANCH" \
+      --exclude-dirs="$EXCLUDE_DIRS" \
+      --force="$FORCE" \
+      --run-id="$RUN_ID" \
+      --workspaces-root="$WORKSPACES_ROOT"

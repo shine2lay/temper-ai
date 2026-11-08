@@ -1,0 +1,53 @@
+# System engineering: safely remove a workflow run's worktree, local branch, and release its claim (workspace_cleanup).
+#
+# Reuses Systems' task_cleanup contract via configs/epd/bin/workspace_lifecycle.py:
+#   - Checks uncommitted changes and unpushed commits before removing anything (refused unless force=true)
+#   - Removes <workspaces_root>/<repo>/worktrees/<task_slug> and prunes git worktrees
+#   - Deletes local branch <task_slug>
+#   - Archives <workspaces_root>/<repo>/claims/<task_slug>.json to claims/released/<task_slug>.<ts>.json
+#
+# Emits JSON on stdout:
+#   {"status": "clean", "repo": "...", "task_slug": "...", "root": "...",
+#    "worktree": "removed"|"removed_unregistered"|"absent",
+#    "branch": "deleted"|"absent", "claim": "released"|"absent",
+#    "released_claim_path": "..."}
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: workspace_cleanup
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    REPO_URL="{{ repo_url | default('') }}"
+    PRODUCT="{{ product | default('') }}"
+    RUN_SLUG="{{ run_slug | default('') }}"
+    TASK_NAME="{{ task_name | default('') }}"
+    TASK_SLUG="{{ task_slug | default('') }}"
+    DEPARTMENT="{{ department | default('') }}"
+    FORCE="{{ force | default('false') }}"
+    RUN_ID="{{ run_id | default('') }}"
+    WORKSPACES_ROOT="{{ workspaces_root | default('') }}"
+    [ "$REPO_URL" = None ] && REPO_URL=""
+    [ "$PRODUCT" = None ] && PRODUCT=""
+    [ "$RUN_SLUG" = None ] && RUN_SLUG=""
+    [ "$TASK_NAME" = None ] && TASK_NAME=""
+    [ "$TASK_SLUG" = None ] && TASK_SLUG=""
+    [ "$DEPARTMENT" = None ] && DEPARTMENT=""
+    if [ -z "$FORCE" ] || [ "$FORCE" = None ]; then FORCE="false"; fi
+    [ "$RUN_ID" = None ] && RUN_ID=""
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    BIN=/app/configs/epd/bin/workspace_lifecycle.py
+    [ -f "$BIN" ] || BIN=configs/epd/bin/workspace_lifecycle.py
+    exec python3 -u "$BIN" cleanup \
+      --repo-url="$REPO_URL" \
+      --product="$PRODUCT" \
+      --run-slug="$RUN_SLUG" \
+      --task-name="$TASK_NAME" \
+      --task-slug="$TASK_SLUG" \
+      --department="$DEPARTMENT" \
+      --force="$FORCE" \
+      --run-id="$RUN_ID" \
+      --workspaces-root="$WORKSPACES_ROOT"

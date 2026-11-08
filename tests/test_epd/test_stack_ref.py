@@ -554,3 +554,31 @@ def test_run_standee_uses_default_ssh_target_when_target_file_absent(
     assert stack_ref.DEFAULT_STANDEE_SSH_TARGET in captured["cmd"]
     assert f"UserKnownHostsFile={known_hosts}" in captured["cmd"]
 
+
+def test_fetch_and_resolve_ref_fast_forwards_clean_main_checkout(
+    git_repos: dict[str, Any],
+) -> None:
+    clone: Path = git_repos["clone"]
+    sha1: str = git_repos["sha1"]
+    sha2: str = git_repos["advance_origin"]("new content\n")
+    assert sha2 != sha1
+    head_before = subprocess.run(
+        ["git", "-C", str(clone), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_before == sha1
+
+    resolved = stack_ref.fetch_and_resolve_ref(clone, "origin/master")
+    assert resolved == sha2
+    head_after = subprocess.run(
+        ["git", "-C", str(clone), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_after == sha2
+    assert (clone / "README.md").read_text() == "new content\n"
+
+

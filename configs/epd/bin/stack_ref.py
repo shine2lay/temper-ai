@@ -294,6 +294,22 @@ def fetch_and_resolve_ref(
         raise StackRefError(
             f"rev-parse returned non-40-hex commit {commit!r} for ref {ref!r}"
         )
+    if ref in ("origin/master", "origin/main"):
+        status_proc = subprocess.run(
+            ["git", "-C", str(local_repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=15,
+        )
+        if status_proc.returncode == 0 and not status_proc.stdout.strip():
+            subprocess.run(
+                ["git", "-C", str(local_repo), "merge", "--ff-only", "--quiet", commit],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
     return commit
 
 

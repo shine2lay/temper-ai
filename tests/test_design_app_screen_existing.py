@@ -23,6 +23,7 @@ BIN = ROOT / "configs/design/bin"
 sys.path.insert(0, str(BIN))
 
 from app_screen import (  # noqa: E402
+    app_instance,
     contracts,
     existing,
     existing_check,
@@ -38,7 +39,6 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
 
 APP_FILE = {
     "product": "demo", "name": "Demo", "job": "Demo shows a gardener which plants need water today.",
-    "app": {"kind": "static", "root": "/tmp/demo-app", "port": 8199},
     "page": {"main": "main", "key_regions": {"main_status": "#status"}, "error_selector": "[role=alert]"},
     "sizes": {"390": {"height": 844, "phone": True}, "320": {"height": 568, "phone": True},
               "1440": {"height": 900, "phone": False}},
@@ -101,7 +101,7 @@ GOOD = {
 
 
 def _loaded(tmp_path: Path) -> dict:
-    return product_app.load("demo", _store(tmp_path, APP_FILE))
+    return product_app.load(_store(tmp_path, APP_FILE))
 
 
 def _audit(app: dict, raw: dict) -> tuple[dict, dict]:
@@ -144,17 +144,20 @@ def _checks(found: dict) -> set[str]:
     return {p["check"] for p in found["problems"]}
 
 
-# --- product file ---------------------------------------------------------------------------------------------
+# --- product file (.temper/design/app.yaml) and instance boundary ---------------------------------------------
 
 def _store(tmp_path: Path, app: dict) -> Path:
-    store = tmp_path / "products"
-    _write(store / app["product"] / "app.yaml", yaml.safe_dump(app, sort_keys=False))
-    return store
+    repo = tmp_path / "repo"
+    _write(repo / ".temper" / "design" / "app.yaml", yaml.safe_dump(app, sort_keys=False))
+    return repo
 
 
-def test_product_file_loads_and_expands_to_one_capture_per_screen_state_width(tmp_path):
-    app = product_app.load("demo", _store(tmp_path, APP_FILE))
-    assert app["base_url"] == "http://127.0.0.1:8199"
+def test_product_file_loads_from_temper_design_and_expands_captures(tmp_path):
+    repo = _store(tmp_path, APP_FILE)
+    app = product_app.load(repo)
+    assert app["repo"] == str(repo)
+    assert app["path"].endswith(".temper/design/app.yaml")
+    assert len(app["spec_sha256"]) == 64
     caps = product_app.captures(app)
     assert [c["id"] for c in caps] == ["home-390-normal", "home-320-normal", "list-390-normal", "list-390-error"]
     assert caps[3]["steps"] == [{"goto": "/list.html?state=error"}]
@@ -166,7 +169,8 @@ def test_product_file_loads_and_expands_to_one_capture_per_screen_state_width(tm
     (lambda a: a["screens"][1]["states"]["normal"].update(widths=[768]), "width 768 is not in sizes"),
     (lambda a: a.update(sheet_width=1280), "sheet_width"),
     (lambda a: a["screens"].append(copy.deepcopy(a["screens"][0])), "used twice"),
-    (lambda a: a.update(login={"path": "/login", "fields": {"#e": "x"}, "submit": "b", "wait_for": "main"}),
+    (lambda a: a.update(login={"path": "/login", "email_field": "#e", "password_field": "#p",
+                               "submit": "b", "wait_for": "main"}),
      "needs an account"),
     (lambda a: a["screens"][0].update(steps=[{"click_first": {"text": "("}}]) or a["screens"][0].pop("route"),
      "not a regular expression"),
@@ -176,21 +180,171 @@ def test_product_file_fails_loud_naming_the_problem(tmp_path, change, words):
     app = copy.deepcopy(APP_FILE)
     change(app)
     with pytest.raises(product_app.AppFileError, match="problem") as err:
-        product_app.load("demo", _store(tmp_path, app))
+        product_app.load(_store(tmp_path, app))
     assert words in str(err.value)
 
 
-def test_server_checkout_never_inside_the_repo(tmp_path):
+@pytest.mark.parametrize("bad_key, bad_val", [
+    ("app", {"kind": "server", "port": 8174}),
+    ("build", ["uv sync --frozen", "npm ci"]),
+    ("env", {"ROLLCALL_ENCRYPTION_KEY": "x"}),
+    ("port", 8174),
+    ("serve", ["uvicorn", "rollcall.app.main:app"]),
+    ("seed", ["python", "-m", "rollcall.cli.seed_dev"]),
+    ("commit", "81117dd"),
+])
+def test_leftover_build_env_port_serve_commit_key_rejected_pointing_to_standee_yaml(tmp_path, bad_key, bad_val):
     app = copy.deepcopy(APP_FILE)
-    app["app"] = {"kind": "server", "repo": "/srv/app", "commit": "81117dd", "checkout": "/srv/app/copy", "port": 8199,
-                  "build": [], "seed": ["seed"], "serve": ["serve"], "ready": "/"}
-    with pytest.raises(product_app.AppFileError, match="never inside the repo"):
-        product_app.load("demo", _store(tmp_path, app))
+    app[bad_key] = bad_val
+    repo = _store(tmp_path, app)
+    with pytest.raises(product_app.AppFileError) as err:
+        product_app.load(repo)
+    msg = str(err.value)
+    assert ".temper/design/app.yaml" in msg
+    assert bad_key in msg
+    assert "standee.yaml" in msg
 
 
-def test_product_folder_must_match():
-    with pytest.raises(product_app.AppFileError, match="not a readable app file"):
-        product_app.load("missing", Path("/nonexistent-store"))
+def test_password_in_spec_is_rejected_loudly(tmp_path):
+    app = copy.deepcopy(APP_FILE)
+    app["login"] = {"path": "/login", "email_field": "#e", "password_field": "#p",
+                    "submit": "button", "wait_for": "main", "default_account": "a@example.com",
+                    "password": "secret-value-never-in-spec"}
+    repo = _store(tmp_path, app)
+    with pytest.raises(product_app.AppFileError) as err:
+        product_app.load(repo)
+    assert "password" in str(err.value)
+    assert "secret-value-never-in-spec" not in str(err.value)
+
+
+def test_missing_spec_in_temper_design_fails_loud_naming_expected_path(tmp_path):
+    empty_repo = tmp_path / "empty-repo"
+    empty_repo.mkdir()
+    with pytest.raises(product_app.AppFileError) as err:
+        product_app.load(empty_repo)
+    assert str(empty_repo / ".temper" / "design" / "app.yaml") in str(err.value)
+
+
+def test_health_unreachable_fails_loud_naming_base_url():
+    def broken_opener(url: str, timeout: float):
+        raise OSError("connection refused")
+
+    with pytest.raises(app_instance.AppInstanceError) as err:
+        app_instance.fetch_health("http://127.0.0.1:59999", opener=broken_opener)
+    assert "http://127.0.0.1:59999" in str(err.value)
+    assert "/api/health" in str(err.value)
+
+
+@pytest.mark.parametrize("payload, expected_word", [
+    ({"ok": True, "version": "0.1.0"}, "commit"),
+    ({"ok": True, "version": "0.1.0", "commit": ""}, "commit"),
+    ({"ok": False, "version": "0.1.0", "commit": "abc1234"}, "ok=False"),
+])
+def test_health_missing_commit_or_not_ok_fails_loud(payload, expected_word):
+    def fake_opener(url: str, timeout: float):
+        return 200, json.dumps(payload)
+
+    with pytest.raises(app_instance.AppInstanceError) as err:
+        app_instance.fetch_health("http://127.0.0.1:18100", opener=fake_opener)
+    assert "http://127.0.0.1:18100" in str(err.value)
+    assert expected_word in str(err.value)
+
+
+def test_login_failure_names_account_and_never_leaks_password():
+    app = copy.deepcopy(APP_FILE)
+    app["login"] = {"path": "/login", "email_field": "input[type=email]", "password_field": "input[type=password]",
+                    "submit": "button[type=submit]", "wait_for": "main",
+                    "default_account": "walker-1@rollcall.local"}
+    secret = "SuperSecretWalkerPass!999"
+    inst = app_instance.AppInstance(
+        app,
+        base_url="http://127.0.0.1:18100",
+        credentials={"walker-1@rollcall.local": secret},
+    )
+    # 1) Missing credential for an unconfigured account names the account and never prints other passwords
+    with pytest.raises(app_instance.AppInstanceError) as missing_err:
+        inst.password_for("empty@rollcall.local")
+    assert "empty@rollcall.local" in str(missing_err.value)
+    assert secret not in str(missing_err.value)
+
+    # 2) Playwright login failure sanitizes any exception containing the password and names the account
+    class FailingPage:
+        url = "http://127.0.0.1:18100/login"
+        def goto(self, *a, **kw): pass
+        def fill(self, selector, value, **kw):
+            if "password" in selector:
+                raise RuntimeError(f"Playwright fill failed with value={value}")
+
+    class FailingContext:
+        def new_page(self): return FailingPage()
+        def close(self): pass
+
+    class FailingBrowser:
+        def new_context(self, **kw): return FailingContext()
+
+    with pytest.raises(app_instance.AppInstanceError) as login_err:
+        inst.login_account(FailingBrowser(), "walker-1@rollcall.local")
+    assert "walker-1@rollcall.local" in str(login_err.value)
+    assert secret not in str(login_err.value)
+
+
+def test_capture_labels_outputs_with_health_commit_version_base_url_and_account(tmp_path, monkeypatch):
+    app = copy.deepcopy(APP_FILE)
+    app["login"] = {"path": "/login", "email_field": "input[type=email]", "password_field": "input[type=password]",
+                    "submit": "button[type=submit]", "wait_for": "main",
+                    "default_account": "walker-1@rollcall.local"}
+    app["screens"][1]["states"]["error"]["account"] = "empty@rollcall.local"
+    repo = _store(tmp_path, app)
+
+    def fake_opener(url: str, timeout: float):
+        return 200, json.dumps({"ok": True, "version": "0.1.0", "commit": "9ca49325deadbeef"})
+
+    def fake_shoot(instance, caps, out_dir):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for c in caps:
+            (out_dir / f"{c['id']}.png").write_bytes(PNG)
+        _write(out_dir / existing_host.RAW, RAW)
+        return RAW, {}
+
+    monkeypatch.setattr(existing_host, "shoot", fake_shoot)
+    monkeypatch.setattr(existing_host.existing_sheet, "build",
+                        lambda caps, out: (out.write_bytes(PNG), {"file": out.name, "bytes": len(PNG), "width": 1, "height": 1, "tiles": [c for c, _ in caps]})[1])
+    ws_dir = tmp_path / "ws-cap"
+    secret = "NeverWriteMeToDisk!42"
+    result = existing_host.capture(
+        repo, ws_dir,
+        base_url="http://127.0.0.1:18100",
+        credentials={"walker-1@rollcall.local": secret, "empty@rollcall.local": secret},
+        health_opener=fake_opener,
+    )
+    assert result["commit"] == "9ca49325deadbeef"
+    assert result["version"] == "0.1.0"
+    assert result["base_url"] == "http://127.0.0.1:18100"
+    folder = Workspace(ws_dir).folder("existing")
+    app_json = json.loads((folder / "app.json").read_text())
+    audit_json = json.loads((folder / "audit.json").read_text())
+    cap_json = json.loads((folder / "capture.json").read_text())
+    assert app_json["commit"] == "9ca49325deadbeef" and app_json["version"] == "0.1.0"
+    assert audit_json["commit"] == "9ca49325deadbeef" and audit_json["version"] == "0.1.0"
+    assert cap_json["commit"] == "9ca49325deadbeef" and cap_json["base_url"] == "http://127.0.0.1:18100"
+    assert cap_json["accounts"]["home-390-normal"] == "walker-1@rollcall.local"
+    assert cap_json["accounts"]["list-390-error"] == "empty@rollcall.local"
+    for f in folder.rglob("*"):
+        if f.is_file() and f.suffix == ".json":
+            assert secret not in f.read_text(encoding="utf-8")
+
+
+def test_package_contains_no_throwaway_app_no_design_lab_paths_and_no_build_calls():
+    pkg = BIN / "app_screen"
+    assert not (pkg / "throwaway_app.py").exists()
+    for py in sorted(pkg.glob("*")):
+        if not py.is_file():
+            continue
+        text = py.read_text(encoding="utf-8")
+        assert "design-lab" not in text, f"{py.name} still references design-lab"
+        assert "throwaway_app" not in text, f"{py.name} still references throwaway_app"
+        for banned in ("git archive", "git-archive", "uv sync", "npm ci", "npx vite"):
+            assert banned not in text, f"{py.name} still contains {banned!r}"
 
 
 # --- measures -------------------------------------------------------------------------------------------------

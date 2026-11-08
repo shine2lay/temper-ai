@@ -9,17 +9,45 @@
 //        ({id: measure result | {failed}}). Exit 0 even when a capture fails: the caller reads raw.json.
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
-const requireFrom = createRequire(process.env.APP_SCREEN_PLAYWRIGHT_FROM || '/home/shinelay/temper-ai/frontend/package.json');
-const { chromium } = requireFrom('playwright');
+function loadPlaywright() {
+  const candidates = [
+    process.env.APP_SCREEN_PLAYWRIGHT_FROM,
+    new URL('../../../../frontend/package.json', import.meta.url),
+    import.meta.url,
+    path.join(os.homedir(), 'temper-ai/frontend/package.json'),
+  ].filter(Boolean);
+  let lastErr;
+  for (const c of candidates) {
+    try {
+      return createRequire(c)('playwright');
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+const { chromium } = loadPlaywright();
 
 const plan = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const BASE = plan.base_url;
-if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(BASE)) throw new Error(`refusing a non-loopback address ${BASE}`);
+const BASE = String(plan.base_url || '').replace(/\/$/, '');
+if (!/^https?:\/\//.test(BASE) || /^https?:\/\/rollcall\.wai2shine\.com(?:[:/]|$)/i.test(BASE)) {
+  throw new Error(`refusing invalid or live address ${BASE}`);
+}
 const PAGE = plan.page;
+const CREDS = JSON.parse(process.env.APP_SCREEN_CREDENTIALS_JSON || '{}');
+const SECRETS = Object.values(CREDS).filter((v) => typeof v === 'string' && v.length > 0).sort((a, b) => b.length - a.length);
+const states = new Map();
 const measureSrc = fs.readFileSync(plan.measure_script, 'utf8');
 const NEVER = /send|place|confirm|submit|delete|cancel order/i;
+
+function redact(text) {
+  let out = String(text ?? '');
+  for (const s of SECRETS) out = out.split(s).join('[REDACTED]');
+  return out;
+}
 
 async function settle(page) {
   await page.waitForSelector(PAGE.main, { timeout: 20000 }).catch(() => {});
@@ -34,19 +62,40 @@ async function settle(page) {
 }
 
 async function loginState(browser, account) {
-  if (!plan.login || !account) return undefined;
-  const file = path.join(plan.state_dir, `state-${account}.json`);
-  if (fs.existsSync(file)) return file;
+  if (!plan.login || !account || account === 'none') return undefined;
+  if (states.has(account)) return states.get(account);
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
-  await page.goto(BASE + plan.login.path, { waitUntil: 'load' });
-  for (const [sel, value] of Object.entries(plan.login.fields)) await page.fill(sel, value.replaceAll('{account}', account));
-  await page.click(plan.login.submit);
-  await page.waitForSelector(plan.login.wait_for, { timeout: 20000 });
-  await page.waitForTimeout(1000);
-  await ctx.storageState({ path: file });
-  await ctx.close();
-  return file;
+  try {
+    await page.goto(BASE + plan.login.path, { waitUntil: 'load', timeout: 25000 });
+    for (const [sel, value] of Object.entries(plan.login.fields || {})) {
+      const strVal = String(value);
+      const filled = strVal.includes('{account}@') && account.includes('@') ? account : strVal.replaceAll('{account}', account);
+      await page.fill(sel, filled);
+    }
+    if (plan.login.user_selector && !(plan.login.fields && plan.login.user_selector in plan.login.fields)) {
+      const userVal = account.includes('@') || plan.login.fields ? account : `${account}@rollcall.test`;
+      await page.fill(plan.login.user_selector, userVal);
+    }
+    if (plan.login.password_selector) {
+      const short = account.split('@')[0];
+      const pwd = CREDS[account] ?? CREDS[short] ?? CREDS['*'] ?? CREDS.default ?? CREDS.password ?? '';
+      if (!pwd) throw new Error(`missing runtime credentials for account ${account}`);
+      await page.fill(plan.login.password_selector, pwd);
+    }
+    await page.click(plan.login.submit);
+    await page.waitForSelector(plan.login.wait_for, { timeout: 20000 });
+    await page.waitForTimeout(1000);
+    const state = await ctx.storageState();
+    states.set(account, state);
+    return state;
+  } catch (err) {
+    const e = new Error(redact(`login failed for account ${account} at ${BASE}${plan.login.path}: ${err.message || err}`));
+    e.loginFailed = true;
+    throw e;
+  } finally {
+    await ctx.close();
+  }
 }
 
 async function followFirstLink(page, prefix) {
@@ -123,19 +172,23 @@ async function capture(browser, cap) {
 }
 
 fs.mkdirSync(plan.out_dir, { recursive: true });
-fs.mkdirSync(plan.state_dir, { recursive: true });
 const browser = await chromium.launch();
 const results = {};
 const rawFile = path.join(plan.out_dir, 'raw.json');
-for (const cap of plan.captures) {
-  try {
-    results[cap.id] = await capture(browser, cap);
-    const m = results[cap.id];
-    console.log(cap.id, 'w', m.viewport.w, 'h', m.pageHeight, 'u16', m.type.under16, 'small', m.targets.under24NotInline, 'trunc', m.truncated.count);
-  } catch (e) {
-    console.log(`${cap.id} FAILED ${e.message}`);
-    results[cap.id] = { failed: String(e.message).slice(0, 300) };
+try {
+  for (const cap of plan.captures) {
+    try {
+      results[cap.id] = await capture(browser, cap);
+      const m = results[cap.id];
+      console.log(cap.id, 'w', m.viewport.w, 'h', m.pageHeight, 'u16', m.type.under16, 'small', m.targets.under24NotInline, 'trunc', m.truncated.count);
+    } catch (e) {
+      if (e && e.loginFailed) throw e;
+      const msg = redact(String(e.message || e)).slice(0, 300);
+      console.log(`${cap.id} FAILED ${msg}`);
+      results[cap.id] = { failed: msg };
+    }
+    fs.writeFileSync(rawFile, JSON.stringify(results));
   }
-  fs.writeFileSync(rawFile, JSON.stringify(results));
+} finally {
+  await browser.close();
 }
-await browser.close();

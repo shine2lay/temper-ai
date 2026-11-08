@@ -34,8 +34,8 @@ Files, one job each:
 | `configs/design/bin/app_screen/intake_grade.py` | grade an intake run against a trial case's answer key (host) |
 | `configs/design/agents/design_app_screen_intake_v1.yaml` | intake's model step: the owner's words -> draft requirements and questions |
 | `configs/design/workflows/design_app_screen_v1_intake.yaml` | stage 1 alone (the same nodes), for intake's trials |
-| `configs/design/bin/app_screen/product_app.py` | the product file (`~/design-lab/products/<product>/app.yaml`): load, check, the capture list |
-| `configs/design/bin/app_screen/throwaway_app.py` | start a throwaway copy of the product (pinned commit, own folder, loopback port, seed) or a static folder, and stop it |
+| `configs/design/bin/app_screen/product_app.py` | the product design spec (`<repo>/.temper/design/app.yaml`): load, check, the capture list |
+| `configs/design/bin/app_screen/app_instance.py` | the instance boundary: connect to a provisioned instance (`base_url` + runtime credentials), read `GET /api/health` for `{version, commit}`, log in, and navigate to declared screens/states |
 | `configs/design/bin/app_screen/existing_capture.mjs` | Playwright on the host: log in, follow the screen's steps, measure in the page, screenshot the first view (look-only) |
 | `configs/design/bin/app_screen/measure_in_page.js` | the in-page measurement (layout width, text sizes, targets, cut text, side scrollers, key regions, errors, text runs) |
 | `configs/design/bin/app_screen/existing_measures.py` | one capture's measurement -> the audit's flat measures, which side of each line is a problem, totals per width |

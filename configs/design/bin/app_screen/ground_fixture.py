@@ -1,6 +1,6 @@
 """Stage 3's fixture checks: the shared sample data holds together, and which states it has data for.
 
-The product file declares the invariants (fixture.invariants in ~/design-lab/products/<product>/app.yaml):
+The product file declares the invariants (fixture.invariants in .temper/design/app.yaml):
 
     same_value  {key, field}: every object in the fixture holding `key` carries one value of `field` per key
                 value (one spot price per symbol, one status per parcel), wherever it sits

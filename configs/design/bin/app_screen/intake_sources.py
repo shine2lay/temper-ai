@@ -27,7 +27,6 @@ from . import contracts
 
 SHOWTELL = "http://127.0.0.1:8650"
 RECORDS = Path.home() / ".pi-web-ui/decisions/records.jsonl"
-PRODUCTS = Path.home() / "design-lab/products"
 CONTEXT_LIMIT = 600
 SENT_STATES = ("sent", "answered", "resolved")  # a draft comment was never sent, so it is not his yet
 
@@ -128,9 +127,11 @@ def record_items(record_id: str, records: Path = RECORDS, question_ids: list[str
     return out
 
 
-def history_items(product: str, products: Path = PRODUCTS) -> list[dict]:
+def history_items(product: str, products: Path | None = None) -> list[dict]:
     """Earlier requests kept in the product store (history.json: {"items": [{text, source, context?}]})."""
-    path = products / product / "history.json"
+    if products is None:
+        return []
+    path = Path(products) / product / "history.json"
     if not path.is_file():
         return []
     data = json.loads(path.read_text(encoding="utf-8"))

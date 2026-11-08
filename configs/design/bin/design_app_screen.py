@@ -144,20 +144,48 @@ def collect(args: argparse.Namespace) -> dict:
     return {"items": len(doc["items"]), "kinds": sorted({i["kind"] for i in doc["items"]}), "written": str(out)}
 
 
+def _parse_credentials(raw: str | None) -> dict[str, str]:
+    """Parse runtime credentials from JSON string, @file, plain password, or env APP_SCREEN_CREDENTIALS."""
+    src = (raw or os.environ.get("APP_SCREEN_CREDENTIALS", "") or os.environ.get("ROLLCALL_QA_PASSWORD", "")).strip()
+    if not src:
+        return {}
+    if src.startswith("@"):
+        src = Path(src[1:]).expanduser().read_text(encoding="utf-8").strip()
+    if src.startswith("{") or src.startswith("["):
+        try:
+            data = json.loads(src)
+        except ValueError as exc:
+            raise WorkspaceError(f"credentials is not valid JSON: {exc}") from None
+        if not isinstance(data, dict):
+            raise WorkspaceError("credentials must be a JSON object mapping account -> password")
+        return {str(k): str(v) for k, v in data.items()}
+    return {"default": src}
+
+
 def capture(args: argparse.Namespace) -> dict:
-    """Host: stage 2's captures and measures of the product today (Playwright, Pillow: host only)."""
-    if not args.product or not args.workspace:
-        raise WorkspaceError("capture needs --product and --workspace")
+    """Host: stage 2's captures and measures of a provisioned product instance (HTTP/Playwright)."""
+    target = args.repo or args.product
+    if not target or not args.workspace:
+        raise WorkspaceError("capture needs (--repo REPO | --product REPO) and --workspace")
+    if not args.base_url:
+        raise WorkspaceError("capture needs --base-url URL")
     from app_screen import existing_host
-    return existing_host.capture(args.product, args.workspace)
+    creds = _parse_credentials(args.credentials)
+    return existing_host.capture(
+        target, args.workspace,
+        base_url=args.base_url,
+        credentials=creds,
+        version=args.version,
+    )
 
 
 def ground_prep(args: argparse.Namespace) -> dict:
     """Host: stage 3's design-file pack, capability map, knowledge files and fixture (ground_host.py)."""
-    if not args.product or not args.workspace:
-        raise WorkspaceError("ground-prep needs --product and --workspace")
+    target = args.repo or args.product
+    if not target or not args.workspace:
+        raise WorkspaceError("ground-prep needs (--repo REPO | --product REPO) and --workspace")
     from app_screen import ground_host
-    return ground_host.prep(args.product, args.workspace)
+    return ground_host.prep(target, args.workspace)
 
 
 def reuse_command(command: str, args: argparse.Namespace) -> dict:
@@ -166,17 +194,26 @@ def reuse_command(command: str, args: argparse.Namespace) -> dict:
         from app_screen import tools_registry
         return tools_registry.check()
     from app_screen import reuse_host
+    target = args.repo or args.product
     if command == "validate-store":
-        if not args.product:
-            raise WorkspaceError("validate-store needs --product")
-        return reuse_host.validate(args.product)
+        if not target:
+            raise WorkspaceError("validate-store needs --repo REPO or --product P")
+        return reuse_host.validate(target, store_root=args.store_dir)
     if not args.workspace:
         raise WorkspaceError(f"{command} needs --workspace W")
     if command == "prepare":
-        if not args.product:
-            raise WorkspaceError("prepare needs --product")
-        return reuse_host.prepare(args.product, args.workspace, args.force)
-    return reuse_host.store(args.workspace, args.run, args.stages, args.workflow_commit)
+        if not target:
+            raise WorkspaceError("prepare needs --repo REPO or --product P")
+        creds = _parse_credentials(args.credentials)
+        return reuse_host.prepare(
+            target, args.workspace, args.force,
+            store_root=args.store_dir,
+            base_url=args.base_url,
+            credentials=creds,
+            version=args.version,
+        )
+    return reuse_host.store(args.workspace, args.run, args.stages, args.workflow_commit,
+                            store_root=args.store_dir)
 
 
 def host(command: str, args: argparse.Namespace) -> dict:
@@ -236,6 +273,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("step", choices=STEPS + HOST_COMMANDS)
     parser.add_argument("--workspace")
     parser.add_argument("--product")
+    parser.add_argument("--repo", help="product repository path containing .temper/design/app.yaml")
+    parser.add_argument("--base-url", help="capture/prepare: provisioned product instance base URL")
+    parser.add_argument("--credentials", help="capture/prepare: JSON object or @file mapping account -> password")
+    parser.add_argument("--version", help="capture/prepare: optional version override")
+    parser.add_argument("--store-dir", help="prepare/store/validate-store: store directory path")
     parser.add_argument("--mode", choices=MODES, default="real")
     parser.add_argument("--case")
     parser.add_argument("--source")

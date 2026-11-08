@@ -145,8 +145,10 @@ SCHEMAS: dict[str, dict] = {
     "audit": obj({"source": TEXT, "screens": items(obj(
         {"id": ID, "width": WIDTH, "state": STATE, "capture": REL_PATH,
          "measures": {"type": "object", "minProperties": 1}},
-        {"what": TEXT, "screen": ID, "name": TEXT, "height": {"type": "integer", "minimum": 1}}))},
-        {"notes": {"type": "object"}, "product": ID, "totals": {"type": "object"}}),
+        {"what": TEXT, "screen": ID, "name": TEXT, "height": {"type": "integer", "minimum": 1},
+         "account": {"type": ["string", "null"]}, "commit": TEXT}))},
+        {"notes": {"type": "object"}, "product": ID, "totals": {"type": "object"},
+         "base_url": TEXT, "commit": TEXT, "version": TEXT}),
     # The model's draft (existing_read / existing_revise): journeys naming the problems they hit, each problem
     # observed and tied to captures by refs the script checks against audit.json and texts.json.
     "existing_draft": obj({"journeys": items(obj(

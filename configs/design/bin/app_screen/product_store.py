@@ -1,6 +1,6 @@
-"""Step 4: a product's proven stage outputs, kept next to its app file so a later run can reuse them.
+"""Step 4: a product's proven stage outputs, kept in a store directory so a later run can reuse them.
 
-    ~/design-lab/products/<product>/store/
+    <store_root>/<product>/store/
         existing/v<N>/   02-existing as the workspace had it (captures/, audit.json, journeys.json, sheet.png, ...)
         ground/v<N>/     03-ground's product part: inventory.json, sources.json, fixture.json, fixtures/, source/,
                          product/, design-files/, check-final.json, fixture-check.json
@@ -10,20 +10,26 @@
         history.json     {"requests": [{at, run, workspace, stages: {stage: {status, reason, version}}}]}
 
 Older versions stay. A version is written only from a run whose stage passed its final checks (reuse_host.py
-checks that); the same files as the current version add no new version. Host only (the design lab).
+checks that); the same files as the current version add no new version.
 """
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import contracts, product_app
+from . import contracts
 from .reuse import sha256_file
 
 STAGES = ("existing", "ground")
 SOURCE, CURRENT, HISTORY = "source.json", "current.json", "history.json"
+DEFAULT_STORE_ROOT = Path(
+    os.environ.get("APP_SCREEN_STORE_DIR")
+    or (Path(tempfile.gettempdir()) / "temper-app-screen-store")
+)
 # What a stored ground keeps: the product part and the proof it passed. The request's working files (task,
 # drafts, the first check) and a reuse run's own inputs (stored/, base.json, ...) stay in the workspace.
 GROUND_KEEP = ("inventory.json", "sources.json", "check-final.json", "fixture.json", "fixture-check.json",
@@ -110,7 +116,7 @@ def check_files(stage: str, folder: Path, files: dict[str, str] | list[str]) -> 
 class ProductStore:
     def __init__(self, product: str, root: Path | None = None):
         self.product = product
-        self.dir = Path(root or product_app.STORE) / product / "store"
+        self.dir = Path(root or DEFAULT_STORE_ROOT) / product / "store"
 
     def stage_dir(self, stage: str) -> Path:
         if stage not in STAGES:

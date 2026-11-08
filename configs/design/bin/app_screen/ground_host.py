@@ -1,13 +1,14 @@
 """Stage 3's host step (ground-prep): everything ground reads from outside the workspace, put into 03-ground/.
 
-Workers reach neither the design lab, the product repo nor the throwaway checkout, so the host runs this before
+Workers reach neither the product repo nor external fixtures, so the host runs this before
 the workflow (design_app_screen.py ground-prep --product P --workspace W), as stage 2's capture does:
 
-    design files   design_files.pack (configs/design/products.yaml) -> 03-ground/source/pack.json and
-                   03-ground/design-files/; a product the registry lacks gets a manifest saying so (status none)
-    capabilities   the product file's capability map: `git show <commit>:<path>` for a server app (the repo is
-                   only read), a file beside the product file for a static one, or "derive", which runs
-                   configs/epd/bin/capabilities.py on the throwaway checkout; its entries -> prep.json
+    design files   from <repo>/.temper/design/ (DESIGN.md, tokens.json) or design_files.pack
+                   (configs/design/products.yaml) -> 03-ground/source/pack.json and 03-ground/design-files/;
+                   a product without design files gets a manifest saying so (status none)
+    capabilities   the product file's capability map (.temper/topics/capabilities.md or path relative to repo
+                   or app.yaml), or "derive", which runs configs/epd/bin/capabilities.py on the repo checkout;
+                   its entries -> prep.json
     notes          the product file's other knowledge files, read the same way -> 03-ground/product/notes/
     fixture        the product's shared sample data, copied as it is: its file -> 03-ground/fixture.json and
                    each part file -> 03-ground/fixtures/<name>.json (added to the fixture under <name>; a name
@@ -20,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -50,36 +50,51 @@ def sha256_file(path: Path) -> str:
 
 
 def pack_design_files(product: str, ground: Path, registry: Path | None = None,
-                      lab_root: Path | str = "~/design-lab") -> dict:
-    """design_files.pack into 03-ground; a product not in the registry gets an empty manifest (status none)."""
+                      lab_root: Path | str | None = None,
+                      design_dir: Path | None = None) -> dict:
+    """Pack DESIGN.md and tokens.json from .temper/design/ or design_files.pack into 03-ground."""
     _on_path(DESIGN_BIN)
     import design_files
-    registry = Path(registry or design_files.REGISTRY)
-    if product in design_files.load_registry(registry)["products"]:
-        design_files.pack(registry, product, None, ground, lab_root)
-        return {"registered": True, "from": str(registry)}
+    reg_path = Path(registry or design_files.REGISTRY)
+    if product in design_files.load_registry(reg_path)["products"]:
+        if lab_root is not None:
+            design_files.pack(reg_path, product, None, ground, lab_root)
+        else:
+            design_files.pack(reg_path, product, None, ground)
+        return {"registered": True, "from": str(reg_path)}
+    if registry is None and design_dir is not None and (design_dir / "DESIGN.md").is_file():
+        files_out = ground / "design-files"
+        files_out.mkdir(parents=True, exist_ok=True)
+        design = {}
+        for name in ("DESIGN.md", "tokens.json"):
+            if (design_dir / name).is_file():
+                shutil.copyfile(design_dir / name, files_out / name)
+                design[name] = sha256_file(files_out / name)
+        write_json(ground / PACK, {
+            "version": 1, "product": product, "name": product, "fixture": False,
+            "registry_entry": None, "files": {}, "design_files": design, "current_state": {},
+        })
+        return {"registered": True, "from": str(design_dir)}
     write_json(ground / PACK, {"version": 1, "product": product, "name": product, "fixture": False,
                                "registry_entry": None, "files": {}, "design_files": {}, "current_state": {}})
-    return {"registered": False, "from": f"{product} is not in {registry}: no design files"}
+    return {"registered": False, "from": f"{product} is not in {reg_path}: no design files"}
 
 
 def _source_path(app: dict, path: str) -> Path:
     p = Path(path).expanduser()
-    return p if p.is_absolute() else Path(app["path"]).parent / p
+    if p.is_absolute():
+        return p
+    app_dir = Path(app["path"]).parent
+    if (app_dir / p).exists():
+        return app_dir / p
+    repo = app.get("repo")
+    if repo and (Path(repo) / p).exists():
+        return Path(repo) / p
+    return app_dir / p
 
 
 def read_source(app: dict, path: str) -> tuple[str, str]:
-    """(text, where it came from): a server app's file at its pinned commit (read only), else a file on disk."""
-    a = app["app"]
-    if a["kind"] == "server" and not Path(path).is_absolute():
-        try:
-            done = subprocess.run(["git", "-C", str(Path(a["repo"]).expanduser()), "show", f"{a['commit']}:{path}"],
-                                  capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise GroundPrepError(f"git show {a['commit']}:{path} did not run: {exc}") from None
-        if done.returncode:
-            raise GroundPrepError(f"git show {a['commit']}:{path} failed: {done.stderr.strip()[-300:]}")
-        return done.stdout, f"{a['repo']} at {a['commit']}: {path}"
+    """(text, where it came from): a file in the product repo or beside app.yaml."""
     file = _source_path(app, path)
     if not file.is_file():
         raise GroundPrepError(f"{file} is missing (named in {app['path']})")
@@ -95,10 +110,10 @@ def read_capabilities(app: dict, ground: Path) -> dict:
         raise GroundPrepError(f"{app['path']}: capabilities: missing; ground needs the product's capability map "
                               "(a path, or derive)")
     if named == "derive":
-        checkout = Path(app["app"]["checkout"])
-        if not checkout.is_dir():
-            raise GroundPrepError(f"{checkout} is missing: derive reads the throwaway checkout (stage 2's capture "
-                                  "makes it)")
+        repo = app.get("repo")
+        checkout = Path(repo) if repo else None
+        if checkout is None or not checkout.is_dir() or not (checkout / "backend").is_dir():
+            raise GroundPrepError(f"{checkout or app.get('path')}: derive reads the product repo checkout")
         caps, where = capabilities.derive(checkout).caps, f"derived from {checkout} by capabilities.py"
     else:
         text, where = read_source(app, named)
@@ -165,10 +180,11 @@ def copy_fixture(app: dict, ground: Path) -> dict:
     return record
 
 
-def prep(product: str, workspace: str | Path, store: Path | None = None, registry: Path | None = None,
-         lab_root: Path | str = "~/design-lab") -> dict:
+def prep(product_or_repo: str | Path, workspace: str | Path, store: Path | None = None,
+         registry: Path | None = None, lab_root: Path | str | None = None) -> dict:
     """Write 03-ground/'s host inputs; a 03-ground that already holds them fails (use a fresh workspace)."""
-    app = product_app.load(product, store)
+    app = product_app.load(product_or_repo, store)
+    product = app["product"]
     ws = Workspace(workspace)
     ws.start(product, "real")
     ground = ws.folder("ground")
@@ -176,13 +192,12 @@ def prep(product: str, workspace: str | Path, store: Path | None = None, registr
     if used:
         raise GroundPrepError(f"{ground} already holds {', '.join(used)}; use a fresh workspace")
     ground.mkdir(parents=True, exist_ok=True)
+    design_dir = Path(app["path"]).parent
     record = {"product": product,
               "capabilities": read_capabilities(app, ground),
               "notes": read_notes(app, ground),
               "fixture": copy_fixture(app, ground),
-              "design_files": pack_design_files(product, ground, registry, lab_root)}
-    if app["app"]["kind"] == "server":
-        record["commit"] = app["app"]["commit"]
+              "design_files": pack_design_files(product, ground, registry, lab_root, design_dir=design_dir)}
     problems = contracts.check_json("ground_prep", record, f"03-ground/{PREP}")
     if problems:
         raise GroundPrepError("; ".join(problems[:8]))

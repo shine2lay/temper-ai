@@ -69,7 +69,6 @@ INVARIANTS = {"same_value": [{"key": "name", "field": "water"}],
 SIZES = {"390": {"height": 844, "phone": True}, "1440": {"height": 900, "phone": False}}
 APP_FILE = {
     "product": "demo", "name": "Demo", "job": "Demo shows a gardener which plants need water today.",
-    "app": {"kind": "static", "root": "/tmp/demo-app", "port": 8199},
     "page": {"main": "main", "key_regions": {"main_status": "#status"}},
     "sizes": SIZES, "sheet_width": 390,
     "screens": [{"id": "home", "name": "Home", "route": "/index.html", "widths": [390, 1440],
@@ -170,12 +169,10 @@ def test_product_file_takes_the_ground_entries_and_refuses_bad_ones():
     bad["capabilities"] = ""
     found = " ".join(product_app.check(bad))
     assert "'file' is a required property" in found and "capabilities" in found
-    static = copy.deepcopy(APP_FILE)
-    static["capabilities"] = "derive"
-    assert "capabilities: derive needs a server app" in " ".join(product_app.check(static))
-    server = {**static, "path": "/tmp/x/app.yaml", "app": {"kind": "server", "checkout": "/tmp/no-such-checkout"}}
-    with pytest.raises(ground_host.GroundPrepError, match="derive reads the throwaway checkout"):
-        ground_host.read_capabilities(server, Path("/tmp"))
+    derive_spec = {**copy.deepcopy(APP_FILE), "capabilities": "derive", "path": "/tmp/x/.temper/design/app.yaml",
+                   "repo": "/tmp/no-such-checkout"}
+    with pytest.raises(ground_host.GroundPrepError, match="derive reads the product repo checkout"):
+        ground_host.read_capabilities(derive_spec, Path("/tmp"))
 
 
 # --- the host's prep -----------------------------------------------------------------------------------------------

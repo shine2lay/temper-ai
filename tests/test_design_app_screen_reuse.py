@@ -1,18 +1,18 @@
-"""design_app_screen_v1 step 4, reuse (Design #214): the fingerprint and the reuse decision, the product store,
-prepare's reuse and delta, the stage steps over a stored copy, ground's delta merge, and the tool registry.
+"""design_app_screen_v1 step 4, reuse (Design #214, updated in #233): commit + spec_sha256 fingerprint,
+per-screen visual diff when the commit moves, the product store, prepare's reuse and delta, the stage steps over
+a stored copy, ground's delta merge, and the tool registry.
 
-The app, screens and words are invented test data (the repository is public). The browser capture is replaced by
-a stub that writes known bytes, so "kept byte-identical" is checked exactly; the real captures are proven by the
-trial runs on temper-dev (docs/design-app-screen.md, "Reuse and tools").
+The app, screens and words are invented test data (the repository is public). Browser capture and /api/health
+are replaced at the boundary by stubs that return known commits and PNGs, never a mode inside the code (rule 42).
 """
 from __future__ import annotations
 
-import base64
 import copy
 import importlib.util
 import json
-import subprocess
+import struct
 import sys
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,8 +38,25 @@ from app_screen import (  # noqa: E402
 from app_screen.product_store import ProductStore, StoreError  # noqa: E402
 from app_screen.workspace import Workspace  # noqa: E402
 
-PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
-NEW_PNG = PNG + b"recaptured"
+
+def _chunk(tag: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+
+def _make_png(rgb: tuple[int, int, int]) -> bytes:
+    w, h = 4, 4
+    row = b"\x00" + bytes(rgb) * w
+    raw = row * h
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(raw))
+        + _chunk(b"IEND", b"")
+    )
+
+
+PNG = _make_png((20, 40, 80))
+NEW_PNG = _make_png((220, 60, 30))
 
 
 def _raw(w: int, h: int, runs: list[str], errors: list | None = None) -> dict:
@@ -74,14 +91,12 @@ JOURNEYS = {
                                 "value": 1}, {"capture": "list-390-error", "text": "Could not load plants"}]}]}
 
 
-def _app_file(root: Path) -> dict:
+def _app_file() -> dict:
     return {
         "product": "demo", "name": "Demo", "job": "Demo shows a gardener which plants need water today.",
-        "app": {"kind": "static", "root": str(root), "port": 8199},
         "page": {"main": "main", "key_regions": {"main_status": "#status"}, "error_selector": "[role=alert]"},
         "sizes": {"390": {"height": 844, "phone": True}},
         "sheet_width": 390,
-        "ui_globs": ["**"],
         "screens": [
             {"id": "home", "name": "Home", "route": "/index.html", "widths": [390],
              "states": {"normal": {"what": "today's plants"}}},
@@ -105,9 +120,7 @@ CAPTURED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
 class StoppedClock:
-    """existing_host's datetime, stopped. audit.json's source line names the moment of the capture and
-    journeys.json quotes it, so two workspaces captured either side of a second boundary hold different bytes
-    and "the same files" would stop meaning the same files (the store dedupes on every file's sha256)."""
+    """existing_host's datetime, stopped so two captures of the same state write identical bytes."""
 
     @staticmethod
     def now(tz=None):
@@ -117,37 +130,55 @@ class StoppedClock:
 
 @pytest.fixture()
 def lab(tmp_path: Path, monkeypatch) -> dict:
-    """A static demo app, its product file, the host's browser replaced by a stub (a capture of the app's
-    current files writes NEW_PNG and a raw entry that names the page's first line), and the capture clock
-    stopped, so what a capture writes depends on the app's files alone."""
-    root = tmp_path / "app"
-    _write(root / "index.html", "<main>Water today</main>")
-    _write(root / "list.html", "<main>Plants</main>")
+    """A product repo with .temper/design/app.yaml, a store dir, and boundary stubs for /api/health and shoot."""
+    repo_dir = tmp_path / "demo-repo"
+    _write(repo_dir / ".temper" / "design" / "app.yaml", yaml.safe_dump(_app_file(), sort_keys=False))
     products = tmp_path / "products"
-    _write(products / "demo" / "app.yaml", yaml.safe_dump(_app_file(root), sort_keys=False))
+    state = {
+        "commit": "1111111a",
+        "version": "0.1.0",
+        "changed_screens": set(),
+    }
     shot: list[list[str]] = []
 
-    def shoot(app, caps, out_dir):
+    def fake_health(url: str, timeout: float = 15.0):
+        return 200, json.dumps({"ok": True, "version": state["version"], "commit": state["commit"]})
+
+    def shoot(instance, caps, out_dir):
         out_dir.mkdir(parents=True, exist_ok=True)
         shot.append([c["id"] for c in caps])
         raw = {}
         for c in caps:
-            (out_dir / f"{c['id']}.png").write_bytes(NEW_PNG)
+            changed = c["screen"] in state["changed_screens"]
+            (out_dir / f"{c['id']}.png").write_bytes(NEW_PNG if changed else PNG)
             raw[c["id"]] = copy.deepcopy(RAW[c["id"]])
-            raw[c["id"]]["runs"].append({"text": "No plants saved yet", "first": True})
+            if changed:
+                raw[c["id"]]["runs"].append({"text": "No plants saved yet", "first": True})
         _write(out_dir / existing_host.RAW, raw)
         return raw, {}
 
     monkeypatch.setattr(existing_host, "datetime", StoppedClock)
     monkeypatch.setattr(existing_host, "shoot", shoot)
     monkeypatch.setattr(existing_host.existing_sheet, "build", _sheet)
-    monkeypatch.setattr(reuse_host.ground_host, "prep", lambda product, workspace, products=None: {"product": product})
-    return {"root": root, "products": products, "shot": shot, "tmp": tmp_path}
+    monkeypatch.setattr(reuse_host.ground_host, "prep",
+                        lambda product_or_repo, workspace, store=None: {"product": "demo"})
+    return {
+        "repo": repo_dir,
+        "products": products,
+        "shot": shot,
+        "state": state,
+        "health_opener": fake_health,
+        "base_url": "http://127.0.0.1:18100",
+        "tmp": tmp_path,
+    }
 
 
 def _finished_existing(lab: dict, name: str = "ws-full") -> Workspace:
-    """A workspace whose stage 2 finished and passed: the stored capture (PNG bytes, RAW) and checked journeys."""
-    app = product_app.load("demo", lab["products"])
+    """A workspace whose stage 2 finished and passed at commit 1111111a."""
+    app = product_app.load(lab["repo"])
+    app["commit"] = lab["state"]["commit"]
+    app["version"] = lab["state"]["version"]
+    app["base_url"] = lab["base_url"]
     (lab["tmp"] / name).mkdir()
     w = Workspace(lab["tmp"] / name)
     w.start("demo", "real")
@@ -157,7 +188,12 @@ def _finished_existing(lab: dict, name: str = "ws-full") -> Workspace:
     for c in caps:
         (folder / existing_host.CAPTURES / f"{c['id']}.png").write_bytes(PNG)
     _write(folder / existing_host.RAW, RAW)
-    _write(folder / existing_host.RECORD, {"captures": len(caps), "failed": {}})
+    _write(folder / existing_host.RECORD, {
+        "captures": len(caps), "failed": {},
+        "base_url": lab["base_url"], "commit": app["commit"], "version": app["version"],
+        "spec_sha256": app["spec_sha256"],
+        "accounts": {c["id"]: c.get("account") for c in caps},
+    })
     existing_host.write_outputs(app, caps, RAW, folder)
     _write(w.folder("intake") / "requirements.json", REQUIREMENTS)
     existing.collect(w, "")
@@ -181,112 +217,85 @@ def _fresh(lab: dict, name: str) -> Path:
     return path
 
 
-# --- fingerprint and decision ---------------------------------------------------------------------------------
+# --- fingerprint and decision (commit + spec_sha256 + per-screen visual diff) ---------------------------------
 
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
-
-
-@pytest.fixture()
-def repo(tmp_path: Path) -> dict:
-    """A server app's repo: two route pages, a shared helper, a server file; one commit per change."""
-    r = tmp_path / "repo"
-    r.mkdir()
-    _git(r, "init", "-q")
-    _git(r, "config", "user.email", "t@example.com")
-    _git(r, "config", "user.name", "t")
-    files = {"frontend/src/pages/Overview.tsx": "overview v1", "frontend/src/pages/Positions.tsx": "positions v1",
-             "frontend/src/lib/format.ts": "format v1", "backend/app.py": "server v1"}
-    for rel, text in files.items():
-        _write(r / rel, text)
-    _git(r, "add", "-A")
-    _git(r, "commit", "-qm", "v1")
-    commits = {"base": _git(r, "rev-parse", "HEAD")}
-    for name, rel in (("route", "frontend/src/pages/Positions.tsx"), ("helper", "frontend/src/lib/format.ts"),
-                      ("server", "backend/app.py")):
-        _git(r, "checkout", "-q", commits["base"])
-        _write(r / rel, f"{name} changed")
-        _git(r, "commit", "-qam", name)
-        commits[name] = _git(r, "rev-parse", "HEAD")
-    return {"repo": r, "commits": commits}
-
-
-SERVER_SCREENS = [{"id": "overview", "route": "/"}, {"id": "positions", "route": "/positions"},
-                  {"id": "position", "steps": [{"goto": "/positions/AAPL"}]}]
-PAGES = [{"kind": "page", "id": "page:/", "group": "Overview"},
-         {"kind": "page", "id": "page:/positions", "group": "Positions"},
-         {"kind": "page", "id": "page:/positions/:symbol", "group": "Positions"}]
-
-
-def _server_app(repo: dict, commit: str, **change) -> dict:
-    app = {"product": "demo", "app": {"kind": "server", "repo": str(repo["repo"]), "commit": repo["commits"][commit]},
-           "ui_globs": ["frontend/src/**"], "screens": SERVER_SCREENS, "sizes": {"390": {"height": 844}},
-           "page": {"main": "main"}, "sheet_width": 390}
+def _spec_app(**change) -> dict:
+    app = {**_app_file(), "spec_sha256": "aaa111"}
     return {**app, **change}
 
 
-def _stored_source(repo: dict) -> dict:
-    return {"version": 1, "run": "run-1", "fingerprint": reuse.fingerprint(_server_app(repo, "base"))}
+def _stored_source(commit: str = "1111111a") -> dict:
+    app = _spec_app()
+    return {"version": 1, "run": "run-1", "fingerprint": reuse.fingerprint(app, commit=commit)}
 
 
-def _decide(repo: dict, commit: str, force: bool = False, problems=(), **change) -> reuse.Decision:
-    app = _server_app(repo, commit, **change)
-    return reuse.decide_existing(app, reuse.fingerprint(app), _stored_source(repo), list(problems), force, PAGES)
-
-
-def test_unchanged_app_is_reused(repo):
-    d = _decide(repo, "base")
+def test_same_commit_and_same_spec_is_reused():
+    app = _spec_app()
+    fp = reuse.fingerprint(app, commit="1111111a")
+    d = reuse.decide_existing(app, fp, _stored_source("1111111a"), [], False)
     assert d.decision == "reuse" and "unchanged since v1" in d.reason
 
 
-def test_one_route_file_changed_is_a_delta_of_only_its_screens(repo):
-    d = _decide(repo, "route")
-    assert d.decision == "delta"
-    assert d.screens == ["positions", "position"] and d.changed == ["frontend/src/pages/Positions.tsx"]
+def test_moved_commit_with_same_spec_defers_to_per_screen_visual_diff():
+    app = _spec_app()
+    fp = reuse.fingerprint(app, commit="2222222b")
+    d = reuse.decide_existing(app, fp, _stored_source("1111111a"), [], False)
+    assert d.decision == "pending"
+    assert "commit moved from 1111111a to 2222222b" in d.reason
 
 
-@pytest.mark.parametrize("commit, force, problems, change, words", [
-    ("base", True, (), {}, "forced"),
-    ("base", False, ("audit.json: changed since it was stored",), {}, "is invalid"),
-    ("base", False, (), {"screens": SERVER_SCREENS[:2]}, "screens, sizes"),
-    ("base", False, (), {"sizes": {"390": {"height": 844}, "1440": {"height": 900}}}, "screens, sizes"),
-    ("helper", False, (), {}, "map to no captured screen: frontend/src/lib/format.ts"),
-    ("server", False, (), {}, "outside the UI globs"),
+def test_visual_diff_reuses_identical_screens_and_marks_changed_screens(tmp_path):
+    app = _spec_app()
+    caps = product_app.captures(app)
+    stored_dir = tmp_path / "stored"
+    cand_same = tmp_path / "cand_same"
+    cand_diff = tmp_path / "cand_diff"
+    for d in (stored_dir, cand_same, cand_diff):
+        (d / "captures").mkdir(parents=True)
+    for c in caps:
+        (stored_dir / "captures" / f"{c['id']}.png").write_bytes(PNG)
+        (cand_same / "captures" / f"{c['id']}.png").write_bytes(PNG)
+        (cand_diff / "captures" / f"{c['id']}.png").write_bytes(NEW_PNG if c["screen"] == "list" else PNG)
+
+    assert reuse.diff_screens_by_visual(app, stored_dir, cand_same) == ([], {})
+    changed, ratios = reuse.diff_screens_by_visual(app, stored_dir, cand_diff)
+    assert changed == ["list"]
+    assert ratios["home-390-normal"] == 0.0 and ratios["list-390-normal"] > 0.0
+
+
+@pytest.mark.parametrize("force, problems, change, words", [
+    (True, (), {}, "forced"),
+    (False, ("audit.json: changed since it was stored",), {}, "is invalid"),
+    (False, (), {"screens": _app_file()["screens"][:1]}, "screens"),
+    (False, (), {"sizes": {"390": {"height": 844}, "1440": {"height": 900}}}, "sizes"),
+    (False, (), {"spec_sha256": "bbb222"}, "design spec"),
 ])
-def test_run_in_full_when_forced_invalid_screens_changed_unmapped_or_not_ui(repo, commit, force, problems, change,
-                                                                           words):
-    d = _decide(repo, commit, force, problems, **change)
+def test_run_in_full_when_forced_invalid_or_spec_changed(force, problems, change, words):
+    app = _spec_app(**change)
+    fp = reuse.fingerprint(app, commit="1111111a")
+    d = reuse.decide_existing(app, fp, _stored_source("1111111a"), list(problems), force)
     assert d.decision == "run" and words in d.reason
 
 
-def test_nothing_stored_runs_and_ground_follows_existing(repo):
-    app = _server_app(repo, "base")
-    d = reuse.decide_existing(app, reuse.fingerprint(app), None, [], False, PAGES)
+def test_nothing_stored_runs_and_ground_follows_existing():
+    app = _spec_app()
+    fp = reuse.fingerprint(app, commit="1111111a")
+    d = reuse.decide_existing(app, fp, None, [], False)
     assert d.decision == "run" and "nothing stored" in d.reason
-    source = _stored_source(repo)
+    source = _stored_source("1111111a")
     assert reuse.decide_ground(d, source, [], False).decision == "run"
-    assert reuse.decide_ground(_decide(repo, "base"), source, [], False).decision == "pending"
-    assert reuse.decide_ground(_decide(repo, "route"), source, [], False).decision == "pending"
-    assert reuse.decide_ground(_decide(repo, "base"), source, [], True).decision == "run"
-    assert reuse.decide_ground(_decide(repo, "base"), None, [], False).decision == "run"
-
-
-def test_static_file_maps_to_the_screen_of_its_route(lab):
-    app = product_app.load("demo", lab["products"])
-    assert reuse.screens_for_files(app, ["list.html"], []) == (["list"], [])
-    assert reuse.screens_for_files(app, ["style.css"], []) == ([], ["style.css"])
+    reused = reuse.decide_existing(app, fp, source, [], False)
+    assert reuse.decide_ground(reused, source, [], False).decision == "pending"
+    delta = reuse.Decision("delta", "1 screen changed", screens=["list"])
+    assert reuse.decide_ground(delta, source, [], False).decision == "pending"
+    assert reuse.decide_ground(reused, source, [], True).decision == "run"
+    assert reuse.decide_ground(reused, None, [], False).decision == "run"
 
 
 def test_force_names_only_known_stages():
     assert reuse.parse_force("existing,ground") == {"existing", "ground"}
     with pytest.raises(reuse.ReuseError, match="--force takes"):
         reuse.parse_force("intake")
-
-
-def test_glob_crosses_folders_only_with_two_stars():
-    assert reuse.is_ui("frontend/src/pages/A.tsx", ["frontend/src/**"])
-    assert not reuse.is_ui("frontend/vite.config.ts", ["frontend/src/**"])
-    assert not reuse.is_ui("a/b.html", ["*.html"]) and reuse.is_ui("a/b.html", ["**/*.html"])
 
 
 # --- product store --------------------------------------------------------------------------------------------
@@ -296,9 +305,11 @@ def test_store_keeps_a_passed_stage_and_it_validates(lab):
     assert ps.current() == {"existing": 1} and ps.validate("existing") == []
     source = ps.source("existing")
     assert source["run"] == "run-1" and source["workflow_commit"] == "abc123" and source["viewports"] == [390]
+    assert source["commit"] == "1111111a"
+    assert source["fingerprint"]["commit"] == "1111111a"
+    assert len(source["fingerprint"]["spec_sha256"]) == 64
     assert source["request"]["items"] == [{"id": "R1", "owner_words": "show what needs water first"}]
-    assert set(source["fingerprint"]["ui"]) == {"index.html", "list.html"}
-    assert reuse_host.validate("demo", lab["products"]) == {"product": "demo", "valid": {"existing": 1}}
+    assert reuse_host.validate(lab["repo"], lab["products"]) == {"product": "demo", "valid": {"existing": 1}}
     history = ps.history()["requests"]
     assert history[-1]["run"] == "run-1" and history[-1]["stages"]["existing"]["version"] == 1
 
@@ -317,8 +328,6 @@ def test_store_refuses_a_failed_or_unchecked_stage(lab):
 
 
 def test_two_captures_of_the_same_app_write_the_same_bytes(lab):
-    """What the dedupe below rests on: the capture writes the time it ran into audit.json's source line, and
-    journeys.json quotes it, so the stopped clock is what makes two workspaces of one app byte-identical."""
     assert existing_host.datetime.now(UTC) == CAPTURED_AT
     first, second = _finished_existing(lab, "ws-clock-a"), _finished_existing(lab, "ws-clock-b")
     for name in ("audit.json", "journeys.json"):
@@ -345,7 +354,7 @@ def test_a_changed_stored_file_makes_the_version_invalid(lab):
     problems = ps.validate("existing")
     assert any("audit.json: changed since it was stored" in p for p in problems)
     with pytest.raises(StoreError, match="existing v1"):
-        reuse_host.validate("demo", lab["products"])
+        reuse_host.validate(lab["repo"], lab["products"])
 
 
 # --- prepare and the stage steps ------------------------------------------------------------------------------
@@ -361,10 +370,13 @@ def _cli():
     return module
 
 
-def test_unchanged_app_reuses_stage_2_byte_identical_and_skips_the_model(lab):
+def test_same_commit_and_same_spec_reuses_stage_2_without_shooting_and_skips_the_model(lab):
     ps = _stored(lab)
     path = _fresh(lab, "ws-reuse")
-    out = reuse_host.prepare("demo", str(path), None, lab["products"])
+    out = reuse_host.prepare(
+        lab["repo"], str(path), None, lab["products"],
+        base_url=lab["base_url"], health_opener=lab["health_opener"],
+    )
     assert out["existing"]["decision"] == "reuse" and lab["shot"] == []
     w = Workspace(path)
     assert _files(w.folder("existing")) == {rel: (ps.version_dir("existing", 1) / rel).read_bytes()
@@ -382,22 +394,33 @@ def test_unchanged_app_reuses_stage_2_byte_identical_and_skips_the_model(lab):
     assert ps.validate("existing") == []
 
 
-def test_a_reused_copy_that_changed_fails_loud(lab):
-    _stored(lab)
-    path = _fresh(lab, "ws-tampered")
-    reuse_host.prepare("demo", str(path), None, lab["products"])
-    (path / "02-existing" / "journeys.json").write_text("{}", encoding="utf-8")
-    with pytest.raises(stored_copy.StoredCopyError, match="journeys.json: changed since prepare"):
-        existing.collect(Workspace(path), "")
-
-
-def test_one_page_changed_recaptures_only_its_screen_and_keeps_the_rest_byte_identical(lab):
+def test_commit_moved_but_screens_render_identically_reuses_every_screen(lab):
     ps = _stored(lab)
-    _write(lab["root"] / "list.html", "<main>Plants</main><p>No plants saved yet</p>")
+    lab["state"]["commit"] = "2222222b"
+    lab["state"]["changed_screens"] = set()
+    path = _fresh(lab, "ws-moved-identical")
+    out = reuse_host.prepare(
+        lab["repo"], str(path), None, lab["products"],
+        base_url=lab["base_url"], health_opener=lab["health_opener"],
+    )
+    assert out["existing"]["decision"] == "reuse"
+    assert "visually identical" in out["existing"]["reason"]
+    w = Workspace(path)
+    stored = ps.version_dir("existing", 1)
+    assert (w.folder("existing") / "journeys.json").read_bytes() == (stored / "journeys.json").read_bytes()
+    assert (w.folder("existing") / "captures/home-390-normal.png").read_bytes() == (stored / "captures/home-390-normal.png").read_bytes()
+
+
+def test_commit_moved_and_one_screen_changed_recaptures_only_that_screen(lab):
+    ps = _stored(lab)
+    lab["state"]["commit"] = "3333333c"
+    lab["state"]["changed_screens"] = {"list"}
     path = _fresh(lab, "ws-delta")
-    out = reuse_host.prepare("demo", str(path), None, lab["products"])
+    out = reuse_host.prepare(
+        lab["repo"], str(path), None, lab["products"],
+        base_url=lab["base_url"], health_opener=lab["health_opener"],
+    )
     assert out["existing"]["decision"] == "delta" and out["existing"]["screens"] == ["list"]
-    assert lab["shot"] == [["list-390-normal", "list-390-error"]]
     folder, stored = Workspace(path).folder("existing"), ps.version_dir("existing", 1)
     assert (folder / "captures/home-390-normal.png").read_bytes() == (stored / "captures/home-390-normal.png").read_bytes()
     assert (folder / "captures/list-390-normal.png").read_bytes() == NEW_PNG
@@ -409,14 +432,30 @@ def test_one_page_changed_recaptures_only_its_screen_and_keeps_the_rest_byte_ide
     assert "No plants saved yet" in texts
     record = json.loads((folder / existing_host.RECORD).read_text())
     assert record["delta"] == ["list-390-normal", "list-390-error"]
+    assert record["commit"] == "3333333c"
     assert Workspace(path).run()["stages"]["existing"]["status"] == "planned"
     assert Workspace(path).decision("existing")["screens"] == ["list"]
+
+
+def test_a_reused_copy_that_changed_fails_loud(lab):
+    _stored(lab)
+    path = _fresh(lab, "ws-tampered")
+    reuse_host.prepare(
+        lab["repo"], str(path), None, lab["products"],
+        base_url=lab["base_url"], health_opener=lab["health_opener"],
+    )
+    (path / "02-existing" / "journeys.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(stored_copy.StoredCopyError, match="journeys.json: changed since prepare"):
+        existing.collect(Workspace(path), "")
 
 
 def test_forced_run_captures_everything(lab):
     _stored(lab)
     path = _fresh(lab, "ws-forced")
-    out = reuse_host.prepare("demo", str(path), "existing,ground", lab["products"])
+    out = reuse_host.prepare(
+        lab["repo"], str(path), "existing,ground", lab["products"],
+        base_url=lab["base_url"], health_opener=lab["health_opener"],
+    )
     assert out["existing"]["decision"] == "run" and out["ground"]["decision"] == "run"
     assert lab["shot"] == [["home-390-normal", "list-390-normal", "list-390-error"]]
 
@@ -426,7 +465,10 @@ def test_prepare_needs_a_fresh_workspace(lab):
     path = _fresh(lab, "ws-used")
     _write(path / "02-existing" / "audit.json", {})
     with pytest.raises(StoreError, match="prepare needs a fresh workspace"):
-        reuse_host.prepare("demo", str(path), None, lab["products"])
+        reuse_host.prepare(
+            lab["repo"], str(path), None, lab["products"],
+            base_url=lab["base_url"], health_opener=lab["health_opener"],
+        )
 
 
 # --- ground's delta -------------------------------------------------------------------------------------------
@@ -530,11 +572,12 @@ def test_the_registry_holds_every_tool_it_names():
     out = tools_registry.check()
     assert out["tools"] >= 20 and out["per_stage"]["existing"] >= 4 and out["per_stage"]["build"] >= 3
     ids = {t["id"] for t in tools_registry.load()}
-    for tool in ("capture_page", "design_measure", "design_page_checks", "throwaway_app", "product_app",
+    for tool in ("capture_page", "design_measure", "design_page_checks", "app_instance", "product_app",
                  "existing_capture", "measure_in_page", "existing_sheet", "design_files", "capabilities",
                  "html_to_penpot", "design_pairwise_judge", "design_research", "showtell_pictures",
                  "check_integration", "check_showtell", "contact_sheet", "type_size_walker"):
         assert tool in ids
+    assert "throwaway_app" not in ids
 
 
 def _registry(tmp_path: Path, edit) -> Path:

@@ -29,18 +29,18 @@ tools:
     proven_on: homepage v2 bar, design_review
     owner: design
     stages: [checks, review]
-  - id: throwaway_app
-    path: configs/design/bin/app_screen/throwaway_app.py
-    job: Starts a throwaway copy of a product's app (server checkout at a pinned commit, or a static folder) and stops it after.
-    inputs: the product's app.yaml (app block)
-    outputs: a base URL on a free local port
-    proven_on: app-screen stage 2 rounds t1-t7 (RollCall, Parcelly)
+  - id: app_instance
+    path: configs/design/bin/app_screen/app_instance.py
+    job: Connects to a provisioned product instance at base_url with runtime credentials, reads GET /api/health for {version, commit}, logs in and drives screen/state capture over HTTP/Playwright.
+    inputs: base_url, runtime credentials, product design spec (<repo>/.temper/design/app.yaml)
+    outputs: health {version, commit}, authenticated session state, captures/<id>.png, raw.json
+    proven_on: app-screen stage 2 provisioned RollCall dev stack
     owner: design
     stages: [existing, build, checks]
   - id: product_app
     path: configs/design/bin/app_screen/product_app.py
-    job: Loads and validates a product's app.yaml and lists every capture (screen x width x state, with steps).
-    inputs: product id (~/design-lab/products/<product>/app.yaml)
+    job: Loads and validates a product's design spec (<repo>/.temper/design/app.yaml) and lists every capture (screen x width x state, with steps).
+    inputs: product repo path (<repo>/.temper/design/app.yaml)
     outputs: app dict, capture list
     proven_on: app-screen stages 2-3 (RollCall, Parcelly)
     owner: design

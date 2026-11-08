@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "configs/design/bin"
 sys.path.insert(0, str(BIN))
 
+import app_screen_harness  # noqa: E402
 from app_screen import contracts, gates, known_case  # noqa: E402
 from app_screen.workspace import (  # noqa: E402
     FOLDERS,
@@ -111,11 +112,12 @@ def filled(tmp_path, case) -> Workspace:
 def test_fixture_run_passes_every_contract(tmp_path, case, monkeypatch):
     ws_dir = tmp_path / "run"
     ws_dir.mkdir()
-    assert CLI.host("pack", CLI.argparse.Namespace(case=str(case), workspace=str(ws_dir), product=None, source=None))
+    app_screen_harness.prepare_workspace(case, ws_dir)
     for step in ORDER:
         raw = json.dumps(DESIGN_ANSWER[step.split("_")[1]]) if step in ("gate_direction", "gate_final") else ""
-        out = CLI.run_step(step, str(ws_dir), None, "fixture", raw)
+        out = app_screen_harness.run_step(step, str(ws_dir), None, raw)
         assert out["valid"] and out["step"] == step, out
+        assert out["mode"] == "real"
         if step == "gate_direction":
             assert out["choice"] == out["known_case_choice"] == "a"
         if step == "review":
@@ -123,7 +125,9 @@ def test_fixture_run_passes_every_contract(tmp_path, case, monkeypatch):
         if step == "gate_final_next":
             assert out["verdict"] == "approve"
     run = Workspace(ws_dir).run()
-    assert {s: v["status"] for s, v in run["stages"].items()} == {s: "done" for s in ORDER}
+    assert run["mode"] == "real"
+    for s in ORDER:
+        assert run["stages"][s]["status"] == "done", (s, run["stages"].get(s))
     assert _read(ws_dir / "04-directions/gate_direction.json")["taste"] == "not-taste"
 
 
@@ -298,7 +302,7 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
         CLI.main(["polish", "--workspace", str(tmp_path)])
     assert err.value.code == 2 and "invalid choice: 'polish'" in capsys.readouterr().err
     with pytest.raises(SystemExit, match=f"intake: workspace {tmp_path / 'nowhere'} does not exist or is not a folder"):
-        CLI.main(["intake", "--workspace", str(tmp_path / "nowhere"), "--product", "rollcall", "--mode", "fixture"])
+        CLI.main(["intake", "--workspace", str(tmp_path / "nowhere"), "--product", "rollcall", "--mode", "real"])
     with pytest.raises(SystemExit, match="intake needs --workspace W"):
         CLI.main(["intake"])
     with pytest.raises(SystemExit, match=r"existing: .*run.json is missing"):

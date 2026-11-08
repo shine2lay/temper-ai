@@ -277,10 +277,14 @@ def test_collect_showtell_comments_and_dialog_answers(tmp_path):
 
 
 def test_fixture_mode_collect_and_check_pass_through(tmp_path):
+    import app_screen_harness
+
     ws = _ws(tmp_path)
-    Workspace(ws).start("demo", "fixture")
-    assert intake.collect(Workspace(ws), "ignored") == {"model": "no", "source": "known case"}
-    assert intake.check(Workspace(ws), "")["verdict"] == "ok"
+    app_screen_harness.prepare_workspace(ws)
+    c_out = app_screen_harness.run_step("intake_collect", str(ws), "rollcall", "")
+    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    chk_out = app_screen_harness.run_step("intake_check", str(ws), "rollcall", "")
+    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
 
 
 # ---------------------------------------------------------------- the trial grader

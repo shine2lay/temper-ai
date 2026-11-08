@@ -40,7 +40,6 @@ from app_screen import (  # noqa: E402
     directions,
     directions_check,
     gates,
-    known_case,
 )
 from app_screen.workspace import Workspace  # noqa: E402
 
@@ -175,32 +174,21 @@ def test_agent_and_workflow_yaml_contracts():
 
 
 def test_fixture_mode_directions_pipeline(tmp_path):
+    import app_screen_harness
+
     case_dir = tmp_path / "case"
-    shutil.copytree(REPO_CASE, case_dir)
-    for s in _read(case_dir / "02-existing/audit.json")["screens"]:
-        p = case_dir / "02-existing" / s["capture"]
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(PNG)
-    for d in _read(case_dir / "04-directions/directions.json")["directions"]:
-        (case_dir / "04-directions" / d["page"]).write_text(HTML, encoding="utf-8")
-    build_doc = _read(case_dir / "05-build/build.json")
-    (case_dir / "05-build" / build_doc["page"]).write_text(HTML, encoding="utf-8")
-    for s in build_doc["screens"]:
-        p = case_dir / "05-build" / s["file"]
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("// stub\n", encoding="utf-8")
-    known_case.freeze(case_dir, "rollcall", "test case")
+    app_screen_harness.ensure_playable_case(REPO_CASE, case_dir)
 
     ws_dir = tmp_path / "fixture-ws"
     ws_dir.mkdir()
-    known_case.pack(case_dir, ws_dir)
+    app_screen_harness.prepare_workspace(case_dir, ws_dir)
 
-    c_out = CLI.run_step("directions_collect", str(ws_dir), None, "fixture", "")
-    assert c_out["valid"] and c_out["model"] == "no"
-    chk_out = CLI.run_step("directions_check", str(ws_dir), None, "fixture", "")
-    assert chk_out["valid"] and chk_out["verdict"] == "ok"
-    fin_out = CLI.run_step("directions", str(ws_dir), None, "fixture", "")
-    assert fin_out["valid"] and fin_out["step"] == "directions"
+    c_out = app_screen_harness.run_step("directions_collect", str(ws_dir), None, "")
+    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    chk_out = app_screen_harness.run_step("directions_check", str(ws_dir), None, "")
+    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
+    fin_out = app_screen_harness.run_step("directions", str(ws_dir), None, "")
+    assert fin_out["valid"] and fin_out["mode"] == "real" and fin_out["step"] == "directions"
 
 
 def test_real_mode_directions_pipeline_compiles_prototypes_and_passes_checks(tmp_path):

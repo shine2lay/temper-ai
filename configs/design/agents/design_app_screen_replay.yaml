@@ -1,0 +1,47 @@
+# @description Design-owned model-boundary and browser-boundary replay agent for design_app_screen_v1_bench:
+# replays recorded or deterministically synthesized model drafts at the fenced model steps of
+# design_app_screen_v1 so the real collect, check, finish, and gate code runs at $0 with no live model calls.
+agent:
+  name: design_app_screen_replay
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    step = os.environ.get("{{ step | default('', true) | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    product = os.environ.get("{{ product | default('rollcall', true) | env }}", "rollcall")
+    if not step or not workspace:
+        raise SystemExit("design_app_screen_replay requires step and workspace")
+
+    cli = "/app/configs/design/bin/app_screen_harness/cli.py"
+    if not Path(cli).is_file():
+        cli = str(Path(__file__).resolve().parents[2] / "configs/design/bin/app_screen_harness/cli.py")
+
+    if step == "checks":
+        subprocess.run(
+            [sys.executable, cli, "step", "--step", "checks", "--workspace", workspace, "--product", product],
+            check=True,
+        )
+    else:
+        proc = subprocess.run(
+            [sys.executable, cli, "replay", "--step", step, "--workspace", workspace],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        raw = proc.stdout.strip()
+        if step == "intake":
+            draft_path = Path(workspace) / "01-request/draft.json"
+            draft_path.parent.mkdir(parents=True, exist_ok=True)
+            draft_path.write_text(raw + "\n", encoding="utf-8")
+        print(raw)
+    PYEOF

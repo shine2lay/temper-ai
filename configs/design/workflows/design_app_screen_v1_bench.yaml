@@ -1,0 +1,271 @@
+# Design-owned benchmark/harness twin of design_app_screen_v1 (Rule 36 / Rule 42):
+# Runs all 8 stages + 2 gates of design_app_screen_v1 through the REAL stage code path (mode: real)
+# on prepared known-case inputs, replacing only the fenced model steps (and browser measurement boundary)
+# with `design_app_screen_replay` at the boundary so CI and harness runs execute at $0 with zero live model calls.
+workflow:
+  name: design_app_screen_v1_bench
+  version: 1
+  description: |
+    Outside harness/bench twin of design_app_screen_v1: runs every collect, check, finish, and gate step
+    in mode="real" via design_app_screen_stage_v1 while replaying recorded/synthesized model drafts at the
+    model boundary via design_app_screen_replay.
+  inputs:
+    product: {type: string, required: true}
+    mode: {type: string, default: real}
+    request_json: {type: string, default: ""}
+  outputs:
+    direction: gate_direction.structured.choice
+    direction_decided_by: gate_direction.structured.decided_by
+    rounds: review.structured.round
+    review_verdict: review.structured.verdict
+    final_verdict: gate_final.structured.verdict
+    final_decided_by: gate_final.structured.decided_by
+  nodes:
+    - name: intake
+      type: stage
+      input_map: {product: input.product, mode: input.mode, request_json: input.request_json}
+      nodes:
+        - name: intake_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: intake_collect, product: input.product, mode: real, data: input.request_json}
+        - name: intake_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [intake_collect]
+          condition: {source: intake_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: intake, product: input.product}
+        - name: intake_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [intake_read]
+          input_map: {step: intake_check, product: input.product, mode: real}
+        - name: intake_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [intake_check]
+          condition: {source: intake_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: intake, product: input.product}
+        - name: intake_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [intake_revise]
+          input_map: {step: intake, product: input.product, mode: real}
+
+    - name: existing
+      type: stage
+      depends_on: [intake]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: existing_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: existing_collect, product: input.product, mode: real}
+        - name: existing_sheet
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [existing_collect]
+          input_map: {step: existing_sheet, product: input.product, mode: real}
+        - name: existing_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [existing_collect, existing_sheet]
+          condition: {source: existing_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: existing, product: input.product}
+        - name: existing_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [existing_read]
+          input_map: {step: existing_check, product: input.product, mode: real, data: existing_read.output}
+        - name: existing_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [existing_sheet, existing_check]
+          condition: {source: existing_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: existing, product: input.product}
+        - name: existing_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [existing_revise]
+          input_map: {step: existing, product: input.product, mode: real, data: existing_revise.output}
+
+    - name: ground
+      type: stage
+      depends_on: [existing]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: ground_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: ground_collect, product: input.product, mode: real}
+        - name: ground_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [ground_collect]
+          condition: {source: ground_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: ground, product: input.product}
+        - name: ground_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [ground_read]
+          input_map: {step: ground_check, product: input.product, mode: real, data: ground_read.output}
+        - name: ground_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [ground_check]
+          condition: {source: ground_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: ground, product: input.product}
+        - name: ground_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [ground_revise]
+          input_map: {step: ground, product: input.product, mode: real, data: ground_revise.output}
+
+    - name: directions
+      type: stage
+      depends_on: [ground]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: directions_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: directions_collect, product: input.product, mode: real}
+        - name: directions_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [directions_collect]
+          condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: directions, product: input.product}
+        - name: directions_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [directions_read]
+          condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: directions_check, product: input.product, mode: real, data: directions_read.output}
+        - name: directions_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [directions_check]
+          condition: {source: directions_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: directions, product: input.product}
+        - name: directions_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [directions_revise]
+          input_map: {step: directions, product: input.product, mode: real, data: directions_revise.output}
+
+    - name: gate_direction
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [directions]
+      gate: true
+      input_map: {step: gate_direction, product: input.product, mode: real}
+
+    - name: build
+      type: stage
+      depends_on: [gate_direction]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: build_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: build, product: input.product, mode: real}
+        - name: build_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [build_collect]
+          condition: {source: build_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: build, product: input.product}
+        - name: build_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [build_read]
+          input_map: {step: build_check, product: input.product, mode: real, data: build_read.output}
+        - name: build_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [build_check]
+          condition: {source: build_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: build, product: input.product}
+        - name: build_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [build_revise]
+          input_map: {step: build_finish, product: input.product, mode: real, data: build_revise.output}
+
+    - name: checks
+      type: stage
+      depends_on: [build]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: checks_finish
+          type: agent
+          agent: design_app_screen_replay
+          input_map: {step: checks, product: input.product}
+
+    - name: review
+      type: stage
+      depends_on: [checks]
+      loop_to: build
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: review.structured.verdict, operator: equals, value: revise}
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: review_collect
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: review_collect, product: input.product, mode: real}
+        - name: review_read
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [review_collect]
+          condition: {source: review_collect.structured.model, operator: equals, value: "yes"}
+          input_map: {step: review, product: input.product}
+        - name: review_check
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [review_read]
+          input_map: {step: review_check, product: input.product, mode: real, data: review_read.output}
+        - name: review_revise
+          type: agent
+          agent: design_app_screen_replay
+          depends_on: [review_collect, review_check]
+          condition: {source: review_check.structured.verdict, operator: equals, value: retry}
+          input_map: {step: review, product: input.product}
+        - name: review_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          depends_on: [review_revise]
+          input_map: {step: review, product: input.product, mode: real, data: review_revise.output}
+
+    - name: show
+      type: stage
+      depends_on: [review]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: show_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: show, product: input.product, mode: real}
+
+    - name: gate_final
+      type: agent
+      agent: design_app_screen_stage_v1
+      depends_on: [show]
+      gate: true
+      loop_to: build
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: gate_final.structured.verdict, operator: equals, value: changes}
+      input_map: {step: gate_final, product: input.product, mode: real}
+
+    - name: handoff
+      type: stage
+      depends_on: [gate_final]
+      input_map: {product: input.product, mode: input.mode}
+      nodes:
+        - name: handoff_finish
+          type: agent
+          agent: design_app_screen_stage_v1
+          input_map: {step: handoff, product: input.product, mode: real}

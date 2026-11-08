@@ -32,7 +32,6 @@ from app_screen import (  # noqa: E402
     checks,
     checks_views,
     contracts,
-    known_case,
 )
 from app_screen.build_scaffold import BuildInputError  # noqa: E402
 from app_screen.workspace import Workspace  # noqa: E402
@@ -233,32 +232,18 @@ def test_build_workflow_yaml_matches_main_workflow():
 
 
 def test_build_fixture_mode_preserved(tmp_path: Path):
-    """Fixture mode continues to copy the known case's 05-build/ output and increment the round."""
+    """Outside harness runs Stage 5 (build) through the real path on a prepared known-case workspace and increments the round."""
+    import app_screen_harness
+
     case = tmp_path / "case" / "rollcall-20261104"
-    shutil.copytree(CASE_DIR, case)
-    html = "<!doctype html><title>placeholder for the known case's page</title>\n"
-    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
-    for s in json.loads((case / "02-existing/audit.json").read_text())["screens"]:
-        p = case / "02-existing" / s["capture"]
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(png)
-    for d in json.loads((case / "04-directions/directions.json").read_text())["directions"]:
-        (case / "04-directions" / d["page"]).write_text(html)
-    bdoc = json.loads((case / "05-build/build.json").read_text())
-    (case / "05-build" / bdoc["page"]).write_text(html)
-    (case / "05-build/shell").mkdir(parents=True, exist_ok=True)
-    (case / "05-build/shell/page.html").write_text(html)
-    for s in bdoc["screens"]:
-        p = case / "05-build" / s["file"]
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("// placeholder for the known case's screen script\n")
-    known_case.freeze(case, "rollcall", "test copy of the RollCall known case")
+    app_screen_harness.ensure_playable_case(CASE_DIR, case)
 
     ws_dir = tmp_path / "fixture-ws"
     ws_dir.mkdir()
-    known_case.pack(case, ws_dir)
-    out = cli.run_step("build", str(ws_dir), None, "fixture", "")
+    app_screen_harness.prepare_workspace(case, ws_dir)
+    out = app_screen_harness.run_step("build", str(ws_dir), None, "")
     assert out["valid"] is True
+    assert out["mode"] == "real"
     assert out["round"] == 1
     assert (ws_dir / "05-build/build.json").is_file()
 

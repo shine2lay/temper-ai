@@ -556,11 +556,13 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_homepage_craft_critic_v2.yaml` | agent (craft checklist; taste advisory) |
 | `design/agents/design_homepage_reviser_v2.yaml` | agent (bounded revision from the fix list) |
 | `design/workflows/design_app_screen_v1.yaml` | workflow (app screens: all eight stages real — intake, existing, ground, directions, build, checks/review, show, handoff — plus direction/final owner gates with deterministic prediction and taste encoding) |
+| `design/workflows/design_app_screen_v1_bench.yaml` | workflow (outside harness/bench twin of design_app_screen_v1: runs all eight stages and two gates in real mode with model-boundary replay at $0) |
 | `design/workflows/design_app_screen_v1_intake.yaml` | workflow (trial: the intake stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_existing.yaml` | workflow (trial: the existing stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_ground.yaml` | workflow (trial: the ground stage's nodes alone, equal to the whole workflow's) |
 | `design/workflows/design_app_screen_v1_directions.yaml` | workflow (trial: the directions stage's nodes alone, equal to the whole workflow's) |
 | `design/agents/design_app_screen_stage_v1.yaml` | agent (script; runs one step and validates its output against its contract) |
+| `design/agents/design_app_screen_replay.yaml` | agent (script; replays recorded/synthesized model drafts at the model boundary for design_app_screen_v1_bench) |
 | `design/agents/design_app_screen_intake_v1.yaml` | agent (one fenced read: the request's sources into sourced requirements and questions; JSON only) |
 | `design/agents/design_app_screen_existing_v1.yaml` | agent (one fenced read of the existing app's contact sheet into evidenced journeys and problems; JSON only) |
 | `design/agents/design_app_screen_ground_v1.yaml` | agent (one fenced read: every capability, requirement and seen screen into the screens x states x actions inventory; JSON only) |

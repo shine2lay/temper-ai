@@ -91,7 +91,7 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
 
 def test_design_app_screen_v1_loads_via_workflow_loader_with_loops_and_outputs():
     loader = GraphLoader(config_store=_RepoConfigResolver())
-    nodes, wf = loader.load_workflow("design_app_screen_v1", {"product": "parcelly-clean", "mode": "fixture"})
+    nodes, wf = loader.load_workflow("design_app_screen_v1", {"product": "parcelly-clean", "mode": "real"})
     assert wf.name == "design_app_screen_v1"
     assert [n.name for n in nodes] == EXPECTED_TOP_LEVEL
 

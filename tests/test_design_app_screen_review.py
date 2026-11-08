@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import copy
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -32,12 +31,10 @@ BIN = ROOT / "configs/design/bin"
 if str(BIN) not in sys.path:
     sys.path.insert(0, str(BIN))
 
-import design_app_screen as cli  # noqa: E402
 from app_screen import (  # noqa: E402
     build,
     build_scaffold,
     contracts,
-    known_case,
     review,
     review_check,
     review_grade,
@@ -423,18 +420,26 @@ def test_review_run_fails_loud_when_revised_draft_still_invalid(tmp_path):
 
 
 def test_fixture_mode_review_pipeline(tmp_path):
+    import app_screen_harness
+
     case_copy = tmp_path / "case"
-    shutil.copytree(CASE_DIR, case_copy)
-    known_case.freeze(case_copy, product="rollcall", source="test")
+    app_screen_harness.ensure_playable_case(CASE_DIR, case_copy)
     ws_dir = tmp_path / "ws_fixture"
     ws_dir.mkdir()
-    known_case.pack(case_copy, ws_dir)
-    ws = Workspace(ws_dir)
-    ws.next_round()
-    assert cli.run_step("review_collect", str(ws_dir), None, "fixture", "")["model"] == "no"
-    assert cli.run_step("review_check", str(ws_dir), None, "fixture", "")["verdict"] == "ok"
-    res = cli.run_step("review", str(ws_dir), None, "fixture", "")
-    assert res["verdict"] == "done" and res["round"] == 1
+    app_screen_harness.prepare_workspace(case_copy, ws_dir)
+    app_screen_harness.run_stage("intake", ws_dir)
+    app_screen_harness.run_stage("existing", ws_dir)
+    app_screen_harness.run_stage("ground", ws_dir)
+    app_screen_harness.run_stage("directions", ws_dir)
+    app_screen_harness.answer_gate("direction", ws_dir, case_dir=case_copy)
+    app_screen_harness.run_stage("build", ws_dir)
+    app_screen_harness.run_stage("checks", ws_dir)
+    c_out = app_screen_harness.run_step("review_collect", str(ws_dir), None, "")
+    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    chk_out = app_screen_harness.run_step("review_check", str(ws_dir), None, "")
+    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
+    res = app_screen_harness.run_step("review", str(ws_dir), None, "")
+    assert res["mode"] == "real" and res["verdict"] == "done" and res["round"] == 1
 
 
 def test_group_measured_items_maps_round_level_location_to_valid_id():

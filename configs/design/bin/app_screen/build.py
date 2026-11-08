@@ -42,6 +42,7 @@ def _parse_draft(raw: str) -> dict:
 
 def check(ws: Workspace, raw: str = "") -> dict:
     """Run deterministic Stage 5a/5b checks on 05-build/."""
+    ws = ws.for_step("build_check")
     folder = ws.folder("build")
     if (folder / f"prebuilt-round-{ws.round}").is_dir():
         return {
@@ -53,7 +54,7 @@ def check(ws: Workspace, raw: str = "") -> dict:
     if not raw or not raw.strip():
         seeded = folder / f"draft-round-{ws.round}.json"
         if seeded.is_file():
-            raw = seeded.read_text(encoding="utf-8")
+            raw = ws.read_text(seeded)
         else:
             return build_check.check_workspace(ws, pass_name="final")
     try:
@@ -70,7 +71,7 @@ def check(ws: Workspace, raw: str = "") -> dict:
         }
         model_step.write_json(folder / "check.json", found)
         task_path = folder / "task.md"
-        task_text = task_path.read_text(encoding="utf-8") if task_path.is_file() else build_scaffold.build_task(ws)
+        task_text = ws.read_text(task_path) if task_path.is_file() else build_scaffold.build_task(ws)
         revise_task = model_step.revise_text(
             task_text,
             (raw or "")[:4000],
@@ -92,7 +93,7 @@ def check(ws: Workspace, raw: str = "") -> dict:
     revise_task = ""
     if found["verdict"] == "retry":
         task_path = folder / "task.md"
-        task_text = task_path.read_text(encoding="utf-8") if task_path.is_file() else build_scaffold.build_task(ws)
+        task_text = ws.read_text(task_path) if task_path.is_file() else build_scaffold.build_task(ws)
         bad_ids = {
             m.group(1)
             for p in found["problems"]
@@ -126,6 +127,7 @@ def check(ws: Workspace, raw: str = "") -> dict:
 
 def finish(ws: Workspace, raw: str = "") -> dict:
     """Apply revised draft if needed, run final Stage 5b check, and fail loud on any remaining problem."""
+    ws = ws.for_step("build_finish")
     folder = ws.folder("build")
     if (folder / f"prebuilt-round-{ws.round}").is_dir():
         contracts.validate("build", ws)
@@ -133,7 +135,7 @@ def finish(ws: Workspace, raw: str = "") -> dict:
     check_path = folder / "check.json"
     if not check_path.is_file():
         raise BuildError("05-build/check.json is missing; run build_check before build_finish")
-    first = json.loads(check_path.read_text(encoding="utf-8"))
+    first = json.loads(ws.read_text(check_path))
     if first.get("verdict") == "retry":
         if not raw or not raw.strip():
             raise BuildError(
@@ -142,7 +144,7 @@ def finish(ws: Workspace, raw: str = "") -> dict:
         revised = _parse_draft(raw)
         first_path = folder / "draft-first.json"
         if first_path.is_file():
-            base_draft = json.loads(first_path.read_text(encoding="utf-8"))
+            base_draft = json.loads(ws.read_text(first_path))
             rev_by_id = {
                 s["id"]: s
                 for s in (revised.get("screens") or [])
@@ -169,7 +171,7 @@ def finish(ws: Workspace, raw: str = "") -> dict:
         draft_path = folder / "draft.json"
         if not draft_path.is_file():
             raise BuildError("05-build/draft.json is missing")
-        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft = json.loads(ws.read_text(draft_path))
     final = build_check.check_workspace(ws, pass_name="final", require_built=True, draft=draft)
     model_step.write_json(folder / "check-final.json", final)
     if final["problems"]:
@@ -183,6 +185,7 @@ def finish(ws: Workspace, raw: str = "") -> dict:
 
 def run(ws: Workspace, data: str = "") -> dict:
     """Run Stage 5 build: writes and checks the Stage 5a skeleton."""
+    ws = ws.for_step("build")
     prebuilt_next = ws.folder("build") / f"prebuilt-round-{ws.round + 1}"
     if prebuilt_next.is_dir():
         import shutil  # noqa: PLC0415
@@ -200,7 +203,7 @@ def run(ws: Workspace, data: str = "") -> dict:
                     dest.unlink()
                 shutil.copyfile(item, dest)
         path = folder / "build.json"
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(ws.read_text(path))
         doc["round"] = r
         path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
         contracts.validate("build", ws)

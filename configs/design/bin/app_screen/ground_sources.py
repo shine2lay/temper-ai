@@ -36,11 +36,12 @@ class SourcesError(ValueError):
     """A stage 3 input is missing or unreadable; the message says which and who writes it."""
 
 
-def _read(path: Path, who: str):
+def _read(ws: Workspace, path: Path, who: str):
     if not path.is_file():
         raise SourcesError(f"{path.name} is missing ({who})")
+    ws_step = ws if ws.step else ws.for_step("ground_collect")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(ws_step.read_text(path))
     except ValueError as exc:
         raise SourcesError(f"{path.name}: not readable JSON ({exc})") from None
 
@@ -94,31 +95,32 @@ def items(ws: Workspace, prep: dict) -> list[dict]:
             out.append({"id": f"{kind}:{cap['key']}", "kind": kind, "text": cap["intent"] or "(undescribed)",
                         **({"group": cap["group"]} if cap.get("group") else {}),
                         **({"where": cap["where"]} if cap.get("where") else {})})
-    app = _read(ws.folder("existing") / "app.json", "stage 2's capture writes it")
+    app = _read(ws, ws.folder("existing") / "app.json", "stage 2's capture writes it")
     for s in app.get("screens", []):
         states = "; ".join(f"{name} ({spec.get('what', '')})" for name, spec in s.get("states", {}).items())
         out.append({"id": f"screen:{s['id']}", "kind": "screen", "text": f"{s['name']}. Captured states: {states}"})
-    words = seen(_read(ws.folder("existing") / "texts.json", "stage 2's capture writes it"),
-                 _read(ws.folder("existing") / "audit.json", "stage 2's capture writes it"))
+    words = seen(_read(ws, ws.folder("existing") / "texts.json", "stage 2's capture writes it"),
+                 _read(ws, ws.folder("existing") / "audit.json", "stage 2's capture writes it"))
     for s in app.get("screens", []):
         if words.get(s["id"]):
             out.append({"id": f"seen:{s['id']}", "kind": "seen", "text": words[s["id"]]})
-    reqs = _read(ws.folder("intake") / "requirements.json", "stage 1 (intake) writes it")
+    reqs = _read(ws, ws.folder("intake") / "requirements.json", "stage 1 (intake) writes it")
     for r in reqs.get("items", []):
         maps = ", ".join(r.get("maps_to", []))
         means = f"; means: {r['means'].rstrip('.')}" if r.get("means") else ""
         out.append({"id": f"req:{r['id']}", "kind": "req",
                     "text": f"\"{r['owner_words']}\" ({r.get('kind', '')}{means}{'; maps to ' + maps if maps else ''})"})
-    journeys = _read(ws.folder("existing") / "journeys.json", "stage 2 (existing) writes it")
+    journeys = _read(ws, ws.folder("existing") / "journeys.json", "stage 2 (existing) writes it")
     for j in journeys.get("journeys", []):
         screens = ", ".join(j.get("screens", []))
         out.append({"id": f"journey:{j['id']}", "kind": "journey",
                     "text": f"{j['name']}: {j['goal']}{' (screens ' + screens + ')' if screens else ''}"})
+    ws_step = ws if ws.step else ws.for_step("ground_collect")
     for note in prep["notes"]:
         path = ws.folder("ground") / note["file"]
         if not path.is_file():
             raise SourcesError(f"03-ground/{note['file']} is missing (ground-prep writes it)")
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for n, line in enumerate(ws_step.read_text(path).splitlines(), 1):
             text = line.strip()
             if text and not text.startswith("#"):
                 out.append({"id": f"note:{note['name']}#L{n}", "kind": "note", "text": text})

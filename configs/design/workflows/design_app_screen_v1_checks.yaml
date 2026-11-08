@@ -27,4 +27,4 @@ workflow:
     - name: checks
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: checks, product: input.product}
+      input_map: {step: checks, product: input.product, workspace_path: input.workspace_path}

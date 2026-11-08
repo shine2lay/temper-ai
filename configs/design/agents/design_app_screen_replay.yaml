@@ -17,7 +17,10 @@ agent:
     from pathlib import Path
 
     step = os.environ.get("{{ step | default('', true) | env }}", "")
-    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    workspace = (
+        os.environ.get("{{ workspace | default('', true) | env }}", "")
+        or os.environ.get("{{ workspace_path | default('', true) | env }}", "")
+    )
     product = os.environ.get("{{ product | default('rollcall', true) | env }}", "rollcall")
     if not step or not workspace:
         raise SystemExit("design_app_screen_replay requires step and workspace")

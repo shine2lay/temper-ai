@@ -15,6 +15,7 @@ RECORDED_ROOT = HERE / "recorded"
 
 MODEL_STEPS: tuple[str, ...] = ("intake", "existing", "ground", "directions", "build", "review")
 STACK_STEPS: tuple[str, ...] = ("stack_up_ref", "stack_seed", "stack_down")
+WORKSPACE_STEPS: tuple[str, ...] = ("workspace_startup", "workspace_cleanup")
 BENCH_DEFAULT_COMMIT = "81117dd000000000000000000000000000000000"
 
 
@@ -353,3 +354,41 @@ def replay_stack_step(step: str, ws_path: str | Path, product: str = "rollcall")
             "leftover_volumes_removed": [],
         }
     raise HarnessReplayError(f"unknown stack step {step!r}")
+
+
+def replay_workspace_step(
+    step: str,
+    ws_path: str | Path,
+    product: str = "rollcall",
+    run_slug: str = "",
+) -> dict[str, Any]:
+    """Return the deterministic harness output for Systems' workspace lifecycle agents in _bench."""
+    prod = (product or "rollcall").strip() or "rollcall"
+    slug = (run_slug or f"{prod}-design-app-screen").strip() or f"{prod}-design-app-screen"
+    ws_p = Path(ws_path).expanduser().resolve()
+    ws_p.mkdir(parents=True, exist_ok=True)
+    if step == "workspace_startup":
+        temper_p = ws_p.parent if ws_p.name == "design" and ws_p.parent.name == ".temper" else ws_p / ".temper"
+        wt_p = temper_p.parent if temper_p.name == ".temper" else ws_p
+        return {
+            "status": "ready",
+            "repo": prod,
+            "task_slug": slug,
+            "worktree_path": str(wt_p),
+            "temper_path": str(temper_p),
+            "department_path": str(ws_p),
+            "department": "design",
+            "excluded_dirs": [".temper/design"],
+            "head": BENCH_DEFAULT_COMMIT,
+            "worktree": "reused",
+        }
+    if step == "workspace_cleanup":
+        return {
+            "status": "clean",
+            "repo": prod,
+            "task_slug": slug,
+            "worktree": "removed",
+            "branch": "deleted",
+            "claim": "released",
+        }
+    raise HarnessReplayError(f"unknown workspace step {step!r}")

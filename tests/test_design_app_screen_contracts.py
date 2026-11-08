@@ -318,3 +318,301 @@ def test_real_mode_stage_fails_loud_until_built(tmp_path):
     assert Workspace(tmp_path).run()["stages"]["handoff"]["status"] == "failed"
     with pytest.raises(WorkspaceError, match="already holds rollcall; use a fresh workspace"):
         CLI.run_step("ground", str(tmp_path), "other-product", "")
+
+
+# ---------------------------------------------------------------- input declarations & outer workspace (Design #238)
+def test_every_step_declares_its_inputs_and_model_steps_have_no_tools_or_paths():
+    import yaml
+
+    assert set(contracts.STEP_INPUTS) >= set(STEPS)
+    for model_step in contracts.MODEL_STEPS:
+        assert contracts.STEP_INPUTS[model_step] == ()
+        with pytest.raises(contracts.ContractError, match=rf"step '{model_step}' refused undeclared read of 'run\.json'"):
+            contracts.check_input(model_step, "run.json")
+
+    for name in ("intake", "existing", "ground", "directions", "build", "review"):
+        cfg_path = ROOT / f"configs/design/agents/design_app_screen_{name}_v1.yaml"
+        raw_txt = cfg_path.read_text(encoding="utf-8")
+        agent = yaml.safe_load(raw_txt)["agent"]
+        assert agent["type"] == "llm"
+        assert (agent.get("tools") or []) == []
+        assert "worktree_path" not in raw_txt
+
+    wf = yaml.safe_load((ROOT / "configs/design/workflows/design_app_screen_v1.yaml").read_text(encoding="utf-8"))["workflow"]
+    for node in wf["nodes"]:
+        if node.get("type") == "stage":
+            # Stage receives department_path (never worktree_path / whole product repo).
+            assert node["input_map"]["workspace_path"] == "workspace_startup.structured.department_path"
+            assert "worktree_path" not in node.get("input_map", {})
+            for child in node["nodes"]:
+                if child["name"] in contracts.MODEL_STEPS:
+                    assert "workspace_path" not in child.get("input_map", {})
+                    assert "worktree_path" not in child.get("input_map", {})
+
+
+def test_declared_and_cross_stage_reads_succeed_while_undeclared_reads_fail_loud(filled):
+    # Declared same-stage read succeeds.
+    filled.bind_step("intake")
+    req = json.loads(filled.read_text(filled.folder("intake") / "requirements.json"))
+    assert req["product"] == "rollcall"
+
+    # Undeclared read in the same stage folder fails loud naming step, path, and declared set.
+    secret = filled.folder("intake") / "secret.json"
+    secret.write_text("{}\n")
+    filled.bind_step("intake_collect")
+    with pytest.raises(contracts.ContractError) as exc_info:
+        filled.read_text(secret)
+    msg = str(exc_info.value)
+    assert "intake_collect" in msg
+    assert "01-request/secret.json" in msg
+    assert "declared inputs:" in msg
+
+    # Declared cross-stage reads succeed: review -> 06-checks & 05-build; handoff -> 06-checks & 07-show; build -> 04-directions.
+    filled.bind_step("review_collect")
+    checks_doc = json.loads(filled.read_text(filled.round_folder(1) / "checks.json"))
+    build_doc = json.loads(filled.read_text(filled.folder("build") / "build.json"))
+    assert checks_doc["round"] == 1 and build_doc["direction"] == "a"
+
+    filled.bind_step("handoff")
+    show_doc = json.loads(filled.read_text(filled.folder("show") / "showtell.json"))
+    handoff_checks = json.loads(filled.read_text(filled.round_folder(1) / "checks.json"))
+    assert show_doc["version"] >= 1 and handoff_checks["round"] == 1
+
+    filled.bind_step("build")
+    directions_doc = json.loads(filled.read_text(filled.folder("directions") / "directions.json"))
+    assert len(directions_doc["directions"]) == 2
+
+    # Undeclared cross-stage reads fail loud naming step, path, and declared set.
+    for step, forbidden_rel in (
+        ("intake_collect", "05-build/build.json"),
+        ("review_collect", "07-show/showtell.json"),
+        ("handoff", "04-directions/directions.json"),
+        ("show", "08-handoff/followup.json"),
+    ):
+        filled.bind_step(step)
+        with pytest.raises(contracts.ContractError) as err:
+            filled.read_text(filled.path / forbidden_rel)
+        text = str(err.value)
+        assert step in text
+        assert forbidden_rel in text
+        assert "declared inputs:" in text
+
+
+def test_product_repo_read_allows_only_temper_design_and_topics_for_existing_collect(tmp_path):
+    from app_screen import product_app
+
+    repo = tmp_path / "rollcall"
+    dept = repo / ".temper/design"
+    topics = repo / ".temper/topics"
+    src = repo / "backend/app"
+    dept.mkdir(parents=True)
+    topics.mkdir(parents=True)
+    src.mkdir(parents=True)
+
+    (dept / "app.yaml").write_text(
+        "product: rollcall\n"
+        "name: RollCall\n"
+        "job: Covered-call trading\n"
+        "page:\n"
+        "  main: main\n"
+        "sheet_width: 1440\n"
+        "sizes:\n"
+        "  1440: {height: 900}\n"
+        "capabilities: .temper/topics/capabilities.md\n"
+        "notes:\n"
+        "  - .temper/topics/testing.md\n"
+        "screens:\n"
+        "  - id: dashboard\n"
+        "    name: Dashboard\n"
+        "    route: /\n"
+        "    states:\n"
+        "      loaded: {what: Dashboard loaded}\n",
+        encoding="utf-8",
+    )
+    (topics / "capabilities.md").write_text("# Capabilities\n", encoding="utf-8")
+    (topics / "testing.md").write_text("# Testing\n", encoding="utf-8")
+    (src / "main.py").write_text("SECRET = 1\n", encoding="utf-8")
+
+    ws = Workspace(dept, step="existing_collect")
+    assert "product: rollcall" in ws.read_text(".temper/design/app.yaml")
+    assert "# Testing" in ws.read_text(".temper/topics/testing.md")
+
+    # Reading product repo source outside .temper/design/ and .temper/topics/ fails loud.
+    for bad in ("backend/app/main.py", str(src / "main.py"), "../../backend/app/main.py"):
+        with pytest.raises(contracts.ContractError) as err:
+            ws.read_text(bad)
+        text = str(err.value)
+        assert "existing_collect" in text
+        assert "declared inputs:" in text
+
+    # Other steps cannot read .temper/design/app.yaml or .temper/topics/*.md.
+    ws.bind_step("build")
+    with pytest.raises(contracts.ContractError, match="step 'build' refused undeclared read of '.temper/design/app.yaml'"):
+        ws.read_text(".temper/design/app.yaml")
+
+    # product_app.load exposes no whole-repo handle and refuses topic paths outside .temper/topics/*.md.
+    loaded = product_app.load(dept / "app.yaml")
+    assert "repo" not in loaded
+    assert loaded["path"] == str((dept / "app.yaml").resolve())
+    assert loaded["notes"] == [".temper/topics/testing.md"]
+
+    (dept / "app.yaml").write_text(
+        (dept / "app.yaml").read_text(encoding="utf-8").replace(
+            ".temper/topics/testing.md", "backend/app/main.py"
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(product_app.AppFileError, match="refused undeclared read"):
+        product_app.load(dept / "app.yaml")
+
+
+def test_stage_modules_read_workspace_files_only_through_workspace_accessor():
+    stage_modules = (
+        "intake.py",
+        "existing.py",
+        "existing_sheet.py",
+        "ground.py",
+        "ground_sources.py",
+        "ground_delta.py",
+        "directions.py",
+        "directions_check.py",
+        "build.py",
+        "build_scaffold.py",
+        "build_check.py",
+        "checks.py",
+        "checks_views.py",
+        "review.py",
+        "review_check.py",
+        "show.py",
+        "show_check.py",
+        "handoff.py",
+        "handoff_check.py",
+        "gates.py",
+    )
+    pkg = BIN / "app_screen"
+    for mod in stage_modules:
+        text = (pkg / mod).read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            assert (
+                "open(" not in stripped
+                or "ws.open_input(" in stripped
+                or "ws_step.open_input(" in stripped
+                or "Image.open(" in stripped
+                or '.open("a"' in stripped
+                or '.open("w"' in stripped
+            ), f"{mod}:{line_no}: raw open(): {stripped}"
+            if ".read_text(" in stripped:
+                assert "ws.read_text(" in stripped or "ws_step.read_text(" in stripped, (
+                    f"{mod}:{line_no}: raw read_text(): {stripped}"
+                )
+            if ".read_bytes(" in stripped:
+                assert "ws.read_bytes(" in stripped or "ws_step.read_bytes(" in stripped, (
+                    f"{mod}:{line_no}: raw read_bytes(): {stripped}"
+                )
+
+
+def test_workspace_cleanup_with_force_false_refuses_dirty_worktree(tmp_path):
+    import subprocess
+
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    subprocess.run(["git", "init", "--bare", str(origin)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "init", "-b", "master"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "test@example.com"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "Test"], check=True, capture_output=True)
+    (seed / ".temper/design").mkdir(parents=True)
+    (seed / ".temper/design/app.yaml").write_text("product: demo\n", encoding="utf-8")
+    (seed / "README.md").write_text("demo\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "commit", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "remote", "add", "origin", str(origin)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "push", "origin", "master"], check=True, capture_output=True)
+
+    lifecycle = ROOT / "configs/epd/bin/workspace_lifecycle.py"
+    ws_root = tmp_path / "workspaces"
+    up = subprocess.run(
+        [
+            sys.executable,
+            str(lifecycle),
+            "startup",
+            "--repo-url",
+            str(origin),
+            "--task-name",
+            "demo",
+            "--run-slug",
+            "design",
+            "--department",
+            "design",
+            "--exclude-dirs",
+            '[".temper/design"]',
+            "--workspaces-root",
+            str(ws_root),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    startup = json.loads(up.stdout.strip().splitlines()[-1])
+    worktree = Path(startup["worktree_path"])
+    dept_path = Path(startup["department_path"])
+    assert dept_path == worktree / ".temper/design"
+
+    # Writing stage artifacts inside department_path (.temper/design) is excluded from git status,
+    # but modifying a tracked/untracked product file inside worktree_path makes force=false fail loud.
+    (dept_path / "01-request").mkdir(parents=True, exist_ok=True)
+    (dept_path / "01-request/requirements.json").write_text("{}\n", encoding="utf-8")
+    (worktree / "dirty.txt").write_text("unexpected edit\n", encoding="utf-8")
+
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(lifecycle),
+            "cleanup",
+            "--repo-url",
+            str(origin),
+            "--task-name",
+            "demo",
+            "--run-slug",
+            "design",
+            "--department",
+            "design",
+            "--workspaces-root",
+            str(ws_root),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    err_doc = json.loads(failed.stdout.strip().splitlines()[-1])
+    assert err_doc["status"] == "failed"
+    assert "uncommitted change" in err_doc["error"]
+
+    # Removing the dirty file outside .temper/design allows force=false cleanup to succeed cleanly.
+    (worktree / "dirty.txt").unlink()
+    clean = subprocess.run(
+        [
+            sys.executable,
+            str(lifecycle),
+            "cleanup",
+            "--repo-url",
+            str(origin),
+            "--task-name",
+            "demo",
+            "--run-slug",
+            "design",
+            "--department",
+            "design",
+            "--workspaces-root",
+            str(ws_root),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    clean_doc = json.loads(clean.stdout.strip().splitlines()[-1])
+    assert clean_doc["status"] == "clean"
+    assert not worktree.exists()

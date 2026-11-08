@@ -35,27 +35,29 @@ def _write(path, data) -> None:
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _read(path, what: str):
+def _read(ws: Workspace, path, what: str):
     if not path.is_file():
         raise IntakeError(f"{path.relative_to(path.parents[1]).as_posix()} is missing ({what})")
+    ws_step = ws if ws.step else ws.for_step("intake")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(ws_step.read_text(path))
     except ValueError as exc:
         raise IntakeError(f"{path.name}: not readable JSON ({exc})") from None
 
 
 def sources(ws: Workspace) -> dict:
-    return intake_sources.load(_read(ws.folder("intake") / SOURCES, "intake_collect writes it"))
+    return intake_sources.load(_read(ws, ws.folder("intake") / SOURCES, "intake_collect writes it"))
 
 
 def collect(ws: Workspace, raw: str) -> dict:
+    ws = ws.for_step("intake_collect")
     path = ws.folder("intake") / SOURCES
     product = ws.run()["product"]
     if raw.strip():
         doc = intake_sources.from_input(raw, product)
         _write(path, doc)
     elif path.is_file():
-        doc = intake_sources.from_input(path.read_text(encoding="utf-8"), product)
+        doc = intake_sources.from_input(ws.read_text(path), product)
     else:
         raise IntakeError("no sources: give request_json (a sources document, or request + source + description) "
                           "or collect them into 01-request/sources.json on the host first")
@@ -67,8 +69,9 @@ def _draft(ws: Workspace):
     path = ws.folder("intake") / DRAFT
     if not path.is_file():
         return None
+    ws_step = ws if ws.step else ws.for_step("intake")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(ws_step.read_text(path))
     except ValueError:
         return {"unreadable": True}
 
@@ -78,6 +81,7 @@ _result = model_step.check_record
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: write check.json; on retry keep the first draft beside the one the model revises."""
+    ws = ws.for_step("intake_check")
     folder = ws.folder("intake")
     draft = _draft(ws)
     found = intake_check.check_draft(sources(ws), draft if draft is not None else {})
@@ -92,6 +96,7 @@ def check(ws: Workspace, raw: str) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: a clean draft becomes requirements.json and questions.json; any problem fails loud."""
+    ws = ws.for_step("intake")
     folder = ws.folder("intake")
     src = sources(ws)
     draft = _draft(ws)

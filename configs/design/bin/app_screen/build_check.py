@@ -109,6 +109,12 @@ def _strip_spec_widths(js_text: str) -> str:
     return cleaned
 
 
+def _read_path_text(path: Path, ws: Workspace | None = None) -> str:
+    ws_obj = ws or Workspace(path.parents[1], step="build_check")
+    ws_step = ws_obj if ws_obj.step else ws_obj.for_step("build_check")
+    return ws_step.read_text(path)
+
+
 def check(
     build_dir: Path,
     inventory: dict[str, Any],
@@ -118,8 +124,10 @@ def check(
     pass_name: str = "final",
     require_built: bool = False,
     draft: dict[str, Any] | None = None,
+    ws: Workspace | None = None,
 ) -> dict[str, Any]:
     """Run all deterministic Stage 5a build checks against 05-build/."""
+    ws = ws or Workspace(build_dir.parent, step="build_check")
     problems: list[dict[str, str]] = []
     inv_screens = [s for s in (inventory.get("screens") or []) if isinstance(s, dict) and isinstance(s.get("id"), str)]
     inv_by_id = {s["id"]: s for s in inv_screens}
@@ -130,7 +138,7 @@ def check(
         problems.append(_prob("screen_file_per_inventory_screen", "05-build/build.json", "missing 05-build/build.json"))
     else:
         try:
-            parsed = json.loads(build_json_path.read_text(encoding="utf-8"))
+            parsed = json.loads(_read_path_text(build_json_path, ws))
             if isinstance(parsed, dict):
                 build_doc = parsed
             else:
@@ -139,12 +147,12 @@ def check(
             problems.append(_prob("screen_file_per_inventory_screen", "05-build/build.json", f"unreadable JSON: {exc}"))
 
     index_path = build_dir / "index.html"
-    index_text = index_path.read_text(encoding="utf-8") if index_path.is_file() else ""
+    index_text = _read_path_text(index_path, ws) if index_path.is_file() else ""
     if not index_path.is_file():
         problems.append(_prob("shell_loads_every_screen_file", "05-build/index.html", "missing 05-build/index.html"))
 
     router_path = build_dir / "shell" / "router.js"
-    router_text = router_path.read_text(encoding="utf-8") if router_path.is_file() else ""
+    router_text = _read_path_text(router_path, ws) if router_path.is_file() else ""
     route_table = _parse_route_table(router_text) if router_text else None
     if not router_path.is_file():
         problems.append(_prob("shell_loads_every_screen_file", "05-build/shell/router.js", "missing 05-build/shell/router.js"))
@@ -181,7 +189,7 @@ def check(
                 f"screen {sid!r} in inventory.json has no screen file at 05-build/{rel_file}",
             ))
         else:
-            js_text = abs_file.read_text(encoding="utf-8")
+            js_text = _read_path_text(abs_file, ws)
             screen_js_by_id[sid] = js_text
             spec = _parse_screen_spec(js_text)
             if spec is not None:
@@ -388,7 +396,7 @@ def check(
         problems.append(_prob("data_req_in_fixture", "05-build/fixture.json", "missing 05-build/fixture.json"))
     else:
         try:
-            parsed_fx = json.loads(build_fixture_path.read_text(encoding="utf-8"))
+            parsed_fx = json.loads(_read_path_text(build_fixture_path, ws))
             if isinstance(parsed_fx, dict) and parsed_fx:
                 build_fixture = parsed_fx
             else:
@@ -495,7 +503,7 @@ def check(
         draft_path = build_dir / "draft.json"
         if draft_path.is_file():
             try:
-                parsed_d = json.loads(draft_path.read_text(encoding="utf-8"))
+                parsed_d = json.loads(_read_path_text(draft_path, ws))
                 if isinstance(parsed_d, dict):
                     active_draft = parsed_d
             except (OSError, json.JSONDecodeError):
@@ -612,7 +620,7 @@ def check(
             "missing 05-build/styles/tokens.css",
         ))
     else:
-        css_text = tokens_css_path.read_text(encoding="utf-8")
+        css_text = _read_path_text(tokens_css_path, ws)
         if 'href="styles/tokens.css"' not in index_text:
             problems.append(_prob(
                 "tokens_from_product_file",
@@ -655,19 +663,20 @@ def check_workspace(
     draft: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Load ground/request inputs and run check() against ws.folder('build')."""
-    ground_dir = ws.folder("ground")
+    ws_step = ws if ws.step else ws.for_step("build_check")
+    ground_dir = ws_step.folder("ground")
     inv_path = ground_dir / "inventory.json"
     fx_path = ground_dir / "fixture.json"
     tok_path = ground_dir / "design-files" / "tokens.json"
-    req_path = ws.folder("intake") / "requirements.json"
+    req_path = ws_step.folder("intake") / "requirements.json"
 
-    inventory = json.loads(inv_path.read_text(encoding="utf-8")) if inv_path.is_file() else {}
-    fixture = json.loads(fx_path.read_text(encoding="utf-8")) if fx_path.is_file() else {}
-    tokens = json.loads(tok_path.read_text(encoding="utf-8")) if tok_path.is_file() else {}
-    requirements = json.loads(req_path.read_text(encoding="utf-8")) if req_path.is_file() else None
+    inventory = json.loads(ws_step.read_text(inv_path)) if inv_path.is_file() else {}
+    fixture = json.loads(ws_step.read_text(fx_path)) if fx_path.is_file() else {}
+    tokens = json.loads(ws_step.read_text(tok_path)) if tok_path.is_file() else {}
+    requirements = json.loads(ws_step.read_text(req_path)) if req_path.is_file() else None
 
     return check(
-        build_dir=ws.folder("build"),
+        build_dir=ws_step.folder("build"),
         inventory=inventory,
         fixture=fixture,
         tokens=tokens,
@@ -675,6 +684,7 @@ def check_workspace(
         pass_name=pass_name,
         require_built=require_built,
         draft=draft,
+        ws=ws_step,
     )
 
 

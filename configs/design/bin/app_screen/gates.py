@@ -40,11 +40,12 @@ class GateError(ValueError):
     """The gate answer is missing or breaks the gate contract."""
 
 
-def _count_should_rows(checks_path: Path) -> int:
+def _count_should_rows(ws: Workspace, checks_path: Path) -> int:
     if not checks_path.is_file():
         return 999999
+    ws_step = ws if ws.step else ws.for_step("gate_direction")
     try:
-        doc = json.loads(checks_path.read_text(encoding="utf-8"))
+        doc = json.loads(ws_step.read_text(checks_path))
     except (OSError, json.JSONDecodeError):
         return 999999
     rows = doc.get("checks") if isinstance(doc, dict) else None
@@ -65,6 +66,7 @@ def _count_should_rows(checks_path: Path) -> int:
 
 def compute_direction_prediction(ws: Workspace, actual_choice: str | None) -> dict[str, Any]:
     """Deterministically predict the direction gate choice from 04-directions/directions.json and checks.json."""
+    ws = ws if ws.step else ws.for_step("gate_direction")
     dir_folder = ws.folder("directions")
     dir_file = dir_folder / "directions.json"
     pred_choice = "a"
@@ -72,7 +74,7 @@ def compute_direction_prediction(ws: Workspace, actual_choice: str | None) -> di
 
     if dir_file.is_file():
         try:
-            doc = json.loads(dir_file.read_text(encoding="utf-8"))
+            doc = json.loads(ws.read_text(dir_file))
         except (OSError, json.JSONDecodeError):
             doc = {}
         if isinstance(doc, dict):
@@ -87,7 +89,7 @@ def compute_direction_prediction(ws: Workspace, actual_choice: str | None) -> di
                 scored: list[tuple[int, int, str]] = []
                 for idx, did in enumerate(dir_ids):
                     c_path = dir_folder / did / "checks.json"
-                    should_cnt = _count_should_rows(c_path)
+                    should_cnt = _count_should_rows(ws, c_path)
                     scored.append((should_cnt, idx, did))
                 scored.sort()
                 best_cnt, _, best_id = scored[0]
@@ -106,6 +108,7 @@ def compute_direction_prediction(ws: Workspace, actual_choice: str | None) -> di
 
 def compute_final_prediction(ws: Workspace, actual_choice: str | None) -> dict[str, Any]:
     """Deterministically predict the final gate choice from 06-checks/round-<n>/review.json and 07-show/comments.json."""
+    ws = ws if ws.step else ws.for_step("gate_final")
     round_num = max(1, ws.round) if ws.run_file.is_file() else 1
     review_path = ws.round_folder(round_num) / "review.json"
     comments_path = ws.folder("show") / "comments.json"
@@ -113,7 +116,7 @@ def compute_final_prediction(ws: Workspace, actual_choice: str | None) -> dict[s
     review_verdict = "missing"
     if review_path.is_file():
         try:
-            rev_doc = json.loads(review_path.read_text(encoding="utf-8"))
+            rev_doc = json.loads(ws.read_text(review_path))
             if isinstance(rev_doc, dict):
                 review_verdict = str(rev_doc.get("verdict") or "unknown")
         except (OSError, json.JSONDecodeError):
@@ -122,7 +125,7 @@ def compute_final_prediction(ws: Workspace, actual_choice: str | None) -> dict[s
     open_comments = 0
     if comments_path.is_file():
         try:
-            cm_doc = json.loads(comments_path.read_text(encoding="utf-8"))
+            cm_doc = json.loads(ws.read_text(comments_path))
             if isinstance(cm_doc, dict):
                 for c in cm_doc.get("comments") or []:
                     if isinstance(c, dict) and c.get("state") == "open":
@@ -156,6 +159,8 @@ def compute_prediction(ws: Workspace, gate: str, actual_choice: str | None) -> d
 
 def _append_owner_taste(ws: Workspace, record: dict[str, Any]) -> str:
     """Append a structured owner taste line to ws.path / 'taste-owner.md' (and DESIGN_TASTE_FILE if set)."""
+    step_name = f"gate_{record.get('gate') or 'direction'}"
+    ws_step = ws if ws.step else ws.for_step(step_name)
     product = "unknown"
     if ws.run_file.is_file():
         try:
@@ -180,19 +185,18 @@ def _append_owner_taste(ws: Workspace, record: dict[str, Any]) -> str:
     )
 
     ws_taste_path = ws.path / "taste-owner.md"
-    if not ws_taste_path.is_file():
-        ws_taste_path.write_text("# Owner Taste Log (design_app_screen_v1)\n\n", encoding="utf-8")
-    with ws_taste_path.open("a", encoding="utf-8") as fh:
-        fh.write(line)
+    existing_taste = ws_step.read_text(ws_taste_path) if ws_taste_path.is_file() else "# Owner Taste Log (design_app_screen_v1)\n\n"
+    ws_taste_path.write_text(existing_taste + line, encoding="utf-8")
 
     env_taste = os.environ.get("DESIGN_TASTE_FILE", "").strip()
     if env_taste:
         env_path = Path(env_taste)
         env_path.parent.mkdir(parents=True, exist_ok=True)
         if not env_path.is_file():
-            env_path.write_text("# Owner Taste Log\n\n", encoding="utf-8")
-        with env_path.open("a", encoding="utf-8") as fh:
-            fh.write(line)
+            env_path.write_text("# Owner Taste Log\n\n" + line, encoding="utf-8")
+        else:
+            with env_path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
 
     return line
 
@@ -205,15 +209,16 @@ def _ensure_targeted_comments_recorded(ws: Workspace, record: dict[str, Any]) ->
     if not isinstance(targeted, list) or not targeted:
         return
 
-    show_dir = ws.folder("show")
+    ws_step = ws if ws.step else ws.for_step("gate_final")
+    show_dir = ws_step.folder("show")
     cm_path = show_dir / "comments.json"
     st_path = show_dir / "showtell.json"
-    round_num = max(1, ws.round) if ws.run_file.is_file() else 1
+    round_num = max(1, ws_step.round) if ws_step.run_file.is_file() else 1
 
-    doc_id = default_doc_id("app", ws.path.name or "run")
+    doc_id = default_doc_id("app", ws_step.path.name or "run")
     if st_path.is_file():
         try:
-            st_doc = json.loads(st_path.read_text(encoding="utf-8"))
+            st_doc = json.loads(ws_step.read_text(st_path))
             if isinstance(st_doc, dict) and st_doc.get("doc_id"):
                 doc_id = str(st_doc["doc_id"])
         except (OSError, json.JSONDecodeError):
@@ -222,7 +227,7 @@ def _ensure_targeted_comments_recorded(ws: Workspace, record: dict[str, Any]) ->
     comments_list: list[dict[str, Any]] = []
     if cm_path.is_file():
         try:
-            cm_doc = json.loads(cm_path.read_text(encoding="utf-8"))
+            cm_doc = json.loads(ws_step.read_text(cm_path))
             if isinstance(cm_doc, dict) and isinstance(cm_doc.get("comments"), list):
                 comments_list = [c for c in cm_doc["comments"] if isinstance(c, dict)]
         except (OSError, json.JSONDecodeError):
@@ -267,6 +272,7 @@ def _ensure_targeted_comments_recorded(ws: Workspace, record: dict[str, Any]) ->
 def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
     if gate not in GATES:
         raise GateError(f"unknown gate {gate!r}; gates are {', '.join(GATES)}")
+    ws = ws if ws.step else ws.for_step(f"gate_{gate}")
     if not (raw or "").strip():
         raise GateError(f"gate {gate}: no answer given; answer it with choice, decided_by, source and reason")
     try:
@@ -279,7 +285,7 @@ def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
         round_override = ws.folder("show") / f"gate_final_round_{ws.round}.json"
         if round_override.is_file():
             try:
-                override_doc = json.loads(round_override.read_text(encoding="utf-8"))
+                override_doc = json.loads(ws.read_text(round_override))
                 if isinstance(override_doc, dict):
                     given = override_doc
             except (OSError, json.JSONDecodeError):
@@ -351,8 +357,9 @@ def record_gate(ws: Workspace, gate: str, given: dict[str, Any] | str) -> dict[s
 
 def final_next(ws: Workspace) -> dict[str, Any]:
     """After the final gate: the verdict again, for the workflow's loop back to build on changes."""
+    ws = ws if ws.step else ws.for_step("gate_final")
     path = ws.folder("show") / "gate_final.json"
     if not path.is_file():
         raise GateError("gate_final.json is missing: the final gate has not been answered")
-    record = json.loads(path.read_text(encoding="utf-8"))
+    record = json.loads(ws.read_text(path))
     return {"verdict": record["choice"], "comments": record.get("comments", [])}

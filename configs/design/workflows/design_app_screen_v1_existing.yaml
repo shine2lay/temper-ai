@@ -23,12 +23,12 @@ workflow:
     - name: existing_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: existing_collect, product: input.product}
+      input_map: {step: existing_collect, product: input.product, workspace_path: input.workspace_path}
     - name: existing_sheet
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_collect]
-      input_map: {step: existing_sheet, product: input.product}
+      input_map: {step: existing_sheet, product: input.product, workspace_path: input.workspace_path}
     - name: existing_read
       type: agent
       agent: design_app_screen_existing_v1
@@ -39,7 +39,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_read]
-      input_map: {step: existing_check, product: input.product, data: existing_read.output}
+      input_map: {step: existing_check, product: input.product, data: existing_read.output, workspace_path: input.workspace_path}
     - name: existing_revise
       type: agent
       agent: design_app_screen_existing_v1
@@ -50,4 +50,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_revise]
-      input_map: {step: existing, product: input.product, data: existing_revise.output}
+      input_map: {step: existing, product: input.product, data: existing_revise.output, workspace_path: input.workspace_path}

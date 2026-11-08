@@ -40,11 +40,12 @@ REQUIRED_SPEC_HEADERS: tuple[str, ...] = (
 )
 
 
-def _read_json(path: Path) -> tuple[Any, str | None]:
+def _read_json(ws: Workspace, path: Path) -> tuple[Any, str | None]:
     if not path.is_file():
         return None, f"{path.name}: file is missing"
+    ws_step = ws if ws.step else ws.for_step("handoff")
     try:
-        return json.loads(path.read_text(encoding="utf-8")), None
+        return json.loads(ws_step.read_text(path)), None
     except (OSError, json.JSONDecodeError) as exc:
         return None, f"{path.name}: invalid JSON ({exc})"
 
@@ -52,7 +53,7 @@ def _read_json(path: Path) -> tuple[Any, str | None]:
 def _check_gate_final_approved(ws: Workspace) -> list[str]:
     problems: list[str] = []
     gate_path = ws.folder("show") / "gate_final.json"
-    gate_doc, err = _read_json(gate_path)
+    gate_doc, err = _read_json(ws, gate_path)
     if err or not isinstance(gate_doc, dict):
         problems.append(f"07-show/gate_final.json: {err or 'must be a JSON object'}")
         return problems
@@ -68,7 +69,7 @@ def _check_gate_final_approved(ws: Workspace) -> list[str]:
 
 def _load_inventory_screens(ws: Workspace) -> tuple[list[dict[str, Any]], list[str]]:
     inv_path = ws.folder("ground") / "inventory.json"
-    inv_doc, err = _read_json(inv_path)
+    inv_doc, err = _read_json(ws, inv_path)
     if err or not isinstance(inv_doc, dict):
         return [], [f"03-ground/inventory.json: {err or 'must be a JSON object'}"]
     screens = inv_doc.get("screens")
@@ -81,11 +82,12 @@ def _load_inventory_screens(ws: Workspace) -> tuple[list[dict[str, Any]], list[s
 
 
 def _check_spec_per_inventory_screen(ws: Workspace) -> list[str]:
-    screens, probs = _load_inventory_screens(ws)
+    ws_step = ws if ws.step else ws.for_step("handoff")
+    screens, probs = _load_inventory_screens(ws_step)
     if probs:
         return probs
 
-    spec_dir = ws.folder("handoff") / "spec"
+    spec_dir = ws_step.folder("handoff") / "spec"
     if not spec_dir.is_dir():
         return ["08-handoff/spec/: directory is missing"]
 
@@ -96,7 +98,7 @@ def _check_spec_per_inventory_screen(ws: Workspace) -> list[str]:
         p = existing_files.get(sid)
         if p is None or not p.is_file():
             probs.append(f"08-handoff/spec/{sid}.md: missing spec file for inventory screen {sid!r}")
-        elif not p.read_text(encoding="utf-8").strip():
+        elif not ws_step.read_text(p).strip():
             probs.append(f"08-handoff/spec/{sid}.md: spec file is empty")
 
     extra_ids = sorted(set(existing_files.keys()) - expected_ids)
@@ -109,11 +111,12 @@ def _check_spec_per_inventory_screen(ws: Workspace) -> list[str]:
 
 
 def _check_spec_sections_complete(ws: Workspace) -> list[str]:
-    screens, probs = _load_inventory_screens(ws)
+    ws_step = ws if ws.step else ws.for_step("handoff")
+    screens, probs = _load_inventory_screens(ws_step)
     if probs:
         return probs
 
-    spec_dir = ws.folder("handoff") / "spec"
+    spec_dir = ws_step.folder("handoff") / "spec"
     for s in screens:
         sid = str(s["id"])
         spec_path = spec_dir / f"{sid}.md"
@@ -121,7 +124,7 @@ def _check_spec_sections_complete(ws: Workspace) -> list[str]:
             probs.append(f"08-handoff/spec/{sid}.md: missing spec file")
             continue
 
-        text = spec_path.read_text(encoding="utf-8")
+        text = ws_step.read_text(spec_path)
         for header in REQUIRED_SPEC_HEADERS:
             if header not in text:
                 probs.append(f"08-handoff/spec/{sid}.md: missing required section {header!r}")
@@ -147,9 +150,10 @@ def _check_spec_sections_complete(ws: Workspace) -> list[str]:
 
 
 def _check_design_file_valid(ws: Workspace) -> list[str]:
+    ws_step = ws if ws.step else ws.for_step("handoff")
     problems: list[str] = []
-    df_path = ws.folder("handoff") / "design-file.json"
-    df_doc, err = _read_json(df_path)
+    df_path = ws_step.folder("handoff") / "design-file.json"
+    df_doc, err = _read_json(ws_step, df_path)
     if err or not isinstance(df_doc, dict):
         return [f"08-handoff/design-file.json: {err or 'must be a JSON object'}"]
 
@@ -168,8 +172,8 @@ def _check_design_file_valid(ws: Workspace) -> list[str]:
     if not location:
         problems.append("08-handoff/design-file.json: location must be non-empty")
     elif kind == "html-prototype":
-        target = ws.path / location
-        if not target.is_file() or not target.read_text(encoding="utf-8").strip():
+        target = ws_step.path / location
+        if not target.is_file() or not ws_step.read_text(target).strip():
             problems.append(
                 f"08-handoff/design-file.json: html-prototype location {location!r} does not exist or is empty"
             )
@@ -182,9 +186,10 @@ def _check_design_file_valid(ws: Workspace) -> list[str]:
 
 
 def _check_followup_valid(ws: Workspace) -> list[str]:
+    ws_step = ws if ws.step else ws.for_step("handoff")
     problems: list[str] = []
-    fu_path = ws.folder("handoff") / "followup.json"
-    fu_doc, err = _read_json(fu_path)
+    fu_path = ws_step.folder("handoff") / "followup.json"
+    fu_doc, err = _read_json(ws_step, fu_path)
     if err or not isinstance(fu_doc, dict):
         return [f"08-handoff/followup.json: {err or 'must be a JSON object'}"]
 
@@ -235,9 +240,10 @@ def _check_followup_valid(ws: Workspace) -> list[str]:
 
 
 def _check_no_open_must_or_unanswered_comment(ws: Workspace, round_num: int) -> list[str]:
+    ws_step = ws if ws.step else ws.for_step("handoff")
     problems: list[str] = []
-    review_path = ws.round_folder(round_num) / "review.json"
-    review_doc, rev_err = _read_json(review_path)
+    review_path = ws_step.round_folder(round_num) / "review.json"
+    review_doc, rev_err = _read_json(ws_step, review_path)
     if rev_err or not isinstance(review_doc, dict):
         problems.append(f"06-checks/round-{round_num}/review.json: {rev_err or 'must be a JSON object'}")
     else:
@@ -257,8 +263,8 @@ def _check_no_open_must_or_unanswered_comment(ws: Workspace, round_num: int) -> 
                 f"06-checks/round-{round_num}/review.json: has {len(open_must)} open Must finding(s): {', '.join(str(x) for x in open_must)}"
             )
 
-    comments_path = ws.folder("show") / "comments.json"
-    comments_doc, cm_err = _read_json(comments_path)
+    comments_path = ws_step.folder("show") / "comments.json"
+    comments_doc, cm_err = _read_json(ws_step, comments_path)
     if cm_err or not isinstance(comments_doc, dict):
         problems.append(f"07-show/comments.json: {cm_err or 'must be a JSON object'}")
     else:

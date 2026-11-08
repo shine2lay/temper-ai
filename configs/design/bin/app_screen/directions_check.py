@@ -221,18 +221,19 @@ def check_workspace(
     draft: Any | None = None,
 ) -> dict[str, Any]:
     """Load ground inputs and run Stage 4 directions_check against 04-directions/draft.json."""
+    ws_step = ws if ws.step else ws.for_step("directions_check")
     ground_dir = ws.folder("ground")
     inv_path = ground_dir / "inventory.json"
     fx_path = ground_dir / "fixture.json"
-    inventory = json.loads(inv_path.read_text(encoding="utf-8")) if inv_path.is_file() else {}
-    fixture = json.loads(fx_path.read_text(encoding="utf-8")) if fx_path.is_file() else {}
+    inventory = json.loads(ws_step.read_text(inv_path)) if inv_path.is_file() else {}
+    fixture = json.loads(ws_step.read_text(fx_path)) if fx_path.is_file() else {}
 
     active_draft = draft
     if active_draft is None:
         draft_path = ws.folder("directions") / "draft.json"
         if draft_path.is_file():
             try:
-                active_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+                active_draft = json.loads(ws_step.read_text(draft_path))
             except (OSError, json.JSONDecodeError):
                 active_draft = None
 

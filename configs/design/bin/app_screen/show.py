@@ -135,6 +135,7 @@ def _normalize_comment_entry(raw: dict[str, Any], idx: int, default_ver: int, do
 
 def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     """Fail loud and fast if Stage 5 build or Stage 6b review outputs are missing or not done."""
+    ws = ws if ws.step else ws.for_step("show")
     round_num = max(1, ws.round) if ws.run_file.is_file() else 1
     build_dir = ws.folder("build")
     round_dir = ws.round_folder(round_num)
@@ -158,17 +159,17 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
         raise ContractError("show: " + "; ".join(problems))
 
     try:
-        build_doc = json.loads(build_json_path.read_text(encoding="utf-8"))
+        build_doc = json.loads(ws.read_text(build_json_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"show: 05-build/build.json: invalid JSON ({exc})") from exc
 
     try:
-        fixture_doc = json.loads(fixture_path.read_text(encoding="utf-8"))
+        fixture_doc = json.loads(ws.read_text(fixture_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"show: 05-build/fixture.json: invalid JSON ({exc})") from exc
 
     try:
-        review_doc = json.loads(review_path.read_text(encoding="utf-8"))
+        review_doc = json.loads(ws.read_text(review_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"show: 06-checks/round-{round_num}/review.json: invalid JSON ({exc})") from exc
 
@@ -228,11 +229,12 @@ def _ensure_interactive_html_tag(html_text: str) -> str:
 
 def compile_bundle(ws: Workspace, round_num: int) -> Path:
     """Compile 05-build/* into a self-contained single-file 07-show/bundle.html."""
+    ws = ws if ws.step else ws.for_step("show")
     build_dir = ws.folder("build")
     show_dir = ws.folder("show")
     show_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_html = (build_dir / "index.html").read_text(encoding="utf-8")
+    raw_html = ws.read_text(build_dir / "index.html")
     html_text = _ensure_interactive_html_tag(raw_html)
 
     def _inline_link(match: re.Match[str]) -> str:
@@ -243,7 +245,7 @@ def compile_bundle(ws: Workspace, round_num: int) -> Path:
         css_path = (build_dir / href).resolve()
         if not css_path.is_file():
             raise ContractError(f"show: 05-build/index.html: missing referenced stylesheet {href!r}")
-        css_text = css_path.read_text(encoding="utf-8")
+        css_text = ws.read_text(css_path)
         return f'<style data-inlined-href="{href}">\n{css_text}\n</style>'
 
     html_text = LINK_RE.sub(_inline_link, html_text)
@@ -253,13 +255,13 @@ def compile_bundle(ws: Workspace, round_num: int) -> Path:
         js_path = (build_dir / src).resolve()
         if not js_path.is_file():
             raise ContractError(f"show: 05-build/index.html: missing referenced script {src!r}")
-        js_text = js_path.read_text(encoding="utf-8")
+        js_text = ws.read_text(js_path)
         return f'<script data-inlined-src="{src}">\n{js_text}\n</script>'
 
     html_text = SCRIPT_SRC_RE.sub(_inline_script, html_text)
 
     if 'id="rc-fixture-data"' not in html_text and "id='rc-fixture-data'" not in html_text:
-        fixture_raw = (build_dir / "fixture.json").read_text(encoding="utf-8").strip()
+        fixture_raw = ws.read_text(build_dir / "fixture.json").strip()
         fixture_block = f'<script id="rc-fixture-data" type="application/json">\n{fixture_raw}\n</script>\n'
         if "</body>" in html_text:
             html_text = html_text.replace("</body>", fixture_block + "</body>", 1)
@@ -299,10 +301,11 @@ def compute_line_retention(prev_text: str, curr_text: str) -> dict[str, Any]:
 
 
 def _default_title(ws: Workspace) -> str:
-    req_path = ws.folder("intake") / "requirements.json"
+    ws_step = ws if ws.step else ws.for_step("show")
+    req_path = ws_step.folder("intake") / "requirements.json"
     if req_path.is_file():
         try:
-            req_doc = json.loads(req_path.read_text(encoding="utf-8"))
+            req_doc = json.loads(ws_step.read_text(req_path))
             prod = str(req_doc.get("product") or "").strip()
             items = req_doc.get("items") or []
             if prod and items and isinstance(items[0], dict):
@@ -314,9 +317,9 @@ def _default_title(ws: Workspace) -> str:
         except (OSError, json.JSONDecodeError):
             pass
 
-    index_path = ws.folder("build") / "index.html"
+    index_path = ws_step.folder("build") / "index.html"
     if index_path.is_file():
-        m = TITLE_RE.search(index_path.read_text(encoding="utf-8"))
+        m = TITLE_RE.search(ws_step.read_text(index_path))
         if m and m.group("title").strip():
             return m.group("title").strip()
 
@@ -331,6 +334,7 @@ def prep_show(
     comments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Host command helper so the lead can seed 07-show/showtell.json and 07-show/comments.json."""
+    ws = ws if ws.step else ws.for_step("show")
     show_dir = ws.folder("show")
     show_dir.mkdir(parents=True, exist_ok=True)
     round_num = max(1, ws.round) if ws.run_file.is_file() else 1
@@ -341,14 +345,14 @@ def prep_show(
     existing_st: dict[str, Any] = {}
     if st_path.is_file():
         try:
-            existing_st = json.loads(st_path.read_text(encoding="utf-8"))
+            existing_st = json.loads(ws.read_text(st_path))
         except (OSError, json.JSONDecodeError):
             existing_st = {}
 
     existing_cm: dict[str, Any] = {}
     if cm_path.is_file():
         try:
-            existing_cm = json.loads(cm_path.read_text(encoding="utf-8"))
+            existing_cm = json.loads(ws.read_text(cm_path))
         except (OSError, json.JSONDecodeError):
             existing_cm = {}
 
@@ -408,8 +412,9 @@ def _resolve_targeted_comments_on_rerun(
     if not gate_path.is_file():
         return comments_list, []
 
+    ws_step = ws if ws.step else ws.for_step("show")
     try:
-        gate_doc = json.loads(gate_path.read_text(encoding="utf-8"))
+        gate_doc = json.loads(ws_step.read_text(gate_path))
     except (OSError, json.JSONDecodeError):
         return comments_list, []
 
@@ -486,18 +491,19 @@ def _resolve_targeted_comments_on_rerun(
 
 
 def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
+    ws = ws.for_step("show")
     prereq = validate_prerequisites(ws)
     round_num: int = prereq["round"]
     show_dir = ws.folder("show")
     show_dir.mkdir(parents=True, exist_ok=True)
 
     bundle_path = compile_bundle(ws, round_num)
-    curr_bundle_text = bundle_path.read_text(encoding="utf-8")
+    curr_bundle_text = ws.read_text(bundle_path)
 
     retention: dict[str, Any] | None = None
     prev_bundle_path = show_dir / f"bundle-round-{round_num - 1}.html"
     if round_num > 1 and prev_bundle_path.is_file():
-        prev_bundle_text = prev_bundle_path.read_text(encoding="utf-8")
+        prev_bundle_text = ws.read_text(prev_bundle_path)
         retention = compute_line_retention(prev_bundle_text, curr_bundle_text)
 
     seeded = prep_show(ws)

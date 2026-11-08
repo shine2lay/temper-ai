@@ -23,6 +23,7 @@ class _RepoConfigResolver:
         return doc.get(config_type, doc)
 
 EXPECTED_TOP_LEVEL = [
+    "workspace_startup",
     "intake",
     "existing",
     "ground",
@@ -35,6 +36,7 @@ EXPECTED_TOP_LEVEL = [
     "gate_final",
     "handoff",
     "stack_down",
+    "workspace_cleanup",
 ]
 
 EXPECTED_STAGE_CHILDREN = {
@@ -81,15 +83,40 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
             assert node["type"] == "agent"
             assert node["gate"] is True
             assert "mode" not in node["input_map"]
+            assert node["input_map"]["workspace_path"] == "workspace_startup.structured.department_path"
+        elif name == "workspace_startup":
+            assert node["type"] == "agent"
+            assert node["agent"] == "workspace_startup"
+            assert node["input_map"] == {
+                "product": "input.product",
+                "run_slug": "design",
+                "task_name": "input.product",
+                "ref": "origin/master",
+                "department": "design",
+                "exclude_dirs": '[".temper/design"]',
+            }
         elif name == "stack_down":
             assert node["type"] == "agent"
             assert node["agent"] == "stack_down"
             assert node["depends_on"] == ["handoff"]
             assert node["run_after_failure"] is True
             assert node["input_map"] == {"product": "input.product", "slug": "design"}
+        elif name == "workspace_cleanup":
+            assert node["type"] == "agent"
+            assert node["agent"] == "workspace_cleanup"
+            assert node["depends_on"] == ["handoff"]
+            assert node["run_after_failure"] is True
+            assert node["input_map"] == {
+                "product": "input.product",
+                "run_slug": "design",
+                "task_name": "input.product",
+                "department": "design",
+                "force": "false",
+            }
         else:
             assert node["type"] == "stage", f"{name} must be type: stage"
             assert node["input_map"]["product"] == "input.product"
+            assert node["input_map"]["workspace_path"] == "workspace_startup.structured.department_path"
             assert "mode" not in node["input_map"]
             if name == "intake":
                 assert node["input_map"]["request_json"] == "input.request_json"

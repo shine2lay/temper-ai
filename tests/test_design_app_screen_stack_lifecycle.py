@@ -215,9 +215,8 @@ def test_base_url_and_commit_from_stack_up_ref_reach_capture_in_existing_collect
 ):
     repo = _write_repo(tmp_path)
     _install_fake_capture_js(tmp_path, monkeypatch)
-    monkeypatch.setenv("APP_SCREEN_REPO", str(repo))
 
-    ws_dir = tmp_path / "ws"
+    ws_dir = repo / ".temper/design"
     app_screen_harness.prepare_intake_inputs(ws_dir)
     app_screen_harness.run_stage("intake", ws_dir)
 
@@ -269,9 +268,8 @@ def test_commit_mismatch_between_stack_up_ref_and_health_fails_loud_naming_both(
 ):
     repo = _write_repo(tmp_path)
     _install_fake_capture_js(tmp_path, monkeypatch)
-    monkeypatch.setenv("APP_SCREEN_REPO", str(repo))
 
-    ws_dir = tmp_path / "ws"
+    ws_dir = repo / ".temper/design"
     app_screen_harness.prepare_intake_inputs(ws_dir)
     app_screen_harness.run_stage("intake", ws_dir)
 
@@ -302,14 +300,13 @@ def test_reused_stack_and_stored_reuse_preserve_fast_path_and_enforce_commit_agr
 ):
     repo = _write_repo(tmp_path)
     _install_fake_capture_js(tmp_path, monkeypatch)
-    monkeypatch.setenv("APP_SCREEN_REPO", str(repo))
 
     sha = "a243a0c87a5e4d025148c6a1ce0acce6ef0b88c5"
 
     def fake_opener(url: str, timeout: float = 15.0):
         return 200, json.dumps({"ok": True, "commit": sha, "version": "0.4.2"})
 
-    ws_dir = tmp_path / "ws_warm"
+    ws_dir = repo / ".temper/design"
     app_screen_harness.prepare_intake_inputs(ws_dir)
     app_screen_harness.run_stage("intake", ws_dir)
     ws = Workspace(ws_dir)
@@ -373,11 +370,23 @@ def test_failing_capture_in_stage_2_still_triggers_stack_down_teardown():
                 output="",
                 error="existing_collect: 1 of 1 capture(s) failed: home-390-normal: navigation timed out",
             )
+        elif name == "workspace_startup":
+            res = NodeResult(
+                status=Status.COMPLETED,
+                output=json.dumps({"status": "ready", "department_path": "/tmp/ws"}),
+                structured_output={"status": "ready", "department_path": "/tmp/ws"},
+            )
         elif name == "stack_down":
             res = NodeResult(
                 status=Status.COMPLETED,
                 output=json.dumps({"status": "down", "env_name": "rollcall-dev-design", "volumes_left": "none"}),
                 structured_output={"status": "down", "env_name": "rollcall-dev-design", "volumes_left": "none"},
+            )
+        elif name == "workspace_cleanup":
+            res = NodeResult(
+                status=Status.COMPLETED,
+                output=json.dumps({"status": "cleaned"}),
+                structured_output={"status": "cleaned"},
             )
         else:
             res = NodeResult(
@@ -413,7 +422,7 @@ def test_failing_capture_in_stage_2_still_triggers_stack_down_teardown():
         is_workflow=True,
     )
     assert wf_res.status == Status.FAILED
-    assert executed_order == ["intake", "existing", "stack_down"]
+    assert executed_order == ["workspace_startup", "intake", "existing", "stack_down", "workspace_cleanup"]
     by_name = {n.name: n for n in nodes}
     by_name["handoff"].run.assert_not_called()
     by_name["stack_down"].run.assert_called_once()
@@ -427,9 +436,8 @@ def test_no_credential_appears_in_configs_logs_errors_or_capture_artifacts(
     secret = "UltraSecretPass!987654"
     repo = _write_repo(tmp_path)
     _install_fake_capture_js(tmp_path, monkeypatch, fail_id="home-390-normal")
-    monkeypatch.setenv("APP_SCREEN_REPO", str(repo))
 
-    ws_dir = tmp_path / "ws"
+    ws_dir = repo / ".temper/design"
     app_screen_harness.prepare_intake_inputs(ws_dir)
     app_screen_harness.run_stage("intake", ws_dir)
     sha = "a243a0c87a5e4d025148c6a1ce0acce6ef0b88c5"

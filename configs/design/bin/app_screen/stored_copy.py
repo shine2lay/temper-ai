@@ -11,11 +11,11 @@ delta, existing's files are the kept captures only (the re-captured ones are new
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .reuse import sha256_file
 from .workspace import Workspace
 
 RECORD = "reuse.json"
@@ -35,8 +35,9 @@ def read(ws: Workspace) -> dict:
     if not file.is_file():
         raise StoredCopyError(f"{RECORD} is missing: the host's prepare writes it "
                               f"(design_app_screen.py prepare --product P --workspace {ws.path})")
+    ws_step = ws if ws.step else ws.for_step("prepare")
     try:
-        return json.loads(file.read_text(encoding="utf-8"))
+        return json.loads(ws_step.read_text(RECORD))
     except ValueError as exc:
         raise StoredCopyError(f"{RECORD}: not readable JSON ({exc})") from None
 
@@ -54,13 +55,15 @@ def folder(ws: Workspace, stage: str) -> Path:
 
 def problems(ws: Workspace, stage: str) -> list[str]:
     """Copied files that are missing or no longer byte-identical to the stored version."""
-    entry = read(ws).get(stage) or {}
-    base, out = folder(ws, stage), []
+    step_name = ws.step or ("existing" if stage == "existing" else "ground_collect")
+    ws_step = ws.for_step(step_name)
+    entry = read(ws_step).get(stage) or {}
+    base, out = folder(ws_step, stage), []
     for rel, sha in (entry.get("files") or {}).items():
         file = base / rel
         if not file.is_file():
             out.append(f"{rel}: missing")
-        elif sha256_file(file) != sha:
+        elif hashlib.sha256(ws_step.read_bytes(file)).hexdigest() != sha:
             out.append(f"{rel}: changed since prepare copied it from stored v{entry.get('version')}")
     if not entry.get("files"):
         out.append(f"{RECORD}: no stored files recorded for {stage}")

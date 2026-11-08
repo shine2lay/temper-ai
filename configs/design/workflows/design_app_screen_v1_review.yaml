@@ -23,7 +23,7 @@ workflow:
     - name: review_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: review_collect, product: input.product}
+      input_map: {step: review_collect, product: input.product, workspace_path: input.workspace_path}
     - name: review_read
       type: agent
       agent: design_app_screen_review_v1
@@ -34,7 +34,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [review_read]
-      input_map: {step: review_check, product: input.product, data: review_read.output}
+      input_map: {step: review_check, product: input.product, data: review_read.output, workspace_path: input.workspace_path}
     - name: review_revise
       type: agent
       agent: design_app_screen_review_v1
@@ -45,4 +45,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [review_revise]
-      input_map: {step: review, product: input.product, data: review_revise.output}
+      input_map: {step: review, product: input.product, data: review_revise.output, workspace_path: input.workspace_path}

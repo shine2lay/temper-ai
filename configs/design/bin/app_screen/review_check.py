@@ -104,20 +104,21 @@ def _extract_screen_from_location(location: str, valid_screens: list[str]) -> st
 
 
 def _valid_screens(ws: Workspace) -> list[str]:
+    ws_step = ws if ws.step else ws.for_step("review")
     screens: list[str] = []
-    build_file = ws.folder("build") / "build.json"
+    build_file = ws_step.folder("build") / "build.json"
     if build_file.is_file():
         try:
-            bdoc = json.loads(build_file.read_text(encoding="utf-8"))
+            bdoc = json.loads(ws_step.read_text(build_file))
             for s in bdoc.get("screens") or []:
                 if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
                     screens.append(s["id"])
         except (OSError, json.JSONDecodeError):
             pass
-    inv_file = ws.folder("ground") / "inventory.json"
+    inv_file = ws_step.folder("ground") / "inventory.json"
     if inv_file.is_file():
         try:
-            idoc = json.loads(inv_file.read_text(encoding="utf-8"))
+            idoc = json.loads(ws_step.read_text(inv_file))
             for s in idoc.get("screens") or []:
                 if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
                     screens.append(s["id"])
@@ -128,13 +129,14 @@ def _valid_screens(ws: Workspace) -> list[str]:
 
 def _screen_ground_phrases(ws: Workspace, screen_id: str) -> tuple[str, list[str]]:
     """Collect grounded strings for a screen from 05-build/draft.json, screens/<id>.js, index.html, and measures.json."""
+    ws_step = ws if ws.step else ws.for_step("review")
     phrases: list[str] = []
-    build_dir = ws.folder("build")
+    build_dir = ws_step.folder("build")
 
     draft_file = build_dir / "draft.json"
     if draft_file.is_file():
         try:
-            ddoc = json.loads(draft_file.read_text(encoding="utf-8"))
+            ddoc = json.loads(ws_step.read_text(draft_file))
             for s in ddoc.get("screens") or []:
                 if isinstance(s, dict) and s.get("id") == screen_id:
                     for key in ("id", "title", "lead", "layout"):
@@ -171,7 +173,7 @@ def _screen_ground_phrases(ws: Workspace, screen_id: str) -> tuple[str, list[str
     js_file = build_dir / "screens" / f"{screen_id}.js"
     if js_file.is_file():
         try:
-            js_text = js_file.read_text(encoding="utf-8")
+            js_text = ws_step.read_text(js_file)
             phrases.append(js_text)
             for m in re.finditer(r'"([^"\\]*(?:\\.[^"\\]*)*)"|\'([^\'\\]*(?:\\.[^\'\\]*)*)\'', js_text):
                 lit = (m.group(1) or m.group(2) or "").strip()
@@ -183,14 +185,14 @@ def _screen_ground_phrases(ws: Workspace, screen_id: str) -> tuple[str, list[str
     html_file = build_dir / "index.html"
     if html_file.is_file():
         try:
-            phrases.append(html_file.read_text(encoding="utf-8"))
+            phrases.append(ws_step.read_text(html_file))
         except OSError:
             pass
 
-    measures_file = ws.round_folder() / "measures.json"
+    measures_file = ws_step.round_folder() / "measures.json"
     if measures_file.is_file():
         try:
-            mdoc = json.loads(measures_file.read_text(encoding="utf-8"))
+            mdoc = json.loads(ws_step.read_text(measures_file))
             measured_map = mdoc.get("measured")
             view_entries = (
                 list(measured_map.values())
@@ -250,13 +252,14 @@ def _is_evidence_grounded(evidence: str, corpus_norm: str, distinct_phrases: lis
 
 def _failed_checks_by_screen(ws: Workspace) -> tuple[set[str], dict[str, set[str]]]:
     """Return (all_failed_check_families, failed_check_families_by_screen) from 06-checks/round-<n>/checks.json."""
+    ws_step = ws if ws.step else ws.for_step("review")
     all_failed: set[str] = set()
     by_screen: dict[str, set[str]] = {}
-    checks_file = ws.round_folder() / "checks.json"
+    checks_file = ws_step.round_folder() / "checks.json"
     if not checks_file.is_file():
         return all_failed, by_screen
     try:
-        cdoc = json.loads(checks_file.read_text(encoding="utf-8"))
+        cdoc = json.loads(ws_step.read_text(checks_file))
         for row in cdoc.get("checks") or []:
             if isinstance(row, dict) and row.get("result") == "fail":
                 cid = str(row.get("id") or "")
@@ -274,11 +277,12 @@ def _failed_checks_by_screen(ws: Workspace) -> tuple[set[str], dict[str, set[str
 
 
 def load_measured_items(ws: Workspace) -> list[dict[str, Any]]:
-    path = ws.round_folder() / "measured_items.json"
+    ws_step = ws if ws.step else ws.for_step("review")
+    path = ws_step.round_folder() / "measured_items.json"
     if not path.is_file():
         return []
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(ws_step.read_text(path))
         items = doc.get("items")
         return [it for it in items if isinstance(it, dict)] if isinstance(items, list) else []
     except (OSError, json.JSONDecodeError):

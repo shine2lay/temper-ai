@@ -62,8 +62,9 @@ def _read(ws: Workspace, stage: str, name: str, what: str):
     path = ws.folder(stage) / name
     if not path.is_file():
         raise ExistingError(f"{path.relative_to(ws.path).as_posix()} is missing ({what})")
+    ws_step = ws if ws.step else ws.for_step("existing_collect")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(ws_step.read_text(path))
     except ValueError as exc:
         raise ExistingError(f"{path.relative_to(ws.path).as_posix()}: not readable JSON ({exc})") from None
 
@@ -110,6 +111,7 @@ def collect(
     health_opener: Any = None,
     instance: app_instance.AppInstance | None = None,
 ) -> dict[str, Any]:
+    ws = ws.for_step("existing_collect")
     eff_url = (base_url if base_url is not None else os.environ.get("APP_SCREEN_BASE_URL", "")).strip()
     eff_commit = (stack_commit if stack_commit is not None else os.environ.get("APP_SCREEN_STACK_COMMIT", "")).strip()
     eff_creds = (
@@ -186,7 +188,7 @@ def collect(
     if not (ws.folder("existing") / SHEET).is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
     requirements = _read(ws, "intake", "requirements.json", "stage 1 (intake) writes it")
-    text = existing_task.task(ctx.audit, json.loads((ws.folder("existing") / TEXTS).read_text(encoding="utf-8")),
+    text = existing_task.task(ctx.audit, json.loads(ws.read_text(ws.folder("existing") / TEXTS)),
                               ctx.app, requirements, tools=tools_registry.task_section("existing"))
     _write(ws.folder("existing") / TASK, text)
     out: dict[str, Any] = {
@@ -206,12 +208,13 @@ def collect(
 
 
 def sheet(ws: Workspace, raw: str) -> dict:
+    ws = ws.for_step("existing_sheet")
     if reused := _reused(ws):
         return reused
     path = ws.folder("existing") / SHEET
     if not path.is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
-    data = path.read_bytes()
+    data = ws.read_bytes(path)
     if not data.startswith(contracts.PNG_MAGIC):
         raise ExistingError(f"02-existing/{SHEET} is not a PNG")
     encoded = base64.b64encode(data).decode("ascii")
@@ -223,6 +226,7 @@ def sheet(ws: Workspace, raw: str) -> dict:
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
+    ws = ws.for_step("existing_check")
     if reused := _reused(ws):
         return {"verdict": "ok", "source": reused["source"]}
     folder = ws.folder("existing")
@@ -233,7 +237,7 @@ def check(ws: Workspace, raw: str) -> dict:
     out = {"verdict": found["verdict"], "problems": len(found["problems"]), **found["counts"]}
     if found["verdict"] == "retry":
         shutil.copyfile(folder / DRAFT, folder / FIRST_DRAFT)
-        task_text = (folder / TASK).read_text(encoding="utf-8")
+        task_text = ws.read_text(folder / TASK)
         out["revise_task"] = existing_task.revise(task_text, json.dumps(draft, ensure_ascii=False, indent=1),
                                                   found["problems"])
     return out
@@ -241,6 +245,7 @@ def check(ws: Workspace, raw: str) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> journeys.json, else fail loud."""
+    ws = ws.for_step("existing")
     if reused := _reused(ws):
         return {"stage_status": "reused", "source": reused["source"], "files": reused["files"]}
     folder = ws.folder("existing")
@@ -249,7 +254,7 @@ def run(ws: Workspace, raw: str) -> dict:
         _write(folder / DRAFT, _parse(raw))
     elif not (folder / DRAFT).is_file():
         raise ExistingError("02-existing/draft.json is missing: the model step wrote no draft")
-    draft = json.loads((folder / DRAFT).read_text(encoding="utf-8"))
+    draft = json.loads(ws.read_text(folder / DRAFT))
     ctx = context(ws)
     found = existing_check.check_draft(ctx, draft)
     _write(folder / CHECK_FINAL, _result(found, "final"))

@@ -205,7 +205,19 @@ def _resolve_instance(app: dict[str, Any], *,
     )
 
 
-def capture(product: str | Path, workspace: str | Path, store: Path | None = None, *,
+def _load_target_app(product: str | Path | dict[str, Any], workspace: str | Path,
+                     store: Path | None = None, *, step: str = "existing_capture") -> dict[str, Any]:
+    if isinstance(product, dict):
+        return dict(product)
+    ws_path = Path(workspace)
+    target: str | Path = product
+    if isinstance(product, str) and "/" not in product and "\\" not in product and store is None:
+        if (ws_path / "app.yaml").is_file() or (ws_path / ".temper/design/app.yaml").is_file():
+            target = ws_path
+    return product_app.load(target, store, step=step)
+
+
+def capture(product: str | Path | dict[str, Any], workspace: str | Path, store: Path | None = None, *,
             base_url: str | None = None,
             credentials: dict[str, str] | str | None = None,
             version: str | None = None,
@@ -213,7 +225,15 @@ def capture(product: str | Path, workspace: str | Path, store: Path | None = Non
             health_opener: Any = None,
             opener: Any = None,
             instance: app_instance.AppInstance | None = None) -> dict[str, Any]:
-    app = product_app.load(product, store)
+    app = _load_target_app(
+        instance.app if (instance is not None and isinstance(product, str) and "/" not in product and store is None
+                         and not (Path(workspace) / "app.yaml").is_file()
+                         and not (Path(workspace) / ".temper/design/app.yaml").is_file())
+        else product,
+        workspace,
+        store,
+        step="existing_capture",
+    )
     inst = _resolve_instance(
         app,
         base_url=base_url,
@@ -229,7 +249,7 @@ def capture(product: str | Path, workspace: str | Path, store: Path | None = Non
     app["version"] = inst.version
 
     Path(workspace).mkdir(parents=True, exist_ok=True)
-    ws = Workspace(workspace)
+    ws = Workspace(workspace, step="existing_capture")
     ws.start(app["product"])
     folder = ws.folder("existing")
     out_dir = folder / CAPTURES
@@ -261,8 +281,9 @@ def recapture(product: str | Path, workspace: str | Path, screens: list[str], st
     """Step 4's delta: capture again only the given screens' captures, over a stored capture prepare copied in
     (captures/ and raw.json); every other capture's PNG and raw measurements stay byte-identical. Then audit,
     texts, app and sheet are rebuilt over all captures (the kept ones measure the same from the same raw)."""
-    app = product_app.load(product, store)
-    folder = Workspace(workspace).folder("existing")
+    app = _load_target_app(product, workspace, store, step="existing_capture")
+    ws = Workspace(workspace, step="existing_capture")
+    folder = ws.folder("existing")
     out_dir, raw_file = folder / CAPTURES, folder / RAW
     if not raw_file.is_file() or not out_dir.is_dir():
         raise CaptureError(f"{folder}: captures/ and {RAW} must be copied from the store before a delta")
@@ -272,7 +293,7 @@ def recapture(product: str | Path, workspace: str | Path, screens: list[str], st
         raise CaptureError(f"recapture needs screens of the app file; got {screens}, unknown "
                            f"{sorted(set(screens) - known)}")
     todo = [c for c in caps if c["screen"] in screens]
-    kept = json.loads(raw_file.read_text(encoding="utf-8"))
+    kept = json.loads(ws.read_text(raw_file))
     missing = [c["id"] for c in caps if c not in todo and (c["id"] not in kept
                                                            or not (out_dir / f"{c['id']}.png").is_file())]
     if missing:
@@ -313,18 +334,19 @@ def recapture(product: str | Path, workspace: str | Path, screens: list[str], st
 def remeasure(product: str | Path, workspace: str | Path, store: Path | None = None) -> dict[str, Any]:
     """Rebuild audit, texts, app and sheet from a finished capture's raw.json and PNGs (no browser, no app):
     for a change to the measures or the sheet, so the same captures are read again."""
-    app = product_app.load(product, store)
-    folder = Workspace(workspace).folder("existing")
+    app = _load_target_app(product, workspace, store, step="existing_capture")
+    ws = Workspace(workspace, step="existing_capture")
+    folder = ws.folder("existing")
     raw_file = folder / RAW
     if not raw_file.is_file():
         raise CaptureError(f"{raw_file} is missing: run the capture first")
     rec_file = folder / RECORD
     if rec_file.is_file():
-        rec = json.loads(rec_file.read_text(encoding="utf-8"))
+        rec = json.loads(ws.read_text(rec_file))
         for k in ("commit", "version", "base_url"):
             if rec.get(k):
                 app[k] = rec[k]
-    return write_outputs(app, product_app.captures(app), json.loads(raw_file.read_text(encoding="utf-8")), folder)
+    return write_outputs(app, product_app.captures(app), json.loads(ws.read_text(raw_file)), folder)
 
 
 def write_outputs(app: dict[str, Any], caps: list[dict[str, Any]], raw: dict[str, Any], folder: Path) -> dict[str, Any]:

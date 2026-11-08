@@ -8,7 +8,9 @@ as "<file>: <field>: <reason>"; it returns the files it checked. Model-free.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from collections.abc import Iterable
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -349,6 +351,777 @@ FILES: dict[str, list[tuple[str, str, int]]] = {
     "handoff": [("08-handoff/spec/*.md", "md", 1), ("08-handoff/design-file.json", "design_file", 1),
                 ("08-handoff/followup.json", "followup", 1), ("08-handoff/check.json", "handoff_check", 0)],
 }
+
+# What each step may read: workspace-relative paths or glob patterns (where "<round>" / "round-*"
+# matches a checks round folder). Model steps (*_read) have no file access and declare ().
+INPUTS: dict[str, tuple[str, ...]] = {
+    "intake_collect": (
+        "01-request/sources.json",
+        "01-request/requirements.json",
+        "01-request/questions.json",
+        "01-request/check-final.json",
+        "run.json",
+    ),
+    "intake_read": (),
+    "intake_check": (
+        "01-request/sources.json",
+        "01-request/draft.json",
+        "01-request/check.json",
+        "run.json",
+    ),
+    "intake": (
+        "01-request/sources.json",
+        "01-request/draft.json",
+        "01-request/check.json",
+        "01-request/check-final.json",
+        "01-request/questions.json",
+        "01-request/requirements.json",
+        "run.json",
+    ),
+    "capture": (
+        "01-request/requirements.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/texts.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/sheet.png",
+        "02-existing/task.md",
+        "02-existing/check-final.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "run.json",
+    ),
+    "existing_capture": (
+        "01-request/requirements.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/texts.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/sheet.png",
+        "02-existing/task.md",
+        "02-existing/check-final.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "run.json",
+    ),
+    "existing_collect": (
+        "01-request/requirements.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/texts.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/draft.json",
+        "02-existing/check.json",
+        "02-existing/sheet.png",
+        "02-existing/sheet.json",
+        "02-existing/task.md",
+        "02-existing/check-final.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "reuse.json",
+        "run.json",
+    ),
+    "existing_sheet": (
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/journeys.json",
+        "02-existing/draft.json",
+        "02-existing/check.json",
+        "02-existing/check-final.json",
+        "02-existing/task.md",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "02-existing/sheet.png",
+        "02-existing/sheet.json",
+        "reuse.json",
+        "run.json",
+    ),
+    "existing_read": (),
+    "existing_check": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/task.md",
+        "02-existing/draft.json",
+        "02-existing/check.json",
+        "02-existing/check-final.json",
+        "02-existing/journeys.json",
+        "02-existing/sheet.png",
+        "02-existing/sheet.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "reuse.json",
+        "run.json",
+    ),
+    "existing": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/app.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/task.md",
+        "02-existing/draft.json",
+        "02-existing/check.json",
+        "02-existing/check-final.json",
+        "02-existing/journeys.json",
+        "02-existing/sheet.png",
+        "02-existing/sheet.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "reuse.json",
+        "run.json",
+    ),
+    "ground_prep": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/app.json",
+        "03-ground/source/prep.json",
+        "03-ground/sources.json",
+        "03-ground/fixture.json",
+        "03-ground/fixture-check.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "reuse.json",
+        "run.json",
+    ),
+    "ground_collect": (
+        "01-request/requirements.json",
+        "01-request/questions.json",
+        "02-existing/app.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/journeys.json",
+        "03-ground/source/prep.json",
+        "03-ground/source/pack.json",
+        "03-ground/product/capabilities.md",
+        "03-ground/product/notes/*.md",
+        "03-ground/sources.json",
+        "03-ground/fixture.json",
+        "03-ground/fixtures/*.json",
+        "03-ground/fixture-check.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/prep_bundle.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "03-ground/base.json",
+        "03-ground/delta.json",
+        "03-ground/draft.json",
+        "03-ground/spec.json",
+        "03-ground/check.json",
+        "03-ground/check-final.json",
+        "03-ground/inventory.json",
+        "03-ground/task.md",
+        "reuse.json",
+        "run.json",
+    ),
+    "ground_read": (),
+    "ground_check": (
+        "01-request/requirements.json",
+        "01-request/questions.json",
+        "02-existing/app.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/journeys.json",
+        "03-ground/source/prep.json",
+        "03-ground/source/pack.json",
+        "03-ground/product/capabilities.md",
+        "03-ground/product/notes/*.md",
+        "03-ground/sources.json",
+        "03-ground/fixture.json",
+        "03-ground/fixtures/*.json",
+        "03-ground/fixture-check.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "03-ground/base.json",
+        "03-ground/delta.json",
+        "03-ground/additions.json",
+        "03-ground/draft.json",
+        "03-ground/spec.json",
+        "03-ground/check.json",
+        "03-ground/check-final.json",
+        "03-ground/inventory.json",
+        "03-ground/task.md",
+        "reuse.json",
+        "run.json",
+    ),
+    "ground_revise": (
+        "01-request/requirements.json",
+        "01-request/questions.json",
+        "02-existing/app.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/journeys.json",
+        "03-ground/source/prep.json",
+        "03-ground/source/pack.json",
+        "03-ground/product/capabilities.md",
+        "03-ground/product/notes/*.md",
+        "03-ground/sources.json",
+        "03-ground/fixture.json",
+        "03-ground/fixtures/*.json",
+        "03-ground/fixture-check.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "03-ground/base.json",
+        "03-ground/delta.json",
+        "03-ground/additions.json",
+        "03-ground/draft.json",
+        "03-ground/spec.json",
+        "03-ground/check.json",
+        "03-ground/check-final.json",
+        "03-ground/inventory.json",
+        "03-ground/task.md",
+        "reuse.json",
+        "run.json",
+    ),
+    "ground": (
+        "01-request/requirements.json",
+        "01-request/questions.json",
+        "02-existing/app.json",
+        "02-existing/audit.json",
+        "02-existing/texts.json",
+        "02-existing/journeys.json",
+        "03-ground/source/prep.json",
+        "03-ground/source/pack.json",
+        "03-ground/product/capabilities.md",
+        "03-ground/product/notes/*.md",
+        "03-ground/sources.json",
+        "03-ground/fixture.json",
+        "03-ground/fixtures/*.json",
+        "03-ground/fixture-check.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "03-ground/base.json",
+        "03-ground/delta.json",
+        "03-ground/additions.json",
+        "03-ground/draft.json",
+        "03-ground/spec.json",
+        "03-ground/check.json",
+        "03-ground/check-final.json",
+        "03-ground/inventory.json",
+        "03-ground/task.md",
+        "reuse.json",
+        "run.json",
+    ),
+    "directions_collect": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/task.md",
+        "04-directions/draft.json",
+        "04-directions/check.json",
+        "04-directions/check-final.json",
+        "04-directions/directions.json",
+        "04-directions/*/index.html",
+        "04-directions/*/checks.json",
+        "run.json",
+    ),
+    "directions_read": (),
+    "directions_check": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/task.md",
+        "04-directions/draft.json",
+        "04-directions/check.json",
+        "04-directions/*/index.html",
+        "04-directions/*/checks.json",
+        "run.json",
+    ),
+    "directions": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/task.md",
+        "04-directions/draft.json",
+        "04-directions/check.json",
+        "04-directions/check-final.json",
+        "04-directions/directions.json",
+        "04-directions/*/index.html",
+        "04-directions/*/build.json",
+        "04-directions/*/fixture.json",
+        "04-directions/*/styles/tokens.css",
+        "04-directions/*/shell/router.js",
+        "04-directions/*/screens/*.js",
+        "04-directions/*/checks.json",
+        "run.json",
+    ),
+    "gate_direction": (
+        "04-directions/directions.json",
+        "04-directions/gate_direction.json",
+        "04-directions/*/checks.json",
+        "taste/owner.md",
+        "taste-owner.md",
+        "run.json",
+    ),
+    "build": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/directions.json",
+        "04-directions/draft.json",
+        "04-directions/gate_direction.json",
+        "04-directions/*/index.html",
+        "04-directions/*/build.json",
+        "04-directions/*/screens/*.js",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/draft-first.json",
+        "05-build/draft-round-*.json",
+        "05-build/check.json",
+        "05-build/check-final.json",
+        "05-build/task.md",
+        "05-build/fixture.json",
+        "05-build/styles/tokens.css",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "05-build/prebuilt-round-*/*",
+        "05-build/prebuilt-round-*/*/*",
+        "06-checks/round-*/review.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "run.json",
+    ),
+    "build_read": (),
+    "build_check": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/directions.json",
+        "04-directions/draft.json",
+        "04-directions/gate_direction.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/draft-first.json",
+        "05-build/draft-round-*.json",
+        "05-build/check.json",
+        "05-build/check-final.json",
+        "05-build/task.md",
+        "05-build/fixture.json",
+        "05-build/styles/tokens.css",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/review.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "run.json",
+    ),
+    "build_finish": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/directions.json",
+        "04-directions/draft.json",
+        "04-directions/gate_direction.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/draft-first.json",
+        "05-build/draft-round-*.json",
+        "05-build/check.json",
+        "05-build/check-final.json",
+        "05-build/task.md",
+        "05-build/fixture.json",
+        "05-build/styles/tokens.css",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/review.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "run.json",
+    ),
+    "checks": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/tokens.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/checks-prebuilt.json",
+        "06-checks/round-*/measures.json",
+        "06-checks/round-*/views/*.png",
+        "run.json",
+    ),
+    "review_collect": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/tokens.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/directions.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/measures.json",
+        "06-checks/round-*/measured_items.json",
+        "06-checks/round-*/views/*.png",
+        "06-checks/round-*/sheet.png",
+        "06-checks/round-*/task.md",
+        "06-checks/round-*/draft-seeded.json",
+        "06-checks/round-*/review.json",
+        "06-checks/round-*/check-final.json",
+        "run.json",
+    ),
+    "review_read": (),
+    "review_check": (
+        "01-request/requirements.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/measures.json",
+        "06-checks/round-*/measured_items.json",
+        "06-checks/round-*/views/*.png",
+        "06-checks/round-*/sheet.png",
+        "06-checks/round-*/task.md",
+        "06-checks/round-*/draft-seeded.json",
+        "06-checks/round-*/draft.json",
+        "06-checks/round-*/draft-first.json",
+        "06-checks/round-*/check.json",
+        "06-checks/round-*/check-final.json",
+        "06-checks/round-*/review.json",
+        "run.json",
+    ),
+    "review_revise": (
+        "01-request/requirements.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/measures.json",
+        "06-checks/round-*/measured_items.json",
+        "06-checks/round-*/views/*.png",
+        "06-checks/round-*/sheet.png",
+        "06-checks/round-*/task.md",
+        "06-checks/round-*/draft.json",
+        "06-checks/round-*/draft-first.json",
+        "06-checks/round-*/check.json",
+        "06-checks/round-*/check-final.json",
+        "06-checks/round-*/review.json",
+        "run.json",
+    ),
+    "review": (
+        "01-request/requirements.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/draft.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/measures.json",
+        "06-checks/round-*/measured_items.json",
+        "06-checks/round-*/views/*.png",
+        "06-checks/round-*/sheet.png",
+        "06-checks/round-*/task.md",
+        "06-checks/round-*/draft.json",
+        "06-checks/round-*/draft-first.json",
+        "06-checks/round-*/check.json",
+        "06-checks/round-*/check-final.json",
+        "06-checks/round-*/review.json",
+        "run.json",
+    ),
+    "show": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "04-directions/directions.json",
+        "04-directions/gate_direction.json",
+        "05-build/index.html",
+        "05-build/build.json",
+        "05-build/fixture.json",
+        "05-build/styles/tokens.css",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/review.json",
+        "07-show/showtell.json",
+        "07-show/comments.json",
+        "07-show/bundle.html",
+        "07-show/bundle-round-*.html",
+        "07-show/bundle-v*.html",
+        "07-show/check.json",
+        "07-show/gate_final.json",
+        "07-show/gate_final-round-*.json",
+        "run.json",
+    ),
+    "show_feedback": (
+        "06-checks/round-*/review.json",
+        "07-show/showtell.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "07-show/gate_final_round_*.json",
+        "07-show/gate_final-round-*.json",
+        "taste/owner.md",
+        "taste-owner.md",
+        "run.json",
+    ),
+    "gate_final": (
+        "06-checks/round-*/review.json",
+        "07-show/showtell.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "07-show/gate_final_round_*.json",
+        "07-show/gate_final-round-*.json",
+        "taste/owner.md",
+        "taste-owner.md",
+        "run.json",
+    ),
+    "gate_final_next": (
+        "07-show/gate_final.json",
+        "run.json",
+    ),
+    "handoff": (
+        "01-request/requirements.json",
+        "02-existing/journeys.json",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "05-build/index.html",
+        "05-build/draft.json",
+        "05-build/fixture.json",
+        "05-build/shell/*",
+        "05-build/screens/*",
+        "06-checks/round-*/checks.json",
+        "06-checks/round-*/review.json",
+        "07-show/showtell.json",
+        "07-show/comments.json",
+        "07-show/gate_final.json",
+        "07-show/bundle.html",
+        "08-handoff/spec/*.md",
+        "08-handoff/design-file.json",
+        "08-handoff/followup.json",
+        "08-handoff/check.json",
+        "run.json",
+    ),
+    "prepare": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/texts.json",
+        "02-existing/app.json",
+        "02-existing/sheet.png",
+        "02-existing/check-final.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/fixture-check.json",
+        "03-ground/sources.json",
+        "03-ground/check-final.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "reuse.json",
+        "run.json",
+    ),
+    "store": (
+        "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/journeys.json",
+        "02-existing/raw.json",
+        "02-existing/capture.json",
+        "02-existing/texts.json",
+        "02-existing/app.json",
+        "02-existing/sheet.png",
+        "02-existing/check-final.json",
+        "02-existing/captures/*.png",
+        "02-existing/screens/*.png",
+        "03-ground/inventory.json",
+        "03-ground/fixture.json",
+        "03-ground/fixture-check.json",
+        "03-ground/sources.json",
+        "03-ground/check-final.json",
+        "03-ground/design-files/DESIGN.md",
+        "03-ground/design-files/tokens.json",
+        "03-ground/stored/*",
+        "03-ground/stored/*/*",
+        "reuse.json",
+        "run.json",
+    ),
+}
+INPUTS["ground-prep"] = INPUTS["ground_prep"]
+for _ms in (
+    "intake_read",
+    "intake_revise",
+    "existing_read",
+    "existing_revise",
+    "ground_read",
+    "ground_revise",
+    "directions_read",
+    "directions_revise",
+    "build_read",
+    "build_revise",
+    "review_read",
+    "review_revise",
+):
+    INPUTS[_ms] = ()
+STAGE_INPUTS = INPUTS
+
+REPO_INPUTS: dict[str, tuple[str, ...]] = {
+    "capture": (
+        ".temper/design/app.yaml",
+        ".temper/topics/*.md",
+    ),
+    "existing_capture": (
+        ".temper/design/app.yaml",
+        ".temper/topics/*.md",
+    ),
+    "existing_collect": (
+        ".temper/design/app.yaml",
+        ".temper/topics/*.md",
+    ),
+    "ground_prep": (
+        ".temper/design/app.yaml",
+        ".temper/topics/*.md",
+    ),
+    "ground-prep": (
+        ".temper/design/app.yaml",
+        ".temper/topics/*.md",
+    ),
+}
+STAGE_REPO_INPUTS = REPO_INPUTS
+STEP_INPUTS = INPUTS
+MODEL_STEPS: tuple[str, ...] = (
+    "intake_read",
+    "intake_revise",
+    "existing_read",
+    "existing_revise",
+    "ground_read",
+    "ground_revise",
+    "directions_read",
+    "directions_revise",
+    "build_read",
+    "build_revise",
+    "review_read",
+    "review_revise",
+)
+
+
+def declared_inputs(step: str, *, include_repo: bool = False) -> tuple[str, ...]:
+    """Return the declared input patterns for ``step``."""
+    if step not in INPUTS:
+        raise ContractError(f"no input declaration for step {step!r}; steps are {', '.join(INPUTS)}")
+    ws_inputs = INPUTS[step]
+    if not include_repo:
+        return ws_inputs
+    return ws_inputs + REPO_INPUTS.get(step, ())
+
+
+def check_input(
+    step: str,
+    rel_path: str,
+    *,
+    repo_input: bool = False,
+    allowed_topics: Iterable[str] | None = None,
+) -> str:
+    """Validate that ``step`` may read ``rel_path``; fail loud naming step, path, and declared set."""
+    if step not in INPUTS:
+        raise ContractError(f"no input declaration for step {step!r}; steps are {', '.join(INPUTS)}")
+    declared = REPO_INPUTS.get(step, ()) if repo_input else INPUTS[step]
+    combined = declared_inputs(step, include_repo=True)
+    raw = str(rel_path or "").strip().replace("\\", "/")
+    while raw.startswith("./"):
+        raw = raw[2:]
+    pure = PurePosixPath(raw)
+    if not raw or pure.is_absolute() or ".." in pure.parts:
+        raise ContractError(
+            f"step '{step}' refused undeclared read of '{rel_path}'; "
+            f"declared inputs: {list(combined)}"
+        )
+    norm = pure.as_posix()
+    if not any(fnmatchcase(norm, pat) for pat in declared):
+        raise ContractError(
+            f"step '{step}' refused undeclared read of '{norm}'; "
+            f"declared inputs: {list(combined)}"
+        )
+    if repo_input and norm.startswith(".temper/topics/") and allowed_topics is not None:
+        allowed_set = {PurePosixPath(str(t).strip()).as_posix() for t in allowed_topics if str(t).strip()}
+        if norm not in allowed_set:
+            raise ContractError(
+                f"step '{step}' refused undeclared read of '{norm}' (topic not referenced by .temper/design/app.yaml); "
+                f"declared inputs: {list(combined)}, referenced topics: {sorted(allowed_set)}"
+            )
+    return norm
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
@@ -362,18 +1135,18 @@ def check_json(name: str, data: Any, label: str) -> list[str]:
     return [f"{label}: {_where(e)}: {e.message}" for e in sorted(validator.iter_errors(data), key=lambda e: list(e.path))]
 
 
-def _load(path: Path, label: str, problems: list[str]) -> Any:
+def _load(ws: Workspace, path: Path, label: str, problems: list[str]) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return json.loads(ws.read_text(path))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ContractError) as exc:
         problems.append(f"{label}: (file): not readable JSON ({exc.__class__.__name__}: {exc})")
         return None
 
 
-def _file_kind(path: Path, kind: str, label: str) -> list[str]:
+def _file_kind(ws: Workspace, path: Path, kind: str, label: str) -> list[str]:
     if not path.is_file() or path.stat().st_size == 0:
         return [f"{label}: (file): empty or not a file"]
-    head = path.read_bytes()[:512]
+    head = ws.read_bytes(path)[:512]
     if kind == "png" and not head.startswith(PNG_MAGIC):
         return [f"{label}: (file): not a PNG"]
     if kind == "html" and b"<" not in head:
@@ -417,7 +1190,8 @@ def _rules(step: str, ws: Workspace, data: dict[str, Any]) -> list[str]:
 def gate_choice_problems(ws: Workspace, gate: dict, label: str) -> list[str]:
     path = ws.folder("directions") / "directions.json"
     try:
-        ids = [d["id"] for d in json.loads(path.read_text())["directions"]]
+        raw = ws.for_step(ws.step or "gate_direction").read_text(path)
+        ids = [d["id"] for d in json.loads(raw)["directions"]]
     except (OSError, ValueError, KeyError, TypeError):
         return [f"{label}: choice: 04-directions/directions.json is missing or broken, so the choice cannot be checked"]
     if gate.get("choice") not in ids:
@@ -427,9 +1201,10 @@ def gate_choice_problems(ws: Workspace, gate: dict, label: str) -> list[str]:
 
 def validate(step: str, workspace: Workspace | Path | str) -> list[str]:
     """Check one step's output in the workspace; raise ContractError with every problem, else return the files."""
-    ws = workspace if isinstance(workspace, Workspace) else Workspace(workspace)
+    base_ws = workspace if isinstance(workspace, Workspace) else Workspace(workspace)
     if step not in FILES:
         raise ContractError(f"no contract for step {step!r}; steps are {', '.join(FILES)}")
+    ws = base_ws.for_step(step)
     problems: list[str] = []
     checked: list[str] = []
     data: dict[str, Any] = {}
@@ -443,12 +1218,12 @@ def validate(step: str, workspace: Workspace | Path | str) -> list[str]:
             label = path.relative_to(ws.path).as_posix()
             checked.append(label)
             if kind in SCHEMAS:
-                parsed = _load(path, label, problems)
+                parsed = _load(ws, path, label, problems)
                 if parsed is not None:
                     data[label] = parsed
                     problems += check_json(kind, parsed, label)
             elif kind != "any":
-                problems += _file_kind(path, kind, label)
+                problems += _file_kind(ws, path, kind, label)
     problems += _rules(step, ws, data)
     if problems:
         raise ContractError(f"{step}: {len(problems)} problem(s): " + "; ".join(problems))

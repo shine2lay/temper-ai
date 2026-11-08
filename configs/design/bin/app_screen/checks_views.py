@@ -84,19 +84,20 @@ def plan(ws: Workspace) -> dict:
     not a guess). Each view carries its id, screen, state, width, height and how to open it; `walk` marks
     the one width per screen and state that the Tab walk and the action clicks use.
     """
-    build_file = ws.folder("build") / "build.json"
+    ws_step = ws.for_step(ws.step or "checks")
+    build_file = ws_step.folder("build") / "build.json"
     if not build_file.is_file():
         raise ViewError(f"{build_file} is missing: the build step must run before the checks step")
-    build = json.loads(build_file.read_text())
+    build = json.loads(ws_step.read_text(build_file))
     widths = [int(w) for w in build.get("widths") or []]
     if not widths:
         raise ViewError("05-build/build.json: widths: the build names no width to measure")
     page = Path(build.get("page") or "index.html")
-    if not (ws.folder("build") / page).is_file():
+    if not (ws_step.folder("build") / page).is_file():
         raise ViewError(f"05-build/build.json: page: {page} is not in 05-build/")
 
-    inventory_file = ws.folder("ground") / "inventory.json"
-    inventory = json.loads(inventory_file.read_text())["screens"] if inventory_file.is_file() else []
+    inventory_file = ws_step.folder("ground") / "inventory.json"
+    inventory = json.loads(ws_step.read_text(inventory_file))["screens"] if inventory_file.is_file() else []
     declared = build.get("views") or []
     if declared:
         views = from_build(declared, widths)

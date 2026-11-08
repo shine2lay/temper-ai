@@ -79,7 +79,8 @@ def sha256_text(text: str) -> str:
 
 
 def sha256_file(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    with Path(path).open("rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def screen_spec(app: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +107,7 @@ def visual_diff_ratio(path_a: Path, path_b: Path) -> float:
     """Fraction of pixels that differ between two PNG files (0.0 = identical, 1.0 = completely different)."""
     if not path_a.is_file() or not path_b.is_file():
         return 1.0
-    if path_a.read_bytes() == path_b.read_bytes():
+    if sha256_file(path_a) == sha256_file(path_b):
         return 0.0
     if Image is None or ImageChops is None:
         return 1.0

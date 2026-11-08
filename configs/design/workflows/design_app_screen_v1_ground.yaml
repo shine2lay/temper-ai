@@ -26,7 +26,7 @@ workflow:
     - name: ground_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: ground_collect, product: input.product}
+      input_map: {step: ground_collect, product: input.product, workspace_path: input.workspace_path}
     - name: ground_read
       type: agent
       agent: design_app_screen_ground_v1
@@ -37,7 +37,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [ground_read]
-      input_map: {step: ground_check, product: input.product, data: ground_read.output}
+      input_map: {step: ground_check, product: input.product, data: ground_read.output, workspace_path: input.workspace_path}
     - name: ground_revise
       type: agent
       agent: design_app_screen_ground_v1
@@ -48,4 +48,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [ground_revise]
-      input_map: {step: ground, product: input.product, data: ground_revise.output}
+      input_map: {step: ground, product: input.product, data: ground_revise.output, workspace_path: input.workspace_path}

@@ -51,9 +51,10 @@ def _copy_delta(ps: ProductStore, n: int, folder: Path) -> dict[str, str]:
 
 def _load_app_for_workspace(product: str | Path, ws: Workspace,
                             products: Path | None = None) -> dict[str, Any]:
+    ws_step = ws if ws.step else ws.for_step("store")
     rec_file = ws.folder("existing") / existing_host.RECORD
     if rec_file.is_file():
-        rec = json.loads(rec_file.read_text(encoding="utf-8"))
+        rec = json.loads(ws_step.read_text(rec_file))
         app_file = rec.get("app_file")
         if app_file and Path(app_file).is_file():
             app = product_app.load(app_file)
@@ -63,7 +64,7 @@ def _load_app_for_workspace(product: str | Path, ws: Workspace,
             return app
     app_file_json = ws.folder("existing") / existing_host.APP
     if app_file_json.is_file():
-        doc = json.loads(app_file_json.read_text(encoding="utf-8"))
+        doc = json.loads(ws_step.read_text(app_file_json))
         spec_path = doc.get("spec_path")
         if spec_path and Path(spec_path).is_file():
             app = product_app.load(spec_path)
@@ -86,7 +87,7 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
     forced = reuse.parse_force(force)
     app = product_app.load(product, products)
     prod_name = app["product"]
-    ws = Workspace(workspace)
+    ws = Workspace(workspace, step="prepare")
     ws.start(prod_name)
     for stage in STAGES:
         if any(ws.folder(stage).glob("*")):
@@ -223,7 +224,8 @@ def _request(ws: Workspace) -> dict:
     file = ws.folder("intake") / "requirements.json"
     if not file.is_file():
         return {}
-    data = json.loads(file.read_text(encoding="utf-8"))
+    ws_step = ws if ws.step else ws.for_step("store")
+    data = json.loads(ws_step.read_text(file))
     return {
         "sha256": reuse.sha256_file(file),
         "items": [{"id": r["id"], "owner_words": r.get("owner_words", "")} for r in data.get("items", [])],
@@ -233,7 +235,7 @@ def _request(ws: Workspace) -> dict:
 def store(workspace: str | Path, run: str, stages: str | None = None, workflow_commit: str | None = None,
           products: Path | None = None) -> dict:
     """Write the run's finished stages back to its product's store; refuse loud what did not pass."""
-    ws = Workspace(workspace)
+    ws = Workspace(workspace, step="store")
     data = ws.run()
     if not run:
         raise StoreError("store needs --run (the temper run id the outputs came from)")
@@ -244,7 +246,7 @@ def store(workspace: str | Path, run: str, stages: str | None = None, workflow_c
     product = data["product"]
     app = _load_app_for_workspace(product, ws, products)
     ps = ProductStore(app["product"], products)
-    prepared = json.loads(stored_copy.path(ws).read_text(encoding="utf-8")) if stored_copy.path(ws).is_file() \
+    prepared = json.loads(ws.read_text(stored_copy.path(ws))) if stored_copy.path(ws).is_file() \
         else None
     fingerprint = prepared["fingerprint"] if prepared else reuse.fingerprint(app, commit=app.get("commit"))
     refused = []

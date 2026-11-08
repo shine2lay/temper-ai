@@ -22,7 +22,7 @@ workflow:
     - name: intake_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: intake_collect, product: input.product, data: input.request_json}
+      input_map: {step: intake_collect, product: input.product, data: input.request_json, workspace_path: input.workspace_path}
     - name: intake_read
       type: agent
       agent: design_app_screen_intake_v1
@@ -33,7 +33,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [intake_read]
-      input_map: {step: intake_check, product: input.product}
+      input_map: {step: intake_check, product: input.product, workspace_path: input.workspace_path}
     - name: intake_revise
       type: agent
       agent: design_app_screen_intake_v1
@@ -44,4 +44,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [intake_revise]
-      input_map: {step: intake, product: input.product}
+      input_map: {step: intake, product: input.product, workspace_path: input.workspace_path}

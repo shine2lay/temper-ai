@@ -155,7 +155,8 @@ def _store(tmp_path: Path, app: dict) -> Path:
 def test_product_file_loads_from_temper_design_and_expands_captures(tmp_path):
     repo = _store(tmp_path, APP_FILE)
     app = product_app.load(repo)
-    assert app["repo"] == str(repo)
+    assert "repo" not in app
+    assert app["temper_dir"] == str(repo / ".temper")
     assert app["path"].endswith(".temper/design/app.yaml")
     assert len(app["spec_sha256"]) == 64
     caps = product_app.captures(app)
@@ -621,7 +622,11 @@ def test_trial_workflow_runs_the_same_existing_nodes_as_the_whole_workflow():
         expected["name"] = node["name"]
         if node["name"] == "existing_collect":
             expected.pop("depends_on", None)
-            expected["input_map"] = {"step": "existing_collect", "product": "input.product"}
+            expected["input_map"] = {
+                "step": "existing_collect",
+                "product": "input.product",
+                "workspace_path": "input.workspace_path",
+            }
         assert node == expected, node["name"]
     assert [n["name"] for n in trial] == ["existing_collect", "existing_sheet", "existing_read", "existing_check",
                                          "existing_revise", "existing"]

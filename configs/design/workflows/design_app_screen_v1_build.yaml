@@ -21,7 +21,7 @@ workflow:
     - name: build
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: build, product: input.product}
+      input_map: {step: build, product: input.product, workspace_path: input.workspace_path}
     - name: build_read
       type: agent
       agent: design_app_screen_build_v1
@@ -32,7 +32,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [build_read]
-      input_map: {step: build_check, product: input.product, data: build_read.output}
+      input_map: {step: build_check, product: input.product, data: build_read.output, workspace_path: input.workspace_path}
     - name: build_revise
       type: agent
       agent: design_app_screen_build_v1
@@ -43,4 +43,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [build_revise]
-      input_map: {step: build_finish, product: input.product, data: build_revise.output}
+      input_map: {step: build_finish, product: input.product, data: build_revise.output, workspace_path: input.workspace_path}

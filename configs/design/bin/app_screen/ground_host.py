@@ -46,23 +46,25 @@ def _on_path(folder: Path) -> None:
 
 
 def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    with path.open("rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def pack_design_files(product: str, ground: Path, registry: Path | None = None,
                       lab_root: Path | str | None = None,
                       design_dir: Path | None = None) -> dict:
-    """Pack DESIGN.md and tokens.json from .temper/design/ or design_files.pack into 03-ground."""
-    _on_path(DESIGN_BIN)
-    import design_files
-    reg_path = Path(registry or design_files.REGISTRY)
-    if product in design_files.load_registry(reg_path)["products"]:
-        if lab_root is not None:
-            design_files.pack(reg_path, product, None, ground, lab_root)
-        else:
-            design_files.pack(reg_path, product, None, ground)
-        return {"registered": True, "from": str(reg_path)}
-    if registry is None and design_dir is not None and (design_dir / "DESIGN.md").is_file():
+    """Pack DESIGN.md and tokens.json from .temper/design/ or an explicit registry into 03-ground."""
+    if registry is not None:
+        _on_path(DESIGN_BIN)
+        import design_files
+        reg_path = Path(registry)
+        if product in design_files.load_registry(reg_path)["products"]:
+            if lab_root is not None:
+                design_files.pack(reg_path, product, None, ground, lab_root)
+            else:
+                design_files.pack(reg_path, product, None, ground)
+            return {"registered": True, "from": str(reg_path)}
+    if design_dir is not None and (design_dir / "DESIGN.md").is_file():
         files_out = ground / "design-files"
         files_out.mkdir(parents=True, exist_ok=True)
         design = {}
@@ -77,7 +79,7 @@ def pack_design_files(product: str, ground: Path, registry: Path | None = None,
         return {"registered": True, "from": str(design_dir)}
     write_json(ground / PACK, {"version": 1, "product": product, "name": product, "fixture": False,
                                "registry_entry": None, "files": {}, "design_files": {}, "current_state": {}})
-    return {"registered": False, "from": f"{product} is not in {reg_path}: no design files"}
+    return {"registered": False, "from": f"{product}: no design files in {design_dir or ground}"}
 
 
 def _source_path(app: dict, path: str) -> Path:
@@ -87,18 +89,21 @@ def _source_path(app: dict, path: str) -> Path:
     app_dir = Path(app["path"]).parent
     if (app_dir / p).exists():
         return app_dir / p
-    repo = app.get("repo")
-    if repo and (Path(repo) / p).exists():
-        return Path(repo) / p
+    if app_dir.name == "design" and app_dir.parent.name == ".temper":
+        try:
+            return Workspace(app_dir, step="ground_prep").resolve_input(path, repo_input=True)
+        except contracts.ContractError as exc:
+            raise GroundPrepError(str(exc)) from None
     return app_dir / p
 
 
 def read_source(app: dict, path: str) -> tuple[str, str]:
-    """(text, where it came from): a file in the product repo or beside app.yaml."""
+    """(text, where it came from): a declared topic file in .temper/topics/ or beside app.yaml."""
     file = _source_path(app, path)
     if not file.is_file():
         raise GroundPrepError(f"{file} is missing (named in {app['path']})")
-    return file.read_text(encoding="utf-8"), str(file)
+    with file.open("r", encoding="utf-8") as fh:
+        return fh.read(), str(file)
 
 
 def read_capabilities(app: dict, ground: Path) -> dict:
@@ -140,7 +145,8 @@ def read_notes(app: dict, ground: Path) -> list[dict]:
 
 def _json_file(path: Path, what: str):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        with path.open("r", encoding="utf-8") as fh:
+            return json.loads(fh.read())
     except (OSError, ValueError) as exc:
         raise GroundPrepError(f"{path} ({what}) is not readable JSON: {exc}") from None
 
@@ -183,9 +189,13 @@ def copy_fixture(app: dict, ground: Path) -> dict:
 def prep(product_or_repo: str | Path, workspace: str | Path, store: Path | None = None,
          registry: Path | None = None, lab_root: Path | str | None = None) -> dict:
     """Write 03-ground/'s host inputs; a 03-ground that already holds them fails (use a fresh workspace)."""
-    app = product_app.load(product_or_repo, store)
+    ws = Workspace(workspace, step="ground_prep")
+    target = product_or_repo
+    if isinstance(product_or_repo, str) and "/" not in product_or_repo and "\\" not in product_or_repo and store is None:
+        if (ws.path / "app.yaml").is_file() or (ws.path / ".temper/design/app.yaml").is_file():
+            target = ws.path
+    app = product_app.load(target, store, step="ground_prep")
     product = app["product"]
-    ws = Workspace(workspace)
     ws.start(product)
     ground = ws.folder("ground")
     used = [p for p in ("source", "product", "design-files", "fixture.json", PARTS_DIR) if (ground / p).exists()]

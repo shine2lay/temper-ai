@@ -25,13 +25,14 @@ class ChecksError(ValueError):
     """The checks step cannot run on this workspace; the message says which file is missing or wrong."""
 
 
-def _read(path: Path, what: str, required: bool = True):
+def _read(ws: Workspace, path: Path, what: str, required: bool = True):
+    ws_step = ws.for_step(ws.step or "checks")
     if not path.is_file():
         if required:
             raise ChecksError(f"checks: {path} is missing: {what}")
         return None
     try:
-        return json.loads(path.read_text())
+        return json.loads(ws_step.read_text(path))
     except json.JSONDecodeError as exc:
         raise ChecksError(f"checks: {path} is not JSON: {exc}") from exc
 
@@ -39,14 +40,14 @@ def _read(path: Path, what: str, required: bool = True):
 def _context(ws: Workspace, plan: dict, measured: dict) -> dict:
     ground = ws.folder("ground")
     inventory_file = ground / "inventory.json"
-    inventory = _read(inventory_file, "the ground stage's inventory names the screens the build must have")
-    requirements = _read(ws.folder("intake") / "requirements.json",
+    inventory = _read(ws, inventory_file, "the ground stage's inventory names the screens the build must have")
+    requirements = _read(ws, ws.folder("intake") / "requirements.json",
                          "the intake stage's requirements say what the build must show", required=False) or {}
-    fixture = _read(ground / "fixture.json", "the run's figures", required=False)
+    fixture = _read(ws, ground / "fixture.json", "the run's figures", required=False)
     tokens = None
     for candidate in (ground / "design-files" / "tokens.json", ground / "tokens.json"):
         if candidate.is_file():
-            tokens = _read(candidate, "the product's design tokens")
+            tokens = _read(ws, candidate, "the product's design tokens")
             break
     return checks_rules.context(plan, inventory.get("screens") or [], requirements.get("items") or [],
                                 fixture, tokens, inventory.get("design_files") or "none", measured)
@@ -82,6 +83,7 @@ def measure(ws: Workspace, plan: dict, thresholds: dict) -> dict:
 
 
 def run(ws: Workspace, data: str = "") -> dict:
+    ws = ws.for_step("checks")
     started = time.time()
     if ws.round < 1:
         raise ChecksError("checks: the run has no round yet: the build step runs before the checks step")
@@ -92,7 +94,7 @@ def run(ws: Workspace, data: str = "") -> dict:
     out.mkdir(parents=True, exist_ok=True)
     prebuilt = out / "checks-prebuilt.json"
     if prebuilt.is_file():
-        record = json.loads(prebuilt.read_text(encoding="utf-8"))
+        record = json.loads(ws.read_text(prebuilt))
         record["round"] = ws.round
         (out / "checks.json").write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
         contracts.validate("checks", ws)

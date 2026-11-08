@@ -8,24 +8,22 @@ workflow input — never in this file.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
 
-from .contracts import ID, STATE, TEXT, WIDTH, items, obj
+from .contracts import ID, STATE, TEXT, WIDTH, ContractError, items, obj
+from .workspace import Workspace
 
-HERE = Path(__file__).resolve().parent
-CONFIG_DIR = HERE.parents[1]
-PRODUCTS_YAML = CONFIG_DIR / "products.yaml"
 DESIGN_SUBDIR = Path(".temper") / "design"
 SPEC_FILENAME = "app.yaml"
 
 
-class AppFileError(ValueError):
+class AppFileError(ContractError):
     """The product's app file is missing or wrong; the message names each problem."""
 
 
@@ -116,9 +114,9 @@ STANDEE_KEYS = frozenset({
 SECRET_KEYS = frozenset({"password", "secret", "token", "api_key", "credentials"})
 
 INTERNAL_META_KEYS = frozenset({
-    "path", "repo", "design_dir", "spec_sha256",
+    "path", "design_dir", "temper_dir", "spec_sha256",
     "base_url", "version",
-    "_repo_root", "_design_dir", "_spec_file", "_spec_hash",
+    "_design_dir", "_spec_file", "_spec_hash",
 })
 
 
@@ -204,42 +202,8 @@ def check(app: Any, label: str = "app.yaml") -> list[str]:
     return problems
 
 
-def _resolve_from_products_yaml(product: str) -> Path | None:
-    env_repo = os.environ.get("APP_SCREEN_REPO")
-    if env_repo:
-        return Path(env_repo).expanduser().resolve()
-    if PRODUCTS_YAML.is_file():
-        data = yaml.safe_load(PRODUCTS_YAML.read_text(encoding="utf-8")) or {}
-        entry = (data.get("products") or {}).get(product)
-        if isinstance(entry, dict):
-            repo = entry.get("repo") or (entry.get("location") or {}).get("repo")
-            if repo:
-                repos_map = data.get("repos") or {}
-                mapped = repos_map.get(str(repo), repo)
-                candidate = Path(str(mapped)).expanduser().resolve()
-                if (candidate / DESIGN_SUBDIR / SPEC_FILENAME).is_file() or candidate.exists():
-                    return candidate
-    for ws_root in (
-        os.environ.get("TEMPER_WORKSPACES_DIR"),
-        str(HERE.parents[3] / "workspaces"),
-        "/app/workspaces",
-        "/home/shinelay/temper-ai/workspaces",
-    ):
-        if ws_root:
-            ws_repo = Path(ws_root).expanduser() / "repos" / product / "main"
-            if (ws_repo / DESIGN_SUBDIR / SPEC_FILENAME).is_file():
-                return ws_repo.resolve()
-    cwd = Path.cwd().resolve()
-    if (cwd / DESIGN_SUBDIR / SPEC_FILENAME).is_file():
-        return cwd
-    sibling = HERE.parents[4] / product
-    if (sibling / DESIGN_SUBDIR / SPEC_FILENAME).is_file():
-        return sibling.resolve()
-    return None
-
-
 def spec_path(product_or_repo: str | Path, store: Path | str | None = None) -> Path:
-    """Resolve the path to <repo>/.temper/design/app.yaml for a product repo or slug."""
+    """Resolve the path to <tree>/.temper/design/app.yaml from an explicit path or store."""
     if store is not None:
         base = Path(store)
         candidates = [
@@ -262,32 +226,52 @@ def spec_path(product_or_repo: str | Path, store: Path | str | None = None) -> P
         return p / DESIGN_SUBDIR / SPEC_FILENAME
     if (p / SPEC_FILENAME).is_file() and p.name == "design" and p.parent.name == ".temper":
         return p / SPEC_FILENAME
-    if "/" in str(product_or_repo) or "\\" in str(product_or_repo) or p.exists():
+    if p.name == ".temper" and (p / "design" / SPEC_FILENAME).is_file():
+        return p / "design" / SPEC_FILENAME
+    if isinstance(product_or_repo, Path) or "/" in str(product_or_repo) or "\\" in str(product_or_repo) or p.exists():
+        if p.name == "design" and p.parent.name == ".temper":
+            return p / SPEC_FILENAME
         return p / DESIGN_SUBDIR / SPEC_FILENAME
-
-    repo = _resolve_from_products_yaml(str(product_or_repo))
-    if repo is not None:
-        return repo / DESIGN_SUBDIR / SPEC_FILENAME
-    return p / DESIGN_SUBDIR / SPEC_FILENAME
+    raise AppFileError(
+        f"product_app requires an explicit path to {DESIGN_SUBDIR / SPEC_FILENAME} (or --store), "
+        f"not a bare product id: {product_or_repo!r}"
+    )
 
 
 def design_dir(product_or_repo: str | Path, store: Path | str | None = None) -> Path:
     return spec_path(product_or_repo, store).parent
 
 
-def repo_root_for(spec_file: Path) -> Path:
-    resolved = spec_file.resolve()
-    if resolved.parent.name == "design" and resolved.parent.parent.name == ".temper":
-        return resolved.parent.parent.parent
-    return resolved.parent
-
-
-def load(product: str | Path, store: Path | str | None = None) -> dict[str, Any]:
+def load(
+    product: str | Path,
+    store: Path | str | None = None,
+    *,
+    step: str = "existing_capture",
+) -> dict[str, Any]:
     """The product's .temper/design/app.yaml, checked; AppFileError lists every problem."""
     path = spec_path(product, store)
+    in_temper_design = path.parent.name == "design" and path.parent.parent.name == ".temper"
     try:
-        raw_bytes = path.read_bytes()
+        if in_temper_design and path.parent.is_dir():
+            ws_app = Workspace(path.parent, step=step)
+            ws_app.resolve_input(".temper/design/app.yaml", repo_input=True)
+            if not path.is_file() and (path.parent.parent / "topics").is_dir():
+                res = subprocess.run(
+                    ["git", "-C", str(path.parent.parent), "show", "HEAD:.temper/design/app.yaml"],
+                    capture_output=True,
+                    check=False,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    path.write_bytes(res.stdout)
+            raw_bytes = ws_app.read_bytes(
+                ".temper/design/app.yaml", repo_input=True
+            )
+        else:
+            with path.open("rb") as fh:
+                raw_bytes = fh.read()
         app = yaml.safe_load(raw_bytes.decode("utf-8"))
+    except ContractError as exc:
+        raise AppFileError(str(exc)) from None
     except (OSError, yaml.YAMLError) as exc:
         raise AppFileError(
             f"{path}: (file): not a readable app file ({exc.__class__.__name__}: {exc})"
@@ -304,7 +288,19 @@ def load(product: str | Path, store: Path | str | None = None) -> dict[str, Any]
         problems.append(f"{path}: product: is {app['product']!r}, but requested product is {product!r}")
     if problems:
         raise AppFileError(f"{len(problems)} problem(s): " + "; ".join(problems))
-    root = repo_root_for(path)
+    if in_temper_design:
+        notes_list = list(app.get("notes") or [])
+        cap_ref = app.get("capabilities")
+        refs_to_check = list(notes_list)
+        if isinstance(cap_ref, str) and cap_ref and cap_ref != "derive":
+            refs_to_check.append(cap_ref)
+        allowed_topics = [r for r in refs_to_check if isinstance(r, str)]
+        ws_repo = Workspace(path.parent, step=step)
+        for rel in refs_to_check:
+            try:
+                ws_repo.resolve_input(rel, repo_input=True, allowed_topics=allowed_topics)
+            except ContractError as exc:
+                raise AppFileError(str(exc)) from None
     spec_sha = hashlib.sha256(raw_bytes).hexdigest()
     app.setdefault("name", app["product"])
     if "job" not in app and "what" in app:
@@ -312,10 +308,10 @@ def load(product: str | Path, store: Path | str | None = None) -> dict[str, Any]
     if "what" not in app and "job" in app:
         app["what"] = app["job"]
     app["path"] = str(path)
-    app["repo"] = str(root)
     app["design_dir"] = str(path.parent)
+    if in_temper_design:
+        app["temper_dir"] = str(path.parent.parent)
     app["spec_sha256"] = spec_sha
-    app["_repo_root"] = str(root)
     app["_design_dir"] = str(path.parent)
     app["_spec_file"] = str(path)
     app["_spec_hash"] = spec_sha

@@ -26,6 +26,8 @@ except ImportError:  # pragma: no cover - try container shared venv, else build(
     except ImportError:
         Image = ImageDraw = ImageFont = None
 
+from .workspace import Workspace
+
 LONG_EDGE = 1568          # the model provider's long-edge size before it downsamples
 BUDGET = 180_000          # raw PNG bytes: base64 (4/3) plus JSON must stay under the 256,000-character output cap
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -93,7 +95,15 @@ def build(captures: list[tuple[str, Path]], out: Path, budget: int = BUDGET) -> 
         raise SheetError("no captures at the sheet width")
     tiles = []
     for cid, path in captures:
-        with Image.open(path) as img:
+        if isinstance(path, Path) and path.parent.name == "captures" and path.parent.parent.name == "02-existing":
+            ws = Workspace(path.parents[2], step="existing_collect")
+            stream: object = io.BytesIO(ws.read_bytes(path))
+        elif isinstance(path, Path) and path.parent.name == "views" and len(path.parents) >= 3 and path.parents[2].name == "06-checks":
+            ws = Workspace(path.parents[3], step="review_collect")
+            stream = io.BytesIO(ws.read_bytes(path))
+        else:
+            stream = path
+        with Image.open(stream) as img:
             tiles.append((cid, img.copy()))
     sizes = {img.size for _, img in tiles}
     if len(sizes) != 1:

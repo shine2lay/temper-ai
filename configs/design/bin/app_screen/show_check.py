@@ -83,11 +83,12 @@ class _BundleHTMLInspector(HTMLParser):
             self._in_script = False
 
 
-def _read_json(path: Path) -> tuple[Any, str | None]:
+def _read_json(ws: Workspace, path: Path) -> tuple[Any, str | None]:
     if not path.is_file():
         return None, f"{path.name}: file is missing"
+    ws_step = ws if ws.step else ws.for_step("show")
     try:
-        return json.loads(path.read_text(encoding="utf-8")), None
+        return json.loads(ws_step.read_text(path)), None
     except (OSError, json.JSONDecodeError) as exc:
         return None, f"{path.name}: invalid JSON ({exc})"
 
@@ -95,7 +96,7 @@ def _read_json(path: Path) -> tuple[Any, str | None]:
 def _check_review_done(ws: Workspace, round_num: int) -> list[str]:
     problems: list[str] = []
     review_path = ws.round_folder(round_num) / "review.json"
-    review_doc, err = _read_json(review_path)
+    review_doc, err = _read_json(ws, review_path)
     if err or not isinstance(review_doc, dict):
         problems.append(f"06-checks/round-{round_num}/review.json: {err or 'must be a JSON object'}")
         return problems
@@ -123,14 +124,15 @@ def _check_review_done(ws: Workspace, round_num: int) -> list[str]:
 
 
 def _check_bundle_self_contained(ws: Workspace, round_num: int) -> list[str]:
+    ws_step = ws if ws.step else ws.for_step("show")
     problems: list[str] = []
-    show_dir = ws.folder("show")
+    show_dir = ws_step.folder("show")
     bundle_path = show_dir / "bundle.html"
     if not bundle_path.is_file():
         problems.append("07-show/bundle.html: file is missing")
         return problems
 
-    text = bundle_path.read_text(encoding="utf-8")
+    text = ws_step.read_text(bundle_path)
     if not text.strip():
         problems.append("07-show/bundle.html: file is empty")
         return problems
@@ -166,7 +168,7 @@ def _check_bundle_self_contained(ws: Workspace, round_num: int) -> list[str]:
         problems.append('07-show/bundle.html: missing inlined <script id="rc-fixture-data"> block')
 
     if round_num > 1 and (show_dir / f"bundle-round-{round_num - 1}.html").is_file():
-        showtell_doc, err = _read_json(show_dir / "showtell.json")
+        showtell_doc, err = _read_json(ws_step, show_dir / "showtell.json")
         if err or not isinstance(showtell_doc, dict):
             problems.append("07-show/showtell.json: missing or invalid for round > 1 retention check")
         else:
@@ -188,8 +190,8 @@ def _check_bundle_self_contained(ws: Workspace, round_num: int) -> list[str]:
 def _check_showtell_and_comments_match(ws: Workspace, round_num: int) -> list[str]:
     problems: list[str] = []
     show_dir = ws.folder("show")
-    showtell_doc, st_err = _read_json(show_dir / "showtell.json")
-    comments_doc, cm_err = _read_json(show_dir / "comments.json")
+    showtell_doc, st_err = _read_json(ws, show_dir / "showtell.json")
+    comments_doc, cm_err = _read_json(ws, show_dir / "comments.json")
 
     if st_err or not isinstance(showtell_doc, dict):
         problems.append(f"07-show/showtell.json: {st_err or 'must be a JSON object'}")
@@ -297,7 +299,7 @@ def _check_targeted_comments_answered(ws: Workspace, round_num: int) -> list[str
     if not gate_path.is_file():
         return problems
 
-    gate_doc, g_err = _read_json(gate_path)
+    gate_doc, g_err = _read_json(ws, gate_path)
     if g_err or not isinstance(gate_doc, dict):
         problems.append(f"07-show/gate_final.json: {g_err or 'must be a JSON object'}")
         return problems
@@ -309,7 +311,7 @@ def _check_targeted_comments_answered(ws: Workspace, round_num: int) -> list[str
     if not isinstance(raw_targets, list) or not raw_targets:
         return problems
 
-    comments_doc, cm_err = _read_json(show_dir / "comments.json")
+    comments_doc, cm_err = _read_json(ws, show_dir / "comments.json")
     if cm_err or not isinstance(comments_doc, dict):
         problems.append(f"07-show/comments.json: {cm_err or 'must be a JSON object'}")
         return problems

@@ -38,13 +38,14 @@ class DirectionsError(ValueError):
     """Stage 4 directions failed a deterministic check or precondition."""
 
 
-def _read_json(path: Path, label: str, required: bool = True) -> dict[str, Any]:
+def _read_json(ws: Workspace, path: Path, label: str, required: bool = True) -> dict[str, Any]:
     if not path.is_file():
         if required:
             raise DirectionsError(f"directions: missing required input {label} at {path}")
         return {}
+    ws_step = ws if ws.step else ws.for_step("directions")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(ws_step.read_text(path))
     except (OSError, json.JSONDecodeError) as exc:
         raise DirectionsError(f"directions: invalid JSON in {label} ({path}): {exc}") from exc
     if not isinstance(data, dict) or (required and not data):
@@ -54,18 +55,19 @@ def _read_json(path: Path, label: str, required: bool = True) -> dict[str, Any]:
 
 def build_directions_task(ws: Workspace) -> str:
     """Build 04-directions/task.md prompt for the Stage 4 fenced directions model."""
+    ws = ws if ws.step else ws.for_step("directions_collect")
     ground_dir = ws.folder("ground")
     intake_dir = ws.folder("intake")
     existing_dir = ws.folder("existing")
 
-    inventory = _read_json(ground_dir / "inventory.json", "03-ground/inventory.json")
-    fixture = _read_json(ground_dir / "fixture.json", "03-ground/fixture.json")
+    inventory = _read_json(ws, ground_dir / "inventory.json", "03-ground/inventory.json")
+    fixture = _read_json(ws, ground_dir / "fixture.json", "03-ground/fixture.json")
     tokens_path = ground_dir / "design-files" / "tokens.json"
     if not tokens_path.is_file():
         tokens_path = ground_dir / "tokens.json"
-    tokens = _read_json(tokens_path, "03-ground/design-files/tokens.json")
-    requirements_doc = _read_json(intake_dir / "requirements.json", "01-request/requirements.json")
-    journeys_doc = _read_json(existing_dir / "journeys.json", "02-existing/journeys.json", required=False)
+    tokens = _read_json(ws, tokens_path, "03-ground/design-files/tokens.json")
+    requirements_doc = _read_json(ws, intake_dir / "requirements.json", "01-request/requirements.json")
+    journeys_doc = _read_json(ws, existing_dir / "journeys.json", "02-existing/journeys.json", required=False)
 
     entry_screens = build_scaffold.select_entry_screens(inventory)
     all_screens = [s for s in (inventory.get("screens") or []) if isinstance(s, dict)]
@@ -74,7 +76,7 @@ def build_directions_task(ws: Workspace) -> str:
     design_md_path = ground_dir / "design-files" / "DESIGN.md"
     design_md_summary = ""
     if design_md_path.is_file():
-        raw_md = design_md_path.read_text(encoding="utf-8").strip()
+        raw_md = ws.read_text(design_md_path).strip()
         design_md_summary = "\n".join(raw_md.splitlines()[:30])
 
     journey_lines: list[str] = []
@@ -169,8 +171,9 @@ def build_directions_task(ws: Workspace) -> str:
 
 def build_revise_task(ws: Workspace, draft: Any, problems: list[dict[str, str]]) -> str:
     """Build revision instructions when directions_check returns retry."""
+    ws = ws if ws.step else ws.for_step("directions_check")
     base_task_path = ws.folder("directions") / "task.md"
-    base_task = base_task_path.read_text(encoding="utf-8") if base_task_path.is_file() else build_directions_task(ws)
+    base_task = ws.read_text(base_task_path) if base_task_path.is_file() else build_directions_task(ws)
     prob_lines = [
         f"- [{p.get('check')}] `{p.get('where')}`: {p.get('problem')}"
         for p in problems[:25]
@@ -190,9 +193,10 @@ def build_revise_task(ws: Workspace, draft: Any, problems: list[dict[str, str]])
 
 def collect(ws: Workspace, data: str = "") -> dict[str, Any]:
     """Step 1 of Stage 4 (directions_collect): prepare 04-directions/task.md."""
+    ws = ws.for_step("directions_collect")
     ws.mark("directions", "running")
     task_text = build_directions_task(ws)
-    inventory = _read_json(ws.folder("ground") / "inventory.json", "03-ground/inventory.json")
+    inventory = _read_json(ws, ws.folder("ground") / "inventory.json", "03-ground/inventory.json")
     entry_screens = build_scaffold.select_entry_screens(inventory)
     contracts.validate("directions_collect", ws)
     return {
@@ -222,6 +226,7 @@ def _parse_reply_json(raw: str) -> dict[str, Any] | None:
 
 def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Step 3 of Stage 4 (directions_check): validate 04-directions/draft.json and write check.json."""
+    ws = ws.for_step("directions_check")
     dir_folder = ws.folder("directions")
     dir_folder.mkdir(parents=True, exist_ok=True)
     draft_path = dir_folder / "draft.json"
@@ -236,7 +241,7 @@ def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
             )
     if draft is None and draft_path.is_file():
         try:
-            draft = json.loads(draft_path.read_text(encoding="utf-8"))
+            draft = json.loads(ws.read_text(draft_path))
         except (OSError, json.JSONDecodeError):
             draft = None
 
@@ -256,10 +261,11 @@ def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
     }
 
 
-def _direction_plan(proto_dir: Path, target_screens: list[dict[str, Any]]) -> dict[str, Any]:
+def _direction_plan(ws: Workspace, proto_dir: Path, target_screens: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the view plan for one compiled direction prototype."""
+    ws_step = ws if ws.step else ws.for_step("directions")
     build_file = proto_dir / "build.json"
-    build = json.loads(build_file.read_text(encoding="utf-8")) if build_file.is_file() else {}
+    build = json.loads(ws_step.read_text(build_file)) if build_file.is_file() else {}
     widths = [int(w) for w in (build.get("widths") or [390, 1280])]
     views = checks_views.from_inventory(target_screens, widths)
     widest = max(widths)
@@ -308,23 +314,24 @@ def measure_direction_checks(
     Reuses checks_views, checks_rules.context, checks_rules.evaluate, and checks._rows_for_file so the
     resulting 04-directions/<id>/checks.json matches schema direction_checks (CHECKS) with 0 blockers.
     """
+    ws = ws if ws.step else ws.for_step("directions")
     ground_dir = ws.folder("ground")
-    inventory_doc = _read_json(ground_dir / "inventory.json", "03-ground/inventory.json")
-    fixture = _read_json(ground_dir / "fixture.json", "03-ground/fixture.json")
-    requirements_doc = _read_json(ws.folder("intake") / "requirements.json", "01-request/requirements.json", required=False)
+    inventory_doc = _read_json(ws, ground_dir / "inventory.json", "03-ground/inventory.json")
+    fixture = _read_json(ws, ground_dir / "fixture.json", "03-ground/fixture.json")
+    requirements_doc = _read_json(ws, ws.folder("intake") / "requirements.json", "01-request/requirements.json", required=False)
     tokens: dict[str, Any] | None = None
     for candidate in (ground_dir / "design-files" / "tokens.json", ground_dir / "tokens.json"):
         if candidate.is_file():
-            tokens = _read_json(candidate, "tokens.json", required=False)
+            tokens = _read_json(ws, candidate, "tokens.json", required=False)
             break
 
     thresholds = checks_rules.load_thresholds()
-    plan = _direction_plan(proto_dir, target_screens)
+    plan = _direction_plan(ws, proto_dir, target_screens)
 
     index_path = proto_dir / "index.html"
-    index_text = index_path.read_text(encoding="utf-8") if index_path.is_file() else ""
+    index_text = ws.read_text(index_path) if index_path.is_file() else ""
     tokens_css_path = proto_dir / "styles" / "tokens.css"
-    tokens_css = tokens_css_path.read_text(encoding="utf-8") if tokens_css_path.is_file() else ""
+    tokens_css = ws.read_text(tokens_css_path) if tokens_css_path.is_file() else ""
     has_focus_ring = ":focus-visible" in tokens_css and "outline" in tokens_css
 
     failed_requests: list[str] = []
@@ -345,7 +352,7 @@ def measure_direction_checks(
         sid = s["id"]
         js_path = proto_dir / "screens" / f"{sid}.js"
         if js_path.is_file():
-            js_text = js_path.read_text(encoding="utf-8")
+            js_text = ws.read_text(js_path)
             js_by_sid[sid] = js_text
             m = re.search(r"const\s+SCREEN_SPEC\s*=\s*(\{.*?\n\});", js_text, re.S)
             if m:
@@ -535,6 +542,7 @@ def measure_direction_checks(
 
 def run(ws: Workspace, data: str = "") -> dict[str, Any]:
     """Step 5 of Stage 4 (directions): compile directions into 04-directions/<id>/ and run quick measured checks."""
+    ws = ws.for_step("directions")
     ws.mark("directions", "running")
     dir_folder = ws.folder("directions")
     dir_folder.mkdir(parents=True, exist_ok=True)
@@ -551,7 +559,7 @@ def run(ws: Workspace, data: str = "") -> dict[str, Any]:
     if not draft_path.is_file():
         raise DirectionsError("directions: 04-directions/draft.json is missing; run directions_read first")
 
-    draft = _read_json(draft_path, "04-directions/draft.json")
+    draft = _read_json(ws, draft_path, "04-directions/draft.json")
     final_check = directions_check.check_workspace(ws, pass_name="final", draft=draft)
     (dir_folder / "check-final.json").write_text(
         json.dumps(final_check, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
@@ -567,7 +575,7 @@ def run(ws: Workspace, data: str = "") -> dict[str, Any]:
             f"{len(final_check.get('problems') or [])} problem(s): {summary}"
         )
 
-    inventory = _read_json(ws.folder("ground") / "inventory.json", "03-ground/inventory.json")
+    inventory = _read_json(ws, ws.folder("ground") / "inventory.json", "03-ground/inventory.json")
     all_screens = [s for s in (inventory.get("screens") or []) if isinstance(s, dict) and isinstance(s.get("id"), str)]
     inv_by_id = {s["id"]: s for s in all_screens}
     entry_screens = build_scaffold.select_entry_screens(inventory)

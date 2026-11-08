@@ -17,7 +17,10 @@ agent:
     import sys
 
     step = os.environ.get("{{ step | env }}", "")
-    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    workspace = (
+        os.environ.get("{{ workspace | default('', true) | env }}", "")
+        or os.environ.get("{{ workspace_path | default('', true) | env }}", "")
+    )
     product = os.environ.get("{{ product | default('', true) | env }}", "")
     raw = os.environ.get("{{ data | default('', true) | env }}", "")
     base_url = os.environ.get("{{ base_url | default('', true) | env }}", "")

@@ -53,6 +53,7 @@ def _resolve_dotted_path(data: Any, path_str: str) -> Any:
 
 def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     """Fail loud and fast if gate_final is not approved, review is not done, or inventory/build/draft are missing."""
+    ws = ws if ws.step else ws.for_step("handoff")
     round_num = max(1, ws.round) if ws.run_file.is_file() else 1
     problems: list[str] = []
 
@@ -80,7 +81,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
         raise ContractError("handoff: " + "; ".join(problems))
 
     try:
-        gate_doc = json.loads(gate_path.read_text(encoding="utf-8"))
+        gate_doc = json.loads(ws.read_text(gate_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"handoff: 07-show/gate_final.json: invalid JSON ({exc})") from exc
 
@@ -91,7 +92,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
         )
 
     try:
-        review_doc = json.loads(review_path.read_text(encoding="utf-8"))
+        review_doc = json.loads(ws.read_text(review_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"handoff: 06-checks/round-{round_num}/review.json: invalid JSON ({exc})") from exc
 
@@ -115,9 +116,8 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
         )
 
     try:
-        inv_doc = json.loads(inv_path.read_text(encoding="utf-8"))
-        build_doc = json.loads(build_path.read_text(encoding="utf-8"))
-        draft_doc = json.loads(draft_path.read_text(encoding="utf-8"))
+        inv_doc = json.loads(ws.read_text(inv_path))
+        draft_doc = json.loads(ws.read_text(draft_path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ContractError(f"handoff: upstream JSON parse error: {exc}") from exc
 
@@ -125,7 +125,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     req_path = ws.folder("intake") / "requirements.json"
     if req_path.is_file():
         try:
-            req_doc = json.loads(req_path.read_text(encoding="utf-8"))
+            req_doc = json.loads(ws.read_text(req_path))
         except (OSError, json.JSONDecodeError):
             req_doc = {}
 
@@ -133,7 +133,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     for fp in (ws.folder("ground") / "fixture.json", ws.folder("build") / "fixture.json"):
         if fp.is_file():
             try:
-                fixture_doc = json.loads(fp.read_text(encoding="utf-8"))
+                fixture_doc = json.loads(ws.read_text(fp))
                 break
             except (OSError, json.JSONDecodeError):
                 pass
@@ -142,7 +142,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     cm_path = ws.folder("show") / "comments.json"
     if cm_path.is_file():
         try:
-            comments_doc = json.loads(cm_path.read_text(encoding="utf-8"))
+            comments_doc = json.loads(ws.read_text(cm_path))
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -150,7 +150,7 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     st_path = ws.folder("show") / "showtell.json"
     if st_path.is_file():
         try:
-            showtell_doc = json.loads(st_path.read_text(encoding="utf-8"))
+            showtell_doc = json.loads(ws.read_text(st_path))
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -159,7 +159,6 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
         "gate": gate_doc,
         "review": review_doc,
         "inventory": inv_doc,
-        "build": build_doc,
         "draft": draft_doc,
         "requirements": req_doc,
         "fixture": fixture_doc,
@@ -441,6 +440,7 @@ def _build_followup_items(
 
 
 def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
+    ws = ws.for_step("handoff")
     prereq = validate_prerequisites(ws)
     round_num: int = prereq["round"]
     inv_doc: dict[str, Any] = prereq["inventory"]

@@ -63,9 +63,10 @@ def _write_canonical_png(out: Path, width: int = 390, height: int = 260) -> None
     out.write_bytes(raw)
 
 
-def _png_size(path: Path) -> tuple[int, int] | None:
+def _png_size(ws: Workspace, path: Path) -> tuple[int, int] | None:
+    ws_step = ws.for_step(ws.step or "review_collect")
     try:
-        head = path.read_bytes()[:24]
+        head = ws_step.read_bytes(path)[:24]
     except OSError:
         return None
     if len(head) >= 24 and head.startswith(b"\x89PNG\r\n\x1a\n") and head[12:16] == b"IHDR":
@@ -79,11 +80,12 @@ class ReviewError(ValueError):
     """Stage 6b review failed input preconditions or final draft validation."""
 
 
-def _load_json(path: Path, label: str) -> dict[str, Any]:
+def _load_json(ws: Workspace, path: Path, label: str) -> dict[str, Any]:
+    ws_step = ws.for_step(ws.step or "review_collect")
     if not path.is_file():
         raise ReviewError(f"{label} ({path}) is missing")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(ws_step.read_text(path))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReviewError(f"{label} ({path}) is not readable JSON: {exc}") from exc
     if not isinstance(data, dict):
@@ -188,7 +190,8 @@ def group_measured_items(checks_doc: dict[str, Any], valid_screens: list[str], r
 
 def _build_contact_sheet(ws: Workspace, measured_doc: dict[str, Any]) -> tuple[Path, str]:
     """Build 06-checks/round-<n>/sheet.png from 06-checks/round-<n>/views/*.png (reusing existing_sheet.py)."""
-    round_dir = ws.round_folder()
+    ws_step = ws.for_step(ws.step or "review_collect")
+    round_dir = ws_step.round_folder()
     views_dir = round_dir / "views"
     sheet_path = round_dir / "sheet.png"
 
@@ -196,7 +199,7 @@ def _build_contact_sheet(ws: Workspace, measured_doc: dict[str, Any]) -> tuple[P
     if png_files:
         by_size: dict[tuple[int, int], list[tuple[str, Path]]] = {}
         for p in png_files:
-            sz = _png_size(p)
+            sz = _png_size(ws_step, p)
             if sz is not None:
                 by_size.setdefault(sz, []).append((p.stem, p))
         if not by_size:
@@ -237,20 +240,21 @@ def _build_contact_sheet(ws: Workspace, measured_doc: dict[str, Any]) -> tuple[P
     elif not sheet_path.is_file():
         raise ReviewError(f"{views_dir} has no view PNGs and {sheet_path} is missing; run checks first")
 
-    raw_bytes = sheet_path.read_bytes()
+    raw_bytes = ws_step.read_bytes(sheet_path)
     b64 = base64.b64encode(raw_bytes).decode("ascii")
     return sheet_path, b64
 
 
 def _render_screen_copy_section(ws: Workspace, valid_screens: list[str]) -> str:
     """Format per-screen rendered copy and state text for 06-checks/round-<n>/task.md."""
-    build_dir = ws.folder("build")
+    ws_step = ws.for_step(ws.step or "review_collect")
+    build_dir = ws_step.folder("build")
     draft_path = build_dir / "draft.json"
     blocks: list[str] = []
 
     if draft_path.is_file():
         try:
-            ddoc = json.loads(draft_path.read_text(encoding="utf-8"))
+            ddoc = json.loads(ws_step.read_text(draft_path))
             for s in ddoc.get("screens") or []:
                 if not isinstance(s, dict):
                     continue
@@ -291,10 +295,10 @@ def _render_screen_copy_section(ws: Workspace, valid_screens: list[str]) -> str:
 
     # Fallback when 05-build/draft.json is absent (e.g. direct HTML/JS builds in Stage 6a known cases):
     # extract rendered texts from 06-checks/round-<n>/measures.json per screen/state.
-    measures_path = ws.round_folder() / "measures.json"
+    measures_path = ws_step.round_folder() / "measures.json"
     if measures_path.is_file():
         try:
-            mdoc = json.loads(measures_path.read_text(encoding="utf-8"))
+            mdoc = json.loads(ws_step.read_text(measures_path))
             by_screen: dict[str, list[str]] = {}
             measured_map = mdoc.get("measured")
             view_entries = (
@@ -333,15 +337,16 @@ def _render_screen_copy_section(ws: Workspace, valid_screens: list[str]) -> str:
 
 def build_task(ws: Workspace, measured_doc: dict[str, Any]) -> str:
     """Build and write 06-checks/round-<n>/task.md for the fenced review agent."""
-    round_num = ws.round or 1
-    round_dir = ws.round_folder(round_num)
-    valid_screens = review_check._valid_screens(ws)
+    ws_step = ws.for_step(ws.step or "review_collect")
+    round_num = ws_step.round or 1
+    round_dir = ws_step.round_folder(round_num)
+    valid_screens = review_check._valid_screens(ws_step)
 
     req_lines: list[str] = []
-    req_path = ws.folder("intake") / "requirements.json"
+    req_path = ws_step.folder("intake") / "requirements.json"
     if req_path.is_file():
         try:
-            rdoc = json.loads(req_path.read_text(encoding="utf-8"))
+            rdoc = json.loads(ws_step.read_text(req_path))
             for item in rdoc.get("items") or []:
                 if isinstance(item, dict):
                     req_lines.append(
@@ -361,10 +366,10 @@ def build_task(ws: Workspace, measured_doc: dict[str, Any]) -> str:
 
     prior_must_lines: list[str] = []
     if round_num > 1:
-        prev_rev_path = ws.round_folder(round_num - 1) / "review.json"
+        prev_rev_path = ws_step.round_folder(round_num - 1) / "review.json"
         if prev_rev_path.is_file():
             try:
-                prev_rev = json.loads(prev_rev_path.read_text(encoding="utf-8"))
+                prev_rev = json.loads(ws_step.read_text(prev_rev_path))
                 for f in prev_rev.get("findings") or []:
                     if isinstance(f, dict) and f.get("priority") == "must":
                         prior_must_lines.append(
@@ -472,11 +477,12 @@ def _parse_draft(ws: Workspace, raw: str) -> dict[str, Any]:
 
 def collect(ws: Workspace, _raw: str = "") -> dict[str, Any]:
     """Run review_collect: group Stage 6a checks into M1..Mk, build contact sheet, and write task.md."""
+    ws = ws.for_step("review_collect")
     round_num = ws.round or 1
     round_dir = ws.round_folder(round_num)
     checks_path = round_dir / "checks.json"
-    checks_doc = _load_json(checks_path, f"06-checks/round-{round_num}/checks.json")
-    _load_json(ws.folder("build") / "build.json", "05-build/build.json")
+    checks_doc = _load_json(ws, checks_path, f"06-checks/round-{round_num}/checks.json")
+    _load_json(ws, ws.folder("build") / "build.json", "05-build/build.json")
 
     valid_screens = review_check._valid_screens(ws)
     measured_doc = group_measured_items(checks_doc, valid_screens, round_num=round_num)
@@ -500,12 +506,13 @@ def collect(ws: Workspace, _raw: str = "") -> dict[str, Any]:
 
 def check(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Run review_check: validate review_read output against the 7 rules in review_check.py."""
+    ws = ws.for_step("review_check")
     round_num = ws.round or 1
     round_dir = ws.round_folder(round_num)
     rel_draft = f"06-checks/round-{round_num}/draft.json"
     items = review_check.load_measured_items(ws)
     if (not raw or not raw.strip()) and (round_dir / "draft-seeded.json").is_file():
-        raw = (round_dir / "draft-seeded.json").read_text(encoding="utf-8")
+        raw = ws.read_text(round_dir / "draft-seeded.json")
 
     try:
         draft = _parse_draft(ws, raw)
@@ -514,7 +521,7 @@ def check(ws: Workspace, raw: str = "") -> dict[str, Any]:
         found = review_check._build_report("draft", items, [], [], [prob])
         model_step.write_json(round_dir / "check.json", found)
         task_path = round_dir / "task.md"
-        task_text = task_path.read_text(encoding="utf-8") if task_path.is_file() else ""
+        task_text = ws.read_text(task_path) if task_path.is_file() else ""
         revise_task = model_step.revise_text(
             task_text,
             (raw or "")[:4000],
@@ -537,7 +544,7 @@ def check(ws: Workspace, raw: str = "") -> dict[str, Any]:
     revise_task = ""
     if found["verdict"] == "retry":
         task_path = round_dir / "task.md"
-        task_text = task_path.read_text(encoding="utf-8") if task_path.is_file() else ""
+        task_text = ws.read_text(task_path) if task_path.is_file() else ""
         revise_task = model_step.revise_text(
             task_text,
             json.dumps(draft, indent=1, ensure_ascii=False),
@@ -613,13 +620,14 @@ def _merge_findings(
 
 def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Run final review step: check final draft and write review.json."""
+    ws = ws.for_step("review")
     round_num = ws.round or 1
     round_dir = ws.round_folder(round_num)
     check_path = round_dir / "check.json"
     if not check_path.is_file():
         raise ReviewError(f"06-checks/round-{round_num}/check.json is missing; run review_check before review")
 
-    first = json.loads(check_path.read_text(encoding="utf-8"))
+    first = json.loads(ws.read_text(check_path))
     items = review_check.load_measured_items(ws)
 
     if first.get("verdict") == "retry":
@@ -636,7 +644,7 @@ def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
         draft_path = round_dir / "draft.json"
         if not draft_path.is_file():
             raise ReviewError(f"06-checks/round-{round_num}/draft.json is missing")
-        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft = json.loads(ws.read_text(draft_path))
 
     final = review_check.check_draft(ws, draft, pass_name="final", measured_items=items)
     model_step.write_json(round_dir / "check-final.json", final)

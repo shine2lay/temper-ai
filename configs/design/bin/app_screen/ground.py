@@ -65,8 +65,9 @@ def _read(ws: Workspace, stage: str, name: str, what: str, schema: str | None = 
     label = path.relative_to(ws.path).as_posix()
     if not path.is_file():
         raise GroundError(f"{label} is missing ({what})")
+    ws_step = ws if ws.step else ws.for_step("ground_collect")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(ws_step.read_text(path))
     except ValueError as exc:
         raise GroundError(f"{label}: not readable JSON ({exc})") from None
     problems = contracts.check_json(schema, data, label) if schema else []
@@ -83,22 +84,24 @@ def _prep(ws: Workspace) -> dict:
     return _read(ws, "ground", PREP, _host_hint(ws), "ground_prep")
 
 
-def _same_as_prep(path: Path, label: str, sha: str, where: str) -> None:
-    if hashlib.sha256(path.read_bytes()).hexdigest() != sha:
+def _same_as_prep(ws: Workspace, path: Path, label: str, sha: str, where: str) -> None:
+    ws_step = ws if ws.step else ws.for_step("ground_collect")
+    if hashlib.sha256(ws_step.read_bytes(path)).hexdigest() != sha:
         raise GroundError(f"03-ground/{label} differs from the copy ground-prep made of {where}")
 
 
 def _fixture(ws: Workspace, prep: dict) -> dict:
     """The shared fixture as one object: fixture.json, each part file added under its name (as ground-prep copied)."""
+    ws_step = ws if ws.step else ws.for_step("ground_collect")
     folder, spec = ws.folder("ground"), prep["fixture"]
-    fixture = _read(ws, "ground", FIXTURE, _host_hint(ws), "fixture")
-    _same_as_prep(folder / FIXTURE, FIXTURE, spec["sha256"], spec["from"])
+    fixture = _read(ws_step, "ground", FIXTURE, _host_hint(ws_step), "fixture")
+    _same_as_prep(ws_step, folder / FIXTURE, FIXTURE, spec["sha256"], spec["from"])
     for name, sha in spec.get("parts", {}).items():
         part = folder / "fixtures" / f"{name}.json"
         if not part.is_file():
-            raise GroundError(f"03-ground/fixtures/{name}.json is missing ({_host_hint(ws)})")
-        _same_as_prep(part, f"fixtures/{name}.json", sha, spec.get("parts_from", "the fixture parts"))
-        fixture[name] = json.loads(part.read_text(encoding="utf-8"))
+            raise GroundError(f"03-ground/fixtures/{name}.json is missing ({_host_hint(ws_step)})")
+        _same_as_prep(ws_step, part, f"fixtures/{name}.json", sha, spec.get("parts_from", "the fixture parts"))
+        fixture[name] = json.loads(ws_step.read_text(part))
     return fixture
 
 
@@ -121,6 +124,7 @@ def context(ws: Workspace) -> ground_check.Context:
 
 
 def collect(ws: Workspace, raw: str) -> dict:
+    ws = ws.for_step("ground_collect")
     folder = ws.folder("ground")
     prep = _prep(ws)
     status = _status(ws)
@@ -220,13 +224,14 @@ def _check(ws: Workspace, ctx: ground_check.Context, draft: dict, delta: dict | 
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
+    ws = ws.for_step("ground_check")
     folder = ws.folder("ground")
     delta = _delta(ws)
     if delta is not None and not delta["model"]:
         return {"verdict": "ok", "source": f"stored v{delta['version']}, no model step"}
     if delta is not None:
         draft = _merged(ws, raw)
-        reply = (folder / ground_delta.ADDITIONS).read_text(encoding="utf-8")
+        reply = ws.read_text(folder / ground_delta.ADDITIONS)
     else:
         draft = _parse(raw)
         _write(folder / DRAFT, draft)
@@ -236,7 +241,7 @@ def check(ws: Workspace, raw: str) -> dict:
     out = {"verdict": found["verdict"], "problems": len(found["problems"]), **found["counts"]}
     if found["verdict"] == "retry":
         shutil.copyfile(folder / DRAFT, folder / FIRST_DRAFT)
-        task_text = (folder / TASK).read_text(encoding="utf-8")
+        task_text = ws.read_text(folder / TASK)
         out["revise_task"] = ground_task.revise(task_text, reply, found["problems"])
     return out
 
@@ -251,6 +256,7 @@ def _source(prep: dict) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> inventory.json, else fail loud."""
+    ws = ws.for_step("ground")
     folder = ws.folder("ground")
     delta = _delta(ws)
     revised = bool((raw or "").strip())
@@ -260,7 +266,7 @@ def run(ws: Workspace, raw: str) -> dict:
         _write(folder / DRAFT, _parse(raw))
     elif not (folder / DRAFT).is_file():
         raise GroundError("03-ground/draft.json is missing: the model step wrote no draft")
-    draft = json.loads((folder / DRAFT).read_text(encoding="utf-8"))
+    draft = json.loads(ws.read_text(folder / DRAFT))
     ctx = context(ws)
     if delta is not None and ws.decision("ground")["decision"] == "reuse":
         return _reused(ws, ctx, draft, delta)
@@ -288,12 +294,13 @@ def _fixture_holds(ws: Workspace) -> None:
 def _reused(ws: Workspace, ctx: ground_check.Context, draft: dict, delta: dict) -> dict:
     """The stored inventory and final check, copied in by ground_collect: still byte-identical to the store,
     within contract, and the stored draft still passes every check against today's sources."""
+    ws_step = ws if ws.step else ws.for_step("ground")
     folder = ws.folder("ground")
-    stored_copy.verify(ws, "ground")
+    stored_copy.verify(ws_step, "ground")
     for name in (INVENTORY, CHECK_FINAL):
-        if (folder / name).read_bytes() != (folder / ground_delta.STORED / name).read_bytes():
+        if ws_step.read_bytes(folder / name) != ws_step.read_bytes(folder / ground_delta.STORED / name):
             raise GroundError(f"03-ground/{name} differs from the stored copy it was reused from")
-    inventory = _read(ws, "ground", INVENTORY, "ground_collect copies it", "inventory")
+    inventory = _read(ws_step, "ground", INVENTORY, "ground_collect copies it", "inventory")
     found = ground_check.check_draft(ctx, draft)
     if found["problems"]:
         raise GroundError("the reused inventory no longer passes: "

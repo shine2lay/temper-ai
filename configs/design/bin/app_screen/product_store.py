@@ -15,9 +15,7 @@ checks that); the same files as the current version add no new version.
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,10 +24,6 @@ from .reuse import sha256_file
 
 STAGES = ("existing", "ground")
 SOURCE, CURRENT, HISTORY = "source.json", "current.json", "history.json"
-DEFAULT_STORE_ROOT = Path(
-    os.environ.get("APP_SCREEN_STORE_DIR")
-    or (Path(tempfile.gettempdir()) / "temper-app-screen-store")
-)
 # What a stored ground keeps: the product part and the proof it passed. The request's working files (task,
 # drafts, the first check) and a reuse run's own inputs (stored/, base.json, ...) stay in the workspace.
 GROUND_KEEP = ("inventory.json", "sources.json", "check-final.json", "fixture.json", "fixture-check.json",
@@ -55,7 +49,8 @@ def _now() -> str:
 
 def _read_json(path: Path, what: str):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        with path.open("r", encoding="utf-8") as fh:
+            return json.loads(fh.read())
     except (OSError, ValueError) as exc:
         raise StoreError(f"{path}: not readable ({what}): {exc.__class__.__name__}") from None
 
@@ -93,7 +88,8 @@ def check_files(stage: str, folder: Path, files: dict[str, str] | list[str]) -> 
         if not path.is_file():
             continue
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.loads(fh.read())
         except ValueError:
             problems.append(f"{rel}: not readable JSON")
             continue
@@ -105,7 +101,8 @@ def check_files(stage: str, folder: Path, files: dict[str, str] | list[str]) -> 
             problems.append(f"{rel}: verdict {data.get('verdict')!r}; the fixture breaks an invariant")
     if stage == "existing" and (folder / "audit.json").is_file():
         try:
-            audit = json.loads((folder / "audit.json").read_text(encoding="utf-8"))
+            with (folder / "audit.json").open("r", encoding="utf-8") as fh:
+                audit = json.loads(fh.read())
             missing = [s["capture"] for s in audit.get("screens", []) if not (folder / s["capture"]).is_file()]
         except (ValueError, KeyError, TypeError):
             missing = ["(audit.json screens unreadable)"]
@@ -114,9 +111,11 @@ def check_files(stage: str, folder: Path, files: dict[str, str] | list[str]) -> 
 
 
 class ProductStore:
-    def __init__(self, product: str, root: Path | None = None):
+    def __init__(self, product: str, root: Path | str):
+        if not root:
+            raise StoreError("ProductStore requires an explicit store root path")
         self.product = product
-        self.dir = Path(root or DEFAULT_STORE_ROOT) / product / "store"
+        self.dir = Path(root) / product / "store"
 
     def stage_dir(self, stage: str) -> Path:
         if stage not in STAGES:

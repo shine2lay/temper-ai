@@ -121,7 +121,9 @@ def test_bench_workflow_and_replay_agent_replace_only_model_boundary():
                     assert child["agent"] == "design_app_screen_replay"
                 else:
                     assert child["agent"] == "design_app_screen_stage_v1"
-        elif node["name"] == "stack_down":
+        elif node["name"] == "workspace_startup":
+            assert node["agent"] == "design_app_screen_replay"
+        elif node["name"] in ("stack_down", "workspace_cleanup"):
             assert node["agent"] == "design_app_screen_replay"
             assert node["run_after_failure"] is True
 

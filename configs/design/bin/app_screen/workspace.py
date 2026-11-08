@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 STAGES = ("intake", "existing", "ground", "directions", "build", "checks", "show", "handoff")
 # Workflow steps that are not one of the eight stages: intake's, existing's and ground's collect and draft-check
@@ -38,10 +40,141 @@ class WorkspaceError(ValueError):
 
 
 class Workspace:
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, *, step: str | None = None):
         self.path = Path(path)
+        self.step = step
         if not self.path.is_dir():
             raise WorkspaceError(f"workspace {self.path} does not exist or is not a folder")
+
+    def for_step(self, step: str) -> Workspace:
+        """Return a Workspace view bound to ``step`` so every read validates against INPUTS[step]."""
+        return Workspace(self.path, step=step)
+
+    def bind_step(self, step: str | None) -> Workspace:
+        """Bind this Workspace instance to ``step`` in place and return self."""
+        self.step = step
+        return self
+
+    bind = bind_step
+
+    def resolve_input(
+        self,
+        target: Path | str,
+        *,
+        step: str | None = None,
+        repo_input: bool = False,
+        allowed_topics: Iterable[str] | None = None,
+    ) -> Path:
+        """Resolve ``target`` only if declared for ``step`` in contracts.py; fail loud otherwise."""
+        from . import contracts
+
+        active_step = step if step is not None else self.step
+        if not active_step:
+            raise contracts.ContractError("Workspace read requires a step name")
+        raw_str = str(target).strip().replace("\\", "/")
+        while raw_str.startswith("./"):
+            raw_str = raw_str[2:]
+        is_repo = repo_input or raw_str.startswith(".temper/")
+        if is_repo:
+            if self.path.name == "design" and self.path.parent.name == ".temper":
+                temper_dir = self.path.parent.resolve()
+            elif (self.path / ".temper").is_dir():
+                temper_dir = (self.path / ".temper").resolve()
+            else:
+                temper_dir = self.path.resolve()
+            t_path = Path(target)
+            if t_path.is_absolute():
+                resolved_t = t_path.resolve()
+                if resolved_t.is_relative_to(temper_dir):
+                    sub = resolved_t.relative_to(temper_dir).as_posix()
+                    rel = sub if sub.startswith(".temper/") else f".temper/{sub}"
+                else:
+                    rel = str(target)
+            else:
+                rel = raw_str
+                if rel == "app.yaml":
+                    rel = ".temper/design/app.yaml"
+            norm = contracts.check_input(active_step, rel, repo_input=True, allowed_topics=allowed_topics)
+            rel_under_temper = PurePosixPath(norm).relative_to(".temper")
+            cand = temper_dir / rel_under_temper
+            if cand.exists() or (self.path.name == "design" and self.path.parent.name == ".temper"):
+                return cand
+            return self.path / norm
+
+        ws_root = self.path.resolve()
+        t_path = Path(target)
+        if t_path.is_absolute() or (isinstance(target, Path) and str(target).startswith(str(self.path))):
+            try:
+                rel = t_path.resolve().relative_to(ws_root).as_posix()
+            except ValueError:
+                rel = str(target)
+        else:
+            rel = str(target)
+        norm = contracts.check_input(active_step, rel, repo_input=False)
+        return self.path / norm
+
+    def open_input(
+        self,
+        target: Path | str,
+        mode: str = "r",
+        *,
+        step: str | None = None,
+        repo_input: bool = False,
+        allowed_topics: Iterable[str] | None = None,
+        encoding: str | None = "utf-8",
+    ):
+        """Open a declared input file for reading; refuse undeclared paths."""
+        if any(flag in mode for flag in ("w", "a", "+", "x")):
+            from . import contracts
+            raise contracts.ContractError(f"open_input is read-only (got mode {mode!r})")
+        resolved = self.resolve_input(
+            target, step=step, repo_input=repo_input, allowed_topics=allowed_topics,
+        )
+        if "b" in mode:
+            return resolved.open(mode)
+        return resolved.open(mode, encoding=encoding)
+
+    def read_text(
+        self,
+        target: Path | str,
+        *,
+        step: str | None = None,
+        repo_input: bool = False,
+        allowed_topics: Iterable[str] | None = None,
+        encoding: str = "utf-8",
+    ) -> str:
+        """Read UTF-8 text from a declared input file."""
+        with self.open_input(
+            target, "r", step=step, repo_input=repo_input, allowed_topics=allowed_topics, encoding=encoding,
+        ) as fh:
+            return fh.read()
+
+    def read_bytes(
+        self,
+        target: Path | str,
+        *,
+        step: str | None = None,
+        repo_input: bool = False,
+        allowed_topics: Iterable[str] | None = None,
+    ) -> bytes:
+        """Read raw bytes from a declared input file."""
+        with self.open_input(
+            target, "rb", step=step, repo_input=repo_input, allowed_topics=allowed_topics, encoding=None,
+        ) as fh:
+            return fh.read()
+
+    def read_json(
+        self,
+        target: Path | str,
+        *,
+        step: str | None = None,
+        repo_input: bool = False,
+        allowed_topics: Iterable[str] | None = None,
+    ) -> Any:
+        """Read and parse JSON from a declared input file."""
+        return json.loads(
+            self.read_text(target, step=step, repo_input=repo_input, allowed_topics=allowed_topics)
+        )
 
     def folder(self, stage: str) -> Path:
         if stage not in FOLDERS:
@@ -58,7 +191,12 @@ class Workspace:
     def run(self) -> dict:
         if not self.run_file.is_file():
             raise WorkspaceError(f"{self.run_file} is missing: run prepare, pack, or intake first")
-        data = json.loads(self.run_file.read_text())
+        if self.step is not None:
+            raw = self.read_text("run.json")
+        else:
+            with self.run_file.open("r", encoding="utf-8") as fh:
+                raw = fh.read()
+        data = json.loads(raw)
         if not isinstance(data, dict) or not PRODUCT_ID.match(str(data.get("product"))):
             raise WorkspaceError(f"{self.run_file}: needs product (lowercase id)")
         return data

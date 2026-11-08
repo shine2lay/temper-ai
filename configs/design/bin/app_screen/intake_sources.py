@@ -26,7 +26,6 @@ from typing import Any
 from . import contracts
 
 SHOWTELL = "http://127.0.0.1:8650"
-RECORDS = Path.home() / ".pi-web-ui/decisions/records.jsonl"
 CONTEXT_LIMIT = 600
 SENT_STATES = ("sent", "answered", "resolved")  # a draft comment was never sent, so it is not his yet
 
@@ -100,9 +99,11 @@ def _find_record(record_id: str, records: Path) -> dict:
     raise SourcesError(f"dialog record {record_id} not in {records}")
 
 
-def record_items(record_id: str, records: Path = RECORDS, question_ids: list[str] | None = None) -> list[dict]:
+def record_items(record_id: str, records: Path | str | None = None, question_ids: list[str] | None = None) -> list[dict]:
     """The owner's answers in one dialog record: his typed words, or the option labels he picked."""
-    record = _find_record(record_id, records)
+    if records is None:
+        raise SourcesError("record_items requires an explicit records path")
+    record = _find_record(record_id, Path(records))
     if record.get("from") not in (None, "owner"):
         raise SourcesError(f"dialog record {record_id} is from {record.get('from')!r}, not the owner")
     when = record.get("at")
@@ -134,7 +135,8 @@ def history_items(product: str, products: Path | None = None) -> list[dict]:
     path = Path(products) / product / "history.json"
     if not path.is_file():
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+    with path.open("r", encoding="utf-8") as fh:
+        data = json.loads(fh.read())
     return [{"kind": "history", "text": h["text"], "source": h["source"],
              **({"context": _clip(h["context"])} if h.get("context") else {})}
             for h in data.get("items") or []]

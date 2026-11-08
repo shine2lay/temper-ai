@@ -21,7 +21,7 @@ workflow:
     - name: directions_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: directions_collect, product: input.product}
+      input_map: {step: directions_collect, product: input.product, workspace_path: input.workspace_path}
     - name: directions_read
       type: agent
       agent: design_app_screen_directions_v1
@@ -33,7 +33,7 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [directions_read]
       condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
-      input_map: {step: directions_check, product: input.product, data: directions_read.output}
+      input_map: {step: directions_check, product: input.product, data: directions_read.output, workspace_path: input.workspace_path}
     - name: directions_revise
       type: agent
       agent: design_app_screen_directions_v1
@@ -44,4 +44,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [directions_revise]
-      input_map: {step: directions, product: input.product, data: directions_revise.output}
+      input_map: {step: directions, product: input.product, data: directions_revise.output, workspace_path: input.workspace_path}

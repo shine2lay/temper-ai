@@ -13,6 +13,8 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 RECORDED_ROOT = HERE / "recorded"
 
+MODEL_STEPS: tuple[str, ...] = ("intake", "existing", "ground", "directions", "build", "review")
+
 
 class HarnessReplayError(ValueError):
     """Raised when recorded inputs or workspace state cannot produce a valid model-boundary draft."""
@@ -295,6 +297,12 @@ def draft_for_step(step: str, ws_path: str | Path, case_name: str = "rollcall-20
         spec = load_recorded_json("ground_spec.json", case_name)
         return expand_ground_spec(spec)
     if key == "directions":
+        design_md_dst = ws_p / "03-ground/design-files/DESIGN.md"
+        if not design_md_dst.is_file():
+            design_md_src = HERE.parents[3] / "tests/design_app_screen_case/rollcall-20261104/03-ground/design-files/DESIGN.md"
+            if design_md_src.is_file():
+                design_md_dst.parent.mkdir(parents=True, exist_ok=True)
+                design_md_dst.write_bytes(design_md_src.read_bytes())
         return synthesize_directions_draft(ws_p)
     if key == "build":
         return synthesize_build_draft(ws_p)

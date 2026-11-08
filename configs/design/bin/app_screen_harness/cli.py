@@ -12,10 +12,10 @@ DESIGN_BIN = HERE.parent
 if str(DESIGN_BIN) not in sys.path:
     sys.path.insert(0, str(DESIGN_BIN))
 
-from .cases import DEFAULT_CASE_DIR, prepare_workspace  # noqa: E402
-from .parity import compare_parity, grade_workspace  # noqa: E402
-from .replay import draft_for_step  # noqa: E402
-from .runner import answer_gate, run_all, run_stage, run_step  # noqa: E402
+from app_screen_harness.cases import DEFAULT_CASE_DIR, prepare_workspace  # noqa: E402, I001
+from app_screen_harness.parity import compare_parity, grade_workspace  # noqa: E402
+from app_screen_harness.replay import MODEL_STEPS, draft_for_step  # noqa: E402
+from app_screen_harness.runner import answer_gate, run_all, run_stage, run_step  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     p_replay = sub.add_parser("replay", help="Emit the recorded/synthesized model draft for a fenced model step.")
     p_replay.add_argument("--step", required=True)
     p_replay.add_argument("--workspace", required=True)
+    p_replay.add_argument("--case", default=str(DEFAULT_CASE_DIR))
+    p_replay.add_argument("--product", default="rollcall")
 
     p_step = sub.add_parser("step", help="Run one real-mode step or stage via the harness.")
     p_step.add_argument("--step", required=True)
@@ -56,8 +58,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "replay":
-        draft = draft_for_step(args.step, args.workspace)
-        print(json.dumps(draft, ensure_ascii=False))
+        if args.step in MODEL_STEPS:
+            draft = draft_for_step(args.step, args.workspace)
+            text = json.dumps(draft, ensure_ascii=False)
+            if args.step == "intake":
+                draft_path = Path(args.workspace).expanduser().resolve() / "01-request/draft.json"
+                draft_path.parent.mkdir(parents=True, exist_ok=True)
+                draft_path.write_text(text + "\n", encoding="utf-8")
+            print(text)
+        else:
+            res = run_step(args.step, args.workspace, product=args.product)
+            print(json.dumps(res, ensure_ascii=False))
         return 0
 
     if args.cmd == "step":

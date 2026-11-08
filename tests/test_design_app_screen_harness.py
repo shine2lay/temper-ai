@@ -134,6 +134,19 @@ def test_replay_draft_for_step_emits_valid_json_for_all_six_model_steps(tmp_path
         doc = app_screen_harness.draft_for_step(step, ws_dir)
         assert isinstance(doc, dict) and doc
 
+    import json
+    import subprocess
+
+    cli_py = BIN / "app_screen_harness/cli.py"
+    proc = subprocess.run(
+        [sys.executable, str(cli_py), "replay", "--step", "intake", "--workspace", str(ws_dir), "--product", "rollcall"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert isinstance(json.loads(proc.stdout), dict)
+    assert (ws_dir / "01-request/draft.json").is_file()
+
 
 def test_harness_runs_all_8_stages_and_2_gates_in_real_mode_and_matches_parity():
     parity = app_screen_harness.compare_parity()

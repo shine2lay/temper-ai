@@ -518,3 +518,39 @@ def test_departments_md_lists_systems_stack_ref_configs() -> None:
         "`epd/bin/stack_ref.py`",
     ):
         assert any(expected in r for r in rows)
+
+
+def test_run_standee_uses_default_ssh_target_when_target_file_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ssh_dir = tmp_path / "standee-ssh"
+    ssh_dir.mkdir(parents=True)
+    key_file = ssh_dir / "id_ed25519"
+    key_file.write_text("fake-key\n")
+    key_file.chmod(0o644)
+    known_hosts = ssh_dir / "known_hosts"
+    known_hosts.write_text("host.docker.internal ssh-ed25519 AAAAC3Nza\n")
+
+    captured: dict[str, Any] = {}
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        idx = cmd.index("-i")
+        temp_key_path = Path(cmd[idx + 1])
+        captured["cmd"] = cmd
+        captured["key_exists_during_run"] = temp_key_path.is_file()
+        captured["key_mode"] = oct(temp_key_path.stat().st_mode & 0o777)
+        captured["temp_key_path"] = temp_key_path
+        return subprocess.CompletedProcess(cmd, 0, '{"state":"running"}\n', "")
+
+    monkeypatch.delenv("STANDEE_BIN", raising=False)
+    monkeypatch.setattr(stack_ref.subprocess, "run", fake_run)
+
+    proc = stack_ref.run_standee(["status", "rollcall-dev-design", "--json"], ssh_dir=ssh_dir)
+    assert proc.returncode == 0
+    assert captured["key_exists_during_run"] is True
+    assert captured["key_mode"] == "0o600"
+    assert not captured["temp_key_path"].exists()
+    assert stack_ref.DEFAULT_STANDEE_SSH_TARGET in captured["cmd"]
+    assert f"UserKnownHostsFile={known_hosts}" in captured["cmd"]
+

@@ -33,6 +33,7 @@ CONTAINER_WORKSPACES = Path("/app/workspaces")
 DEFAULT_HOST_WORKSPACES = Path("/home/shinelay/temper-ai/workspaces")
 DEFAULT_HOST_HOME = Path("/home/shinelay")
 DEFAULT_STANDEE_SSH_DIR = Path("/app/standee-ssh")
+DEFAULT_STANDEE_SSH_TARGET = "shinelay@host.docker.internal"
 DEFAULT_GITHUB_DEPLOY_DIR = Path("/app/github-deploy")
 
 PRODUCT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
@@ -315,25 +316,31 @@ def run_standee(
 
     key_file = ssh_dir / "id_ed25519"
     target_file = ssh_dir / "target"
-    if key_file.is_file() and target_file.is_file():
-        target = target_file.read_text().strip()
-        if not target:
-            raise StackRefError(f"empty standee ssh target in {target_file}")
+    if key_file.is_file():
+        if target_file.is_file():
+            target = target_file.read_text().strip()
+            if not target:
+                raise StackRefError(f"empty standee ssh target in {target_file}")
+        else:
+            target = DEFAULT_STANDEE_SSH_TARGET
         fd, temp_key = tempfile.mkstemp(prefix="stack-ref-standee-key-")
         os.close(fd)
         try:
             shutil.copyfile(key_file, temp_key)
             os.chmod(temp_key, 0o600)
+            known_hosts = ssh_dir / "known_hosts"
+            kh_opts = (
+                ["-o", f"UserKnownHostsFile={known_hosts}", "-o", "StrictHostKeyChecking=yes"]
+                if known_hosts.is_file()
+                else ["-o", "StrictHostKeyChecking=accept-new"]
+            )
             cmd = [
                 "ssh",
                 "-i",
                 temp_key,
                 "-o",
                 "IdentitiesOnly=yes",
-                "-o",
-                f"UserKnownHostsFile={ssh_dir / 'known_hosts'}",
-                "-o",
-                "StrictHostKeyChecking=yes",
+                *kh_opts,
                 "-o",
                 "BatchMode=yes",
                 "-o",
@@ -653,6 +660,16 @@ def cmd_down(
     if proc.stderr:
         sys.stderr.write(proc.stderr)
     combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+    standee_removed = re.findall(
+        rf"^Removed leftover volume '([^']+)' for '{re.escape(resolved_env)}'\.$",
+        combined,
+        flags=re.MULTILINE,
+    )
+    if "leftover volume cleanup incomplete" in combined:
+        raise StackRefError(
+            f"standee could not remove every leftover volume of {resolved_env}",
+            env_name=resolved_env,
+        )
     if proc.returncode != 0:
         if "no environment named" in combined.lower():
             down_status = "absent"
@@ -662,6 +679,16 @@ def cmd_down(
                 f"standee down {resolved_env} failed (exit {proc.returncode}): {detail}",
                 env_name=resolved_env,
             )
+    elif (
+        standee_removed
+        or f"No leftover volumes for '{resolved_env}'." in combined
+        or re.search(
+            rf"^Removed \d+ leftover volume\(s\) for '{re.escape(resolved_env)}'\.$",
+            combined,
+            flags=re.MULTILINE,
+        )
+    ):
+        down_status = "absent"
     else:
         down_status = "down"
 
@@ -671,7 +698,7 @@ def cmd_down(
         or shutil.which("docker")
         or ""
     )
-    removed_count = 0
+    removed_count = len(standee_removed)
     if resolved_docker:
         leftover = _find_env_volumes(resolved_env, resolved_docker)
         if leftover:

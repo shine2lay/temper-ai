@@ -18,7 +18,6 @@ workflow:
     its severity class for the review (blocker = a Must input, should). No model, $0.
   inputs:
     product: {type: string, required: true}
-    mode: {type: string, default: real}
   outputs:
     verdict: checks.structured.verdict
     blockers: checks.structured.blockers
@@ -28,4 +27,4 @@ workflow:
     - name: checks
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: checks, product: input.product, mode: input.mode}
+      input_map: {step: checks, product: input.product}

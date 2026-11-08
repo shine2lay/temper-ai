@@ -1,7 +1,5 @@
 """Stage 8 (08-handoff/): per-screen Markdown specs, design-file.json, followup.json, and deterministic check.
 
-In fixture mode: copies known-case files via run_fixture(ws, "handoff").
-In real mode:
 1. Validates upstream prerequisites loud and fast:
    - 07-show/gate_final.json must exist with choice == "approve",
    - 06-checks/round-<ws.round>/review.json must have verdict == "done" and 0 open Must findings,
@@ -27,7 +25,6 @@ from typing import Any
 
 from . import contracts
 from .contracts import ContractError
-from .fixture_stage import run_fixture
 from .handoff_check import assert_handoff_clean
 from .workspace import Workspace
 
@@ -444,9 +441,6 @@ def _build_followup_items(
 
 
 def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
-    if ws.mode == "fixture":
-        return run_fixture(ws, "handoff")
-
     prereq = validate_prerequisites(ws)
     round_num: int = prereq["round"]
     inv_doc: dict[str, Any] = prereq["inventory"]
@@ -526,7 +520,6 @@ def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
     return {
         "status": "ok",
         "stage": "handoff",
-        "mode": "real",
         "round": round_num,
         "specs": written_specs,
         "followup_count": len(followup_items),

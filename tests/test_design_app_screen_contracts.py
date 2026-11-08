@@ -117,7 +117,7 @@ def test_fixture_run_passes_every_contract(tmp_path, case, monkeypatch):
         raw = json.dumps(DESIGN_ANSWER[step.split("_")[1]]) if step in ("gate_direction", "gate_final") else ""
         out = app_screen_harness.run_step(step, str(ws_dir), None, raw)
         assert out["valid"] and out["step"] == step, out
-        assert out["mode"] == "real"
+        assert "mode" not in out
         if step == "gate_direction":
             assert out["choice"] == out["known_case_choice"] == "a"
         if step == "review":
@@ -125,7 +125,7 @@ def test_fixture_run_passes_every_contract(tmp_path, case, monkeypatch):
         if step == "gate_final_next":
             assert out["verdict"] == "approve"
     run = Workspace(ws_dir).run()
-    assert run["mode"] == "real"
+    assert "mode" not in run
     for s in ORDER:
         assert run["stages"][s]["status"] == "done", (s, run["stages"].get(s))
     assert _read(ws_dir / "04-directions/gate_direction.json")["taste"] == "not-taste"
@@ -302,7 +302,7 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
         CLI.main(["polish", "--workspace", str(tmp_path)])
     assert err.value.code == 2 and "invalid choice: 'polish'" in capsys.readouterr().err
     with pytest.raises(SystemExit, match=f"intake: workspace {tmp_path / 'nowhere'} does not exist or is not a folder"):
-        CLI.main(["intake", "--workspace", str(tmp_path / "nowhere"), "--product", "rollcall", "--mode", "real"])
+        CLI.main(["intake", "--workspace", str(tmp_path / "nowhere"), "--product", "rollcall"])
     with pytest.raises(SystemExit, match="intake needs --workspace W"):
         CLI.main(["intake"])
     with pytest.raises(SystemExit, match=r"existing: .*run.json is missing"):
@@ -311,10 +311,10 @@ def test_dispatcher_refuses_unknown_step_and_missing_workspace(tmp_path, capsys)
 
 def test_real_mode_stage_fails_loud_until_built(tmp_path):
     with pytest.raises(contracts.ContractError, match="show: 05-build/index.html: missing Stage 5 prototype HTML"):
-        CLI.run_step("show", str(tmp_path), "rollcall", "real", "")
+        CLI.run_step("show", str(tmp_path), "rollcall", "")
     assert Workspace(tmp_path).run()["stages"]["show"]["status"] == "failed"
     with pytest.raises(contracts.ContractError, match="handoff: 07-show/gate_final.json: missing final gate record"):
-        CLI.run_step("handoff", str(tmp_path), None, "real", "")
+        CLI.run_step("handoff", str(tmp_path), None, "")
     assert Workspace(tmp_path).run()["stages"]["handoff"]["status"] == "failed"
-    with pytest.raises(WorkspaceError, match="run.json says mode real, the step was called with fixture"):
-        CLI.run_step("ground", str(tmp_path), None, "fixture", "")
+    with pytest.raises(WorkspaceError, match="already holds rollcall; use a fresh workspace"):
+        CLI.run_step("ground", str(tmp_path), "other-product", "")

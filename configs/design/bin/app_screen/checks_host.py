@@ -59,7 +59,7 @@ def prep(case_dir: Path | str, workspace: Path | str) -> dict:
         shutil.copytree(src, ws_path / folder)
         copied += sum(1 for p in (ws_path / folder).rglob("*") if p.is_file())
     ws = Workspace(ws_path)
-    ws.start(expected["product"], "real")
+    ws.start(expected["product"])
     ws.next_round()
     ws.mark("build", "done", round=1, source=f"checks case {expected['case']}")
     return {"case": expected["case"], "product": expected["product"], "workspace": str(ws_path),

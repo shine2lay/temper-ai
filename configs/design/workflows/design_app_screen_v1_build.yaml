@@ -11,7 +11,6 @@ workflow:
     runs deterministic build_check (with one revision pass if needed).
   inputs:
     product: {type: string, required: true}
-    mode: {type: string, default: real}
   outputs:
     direction: build.structured.direction
     round: build.structured.round
@@ -22,7 +21,7 @@ workflow:
     - name: build
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: build, product: input.product, mode: input.mode}
+      input_map: {step: build, product: input.product}
     - name: build_read
       type: agent
       agent: design_app_screen_build_v1
@@ -33,7 +32,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [build_read]
-      input_map: {step: build_check, product: input.product, mode: input.mode, data: build_read.output}
+      input_map: {step: build_check, product: input.product, data: build_read.output}
     - name: build_revise
       type: agent
       agent: design_app_screen_build_v1
@@ -44,4 +43,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [build_revise]
-      input_map: {step: build_finish, product: input.product, mode: input.mode, data: build_revise.output}
+      input_map: {step: build_finish, product: input.product, data: build_revise.output}

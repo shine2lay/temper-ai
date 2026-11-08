@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any
 
 from . import contracts, existing_sheet, model_step, review_check
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 
@@ -473,9 +472,6 @@ def _parse_draft(ws: Workspace, raw: str) -> dict[str, Any]:
 def collect(ws: Workspace, _raw: str = "") -> dict[str, Any]:
     """Run review_collect: group Stage 6a checks into M1..Mk, build contact sheet, and write task.md."""
     round_num = ws.round or 1
-    if ws.mode == "fixture":
-        return {"model": "no", "round": round_num, "task": "", "sheet": "", "sheet_path": ""}
-
     round_dir = ws.round_folder(round_num)
     checks_path = round_dir / "checks.json"
     checks_doc = _load_json(checks_path, f"06-checks/round-{round_num}/checks.json")
@@ -503,9 +499,6 @@ def collect(ws: Workspace, _raw: str = "") -> dict[str, Any]:
 
 def check(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Run review_check: validate review_read output against the 7 rules in review_check.py."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case", "revise_task": ""}
-
     round_num = ws.round or 1
     round_dir = ws.round_folder(round_num)
     rel_draft = f"06-checks/round-{round_num}/draft.json"
@@ -618,19 +611,8 @@ def _merge_findings(
 
 
 def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
-    """Run final review step: fixture mode copies known case; real mode checks final draft and writes review.json."""
+    """Run final review step: check final draft and write review.json."""
     round_num = ws.round or 1
-    if ws.mode == "fixture":
-        out = run_fixture(ws, "review")
-        path = ws.round_folder(round_num) / "review.json"
-        doc = json.loads(path.read_text(encoding="utf-8"))
-        return {
-            **out,
-            "round": round_num,
-            "verdict": doc["verdict"],
-            "must": sum(1 for f in doc["findings"] if f["priority"] == "must"),
-        }
-
     round_dir = ws.round_folder(round_num)
     check_path = round_dir / "check.json"
     if not check_path.is_file():

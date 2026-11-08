@@ -120,7 +120,7 @@ def ws(tmp_path: Path) -> Workspace:
     app = _loaded(tmp_path)
     (tmp_path / "ws").mkdir()
     w = Workspace(tmp_path / "ws")
-    w.start("demo", "real")
+    w.start("demo")
     folder = w.folder("existing")
     audit, texts = _audit(app, RAW)
     for s in audit["screens"]:
@@ -442,7 +442,7 @@ def test_collect_writes_the_task_and_sheet_passes_the_png(ws):
 def test_collect_fails_loud_without_the_capture(tmp_path):
     (tmp_path / "empty").mkdir()
     w = Workspace(tmp_path / "empty")
-    w.start("demo", "real")
+    w.start("demo")
     with pytest.raises(existing.ExistingError, match="design_app_screen.py capture --product demo"):
         existing.collect(w, "")
 
@@ -640,6 +640,6 @@ def _cli():
 
 def test_cli_runs_the_existing_steps(ws, capsys):
     cli = _cli()
-    cli.main(["existing_collect", "--workspace", str(ws.path), "--mode", "real"])
+    cli.main(["existing_collect", "--workspace", str(ws.path)])
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line["step"] == "existing_collect" and line["model"] == "yes" and line["valid"] is True

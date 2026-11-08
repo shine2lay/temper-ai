@@ -15,8 +15,6 @@ browser). Then four script steps around one fenced model step (agents/design_app
     existing          the revised reply (if any) becomes draft.json; the same checks -> check-final.json;
                       clean: journeys.json; any problem left fails the stage loud
 
-Fixture mode: collect, sheet and check pass through (model no) and existing copies the known case's output.
-
 Step 4 (reuse, reuse_host.py): when the host's prepare decided reuse, the stored 02-existing is already here;
 every step checks it is byte-identical to the store (stored_copy.py) and holds to the contracts, and the model
 is skipped (the stage ends reused). A delta (only changed screens captured again) runs as a full read over
@@ -37,7 +35,6 @@ from . import (
     stored_copy,
     tools_registry,
 )
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 AUDIT, TEXTS, APP, SHEET, TASK = "audit.json", "texts.json", "app.json", "sheet.png", "task.md"
@@ -100,8 +97,6 @@ def context(ws: Workspace) -> existing_check.Context:
 
 
 def collect(ws: Workspace, raw: str) -> dict:
-    if ws.mode == "fixture":
-        return {"model": "no", "source": "known case"}
     if reused := _reused(ws):
         return reused
     ctx = context(ws)
@@ -116,8 +111,6 @@ def collect(ws: Workspace, raw: str) -> dict:
 
 
 def sheet(ws: Workspace, raw: str) -> dict:
-    if ws.mode == "fixture":
-        return {"model": "no", "source": "known case"}
     if reused := _reused(ws):
         return reused
     path = ws.folder("existing") / SHEET
@@ -135,8 +128,6 @@ def sheet(ws: Workspace, raw: str) -> dict:
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case"}
     if reused := _reused(ws):
         return {"verdict": "ok", "source": reused["source"]}
     folder = ws.folder("existing")
@@ -155,8 +146,6 @@ def check(ws: Workspace, raw: str) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> journeys.json, else fail loud."""
-    if ws.mode == "fixture":
-        return run_fixture(ws, "existing")
     if reused := _reused(ws):
         return {"stage_status": "reused", "source": reused["source"], "files": reused["files"]}
     folder = ws.folder("existing")

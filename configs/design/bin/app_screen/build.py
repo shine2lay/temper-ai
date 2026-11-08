@@ -6,8 +6,6 @@ Stage 5a (deterministic half, rule 17):
 - Writes the contract-valid prototype skeleton with data-build-placeholder="<screen-id>" per screen
   (build_scaffold.write_scaffold).
 - Verifies the written build with deterministic checks (build_check.check_workspace).
-
-Fixture mode: copies the known case's 05-build/ output (run_fixture).
 """
 from __future__ import annotations
 
@@ -16,7 +14,6 @@ import re
 
 from . import build_check, build_scaffold, contracts, model_step
 from .build_scaffold import BuildInputError
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 
@@ -45,8 +42,6 @@ def _parse_draft(raw: str) -> dict:
 
 def check(ws: Workspace, raw: str = "") -> dict:
     """Run deterministic Stage 5a/5b checks on 05-build/."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case", "revise_task": ""}
     folder = ws.folder("build")
     if (folder / f"prebuilt-round-{ws.round}").is_dir():
         return {
@@ -131,8 +126,6 @@ def check(ws: Workspace, raw: str = "") -> dict:
 
 def finish(ws: Workspace, raw: str = "") -> dict:
     """Apply revised draft if needed, run final Stage 5b check, and fail loud on any remaining problem."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case"}
     folder = ws.folder("build")
     if (folder / f"prebuilt-round-{ws.round}").is_dir():
         contracts.validate("build", ws)
@@ -189,15 +182,7 @@ def finish(ws: Workspace, raw: str = "") -> dict:
 
 
 def run(ws: Workspace, data: str = "") -> dict:
-    """Run Stage 5 build: fixture mode copies known case; real mode writes and checks the Stage 5a skeleton."""
-    if ws.mode == "fixture":
-        r = ws.next_round()
-        out = run_fixture(ws, "build")
-        path = ws.folder("build") / "build.json"
-        doc = json.loads(path.read_text())
-        doc["round"] = r
-        path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
-        return {**out, "round": r, "model": "no", "task": ""}
+    """Run Stage 5 build: writes and checks the Stage 5a skeleton."""
     prebuilt_next = ws.folder("build") / f"prebuilt-round-{ws.round + 1}"
     if prebuilt_next.is_dir():
         import shutil  # noqa: PLC0415

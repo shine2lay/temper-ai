@@ -16,8 +16,6 @@ nor the product repo). Then three script steps around one fenced model step (age
                     inventory.json (widths from the product file, data_needed from the fixture); then a broken
                     fixture invariant, or any problem left, fails the stage loud
 
-Fixture mode: collect and check pass through (model no) and ground copies the known case's output.
-
 Step 4 (reuse): when the host's prepare copied a stored ground to 03-ground/stored/ (decision pending),
 ground_collect settles it by script (ground_delta.py): nothing new or changed -> reused (the stored inventory
 and final check copied, the model skipped, every check run again); else delta: the stored inventory, less
@@ -43,7 +41,6 @@ from . import (
     stored_copy,
     tools_registry,
 )
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 PREP, SOURCES, TASK, DRAFT, FIRST_DRAFT, CHECK, CHECK_FINAL, INVENTORY, FIXTURE, FIXTURE_CHECK = (
@@ -124,8 +121,6 @@ def context(ws: Workspace) -> ground_check.Context:
 
 
 def collect(ws: Workspace, raw: str) -> dict:
-    if ws.mode == "fixture":
-        return {"model": "no", "source": "known case"}
     folder = ws.folder("ground")
     prep = _prep(ws)
     status = _status(ws)
@@ -225,8 +220,6 @@ def _check(ws: Workspace, ctx: ground_check.Context, draft: dict, delta: dict | 
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: the model's reply -> draft.json and check.json; on retry the revision text."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case"}
     folder = ws.folder("ground")
     delta = _delta(ws)
     if delta is not None and not delta["model"]:
@@ -258,8 +251,6 @@ def _source(prep: dict) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> inventory.json, else fail loud."""
-    if ws.mode == "fixture":
-        return run_fixture(ws, "ground")
     folder = ws.folder("ground")
     delta = _delta(ws)
     revised = bool((raw or "").strip())

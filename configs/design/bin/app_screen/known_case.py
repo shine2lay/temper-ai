@@ -2,9 +2,8 @@
 
 A known case is a folder laid out like a workspace (01-request/ .. 08-handoff/, with 06-checks/round-1/)
 plus gates/ (the gate answers really given) and FREEZE.json: {"case", "product", "frozen_at", "source",
-"files": {relative path: sha256}}. The host packs it into a run workspace's known-case/ before a fixture
-run (workers cannot see Design's lab); a fixture stage copies its folder from there and validates it.
-Any changed, missing or extra file fails the run.
+"files": {relative path: sha256}}. The host packs it into a run workspace's known-case/ when needed.
+Any changed, missing or extra file fails verification.
 """
 from __future__ import annotations
 
@@ -84,7 +83,7 @@ def verify(case_dir: Path | str) -> dict:
 
 
 def pack(case_dir: Path | str, workspace: Path | str) -> dict:
-    """Host side: copy a verified case into <workspace>/known-case/ and start a fixture run.json."""
+    """Host side: copy a verified case into <workspace>/known-case/ and start run.json."""
     record = verify(case_dir)
     ws = Workspace(workspace)
     dest = ws.path / KNOWN_CASE
@@ -92,30 +91,8 @@ def pack(case_dir: Path | str, workspace: Path | str) -> dict:
         raise KnownCaseError(f"{dest} exists; use a fresh workspace")
     shutil.copytree(Path(case_dir), dest, symlinks=False)
     verify(dest)
-    ws.start(record["product"], "fixture")
+    ws.start(record["product"])
     return {"case": record["case"], "product": record["product"], "files": len(record["files"]), "packed": str(dest)}
-
-
-def copy_stage(ws: Workspace, stage: str) -> list[str]:
-    """Fixture mode: the known case's output for one stage, copied into the workspace (checks: into this round)."""
-    case = ws.path / KNOWN_CASE
-    verify(case)
-    if stage == "checks" or stage == "review":
-        src = case / FOLDERS["checks"] / "round-1"
-        dest = ws.round_folder()
-        name = "checks.json" if stage == "checks" else "review.json"
-        if not (src / name).is_file():
-            raise KnownCaseError(f"known case has no {FOLDERS['checks']}/round-1/{name}")
-        dest.mkdir(parents=True, exist_ok=True)
-        data = json.loads((src / name).read_text())
-        data["round"] = ws.round
-        (dest / name).write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n")
-        return [(dest / name).relative_to(ws.path).as_posix()]
-    src = case / FOLDERS[stage]
-    if not src.is_dir():
-        raise KnownCaseError(f"known case has no {FOLDERS[stage]}/")
-    shutil.copytree(src, ws.folder(stage), dirs_exist_ok=True)
-    return sorted(p.relative_to(ws.path).as_posix() for p in ws.folder(stage).rglob("*") if p.is_file())
 
 
 def gate_answer(ws: Workspace, gate: str) -> dict:

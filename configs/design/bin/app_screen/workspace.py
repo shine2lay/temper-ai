@@ -1,7 +1,7 @@
-"""The app-screen run workspace: one folder per stage and run.json (product, mode, stage status, round).
+"""The app-screen run workspace: one folder per stage and run.json (product, stage status, round).
 
 Every stage reads and writes only inside the workspace. run.json is the run's own record:
-    {"product": "rollcall", "mode": "fixture", "round": 1,
+    {"product": "rollcall", "round": 1,
      "stages": {"intake": {"status": "done", "at": "..."}, ...}}
 
 Step 4 (reuse): the host's prepare writes the decision for stages 2-3 into their entries before the run
@@ -26,7 +26,6 @@ STEPS = STAGES + ("intake_collect", "intake_check", "existing_collect", "existin
                   "gate_final", "gate_final_next")
 FOLDERS = {"intake": "01-request", "existing": "02-existing", "ground": "03-ground", "directions": "04-directions",
            "build": "05-build", "checks": "06-checks", "show": "07-show", "handoff": "08-handoff"}
-MODES = ("real", "fixture")
 STATUSES = ("running", "done", "failed", "planned", "reused", "delta")
 DECISIONS = ("reuse", "delta", "run", "pending")       # pending: ground's, finished by ground_collect
 DECISION_KEYS = ("decision", "reason", "source_run", "store_version", "screens")
@@ -58,32 +57,26 @@ class Workspace:
 
     def run(self) -> dict:
         if not self.run_file.is_file():
-            raise WorkspaceError(f"{self.run_file} is missing: pack a known case (fixture) or run intake first")
+            raise WorkspaceError(f"{self.run_file} is missing: run prepare, pack, or intake first")
         data = json.loads(self.run_file.read_text())
-        if not isinstance(data, dict) or data.get("mode") not in MODES or not PRODUCT_ID.match(str(data.get("product"))):
-            raise WorkspaceError(f"{self.run_file}: needs product (lowercase id) and mode real|fixture")
+        if not isinstance(data, dict) or not PRODUCT_ID.match(str(data.get("product"))):
+            raise WorkspaceError(f"{self.run_file}: needs product (lowercase id)")
         return data
-
-    @property
-    def mode(self) -> str:
-        return self.run()["mode"]
 
     @property
     def round(self) -> int:
         return int(self.run().get("round", 0))
 
-    def start(self, product: str, mode: str) -> dict:
-        """Write a fresh run.json (host pack or intake); an existing one with another product or mode fails."""
-        if mode not in MODES:
-            raise WorkspaceError(f"mode is {' or '.join(MODES)}, not {mode!r}")
+    def start(self, product: str) -> dict:
+        """Write a fresh run.json (host prepare, pack, or intake); an existing one with another product fails."""
         if not PRODUCT_ID.match(product or ""):
             raise WorkspaceError(f"product {product!r} is not a lowercase id (a-z, 0-9, -)")
         if self.run_file.exists():
             old = self.run()
-            if (old["product"], old["mode"]) != (product, mode):
-                raise WorkspaceError(f"{self.run_file} already holds {old['product']}/{old['mode']}; use a fresh workspace")
+            if old["product"] != product:
+                raise WorkspaceError(f"{self.run_file} already holds {old['product']}; use a fresh workspace")
             return old
-        data = {"product": product, "mode": mode, "round": 0, "stages": {}}
+        data = {"product": product, "round": 0, "stages": {}}
         self._save(data)
         return data
 

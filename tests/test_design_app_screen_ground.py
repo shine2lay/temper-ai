@@ -235,7 +235,7 @@ def test_collect_writes_sources_fixture_check_and_task(ws):
 def test_collect_fails_loud_without_the_host_prep(tmp_path):
     (tmp_path / "empty").mkdir()
     w = Workspace(tmp_path / "empty")
-    w.start("demo", "real")
+    w.start("demo")
     with pytest.raises(ground.GroundError, match="ground-prep --product demo"):
         ground.collect(w, "")
 

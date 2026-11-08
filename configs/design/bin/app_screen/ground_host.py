@@ -186,7 +186,7 @@ def prep(product_or_repo: str | Path, workspace: str | Path, store: Path | None 
     app = product_app.load(product_or_repo, store)
     product = app["product"]
     ws = Workspace(workspace)
-    ws.start(product, "real")
+    ws.start(product)
     ground = ws.folder("ground")
     used = [p for p in ("source", "product", "design-files", "fixture.json", PARTS_DIR) if (ground / p).exists()]
     if used:

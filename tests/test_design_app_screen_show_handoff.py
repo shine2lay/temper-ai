@@ -47,11 +47,11 @@ def _read_json(path: Path) -> Any:
 
 @pytest.fixture()
 def real_ws(tmp_path: Path) -> Workspace:
-    """Create a real-mode workspace populated through Stage 6b review (round 1, verdict='done')."""
+    """Create a workspace populated through Stage 6b review (round 1, verdict='done')."""
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir()
     ws = Workspace(ws_dir)
-    ws.start("rollcall", "real")
+    ws.start("rollcall")
 
     for rel in (
         "01-request/questions.json",
@@ -125,7 +125,6 @@ def real_ws(tmp_path: Path) -> Workspace:
 def test_show_real_mode_builds_self_contained_bundle_and_passes_contracts(real_ws: Workspace):
     out = show.run(real_ws)
     assert out["status"] == "ok"
-    assert out["mode"] == "real"
     assert out["round"] == 1
     assert out["check_passed"] is True
 
@@ -411,7 +410,6 @@ def test_handoff_real_mode_generates_specs_design_file_and_followup(real_ws: Wor
     _prepare_approved_show(real_ws)
     out = handoff.run(real_ws)
     assert out["status"] == "ok"
-    assert out["mode"] == "real"
     assert out["check_passed"] is True
 
     inv = _read_json(real_ws.folder("ground") / "inventory.json")

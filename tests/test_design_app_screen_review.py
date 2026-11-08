@@ -435,11 +435,11 @@ def test_fixture_mode_review_pipeline(tmp_path):
     app_screen_harness.run_stage("build", ws_dir)
     app_screen_harness.run_stage("checks", ws_dir)
     c_out = app_screen_harness.run_step("review_collect", str(ws_dir), None, "")
-    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    assert c_out["valid"] and c_out["model"] == "yes"
     chk_out = app_screen_harness.run_step("review_check", str(ws_dir), None, "")
-    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
+    assert chk_out["valid"] and chk_out["verdict"] == "ok"
     res = app_screen_harness.run_step("review", str(ws_dir), None, "")
-    assert res["mode"] == "real" and res["verdict"] == "done" and res["round"] == 1
+    assert res["verdict"] == "done" and res["round"] == 1
 
 
 def test_group_measured_items_maps_round_level_location_to_valid_id():

@@ -94,10 +94,11 @@ def test_bench_workflow_and_replay_agent_replace_only_model_boundary():
 
     live_wf = yaml.safe_load(LIVE_WORKFLOW_PATH.read_text(encoding="utf-8"))["workflow"]
     bench_wf = yaml.safe_load(BENCH_WORKFLOW_PATH.read_text(encoding="utf-8"))["workflow"]
-    assert bench_wf["inputs"]["mode"]["default"] == "real"
+    assert set(live_wf["inputs"]) == {"product", "request_json"}
+    assert set(bench_wf["inputs"]) == {"product", "request_json"}
 
     loader = GraphLoader(config_store=_RepoConfigResolver())
-    nodes, wf = loader.load_workflow("design_app_screen_v1_bench", {"product": "rollcall", "mode": "real"})
+    nodes, wf = loader.load_workflow("design_app_screen_v1_bench", {"product": "rollcall"})
     assert wf.name == "design_app_screen_v1_bench"
     assert [n.name for n in nodes] == [n["name"] for n in live_wf["nodes"]]
 
@@ -152,8 +153,6 @@ def test_harness_runs_all_8_stages_and_2_gates_in_real_mode_and_matches_parity()
     parity = app_screen_harness.compare_parity()
     assert parity["parity"] is True
     assert parity["all_stages_match"] is True
-    assert parity["fixture_mode"] == "fixture"
-    assert parity["harness_mode"] == "real"
     assert parity["cost_usd"] == {"fixture": 0.0, "harness": 0.0}
     assert parity["live_model_calls"] == {"fixture": 0, "harness": 0}
 

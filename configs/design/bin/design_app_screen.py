@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Design's app-screen workflow (design_app_screen_v1): run one step on a workspace, or pack a known case.
 
-    design_app_screen.py <step> --workspace W [--product P --mode real|fixture]   (the workflow's script agent)
-    design_app_screen.py pack --case DIR --workspace W                          (host, before a fixture run)
+    design_app_screen.py <step> --workspace W [--product P]                     (the workflow's script agent)
+    design_app_screen.py pack --case DIR --workspace W                          (host, pack a known case)
     design_app_screen.py freeze --case DIR --product P --source TEXT [--stages checks]
         (host, once per known case)
     design_app_screen.py verify --case DIR                                      (host)
@@ -63,8 +63,7 @@ from app_screen import (  # noqa: E402
     review_grade,
     show,
 )
-from app_screen.fixture_stage import NotBuiltError  # noqa: E402
-from app_screen.workspace import MODES, STEPS, Workspace, WorkspaceError  # noqa: E402
+from app_screen.workspace import STEPS, Workspace, WorkspaceError  # noqa: E402
 
 HOST_COMMANDS = ("pack", "freeze", "verify", "collect", "grade-intake", "capture", "grade-existing",
                  "ground-prep", "grade-ground", "prepare", "store", "validate-store", "check-tools",
@@ -82,18 +81,18 @@ RUNS = {"intake_collect": intake.collect, "intake_check": intake.check, "intake"
         "review": review.run, "show": show.run,
         "gate_final": lambda ws, raw: gates.answer(ws, "final", raw),
         "gate_final_next": lambda ws, raw: gates.final_next(ws), "handoff": handoff.run}
-FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError, NotBuiltError,
+FAILURES = (WorkspaceError, contracts.ContractError, known_case.KnownCaseError, gates.GateError,
             intake.IntakeError, intake_sources.SourcesError, existing.ExistingError, ground.GroundError,
             ground_sources.SourcesError, directions.DirectionsError, build.BuildError, checks.ChecksError,
             review.ReviewError, OSError, ValueError, KeyError, RuntimeError)
 
 
-def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str) -> dict:
+def run_step(step: str, workspace: str, product: str | None, raw: str) -> dict:
     ws = Workspace(workspace)
     if product:
-        ws.start(product, mode)
-    elif ws.mode != mode:
-        raise WorkspaceError(f"run.json says mode {ws.mode}, the step was called with {mode}")
+        ws.start(product)
+    else:
+        ws.run()
     ws.mark(step, "running")
     try:
         result = RUNS[step](ws, raw)
@@ -105,7 +104,7 @@ def run_step(step: str, workspace: str, product: str | None, mode: str, raw: str
     if status not in ("done",) + STAGE_STATUSES:
         raise WorkspaceError(f"{step} returned stage_status {status!r}; it is one of {', '.join(STAGE_STATUSES)}")
     ws.mark(step, status)
-    return {"step": step, "mode": ws.mode, "valid": True, "checked": len(files), **result}
+    return {"step": step, "valid": True, "checked": len(files), **result}
 
 
 def _ids(spec: str, sep: str) -> tuple[str, list[str] | None]:
@@ -137,7 +136,7 @@ def collect(args: argparse.Namespace) -> dict:
         out = Path(args.out)
     else:
         ws = Workspace(args.workspace)
-        ws.start(args.product, "real")
+        ws.start(args.product)
         out = ws.folder("intake") / intake.SOURCES
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
@@ -278,7 +277,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--credentials", help="capture/prepare: JSON object or @file mapping account -> password")
     parser.add_argument("--version", help="capture/prepare: optional version override")
     parser.add_argument("--store-dir", help="prepare/store/validate-store: store directory path")
-    parser.add_argument("--mode", choices=MODES, default="real")
     parser.add_argument("--case")
     parser.add_argument("--source")
     parser.add_argument("--description")
@@ -301,7 +299,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             if not args.workspace:
                 raise WorkspaceError(f"{args.step} needs --workspace W")
-            result = run_step(args.step, args.workspace, args.product, args.mode, os.environ.get("APP_SCREEN_DATA", ""))
+            result = run_step(args.step, args.workspace, args.product, os.environ.get("APP_SCREEN_DATA", ""))
     except FAILURES as exc:
         # Our own messages only; never environment or session data.
         raise SystemExit(f"{args.step}: {exc}") from None

@@ -150,7 +150,7 @@ def _setup_fixed_workspace(tmp_path: Path, name: str = "ws") -> Workspace:
     ws_dir = tmp_path / name
     ws_dir.mkdir(parents=True, exist_ok=True)
     ws = Workspace(ws_dir)
-    ws.start("parcelly-build", "real")
+    ws.start("parcelly-build")
 
     intake_dir = ws.folder("intake")
     intake_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +175,7 @@ def _setup_frozen_case_workspace(tmp_path: Path, name: str = "ws-rollcall") -> W
     ws_dir = tmp_path / name
     ws_dir.mkdir(parents=True, exist_ok=True)
     ws = Workspace(ws_dir)
-    ws.start("rollcall", "real")
+    ws.start("rollcall")
     shutil.copytree(CASE_DIR / "01-request", ws.folder("intake"))
     shutil.copytree(CASE_DIR / "03-ground", ws.folder("ground"))
     shutil.copytree(CASE_DIR / "04-directions", ws.folder("directions"))
@@ -243,7 +243,6 @@ def test_build_fixture_mode_preserved(tmp_path: Path):
     app_screen_harness.prepare_workspace(case, ws_dir)
     out = app_screen_harness.run_step("build", str(ws_dir), None, "")
     assert out["valid"] is True
-    assert out["mode"] == "real"
     assert out["round"] == 1
     assert (ws_dir / "05-build/build.json").is_file()
 
@@ -251,7 +250,7 @@ def test_build_fixture_mode_preserved(tmp_path: Path):
 def test_build_real_mode_on_fixed_inputs(tmp_path: Path):
     """Real mode writes shell, tokens.css, fixture.json, build.json and one screen JS per screen."""
     ws = _setup_fixed_workspace(tmp_path)
-    out = cli.run_step("build", str(ws.path), None, "real", "")
+    out = cli.run_step("build", str(ws.path), None, "")
 
     assert out["valid"] is True
     assert out["verdict"] == "ok"
@@ -286,7 +285,7 @@ def test_build_real_mode_on_fixed_inputs(tmp_path: Path):
 def test_build_real_mode_on_frozen_rollcall_case(tmp_path: Path):
     """Real mode on the frozen rollcall-20261104 case writes all 17 screen files and 85 views."""
     ws = _setup_frozen_case_workspace(tmp_path)
-    out = cli.run_step("build", str(ws.path), None, "real", "")
+    out = cli.run_step("build", str(ws.path), None, "")
 
     assert out["valid"] is True
     assert out["verdict"] == "ok"
@@ -637,19 +636,19 @@ FIXED_BUILD_DRAFT = {
 def test_stage_5b_build_task_check_and_finish_end_to_end(tmp_path: Path):
     """Stage 5b pipeline (`build` -> `build_check` -> `build_finish`) compiles draft.json and leaves 0 placeholders."""
     ws = _setup_fixed_workspace(tmp_path)
-    out_build = cli.run_step("build", str(ws.path), None, "real", "")
+    out_build = cli.run_step("build", str(ws.path), None, "")
     assert out_build["model"] == "yes"
     assert "parcels" in out_build["task"]
     assert "S1" in out_build["task"]
     assert (ws.folder("build") / "task.md").is_file()
 
-    out_check = cli.run_step("build_check", str(ws.path), None, "real", json.dumps(FIXED_BUILD_DRAFT))
+    out_check = cli.run_step("build_check", str(ws.path), None, json.dumps(FIXED_BUILD_DRAFT))
     assert out_check["valid"] is True
     assert out_check["verdict"] == "ok"
     assert out_check["problems"] == []
     assert out_check["revise_task"] == ""
 
-    out_finish = cli.run_step("build_finish", str(ws.path), None, "real", "")
+    out_finish = cli.run_step("build_finish", str(ws.path), None, "")
     assert out_finish["valid"] is True
     assert out_finish["verdict"] == "ok"
 
@@ -758,7 +757,7 @@ def test_stage_5b_broken_draft_retry_and_revise_finish(tmp_path: Path):
     with pytest.raises(build.BuildError, match="every_screen_state_designed"):
         build.finish(ws, "")
 
-    finish_out = cli.run_step("build_finish", str(ws.path), None, "real", json.dumps(FIXED_BUILD_DRAFT))
+    finish_out = cli.run_step("build_finish", str(ws.path), None, json.dumps(FIXED_BUILD_DRAFT))
     assert finish_out["valid"] is True
     assert finish_out["verdict"] == "ok"
     final_check = json.loads((ws.folder("build") / "check-final.json").read_text())

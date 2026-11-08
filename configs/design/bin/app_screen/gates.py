@@ -14,8 +14,8 @@ W5 responsibilities (100% deterministic, $0.00 model cost):
      predicts `"approve"` when `review.verdict == "done"` and no comment has `state == "open"`, else `"changes"`,
      and records `prediction = {"choice": pred_choice, "matched": pred_choice == record["choice"], "basis": "..."}`.
 2. Encodes owner taste (`taste` field in `gate_<name>.json`):
-   - When `ws.mode == "fixture"` or `record["decided_by"] == "design"`, sets `"taste": "not-taste"`.
-   - When `ws.mode == "real"` and `record["decided_by"] == "owner"`, appends a structured taste line
+   - When `record["decided_by"] == "design"`, sets `"taste": "not-taste"`.
+   - When `record["decided_by"] == "owner"`, appends a structured taste line
      (timestamp, product, gate, choice, `owner_words` verbatim, `source`, `reason`, `prediction.choice`,
      `prediction.matched`) to `ws.path / "taste-owner.md"` (and to `DESIGN_TASTE_FILE` when set in env)
      and sets `"taste": "saved"`.
@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import contracts, known_case
+from . import contracts
 from .show import default_comment_id, default_doc_id
 from .workspace import Workspace
 
@@ -295,7 +295,7 @@ def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
         raise GateError(f"gate {gate}: owner_words are for decided_by owner only (his words, verbatim)")
 
     prediction = compute_prediction(ws, gate, choice if isinstance(choice, str) else None)
-    encode_taste = bool(ws.mode == "real" and decided_by == "owner")
+    encode_taste = bool(decided_by == "owner")
     taste_status = "saved" if encode_taste else "not-taste"
 
     record: dict[str, Any] = {
@@ -328,7 +328,7 @@ def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
     if encode_taste:
         _append_owner_taste(ws, record)
 
-    if ws.mode == "real" and gate == "final" and record.get("choice") == "changes":
+    if gate == "final" and record.get("choice") == "changes":
         _ensure_targeted_comments_recorded(ws, record)
 
     out: dict[str, Any] = {
@@ -340,8 +340,6 @@ def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
         "taste": record["taste"],
         "file": path.relative_to(ws.path).as_posix(),
     }
-    if ws.mode == "fixture":
-        out["known_case_choice"] = known_case.gate_answer(ws, gate).get("choice")
     return out
 
 

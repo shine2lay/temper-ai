@@ -86,7 +86,7 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
     app = product_app.load(product, products)
     prod_name = app["product"]
     ws = Workspace(workspace)
-    ws.start(prod_name, "real")
+    ws.start(prod_name)
     for stage in STAGES:
         if any(ws.folder(stage).glob("*")):
             raise StoreError(f"{ws.folder(stage)} is not empty; prepare needs a fresh workspace")
@@ -226,8 +226,6 @@ def store(workspace: str | Path, run: str, stages: str | None = None, workflow_c
     """Write the run's finished stages back to its product's store; refuse loud what did not pass."""
     ws = Workspace(workspace)
     data = ws.run()
-    if data["mode"] != "real":
-        raise StoreError(f"{ws.run_file}: mode {data['mode']}; only a real run is stored")
     if not run:
         raise StoreError("store needs --run (the temper run id the outputs came from)")
     wanted = [s for s in (stages or ",".join(STAGES)).split(",") if s]

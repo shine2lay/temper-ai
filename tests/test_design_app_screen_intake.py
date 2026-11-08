@@ -186,14 +186,14 @@ def _draft(ws: Path, draft) -> None:
 
 def test_steps_clean_draft_becomes_requirements_and_questions(tmp_path):
     ws = _ws(tmp_path)
-    out = CLI.run_step("intake_collect", str(ws), "demo", "real", json.dumps(SOURCES))
+    out = CLI.run_step("intake_collect", str(ws), "demo", json.dumps(SOURCES))
     assert out["model"] == "yes" and out["items"] == 3
     assert json.loads((ws / "01-request/sources.json").read_text()) == SOURCES
     _draft(ws, GOOD)
-    out = CLI.run_step("intake_check", str(ws), "demo", "real", "")
+    out = CLI.run_step("intake_check", str(ws), "demo", "")
     assert out["verdict"] == "ok" and out["problems"] == 0
     assert not (ws / "01-request/draft-first.json").exists()
-    out = CLI.run_step("intake", str(ws), "demo", "real", "")
+    out = CLI.run_step("intake", str(ws), "demo", "")
     assert out["valid"] and out["revised"] is False and out["coverage"] == 1.0
     assert contracts.validate("intake", Workspace(ws))
     assert json.loads((ws / "01-request/check-final.json").read_text())["verdict"] == "ok"
@@ -201,27 +201,27 @@ def test_steps_clean_draft_becomes_requirements_and_questions(tmp_path):
 
 def test_steps_bad_draft_retries_then_fails_loud(tmp_path):
     ws = _ws(tmp_path)
-    CLI.run_step("intake_collect", str(ws), "demo", "real", json.dumps(SOURCES))
-    out = CLI.run_step("intake_check", str(ws), "demo", "real", "")
+    CLI.run_step("intake_collect", str(ws), "demo", json.dumps(SOURCES))
+    out = CLI.run_step("intake_check", str(ws), "demo", "")
     assert out["verdict"] == "retry"  # no draft yet
     bad = _edit(lambda d: d["requirements"][0].update(owner_words="chart too busy"))
     _draft(ws, bad)
-    out = CLI.run_step("intake_check", str(ws), "demo", "real", "")
+    out = CLI.run_step("intake_check", str(ws), "demo", "")
     assert out["verdict"] == "retry" and out["not_verbatim"] == 1
     assert (ws / "01-request/draft-first.json").is_file()
     with pytest.raises(intake.IntakeError, match="the final draft breaks 1 check"):
-        CLI.run_step("intake", str(ws), "demo", "real", "")
+        CLI.run_step("intake", str(ws), "demo", "")
     assert not (ws / "01-request/requirements.json").exists()
     assert Workspace(ws).run()["stages"]["intake"]["status"] == "failed"
     _draft(ws, GOOD)  # the revision fixed it
-    assert CLI.run_step("intake", str(ws), "demo", "real", "")["revised"] is True
+    assert CLI.run_step("intake", str(ws), "demo", "")["revised"] is True
 
 
 def test_collect_takes_a_plain_request_and_refuses_bad_input(tmp_path):
     ws = _ws(tmp_path)
     raw = json.dumps({"request": "make the history page faster to read", "source": "test request",
                       "description": "Demo: a budgeting app."})
-    CLI.run_step("intake_collect", str(ws), "demo", "real", raw)
+    CLI.run_step("intake_collect", str(ws), "demo", raw)
     doc = json.loads((ws / "01-request/sources.json").read_text())
     assert doc["items"] == [{"id": "S1", "kind": "request", "text": "make the history page faster to read",
                              "source": "test request"}]
@@ -234,7 +234,7 @@ def test_collect_takes_a_plain_request_and_refuses_bad_input(tmp_path):
     with pytest.raises(intake_sources.SourcesError, match="not JSON"):
         intake_sources.from_input("make it nicer", "demo")
     with pytest.raises(intake.IntakeError, match="no sources"):
-        CLI.run_step("intake_collect", str(_ws(tmp_path / "empty")), "demo", "real", "")
+        CLI.run_step("intake_collect", str(_ws(tmp_path / "empty")), "demo", "")
     twice = copy.deepcopy(SOURCES)
     twice["items"][1]["id"] = "S1"
     with pytest.raises(intake_sources.SourcesError, match="duplicate ids S1"):
@@ -282,9 +282,9 @@ def test_fixture_mode_collect_and_check_pass_through(tmp_path):
     ws = _ws(tmp_path)
     app_screen_harness.prepare_workspace(ws)
     c_out = app_screen_harness.run_step("intake_collect", str(ws), "rollcall", "")
-    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    assert c_out["valid"] and c_out["model"] == "yes"
     chk_out = app_screen_harness.run_step("intake_check", str(ws), "rollcall", "")
-    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
+    assert chk_out["valid"] and chk_out["verdict"] == "ok"
 
 
 # ---------------------------------------------------------------- the trial grader
@@ -299,11 +299,11 @@ def _graded_run(tmp_path, draft) -> Path:
         "specifics": {"forbidden_terms": ["colour"]}}))
     ws = tmp_path / "run"
     ws.mkdir()
-    CLI.run_step("intake_collect", str(ws), "demo", "real", json.dumps(SOURCES))
+    CLI.run_step("intake_collect", str(ws), "demo", json.dumps(SOURCES))
     _draft(ws, draft)
-    CLI.run_step("intake_check", str(ws), "demo", "real", "")
+    CLI.run_step("intake_check", str(ws), "demo", "")
     try:
-        CLI.run_step("intake", str(ws), "demo", "real", "")
+        CLI.run_step("intake", str(ws), "demo", "")
     except intake.IntakeError:
         pass
     return case, ws

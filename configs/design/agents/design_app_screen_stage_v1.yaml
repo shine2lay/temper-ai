@@ -19,18 +19,14 @@ agent:
     step = os.environ.get("{{ step | env }}", "")
     workspace = os.environ.get("{{ workspace_path | env }}", "")
     product = os.environ.get("{{ product | default('', true) | env }}", "")
-    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
     raw = os.environ.get("{{ data | default('', true) | env }}", "")
     {% if gate is defined %}
     raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
     {% endif %}
     if not step or not workspace:
         raise SystemExit("app-screen step and workspace required")
-    if mode not in ("real", "fixture"):
-        raise SystemExit("mode is real or fixture")
     os.environ["APP_SCREEN_DATA"] = raw
-    cmd = [sys.executable, "/app/configs/design/bin/design_app_screen.py", step, "--workspace", workspace,
-           "--mode", mode]
+    cmd = [sys.executable, "/app/configs/design/bin/design_app_screen.py", step, "--workspace", workspace]
     if product:
         cmd += ["--product", product]
     subprocess.run(cmd, env=os.environ, check=True)

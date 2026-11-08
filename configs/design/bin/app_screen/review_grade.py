@@ -173,7 +173,7 @@ def _taste_planted_draft() -> dict[str, Any]:
 
 
 def _setup_parcelly_inputs(ws: Workspace) -> None:
-    ws.start("parcelly", "real")
+    ws.start("parcelly")
     req_dir = ws.folder("intake")
     ground_dir = ws.folder("ground")
     design_dir = ground_dir / "design-files"

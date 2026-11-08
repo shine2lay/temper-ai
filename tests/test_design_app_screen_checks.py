@@ -148,7 +148,7 @@ def one_view(breakage: dict | None = None, walk=True, **kw) -> dict:
 def workspace_with_build(tmp_path: Path, build: dict, page: str = "<!doctype html><title>x</title>",
                          inventory: dict | None = INVENTORY) -> Workspace:
     ws = Workspace(tmp_path)
-    ws.start("parcelly-checks", "real")
+    ws.start("parcelly-checks")
     ws.next_round()
     (ws.folder("build")).mkdir(parents=True, exist_ok=True)
     (ws.folder("build") / "build.json").write_text(json.dumps(build))
@@ -198,7 +198,7 @@ def test_plan_refuses_a_build_it_cannot_open(tmp_path, build, why):
 
 def test_plan_says_which_file_is_missing(tmp_path):
     ws = Workspace(tmp_path)
-    ws.start("parcelly-checks", "real")
+    ws.start("parcelly-checks")
     with pytest.raises(checks_views.ViewError) as exc:
         checks_views.plan(ws)
     assert "build.json is missing" in str(exc.value)
@@ -546,7 +546,7 @@ def test_the_step_refuses_a_run_with_no_build_round(tmp_path):
     ws_path = tmp_path / "ws"
     ws_path.mkdir()
     ws = Workspace(ws_path)
-    ws.start("parcelly-checks", "real")
+    ws.start("parcelly-checks")
     with pytest.raises(checks.ChecksError) as exc:
         checks.run(ws, "")
     assert "the build step runs before the checks step" in str(exc.value)
@@ -689,7 +689,7 @@ def test_the_stage_alone_workflow_runs_the_checks_step_on_a_prepared_workspace()
     wf = yaml.safe_load((ROOT / "configs/design/workflows/design_app_screen_v1_checks.yaml"
                          ).read_text())["workflow"]
     assert [n["name"] for n in wf["nodes"]] == ["checks"]
-    assert wf["inputs"]["mode"]["default"] == "real"
+    assert set(wf["inputs"]) == {"product"}
     assert wf["nodes"][0]["input_map"]["step"] == "checks"
 
 

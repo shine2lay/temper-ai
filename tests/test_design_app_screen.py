@@ -62,6 +62,7 @@ EXPECTED_STAGE_CHILDREN = {
 
 def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
     raw = yaml.safe_load(WF_PATH.read_text(encoding="utf-8"))["workflow"]
+    assert set(raw["inputs"]) == {"product", "request_json"}
     nodes = raw["nodes"]
     assert [n["name"] for n in nodes] == EXPECTED_TOP_LEVEL
 
@@ -74,15 +75,18 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
         if name in ("gate_direction", "gate_final"):
             assert node["type"] == "agent"
             assert node["gate"] is True
+            assert "mode" not in node["input_map"]
         else:
             assert node["type"] == "stage", f"{name} must be type: stage"
             assert node["input_map"]["product"] == "input.product"
-            assert node["input_map"]["mode"] == "input.mode"
+            assert "mode" not in node["input_map"]
             if name == "intake":
                 assert node["input_map"]["request_json"] == "input.request_json"
 
             child_names = [c["name"] for c in node["nodes"]]
             assert child_names == EXPECTED_STAGE_CHILDREN[name]
+            for child in node["nodes"]:
+                assert "mode" not in child.get("input_map", {})
             for child_name in child_names:
                 assert child_name != name, f"child node {child_name} collides with parent stage {name}"
                 assert child_name not in all_ids, f"duplicate node name {child_name}"
@@ -91,7 +95,7 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
 
 def test_design_app_screen_v1_loads_via_workflow_loader_with_loops_and_outputs():
     loader = GraphLoader(config_store=_RepoConfigResolver())
-    nodes, wf = loader.load_workflow("design_app_screen_v1", {"product": "parcelly-clean", "mode": "real"})
+    nodes, wf = loader.load_workflow("design_app_screen_v1", {"product": "parcelly-clean"})
     assert wf.name == "design_app_screen_v1"
     assert [n.name for n in nodes] == EXPECTED_TOP_LEVEL
 

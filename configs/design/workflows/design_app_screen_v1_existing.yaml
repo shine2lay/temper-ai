@@ -15,7 +15,6 @@ workflow:
     ref shows) -> one revision only if a check failed -> final checks -> 02-existing/journeys.json.
   inputs:
     product: {type: string, required: true}
-    mode: {type: string, default: real}
   outputs:
     journeys: existing.structured.journeys
     problems: existing.structured.problems
@@ -24,12 +23,12 @@ workflow:
     - name: existing_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: existing_collect, product: input.product, mode: input.mode}
+      input_map: {step: existing_collect, product: input.product}
     - name: existing_sheet
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_collect]
-      input_map: {step: existing_sheet, product: input.product, mode: input.mode}
+      input_map: {step: existing_sheet, product: input.product}
     - name: existing_read
       type: agent
       agent: design_app_screen_existing_v1
@@ -40,7 +39,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_read]
-      input_map: {step: existing_check, product: input.product, mode: input.mode, data: existing_read.output}
+      input_map: {step: existing_check, product: input.product, data: existing_read.output}
     - name: existing_revise
       type: agent
       agent: design_app_screen_existing_v1
@@ -51,4 +50,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [existing_revise]
-      input_map: {step: existing, product: input.product, mode: input.mode, data: existing_revise.output}
+      input_map: {step: existing, product: input.product, data: existing_revise.output}

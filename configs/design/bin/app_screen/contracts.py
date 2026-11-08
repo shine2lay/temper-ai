@@ -304,18 +304,18 @@ SCHEMAS["gate"]["allOf"] = [{"if": {"properties": {"gate": {"const": "final"}}},
 # What each step must leave: (path relative to the workspace, schema name or file kind, least matches).
 # "<round>" becomes round-<n> of the checks stage.
 FILES: dict[str, list[tuple[str, str, int]]] = {
-    # sources.json and check.json are absent in fixture mode (the known case starts at requirements).
+    # sources.json and check.json come from intake_collect and intake_check.
     "intake_collect": [("01-request/sources.json", "sources", 0)],
     "intake_check": [("01-request/check.json", "intake_check", 0)],
     "intake": [("01-request/requirements.json", "requirements", 1), ("01-request/questions.json", "questions", 1),
                ("01-request/check-final.json", "intake_check", 0)],
-    # audit.json and sheet.png come from the host's capture (absent in fixture mode until existing copies the case).
+    # audit.json and sheet.png come from the host's capture and existing_sheet.
     "existing_collect": [("02-existing/audit.json", "audit", 0), ("02-existing/task.md", "md", 0)],
     "existing_sheet": [("02-existing/sheet.png", "png", 0)],
     "existing_check": [("02-existing/check.json", "existing_check", 0)],
     "existing": [("02-existing/captures/*.png", "png", 1), ("02-existing/audit.json", "audit", 1),
                  ("02-existing/journeys.json", "journeys", 1), ("02-existing/check-final.json", "existing_check", 0)],
-    # prep.json and fixture.json come from the host's ground-prep (absent in fixture mode until ground copies the case).
+    # prep.json and fixture.json come from the host's ground-prep.
     "ground_collect": [("03-ground/source/prep.json", "ground_prep", 0), ("03-ground/sources.json", "ground_sources", 0),
                        ("03-ground/task.md", "md", 0), ("03-ground/fixture-check.json", "fixture_check", 0)],
     "ground_check": [("03-ground/check.json", "ground_check", 0)],

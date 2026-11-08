@@ -56,12 +56,12 @@ def _switch_to_real_mode(ws_path: Path, product: str = "rollcall") -> None:
     run_file = ws_path / "run.json"
     if run_file.is_file():
         doc = json.loads(run_file.read_text(encoding="utf-8"))
-        doc["mode"] = "real"
+        doc.pop("mode", None)
         if not doc.get("product"):
             doc["product"] = product
         run_file.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     else:
-        ws.start(product, "real")
+        ws.start(product)
 
 
 def ensure_upstream_for_stage(
@@ -152,7 +152,7 @@ def run_step(
     if step in ("gate_direction", "gate_final"):
         gate_name = step.removeprefix("gate_")
         gate_raw = raw or json.dumps(load_gate_answer(gate_name, workspace_dir=ws_path), ensure_ascii=False)
-        out = cli.run_step(step, str(ws_path), product, "real", gate_raw)
+        out = cli.run_step(step, str(ws_path), product, gate_raw)
         out["known_case_choice"] = load_gate_answer(gate_name, workspace_dir=ws_path).get("choice")
         return out
 
@@ -161,7 +161,7 @@ def run_step(
         draft_path = ws_path / "01-request/draft.json"
         draft_path.parent.mkdir(parents=True, exist_ok=True)
         draft_path.write_text(draft_raw + "\n", encoding="utf-8")
-        return cli.run_step("intake_check", str(ws_path), product, "real", draft_raw)
+        return cli.run_step("intake_check", str(ws_path), product, draft_raw)
 
     if step in ("intake", "existing", "ground", "directions", "review"):
         check_rel = {
@@ -184,15 +184,15 @@ def run_step(
                                 child.unlink()
             elif step == "review":
                 (ws_path / "06-checks/round-1/review.json").unlink(missing_ok=True)
-            cli.run_step(f"{step}_collect", str(ws_path), product, "real", "")
+            cli.run_step(f"{step}_collect", str(ws_path), product, "")
             if step == "intake":
                 draft_path = ws_path / "01-request/draft.json"
                 draft_path.parent.mkdir(parents=True, exist_ok=True)
                 draft_path.write_text(draft_raw + "\n", encoding="utf-8")
-            chk = cli.run_step(f"{step}_check", str(ws_path), product, "real", draft_raw)
+            chk = cli.run_step(f"{step}_check", str(ws_path), product, draft_raw)
             if chk.get("verdict") != "ok":
                 raise HarnessCaseError(f"{step}_check failed in real mode: {chk}")
-        return cli.run_step(step, str(ws_path), product, "real", draft_raw)
+        return cli.run_step(step, str(ws_path), product, draft_raw)
 
     if step == "build":
         if not (ws_path / "04-directions/gate_direction.json").is_file():
@@ -200,12 +200,12 @@ def run_step(
         target_folder = ws_path / "05-build"
         if target_folder.is_dir():
             shutil.rmtree(target_folder)
-        out = cli.run_step("build", str(ws_path), product, "real", raw)
+        out = cli.run_step("build", str(ws_path), product, raw)
         draft_raw = json.dumps(draft_for_step("build", ws_path, case_name=case_name), ensure_ascii=False)
-        chk = cli.run_step("build_check", str(ws_path), product, "real", draft_raw)
+        chk = cli.run_step("build_check", str(ws_path), product, draft_raw)
         if chk.get("verdict") != "ok":
             raise HarnessCaseError(f"build_check failed in real mode: {chk}")
-        cli.run_step("build_finish", str(ws_path), product, "real", draft_raw)
+        cli.run_step("build_finish", str(ws_path), product, draft_raw)
         return out
 
     base = step.removesuffix("_collect").removesuffix("_check").removesuffix("_finish")
@@ -215,7 +215,7 @@ def run_step(
 
     if step == "checks":
         with patch.object(checks, "measure", side_effect=synthesize_measures_for_workspace):
-            return cli.run_step("checks", str(ws_path), product, "real", raw)
+            return cli.run_step("checks", str(ws_path), product, raw)
 
     if step == "show":
         target_folder = ws_path / "07-show"
@@ -229,7 +229,7 @@ def run_step(
     elif step == "handoff":
         shutil.rmtree(ws_path / "08-handoff", ignore_errors=True)
 
-    return cli.run_step(step, str(ws_path), product, "real", raw)
+    return cli.run_step(step, str(ws_path), product, raw)
 
 
 def run_stage(
@@ -316,14 +316,13 @@ def answer_gate(
             "ok": True,
             "valid": True,
             "step": step,
-            "mode": ws.mode,
             "checked": len(files),
             "files": len(files),
             "known_case_choice": known_choice,
             **result,
         }
 
-    out = cli.run_step(f"gate_{gate_name}", str(ws_path), None, "real", raw_json)
+    out = cli.run_step(f"gate_{gate_name}", str(ws_path), None, raw_json)
     out["known_case_choice"] = load_gate_answer(gate_name, case_dir=case_dir, workspace_dir=ws_path).get("choice")
     return out
 
@@ -335,7 +334,7 @@ def run_all(
     case_name: str = "rollcall-20261104",
     taste_file: Path | None = None,
 ) -> dict[str, Any]:
-    """Prepare `workspace_dir` from `case_dir` and run all 8 stages + 2 gates in `mode="real"` at $0.
+    """Prepare `workspace_dir` from `case_dir` and run all 8 stages + 2 gates at $0.
 
     Supports both `run_all(workspace_dir)` and `run_all(case_dir, workspace_dir)`.
     """
@@ -371,16 +370,12 @@ def run_all(
     results["handoff"] = run_stage("handoff", ws_path, product=product, case_name=case_name)
 
     ws = workspace.Workspace(ws_path)
-    if ws.mode != "real":
-        raise HarnessCaseError(f"expected workspace mode 'real', got {ws.mode!r}")
-
     contract_counts: dict[str, int] = {}
     for st in workspace.STAGES + ("gate_direction", "review", "gate_final"):
         contract_counts[st] = len(contracts.validate(st, ws))
 
     return {
         "ok": True,
-        "mode": ws.mode,
         "workspace": str(ws_path),
         "cost_usd": 0.0,
         "live_model_calls": 0,

@@ -24,10 +24,9 @@ workflow:
     build, at most twice) -> show (one Show&Tell share, the owner's comments) -> FINAL gate (approve, or
     changes: back to build as targeted edits, at most twice) -> handoff (spec per screen, design file,
     follow-ups). Each gate answer records choice, decided_by (owner or design), the owner's words
-    verbatim, source and reason in gate_<name>.json. mode fixture runs the known case at $0.
+    verbatim, source and reason in gate_<name>.json.
   inputs:
     product: {type: string, required: true}
-    mode: {type: string, default: real}
     request_json: {type: string, default: ""}
   outputs:
     direction: gate_direction.structured.choice
@@ -41,12 +40,12 @@ workflow:
     # questions -> measured checks -> one revision only if a check failed -> final checks, outputs.
     - name: intake
       type: stage
-      input_map: {product: input.product, mode: input.mode, request_json: input.request_json}
+      input_map: {product: input.product, request_json: input.request_json}
       nodes:
         - name: intake_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: intake_collect, product: input.product, mode: input.mode, data: input.request_json}
+          input_map: {step: intake_collect, product: input.product, data: input.request_json}
         - name: intake_read
           type: agent
           agent: design_app_screen_intake_v1
@@ -57,7 +56,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [intake_read]
-          input_map: {step: intake_check, product: input.product, mode: input.mode}
+          input_map: {step: intake_check, product: input.product}
         - name: intake_revise
           type: agent
           agent: design_app_screen_intake_v1
@@ -68,24 +67,24 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [intake_revise]
-          input_map: {step: intake, product: input.product, mode: input.mode}
+          input_map: {step: intake, product: input.product}
 
     # Stage 2, existing (built, Design #207): captures & sheet -> fenced model read -> measured checks
     # -> optional revision -> final checks, 02-existing/journeys.json.
     - name: existing
       type: stage
       depends_on: [intake]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: existing_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: existing_collect, product: input.product, mode: input.mode}
+          input_map: {step: existing_collect, product: input.product}
         - name: existing_sheet
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [existing_collect]
-          input_map: {step: existing_sheet, product: input.product, mode: input.mode}
+          input_map: {step: existing_sheet, product: input.product}
         - name: existing_read
           type: agent
           agent: design_app_screen_existing_v1
@@ -96,7 +95,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [existing_read]
-          input_map: {step: existing_check, product: input.product, mode: input.mode, data: existing_read.output}
+          input_map: {step: existing_check, product: input.product, data: existing_read.output}
         - name: existing_revise
           type: agent
           agent: design_app_screen_existing_v1
@@ -107,19 +106,19 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [existing_revise]
-          input_map: {step: existing, product: input.product, mode: input.mode, data: existing_revise.output}
+          input_map: {step: existing, product: input.product, data: existing_revise.output}
 
     # Stage 3, ground (built, Design #210): design-file pack & capability map -> fenced model read ->
     # measured checks -> optional revision -> final checks, 03-ground/inventory.json.
     - name: ground
       type: stage
       depends_on: [existing]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: ground_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: ground_collect, product: input.product, mode: input.mode}
+          input_map: {step: ground_collect, product: input.product}
         - name: ground_read
           type: agent
           agent: design_app_screen_ground_v1
@@ -130,7 +129,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [ground_read]
-          input_map: {step: ground_check, product: input.product, mode: input.mode, data: ground_read.output}
+          input_map: {step: ground_check, product: input.product, data: ground_read.output}
         - name: ground_revise
           type: agent
           agent: design_app_screen_ground_v1
@@ -141,19 +140,19 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [ground_revise]
-          input_map: {step: ground, product: input.product, mode: input.mode, data: ground_revise.output}
+          input_map: {step: ground, product: input.product, data: ground_revise.output}
 
     # Stage 4, directions (built, Design #211/#215): task pack -> fenced directions writer ->
     # measured checks -> optional revision -> compile directions & checks, 04-directions/directions.json.
     - name: directions
       type: stage
       depends_on: [ground]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: directions_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: directions_collect, product: input.product, mode: input.mode}
+          input_map: {step: directions_collect, product: input.product}
         - name: directions_read
           type: agent
           agent: design_app_screen_directions_v1
@@ -165,7 +164,7 @@ workflow:
           agent: design_app_screen_stage_v1
           depends_on: [directions_read]
           condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: directions_check, product: input.product, mode: input.mode, data: directions_read.output}
+          input_map: {step: directions_check, product: input.product, data: directions_read.output}
         - name: directions_revise
           type: agent
           agent: design_app_screen_directions_v1
@@ -176,7 +175,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [directions_revise]
-          input_map: {step: directions, product: input.product, mode: input.mode, data: directions_revise.output}
+          input_map: {step: directions, product: input.product, data: directions_revise.output}
 
     # Owner Gate 1 (direction choice): pauses for human approval, records prediction and taste.
     - name: gate_direction
@@ -184,19 +183,19 @@ workflow:
       agent: design_app_screen_stage_v1
       depends_on: [directions]
       gate: true
-      input_map: {step: gate_direction, product: input.product, mode: input.mode}
+      input_map: {step: gate_direction, product: input.product}
 
     # Stage 5, build (built, Design #219/#221): scaffold -> fenced screen writer -> measured checks ->
     # optional revision -> compile & contract finish, 05-build/build.json.
     - name: build
       type: stage
       depends_on: [gate_direction]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: build_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: build, product: input.product, mode: input.mode}
+          input_map: {step: build, product: input.product}
         - name: build_read
           type: agent
           agent: design_app_screen_build_v1
@@ -207,7 +206,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [build_read]
-          input_map: {step: build_check, product: input.product, mode: input.mode, data: build_read.output}
+          input_map: {step: build_check, product: input.product, data: build_read.output}
         - name: build_revise
           type: agent
           agent: design_app_screen_build_v1
@@ -218,18 +217,18 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [build_revise]
-          input_map: {step: build_finish, product: input.product, mode: input.mode, data: build_revise.output}
+          input_map: {step: build_finish, product: input.product, data: build_revise.output}
 
     # Stage 6a, checks (built, Design #216): deterministic browser measurement across screens x states x widths.
     - name: checks
       type: stage
       depends_on: [build]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: checks_finish
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: checks, product: input.product, mode: input.mode}
+          input_map: {step: checks, product: input.product}
 
     # Stage 6b, review (built, Design #222/#223): contact sheet & measured grouping -> fenced reviewer ->
     # measured checks -> optional revision -> final checks, 06-review/review.json (loops to build on revise, max 2).
@@ -240,12 +239,12 @@ workflow:
       max_loops: 2
       on_max_loops: fail
       loop_condition: {source: review.structured.verdict, operator: equals, value: revise}
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: review_collect
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: review_collect, product: input.product, mode: input.mode}
+          input_map: {step: review_collect, product: input.product}
         - name: review_read
           type: agent
           agent: design_app_screen_review_v1
@@ -256,7 +255,7 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [review_read]
-          input_map: {step: review_check, product: input.product, mode: input.mode, data: review_read.output}
+          input_map: {step: review_check, product: input.product, data: review_read.output}
         - name: review_revise
           type: agent
           agent: design_app_screen_review_v1
@@ -267,18 +266,18 @@ workflow:
           type: agent
           agent: design_app_screen_stage_v1
           depends_on: [review_revise]
-          input_map: {step: review, product: input.product, mode: input.mode, data: review_revise.output}
+          input_map: {step: review, product: input.product, data: review_revise.output}
 
     # Stage 7, show (built, Design #224): self-contained interactive Show&Tell bundle and deterministic check.
     - name: show
       type: stage
       depends_on: [review]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: show_finish
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: show, product: input.product, mode: input.mode}
+          input_map: {step: show, product: input.product}
 
     # Owner Gate 2 (final prototype approval): pauses for human approval, loops back to build on changes (max 2).
     - name: gate_final
@@ -290,15 +289,15 @@ workflow:
       max_loops: 2
       on_max_loops: fail
       loop_condition: {source: gate_final.structured.verdict, operator: equals, value: changes}
-      input_map: {step: gate_final, product: input.product, mode: input.mode}
+      input_map: {step: gate_final, product: input.product}
 
     # Stage 8, handoff (built, Design #224): Penpot export, per-screen specs, handoff.json, and deterministic check.
     - name: handoff
       type: stage
       depends_on: [gate_final]
-      input_map: {product: input.product, mode: input.mode}
+      input_map: {product: input.product}
       nodes:
         - name: handoff_finish
           type: agent
           agent: design_app_screen_stage_v1
-          input_map: {step: handoff, product: input.product, mode: input.mode}
+          input_map: {step: handoff, product: input.product}

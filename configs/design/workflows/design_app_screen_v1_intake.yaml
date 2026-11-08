@@ -13,7 +13,6 @@ workflow:
     revision only if a check failed -> final checks -> 01-request/requirements.json and questions.json.
   inputs:
     product: {type: string, required: true}
-    mode: {type: string, default: real}
     request_json: {type: string, default: ""}
   outputs:
     requirements: intake.structured.requirements
@@ -23,7 +22,7 @@ workflow:
     - name: intake_collect
       type: agent
       agent: design_app_screen_stage_v1
-      input_map: {step: intake_collect, product: input.product, mode: input.mode, data: input.request_json}
+      input_map: {step: intake_collect, product: input.product, data: input.request_json}
     - name: intake_read
       type: agent
       agent: design_app_screen_intake_v1
@@ -34,7 +33,7 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [intake_read]
-      input_map: {step: intake_check, product: input.product, mode: input.mode}
+      input_map: {step: intake_check, product: input.product}
     - name: intake_revise
       type: agent
       agent: design_app_screen_intake_v1
@@ -45,4 +44,4 @@ workflow:
       type: agent
       agent: design_app_screen_stage_v1
       depends_on: [intake_revise]
-      input_map: {step: intake, product: input.product, mode: input.mode}
+      input_map: {step: intake, product: input.product}

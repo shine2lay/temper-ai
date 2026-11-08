@@ -10,8 +10,6 @@ Three script steps around one fenced model step (configs/design/agents/design_ap
                     retry sends the problems back to the model once (intake_revise)
     intake          the same checks on the final draft -> check-final.json; clean: requirements.json and
                     questions.json; any problem left fails the stage loud
-
-Fixture mode: collect and check pass through (model no) and intake copies the known case's output.
 """
 from __future__ import annotations
 
@@ -19,7 +17,6 @@ import json
 import shutil
 
 from . import intake_check, intake_sources, model_step
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 SOURCES = "sources.json"
@@ -52,8 +49,6 @@ def sources(ws: Workspace) -> dict:
 
 
 def collect(ws: Workspace, raw: str) -> dict:
-    if ws.mode == "fixture":
-        return {"model": "no", "source": "known case"}
     path = ws.folder("intake") / SOURCES
     product = ws.run()["product"]
     if raw.strip():
@@ -83,8 +78,6 @@ _result = model_step.check_record
 
 def check(ws: Workspace, raw: str) -> dict:
     """The draft pass: write check.json; on retry keep the first draft beside the one the model revises."""
-    if ws.mode == "fixture":
-        return {"verdict": "ok", "source": "known case"}
     folder = ws.folder("intake")
     draft = _draft(ws)
     found = intake_check.check_draft(sources(ws), draft if draft is not None else {})
@@ -99,8 +92,6 @@ def check(ws: Workspace, raw: str) -> dict:
 
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: a clean draft becomes requirements.json and questions.json; any problem fails loud."""
-    if ws.mode == "fixture":
-        return run_fixture(ws, "intake")
     folder = ws.folder("intake")
     src = sources(ws)
     draft = _draft(ws)

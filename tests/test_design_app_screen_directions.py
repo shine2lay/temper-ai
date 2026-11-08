@@ -69,11 +69,11 @@ def _write(path: Path, data: Any) -> None:
 
 
 def _make_real_ws(tmp_path: Path) -> Workspace:
-    """Create a real-mode workspace populated with stages 1..3 from the RollCall known case."""
+    """Create a workspace populated with stages 1..3 from the RollCall known case."""
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir(parents=True, exist_ok=True)
     ws = Workspace(ws_dir)
-    ws.start("rollcall", "real")
+    ws.start("rollcall")
     for folder in ("01-request", "02-existing", "03-ground"):
         shutil.copytree(REPO_CASE / folder, ws_dir / folder, dirs_exist_ok=True)
     for s in _read(ws_dir / "02-existing/audit.json")["screens"]:
@@ -184,18 +184,18 @@ def test_fixture_mode_directions_pipeline(tmp_path):
     app_screen_harness.prepare_workspace(case_dir, ws_dir)
 
     c_out = app_screen_harness.run_step("directions_collect", str(ws_dir), None, "")
-    assert c_out["valid"] and c_out["mode"] == "real" and c_out["model"] == "yes"
+    assert c_out["valid"] and c_out["model"] == "yes"
     chk_out = app_screen_harness.run_step("directions_check", str(ws_dir), None, "")
-    assert chk_out["valid"] and chk_out["mode"] == "real" and chk_out["verdict"] == "ok"
+    assert chk_out["valid"] and chk_out["verdict"] == "ok"
     fin_out = app_screen_harness.run_step("directions", str(ws_dir), None, "")
-    assert fin_out["valid"] and fin_out["mode"] == "real" and fin_out["step"] == "directions"
+    assert fin_out["valid"] and fin_out["step"] == "directions"
 
 
 def test_real_mode_directions_pipeline_compiles_prototypes_and_passes_checks(tmp_path):
     ws = _make_real_ws(tmp_path)
 
     # 1. directions_collect
-    collect_out = CLI.run_step("directions_collect", str(ws.path), None, "real", "")
+    collect_out = CLI.run_step("directions_collect", str(ws.path), None, "")
     assert collect_out["valid"]
     assert collect_out["model"] == "yes"
     assert len(collect_out["entry_screens"]) == 2
@@ -203,7 +203,7 @@ def test_real_mode_directions_pipeline_compiles_prototypes_and_passes_checks(tmp
 
     # 2. directions_check on valid draft
     draft = _valid_directions_draft(ws)
-    check_out = CLI.run_step("directions_check", str(ws.path), None, "real", json.dumps(draft))
+    check_out = CLI.run_step("directions_check", str(ws.path), None, json.dumps(draft))
     assert check_out["valid"]
     assert check_out["verdict"] == "ok", check_out["problems"]
     assert check_out["problems"] == []
@@ -211,7 +211,7 @@ def test_real_mode_directions_pipeline_compiles_prototypes_and_passes_checks(tmp
     assert (ws.folder("directions") / "check.json").is_file()
 
     # 3. directions (final compile + quick measured checks)
-    fin_out = CLI.run_step("directions", str(ws.path), None, "real", "")
+    fin_out = CLI.run_step("directions", str(ws.path), None, "")
     assert fin_out["valid"]
     assert fin_out["directions"] == ["a", "b"]
     assert fin_out["blockers"] == {"a": 0, "b": 0}
@@ -353,14 +353,14 @@ def test_planted_fault_caught_by_directions_check(tmp_path, fault_name, mutator,
 
 def test_directions_revise_recovers_from_retry_and_final_step_rejects_broken_draft(tmp_path):
     ws = _make_real_ws(tmp_path)
-    CLI.run_step("directions_collect", str(ws.path), None, "real", "")
+    CLI.run_step("directions_collect", str(ws.path), None, "")
 
     good_draft = _valid_directions_draft(ws)
     bad_draft = copy.deepcopy(good_draft)
     _break_duplicate_layout(bad_draft)
 
     # Initial check returns retry + revise_task
-    chk_out = CLI.run_step("directions_check", str(ws.path), None, "real", json.dumps(bad_draft))
+    chk_out = CLI.run_step("directions_check", str(ws.path), None, json.dumps(bad_draft))
     assert chk_out["verdict"] == "retry"
     assert "Fix `04-directions/draft.json` Problems" in chk_out["revise_task"]
 
@@ -369,7 +369,7 @@ def test_directions_revise_recovers_from_retry_and_final_step_rejects_broken_dra
         directions.run(ws, "")
 
     # When directions receives the revised JSON from directions_revise, it succeeds
-    fin_out = CLI.run_step("directions", str(ws.path), None, "real", json.dumps(good_draft))
+    fin_out = CLI.run_step("directions", str(ws.path), None, json.dumps(good_draft))
     assert fin_out["valid"]
     assert fin_out["directions"] == ["a", "b"]
     assert fin_out["blockers"] == {"a": 0, "b": 0}

@@ -181,7 +181,7 @@ def _finished_existing(lab: dict, name: str = "ws-full") -> Workspace:
     app["base_url"] = lab["base_url"]
     (lab["tmp"] / name).mkdir()
     w = Workspace(lab["tmp"] / name)
-    w.start("demo", "real")
+    w.start("demo")
     folder = w.folder("existing")
     caps = product_app.captures(app)
     (folder / existing_host.CAPTURES).mkdir(parents=True)
@@ -386,7 +386,7 @@ def test_same_commit_and_same_spec_reuses_stage_2_without_shooting_and_skips_the
     with pytest.raises(StoreError, match="status 'planned'"):
         reuse_host.store(str(path), "run-2", "existing", None, lab["products"])
     cli = _cli()
-    results = [cli.run_step(step, str(path), "demo", "real", "")
+    results = [cli.run_step(step, str(path), "demo", "")
                for step in ("existing_collect", "existing_sheet", "existing_check", "existing")]
     assert [r.get("model") for r in results[:2]] == ["no", "no"] and results[2]["verdict"] == "ok"
     assert w.run()["stages"]["existing"]["status"] == "reused"

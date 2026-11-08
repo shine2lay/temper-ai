@@ -5,29 +5,29 @@ Inkflow, as a Temper workflow. The owner asked for it on 2026-11-04: "lets try t
 stages you had of your flow into temper wf".
 
 Version 1's skeleton (Design #198, W0) set up every stage, both owner gates, the workspace, a contract
-for each step's output and the first known case. A stage that is still a stub copies the known case's
-output in fixture mode and has it checked against its contract; in real mode it fails at once with "the
-real stage is not built yet". Each stage's own task replaces its stub and keeps its contract, one stage
+for each step's output and the first known case. Each stage's own task replaced its stub and kept its contract, one stage
 at a time (owner, 2026-11-04: "lets run one stage a time after setting up the skeleton, so we can really
-hone in on it"). Built so far: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
+hone in on it"). Built: stage 1, intake (Design #206; see "Stage 1: intake"), stage 2, existing
 (Design #207; see "Stage 2: existing"), stage 3, ground (Design #210; see "Stage 3: ground"), step 4,
 reuse/store/tools (Design #214), stage 4, directions (Design #223; see "Stage 4: directions"), stage 5, build (Design #219 5a scaffold + Design #221 5b model screen writer; see
 "Stage 5: build"), stage 6a, measured checks (Design #216; see "Stage 6a: checks"), stage 6b, fenced design
 and UX review + build-loop proof (Design #222; see "Stage 6b: review"), stage 7, show + W5 gates prediction
-and owner taste encoding, and stage 8, handoff + end-to-end real proof (Design #224; see "Stage 7: show, W5 gates, and Stage 8: handoff"). All 8 stages and both gates are now real and proven on `temper-dev`.
+and owner taste encoding, and stage 8, handoff + end-to-end real proof (Design #224; see "Stage 7: show, W5 gates, and Stage 8: handoff"). All 8 stages and both gates are real and proven on `temper-dev`; known-case replay runs through the outside harness (`configs/design/bin/app_screen_harness/` and `design_app_screen_v1_bench.yaml`, Design #229), and all in-workflow fixture branches and `fixture_stage.py` were removed in Design #230 (AGENTS.md rule 42).
 
 Files, one job each:
 
 | File | Job |
 | --- | --- |
 | `configs/design/workflows/design_app_screen_v1.yaml` | the workflow: 8 stages, 2 owner gates, 2 loops back to build |
+| `configs/design/workflows/design_app_screen_v1_bench.yaml` | outside benchmark/harness twin workflow: swaps only the 6 model boundaries for `design_app_screen_replay` |
 | `configs/design/agents/design_app_screen_stage_v1.yaml` | script agent: runs one step through the CLI (no model, no network) |
+| `configs/design/agents/design_app_screen_replay.yaml` | outside harness replay agent: replays recorded/synthesized drafts at the model boundary at $0 |
 | `configs/design/bin/design_app_screen.py` | CLI: one step on a workspace, or the host commands pack, freeze, verify |
 | `configs/design/bin/app_screen/workspace.py` | the workspace: stage folders, `run.json`, rounds |
 | `configs/design/bin/app_screen/contracts.py` | one JSON schema per output file, plus `validate(step, workspace)` |
 | `configs/design/bin/app_screen/gates.py` | the two owner gates: check and record the answer |
 | `configs/design/bin/app_screen/known_case.py` | known cases: freeze, verify, pack, copy a stage's output |
-| `configs/design/bin/app_screen/fixture_stage.py` | what a stub stage does: fixture copy, or fail loud in real mode |
+| `configs/design/bin/app_screen_harness/` | outside fixture wrapper (harness): prepares known-case inputs, replays drafts at the model boundary, and runs all 8 stages + 2 gates through the production code path at $0 |
 | `configs/design/bin/app_screen/<stage>.py` | one module per stage: `intake`, `existing`, `ground`, `directions`, `build`, `checks`, `show`, `handoff` |
 | `configs/design/bin/app_screen/intake_sources.py` | intake's sources: the owner's words as numbered verbatim items, collected on the host |
 | `configs/design/bin/app_screen/intake_check.py` | intake's measured checks on the model's draft, and the final files from a clean draft |
@@ -92,8 +92,8 @@ Loops: `review` goes back to `build` while its verdict is `revise` (a Must findi
 (`max_loops: 2`); a third time fails the run (`on_max_loops: fail`), it does not hand off a design that
 still has an open Must. Each pass through `checks` starts a new `06-checks/round-<n>/`.
 
-Inputs: `product` (a lowercase id, e.g. `rollcall`), `mode` (`real`, the default, or `fixture`) and
-`request_json` (intake's sources document, or a plain request; see Stage 1; unused in fixture mode). Outputs: the direction picked and
+Inputs: `product` (a lowercase id, e.g. `rollcall`) and
+`request_json` (intake's sources document, or a plain request; see Stage 1). Outputs: the direction picked and
 who decided it, the review rounds and verdict, and the final verdict and who decided it.
 
 ## Workspace
@@ -101,10 +101,9 @@ who decided it, the review rounds and verdict, and the final verdict and who dec
 Every step reads and writes only inside the run's workspace:
 
 ```
-run.json                    product, mode real|fixture, round, status of every step
-known-case/                 fixture mode only: the known case, packed by the host, with FREEZE.json
-01-request/                 requirements.json, questions.json; real mode also sources.json, draft.json,
-                            check.json, check-final.json (draft-first.json when the model revised)
+run.json                    product, round, status of every step
+01-request/                 sources.json, draft.json, check.json, check-final.json,
+                            requirements.json, questions.json (draft-first.json when the model revised)
 02-existing/                captures/*.png, audit.json (measured), journeys.json (model; each claim has evidence)
 03-ground/                  fixture.json, design-files/ (DESIGN.md, tokens.json), inventory.json (screens x states)
 04-directions/<id>/         index.html, checks.json; plus directions.json and gate_direction.json
@@ -220,20 +219,20 @@ the answer plus:
   the fewest `should`/non-pass rows in `04-directions/<id>/checks.json` (tie-breaking to the first direction id).
   For `final`, reads `06-checks/round-<ws.round>/review.json` and `07-show/comments.json`, predicting
   `"approve"` iff `review.verdict == "done"` and 0 comments have `state == "open"`, else `"changes"`.
-- `taste`: `"not-taste"` when `ws.mode == "fixture"` or `decided_by == "design"`; `"saved"` when
-  `ws.mode == "real"` and `decided_by == "owner"`, appending a structured taste entry (timestamp, product,
+- `taste`: `"not-taste"` when `decided_by == "design"`; `"saved"` when
+  `decided_by == "owner"`, appending a structured taste entry (timestamp, product,
   gate, choice, verbatim `owner_words`, `source`, `reason`, `prediction.choice`, `prediction.matched`) to
   `ws.path / "taste-owner.md"` (and `DESIGN_TASTE_FILE` when set in the environment).
 Answer a gate with `POST /api/runs/<run>/approve/<node>` and body `{"response": "<the
 JSON text>"}`, signed (`~/design-lab/tools/temper_call.py`).
 
-## Known cases and fixture runs
+## Known cases and outside harness runs
 
 A known case is a finished job frozen as each stage's real output, so each stage can be tested alone on
-fixed inputs with known answers (AGENTS.md rule 16). It lives in
+fixed inputs with known answers (AGENTS.md rule 16) via the outside fixture harness (`configs/design/bin/app_screen_harness/`, AGENTS.md rule 42). It lives in
 `~/design-lab/app-screen-workflow/known-cases/<name>/`, laid out like a workspace, plus `gates/` (the gate
 answers really given) and `FREEZE.json` (`case`, `product`, `frozen_at`, `source`, and a sha256 per file).
-A changed, missing or extra file fails `verify`, `pack` and every fixture step; a frozen case is never
+A changed, missing or extra file fails `verify` and `pack`; a frozen case is never
 re-frozen.
 
 Known case 1, `rollcall-20261104`: the RollCall phone and desktop redesign of 2026-11-04 (Design
@@ -246,25 +245,24 @@ failed; show is his comments on Show&Tell `d_kgrxir5ezb`; handoff is the 13 scre
 follow-ups RollCall and Frontend sent. RollCall's numbers are its invented sample book; no client or
 private data. It was built by `build_rollcall_20261104.py` next to it.
 
-A fixture run (the worker can't see Design's lab, so the host packs the case into the workspace first;
-the workspace must be under `~/temper-ai/workspaces`, which runs mount):
+An outside harness run prepares the workspace from the frozen case and runs `design_app_screen_v1_bench`
+(which executes the production stage code path while replaying drafts at the model boundary via `design_app_screen_replay`):
 
 ```
-python3 configs/design/bin/design_app_screen.py pack \
+python3 configs/design/bin/app_screen_harness/cli.py prepare \
   --case ~/design-lab/app-screen-workflow/known-cases/rollcall-20261104 \
   --workspace ~/temper-ai/workspaces/<run folder>
-python3 ~/design-lab/tools/temper_call.py POST /api/runs '{"workflow": "design_app_screen_v1",
-  "workspace_path": "<run folder>", "inputs": {"product": "rollcall", "mode": "fixture"}}'
+python3 ~/design-lab/tools/temper_call.py POST /api/runs '{"workflow": "design_app_screen_v1_bench",
+  "workspace_path": "<run folder>", "inputs": {"product": "rollcall"}}'
 ```
 
-then answer both gates with `decided_by` `design` (a fixture answer is never the owner's). Every step
-reports `valid: true`; the direction gate also reports `known_case_choice`, the owner's real pick, to
-compare with. Costs $0: no model runs.
+then answer both gates with `decided_by` `design`. Every step
+reports `valid: true`; costs $0: no live model runs.
 
 To add a known case: lay out a finished job's real outputs as a workspace under
 `known-cases/<product>-<date>/`, with `06-checks/round-1/` and `gates/gate_direction.json`,
 `gates/gate_final.json` (the answers really given, the owner's words verbatim with their source). Keep it
-free of client or private data. Check each stage with `design_app_screen.py <step>` on a packed workspace,
+free of client or private data. Check each stage with `app_screen_harness` on a prepared workspace,
 then freeze it once:
 
 ```
@@ -275,6 +273,8 @@ python3 configs/design/bin/design_app_screen.py verify --case <dir>
 Write a builder script next to it, as `build_rollcall_20261104.py` is, so how it was made stays readable.
 
 ## Stage status
+
+All 8 stages and both gates are real on `design_app_screen_v1`, with zero in-workflow fixture branches (Design #229 built the outside harness `configs/design/bin/app_screen_harness/` and `design_app_screen_v1_bench.yaml`; Design #230 deleted `mode: fixture` and `fixture_stage.py` from the production workflow).
 
 | Stage | Real stage | Task |
 | --- | --- | --- |
@@ -1192,8 +1192,7 @@ and `04-directions/draft.json` screen layout and copy as the starting direction 
 `directions` remains the final node of Stage 4 in `design_app_screen_v1.yaml` and
 `design_app_screen_v1_directions.yaml` so `gate_direction` (`depends_on: [directions]`) works unchanged:
 
-1. `directions_collect` (script, `design_app_screen_stage_v1`, `depends_on: [ground]`): in `fixture` mode
-   returns `model: "no"`. In `real` mode reads `01-request/requirements.json`, `02-existing/journeys.json`,
+1. `directions_collect` (script, `design_app_screen_stage_v1`, `depends_on: [ground]`): reads `01-request/requirements.json`, `02-existing/journeys.json`,
    and `03-ground/{inventory.json,fixture.json,design-files/}`, selects the primary entry screens from
    `inventory.json` (`build_scaffold.select_entry_screens`, first 1-2 screens so directions focus on the
    opening experience), writes `04-directions/task.md`, and returns `model: "yes"`, `task`.
@@ -1209,8 +1208,7 @@ and `04-directions/draft.json` screen layout and copy as the starting direction 
    `04-directions/check.json` (`verdict: "ok" | "retry"`), and on `"retry"` prepares `revise_task`.
 4. `directions_revise` (same agent `design_app_screen_directions_v1`, `condition: directions_check.structured.verdict == "retry"`):
    one bounded revision pass fixing any reported problems.
-5. `directions` (script, `design_app_screen_stage_v1`, `depends_on: [directions_revise]`): in `fixture`
-   mode runs `run_fixture(ws, "directions")`. In `real` mode applies the revised draft if any, runs final
+5. `directions` (script, `design_app_screen_stage_v1`, `depends_on: [directions_revise]`): applies the revised draft if any, runs final
    `directions_check` -> `04-directions/check-final.json` (fails loud on any remaining problem), compiles
    each direction `<id>` into `04-directions/<id>/` (`index.html`, `styles/tokens.css`, `shell/router.js`,
    `screens/*.js`, `fixture.json`, `build.json`) via `build_scaffold.compile_direction_prototype`, runs
@@ -1885,8 +1883,7 @@ edges. Both `design_app_screen_v1.yaml` and the stage-alone trial workflow `desi
 run the same 5-node Stage 6b pipeline:
 
 1. `review_collect` (`design_app_screen_stage_v1`, `depends_on: [checks]` in the full workflow):
-   - In `fixture` mode, returns `model: "no"` so the model nodes are skipped at $0.00.
-   - In `real` mode, validates `06-checks/round-<n>/checks.json`, `05-build/build.json`,
+   - Validates `06-checks/round-<n>/checks.json`, `05-build/build.json`,
      `01-request/requirements.json`, and `03-ground/inventory.json`; groups failing Stage 6a check rows by
      `(check_id, screen)` into numbered measured items `M1..Mk` (`06-checks/round-<n>/measured_items.json`,
      blockers ordered first); builds a 12-panel contact sheet `06-checks/round-<n>/sheet.png` (`<= 1568 px`,
@@ -1909,8 +1906,7 @@ run the same 5-node Stage 6b pipeline:
 4. `review_revise` (`design_app_screen_review_v1`, `condition: review_check.structured.verdict == "retry"`):
    one bounded revision pass when `review_check` finds any rule violation.
 5. `review` (`design_app_screen_stage_v1`, `depends_on: [review_revise]`):
-   - In `fixture` mode, copies the known case's `review.json`.
-   - In `real` mode, applies the revised draft if `review_check` returned `"retry"`, runs final `review_check`
+   - Applies the revised draft if `review_check` returned `"retry"`, runs final `review_check`
      (`06-checks/round-<n>/check-final.json`, failing loud on any remaining problem), merges `measured[]`
      (carrying each `M*` item's exact `element`, `location`, `evidence`, and `check` from `measured_items.json`)
      and `findings[]` into `06-checks/round-<n>/review.json` (`F1..Fn`), computes deterministic
@@ -2006,35 +2002,33 @@ workflow run from Stage 1 (`intake`) to Stage 8 (`handoff`) on `temper-dev`.
 ### Architecture (rule 17: 100% deterministic scripts, $0.00 model cost)
 
 1. **Stage 7 (`configs/design/bin/app_screen/show.py` + `show_check.py`)**:
-   - In `fixture` mode: runs `run_fixture(ws, "show")`.
-   - In `real` mode:
-     - Validates upstream prerequisites loud and fast: `05-build/index.html`, `05-build/build.json`,
-       `05-build/fixture.json`, and `06-checks/round-<ws.round>/review.json` must exist, and `review.json`
-       must have `verdict == "done"` (0 open Must findings).
-     - Compiles a self-contained single-file interactive Show&Tell bundle `07-show/bundle.html` (and
-       `07-show/bundle-round-<ws.round>.html`) by inlining `05-build/styles/tokens.css`,
-       `05-build/fixture.json`, `05-build/screens/*.js`, and `05-build/shell/router.js` into
-       `05-build/index.html`, ensuring `<html ... data-st-interactive="true">` and stripping any forbidden
-       `data-state` or `data-st-state` attributes below `html`/`body` (note `n131`). Never shares externally
-       or sends Telegram notifications from inside a worker run (lead-only rule).
-     - On `ws.round > 1`: archives the prior round's `07-show/gate_final.json` to
-       `07-show/gate_final-round-<ws.round - 1>.json` (so `gate_final` can be freshly answered on the new
-       round), computes non-blank line retention (`kept_lines`, `prev_non_blank_lines`, `kept_ratio`,
-       `change_note` per `bp-bc056d81`) against `07-show/bundle-round-<ws.round - 1>.html`, and resolves
-       targeted comments listed in `gate_final-round-<ws.round - 1>.json`'s `comments[]` to
-       `state = "answered"` with a versioned reply (`version = ws.round`, `outcome = "done"`) in
-       `07-show/comments.json`.
-     - Writes `07-show/showtell.json` (`doc_id`, `version = ws.round`, `url = f"/showtell/#/d/{doc_id}"`,
-       `title`, `bundle: "07-show/bundle.html"`, plus line-retention fields on Round > 1) and
-       `07-show/comments.json` (`doc_id`, `comments[]`).
-     - Also exposes host command `design_app_screen.py prep-show --workspace W [--doc DOC_ID] [--description TITLE] [--source COMMENTS_JSON]`
-       so the lead can seed `07-show/showtell.json` and `07-show/comments.json` before `show` runs.
-     - Runs `show_check.py` (4 rules) -> `07-show/check.json`, failing loud on any violation, and validates
-       `contracts.validate("show", ws)`.
-     - Furthermore, `build_scaffold.build_task(ws)` now reads `07-show/gate_final.json` (or
-       `07-show/gate_final-round-<ws.round - 1>.json`) and `07-show/comments.json` when `ws.round > 1`,
-       injecting a `"Show&Tell Comments From Round <n-1> To Address"` section into `05-build/task.md` so
-       Stage 5b addresses each targeted comment.
+   - Validates upstream prerequisites loud and fast: `05-build/index.html`, `05-build/build.json`,
+     `05-build/fixture.json`, and `06-checks/round-<ws.round>/review.json` must exist, and `review.json`
+     must have `verdict == "done"` (0 open Must findings).
+   - Compiles a self-contained single-file interactive Show&Tell bundle `07-show/bundle.html` (and
+     `07-show/bundle-round-<ws.round>.html`) by inlining `05-build/styles/tokens.css`,
+     `05-build/fixture.json`, `05-build/screens/*.js`, and `05-build/shell/router.js` into
+     `05-build/index.html`, ensuring `<html ... data-st-interactive="true">` and stripping any forbidden
+     `data-state` or `data-st-state` attributes below `html`/`body` (note `n131`). Never shares externally
+     or sends Telegram notifications from inside a worker run (lead-only rule).
+   - On `ws.round > 1`: archives the prior round's `07-show/gate_final.json` to
+     `07-show/gate_final-round-<ws.round - 1>.json` (so `gate_final` can be freshly answered on the new
+     round), computes non-blank line retention (`kept_lines`, `prev_non_blank_lines`, `kept_ratio`,
+     `change_note` per `bp-bc056d81`) against `07-show/bundle-round-<ws.round - 1>.html`, and resolves
+     targeted comments listed in `gate_final-round-<ws.round - 1>.json`'s `comments[]` to
+     `state = "answered"` with a versioned reply (`version = ws.round`, `outcome = "done"`) in
+     `07-show/comments.json`.
+   - Writes `07-show/showtell.json` (`doc_id`, `version = ws.round`, `url = f"/showtell/#/d/{doc_id}"`,
+     `title`, `bundle: "07-show/bundle.html"`, plus line-retention fields on Round > 1) and
+     `07-show/comments.json` (`doc_id`, `comments[]`).
+   - Also exposes host command `design_app_screen.py prep-show --workspace W [--doc DOC_ID] [--description TITLE] [--source COMMENTS_JSON]`
+     so the lead can seed `07-show/showtell.json` and `07-show/comments.json` before `show` runs.
+   - Runs `show_check.py` (4 rules) -> `07-show/check.json`, failing loud on any violation, and validates
+     `contracts.validate("show", ws)`.
+   - Furthermore, `build_scaffold.build_task(ws)` now reads `07-show/gate_final.json` (or
+     `07-show/gate_final-round-<ws.round - 1>.json`) and `07-show/comments.json` when `ws.round > 1`,
+     injecting a `"Show&Tell Comments From Round <n-1> To Address"` section into `05-build/task.md` so
+     Stage 5b addresses each targeted comment.
 
 2. **W5 (`configs/design/bin/app_screen/gates.py`)**:
    - Computes deterministic `prediction = {"choice": pred_choice, "matched": pred_choice == record["choice"], "basis": "..."}`
@@ -2045,31 +2039,28 @@ workflow run from Stage 1 (`intake`) to Stage 8 (`handoff`) on `temper-dev`.
      - `gate == "final"`: reads `06-checks/round-<ws.round>/review.json` and `07-show/comments.json`; predicts
        `"approve"` when `review.verdict == "done"` and 0 comments have `state == "open"`, else `"changes"`.
    - Encodes owner taste (`taste` field in `gate_<name>.json`):
-     - When `ws.mode == "fixture"` or `record["decided_by"] == "design"`, sets `"taste": "not-taste"` (keeping
-       `test_fixture_run_passes_every_contract` green).
-     - When `ws.mode == "real"` and `record["decided_by"] == "owner"`, appends a structured taste entry
+     - When `record["decided_by"] == "design"`, sets `"taste": "not-taste"`.
+     - When `record["decided_by"] == "owner"`, appends a structured taste entry
        (timestamp, product, gate, choice, verbatim `owner_words`, `source`, `reason`, `prediction.choice`,
        `prediction.matched`) to `ws.path / "taste-owner.md"` (and `DESIGN_TASTE_FILE` when set in env) and
        sets `"taste": "saved"`.
 
 3. **Stage 8 (`configs/design/bin/app_screen/handoff.py` + `handoff_check.py`)**:
-   - In `fixture` mode: runs `run_fixture(ws, "handoff")`.
-   - In `real` mode:
-     - Validates upstream prerequisites loud and fast: `07-show/gate_final.json` must exist with
-       `choice == "approve"`, `06-checks/round-<ws.round>/review.json` must have `verdict == "done"`, and
-       `03-ground/inventory.json`, `05-build/build.json`, and `05-build/draft.json` must exist.
-     - Generates one comprehensive Markdown spec per screen in `08-handoff/spec/<screen-id>.md` covering:
-       `## Route & Layout` (`#<screen>/<state>`, layout, widths `1440`, `390`, `320`),
-       `## Mapped Requirements` (`R*` with verbatim `owner_words`), `## What It Shows` (`S*` with `fields[]`
-       paths and sample values from `03-ground/fixture.json`), `## Interactive Actions` (`A*` with immediate
-       click feedback), `## States & Copy Table` (`normal`, `loading`, `empty`, `error`, plus screen-specific
-       states), and `## Review & Show&Tell Notes` (Stage 6 checks/review + Stage 7 Show&Tell comment notes).
-     - Writes `08-handoff/design-file.json` (`kind: "html-prototype"`, `location: "05-build/index.html"`,
-       `editable: True`, `note`) and `08-handoff/followup.json` (`F1..Fn`: `frontend` implementation items
-       per screen + `design` follow-ups for any non-blocking `should`/`could` review findings or excluded
-       ground items).
-     - Runs `handoff_check.py` (6 rules) -> `08-handoff/check.json`, failing loud on any violation, and
-       validates `contracts.validate("handoff", ws)`.
+   - Validates upstream prerequisites loud and fast: `07-show/gate_final.json` must exist with
+     `choice == "approve"`, `06-checks/round-<ws.round>/review.json` must have `verdict == "done"`, and
+     `03-ground/inventory.json`, `05-build/build.json`, and `05-build/draft.json` must exist.
+   - Generates one comprehensive Markdown spec per screen in `08-handoff/spec/<screen-id>.md` covering:
+     `## Route & Layout` (`#<screen>/<state>`, layout, widths `1440`, `390`, `320`),
+     `## Mapped Requirements` (`R*` with verbatim `owner_words`), `## What It Shows` (`S*` with `fields[]`
+     paths and sample values from `03-ground/fixture.json`), `## Interactive Actions` (`A*` with immediate
+     click feedback), `## States & Copy Table` (`normal`, `loading`, `empty`, `error`, plus screen-specific
+     states), and `## Review & Show&Tell Notes` (Stage 6 checks/review + Stage 7 Show&Tell comment notes).
+   - Writes `08-handoff/design-file.json` (`kind: "html-prototype"`, `location: "05-build/index.html"`,
+     `editable: True`, `note`) and `08-handoff/followup.json` (`F1..Fn`: `frontend` implementation items
+     per screen + `design` follow-ups for any non-blocking `should`/`could` review findings or excluded
+     ground items).
+   - Runs `handoff_check.py` (6 rules) -> `08-handoff/check.json`, failing loud on any violation, and
+     validates `contracts.validate("handoff", ws)`.
 
 ### Planted-fault proof (`show_check.py`, `gates.py`, and `handoff_check.py`)
 

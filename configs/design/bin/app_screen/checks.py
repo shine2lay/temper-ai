@@ -16,7 +16,6 @@ import time
 from pathlib import Path
 
 from . import checks_rules, checks_views, contracts
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 TOOL = "checks_render.mjs (playwright-mcp) + design_measure.js, measure_in_page.js, checks_measure.js, axe 4.13.0"
@@ -82,9 +81,7 @@ def measure(ws: Workspace, plan: dict, thresholds: dict) -> dict:
     return checks_render.render(ws.folder("build"), plan, ws.round_folder(), thresholds)
 
 
-def run(ws: Workspace, data: str) -> dict:
-    if ws.mode == "fixture":
-        return {**run_fixture(ws, "checks"), "round": ws.round}
+def run(ws: Workspace, data: str = "") -> dict:
     started = time.time()
     if ws.round < 1:
         raise ChecksError("checks: the run has no round yet: the build step runs before the checks step")
@@ -131,9 +128,3 @@ def run(ws: Workspace, data: str) -> dict:
             "shoulds": result["totals"]["shoulds"], "checks_failed": result["totals"]["checks_failed"],
             "checks_skipped": result["totals"]["checks_skipped"], "seconds": round(time.time() - started, 1)}
 
-
-def review(ws: Workspace, data: str) -> dict:
-    out = run_fixture(ws, "review")
-    record = json.loads((ws.round_folder() / "review.json").read_text())
-    must = sum(1 for f in record["findings"] if f.get("priority") == "must")
-    return {**out, "round": ws.round, "verdict": record["verdict"], "must": must}

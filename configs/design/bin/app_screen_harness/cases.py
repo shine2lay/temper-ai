@@ -351,8 +351,7 @@ def prepare_workspace(
 
     ws_path.mkdir(parents=True, exist_ok=True)
 
-    # If the case has FREEZE.json and all files exist, pack it so known-case/gates is available for inspection;
-    # then switch run.json to mode="real" so zero production fixture branches are taken.
+    # If the case has FREEZE.json and all files exist, pack it so known-case/gates is available for inspection.
     if (src_case / "FREEZE.json").is_file():
         try:
             known_case.pack(src_case, ws_path)
@@ -366,11 +365,11 @@ def prepare_workspace(
     run_file = ws_path / "run.json"
     if run_file.is_file():
         doc = json.loads(run_file.read_text(encoding="utf-8"))
-        doc["mode"] = "real"
+        doc.pop("mode", None)
         doc["product"] = product
         run_file.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     else:
-        ws.start(product, "real")
+        ws.start(product)
 
     prepare_intake_inputs(ws_path, case_name)
     prepare_existing_inputs(ws_path, case_name)

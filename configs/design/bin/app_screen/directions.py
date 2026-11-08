@@ -26,7 +26,6 @@ from . import (
     directions_check,
     model_step,
 )
-from .fixture_stage import run_fixture
 from .workspace import Workspace
 
 QUICK_CHECK_TOOL = (
@@ -191,8 +190,6 @@ def build_revise_task(ws: Workspace, draft: Any, problems: list[dict[str, str]])
 
 def collect(ws: Workspace, data: str = "") -> dict[str, Any]:
     """Step 1 of Stage 4 (directions_collect): prepare 04-directions/task.md."""
-    if ws.mode == "fixture":
-        return {"step": "directions_collect", "mode": "fixture", "model": "no", "task": ""}
     ws.mark("directions", "running")
     task_text = build_directions_task(ws)
     inventory = _read_json(ws.folder("ground") / "inventory.json", "03-ground/inventory.json")
@@ -200,7 +197,6 @@ def collect(ws: Workspace, data: str = "") -> dict[str, Any]:
     contracts.validate("directions_collect", ws)
     return {
         "step": "directions_collect",
-        "mode": "real",
         "model": "yes",
         "entry_screens": [s["id"] for s in entry_screens],
         "task": task_text,
@@ -226,14 +222,6 @@ def _parse_reply_json(raw: str) -> dict[str, Any] | None:
 
 def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Step 3 of Stage 4 (directions_check): validate 04-directions/draft.json and write check.json."""
-    if ws.mode == "fixture":
-        return {
-            "step": "directions_check",
-            "mode": "fixture",
-            "verdict": "ok",
-            "problems": [],
-            "revise_task": "",
-        }
     dir_folder = ws.folder("directions")
     dir_folder.mkdir(parents=True, exist_ok=True)
     draft_path = dir_folder / "draft.json"
@@ -261,7 +249,6 @@ def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
     revise_task = build_revise_task(ws, draft, report["problems"]) if report["verdict"] == "retry" else ""
     return {
         "step": "directions_check",
-        "mode": "real",
         "verdict": report["verdict"],
         "counts": report["counts"],
         "problems": report["problems"],
@@ -548,9 +535,6 @@ def measure_direction_checks(
 
 def run(ws: Workspace, data: str = "") -> dict[str, Any]:
     """Step 5 of Stage 4 (directions): compile directions into 04-directions/<id>/ and run quick measured checks."""
-    if ws.mode == "fixture":
-        return run_fixture(ws, "directions")
-
     ws.mark("directions", "running")
     dir_folder = ws.folder("directions")
     dir_folder.mkdir(parents=True, exist_ok=True)
@@ -637,7 +621,6 @@ def run(ws: Workspace, data: str = "") -> dict[str, Any]:
     ws.mark("directions", "done", directions=len(compiled_entries))
     return {
         "step": "directions",
-        "mode": "real",
         "directions": [e["id"] for e in compiled_entries],
         "blockers": blockers_by_dir,
         "recommended": directions_doc.get("recommended"),

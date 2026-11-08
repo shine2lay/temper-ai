@@ -74,7 +74,7 @@ def grade_workspace(workspace_dir: str | Path, lab_cases_dir: str | Path = DEFAU
 
 
 def run_legacy_fixture_all(case_dir: str | Path, workspace_dir: str | Path) -> dict[str, Any]:
-    """Run all 8 stages + 2 gates through the legacy `mode="fixture"` path for side-by-side comparison."""
+    """Materialize a frozen known case into `workspace_dir` and validate all 8 stages + 2 gates for parity comparison."""
     _ensure_design_bin_on_path()
     import design_app_screen as cli
     from app_screen import contracts, known_case, workspace
@@ -82,26 +82,50 @@ def run_legacy_fixture_all(case_dir: str | Path, workspace_dir: str | Path) -> d
     ws_path = Path(workspace_dir).expanduser().resolve()
     ws_path.mkdir(parents=True, exist_ok=True)
     known_case.pack(case_dir, ws_path)
+    case_path = Path(case_dir).expanduser().resolve()
+    for folder in (
+        "01-request",
+        "02-existing",
+        "03-ground",
+        "04-directions",
+        "05-build",
+        "06-checks",
+        "07-show",
+        "08-handoff",
+    ):
+        src = case_path / folder
+        if src.is_dir():
+            shutil.copytree(src, ws_path / folder, dirs_exist_ok=True)
 
     ws = workspace.Workspace(ws_path)
+    ws.next_round()
     results: dict[str, Any] = {}
     for st in ("intake", "existing", "ground", "directions"):
-        results[st] = cli.run_step(st, str(ws_path), None, "fixture", "")
+        files = contracts.validate(st, ws)
+        ws.mark(st, "done")
+        results[st] = {"step": st, "valid": True, "checked": len(files)}
     dir_ans = json.dumps(load_gate_answer("direction", case_dir=case_dir, workspace_dir=ws_path), ensure_ascii=False)
-    results["gate_direction"] = cli.run_step("gate_direction", str(ws_path), None, "fixture", dir_ans)
+    results["gate_direction"] = cli.run_step("gate_direction", str(ws_path), None, dir_ans)
     for st in ("build", "checks", "review", "show"):
-        results[st] = cli.run_step(st, str(ws_path), None, "fixture", "")
+        files = contracts.validate(st, ws)
+        ws.mark(st, "done")
+        entry: dict[str, Any] = {"step": st, "valid": True, "checked": len(files)}
+        if st == "review":
+            rev_doc = json.loads((ws.round_folder(1) / "review.json").read_text(encoding="utf-8"))
+            entry["verdict"] = rev_doc["verdict"]
+        results[st] = entry
     fin_ans = json.dumps(load_gate_answer("final", case_dir=case_dir, workspace_dir=ws_path), ensure_ascii=False)
-    results["gate_final"] = cli.run_step("gate_final", str(ws_path), None, "fixture", fin_ans)
-    results["gate_final_next"] = cli.run_step("gate_final_next", str(ws_path), None, "fixture", "")
-    results["handoff"] = cli.run_step("handoff", str(ws_path), None, "fixture", "")
+    results["gate_final"] = cli.run_step("gate_final", str(ws_path), None, fin_ans)
+    results["gate_final_next"] = cli.run_step("gate_final_next", str(ws_path), None, "")
+    files_handoff = contracts.validate("handoff", ws)
+    ws.mark("handoff", "done")
+    results["handoff"] = {"step": "handoff", "valid": True, "checked": len(files_handoff)}
     contract_counts: dict[str, int] = {}
     for st in workspace.STAGES + ("gate_direction", "review", "gate_final"):
         contract_counts[st] = len(contracts.validate(st, ws))
 
     return {
         "ok": True,
-        "mode": ws.mode,
         "workspace": str(ws_path),
         "cost_usd": 0.0,
         "live_model_calls": 0,
@@ -235,8 +259,6 @@ def compare_parity(
             "parity": all_stages_match and all_grades_match,
             "all_stages_match": all_stages_match,
             "all_grades_match": all_grades_match,
-            "fixture_mode": fixture_run["mode"],
-            "harness_mode": harness_run["mode"],
             "cost_usd": {"fixture": 0.0, "harness": 0.0},
             "live_model_calls": {"fixture": 0, "harness": 0},
             "stage_parity": stage_parity,

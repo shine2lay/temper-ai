@@ -214,7 +214,7 @@ def capture(product: str | Path, workspace: str | Path, store: Path | None = Non
 
     Path(workspace).mkdir(parents=True, exist_ok=True)
     ws = Workspace(workspace)
-    ws.start(app["product"], "real")
+    ws.start(app["product"])
     folder = ws.folder("existing")
     out_dir = folder / CAPTURES
     if out_dir.exists():

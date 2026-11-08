@@ -1,7 +1,5 @@
 """Stage 7 (07-show/): self-contained Show&Tell bundle, showtell.json, comments.json, and deterministic check.
 
-In fixture mode: copies known-case files via run_fixture(ws, "show").
-In real mode:
 1. Validates upstream prerequisites loud and fast:
    - 05-build/index.html, 05-build/build.json, 05-build/fixture.json, and
      06-checks/round-<ws.round>/review.json must exist,
@@ -31,7 +29,6 @@ from typing import Any
 
 from . import contracts
 from .contracts import ContractError
-from .fixture_stage import run_fixture
 from .show_check import assert_show_clean
 from .workspace import Workspace
 
@@ -489,9 +486,6 @@ def _resolve_targeted_comments_on_rerun(
 
 
 def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
-    if ws.mode == "fixture":
-        return run_fixture(ws, "show")
-
     prereq = validate_prerequisites(ws)
     round_num: int = prereq["round"]
     show_dir = ws.folder("show")
@@ -552,7 +546,6 @@ def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
     return {
         "status": "ok",
         "stage": "show",
-        "mode": "real",
         "round": round_num,
         "doc_id": doc_id,
         "version": showtell_doc["version"],

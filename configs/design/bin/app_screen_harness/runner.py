@@ -22,7 +22,7 @@ from .cases import (
     prepare_intake_inputs,
     prepare_workspace,
 )
-from .replay import draft_for_step, synthesize_measures_for_workspace
+from .replay import draft_for_step, replay_ci_runner, synthesize_measures_for_workspace
 
 HERE = Path(__file__).resolve().parent
 DESIGN_BIN = HERE.parent
@@ -143,11 +143,25 @@ def run_step(
     """
     _ensure_design_bin_on_path()
     import design_app_screen as cli
-    from app_screen import checks
+    from app_screen import app_instance, checks
 
     ws_path = Path(workspace_dir).expanduser().resolve()
     prod = product or "rollcall"
     ensure_upstream_for_stage(step, ws_path, product=prod, case_name=case_name)
+
+    with patch.object(app_instance, "GH_RUNNER", replay_ci_runner):
+        return _run_step_inner(cli, checks, step, ws_path, product, raw, case_name)
+
+
+def _run_step_inner(
+    cli: Any,
+    checks: Any,
+    step: str,
+    ws_path: Path,
+    product: str | None,
+    raw: str,
+    case_name: str,
+) -> dict[str, Any]:
 
     if step in ("gate_direction", "gate_final"):
         gate_name = step.removeprefix("gate_")

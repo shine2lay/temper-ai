@@ -150,7 +150,10 @@ SCHEMAS: dict[str, dict] = {
         {"what": TEXT, "screen": ID, "name": TEXT, "height": {"type": "integer", "minimum": 1},
          "account": {"type": ["string", "null"]}, "commit": TEXT}))},
         {"notes": {"type": "object"}, "product": ID, "totals": {"type": "object"},
-         "base_url": TEXT, "commit": TEXT, "version": TEXT}),
+         "base_url": TEXT, "commit": TEXT, "short_commit": TEXT, "ref": TEXT,
+         "reused": {"type": "boolean"}, "ci_conclusion": TEXT,
+         "allow_red_commit": {"type": "boolean"}, "ci_failing_check": {"type": ["string", "null"]},
+         "version": TEXT}),
     # The model's draft (existing_read / existing_revise): journeys naming the problems they hit, each problem
     # observed and tied to captures by refs the script checks against audit.json and texts.json.
     "existing_draft": obj({"journeys": items(obj(
@@ -265,7 +268,11 @@ SCHEMAS: dict[str, dict] = {
                         "priority": {"enum": ["must", "should", "could", "wont"]}},
                        {"reason": TEXT, "check": ID, "suggestion": TEXT}) | {
                        "if": {"properties": {"priority": {"const": "wont"}}}, "then": {"required": ["reason"]}},
-                       least=0)}, {"source": TEXT}),
+                       least=0)},
+                  {"source": TEXT, "commit": TEXT, "short_commit": TEXT, "ref": TEXT,
+                   "reused": {"type": "boolean"}, "ci_conclusion": TEXT,
+                   "allow_red_commit": {"type": "boolean"},
+                   "ci_failing_check": {"type": ["string", "null"]}}),
     # 07-show
     "showtell": obj({"doc_id": {"type": "string", "pattern": "^d_[a-z0-9]{6,20}$"},
                      "version": {"type": "integer", "minimum": 1},
@@ -285,7 +292,10 @@ SCHEMAS: dict[str, dict] = {
                        "problems": items(TEXT, least=0)}),
     # 08-handoff
     "design_file": obj({"kind": {"enum": ["penpot", "html-prototype"]}, "location": TEXT, "editable": {"type": "boolean"}},
-                       {"note": TEXT}),
+                       {"note": TEXT, "commit": TEXT, "short_commit": TEXT, "ref": TEXT,
+                        "reused": {"type": "boolean"}, "ci_conclusion": TEXT,
+                        "allow_red_commit": {"type": "boolean"},
+                        "ci_failing_check": {"type": ["string", "null"]}}),
     "followup": obj({"items": items(obj(
         {"id": ID, "what": TEXT, "owner_role": ID, "source": TEXT},
         {"screen": ID, "detail": TEXT}), least=0)}),
@@ -796,6 +806,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "review_collect": (
         "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/capture.json",
         "02-existing/journeys.json",
         "03-ground/inventory.json",
         "03-ground/fixture.json",
@@ -822,6 +834,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     "review_read": (),
     "review_check": (
         "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/capture.json",
         "03-ground/inventory.json",
         "03-ground/fixture.json",
         "03-ground/design-files/DESIGN.md",
@@ -847,6 +861,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "review_revise": (
         "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/capture.json",
         "03-ground/inventory.json",
         "03-ground/fixture.json",
         "03-ground/design-files/DESIGN.md",
@@ -871,6 +887,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "review": (
         "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/capture.json",
         "03-ground/inventory.json",
         "03-ground/fixture.json",
         "03-ground/design-files/DESIGN.md",
@@ -948,6 +966,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "handoff": (
         "01-request/requirements.json",
+        "02-existing/audit.json",
+        "02-existing/capture.json",
         "02-existing/journeys.json",
         "03-ground/inventory.json",
         "03-ground/fixture.json",

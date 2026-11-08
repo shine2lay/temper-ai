@@ -15,6 +15,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import ssl
 import subprocess
@@ -33,6 +34,9 @@ CAPTURE_JS = HERE / "existing_capture.mjs"
 MEASURE_JS = HERE / "measure_in_page.js"
 LIVE_HOSTS = frozenset({"rollcall.wai2shine.com"})
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+FULL_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?\s*$")
+GH_CANDIDATES = ("/home/shinelay/.local/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh")
 
 
 class AppInstanceError(RuntimeError):
@@ -102,6 +106,370 @@ def verify_stack_commit(stack_commit: str | None, health_commit: str | None, *, 
             f"stack_up_ref commit {sc!r} != health commit {hc!r}"
         )
     return hc
+
+
+def parse_bool(value: Any) -> bool:
+    """Parse a workflow boolean input from bool, int, or string ('true', '1', 'yes')."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return False
+
+
+def _extract_github_repo_from_git_dir(repo_dir: Path) -> str | None:
+    """Read <repo>/.git/config (or worktree gitdir config) without invoking git subprocess."""
+    git_entry = repo_dir / ".git"
+    config_candidates: list[Path] = []
+    if git_entry.is_dir():
+        config_candidates.append(git_entry / "config")
+    elif git_entry.is_file():
+        try:
+            first = git_entry.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            first = ""
+        if first.startswith("gitdir:"):
+            raw_gitdir = first.split(":", 1)[1].strip()
+            gitdir = Path(raw_gitdir) if Path(raw_gitdir).is_absolute() else (repo_dir / raw_gitdir).resolve()
+            config_candidates.append(gitdir / "config")
+            if gitdir.parent.name == "worktrees":
+                config_candidates.append(gitdir.parent.parent / "config")
+    for cfg in config_candidates:
+        if not cfg.is_file():
+            continue
+        try:
+            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("url") and "=" in stripped:
+                    rhs = stripped.split("=", 1)[1].strip()
+                    m = GITHUB_REMOTE_RE.search(rhs)
+                    if m:
+                        return m.group(1)
+        except OSError:
+            continue
+    return None
+
+
+def resolve_github_repo(product: str, repo_path: str | Path | None = None) -> str:
+    """Resolve the GitHub '<owner>/<name>' slug for `product` without invoking git."""
+    env_override = os.environ.get("APP_SCREEN_GITHUB_REPO", "").strip()
+    if env_override and "/" in env_override:
+        return env_override
+    prod = str(product or "rollcall").strip() or "rollcall"
+    if "/" in prod and not Path(prod).exists():
+        return prod
+    candidates: list[Path] = []
+    if repo_path is not None:
+        candidates.append(Path(repo_path).expanduser())
+    try:
+        reg = product_app.registry()
+        mapped = (reg.get("repos") or {}).get(prod)
+        if mapped:
+            candidates.append(Path(str(mapped)).expanduser())
+    except Exception:
+        pass
+    candidates.append(Path.home() / prod)
+    for cand in candidates:
+        slug = _extract_github_repo_from_git_dir(cand)
+        if slug:
+            return slug
+    return f"shine2lay/{prod}"
+
+
+def _github_token_from_env() -> str:
+    """Locate a GitHub token from env or sibling PID 1 environ in temper-ai-worker without printing it."""
+    for key in ("GH_TOKEN", "GITHUB_TOKEN", "TEMPER_GITHUB_TOKEN", "GITHUB_TOKEN_DESIGN"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            return val
+    proc_root = Path("/proc")
+    if proc_root.is_dir():
+        for entry in sorted(proc_root.iterdir()):
+            if not entry.name.isdigit():
+                continue
+            try:
+                raw = (entry / "environ").read_bytes()
+            except OSError:
+                continue
+            for item in raw.split(b"\0"):
+                for prefix in (b"GH_TOKEN=", b"GITHUB_TOKEN=", b"TEMPER_GITHUB_TOKEN="):
+                    if item.startswith(prefix):
+                        tok = item[len(prefix):].decode("utf-8", errors="ignore").strip()
+                        if tok:
+                            return tok
+    return ""
+
+
+def _find_gh_binary() -> str:
+    found = shutil.which("gh")
+    if found:
+        return found
+    for cand in GH_CANDIDATES:
+        if Path(cand).is_file() and os.access(cand, os.X_OK):
+            return cand
+    raise AppInstanceError("gh CLI binary not found on PATH or /home/shinelay/.local/bin/gh")
+
+
+def _default_gh_runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    gh_bin = _find_gh_binary()
+    actual_cmd = [gh_bin, *cmd[1:]] if cmd and cmd[0] == "gh" else list(cmd)
+    env = dict(os.environ)
+    tok = _github_token_from_env()
+    if tok and not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
+        env["GH_TOKEN"] = tok
+    return subprocess.run(
+        actual_cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+        check=False,
+    )
+
+
+GH_RUNNER: Any = _default_gh_runner
+
+
+def _invoke_gh(runner: Any, cmd: list[str], *, commit: str, repo: str, secrets_list: list[str]) -> tuple[int, str, str]:
+    try:
+        res = runner(cmd)
+    except AppInstanceError:
+        raise
+    except Exception as exc:
+        clean = _scrub(str(exc), secrets_list)
+        raise AppInstanceError(f"gh command failed for commit {commit} in {repo}: {clean}") from None
+
+    if isinstance(res, subprocess.CompletedProcess):
+        return (
+            int(res.returncode),
+            _scrub(res.stdout or "", secrets_list),
+            _scrub(res.stderr or "", secrets_list),
+        )
+    if isinstance(res, tuple):
+        if len(res) == 3:
+            rc, out, err = res
+            return int(rc), _scrub(str(out or ""), secrets_list), _scrub(str(err or ""), secrets_list)
+        if len(res) == 2:
+            rc, out = res
+            return int(rc), _scrub(str(out or ""), secrets_list), ""
+    if isinstance(res, (list, dict)):
+        return 0, json.dumps(res), ""
+    if isinstance(res, str):
+        return 0, _scrub(res, secrets_list), ""
+    raise AppInstanceError(f"unexpected gh runner return type {type(res).__name__} for commit {commit} in {repo}")
+
+
+def verify_commit_ci_status(
+    commit: str | None,
+    *,
+    product: str = "rollcall",
+    github_repo: str | None = None,
+    allow_red_commit: bool | str = False,
+    runner: Any = None,
+) -> dict[str, Any]:
+    """Deterministic GitHub CI check for `commit` via `gh` CLI.
+
+    Resolves the 40-char commit SHA, queries `gh run list --repo <owner/name> --commit <sha>
+    --json headSha,conclusion,status,name,workflowName,databaseId`, and fails loud naming the
+    commit and failing check unless `conclusion == 'success'` or `allow_red_commit` is True.
+    Treats 'no CI run found' and 'in progress' as not-green, and never fails open on a `gh` error.
+    """
+    raw_commit = str(commit or "").strip()
+    if not raw_commit or not COMMIT_RE.match(raw_commit):
+        raise AppInstanceError(f"CI status check requires a valid commit SHA (got {commit!r})")
+
+    allow_red = parse_bool(allow_red_commit)
+    repo = (github_repo or resolve_github_repo(product)).strip()
+    eff_runner = runner if runner is not None else GH_RUNNER
+    tok = _github_token_from_env()
+    secrets_list = [tok] if tok else []
+
+    full_commit = raw_commit.lower()
+    prefetched_runs: list[dict[str, Any]] | None = None
+    if len(full_commit) < 40:
+        rc, out, err = _invoke_gh(
+            eff_runner,
+            ["gh", "api", f"repos/{repo}/commits/{full_commit}", "--jq", ".sha"],
+            commit=full_commit,
+            repo=repo,
+            secrets_list=secrets_list,
+        )
+        if rc != 0:
+            detail = (err or out).strip()[:300] or f"exit {rc}"
+            raise AppInstanceError(
+                f"gh failed to resolve 40-char commit SHA for {raw_commit!r} in {repo}: {detail}"
+            )
+        candidate = out.strip()
+        if FULL_COMMIT_RE.match(candidate):
+            full_commit = candidate.lower()
+        elif candidate.startswith("["):
+            try:
+                parsed = json.loads(candidate)
+            except ValueError as exc:
+                raise AppInstanceError(
+                    f"gh returned invalid JSON resolving commit {raw_commit!r} in {repo}: {exc}"
+                ) from None
+            if isinstance(parsed, list):
+                prefetched_runs = [r for r in parsed if isinstance(r, dict)]
+                for r in prefetched_runs:
+                    h = str(r.get("headSha") or "").strip().lower()
+                    if FULL_COMMIT_RE.match(h) and h.startswith(full_commit):
+                        full_commit = h
+                        break
+        else:
+            raise AppInstanceError(
+                f"gh did not return a 40-char commit SHA for {raw_commit!r} in {repo}: {candidate[:120]!r}"
+            )
+
+    if prefetched_runs is None:
+        rc, out, err = _invoke_gh(
+            eff_runner,
+            [
+                "gh",
+                "run",
+                "list",
+                "--repo",
+                repo,
+                "--commit",
+                full_commit,
+                "--json",
+                "headSha,conclusion,status,name,workflowName,databaseId",
+            ],
+            commit=full_commit,
+            repo=repo,
+            secrets_list=secrets_list,
+        )
+        if rc != 0:
+            detail = (err or out).strip()[:300] or f"exit {rc}"
+            raise AppInstanceError(f"gh run list failed for commit {full_commit} in {repo}: {detail}")
+        try:
+            runs_raw = json.loads(out or "")
+        except ValueError as exc:
+            raise AppInstanceError(
+                f"gh run list returned invalid JSON for commit {full_commit} in {repo}: {exc}"
+            ) from None
+        if not isinstance(runs_raw, list) or any(not isinstance(item, dict) for item in runs_raw):
+            raise AppInstanceError(
+                f"gh run list must return a JSON list of objects for commit {full_commit} in {repo}"
+            )
+        prefetched_runs = runs_raw
+
+    matching_runs: list[dict[str, Any]] = []
+    for item in prefetched_runs:
+        head_sha = str(item.get("headSha") or "").strip().lower()
+        if not head_sha or head_sha == full_commit or head_sha.startswith(raw_commit.lower()) or full_commit.startswith(head_sha):
+            matching_runs.append(item)
+
+    def _run_check_name(run_obj: dict[str, Any]) -> str:
+        for key in ("failingCheck", "checkName", "jobName"):
+            val = str(run_obj.get(key) or "").strip()
+            if val:
+                return val
+        jobs = run_obj.get("jobs")
+        if isinstance(jobs, list):
+            for job in jobs:
+                if isinstance(job, dict):
+                    j_conc = str(job.get("conclusion") or "").strip().lower()
+                    j_stat = str(job.get("status") or "completed").strip().lower()
+                    if j_stat != "completed" or j_conc not in ("success", "skipped", "neutral", ""):
+                        j_name = str(job.get("name") or "").strip()
+                        if j_name:
+                            return j_name
+        db_id = run_obj.get("databaseId")
+        if db_id:
+            try:
+                v_rc, v_out, _ = _invoke_gh(
+                    eff_runner,
+                    ["gh", "run", "view", str(db_id), "--repo", repo, "--json", "jobs"],
+                    commit=full_commit,
+                    repo=repo,
+                    secrets_list=secrets_list,
+                )
+                if v_rc == 0 and (v_out or "").strip().startswith("{"):
+                    v_doc = json.loads(v_out)
+                    for job in v_doc.get("jobs") or []:
+                        if isinstance(job, dict):
+                            j_conc = str(job.get("conclusion") or "").strip().lower()
+                            if j_conc and j_conc not in ("success", "skipped", "neutral"):
+                                j_name = str(job.get("name") or "").strip()
+                                if j_name:
+                                    return j_name
+            except Exception:
+                pass
+        return str(run_obj.get("name") or run_obj.get("workflowName") or "ci").strip() or "ci"
+
+    if not matching_runs:
+        ci_conclusion = "no_ci_run"
+        failing_check: str | None = "no CI run found"
+        if not allow_red:
+            raise AppInstanceError(
+                f"CI check failed for commit {full_commit} in {repo}: no CI run found "
+                f"(pass allow_red_commit=true to proceed)"
+            )
+    else:
+        failed_runs = [
+            r
+            for r in matching_runs
+            if str(r.get("status") or "completed").strip().lower() == "completed"
+            and str(r.get("conclusion") or "").strip().lower() not in ("", "success", "skipped", "neutral")
+        ]
+        in_progress_runs = [
+            r
+            for r in matching_runs
+            if str(r.get("status") or "completed").strip().lower() != "completed"
+            or not str(r.get("conclusion") or "").strip()
+        ]
+        success_runs = [
+            r
+            for r in matching_runs
+            if str(r.get("status") or "completed").strip().lower() == "completed"
+            and str(r.get("conclusion") or "").strip().lower() == "success"
+        ]
+
+        if failed_runs:
+            bad = failed_runs[0]
+            ci_conclusion = str(bad.get("conclusion") or "failure").strip().lower()
+            failing_check = _run_check_name(bad)
+            if not allow_red:
+                raise AppInstanceError(
+                    f"CI check failed for commit {full_commit} in {repo}: "
+                    f"conclusion={ci_conclusion!r} on failing check {failing_check!r} "
+                    f"(pass allow_red_commit=true to proceed)"
+                )
+        elif in_progress_runs:
+            pending = in_progress_runs[0]
+            ci_conclusion = "in_progress"
+            failing_check = _run_check_name(pending)
+            if not allow_red:
+                raise AppInstanceError(
+                    f"CI check failed for commit {full_commit} in {repo}: "
+                    f"check {failing_check!r} is in progress (status={pending.get('status')!r}; "
+                    f"pass allow_red_commit=true to proceed)"
+                )
+        elif not success_runs:
+            first = matching_runs[0]
+            ci_conclusion = str(first.get("conclusion") or "no_ci_run").strip().lower()
+            failing_check = _run_check_name(first)
+            if not allow_red:
+                raise AppInstanceError(
+                    f"CI check failed for commit {full_commit} in {repo}: "
+                    f"conclusion={ci_conclusion!r} on check {failing_check!r} "
+                    f"(pass allow_red_commit=true to proceed)"
+                )
+        else:
+            ci_conclusion = "success"
+            failing_check = None
+
+    return {
+        "commit": full_commit,
+        "short_commit": full_commit[:12],
+        "ci_conclusion": ci_conclusion,
+        "allow_red_commit": allow_red,
+        "ci_failing_check": failing_check,
+        "repo": repo,
+    }
 
 
 def _resolve_gateway_ip(hostname: str, timeout: float = 5.0) -> str | None:

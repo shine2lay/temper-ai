@@ -16,7 +16,7 @@ RECORDED_ROOT = HERE / "recorded"
 MODEL_STEPS: tuple[str, ...] = ("intake", "existing", "ground", "directions", "build", "review")
 STACK_STEPS: tuple[str, ...] = ("stack_up_ref", "stack_seed", "stack_down")
 WORKSPACE_STEPS: tuple[str, ...] = ("workspace_startup", "workspace_cleanup")
-BENCH_DEFAULT_COMMIT = "81117dd000000000000000000000000000000000"
+BENCH_DEFAULT_COMMIT = "81117dd509f2272d3f2fb36af16f118819efb0f4"
 
 
 class HarnessReplayError(ValueError):
@@ -314,9 +314,44 @@ def draft_for_step(step: str, ws_path: str | Path, case_name: str = "rollcall-20
     raise HarnessReplayError(f"unknown model-boundary step {step!r}")
 
 
-def replay_stack_step(step: str, ws_path: str | Path, product: str = "rollcall") -> dict[str, Any]:
+def replay_ci_runner(cmd: list[str]) -> tuple[int, str, str]:
+    """Deterministic outside-harness stub for `gh` CI lookups in tests and harness runs."""
+    if len(cmd) >= 3 and cmd[1] == "api" and "/commits/" in cmd[2]:
+        ref_part = cmd[2].split("/commits/", 1)[1].split("/", 1)[0].strip()
+        if len(ref_part) == 40:
+            return 0, f"{ref_part}\n", ""
+        if BENCH_DEFAULT_COMMIT.startswith(ref_part.lower()):
+            return 0, f"{BENCH_DEFAULT_COMMIT}\n", ""
+        padded = (ref_part.lower() + ("0" * 40))[:40]
+        return 0, f"{padded}\n", ""
+    if len(cmd) >= 3 and cmd[1] == "run" and cmd[2] == "list":
+        sha = BENCH_DEFAULT_COMMIT
+        if "--commit" in cmd:
+            idx = cmd.index("--commit")
+            if idx + 1 < len(cmd):
+                sha = cmd[idx + 1]
+        payload = [
+            {
+                "headSha": sha,
+                "conclusion": "success",
+                "status": "completed",
+                "name": "ci",
+                "databaseId": 1001,
+            }
+        ]
+        return 0, json.dumps(payload), ""
+    return 0, "[]", ""
+
+
+def replay_stack_step(
+    step: str,
+    ws_path: str | Path,
+    product: str = "rollcall",
+    ref: str = "origin/master",
+) -> dict[str, Any]:
     """Return the deterministic harness output for Systems' stack lifecycle agents in _bench."""
     prod = (product or "rollcall").strip() or "rollcall"
+    eff_ref = (ref or "origin/master").strip() or "origin/master"
     env_name = f"{prod}-dev-design"
     ws_p = Path(ws_path).expanduser().resolve()
     audit_path = ws_p / "02-existing/audit.json"
@@ -337,7 +372,7 @@ def replay_stack_step(step: str, ws_path: str | Path, product: str = "rollcall")
             "url": url,
             "commit": commit,
             "short_commit": commit[:12],
-            "ref": "origin/master",
+            "ref": eff_ref,
             "product": prod,
             "reused": True,
         }

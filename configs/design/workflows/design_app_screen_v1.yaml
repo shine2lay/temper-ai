@@ -25,9 +25,12 @@ workflow:
     changes: back to build as targeted edits, at most twice) -> handoff (spec per screen, design file,
     follow-ups). Each gate answer records choice, decided_by (owner or design), the owner's words
     verbatim, source and reason in gate_<name>.json.
+  on_failure: hold
   inputs:
     product: {type: string, required: true}
     request_json: {type: string, default: ""}
+    ref: {type: string, default: origin/master}
+    allow_red_commit: {type: boolean, default: false}
   outputs:
     direction: gate_direction.structured.choice
     direction_decided_by: gate_direction.structured.decided_by
@@ -45,15 +48,29 @@ workflow:
         product: input.product
         run_slug: design
         task_name: input.product
-        ref: origin/master
+        ref: input.ref
         department: design
         exclude_dirs: '[".temper/design"]'
+
+    # Stack provisioning lifecycle (Systems #114, Design #237/#240): bring up and seed the isolated product
+    # stack at input.ref as top-level set-up nodes before Stage 1, matched with stack_down (undoes).
+    - name: stack_up_ref
+      type: agent
+      agent: stack_up_ref
+      depends_on: [workspace_startup]
+      input_map: {product: input.product, ref: input.ref, slug: design}
+
+    - name: stack_seed
+      type: agent
+      agent: stack_seed
+      depends_on: [stack_up_ref]
+      input_map: {env_name: stack_up_ref.structured.env_name, product: input.product, slug: design}
 
     # Stage 1, intake (built, Design #206): the sources checked -> the model drafts requirements and
     # questions -> measured checks -> one revision only if a check failed -> final checks, outputs.
     - name: intake
       type: stage
-      depends_on: [workspace_startup]
+      depends_on: [stack_seed]
       input_map:
         product: input.product
         request_json: input.request_json
@@ -86,8 +103,9 @@ workflow:
           depends_on: [intake_revise]
           input_map: {step: intake, product: input.product, workspace_path: input.workspace_path}
 
-    # Stage 2, existing (built, Design #207/#233/#237): stack_up_ref -> stack_seed -> captures & sheet ->
-    # fenced model read -> measured checks -> optional revision -> final checks, 02-existing/journeys.json.
+    # Stage 2, existing (built, Design #207/#233/#237/#240): captures & sheet against stack_up_ref ->
+    # commit & GitHub CI check -> fenced model read -> measured checks -> optional revision -> final checks,
+    # 02-existing/journeys.json.
     - name: existing
       type: stage
       depends_on: [intake]
@@ -95,28 +113,28 @@ workflow:
         product: input.product
         credentials: input.credentials
         workspace_path: workspace_startup.structured.department_path
+        base_url: stack_up_ref.structured.base_url
+        stack_commit: stack_up_ref.structured.commit
+        stack_short_commit: stack_up_ref.structured.short_commit
+        stack_ref: stack_up_ref.structured.ref
+        stack_env_name: stack_up_ref.structured.env_name
+        stack_reused: stack_up_ref.structured.reused
+        allow_red_commit: input.allow_red_commit
       nodes:
-        - name: stack_up_ref
-          type: agent
-          agent: stack_up_ref
-          input_map: {product: input.product, ref: origin/master, slug: design}
-        - name: stack_seed
-          type: agent
-          agent: stack_seed
-          depends_on: [stack_up_ref]
-          input_map: {env_name: stack_up_ref.structured.env_name, product: input.product, slug: design}
         - name: existing_collect
           type: agent
           agent: design_app_screen_stage_v1
-          depends_on: [stack_seed]
           input_map:
             step: existing_collect
             product: input.product
             workspace_path: input.workspace_path
-            base_url: stack_up_ref.structured.base_url
-            stack_commit: stack_up_ref.structured.commit
-            stack_env_name: stack_up_ref.structured.env_name
-            stack_reused: stack_up_ref.structured.reused
+            base_url: input.base_url
+            stack_commit: input.stack_commit
+            stack_short_commit: input.stack_short_commit
+            stack_ref: input.stack_ref
+            stack_env_name: input.stack_env_name
+            stack_reused: input.stack_reused
+            allow_red_commit: input.allow_red_commit
             credentials: input.credentials
         - name: existing_sheet
           type: agent
@@ -346,21 +364,24 @@ workflow:
           agent: design_app_screen_stage_v1
           input_map: {step: handoff, product: input.product, workspace_path: input.workspace_path}
 
-    # Stack teardown (Design #237): runs on both success and failure to guarantee zero leaked dev stacks/volumes.
+    # Stack teardown (Design #237/#240): declared clean-up for stack_up_ref + stack_seed; held on failure
+    # when workflow on_failure is hold so the provisioned instance stays up for retry.
     - name: stack_down
       type: agent
       agent: stack_down
       depends_on: [handoff]
       run_after_failure: true
+      undoes: [stack_up_ref, stack_seed]
       input_map: {product: input.product, slug: design}
 
-    # Outer workspace cleanup (Systems #119, Design #238): refuses dirty product worktree (force=false)
-    # and removes the worktree, branch, and claim on completion or failure.
+    # Outer workspace cleanup (Systems #119, Design #238/#240): declared clean-up for workspace_startup;
+    # refuses dirty product worktree (force=false) and is held on failure when on_failure is hold.
     - name: workspace_cleanup
       type: agent
       agent: workspace_cleanup
       depends_on: [handoff]
       run_after_failure: true
+      undoes: [workspace_startup]
       input_map:
         product: input.product
         run_slug: design

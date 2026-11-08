@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .replay import load_recorded_json
+from .replay import BENCH_DEFAULT_COMMIT, load_recorded_json
 
 HERE = Path(__file__).resolve().parent
 DESIGN_BIN = HERE.parent
@@ -211,6 +211,9 @@ def prepare_existing_inputs(ws_path: Path, case_name: str = "rollcall-20261104")
     audit_doc = {
         "source": "RollCall at 81117dd, captured look-only on loopback by design_app_screen.py capture",
         "product": app_doc["product"],
+        "commit": BENCH_DEFAULT_COMMIT,
+        "ci_conclusion": "success",
+        "allow_red_commit": False,
         "notes": existing_measures.NOTES,
         "screens": screens,
         "totals": cited_totals,
@@ -225,6 +228,12 @@ def prepare_existing_inputs(ws_path: Path, case_name: str = "rollcall-20261104")
     write_json(ex_dir / "capture.json", {
         "product": app_doc["product"],
         "source": audit_doc["source"],
+        "commit": BENCH_DEFAULT_COMMIT,
+        "short_commit": BENCH_DEFAULT_COMMIT[:7],
+        "ref": "origin/master",
+        "reused": False,
+        "ci_conclusion": "success",
+        "allow_red_commit": False,
         "captures": len(screens),
         "failed": [],
     })

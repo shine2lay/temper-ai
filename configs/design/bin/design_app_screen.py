@@ -277,6 +277,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--repo", help="product repository path containing .temper/design/app.yaml")
     parser.add_argument("--base-url", help="capture/prepare: provisioned product instance base URL")
     parser.add_argument("--stack-commit", help="capture/prepare/existing_collect: stack_up_ref commit SHA to verify against health")
+    parser.add_argument("--stack-ref", help="existing_collect: git ref resolved by stack_up_ref")
+    parser.add_argument("--allow-red-commit", help="existing_collect: allow proceeding when GitHub CI conclusion is not success")
     parser.add_argument("--credentials", help="capture/prepare: JSON object or @file mapping account -> password")
     parser.add_argument("--version", help="capture/prepare: optional version override")
     parser.add_argument("--store-dir", help="prepare/store/validate-store: store directory path")
@@ -306,6 +308,10 @@ def main(argv: list[str] | None = None) -> None:
                 os.environ["APP_SCREEN_BASE_URL"] = args.base_url
             if args.stack_commit:
                 os.environ["APP_SCREEN_STACK_COMMIT"] = args.stack_commit
+            if args.stack_ref:
+                os.environ["APP_SCREEN_STACK_REF"] = args.stack_ref
+            if args.allow_red_commit is not None:
+                os.environ["APP_SCREEN_ALLOW_RED_COMMIT"] = str(args.allow_red_commit)
             if args.credentials:
                 os.environ["APP_SCREEN_CREDENTIALS"] = args.credentials
             result = run_step(args.step, args.workspace, args.product, os.environ.get("APP_SCREEN_DATA", ""))

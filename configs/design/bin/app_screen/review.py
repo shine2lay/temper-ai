@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import struct
 import sys
@@ -25,7 +26,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from . import contracts, existing_sheet, model_step, review_check
+from . import app_instance, contracts, existing_sheet, model_step, review_check
 from .workspace import Workspace
 
 
@@ -618,6 +619,57 @@ def _merge_findings(
     return merged
 
 
+def _load_stack_metadata(ws: Workspace) -> dict[str, Any]:
+    """Read commit & CI status metadata via the Workspace accessor (run.json, capture.json, audit.json)."""
+    ws_step = ws.for_step(ws.step or "review")
+    meta: dict[str, Any] = {}
+    if ws.run_file.is_file():
+        try:
+            run_doc = json.loads(ws_step.read_text(ws.run_file))
+            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+                meta.update(run_doc["stack"])
+        except (OSError, json.JSONDecodeError):
+            pass
+    for rel in ("02-existing/capture.json", "02-existing/audit.json"):
+        p = ws.path / rel
+        if p.is_file():
+            try:
+                doc = json.loads(ws_step.read_text(p))
+                if isinstance(doc, dict):
+                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+                        if k not in meta and doc.get(k) is not None:
+                            meta[k] = doc[k]
+            except (OSError, json.JSONDecodeError):
+                pass
+    env_commit = os.environ.get("APP_SCREEN_STACK_COMMIT", "").strip()
+    if env_commit and "commit" not in meta:
+        meta["commit"] = env_commit
+    if meta.get("commit") and "short_commit" not in meta:
+        meta["short_commit"] = str(meta["commit"])[:12]
+    env_ref = os.environ.get("APP_SCREEN_STACK_REF", "").strip()
+    if env_ref and "ref" not in meta:
+        meta["ref"] = env_ref
+    elif "commit" in meta and "ref" not in meta:
+        meta["ref"] = "origin/master"
+    env_reused = os.environ.get("APP_SCREEN_STACK_REUSED", "").strip()
+    if env_reused and "reused" not in meta:
+        meta["reused"] = app_instance.parse_bool(env_reused)
+    elif "commit" in meta and "reused" not in meta:
+        meta["reused"] = False
+    env_allow_red = os.environ.get("APP_SCREEN_ALLOW_RED_COMMIT", "").strip()
+    if env_allow_red and "allow_red_commit" not in meta:
+        meta["allow_red_commit"] = app_instance.parse_bool(env_allow_red)
+    elif "commit" in meta and "allow_red_commit" not in meta:
+        meta["allow_red_commit"] = False
+    if "commit" in meta and "ci_conclusion" not in meta:
+        meta["ci_conclusion"] = "success"
+    return {
+        k: meta[k]
+        for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check")
+        if k in meta and meta[k] is not None
+    }
+
+
 def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
     """Run final review step: check final draft and write review.json."""
     ws = ws.for_step("review")
@@ -659,11 +711,13 @@ def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
     merged_findings = _merge_findings(items, draft)
     must_count = sum(1 for f in merged_findings if f["priority"] == "must")
     verdict = "revise" if must_count > 0 else "done"
+    stack_meta = _load_stack_metadata(ws)
 
     review_doc = {
         "round": round_num,
         "verdict": verdict,
         "source": "design_app_screen_review_v1",
+        **stack_meta,
         "findings": merged_findings,
     }
     model_step.write_json(round_dir / "review.json", review_doc)
@@ -677,4 +731,5 @@ def run(ws: Workspace, raw: str = "") -> dict[str, Any]:
         "measured_items": len(items),
         "taste_findings": len(draft.get("findings") or []),
         "retried": first.get("verdict") == "retry",
+        **stack_meta,
     }

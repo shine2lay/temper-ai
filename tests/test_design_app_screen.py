@@ -24,6 +24,8 @@ class _RepoConfigResolver:
 
 EXPECTED_TOP_LEVEL = [
     "workspace_startup",
+    "stack_up_ref",
+    "stack_seed",
     "intake",
     "existing",
     "ground",
@@ -42,8 +44,6 @@ EXPECTED_TOP_LEVEL = [
 EXPECTED_STAGE_CHILDREN = {
     "intake": ["intake_collect", "intake_read", "intake_check", "intake_revise", "intake_finish"],
     "existing": [
-        "stack_up_ref",
-        "stack_seed",
         "existing_collect",
         "existing_sheet",
         "existing_read",
@@ -69,7 +69,10 @@ EXPECTED_STAGE_CHILDREN = {
 
 def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
     raw = yaml.safe_load(WF_PATH.read_text(encoding="utf-8"))["workflow"]
-    assert set(raw["inputs"]) == {"product", "request_json"}
+    assert raw.get("on_failure") == "hold"
+    assert set(raw["inputs"]) == {"product", "request_json", "ref", "allow_red_commit"}
+    assert raw["inputs"]["ref"] == {"type": "string", "default": "origin/master"}
+    assert raw["inputs"]["allow_red_commit"] == {"type": "boolean", "default": False}
     nodes = raw["nodes"]
     assert [n["name"] for n in nodes] == EXPECTED_TOP_LEVEL
 
@@ -91,21 +94,37 @@ def test_design_app_screen_v1_groups_into_clean_stages_without_id_collisions():
                 "product": "input.product",
                 "run_slug": "design",
                 "task_name": "input.product",
-                "ref": "origin/master",
+                "ref": "input.ref",
                 "department": "design",
                 "exclude_dirs": '[".temper/design"]',
+            }
+        elif name == "stack_up_ref":
+            assert node["type"] == "agent"
+            assert node["agent"] == "stack_up_ref"
+            assert node["depends_on"] == ["workspace_startup"]
+            assert node["input_map"] == {"product": "input.product", "ref": "input.ref", "slug": "design"}
+        elif name == "stack_seed":
+            assert node["type"] == "agent"
+            assert node["agent"] == "stack_seed"
+            assert node["depends_on"] == ["stack_up_ref"]
+            assert node["input_map"] == {
+                "env_name": "stack_up_ref.structured.env_name",
+                "product": "input.product",
+                "slug": "design",
             }
         elif name == "stack_down":
             assert node["type"] == "agent"
             assert node["agent"] == "stack_down"
             assert node["depends_on"] == ["handoff"]
             assert node["run_after_failure"] is True
+            assert node["undoes"] == ["stack_up_ref", "stack_seed"]
             assert node["input_map"] == {"product": "input.product", "slug": "design"}
         elif name == "workspace_cleanup":
             assert node["type"] == "agent"
             assert node["agent"] == "workspace_cleanup"
             assert node["depends_on"] == ["handoff"]
             assert node["run_after_failure"] is True
+            assert node["undoes"] == ["workspace_startup"]
             assert node["input_map"] == {
                 "product": "input.product",
                 "run_slug": "design",

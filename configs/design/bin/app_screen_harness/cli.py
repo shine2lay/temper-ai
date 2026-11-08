@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     p_replay.add_argument("--workspace", required=True)
     p_replay.add_argument("--case", default=str(DEFAULT_CASE_DIR))
     p_replay.add_argument("--product", default="rollcall")
+    p_replay.add_argument("--ref", default="origin/master")
 
     p_step = sub.add_parser("step", help="Run one real-mode step or stage via the harness.")
     p_step.add_argument("--step", required=True)
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
                 draft_path.write_text(text + "\n", encoding="utf-8")
             print(text)
         elif args.step in STACK_STEPS:
-            res = replay_stack_step(args.step, args.workspace, product=args.product)
+            res = replay_stack_step(args.step, args.workspace, product=args.product, ref=args.ref)
             print(json.dumps(res, ensure_ascii=False))
         elif args.step in WORKSPACE_STEPS:
             res = replay_workspace_step(args.step, args.workspace, product=args.product)

@@ -25,8 +25,11 @@ agent:
     raw = os.environ.get("{{ data | default('', true) | env }}", "")
     base_url = os.environ.get("{{ base_url | default('', true) | env }}", "")
     stack_commit = os.environ.get("{{ stack_commit | default('', true) | env }}", "")
+    stack_short_commit = os.environ.get("{{ stack_short_commit | default('', true) | env }}", "")
+    stack_ref = os.environ.get("{{ stack_ref | default('', true) | env }}", "")
     stack_env_name = os.environ.get("{{ stack_env_name | default('', true) | env }}", "")
     stack_reused = os.environ.get("{{ stack_reused | default('', true) | env }}", "")
+    allow_red_commit = os.environ.get("{{ allow_red_commit | default('', true) | env }}", "")
     credentials = os.environ.get("{{ credentials | default('', true) | env }}", "")
     {% if gate is defined %}
     raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
@@ -38,10 +41,16 @@ agent:
         os.environ["APP_SCREEN_BASE_URL"] = base_url
     if stack_commit:
         os.environ["APP_SCREEN_STACK_COMMIT"] = stack_commit
+    if stack_short_commit:
+        os.environ["APP_SCREEN_STACK_SHORT_COMMIT"] = stack_short_commit
+    if stack_ref:
+        os.environ["APP_SCREEN_STACK_REF"] = stack_ref
     if stack_env_name:
         os.environ["APP_SCREEN_STACK_ENV_NAME"] = stack_env_name
     if stack_reused:
         os.environ["APP_SCREEN_STACK_REUSED"] = stack_reused
+    if allow_red_commit:
+        os.environ["APP_SCREEN_ALLOW_RED_COMMIT"] = allow_red_commit
     if credentials:
         os.environ["APP_SCREEN_CREDENTIALS"] = credentials
     cmd = [sys.executable, "/app/configs/design/bin/design_app_screen.py", step, "--workspace", workspace]
@@ -51,5 +60,9 @@ agent:
         cmd += ["--base-url", base_url]
     if stack_commit:
         cmd += ["--stack-commit", stack_commit]
+    if stack_ref:
+        cmd += ["--stack-ref", stack_ref]
+    if allow_red_commit:
+        cmd += ["--allow-red-commit", allow_red_commit]
     subprocess.run(cmd, env=os.environ, check=True)
     PYEOF

@@ -89,6 +89,60 @@ def _status(ws: Workspace) -> dict:
     return {"stage_status": "delta"} if decision and decision["decision"] == "delta" else {}
 
 
+def _save_stack_meta(ws: Workspace, meta: dict[str, Any], *, write_capture_record: bool = False) -> None:
+    ws_step = ws if ws.step else ws.for_step("existing_collect")
+    if ws.run_file.is_file():
+        try:
+            run_doc = json.loads(ws_step.read_text(ws.run_file))
+            if isinstance(run_doc, dict):
+                merged = dict(run_doc.get("stack") or {})
+                for k, v in meta.items():
+                    if v is not None:
+                        merged[k] = v
+                run_doc["stack"] = merged
+                _write(ws.run_file, run_doc)
+        except Exception:
+            pass
+    if write_capture_record:
+        cap_path = ws.folder("existing") / "capture.json"
+        existing_cap: dict[str, Any] = {}
+        if cap_path.is_file():
+            try:
+                loaded = json.loads(ws_step.read_text(cap_path))
+                if isinstance(loaded, dict):
+                    existing_cap = loaded
+            except Exception:
+                existing_cap = {}
+        for k, v in meta.items():
+            if v is not None:
+                existing_cap[k] = v
+        _write(cap_path, existing_cap)
+
+
+def _load_stack_meta(ws: Workspace) -> dict[str, Any]:
+    ws_step = ws if ws.step else ws.for_step("existing")
+    out: dict[str, Any] = {}
+    if ws.run_file.is_file():
+        try:
+            run_doc = json.loads(ws_step.read_text(ws.run_file))
+            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+                out.update(run_doc["stack"])
+        except Exception:
+            pass
+    for rel in ("02-existing/capture.json", "02-existing/audit.json"):
+        p = ws.path / rel
+        if p.is_file():
+            try:
+                doc = json.loads(ws_step.read_text(p))
+                if isinstance(doc, dict):
+                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check", "base_url"):
+                        if k not in out and doc.get(k) is not None:
+                            out[k] = doc[k]
+            except Exception:
+                pass
+    return out
+
+
 def context(ws: Workspace) -> existing_check.Context:
     hint = _capture_hint(ws)
     audit = _read(ws, "existing", AUDIT, hint)
@@ -107,13 +161,36 @@ def collect(
     *,
     base_url: str | None = None,
     stack_commit: str | None = None,
+    stack_short_commit: str | None = None,
+    stack_ref: str | None = None,
+    stack_env_name: str | None = None,
+    stack_reused: bool | str | None = None,
+    allow_red_commit: bool | str | None = None,
     credentials: dict[str, str] | str | None = None,
     health_opener: Any = None,
+    ci_runner: Any = None,
     instance: app_instance.AppInstance | None = None,
 ) -> dict[str, Any]:
     ws = ws.for_step("existing_collect")
     eff_url = (base_url if base_url is not None else os.environ.get("APP_SCREEN_BASE_URL", "")).strip()
     eff_commit = (stack_commit if stack_commit is not None else os.environ.get("APP_SCREEN_STACK_COMMIT", "")).strip()
+    eff_short_commit = (
+        stack_short_commit if stack_short_commit is not None else os.environ.get("APP_SCREEN_STACK_SHORT_COMMIT", "")
+    ).strip()
+    eff_ref = (stack_ref if stack_ref is not None else os.environ.get("APP_SCREEN_STACK_REF", "")).strip() or "origin/master"
+    eff_env_name = (
+        stack_env_name if stack_env_name is not None else os.environ.get("APP_SCREEN_STACK_ENV_NAME", "")
+    ).strip()
+    raw_reused = stack_reused if stack_reused is not None else os.environ.get("APP_SCREEN_STACK_REUSED")
+    eff_reused = app_instance.parse_bool(raw_reused) if raw_reused is not None and str(raw_reused).strip() != "" else False
+    raw_allow_red = allow_red_commit if allow_red_commit is not None else os.environ.get("APP_SCREEN_ALLOW_RED_COMMIT")
+    eff_allow_red = app_instance.parse_bool(raw_allow_red)
+    has_ci_input = bool(
+        eff_commit
+        or allow_red_commit is not None
+        or ci_runner is not None
+        or os.environ.get("APP_SCREEN_ALLOW_RED_COMMIT", "").strip()
+    )
     eff_creds = (
         credentials
         if credentials is not None
@@ -128,9 +205,10 @@ def collect(
     )
 
     if reused := _reused(ws):
+        product = ws.run()["product"]
+        audit_doc = _read(ws, "existing", AUDIT, _capture_hint(ws))
+        recorded_commit = str(audit_doc.get("commit") or "").strip()
         if eff_commit:
-            audit_doc = _read(ws, "existing", AUDIT, _capture_hint(ws))
-            recorded_commit = str(audit_doc.get("commit") or "").strip()
             if eff_url and (health_opener is not None or instance is not None or not recorded_commit):
                 try:
                     health = (
@@ -146,6 +224,30 @@ def collect(
                     app_instance.verify_stack_commit(eff_commit, recorded_commit, base_url=eff_url)
                 except app_instance.AppInstanceError as exc:
                     raise ExistingError(str(exc)) from None
+        target_sha = eff_commit or recorded_commit
+        if has_ci_input and target_sha:
+            try:
+                ci_info = app_instance.verify_commit_ci_status(
+                    target_sha,
+                    product=product,
+                    allow_red_commit=eff_allow_red,
+                    runner=ci_runner,
+                )
+            except app_instance.AppInstanceError as exc:
+                raise ExistingError(str(exc)) from None
+            meta = {
+                "commit": ci_info["commit"],
+                "short_commit": eff_short_commit or ci_info["short_commit"],
+                "ref": eff_ref,
+                "reused": True,
+                "ci_conclusion": ci_info["ci_conclusion"],
+                "allow_red_commit": ci_info["allow_red_commit"],
+                "ci_failing_check": ci_info.get("ci_failing_check"),
+                "base_url": eff_url or audit_doc.get("base_url"),
+                "env_name": eff_env_name or None,
+            }
+            _save_stack_meta(ws, meta, write_capture_record=False)
+            return {**reused, **{k: v for k, v in meta.items() if v is not None}}
         return reused
 
     if (eff_url or instance is not None) and not has_prepared_capture:
@@ -157,15 +259,19 @@ def collect(
                 base_url=eff_url or None,
                 credentials=eff_creds,
                 stack_commit=eff_commit or None,
+                stack_ref=eff_ref,
+                stack_reused=eff_reused,
+                allow_red_commit=eff_allow_red if has_ci_input else None,
                 health_opener=health_opener,
+                ci_runner=ci_runner,
                 instance=instance,
             )
         except (existing_host.CaptureError, app_instance.AppInstanceError) as exc:
             raise ExistingError(str(exc)) from None
 
     ctx = context(ws)
+    recorded_commit = str(ctx.audit.get("commit") or ctx.app.get("commit") or "").strip()
     if eff_commit:
-        recorded_commit = str(ctx.audit.get("commit") or ctx.app.get("commit") or "").strip()
         if eff_url and (health_opener is not None or instance is not None):
             try:
                 health = (
@@ -185,6 +291,45 @@ def collect(
                 )
             except app_instance.AppInstanceError as exc:
                 raise ExistingError(str(exc)) from None
+
+    stack_meta: dict[str, Any] = {}
+    target_sha = eff_commit or recorded_commit
+    if has_ci_input and target_sha:
+        product = ws.run()["product"]
+        try:
+            ci_info = app_instance.verify_commit_ci_status(
+                target_sha,
+                product=product,
+                allow_red_commit=eff_allow_red,
+                runner=ci_runner,
+            )
+        except app_instance.AppInstanceError as exc:
+            raise ExistingError(str(exc)) from None
+        stack_meta = {
+            "commit": ci_info["commit"],
+            "short_commit": eff_short_commit or ci_info["short_commit"],
+            "ref": eff_ref,
+            "reused": eff_reused,
+            "ci_conclusion": ci_info["ci_conclusion"],
+            "allow_red_commit": ci_info["allow_red_commit"],
+            "ci_failing_check": ci_info.get("ci_failing_check"),
+            "base_url": eff_url or ctx.audit.get("base_url") or ctx.app.get("base_url"),
+            "env_name": eff_env_name or None,
+        }
+        _save_stack_meta(
+            ws,
+            stack_meta,
+            write_capture_record=(folder / "capture.json").is_file() or not (ws.path / "known-case").is_dir(),
+        )
+    elif recorded_commit:
+        stack_meta = {
+            "commit": recorded_commit,
+            "short_commit": eff_short_commit or recorded_commit[:12],
+            "ref": eff_ref,
+            "reused": eff_reused,
+        }
+        _save_stack_meta(ws, stack_meta, write_capture_record=False)
+
     if not (ws.folder("existing") / SHEET).is_file():
         raise ExistingError(f"02-existing/{SHEET} is missing ({_capture_hint(ws)})")
     requirements = _read(ws, "intake", "requirements.json", "stage 1 (intake) writes it")
@@ -199,8 +344,11 @@ def collect(
         "task_chars": len(text),
         "task": text,
     }
-    if ctx.audit.get("commit"):
-        out["commit"] = ctx.audit["commit"]
+    if stack_meta.get("commit") or ctx.audit.get("commit"):
+        out["commit"] = stack_meta.get("commit") or ctx.audit["commit"]
+    for k in ("short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit"):
+        if k in stack_meta and stack_meta[k] is not None:
+            out[k] = stack_meta[k]
     base = ctx.audit.get("base_url") or ctx.app.get("base_url") or eff_url
     if base:
         out["base_url"] = base
@@ -246,8 +394,10 @@ def check(ws: Workspace, raw: str) -> dict:
 def run(ws: Workspace, raw: str) -> dict:
     """The final pass: the revised reply (if there was one) is the draft; clean -> journeys.json, else fail loud."""
     ws = ws.for_step("existing")
+    meta = _load_stack_meta(ws)
+    carry = {k: meta[k] for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit") if k in meta and meta[k] is not None}
     if reused := _reused(ws):
-        return {"stage_status": "reused", "source": reused["source"], "files": reused["files"]}
+        return {"stage_status": "reused", "source": reused["source"], "files": reused["files"], **carry}
     folder = ws.folder("existing")
     revised = bool((raw or "").strip())
     if revised:
@@ -261,4 +411,4 @@ def run(ws: Workspace, raw: str) -> dict:
     if found["problems"]:
         raise ExistingError(model_step.failure(found["problems"], f"02-existing/{CHECK_FINAL}"))
     _write(folder / JOURNEYS, existing_check.outputs(ctx, draft))
-    return {"revised": revised, **found["counts"], **_status(ws)}
+    return {"revised": revised, **found["counts"], **carry, **_status(ws)}

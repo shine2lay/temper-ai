@@ -22,6 +22,9 @@ agent:
         or os.environ.get("{{ workspace_path | default('', true) | env }}", "")
     )
     product = os.environ.get("{{ product | default('rollcall', true) | env }}", "rollcall")
+    ref = os.environ.get("{{ ref | default('', true) | env }}", "")
+    if not workspace and step in ("workspace_startup", "stack_up_ref", "stack_seed", "stack_down", "workspace_cleanup"):
+        workspace = f"/tmp/temper-bench-{product}/.temper/design"
     if not step or not workspace:
         raise SystemExit("design_app_screen_replay requires step and workspace")
 
@@ -35,8 +38,11 @@ agent:
             check=True,
         )
     else:
+        cmd = [sys.executable, cli, "replay", "--step", step, "--workspace", workspace, "--product", product]
+        if ref:
+            cmd += ["--ref", ref]
         proc = subprocess.run(
-            [sys.executable, cli, "replay", "--step", step, "--workspace", workspace, "--product", product],
+            cmd,
             capture_output=True,
             text=True,
             check=True,

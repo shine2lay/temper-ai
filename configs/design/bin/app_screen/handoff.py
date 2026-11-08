@@ -439,6 +439,39 @@ def _build_followup_items(
     return items
 
 
+def _load_handoff_stack_metadata(ws: Workspace, review_doc: dict[str, Any]) -> dict[str, Any]:
+    ws_step = ws if ws.step else ws.for_step("handoff")
+    meta: dict[str, Any] = {}
+    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+        if review_doc.get(k) is not None:
+            meta[k] = review_doc[k]
+    if ws.run_file.is_file():
+        try:
+            run_doc = json.loads(ws_step.read_text(ws.run_file))
+            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+                for k, v in run_doc["stack"].items():
+                    if k not in meta and v is not None:
+                        meta[k] = v
+        except (OSError, json.JSONDecodeError):
+            pass
+    for rel in ("02-existing/capture.json", "02-existing/audit.json"):
+        p = ws.path / rel
+        if p.is_file():
+            try:
+                doc = json.loads(ws_step.read_text(p))
+                if isinstance(doc, dict):
+                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+                        if k not in meta and doc.get(k) is not None:
+                            meta[k] = doc[k]
+            except (OSError, json.JSONDecodeError):
+                pass
+    return {
+        k: meta[k]
+        for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check")
+        if k in meta and meta[k] is not None
+    }
+
+
 def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
     ws = ws.for_step("handoff")
     prereq = validate_prerequisites(ws)
@@ -492,6 +525,7 @@ def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
         spec_path.write_text(md_text, encoding="utf-8")
         written_specs.append(f"08-handoff/spec/{sid}.md")
 
+    stack_meta = _load_handoff_stack_metadata(ws, review_doc)
     design_file_doc = {
         "kind": "html-prototype",
         "location": "05-build/index.html",
@@ -501,6 +535,7 @@ def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
             f"07-show/bundle.html) approved at final gate in Round {round_num}; ready for Frontend implementation "
             f"or HTML-to-Penpot import."
         ),
+        **stack_meta,
     }
     (handoff_dir / "design-file.json").write_text(
         json.dumps(design_file_doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
@@ -524,4 +559,5 @@ def run(ws: Workspace, _raw: str = "") -> dict[str, Any]:
         "specs": written_specs,
         "followup_count": len(followup_items),
         "check_passed": check_report["passed"],
+        **stack_meta,
     }

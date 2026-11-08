@@ -119,6 +119,9 @@ def audit_from(app: dict[str, Any], caps: list[dict[str, Any]], raw: dict[str, A
     }
     if commit is not None:
         audit["commit"] = commit
+    for k in ("short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+        if app.get(k) is not None:
+            audit[k] = app[k]
     if version is not None:
         audit["version"] = version
     if base_url is not None:
@@ -153,7 +156,7 @@ def shoot(instance_or_app: app_instance.AppInstance | dict[str, Any],
 
 
 def _record(app: dict[str, Any], caps: list[dict[str, Any]], failed: dict[str, str], **extra: Any) -> dict[str, Any]:
-    return {
+    rec: dict[str, Any] = {
         "app_file": app.get("path"),
         "product": app["product"],
         "spec_sha256": app.get("spec_sha256"),
@@ -164,9 +167,13 @@ def _record(app: dict[str, Any], caps: list[dict[str, Any]], failed: dict[str, s
         "captures": len(caps),
         "failed": failed,
         "raw": RAW,
-        **extra,
-        "at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
+    for k in ("short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+        if app.get(k) is not None:
+            rec[k] = app[k]
+    rec.update(extra)
+    rec["at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    return rec
 
 
 def _fail(folder: Path, failed: dict[str, str], total: int) -> None:
@@ -222,7 +229,11 @@ def capture(product: str | Path | dict[str, Any], workspace: str | Path, store: 
             credentials: dict[str, str] | str | None = None,
             version: str | None = None,
             stack_commit: str | None = None,
+            stack_ref: str | None = None,
+            stack_reused: bool | str | None = None,
+            allow_red_commit: bool | str | None = None,
             health_opener: Any = None,
+            ci_runner: Any = None,
             opener: Any = None,
             instance: app_instance.AppInstance | None = None) -> dict[str, Any]:
     app = _load_target_app(
@@ -244,8 +255,31 @@ def capture(product: str | Path | dict[str, Any], workspace: str | Path, store: 
         opener=opener,
         instance=instance,
     )
+    eff_stack_commit = (stack_commit or os.environ.get("APP_SCREEN_STACK_COMMIT") or "").strip()
+    if eff_stack_commit or allow_red_commit is not None or ci_runner is not None:
+        eff_allow_red = (
+            allow_red_commit
+            if allow_red_commit is not None
+            else os.environ.get("APP_SCREEN_ALLOW_RED_COMMIT", False)
+        )
+        ci_info = app_instance.verify_commit_ci_status(
+            inst.commit,
+            product=str(app.get("product") or "rollcall"),
+            allow_red_commit=eff_allow_red,
+            runner=ci_runner,
+        )
+        app["commit"] = ci_info["commit"]
+        app["short_commit"] = ci_info["short_commit"]
+        app["ref"] = (stack_ref or os.environ.get("APP_SCREEN_STACK_REF") or "origin/master").strip()
+        raw_reused = stack_reused if stack_reused is not None else os.environ.get("APP_SCREEN_STACK_REUSED")
+        app["reused"] = app_instance.parse_bool(raw_reused) if raw_reused is not None else False
+        app["ci_conclusion"] = ci_info["ci_conclusion"]
+        app["allow_red_commit"] = ci_info["allow_red_commit"]
+        if ci_info.get("ci_failing_check"):
+            app["ci_failing_check"] = ci_info["ci_failing_check"]
+    else:
+        app["commit"] = inst.commit
     app["base_url"] = inst.base_url
-    app["commit"] = inst.commit
     app["version"] = inst.version
 
     Path(workspace).mkdir(parents=True, exist_ok=True)

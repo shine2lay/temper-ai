@@ -1,0 +1,32 @@
+# System engineering: provision or reuse a ref-pinned non-live dev stack via standee (stack_up_ref).
+#
+# Resolves <ref> (default origin/master) in the product repository after fetching origin, checks
+# whether <product>-dev-<slug> (default slug: design) is already running at that exact 40-char
+# commit SHA, and either reuses it (reused=true) or builds and starts it with
+# `standee up <host_repo> --project <product> --as <slug> --tier dev --ref <commit> --gateway --wait`.
+#
+# Emits JSON:
+#   {"status": "up", "env_name": "...", "base_url": "...", "url": "...",
+#    "commit": "<40-char sha>", "short_commit": "<7-char>", "ref": "...",
+#    "product": "...", "reused": true|false}
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: stack_up_ref
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -eu
+    PRODUCT="{{ product | default('') }}"
+    REF="{{ ref | default('origin/master') }}"
+    SLUG="{{ slug | default('design') }}"
+    TTL="{{ ttl | default('') }}"
+    [ "$PRODUCT" = None ] && PRODUCT=""
+    if [ -z "$REF" ] || [ "$REF" = None ]; then REF="origin/master"; fi
+    if [ -z "$SLUG" ] || [ "$SLUG" = None ]; then SLUG="design"; fi
+    [ "$TTL" = None ] && TTL=""
+    BIN=/app/configs/epd/bin/stack_ref.py
+    [ -f "$BIN" ] || BIN=configs/epd/bin/stack_ref.py
+    exec python3 -u "$BIN" up --product="$PRODUCT" --ref="$REF" --slug="$SLUG" --ttl="$TTL"

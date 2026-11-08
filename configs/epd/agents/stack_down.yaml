@@ -1,0 +1,28 @@
+# System engineering: tear down a non-live standee dev environment and verify zero volumes (stack_down).
+#
+# Runs `standee down <env_name> --volumes --images` via the forced-command SSH key at /app/standee-ssh,
+# then checks docker volumes by compose project label and prefix (<env_name>_*), removing any
+# stragglers and failing loud if any volume remains.
+#
+# Emits JSON:
+#   {"status": "down"|"absent", "env_name": "<product>-dev-<slug>",
+#    "volumes_left": "none", "leftover_volumes_removed": 0}
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: stack_down
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    ENV_NAME="{{ env_name | default('') }}"
+    PRODUCT="{{ product | default('') }}"
+    SLUG="{{ slug | default('design') }}"
+    [ "$ENV_NAME" = None ] && ENV_NAME=""
+    [ "$PRODUCT" = None ] && PRODUCT=""
+    if [ -z "$SLUG" ] || [ "$SLUG" = None ]; then SLUG="design"; fi
+    BIN=/app/configs/epd/bin/stack_ref.py
+    [ -f "$BIN" ] || BIN=configs/epd/bin/stack_ref.py
+    exec python3 -u "$BIN" down --env-name="$ENV_NAME" --product="$PRODUCT" --slug="$SLUG"

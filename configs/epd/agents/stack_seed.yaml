@@ -1,0 +1,27 @@
+# System engineering: reset dev seed data on a non-live standee dev environment (stack_seed).
+#
+# Runs `standee seed <env_name>` via the forced-command SSH key at /app/standee-ssh.
+# Accepts either `env_name` directly (e.g. rollcall-dev-design) or `product` + optional `slug`
+# (default: design). Refuses non-dev environments.
+#
+# Emits JSON:
+#   {"status": "seeded", "env_name": "<product>-dev-<slug>"}
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: stack_seed
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    ENV_NAME="{{ env_name | default('') }}"
+    PRODUCT="{{ product | default('') }}"
+    SLUG="{{ slug | default('design') }}"
+    [ "$ENV_NAME" = None ] && ENV_NAME=""
+    [ "$PRODUCT" = None ] && PRODUCT=""
+    if [ -z "$SLUG" ] || [ "$SLUG" = None ]; then SLUG="design"; fi
+    BIN=/app/configs/epd/bin/stack_ref.py
+    [ -f "$BIN" ] || BIN=configs/epd/bin/stack_ref.py
+    exec python3 -u "$BIN" seed --env-name="$ENV_NAME" --product="$PRODUCT" --slug="$SLUG"

@@ -713,7 +713,7 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/workflows/epd_qa_grade.yaml` | workflow |
 | `epd/workflows/qa_flaky_report.yaml` | workflow |
 
-### systems (32)
+### systems (34)
 
 | Config | Kind |
 |---|---|
@@ -734,6 +734,9 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/agents/epd_deploy.yaml` | agent (script) |
 | `epd/agents/epd_leftovers.yaml` | agent (script) |
 | `epd/agents/epd_ship.yaml` | agent (script) |
+| `epd/agents/stack_down.yaml` | agent (script) |
+| `epd/agents/stack_seed.yaml` | agent (script) |
+| `epd/agents/stack_up_ref.yaml` | agent (script) |
 | `epd/agents/task_branch_check.yaml` | agent (script) |
 | `epd/agents/task_claim.yaml` | agent (script) |
 | `epd/agents/task_cleanup.yaml` | agent (script) |
@@ -747,6 +750,7 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/bin/rollcall_cd_deploy.py` | script |
 | `epd/bin/rollcall_cd_money.py` | script |
 | `epd/bin/rollcall_cd_notify.py` | script |
+| `epd/bin/stack_ref.py` | script |
 
 ### security (3)
 

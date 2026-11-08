@@ -489,7 +489,7 @@ def cmd_up(
         )
         existing_url = str(existing.get("url") or "").strip()
         if (
-            existing_status == "running"
+            existing_status in ("up", "running")
             and existing_sha == commit
             and bool(existing_url)
         ):
@@ -569,7 +569,7 @@ def cmd_up(
             env_name=actual_name,
             commit=commit,
         )
-    if after.get("status") != "running":
+    if after.get("status") not in ("up", "running"):
         raise StackRefError(
             f"standee status {actual_name} reported status={after.get('status')!r} after up",
             env_name=actual_name,

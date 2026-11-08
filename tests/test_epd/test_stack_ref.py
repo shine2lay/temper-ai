@@ -157,7 +157,7 @@ if cmd == "up":
         "project": project,
         "tier": tier,
         "url": url,
-        "status": "running",
+        "status": state.get("status_value", "up"),
         "ttl": ttl,
         "commit": {{
             "sha": ref_sha,
@@ -580,5 +580,35 @@ def test_fetch_and_resolve_ref_fast_forwards_clean_main_checkout(
     ).stdout.strip()
     assert head_after == sha2
     assert (clone / "README.md").read_text() == "new content\n"
+
+
+@pytest.mark.parametrize("status_value", ["up", "running"])
+def test_cmd_up_accepts_standee_status_up_and_running(
+    git_repos: dict[str, Any],
+    fake_bins: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    status_value: str,
+) -> None:
+    monkeypatch.setenv("WORKSPACE_DIR", str(git_repos["workspaces"]))
+    fake_bins["update_state"](status_value=status_value)
+
+    first = stack_ref.cmd_up(
+        product="rollcall",
+        ref="origin/master",
+        slug="design",
+        standee_bin=fake_bins["standee"],
+    )
+    assert first["status"] == "up"
+    assert first["reused"] is False
+
+    second = stack_ref.cmd_up(
+        product="rollcall",
+        ref="origin/master",
+        slug="design",
+        standee_bin=fake_bins["standee"],
+    )
+    assert second["status"] == "up"
+    assert second["reused"] is True
+
 
 

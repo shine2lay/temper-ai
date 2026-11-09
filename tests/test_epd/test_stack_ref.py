@@ -611,4 +611,248 @@ def test_cmd_up_accepts_standee_status_up_and_running(
     assert second["reused"] is True
 
 
+def test_cmd_up_40char_sha_in_container_ssh_mode_supports_projects_and_home_with_zero_workspace_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty_workspaces = tmp_path / "workspaces"
+    empty_workspaces.mkdir(parents=True)
+    monkeypatch.setenv("WORKSPACE_DIR", str(empty_workspaces))
+    monkeypatch.delenv("STANDEE_BIN", raising=False)
+
+    ssh_dir = tmp_path / "standee-ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("fake-key\n")
+    (ssh_dir / "known_hosts").write_text("host.docker.internal ssh-ed25519 AAAAC3Nza\n")
+
+    no_checkout = tmp_path / "no-checkout-repo"
+    inkflow_sha = "5b3cda5efea0bf52970ae2dd8dd473d02934b24b"
+    rollcall_sha = "a243a0c87a5e4d025148c6a1ce0acce6ef0b88c5"
+    ssh_calls: list[list[str]] = []
+
+    def fake_run_standee(
+        args: list[str],
+        *,
+        standee_bin: str = "",
+        ssh_dir: Path = stack_ref.DEFAULT_STANDEE_SSH_DIR,
+        timeout: int = 540,
+    ) -> subprocess.CompletedProcess[str]:
+        ssh_calls.append(list(args))
+        if args[0] == "status":
+            name = args[1]
+            if (
+                sum(
+                    1
+                    for c in ssh_calls
+                    if c[0] == "up"
+                    and "--project" in c
+                    and name.startswith(c[c.index("--project") + 1])
+                )
+                == 0
+            ):
+                return subprocess.CompletedProcess(
+                    ["standee", *args], 1, "", f"no environment named {name}\n"
+                )
+            sha = inkflow_sha if name.startswith("inkflow-") else rollcall_sha
+            payload = {
+                "kind": "managed",
+                "name": name,
+                "project": "inkflow" if name.startswith("inkflow-") else "rollcall",
+                "tier": "dev",
+                "url": f"https://systems.dev.{'inkflow' if name.startswith('inkflow-') else 'rollcall'}.wai2shine.com",
+                "status": "up",
+                "commit": {"sha": sha, "short": sha[:7]},
+            }
+            return subprocess.CompletedProcess(
+                ["standee", *args], 0, json.dumps(payload) + "\n", ""
+            )
+        if args[0] == "up":
+            proj = args[args.index("--project") + 1]
+            sl = args[args.index("--as") + 1]
+            name = f"{proj}-dev-{sl}"
+            return subprocess.CompletedProcess(
+                ["standee", *args], 0, f"✓ {name} is up\n", ""
+            )
+        raise AssertionError(f"unexpected standee call: {args}")
+
+    monkeypatch.setattr(stack_ref, "run_standee", fake_run_standee)
+
+    inkflow_out = stack_ref.cmd_up(
+        product="inkflow",
+        ref=inkflow_sha,
+        slug="systems",
+        ssh_dir=ssh_dir,
+        checkout_repo=no_checkout,
+    )
+    assert inkflow_out["status"] == "up"
+    assert inkflow_out["env_name"] == "inkflow-dev-systems"
+    assert inkflow_out["commit"] == inkflow_sha
+    assert inkflow_out["short_commit"] == inkflow_sha[:7]
+    inkflow_up_call = next(c for c in ssh_calls if c[0] == "up" and "inkflow" in c)
+    assert inkflow_up_call[1] == "/home/shinelay/projects/inkflow"
+    assert inkflow_up_call[inkflow_up_call.index("--ref") + 1] == inkflow_sha
+
+    rollcall_out = stack_ref.cmd_up(
+        product="rollcall",
+        ref=rollcall_sha,
+        slug="systems",
+        ssh_dir=ssh_dir,
+        checkout_repo=no_checkout,
+    )
+    assert rollcall_out["status"] == "up"
+    assert rollcall_out["env_name"] == "rollcall-dev-systems"
+    assert rollcall_out["commit"] == rollcall_sha
+    assert rollcall_out["short_commit"] == rollcall_sha[:7]
+    rollcall_up_call = next(c for c in ssh_calls if c[0] == "up" and "rollcall" in c)
+    assert rollcall_up_call[1] == "/home/shinelay/rollcall"
+    assert rollcall_up_call[rollcall_up_call.index("--ref") + 1] == rollcall_sha
+
+    # Zero files or directories created under $WORKSPACE_DIR
+    assert list(empty_workspaces.iterdir()) == []
+
+
+def test_cmd_up_verifies_40char_sha_readonly_in_checkout_repo_when_present(
+    git_repos: dict[str, Any],
+    fake_bins: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty_workspaces = tmp_path / "empty_ws"
+    empty_workspaces.mkdir()
+    monkeypatch.setenv("WORKSPACE_DIR", str(empty_workspaces))
+
+    checkout_repo = git_repos["clone"]
+    sha1 = git_repos["sha1"]
+
+    res = stack_ref.cmd_up(
+        product="inkflow",
+        ref=sha1,
+        slug="systems",
+        standee_bin=fake_bins["standee"],
+        checkout_repo=checkout_repo,
+    )
+    assert res["status"] == "up"
+    assert res["commit"] == sha1
+    assert list(empty_workspaces.iterdir()) == []
+
+    unknown_sha = "0" * 40
+    with pytest.raises(stack_ref.StackRefError, match="cannot resolve ref"):
+        stack_ref.cmd_up(
+            product="inkflow",
+            ref=unknown_sha,
+            slug="systems",
+            standee_bin=fake_bins["standee"],
+            checkout_repo=checkout_repo,
+        )
+
+
+def test_cmd_up_returns_commit_sha_reported_by_standee_status(
+    git_repos: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WORKSPACE_DIR", str(git_repos["workspaces"]))
+    sha1 = git_repos["sha1"]
+    reported_sha = "3b838f2ac7387305095c55a492bfd9aa248fe03c"
+    calls: list[list[str]] = []
+
+    def fake_run_standee(
+        args: list[str],
+        *,
+        standee_bin: str = "",
+        ssh_dir: Path = stack_ref.DEFAULT_STANDEE_SSH_DIR,
+        timeout: int = 540,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(list(args))
+        if args[0] == "status":
+            if not any(c[0] == "up" for c in calls):
+                return subprocess.CompletedProcess(
+                    ["standee", *args], 1, "", "no environment\n"
+                )
+            payload = {
+                "kind": "managed",
+                "name": "rollcall-dev-systems",
+                "project": "rollcall",
+                "tier": "dev",
+                "url": "https://systems.dev.rollcall.wai2shine.com",
+                "status": "up",
+                "commit": {"sha": reported_sha, "short": reported_sha[:7]},
+            }
+            return subprocess.CompletedProcess(
+                ["standee", *args], 0, json.dumps(payload) + "\n", ""
+            )
+        if args[0] == "up":
+            return subprocess.CompletedProcess(
+                ["standee", *args], 0, "✓ rollcall-dev-systems is up\n", ""
+            )
+        raise AssertionError(f"unexpected call: {args}")
+
+    monkeypatch.setattr(stack_ref, "run_standee", fake_run_standee)
+    out = stack_ref.cmd_up(
+        product="rollcall",
+        ref=sha1,
+        slug="systems",
+        checkout_repo=git_repos["clone"],
+    )
+    assert out["commit"] == reported_sha
+    assert out["short_commit"] == reported_sha[:7]
+    assert out["ref"] == sha1
+
+
+def test_locate_product_repo_supports_projects_and_home_checkouts(
+    tmp_path: Path,
+) -> None:
+    fake_home = tmp_path / "home"
+    inkflow_repo = fake_home / "projects" / "inkflow"
+    rollcall_repo = fake_home / "rollcall"
+    (inkflow_repo / ".git").mkdir(parents=True)
+    (rollcall_repo / ".git").mkdir(parents=True)
+
+    local_ink, host_ink = stack_ref.locate_product_repo(
+        "inkflow",
+        workspace_dir_env="",
+        container_workspaces=tmp_path / "no-container-ws",
+        default_host_workspaces=tmp_path / "no-host-ws",
+        default_host_home=fake_home,
+    )
+    assert local_ink == inkflow_repo
+    assert host_ink == inkflow_repo
+
+    local_rc, host_rc = stack_ref.locate_product_repo(
+        "rollcall",
+        workspace_dir_env="",
+        container_workspaces=tmp_path / "no-container-ws",
+        default_host_workspaces=tmp_path / "no-host-ws",
+        default_host_home=fake_home,
+    )
+    assert local_rc == rollcall_repo
+    assert host_rc == rollcall_repo
+
+
+def test_cmd_seed_succeeds_when_companion_has_no_seed_hook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run_standee(
+        args: list[str],
+        *,
+        standee_bin: str = "",
+        ssh_dir: Path = stack_ref.DEFAULT_STANDEE_SSH_DIR,
+        timeout: int = 540,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["seed", "inkflow-dev-systems"]
+        return subprocess.CompletedProcess(
+            ["standee", *args],
+            1,
+            "",
+            "Error: the companion for inkflow has no `seed:` for tier dev\n",
+        )
+
+    monkeypatch.setattr(stack_ref, "run_standee", fake_run_standee)
+    out = stack_ref.cmd_seed(product="inkflow", slug="systems")
+    assert out == {"status": "seeded", "env_name": "inkflow-dev-systems"}
+
+
+
+
+
 

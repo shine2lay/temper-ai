@@ -32,9 +32,12 @@ from typing import Any
 CONTAINER_WORKSPACES = Path("/app/workspaces")
 DEFAULT_HOST_WORKSPACES = Path("/home/shinelay/temper-ai/workspaces")
 DEFAULT_HOST_HOME = Path("/home/shinelay")
+DEFAULT_HOST_PROJECTS = Path("/home/shinelay/projects")
+DEFAULT_CHECKOUT_REPO = Path("/tmp/temper-checkout/repo")
 DEFAULT_STANDEE_SSH_DIR = Path("/app/standee-ssh")
 DEFAULT_STANDEE_SSH_TARGET = "shinelay@host.docker.internal"
 DEFAULT_GITHUB_DEPLOY_DIR = Path("/app/github-deploy")
+HOST_TOP_LEVEL_PRODUCTS = frozenset({"rollcall", "roamee", "temper-ai", "standee"})
 
 PRODUCT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -133,6 +136,59 @@ def _has_git_marker(path: Path) -> bool:
     return git_marker.is_dir() or git_marker.is_file()
 
 
+def _resolve_host_product_dir(
+    product: str,
+    default_host_home: Path = DEFAULT_HOST_HOME,
+    default_host_projects: Path | None = None,
+) -> Path:
+    """Return the host checkout path (`/home/shinelay/projects/<product>` or `/home/shinelay/<product>`)."""
+    projects_base = (
+        default_host_projects
+        if default_host_projects is not None
+        else (
+            DEFAULT_HOST_PROJECTS
+            if default_host_home == DEFAULT_HOST_HOME
+            else default_host_home / "projects"
+        )
+    )
+    projects_candidate = projects_base / product
+    home_candidate = default_host_home / product
+    if _has_git_marker(projects_candidate):
+        return projects_candidate
+    if _has_git_marker(home_candidate):
+        return home_candidate
+    if product in HOST_TOP_LEVEL_PRODUCTS:
+        return home_candidate
+    return projects_candidate
+
+
+def _verify_commit_readonly(repo: Path, sha: str) -> str:
+    """Verify `<sha>^{commit}` read-only in `repo` without fetching or writing."""
+    rev_proc = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            f"{sha}^{{commit}}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if rev_proc.returncode != 0:
+        detail = (rev_proc.stderr or rev_proc.stdout).strip()
+        raise StackRefError(f"cannot resolve ref {sha!r} in {repo}: {detail}")
+    resolved = rev_proc.stdout.strip()
+    if not SHA40_RE.fullmatch(resolved):
+        raise StackRefError(
+            f"rev-parse returned non-40-hex commit {resolved!r} for ref {sha!r}"
+        )
+    return resolved
+
+
 def locate_product_repo(
     product: str,
     repo_dir: str = "",
@@ -141,6 +197,11 @@ def locate_product_repo(
     container_workspaces: Path = CONTAINER_WORKSPACES,
     default_host_workspaces: Path = DEFAULT_HOST_WORKSPACES,
     default_host_home: Path = DEFAULT_HOST_HOME,
+    default_host_projects: Path | None = None,
+    *,
+    ref: str = "",
+    ssh_dir: Path = DEFAULT_STANDEE_SSH_DIR,
+    checkout_repo: Path = DEFAULT_CHECKOUT_REPO,
 ) -> tuple[Path, Path]:
     """Return `(local_repo, host_repo)` for `product`, or raise StackRefError."""
     wd_raw = (
@@ -162,6 +223,42 @@ def locate_product_repo(
             return local_repo, local_repo
         host_base = wd_path or default_host_workspaces
         return local_repo, host_base / rel
+
+    projects_base = (
+        default_host_projects
+        if default_host_projects is not None
+        else (
+            DEFAULT_HOST_PROJECTS
+            if default_host_home == DEFAULT_HOST_HOME
+            else default_host_home / "projects"
+        )
+    )
+    projects_candidate = projects_base / product
+    home_candidate = default_host_home / product
+
+    clean_ref = (ref or "").strip()
+    if SHA40_RE.fullmatch(clean_ref):
+        host_target = (
+            Path(host_repo_dir)
+            if host_repo_dir
+            else _resolve_host_product_dir(
+                product,
+                default_host_home=default_host_home,
+                default_host_projects=projects_base,
+            )
+        )
+        if _has_git_marker(checkout_repo):
+            return checkout_repo, host_target
+        if (ssh_dir / "id_ed25519").is_file():
+            return host_target, host_target
+        if _has_git_marker(projects_candidate):
+            return projects_candidate, Path(
+                host_repo_dir
+            ) if host_repo_dir else projects_candidate
+        if _has_git_marker(home_candidate):
+            return home_candidate, Path(
+                host_repo_dir
+            ) if host_repo_dir else home_candidate
 
     # 1. Container workspaces mount (/app/workspaces/repos/<product>/main)
     container_candidate = container_workspaces / "repos" / product / "main"
@@ -189,13 +286,19 @@ def locate_product_repo(
             Path(host_repo_dir) if host_repo_dir else host_ws_candidate,
         )
 
-    # 4. Host home checkout (/home/shinelay/<product>)
-    home_candidate = default_host_home / product
+    # 4. Host projects checkout (/home/shinelay/projects/<product>)
+    if _has_git_marker(projects_candidate):
+        return (
+            projects_candidate,
+            Path(host_repo_dir) if host_repo_dir else projects_candidate,
+        )
+
+    # 5. Host home checkout (/home/shinelay/<product>)
     if _has_git_marker(home_candidate):
         return home_candidate, Path(host_repo_dir) if host_repo_dir else home_candidate
 
     raise StackRefError(
-        f"repository for product {product!r} not found under workspaces/repos/{product}/main or {default_host_home / product}"
+        f"repository for product {product!r} not found under workspaces/repos/{product}/main, {projects_candidate}, or {home_candidate}"
     )
 
 
@@ -455,6 +558,7 @@ def cmd_up(
     standee_bin: str = "",
     ssh_dir: Path = DEFAULT_STANDEE_SSH_DIR,
     github_deploy_dir: Path = DEFAULT_GITHUB_DEPLOY_DIR,
+    checkout_repo: Path = DEFAULT_CHECKOUT_REPO,
 ) -> dict[str, Any]:
     prod = validate_product(product)
     sl = validate_slug(slug)
@@ -466,12 +570,25 @@ def cmd_up(
         prod,
         repo_dir=repo_dir,
         host_repo_dir=host_repo_dir,
+        ref=clean_ref,
+        ssh_dir=ssh_dir,
+        checkout_repo=checkout_repo,
     )
-    commit = fetch_and_resolve_ref(
-        local_repo,
-        clean_ref,
-        github_deploy_dir=github_deploy_dir,
-    )
+    if SHA40_RE.fullmatch(clean_ref):
+        if _has_git_marker(checkout_repo):
+            commit = _verify_commit_readonly(checkout_repo, clean_ref)
+        elif (ssh_dir / "id_ed25519").is_file() and not repo_dir:
+            commit = clean_ref
+        elif _has_git_marker(local_repo):
+            commit = _verify_commit_readonly(local_repo, clean_ref)
+        else:
+            commit = clean_ref
+    else:
+        commit = fetch_and_resolve_ref(
+            local_repo,
+            clean_ref,
+            github_deploy_dir=github_deploy_dir,
+        )
     short_commit = commit[:7]
 
     existing = _read_status_json(
@@ -483,9 +600,9 @@ def cmd_up(
         existing_status = existing.get("status")
         existing_commit = existing.get("commit")
         existing_sha = (
-            existing_commit.get("sha")
+            str(existing_commit.get("sha") or "").strip()
             if isinstance(existing_commit, dict)
-            else None
+            else ""
         )
         existing_url = str(existing.get("url") or "").strip()
         if (
@@ -506,8 +623,8 @@ def cmd_up(
                 "env_name": actual_name,
                 "base_url": existing_url,
                 "url": existing_url,
-                "commit": commit,
-                "short_commit": short_commit,
+                "commit": existing_sha,
+                "short_commit": existing_sha[:7],
                 "ref": clean_ref,
                 "product": prod,
                 "reused": True,
@@ -536,6 +653,29 @@ def cmd_up(
         ssh_dir=ssh_dir,
         timeout=540,
     )
+    if (
+        up_proc.returncode != 0
+        and not host_repo_dir
+        and any(
+            marker in f"{up_proc.stderr or ''}\n{up_proc.stdout or ''}".lower()
+            for marker in ("does not exist", "not a directory")
+        )
+    ):
+        alt_host_repo = (
+            DEFAULT_HOST_HOME / prod
+            if host_repo == DEFAULT_HOST_PROJECTS / prod
+            else DEFAULT_HOST_PROJECTS / prod
+        )
+        if alt_host_repo != host_repo:
+            retry_args = [
+                str(alt_host_repo) if i == 1 else a for i, a in enumerate(up_args)
+            ]
+            up_proc = run_standee(
+                retry_args,
+                standee_bin=standee_bin,
+                ssh_dir=ssh_dir,
+                timeout=540,
+            )
     if up_proc.stdout:
         sys.stderr.write(up_proc.stdout)
     if up_proc.stderr:
@@ -576,13 +716,20 @@ def cmd_up(
             commit=commit,
         )
 
+    after_commit = after.get("commit")
+    reported_commit = (
+        str(after_commit.get("sha") or "").strip()
+        if isinstance(after_commit, dict)
+        else ""
+    ) or commit
+
     return {
         "status": "up",
         "env_name": str(after.get("name") or actual_name),
         "base_url": url,
         "url": url,
-        "commit": commit,
-        "short_commit": short_commit,
+        "commit": reported_commit,
+        "short_commit": reported_commit[:7],
         "ref": clean_ref,
         "product": prod,
         "reused": False,
@@ -610,10 +757,11 @@ def cmd_seed(
         sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip()
-        raise StackRefError(
-            f"standee seed {resolved_env} failed (exit {proc.returncode}): {detail}",
-            env_name=resolved_env,
-        )
+        if "has no `seed:` for tier" not in detail:
+            raise StackRefError(
+                f"standee seed {resolved_env} failed (exit {proc.returncode}): {detail}",
+                env_name=resolved_env,
+            )
     return {
         "status": "seeded",
         "env_name": resolved_env,

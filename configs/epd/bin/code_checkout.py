@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clone a shallow single-branch GitHub repo and cut a worktree inside a run container.
+"""Clone a shallow single-branch GitHub repo and check out a work branch inside a run container.
 
 Contract:
 - Validates all inputs (repo_url, base_branch, branch, label, resume, root) up front
@@ -22,9 +22,11 @@ Contract:
   calls in long runs (>1h) re-request a fresh installation token on demand without
   ever writing or caching tokens on disk.
 - Clones <root>/repo with --single-branch --branch <base_branch> --depth 1 and
-  cuts <root>/work on <branch> (or resumes an existing work branch when resume=true).
-- Callers needing deeper commit history can run `git -C <worktree_path> fetch --deepen=<N> origin`
-  (or pass `--deepen <N>`), never silently full-cloning.
+  checks out <branch> directly inside <root>/repo (or resumes an existing work branch
+  when resume=true). No git worktree is created.
+- Callers needing deeper commit history can call `deepen_checkout(<path>, <N>)` or run
+  `git -C <path> fetch --deepen=<N> origin` (or pass `--deepen <N>`), never silently
+  full-cloning.
 """
 
 from __future__ import annotations
@@ -72,9 +74,26 @@ class CodeCheckoutError(Exception):
     """Raised on any validation, auth, or git failure."""
 
 
+CheckoutError = CodeCheckoutError
+
+AUTH_FAILURE_RE = re.compile(
+    r"(?i)(?:\b401\b|\b403\b|unauthorized|authentication failed|"
+    r"invalid username or (?:password|token)|token (?:expired|revoked)|"
+    r"bad credentials|could not read username|terminal prompts disabled|"
+    r"unable to get password|credential helper)"
+)
+
+
 def emit(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload) + "\n")
     sys.stdout.flush()
+
+
+def _is_only_redacted_or_empty(scrubbed: str) -> bool:
+    stripped = (scrubbed or "").strip()
+    if not stripped:
+        return True
+    return bool(re.fullmatch(r"(?:\[REDACTED\]|\s|[:;,.!?\-_*'\"]+)+", stripped))
 
 
 def scrub_secrets(text: str, extra_secrets: list[str] | None = None) -> str:
@@ -111,8 +130,36 @@ def scrub_secrets(text: str, extra_secrets: list[str] | None = None) -> str:
     return out
 
 
+def _format_git_failure_detail(
+    raw_output: str,
+    *,
+    returncode: int,
+    extra_secrets: list[str] | None = None,
+) -> str:
+    """Scrub git stderr/stdout and guarantee a loud non-empty error naming auth/token expiry when applicable."""
+    raw = (raw_output or "").strip()
+    if not raw:
+        return f"exit code {returncode} (no stderr/stdout output)"
+    scrubbed = scrub_secrets(raw, extra_secrets).strip()
+    if _is_only_redacted_or_empty(scrubbed):
+        return (
+            f"[REDACTED] (exit code {returncode}: output contained only redacted secret material; "
+            "GitHub token expired or authentication failed)"
+        )
+    if AUTH_FAILURE_RE.search(raw) or AUTH_FAILURE_RE.search(scrubbed):
+        if "token expired" not in scrubbed.lower():
+            return f"GitHub token expired or authentication failed: {scrubbed}"
+    return scrubbed
+
+
 def fail(message: str, extra_secrets: list[str] | None = None) -> None:
-    emit({"status": "failed", "error": scrub_secrets(message, extra_secrets)})
+    scrubbed = scrub_secrets(message, extra_secrets).strip()
+    if _is_only_redacted_or_empty(scrubbed):
+        scrubbed = (
+            "[REDACTED] (error message contained only redacted secret material; "
+            "GitHub token expired or authentication failed)"
+        )
+    emit({"status": "failed", "error": scrubbed})
     raise SystemExit(1)
 
 
@@ -372,22 +419,37 @@ def fetch_github_token(
             if exc.code == 404:
                 if not detail:
                     detail = f"the app is not installed on {repo_slug}"
+                scrubbed_404 = scrub_secrets(
+                    detail, [bearer] if bearer else None
+                ).strip()
+                if _is_only_redacted_or_empty(scrubbed_404):
+                    scrubbed_404 = f"the app is not installed on {repo_slug} ([REDACTED])"
                 raise CodeCheckoutError(
-                    scrub_secrets(
-                        f"GitHub App installation (temper-ai-bot) does not cover repository '{repo_slug}' ({repo_url}): {detail}",
-                        [bearer] if bearer else None,
-                    )
+                    f"GitHub App installation (temper-ai-bot) does not cover repository '{repo_slug}' ({repo_url}): {scrubbed_404}"
                 ) from exc
             if exc.code == 503:
                 last_err = scrub_secrets(
                     f"HTTP 503 {detail}".strip(), [bearer] if bearer else None
                 )
                 continue
-            raise CodeCheckoutError(
-                scrub_secrets(
-                    f"repository '{repo_slug}' ({repo_url}) is unreachable or token request failed: HTTP {exc.code} {detail}",
-                    [bearer] if bearer else None,
+            scrubbed_detail = scrub_secrets(
+                detail, [bearer] if bearer else None
+            ).strip()
+            if _is_only_redacted_or_empty(scrubbed_detail):
+                scrubbed_detail = (
+                    "[REDACTED] (response contained only redacted secret material)"
                 )
+            if exc.code in (401, 403):
+                auth_reason = (
+                    "GitHub token expired or authentication failed"
+                    if exc.code == 401
+                    else "GitHub token expired, authentication failed, or access denied"
+                )
+                raise CodeCheckoutError(
+                    f"repository '{repo_slug}' ({repo_url}) {auth_reason}: HTTP {exc.code} {scrubbed_detail}"
+                ) from exc
+            raise CodeCheckoutError(
+                f"repository '{repo_slug}' ({repo_url}) is unreachable or token request failed: HTTP {exc.code} {scrubbed_detail}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
             reason = getattr(exc, "reason", None) or exc
@@ -502,10 +564,19 @@ def run_git(
         check=False,
     )
     if check and proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
-        raise CodeCheckoutError(
-            scrub_secrets(f"git {' '.join(args[:3])} failed: {detail}", [token])
+        detail = _format_git_failure_detail(
+            proc.stderr or proc.stdout or "",
+            returncode=proc.returncode,
+            extra_secrets=[token] if token else None,
         )
+        label_args = [a for a in args if a != "--quiet"][:3]
+        if (
+            label_args[:1] == ["fetch"]
+            and len(label_args) >= 2
+            and label_args[1].startswith("--deepen=")
+        ):
+            label_args = label_args[:2]
+        raise CodeCheckoutError(f"git {' '.join(label_args)} failed: {detail}")
     return proc
 
 
@@ -525,7 +596,11 @@ def list_remote_heads(
         check=False,
     )
     if proc.returncode != 0:
-        detail = scrub_secrets((proc.stderr or proc.stdout or "").strip(), [token])
+        detail = _format_git_failure_detail(
+            proc.stderr or proc.stdout or "",
+            returncode=proc.returncode,
+            extra_secrets=[token] if token else None,
+        )
         raise CodeCheckoutError(
             f"repository '{repo_slug}' ({repo_url}) is unreachable or access was denied: {detail}"
         )
@@ -571,24 +646,50 @@ def _ensure_no_persisted_credentials(repo_path: Path, token: str) -> None:
         raise CodeCheckoutError("credential leak detected in .git/config")
 
 
-def deepen_history(
-    worktree_path: Path,
+def deepen_checkout(
+    repo_path: Path | str,
     depth: int,
     *,
-    git_env: dict[str, str],
-    token: str,
+    token: str = "",
+    env: dict[str, str] | None = None,
+    git_env: dict[str, str] | None = None,
 ) -> None:
-    """Deepen a shallow checkout by `depth` additional commits without full-cloning."""
-    if depth <= 0:
+    """Deepen a shallow checkout at `repo_path` by `depth` additional commits without full-cloning."""
+    if isinstance(depth, bool) or not isinstance(depth, int) or depth <= 0:
         raise CodeCheckoutError(
-            f"invalid deepen value {depth}: must be a positive integer"
+            f"git fetch --deepen={depth} failed: invalid deepen value {depth} (must be a positive integer)"
         )
+    target_path = Path(repo_path)
+    if not (target_path / ".git").exists():
+        raise CodeCheckoutError(
+            f"git fetch --deepen={depth} failed: checkout path '{target_path}' is not a git repository"
+        )
+    if git_env is not None:
+        effective_env = git_env
+    elif token:
+        effective_env = build_git_env(token, base_env=env)
+    else:
+        effective_env = dict(env if env is not None else os.environ)
+        for key in list(effective_env):
+            if (
+                key == "GIT_CONFIG_COUNT"
+                or key.startswith("GIT_CONFIG_KEY_")
+                or key.startswith("GIT_CONFIG_VALUE_")
+            ):
+                del effective_env[key]
+        effective_env["GIT_TERMINAL_PROMPT"] = "0"
+        effective_env["GIT_CONFIG_NOSYSTEM"] = "1"
+        effective_env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+
     run_git(
-        ["fetch", "--quiet", f"--deepen={depth}", "origin"],
-        cwd=worktree_path,
-        git_env=git_env,
+        ["fetch", f"--deepen={depth}", "--quiet", "origin"],
+        cwd=target_path,
+        git_env=effective_env,
         token=token,
     )
+
+
+deepen_history = deepen_checkout
 
 
 def checkout_code(
@@ -602,7 +703,7 @@ def checkout_code(
     deepen: int = 0,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Validate inputs, mint short-lived GitHub token, shallow-clone repo, and cut/resume worktree."""
+    """Validate inputs, mint short-lived GitHub token, shallow-clone repo into <root>/repo, and check out/resume branch."""
     environ = env if env is not None else os.environ
 
     # 1. Validate all inputs before any network or token request.
@@ -615,37 +716,34 @@ def checkout_code(
             f"work branch '{valid_branch}' must differ from base_branch '{valid_base}'"
         )
     root_path = validate_root(root, env=environ)
-    if deepen < 0:
-        raise CodeCheckoutError(f"invalid deepen value {deepen}: must be >= 0")
+    if isinstance(deepen, bool) or not isinstance(deepen, int) or deepen < 0:
+        raise CodeCheckoutError(
+            f"git fetch --deepen={deepen} failed: invalid deepen value {deepen}: must be >= 0"
+        )
 
     repo_path = root_path / "repo"
-    worktree_path = root_path / "work"
+    repo_existed = (repo_path / ".git").exists()
 
     # 2. Fast local check before network when resume=false.
-    if not resume_flag:
-        if worktree_path.exists():
+    if not resume_flag and repo_existed:
+        check_proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_path),
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/heads/{valid_branch}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check_proc.returncode == 0:
             raise CodeCheckoutError(
-                f"worktree path '{worktree_path}' already exists for branch '{valid_branch}' (resume=false)"
+                f"work branch '{valid_branch}' already exists locally in {repo_path} (resume=false)"
             )
-        if (repo_path / ".git").exists():
-            check_proc = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_path),
-                    "show-ref",
-                    "--verify",
-                    "--quiet",
-                    f"refs/heads/{valid_branch}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if check_proc.returncode == 0:
-                raise CodeCheckoutError(
-                    f"work branch '{valid_branch}' already exists locally in {repo_path} (resume=false)"
-                )
 
     # 3. Request short-lived installation token from Temper server.
     token = fetch_github_token(repo_slug, repo_url=repo_url, env=environ)
@@ -671,7 +769,7 @@ def checkout_code(
 
     # 5. Clone or refresh <root>/repo (--single-branch --branch <base_branch> --depth 1).
     root_path.mkdir(parents=True, exist_ok=True)
-    if (repo_path / ".git").exists():
+    if repo_existed:
         run_git(
             ["remote", "set-url", "origin", https_remote],
             cwd=repo_path,
@@ -695,7 +793,7 @@ def checkout_code(
         if repo_path.exists():
             if any(repo_path.iterdir()):
                 raise CodeCheckoutError(
-                    f"repo_path '{repo_path}' already exists and is not a git repository"
+                    f"checkout path '{repo_path}' already exists and is not a git repository"
                 )
             shutil.rmtree(repo_path)
         run_git(
@@ -710,12 +808,6 @@ def checkout_code(
                 https_remote,
                 str(repo_path),
             ],
-            git_env=git_env,
-            token=token,
-        )
-        run_git(
-            ["checkout", "--detach", "--quiet"],
-            cwd=repo_path,
             git_env=git_env,
             token=token,
         )
@@ -770,24 +862,18 @@ def checkout_code(
             f"failed to resolve 40-char SHA for origin/{valid_base}: got {base_head!r}"
         )
 
-    # 6. Cut or resume <root>/work worktree.
+    # 6. Check out or resume <branch> directly inside <root>/repo.
     if not resume_flag:
         if _local_branch_exists(repo_path, valid_branch, git_env=git_env, token=token):
             raise CodeCheckoutError(
                 f"work branch '{valid_branch}' already exists locally in {repo_path} (resume=false)"
             )
-        if worktree_path.exists():
-            raise CodeCheckoutError(
-                f"worktree path '{worktree_path}' already exists for branch '{valid_branch}' (resume=false)"
-            )
         run_git(
             [
-                "worktree",
-                "add",
+                "checkout",
                 "--quiet",
                 "-b",
                 valid_branch,
-                str(worktree_path),
                 f"refs/remotes/origin/{valid_base}",
             ],
             cwd=repo_path,
@@ -796,21 +882,19 @@ def checkout_code(
         )
         mode = "cloned"
     else:
-        if worktree_path.exists():
-            wt_branch_proc = run_git(
+        current_branch = ""
+        if repo_existed:
+            branch_proc = run_git(
                 ["rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=worktree_path,
+                cwd=repo_path,
                 git_env=git_env,
                 token=token,
                 check=False,
             )
-            current_branch = (
-                wt_branch_proc.stdout.strip() if wt_branch_proc.returncode == 0 else ""
-            )
-            if current_branch != valid_branch:
-                raise CodeCheckoutError(
-                    f"worktree path '{worktree_path}' exists on branch '{current_branch}', expected '{valid_branch}'"
-                )
+            if branch_proc.returncode == 0:
+                current_branch = branch_proc.stdout.strip()
+
+        if repo_existed and current_branch == valid_branch:
             mode = "resumed"
         elif branch_on_origin:
             run_git(
@@ -828,12 +912,10 @@ def checkout_code(
             )
             run_git(
                 [
-                    "worktree",
-                    "add",
+                    "checkout",
                     "--quiet",
                     "-B",
                     valid_branch,
-                    str(worktree_path),
                     f"refs/remotes/origin/{valid_branch}",
                 ],
                 cwd=repo_path,
@@ -846,10 +928,8 @@ def checkout_code(
         ):
             run_git(
                 [
-                    "worktree",
-                    "add",
+                    "checkout",
                     "--quiet",
-                    str(worktree_path),
                     valid_branch,
                 ],
                 cwd=repo_path,
@@ -860,12 +940,10 @@ def checkout_code(
         else:
             run_git(
                 [
-                    "worktree",
-                    "add",
+                    "checkout",
                     "--quiet",
                     "-b",
                     valid_branch,
-                    str(worktree_path),
                     f"refs/remotes/origin/{valid_base}",
                 ],
                 cwd=repo_path,
@@ -875,7 +953,7 @@ def checkout_code(
             mode = "cloned"
 
     if deepen > 0:
-        deepen_history(worktree_path, deepen, git_env=git_env, token=token)
+        deepen_checkout(repo_path, deepen, token=token, git_env=git_env)
 
     _ensure_no_persisted_credentials(repo_path, token)
 
@@ -886,15 +964,14 @@ def checkout_code(
         "base_branch": valid_base,
         "base_head": base_head,
         "branch": valid_branch,
-        "repo_path": str(repo_path),
-        "worktree_path": str(worktree_path),
+        "path": str(repo_path),
         "mode": mode,
     }
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Shallow-clone a GitHub repo and cut a worktree."
+        description="Shallow-clone a GitHub repo and check out a work branch."
     )
     parser.add_argument(
         "--credential-helper",

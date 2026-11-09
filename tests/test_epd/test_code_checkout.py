@@ -71,6 +71,10 @@ def checkout_harness(tmp_path: Path):
     seed = tmp_path / "seed"
     seed.mkdir(parents=True)
     _git_raw(seed, "init", "-b", "main")
+    (seed / "README.md").write_text("commit 0\n", encoding="utf-8")
+    _git_raw(seed, "add", "README.md")
+    _git_raw(seed, "commit", "-m", "initial commit")
+
     (seed / "README.md").write_text("commit 1\n", encoding="utf-8")
     _git_raw(seed, "add", "README.md")
     _git_raw(seed, "commit", "-m", "first commit")
@@ -127,6 +131,22 @@ def checkout_harness(tmp_path: Path):
                 self.wfile.write(
                     json.dumps({"detail": f"denied for {current_tok}"}).encode()
                 )
+                return
+            if repo_slug == "acme/expired-401":
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {"detail": f"token expired for {current_tok}"}
+                    ).encode()
+                )
+                return
+            if repo_slug == "acme/expired-401-secret-only":
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"detail": current_tok}).encode())
                 return
             if repo_slug == "acme/uninstalled":
                 self.send_response(404)
@@ -326,11 +346,12 @@ def test_code_checkout_yaml_contract_and_shell_syntax() -> None:
         "base_branch",
         "base_head",
         "branch",
-        "repo_path",
-        "worktree_path",
+        "path",
         "mode",
         "error",
     }
+    assert "repo_path" not in outputs
+    assert "worktree_path" not in outputs
 
     jenv = jinja2.Environment(undefined=jinja2.StrictUndefined)
     rendered = jenv.from_string(cfg["script_template"]).render(
@@ -486,18 +507,20 @@ def test_fresh_clone_and_worktree_pass_case(checkout_harness: dict[str, Any]) ->
     assert res["base_branch"] == "main"
     assert res["base_head"] == checkout_harness["main_sha"]
     assert res["branch"] == "run-stage-check-99887766"
-    assert res["repo_path"] == str(root_dir / "repo")
-    assert res["worktree_path"] == str(root_dir / "work")
+    assert res["path"] == str(root_dir / "repo")
+    assert "repo_path" not in res
+    assert "worktree_path" not in res
+    assert not (root_dir / "work").exists()
     assert res["mode"] == "cloned"
 
-    work_dir = Path(res["worktree_path"])
-    assert (work_dir / "README.md").read_text(encoding="utf-8") == "commit 2\n"
+    repo_dir = Path(res["path"])
+    assert (repo_dir / "README.md").read_text(encoding="utf-8") == "commit 2\n"
     assert (
-        _git_raw(work_dir, "rev-parse", "--abbrev-ref", "HEAD")
+        _git_raw(repo_dir, "rev-parse", "--abbrev-ref", "HEAD")
         == "run-stage-check-99887766"
     )
-    assert _git_raw(work_dir, "rev-parse", "HEAD") == checkout_harness["main_sha"]
-    assert (Path(res["repo_path"]) / ".git" / "shallow").is_file()
+    assert _git_raw(repo_dir, "rev-parse", "HEAD") == checkout_harness["main_sha"]
+    assert (repo_dir / ".git" / "shallow").is_file()
 
     # Zero files written under WORKSPACE_DIR
     assert list(checkout_harness["workspace_dir"].iterdir()) == []
@@ -511,36 +534,36 @@ def test_fresh_clone_and_worktree_pass_case(checkout_harness: dict[str, Any]) ->
     assert git_calls[0]["git_config_key_0"] == "http.https://github.com/.extraheader"
     assert git_calls[0]["git_config_value_0"] == f"Authorization: Basic {expected_b64}"
 
-    git_cfg = (Path(res["repo_path"]) / ".git" / "config").read_text(encoding="utf-8")
+    git_cfg = (repo_dir / ".git" / "config").read_text(encoding="utf-8")
     assert checkout_harness["test_token"] not in git_cfg
     assert expected_b64 not in git_cfg
     assert _git_raw(
-        work_dir, "config", "--get", "credential.https://github.com.helper"
+        repo_dir, "config", "--get", "credential.https://github.com.helper"
     ) == code_checkout.build_credential_helper_command("acme/widget")
     assert (
         _git_raw(
-            work_dir, "config", "--get", "credential.https://github.com.useHttpPath"
+            repo_dir, "config", "--get", "credential.https://github.com.useHttpPath"
         )
         == "true"
     )
 
-    # Verify pushing a new commit from the shallow worktree and deepening history work cleanly
-    (work_dir / "new_file.txt").write_text("hello from worktree\n", encoding="utf-8")
-    _git_raw(work_dir, "add", "new_file.txt")
-    _git_raw(work_dir, "commit", "-m", "worktree commit")
-    _git_raw(work_dir, "push", "origin", f"HEAD:refs/heads/{res['branch']}")
+    # Verify pushing a new commit from the shallow checkout and deepening history work cleanly
+    (repo_dir / "new_file.txt").write_text("hello from checkout\n", encoding="utf-8")
+    _git_raw(repo_dir, "add", "new_file.txt")
+    _git_raw(repo_dir, "commit", "-m", "checkout commit")
+    _git_raw(repo_dir, "push", "origin", f"HEAD:refs/heads/{res['branch']}")
 
-    git_env = code_checkout.build_git_env(
-        checkout_harness["test_token"], base_env=checkout_harness["env"]
+    code_checkout.deepen_checkout(
+        repo_dir,
+        1,
+        token=checkout_harness["test_token"],
+        env=checkout_harness["env"],
     )
-    code_checkout.deepen_history(
-        work_dir, 1, git_env=git_env, token=checkout_harness["test_token"]
-    )
-    log_lines = _git_raw(work_dir, "log", "--oneline").splitlines()
+    log_lines = _git_raw(repo_dir, "log", "--oneline").splitlines()
     assert len(log_lines) >= 3
 
 
-def test_resume_true_on_existing_origin_branch_and_local_worktree(
+def test_resume_true_on_existing_origin_branch_and_local_checkout(
     checkout_harness: dict[str, Any],
 ) -> None:
     root_dir = checkout_harness["tmp_path"] / "checkout-resume"
@@ -558,16 +581,20 @@ def test_resume_true_on_existing_origin_branch_and_local_worktree(
     assert res1["mode"] == "resumed"
     assert res1["branch"] == "existing-work"
     assert res1["base_head"] == checkout_harness["main_sha"]
-    work_dir = Path(res1["worktree_path"])
-    assert (work_dir / "feature.txt").read_text(
+    assert res1["path"] == str(root_dir / "repo")
+    assert "repo_path" not in res1
+    assert "worktree_path" not in res1
+    assert not (root_dir / "work").exists()
+    repo_dir = Path(res1["path"])
+    assert (repo_dir / "feature.txt").read_text(
         encoding="utf-8"
     ) == "existing work content\n"
     assert (
-        _git_raw(work_dir, "rev-parse", "HEAD")
+        _git_raw(repo_dir, "rev-parse", "HEAD")
         == checkout_harness["existing_branch_sha"]
     )
 
-    # 2. Re-running with resume=true when worktree is already checked out reuses it
+    # 2. Re-running with resume=true when <root>/repo is already on <branch> reuses it
     res2 = code_checkout.checkout_code(
         repo_url="git@github.com:acme/widget.git",
         base_branch="main",
@@ -579,6 +606,36 @@ def test_resume_true_on_existing_origin_branch_and_local_worktree(
     assert res2["status"] == "ready"
     assert res2["mode"] == "resumed"
     assert res2["branch"] == "existing-work"
+    assert res2["path"] == str(root_dir / "repo")
+
+    # 3. When <branch> does not exist on origin or locally and resume=true, cuts from origin/<base_branch> (mode="cloned")
+    res3 = code_checkout.checkout_code(
+        repo_url="git@github.com:acme/widget.git",
+        base_branch="main",
+        branch="brand-new-branch",
+        resume=True,
+        root=str(root_dir),
+        env=checkout_harness["env"],
+    )
+    assert res3["status"] == "ready"
+    assert res3["mode"] == "cloned"
+    assert res3["branch"] == "brand-new-branch"
+    assert _git_raw(repo_dir, "rev-parse", "--abbrev-ref", "HEAD") == "brand-new-branch"
+
+    # 4. When <branch> exists only locally (e.g. brand-new-branch after switching back to existing-work),
+    # resume=true checks out the existing local branch (mode="resumed")
+    _git_raw(repo_dir, "checkout", "existing-work")
+    res4 = code_checkout.checkout_code(
+        repo_url="git@github.com:acme/widget.git",
+        base_branch="main",
+        branch="brand-new-branch",
+        resume=True,
+        root=str(root_dir),
+        env=checkout_harness["env"],
+    )
+    assert res4["status"] == "ready"
+    assert res4["mode"] == "resumed"
+    assert res4["branch"] == "brand-new-branch"
 
 
 def test_existing_work_branch_with_resume_false_fails(
@@ -676,10 +733,13 @@ def test_cli_json_output_through_yaml_command(
         env=env,
         check=False,
     )
-    assert proc.returncode == 0, proc.stderr
+    assert proc.returncode == 0
     payload = json.loads(proc.stdout.strip())
     assert payload["status"] == "ready"
     assert payload["branch"] == "yaml-feature-branch"
+    assert payload["path"] == str(root_dir / "repo")
+    assert "repo_path" not in payload
+    assert "worktree_path" not in payload
     assert payload["mode"] == "cloned"
 
     # Running the same command again with resume="false" exits 1 with JSON status=="failed"
@@ -830,12 +890,11 @@ def test_subsequent_git_fetch_and_push_without_git_config_count_use_credential_h
     clean_env["GIT_COMMITTER_NAME"] = "Test Author"
     clean_env["GIT_COMMITTER_EMAIL"] = "author@example.com"
 
-    work_dir = Path(res["worktree_path"])
-    repo_dir = Path(res["repo_path"])
+    repo_dir = Path(res["path"])
 
-    # Subsequent `git -C <worktree_path> fetch --deepen=1 origin` re-requests fresh token via helper
+    # Subsequent `git -C <path> fetch --deepen=1 origin` re-requests fresh token via helper
     fetch_proc = subprocess.run(
-        ["git", "-C", str(work_dir), "fetch", "--deepen=1", "origin"],
+        ["git", "-C", str(repo_dir), "fetch", "--deepen=1", "origin"],
         env=clean_env,
         capture_output=True,
         text=True,
@@ -844,18 +903,18 @@ def test_subsequent_git_fetch_and_push_without_git_config_count_use_credential_h
     assert fetch_proc.returncode == 0
     assert len(checkout_harness["token_requests"]) == 2
 
-    # Subsequent `git -C <worktree_path> push` re-requests another fresh token via helper
+    # Subsequent `git -C <path> push` re-requests another fresh token via helper
     rotated_token_2 = "ghs_SecondRotatedTokenForPush_888"
     checkout_harness["set_token"](rotated_token_2)
-    (work_dir / "later_change.txt").write_text("pushed after 1h\n", encoding="utf-8")
-    _git_raw(work_dir, "add", "later_change.txt")
-    _git_raw(work_dir, "commit", "-m", "commit after 1h")
+    (repo_dir / "later_change.txt").write_text("pushed after 1h\n", encoding="utf-8")
+    _git_raw(repo_dir, "add", "later_change.txt")
+    _git_raw(repo_dir, "commit", "-m", "commit after 1h")
 
     push_proc = subprocess.run(
         [
             "git",
             "-C",
-            str(work_dir),
+            str(repo_dir),
             "push",
             "origin",
             f"HEAD:refs/heads/{res['branch']}",
@@ -989,6 +1048,157 @@ def test_unreachable_server_and_503_fallback_to_github_token_only_when_set(
     )
     assert res["status"] == "ready"
     assert res["branch"] == "fallback-work-branch"
-    git_cfg = (Path(res["repo_path"]) / ".git" / "config").read_text(encoding="utf-8")
+    assert res["path"] == str(root_fallback / "repo")
+    git_cfg = (Path(res["path"]) / ".git" / "config").read_text(encoding="utf-8")
     assert fallback_secret not in git_cfg
     assert "x-access-token:" not in git_cfg
+
+
+def test_mid_run_token_expiry_loud_401_and_secret_only_stderr(
+    checkout_harness: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    # 1. HTTP 401 from /api/github/token surfaces a loud error naming token expiry / auth failure
+    with pytest.raises(
+        code_checkout.CheckoutError,
+        match=r"GitHub token expired or authentication failed: HTTP 401",
+    ) as exc_401:
+        code_checkout.checkout_code(
+            repo_url="https://github.com/acme/expired-401.git",
+            base_branch="main",
+            root=str(tmp_path / "expired-401"),
+            env=checkout_harness["env"],
+        )
+    assert checkout_harness["test_token"] not in str(exc_401.value)
+    assert "[REDACTED]" in str(exc_401.value)
+
+    # 2. HTTP 401 where server body contained ONLY the secret token still surfaces a loud non-empty error
+    with pytest.raises(
+        code_checkout.CheckoutError,
+        match=r"GitHub token expired or authentication failed: HTTP 401 \[REDACTED\]",
+    ) as exc_401_secret:
+        code_checkout.checkout_code(
+            repo_url="https://github.com/acme/expired-401-secret-only.git",
+            base_branch="main",
+            root=str(tmp_path / "expired-401-secret-only"),
+            env=checkout_harness["env"],
+        )
+    assert checkout_harness["test_token"] not in str(exc_401_secret.value)
+    assert str(exc_401_secret.value).strip() != "[REDACTED]"
+
+    # 3. Git operation failing with only the secret token in stderr never scrubs to empty or bare [REDACTED]
+    fake_bin = tmp_path / "fake-git-bin"
+    fake_bin.mkdir(parents=True)
+    secret_only_git = fake_bin / "git"
+    leaked_tok = "ghs_LeakedMidRunExpiredTokenSecretOnly777"
+    secret_only_git.write_text(
+        f"#!{sys.executable}\nimport sys\nsys.stderr.write({leaked_tok!r} + '\\n')\nsys.exit(128)\n",
+        encoding="utf-8",
+    )
+    secret_only_git.chmod(0o755)
+    git_env = code_checkout.build_git_env(
+        leaked_tok,
+        base_env={**checkout_harness["env"], "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}"},
+    )
+    with pytest.raises(
+        code_checkout.CheckoutError,
+        match=r"GitHub token expired or authentication failed",
+    ) as exc_git_secret:
+        code_checkout.run_git(
+            ["fetch", "origin"],
+            git_env=git_env,
+            token=leaked_tok,
+        )
+    err_msg = str(exc_git_secret.value)
+    assert leaked_tok not in err_msg
+    assert "[REDACTED]" in err_msg
+    assert err_msg.strip() not in {"", "[REDACTED]", "git fetch origin failed: [REDACTED]"}
+
+    # 4. Git operation failing with HTTP 401 / Authentication failed in stderr explicitly names token expiry / auth failure
+    auth_fail_git = fake_bin / "git"
+    auth_fail_git.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"sys.stderr.write('remote: Invalid username or token.\\nfatal: Authentication failed for https://github.com/acme/widget.git/\\n')\n"
+        f"sys.exit(128)\n",
+        encoding="utf-8",
+    )
+    auth_fail_git.chmod(0o755)
+    with pytest.raises(
+        code_checkout.CheckoutError,
+        match=r"git push origin main failed: GitHub token expired or authentication failed:",
+    ):
+        code_checkout.run_git(
+            ["push", "origin", "main"],
+            git_env=git_env,
+            token=leaked_tok,
+        )
+
+
+def test_deepen_checkout_pass_and_fail_cases(
+    checkout_harness: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    root_dir = tmp_path / "checkout-deepen"
+    res = code_checkout.checkout_code(
+        repo_url="https://github.com/acme/widget.git",
+        base_branch="main",
+        branch="deepen-work-branch",
+        resume="false",
+        root=str(root_dir),
+        env=checkout_harness["env"],
+    )
+    repo_dir = Path(res["path"])
+    assert repo_dir == root_dir / "repo"
+
+    # Shallow clone (depth=1) starts with commit count == 1
+    initial_count = int(_git_raw(repo_dir, "rev-list", "--count", "HEAD"))
+    assert initial_count == 1
+    assert (repo_dir / ".git" / "shallow").is_file()
+
+    # Pass case: deepen_checkout(path, depth=2) grows commit history while base_head stays unchanged
+    code_checkout.deepen_checkout(
+        repo_dir,
+        depth=2,
+        token=checkout_harness["test_token"],
+        env=checkout_harness["env"],
+    )
+    deepened_count = int(_git_raw(repo_dir, "rev-list", "--count", "HEAD"))
+    assert deepened_count >= 2
+    assert deepened_count == 3
+    assert _git_raw(repo_dir, "rev-parse", "HEAD") == res["base_head"]
+    assert (
+        _git_raw(repo_dir, "rev-parse", "refs/remotes/origin/main")
+        == res["base_head"]
+    )
+
+    # Fail case 1: invalid depth (<= 0) raises CheckoutError naming `git fetch --deepen=<N> failed`
+    for bad_depth in (0, -1, -5):
+        with pytest.raises(
+            code_checkout.CheckoutError,
+            match=rf"git fetch --deepen={bad_depth} failed: invalid deepen value",
+        ):
+            code_checkout.deepen_checkout(
+                repo_dir,
+                depth=bad_depth,
+                token=checkout_harness["test_token"],
+                env=checkout_harness["env"],
+            )
+
+    # Fail case 2: failing git fetch --deepen (broken/unreachable remote) raises CheckoutError naming `git fetch --deepen=<N> failed` immediately
+    _git_raw(
+        repo_dir,
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/acme/missing-deepen-remote.git",
+    )
+    with pytest.raises(
+        code_checkout.CheckoutError,
+        match=r"git fetch --deepen=2 failed:",
+    ):
+        code_checkout.deepen_checkout(
+            repo_dir,
+            depth=2,
+            token=checkout_harness["test_token"],
+            env=checkout_harness["env"],
+        )

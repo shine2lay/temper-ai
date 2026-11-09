@@ -3,10 +3,11 @@ agent:
   type: script
   description: >
     Clone a shallow (--depth 1 --single-branch) GitHub repository into <root>/repo
-    and cut a git worktree at <root>/work inside the run's throwaway container
-    using a short-lived GitHub App installation token from the Temper server.
-    Uses no host paths, no claims, no cleanup partner, and never writes under
-    WORKSPACE_DIR. Deeper history can be fetched explicitly via git fetch --deepen=<N>.
+    and check out <branch> directly inside <root>/repo in the run's throwaway
+    container using a short-lived GitHub App installation token from the Temper
+    server. Uses no git worktree, no host paths, no claims, no cleanup partner,
+    and never writes under WORKSPACE_DIR. Deeper history can be fetched explicitly
+    via deepen_checkout(<path>, <N>) or git fetch --deepen=<N>.
   timeout_seconds: 300
   strict_undefined: true
   inputs:
@@ -33,7 +34,7 @@ agent:
     root:
       type: string
       default: "/tmp/temper-checkout"
-      description: "Container-local checkout root directory for <root>/repo and <root>/work (default /tmp/temper-checkout; never under WORKSPACE_DIR)."
+      description: "Container-local checkout root directory for <root>/repo (default /tmp/temper-checkout; never under WORKSPACE_DIR)."
   outputs:
     status:
       type: string
@@ -53,12 +54,9 @@ agent:
     branch:
       type: string
       description: "Checked-out work branch name."
-    repo_path:
+    path:
       type: string
-      description: "Container path to the base clone (<root>/repo)."
-    worktree_path:
-      type: string
-      description: "Container path to the checked-out worktree (<root>/work)."
+      description: "Container path to the checked-out repository (<root>/repo)."
     mode:
       type: string
       description: "cloned | resumed"

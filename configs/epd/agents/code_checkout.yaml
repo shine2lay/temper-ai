@@ -1,0 +1,86 @@
+agent:
+  name: code_checkout
+  type: script
+  description: >
+    Clone a shallow (--depth 1 --single-branch) GitHub repository into <root>/repo
+    and cut a git worktree at <root>/work inside the run's throwaway container
+    using a short-lived GitHub App installation token from the Temper server.
+    Uses no host paths, no claims, no cleanup partner, and never writes under
+    WORKSPACE_DIR. Deeper history can be fetched explicitly via git fetch --deepen=<N>.
+  timeout_seconds: 300
+  strict_undefined: true
+  inputs:
+    repo_url:
+      type: string
+      required: true
+      description: "GitHub repository URL (https://github.com/<owner>/<repo>[.git], git@github.com:<owner>/<repo>[.git], or ssh://git@github.com/<owner>/<repo>[.git])."
+    base_branch:
+      type: string
+      required: true
+      description: "Existing branch on origin to start from."
+    branch:
+      type: string
+      default: ""
+      description: "Work branch to create or resume. Defaults to run-<label>-<short_run_id> when label is set, else run-<run_id>."
+    label:
+      type: string
+      default: ""
+      description: "Optional readable slug ([a-z0-9-]+) used in the default branch name when branch is omitted."
+    resume:
+      type: string
+      default: "false"
+      description: "true to resume an existing work branch; false (default) fails if the work branch already exists locally or on origin."
+    root:
+      type: string
+      default: "/tmp/temper-checkout"
+      description: "Container-local checkout root directory for <root>/repo and <root>/work (default /tmp/temper-checkout; never under WORKSPACE_DIR)."
+  outputs:
+    status:
+      type: string
+      description: "ready | failed"
+    repo:
+      type: string
+      description: "Canonical <owner>/<repo> slug."
+    repo_url:
+      type: string
+      description: "Caller-supplied repository URL."
+    base_branch:
+      type: string
+      description: "Base branch on origin."
+    base_head:
+      type: string
+      description: "40-character commit SHA of origin/<base_branch>."
+    branch:
+      type: string
+      description: "Checked-out work branch name."
+    repo_path:
+      type: string
+      description: "Container path to the base clone (<root>/repo)."
+    worktree_path:
+      type: string
+      description: "Container path to the checked-out worktree (<root>/work)."
+    mode:
+      type: string
+      description: "cloned | resumed"
+    error:
+      type: string
+      description: "Failure message when status == failed."
+  script_template: |
+    #!/bin/sh
+    # POSIX sh; no dollar-brace env syntax (config-loader substitution).
+    set -e
+
+    PYTHON="$TEMPER_PYTHON"
+    [ -n "$PYTHON" ] || PYTHON=python3
+    SCRIPT="$CONFIGS_DIR/epd/bin/code_checkout.py"
+    [ -f "$SCRIPT" ] || SCRIPT=/app/configs/epd/bin/code_checkout.py
+    [ -f "$SCRIPT" ] || SCRIPT=configs/epd/bin/code_checkout.py
+    set -u
+
+    exec "$PYTHON" "$SCRIPT" \
+      --repo-url "{{ repo_url }}" \
+      --base-branch "{{ base_branch }}" \
+      --branch "{{ branch | default('', true) }}" \
+      --label "{{ label | default('', true) }}" \
+      --resume "{{ resume | default('false', true) }}" \
+      --root "{{ root | default('/tmp/temper-checkout', true) }}"

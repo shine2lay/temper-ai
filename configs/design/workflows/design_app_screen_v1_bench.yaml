@@ -64,7 +64,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [intake_collect]
           condition: {source: intake_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: intake, product: input.product}
+          input_map: {step: intake, product: input.product, workspace_path: input.workspace_path}
         - name: intake_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -75,7 +75,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [intake_check]
           condition: {source: intake_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: intake, product: input.product}
+          input_map: {step: intake, product: input.product, workspace_path: input.workspace_path}
         - name: intake_finish
           type: agent
           agent: design_app_screen_stage_v1
@@ -122,7 +122,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [existing_collect, existing_sheet]
           condition: {source: existing_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: existing, product: input.product}
+          input_map: {step: existing, product: input.product, workspace_path: input.workspace_path}
         - name: existing_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -133,7 +133,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [existing_sheet, existing_check]
           condition: {source: existing_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: existing, product: input.product}
+          input_map: {step: existing, product: input.product, workspace_path: input.workspace_path}
         - name: existing_finish
           type: agent
           agent: design_app_screen_stage_v1
@@ -154,7 +154,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [ground_collect]
           condition: {source: ground_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: ground, product: input.product}
+          input_map: {step: ground, product: input.product, workspace_path: input.workspace_path}
         - name: ground_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -165,7 +165,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [ground_check]
           condition: {source: ground_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: ground, product: input.product}
+          input_map: {step: ground, product: input.product, workspace_path: input.workspace_path}
         - name: ground_finish
           type: agent
           agent: design_app_screen_stage_v1
@@ -186,7 +186,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [directions_collect]
           condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: directions, product: input.product}
+          input_map: {step: directions, product: input.product, workspace_path: input.workspace_path}
         - name: directions_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -198,7 +198,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [directions_check]
           condition: {source: directions_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: directions, product: input.product}
+          input_map: {step: directions, product: input.product, workspace_path: input.workspace_path}
         - name: directions_finish
           type: agent
           agent: design_app_screen_stage_v1
@@ -229,7 +229,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [build_collect]
           condition: {source: build_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: build, product: input.product}
+          input_map: {step: build, product: input.product, workspace_path: input.workspace_path}
         - name: build_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -240,7 +240,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [build_check]
           condition: {source: build_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: build, product: input.product}
+          input_map: {step: build, product: input.product, workspace_path: input.workspace_path}
         - name: build_finish
           type: agent
           agent: design_app_screen_stage_v1
@@ -275,7 +275,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [review_collect]
           condition: {source: review_collect.structured.model, operator: equals, value: "yes"}
-          input_map: {step: review, product: input.product}
+          input_map: {step: review, product: input.product, workspace_path: input.workspace_path}
         - name: review_check
           type: agent
           agent: design_app_screen_stage_v1
@@ -286,7 +286,7 @@ workflow:
           agent: design_app_screen_replay
           depends_on: [review_collect, review_check]
           condition: {source: review_check.structured.verdict, operator: equals, value: retry}
-          input_map: {step: review, product: input.product}
+          input_map: {step: review, product: input.product, workspace_path: input.workspace_path}
         - name: review_finish
           type: agent
           agent: design_app_screen_stage_v1

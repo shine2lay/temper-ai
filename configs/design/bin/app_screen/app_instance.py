@@ -212,11 +212,61 @@ def _find_gh_binary() -> str:
     raise AppInstanceError("gh CLI binary not found on PATH or /home/shinelay/.local/bin/gh")
 
 
+def _github_api_fallback(cmd: list[str], tok: str) -> subprocess.CompletedProcess[str]:
+    """Fallback for containers where the `gh` binary is not installed but TEMPER_GITHUB_TOKEN is set."""
+    headers = {
+        "Authorization": f"Bearer {tok}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "temper-ai",
+    }
+    try:
+        if len(cmd) >= 3 and cmd[1] == "api" and "/commits/" in cmd[2]:
+            endpoint = cmd[2].lstrip("/")
+            req = urllib.request.Request(f"https://api.github.com/{endpoint}", headers=headers)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            sha = str(data.get("sha") or "").strip()
+            return subprocess.CompletedProcess(cmd, 0, f"{sha}\n" if sha else "", "")
+        if len(cmd) >= 3 and cmd[1] == "run" and cmd[2] == "list":
+            repo = ""
+            commit = ""
+            for idx, part in enumerate(cmd):
+                if part == "--repo" and idx + 1 < len(cmd):
+                    repo = cmd[idx + 1]
+                elif part == "--commit" and idx + 1 < len(cmd):
+                    commit = cmd[idx + 1]
+            url = f"https://api.github.com/repos/{repo}/actions/runs?head_sha={commit}&per_page=30"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            runs = [
+                {
+                    "headSha": r.get("head_sha"),
+                    "conclusion": r.get("conclusion"),
+                    "status": r.get("status"),
+                    "name": r.get("display_title") or r.get("name"),
+                    "workflowName": r.get("name"),
+                    "databaseId": r.get("id"),
+                }
+                for r in (data.get("workflow_runs") or [])
+                if isinstance(r, dict)
+            ]
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(runs), "")
+    except Exception as exc:
+        return subprocess.CompletedProcess(cmd, 1, "", str(exc))
+    return subprocess.CompletedProcess(cmd, 1, "", f"unsupported gh command without gh binary: {cmd!r}")
+
+
 def _default_gh_runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    gh_bin = _find_gh_binary()
+    tok = _github_token_from_env()
+    try:
+        gh_bin = _find_gh_binary()
+    except AppInstanceError:
+        if tok:
+            return _github_api_fallback(cmd, tok)
+        raise
     actual_cmd = [gh_bin, *cmd[1:]] if cmd and cmd[0] == "gh" else list(cmd)
     env = dict(os.environ)
-    tok = _github_token_from_env()
     if tok and not env.get("GH_TOKEN") and not env.get("GITHUB_TOKEN"):
         env["GH_TOKEN"] = tok
     return subprocess.run(

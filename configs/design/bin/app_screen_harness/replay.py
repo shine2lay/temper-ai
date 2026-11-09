@@ -403,6 +403,10 @@ def replay_workspace_step(
     ws_p = Path(ws_path).expanduser().resolve()
     ws_p.mkdir(parents=True, exist_ok=True)
     if step == "workspace_startup":
+        if str(ws_p).startswith("/tmp/temper-bench-") and not (ws_p / "run.json").is_file():
+            from . import cases  # noqa: PLC0415
+
+            cases.prepare_workspace(cases.DEFAULT_CASE_DIR, ws_p, product=prod)
         temper_p = ws_p.parent if ws_p.name == "design" and ws_p.parent.name == ".temper" else ws_p / ".temper"
         wt_p = temper_p.parent if temper_p.name == ".temper" else ws_p
         return {
@@ -418,6 +422,12 @@ def replay_workspace_step(
             "worktree": "reused",
         }
     if step == "workspace_cleanup":
+        if str(ws_p).startswith("/tmp/temper-bench-"):
+            import shutil  # noqa: PLC0415
+
+            temper_p = ws_p.parent if ws_p.name == "design" and ws_p.parent.name == ".temper" else ws_p / ".temper"
+            wt_p = temper_p.parent if temper_p.name == ".temper" else ws_p
+            shutil.rmtree(wt_p, ignore_errors=True)
         return {
             "status": "clean",
             "repo": prod,

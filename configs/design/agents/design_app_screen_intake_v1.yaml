@@ -85,7 +85,6 @@ agent:
     End with a single ```json block: {"status": "completed", "requirements": <count>,
     "questions": <count>}.
   task_template: |
-    Workspace: {{ workspace_path }}
     Phase: {{ phase }}
     {% if phase == 'revise' %}
     Read 01-request/sources.json, your draft 01-request/draft.json and the script's

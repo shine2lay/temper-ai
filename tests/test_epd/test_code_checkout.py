@@ -96,12 +96,18 @@ def checkout_harness(tmp_path: Path):
     # Start a local HTTP server implementing POST /api/github/token
     token_requests: list[dict[str, Any]] = []
     test_token = "ghs_TestSecretInstallToken987654321"
+    active_token_file = tmp_path / "active_token.txt"
+    active_token_file.write_text(test_token, encoding="utf-8")
+
+    def set_token(new_token: str) -> None:
+        active_token_file.write_text(new_token, encoding="utf-8")
 
     class TokenHandler(http.server.BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw) if raw else {}
+            current_tok = active_token_file.read_text(encoding="utf-8").strip()
             token_requests.append(
                 {
                     "path": self.path,
@@ -119,7 +125,29 @@ def checkout_harness(tmp_path: Path):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(
-                    json.dumps({"detail": f"denied for {test_token}"}).encode()
+                    json.dumps({"detail": f"denied for {current_tok}"}).encode()
+                )
+                return
+            if repo_slug == "acme/uninstalled":
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {"detail": "the app is not installed on acme/uninstalled"}
+                    ).encode()
+                )
+                return
+            if repo_slug == "acme/unconfigured-503":
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "detail": "temper's GitHub app is not set up: TEMPER_GITHUB_APP_ID is not set"
+                        }
+                    ).encode()
                 )
                 return
             self.send_response(200)
@@ -127,7 +155,7 @@ def checkout_harness(tmp_path: Path):
             self.end_headers()
             self.wfile.write(
                 json.dumps(
-                    {"token": test_token, "expires_at": "2099-01-01T00:00:00Z"}
+                    {"token": current_tok, "expires_at": "2099-01-01T00:00:00Z"}
                 ).encode()
             )
 
@@ -146,10 +174,11 @@ def checkout_harness(tmp_path: Path):
     git_wrapper = bin_dir / "git"
     git_wrapper.write_text(
         f"""#!{sys.executable}
-import json, os, re, sys
+import json, os, re, subprocess, sys
 
 remotes_root = {str(remotes_root)!r}
 log_path = {str(git_log_path)!r}
+active_token_path = {str(active_token_file)!r}
 args = sys.argv[1:]
 rewritten = []
 for arg in args:
@@ -168,6 +197,53 @@ record = {{
 }}
 with open(log_path, "a", encoding="utf-8") as fh:
     fh.write(json.dumps(record) + "\\n")
+
+# When a remote operation (fetch/push/pull/ls-remote) runs without ephemeral extraheader
+# (e.g. a subsequent git fetch/push >1h later in the worktree), exercise Git's configured
+# credential.https://github.com.helper via `/usr/bin/git credential fill` + `approve`.
+if not os.environ.get("GIT_CONFIG_VALUE_0"):
+    cwd = os.getcwd()
+    subcmd = None
+    i = 0
+    while i < len(args):
+        if args[i] == "-C" and i + 1 < len(args):
+            cwd = args[i + 1]
+            i += 2
+            continue
+        if not args[i].startswith("-"):
+            subcmd = args[i]
+            break
+        i += 1
+    if subcmd in ("fetch", "push", "pull", "ls-remote"):
+        cred_input = "protocol=https\\nhost=github.com\\npath=acme/widget.git\\n\\n"
+        fill = subprocess.run(
+            ["/usr/bin/git", "-C", cwd, "credential", "fill"],
+            input=cred_input,
+            capture_output=True,
+            text=True,
+            env=os.environ,
+            check=False,
+        )
+        if fill.returncode != 0:
+            sys.stderr.write(fill.stderr or "fatal: credential helper failed\\n")
+            sys.exit(128)
+        expected_tok = open(active_token_path, encoding="utf-8").read().strip()
+        kv = dict(
+            line.split("=", 1)
+            for line in fill.stdout.splitlines()
+            if "=" in line
+        )
+        if kv.get("username") != "x-access-token" or kv.get("password") != expected_tok:
+            sys.stderr.write("fatal: Authentication failed for 'https://github.com/acme/widget.git/'\\n")
+            sys.exit(128)
+        subprocess.run(
+            ["/usr/bin/git", "-C", cwd, "credential", "approve"],
+            input=fill.stdout,
+            capture_output=True,
+            text=True,
+            env=os.environ,
+            check=False,
+        )
 
 os.execv("/usr/bin/git", ["/usr/bin/git"] + rewritten)
 """,
@@ -206,6 +282,7 @@ os.execv("/usr/bin/git", ["/usr/bin/git"] + rewritten)
             "token_requests": token_requests,
             "read_git_calls": read_git_calls,
             "test_token": test_token,
+            "set_token": set_token,
             "workspace_dir": workspace_dir,
             "tmp_path": tmp_path,
         }
@@ -229,7 +306,14 @@ def test_code_checkout_yaml_contract_and_shell_syntax() -> None:
     assert cfg["strict_undefined"] is True
 
     inputs = cfg["inputs"]
-    assert set(inputs) == {"repo_url", "base_branch", "branch", "label", "resume", "root"}
+    assert set(inputs) == {
+        "repo_url",
+        "base_branch",
+        "branch",
+        "label",
+        "resume",
+        "root",
+    }
     assert inputs["repo_url"]["required"] is True
     assert inputs["base_branch"]["required"] is True
     assert inputs["root"]["default"] == "/tmp/temper-checkout"
@@ -408,7 +492,10 @@ def test_fresh_clone_and_worktree_pass_case(checkout_harness: dict[str, Any]) ->
 
     work_dir = Path(res["worktree_path"])
     assert (work_dir / "README.md").read_text(encoding="utf-8") == "commit 2\n"
-    assert _git_raw(work_dir, "rev-parse", "--abbrev-ref", "HEAD") == "run-stage-check-99887766"
+    assert (
+        _git_raw(work_dir, "rev-parse", "--abbrev-ref", "HEAD")
+        == "run-stage-check-99887766"
+    )
     assert _git_raw(work_dir, "rev-parse", "HEAD") == checkout_harness["main_sha"]
     assert (Path(res["repo_path"]) / ".git" / "shallow").is_file()
 
@@ -427,6 +514,15 @@ def test_fresh_clone_and_worktree_pass_case(checkout_harness: dict[str, Any]) ->
     git_cfg = (Path(res["repo_path"]) / ".git" / "config").read_text(encoding="utf-8")
     assert checkout_harness["test_token"] not in git_cfg
     assert expected_b64 not in git_cfg
+    assert _git_raw(
+        work_dir, "config", "--get", "credential.https://github.com.helper"
+    ) == code_checkout.build_credential_helper_command("acme/widget")
+    assert (
+        _git_raw(
+            work_dir, "config", "--get", "credential.https://github.com.useHttpPath"
+        )
+        == "true"
+    )
 
     # Verify pushing a new commit from the shallow worktree and deepening history work cleanly
     (work_dir / "new_file.txt").write_text("hello from worktree\n", encoding="utf-8")
@@ -463,8 +559,13 @@ def test_resume_true_on_existing_origin_branch_and_local_worktree(
     assert res1["branch"] == "existing-work"
     assert res1["base_head"] == checkout_harness["main_sha"]
     work_dir = Path(res1["worktree_path"])
-    assert (work_dir / "feature.txt").read_text(encoding="utf-8") == "existing work content\n"
-    assert _git_raw(work_dir, "rev-parse", "HEAD") == checkout_harness["existing_branch_sha"]
+    assert (work_dir / "feature.txt").read_text(
+        encoding="utf-8"
+    ) == "existing work content\n"
+    assert (
+        _git_raw(work_dir, "rev-parse", "HEAD")
+        == checkout_harness["existing_branch_sha"]
+    )
 
     # 2. Re-running with resume=true when worktree is already checked out reuses it
     res2 = code_checkout.checkout_code(
@@ -619,3 +720,275 @@ def test_cli_json_output_through_yaml_command(
     unset_payload = json.loads(proc_unset.stdout.strip())
     assert unset_payload["status"] == "ready"
     assert unset_payload["branch"] == "yaml-unset-env-branch"
+
+
+def test_credential_helper_get_rotates_token_and_store_erase_are_noops(
+    checkout_harness: dict[str, Any],
+) -> None:
+    env = dict(checkout_harness["env"])
+
+    # 1. Initial `get` fetches token v1 from POST /api/github/token
+    proc_get1 = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--credential-helper",
+            "--repo",
+            "acme/widget",
+            "get",
+        ],
+        input="protocol=https\nhost=github.com\npath=acme/widget.git\n\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert proc_get1.returncode == 0
+    assert (
+        proc_get1.stdout
+        == f"username=x-access-token\npassword={checkout_harness['test_token']}\n\n"
+    )
+    assert len(checkout_harness["token_requests"]) == 1
+    assert checkout_harness["token_requests"][0]["body"] == {"repo": "acme/widget"}
+
+    # 2. Rotate server token (simulating >1h installation token expiry) and call `get` again
+    rotated_token = "ghs_RotatedInstallTokenAfterOneHour_222"
+    checkout_harness["set_token"](rotated_token)
+
+    proc_get2 = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--credential-helper",
+            "--repo",
+            "acme/widget",
+            "get",
+        ],
+        input="protocol=https\nhost=github.com\npath=acme/widget.git\n\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert proc_get2.returncode == 0
+    assert proc_get2.stdout == f"username=x-access-token\npassword={rotated_token}\n\n"
+    assert len(checkout_harness["token_requests"]) == 2
+
+    # 3. `store` and `erase` are no-ops: exit 0, empty stdout, zero token requests, zero files written
+    for op in ("store", "erase"):
+        proc_op = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--credential-helper",
+                "--repo",
+                "acme/widget",
+                op,
+            ],
+            input=f"protocol=https\nhost=github.com\nusername=x-access-token\npassword={rotated_token}\n\n",
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        assert proc_op.returncode == 0
+        assert proc_op.stdout == ""
+        assert proc_op.stderr == ""
+    assert len(checkout_harness["token_requests"]) == 2
+
+
+def test_subsequent_git_fetch_and_push_without_git_config_count_use_credential_helper(
+    checkout_harness: dict[str, Any],
+) -> None:
+    root_dir = checkout_harness["tmp_path"] / "checkout-long-run"
+    res = code_checkout.checkout_code(
+        repo_url="https://github.com/acme/widget.git",
+        base_branch="main",
+        branch="long-run-branch",
+        resume="false",
+        root=str(root_dir),
+        env=checkout_harness["env"],
+    )
+    assert res["status"] == "ready"
+    assert len(checkout_harness["token_requests"]) == 1
+
+    # Simulate >1h passing: rotate the installation token on the Temper server
+    rotated_token = "ghs_FreshTokenAfterOneHourExpiry_999"
+    checkout_harness["set_token"](rotated_token)
+
+    # Clean environment without GIT_CONFIG_COUNT / GIT_CONFIG_KEY_0 / GIT_CONFIG_VALUE_0
+    clean_env = {
+        k: v
+        for k, v in checkout_harness["env"].items()
+        if not k.startswith("GIT_CONFIG_")
+    }
+    clean_env["GIT_TERMINAL_PROMPT"] = "0"
+    clean_env["GIT_CONFIG_NOSYSTEM"] = "1"
+    clean_env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    clean_env["GIT_AUTHOR_NAME"] = "Test Author"
+    clean_env["GIT_AUTHOR_EMAIL"] = "author@example.com"
+    clean_env["GIT_COMMITTER_NAME"] = "Test Author"
+    clean_env["GIT_COMMITTER_EMAIL"] = "author@example.com"
+
+    work_dir = Path(res["worktree_path"])
+    repo_dir = Path(res["repo_path"])
+
+    # Subsequent `git -C <worktree_path> fetch --deepen=1 origin` re-requests fresh token via helper
+    fetch_proc = subprocess.run(
+        ["git", "-C", str(work_dir), "fetch", "--deepen=1", "origin"],
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert fetch_proc.returncode == 0
+    assert len(checkout_harness["token_requests"]) == 2
+
+    # Subsequent `git -C <worktree_path> push` re-requests another fresh token via helper
+    rotated_token_2 = "ghs_SecondRotatedTokenForPush_888"
+    checkout_harness["set_token"](rotated_token_2)
+    (work_dir / "later_change.txt").write_text("pushed after 1h\n", encoding="utf-8")
+    _git_raw(work_dir, "add", "later_change.txt")
+    _git_raw(work_dir, "commit", "-m", "commit after 1h")
+
+    push_proc = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(work_dir),
+            "push",
+            "origin",
+            f"HEAD:refs/heads/{res['branch']}",
+        ],
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert push_proc.returncode == 0
+    assert len(checkout_harness["token_requests"]) == 3
+
+    # Verify zero tokens or secrets are persisted in .git/config
+    git_cfg = (repo_dir / ".git" / "config").read_text(encoding="utf-8")
+    for tok in (checkout_harness["test_token"], rotated_token, rotated_token_2):
+        assert tok not in git_cfg
+    assert "x-access-token:" not in git_cfg
+
+
+def test_missing_installation_404_fails_loud_even_when_github_token_set(
+    checkout_harness: dict[str, Any],
+) -> None:
+    root_dir = checkout_harness["tmp_path"] / "checkout-404"
+    env_with_fallback = {
+        **checkout_harness["env"],
+        "GITHUB_TOKEN": "ghp_ShouldNeverBeUsedWhenAppNotInstalled123",
+    }
+
+    with pytest.raises(
+        code_checkout.CodeCheckoutError,
+        match=(
+            r"GitHub App installation \(temper-ai-bot\) does not cover repository "
+            r"'acme/uninstalled' \(https://github\.com/acme/uninstalled\.git\): "
+            r"the app is not installed on acme/uninstalled"
+        ),
+    ):
+        code_checkout.checkout_code(
+            repo_url="https://github.com/acme/uninstalled.git",
+            base_branch="main",
+            root=str(root_dir),
+            env=env_with_fallback,
+        )
+
+    # Must NEVER fall back to GITHUB_TOKEN or invoke git when /api/github/token returns 404
+    assert len(checkout_harness["token_requests"]) == 1
+    assert checkout_harness["read_git_calls"]() == []
+
+    # Credential helper also fails loud on 404 without emitting credentials to stdout
+    helper_proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--credential-helper",
+            "--repo",
+            "acme/uninstalled",
+            "get",
+        ],
+        input="protocol=https\nhost=github.com\npath=acme/uninstalled.git\n\n",
+        env=env_with_fallback,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert helper_proc.returncode == 1
+    assert helper_proc.stdout == ""
+    assert (
+        "GitHub App installation (temper-ai-bot) does not cover repository 'acme/uninstalled'"
+        in helper_proc.stderr
+    )
+    assert "ghp_ShouldNeverBeUsedWhenAppNotInstalled123" not in helper_proc.stderr
+
+
+def test_unreachable_server_and_503_fallback_to_github_token_only_when_set(
+    checkout_harness: dict[str, Any],
+) -> None:
+    # 1. Unreachable server without GITHUB_TOKEN fails loud
+    unreachable_env = {
+        **checkout_harness["env"],
+        "TEMPER_SERVER_URL": "http://127.0.0.1:1",
+    }
+    unreachable_env.pop("GITHUB_TOKEN", None)
+    with pytest.raises(
+        code_checkout.CodeCheckoutError,
+        match="failed to reach Temper server for GitHub token",
+    ):
+        code_checkout.checkout_code(
+            repo_url="https://github.com/acme/widget.git",
+            base_branch="main",
+            root=str(checkout_harness["tmp_path"] / "unreachable-no-token"),
+            env=unreachable_env,
+        )
+
+    # 2. HTTP 503 (app not configured) without GITHUB_TOKEN fails loud
+    env_503_no_token = dict(checkout_harness["env"])
+    env_503_no_token.pop("GITHUB_TOKEN", None)
+    with pytest.raises(
+        code_checkout.CodeCheckoutError,
+        match="failed to reach Temper server for GitHub token.*HTTP 503",
+    ):
+        code_checkout.fetch_github_token(
+            "acme/unconfigured-503",
+            repo_url="https://github.com/acme/unconfigured-503.git",
+            env=env_503_no_token,
+        )
+
+    # 3. HTTP 503 with single env var GITHUB_TOKEN falls back to GITHUB_TOKEN
+    fallback_secret = "ghp_FallbackEnvTokenForUnreachableServer999"
+    env_503_with_token = {
+        **checkout_harness["env"],
+        "GITHUB_TOKEN": fallback_secret,
+    }
+    tok_503 = code_checkout.fetch_github_token(
+        "acme/unconfigured-503",
+        repo_url="https://github.com/acme/unconfigured-503.git",
+        env=env_503_with_token,
+    )
+    assert tok_503 == fallback_secret
+
+    # 4. Unreachable server with single env var GITHUB_TOKEN falls back to GITHUB_TOKEN over HTTPS
+    unreachable_with_token = {
+        **unreachable_env,
+        "GITHUB_TOKEN": fallback_secret,
+    }
+    root_fallback = checkout_harness["tmp_path"] / "unreachable-with-token"
+    res = code_checkout.checkout_code(
+        repo_url="https://github.com/acme/widget.git",
+        base_branch="main",
+        branch="fallback-work-branch",
+        root=str(root_fallback),
+        env=unreachable_with_token,
+    )
+    assert res["status"] == "ready"
+    assert res["branch"] == "fallback-work-branch"
+    git_cfg = (Path(res["repo_path"]) / ".git" / "config").read_text(encoding="utf-8")
+    assert fallback_secret not in git_cfg
+    assert "x-access-token:" not in git_cfg

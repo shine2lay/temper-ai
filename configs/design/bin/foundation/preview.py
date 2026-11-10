@@ -455,6 +455,22 @@ def build_override_css(bindings: list[TokenBinding], theme: str = "light") -> st
     return "\n".join(lines)
 
 
+def _parse_brief_markdown(raw: str, *, product: str, brief_path: Path) -> dict[str, Any]:
+    md_parser = getattr(brief_mod, "parse_brief_markdown", None)
+    if callable(md_parser):
+        doc = md_parser(raw, product=product)
+    else:
+        doc = brief_mod.parse_brief(
+            raw,
+            product=product,
+            brief_path=brief_path,
+            brief_rel=brief_path.name,
+        )
+    if not isinstance(doc, dict):
+        raise PreviewError(f"markdown brief parser returned {type(doc).__name__}, expected dict")
+    return doc
+
+
 def _brief_fields(brief_source: str | Path | dict[str, Any] | None) -> dict[str, str]:
     defaults = {
         "product": "Foundation Sample Product",
@@ -467,16 +483,35 @@ def _brief_fields(brief_source: str | Path | dict[str, Any] | None) -> dict[str,
     if brief_source is None:
         return defaults
     if isinstance(brief_source, (str, Path)):
+        if isinstance(brief_source, str) and not brief_source.strip():
+            return defaults
         p = Path(brief_source)
-        if p.is_file():
-            raw = p.read_text(encoding="utf-8")
+        if p.exists():
+            try:
+                raw = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as read_exc:
+                raise PreviewError(
+                    f"unreadable brief {p}: {read_exc.__class__.__name__}: {read_exc}"
+                ) from read_exc
             try:
                 doc = json.loads(raw)
-            except Exception:
+                if not isinstance(doc, dict) or not doc:
+                    raise ValueError("brief JSON must be a non-empty object")
+            except (json.JSONDecodeError, ValueError, TypeError) as json_exc:
                 try:
-                    doc = brief_mod.parse_brief_markdown(raw, product=p.stem)
-                except Exception:
-                    doc = {}
+                    doc = _parse_brief_markdown(raw, product=p.stem, brief_path=p)
+                except (
+                    brief_mod.BriefError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    RuntimeError,
+                ) as md_exc:
+                    raise PreviewError(
+                        f"malformed brief {p}: JSON parse failed ({json_exc.__class__.__name__}: {json_exc}); "
+                        f"markdown parse failed ({md_exc.__class__.__name__}: {md_exc})"
+                    ) from md_exc
         else:
             doc = {}
     elif isinstance(brief_source, dict):
@@ -484,7 +519,20 @@ def _brief_fields(brief_source: str | Path | dict[str, Any] | None) -> dict[str,
     else:
         doc = {}
 
-    sec = doc.get("sections") if isinstance(doc.get("sections"), dict) else doc
+    raw_sections = doc.get("sections")
+    if isinstance(raw_sections, dict):
+        sec: dict[str, Any] = raw_sections
+    elif isinstance(raw_sections, list):
+        sec = {
+            str(s["id"]): s.get("body", "")
+            for s in raw_sections
+            if isinstance(s, dict) and isinstance(s.get("id"), str)
+        }
+        if "constraints" not in sec and isinstance(sec.get("fixed_constraints"), str):
+            sec["constraints"] = sec["fixed_constraints"]
+    else:
+        sec = doc
+
     out = dict(defaults)
     if isinstance(doc.get("product"), str) and doc["product"].strip():
         out["product"] = doc["product"].strip()
@@ -1128,6 +1176,7 @@ def discover_screens(
     *,
     staging_dir: Path,
     brief_source: str | Path | dict[str, Any] | None = None,
+    warnings_out: list[str] | None = None,
 ) -> tuple[Path, list[dict[str, str]], str]:
     """Return `(site_root, screens_list, surface_mode)` where each screen has `id` and `file`."""
     if captures is not None and str(captures).strip():
@@ -1137,20 +1186,30 @@ def discover_screens(
         if cap_path.is_dir():
             html_dir = cap_path / "captures" if (cap_path / "captures").is_dir() else cap_path
             manifest_file = html_dir / "manifest.json"
-            if manifest_file.is_file():
+            if manifest_file.exists():
                 try:
                     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-                    screens_raw = manifest.get("screens") if isinstance(manifest, dict) else None
-                    if isinstance(screens_raw, list):
-                        screens = [
-                            {"id": _kebab(str(s["id"])), "file": str(s["file"]).lstrip("/")}
-                            for s in screens_raw
-                            if isinstance(s, dict) and s.get("id") and s.get("file") and (html_dir / str(s["file"]).lstrip("/")).is_file()
-                        ]
-                        if screens:
-                            return html_dir, screens, "captured"
-                except Exception:
-                    pass
+                    if not isinstance(manifest, dict):
+                        raise ValueError(f"expected JSON object in manifest, got {type(manifest).__name__}")
+                    screens_raw = manifest.get("screens")
+                    if not isinstance(screens_raw, list):
+                        raise ValueError("manifest missing 'screens' list")
+                    screens = [
+                        {"id": _kebab(str(s["id"])), "file": str(s["file"]).lstrip("/")}
+                        for s in screens_raw
+                        if isinstance(s, dict) and s.get("id") and s.get("file") and (html_dir / str(s["file"]).lstrip("/")).is_file()
+                    ]
+                    if screens:
+                        return html_dir, screens, "captured"
+                    raise ValueError("manifest 'screens' list matched no existing HTML files")
+                except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+                    reason = (
+                        f"manifest discovery failed for {manifest_file} "
+                        f"({exc.__class__.__name__}: {exc}); fell back to globbing *.html"
+                    )
+                    if warnings_out is not None:
+                        warnings_out.append(reason)
+                    print(f"warning: {reason}", file=sys.stderr)
             html_files = sorted(
                 p for p in html_dir.iterdir() if p.is_file() and p.suffix.lower() in (".html", ".htm")
             )
@@ -1542,10 +1601,12 @@ def render_preview(
     if not directions:
         raise PreviewError("at least one token set is required")
 
+    discovery_warnings: list[str] = []
     screen_root, screens, surface_mode = discover_screens(
         captures,
         staging_dir=out_path,
         brief_source=brief_source,
+        warnings_out=discovery_warnings,
     )
 
     try:
@@ -1684,6 +1745,11 @@ def render_preview(
         "side_by_side_sheets": sbs_flat_list,
         "pairwise_diff": pairwise_diff,
     }
+    if discovery_warnings:
+        report["manifest_fallback_reason"] = (
+            discovery_warnings[0] if len(discovery_warnings) == 1 else "; ".join(discovery_warnings)
+        )
+        report["warnings"] = list(discovery_warnings)
     if len(dir_ids) == 1:
         sole = directions_report[dir_ids[0]]
         report["substituted"] = sole["substituted"]

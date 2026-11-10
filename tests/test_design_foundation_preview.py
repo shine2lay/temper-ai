@@ -494,8 +494,22 @@ def sample_preview_bundle(tmp_path_factory: pytest.TempPathFactory) -> dict[str,
     brief_path = base / "brief.md"
     brief_path.write_text(
         "# RollCall Covered-Call Posture\n\n"
+        "## 1. What it is\n"
         "A high-density options portfolio workbench showing weekly call expirations, "
-        "moneyness distance, assignment risk, and roll net credit.\n",
+        "moneyness distance, assignment risk, and roll net credit.\n\n"
+        "## 2. Who for\n"
+        "Self-directed equity investors managing weekly and monthly covered calls across accounts.\n\n"
+        "## 3. Where and how used\n"
+        "Desktop browser at market open for roll decisions; mobile browser for alert triage.\n\n"
+        "## 4. How it should feel plus what it must not feel like\n"
+        "Calm, high-precision financial ledger; must not feel like a casino ticker or flat grey table.\n\n"
+        "## 5. The neighbours\n"
+        "Tastytrade, Interactive Brokers Client Portal, Linear.\n\n"
+        "## 6. What is fixed\n"
+        "- Existing wordmark proportions stay untouched; foundation covers colour, type, spacing, radius, elevation, and motion only.\n"
+        "- WCAG 2.2 AA 4.5:1 text contrast required in both light and dark themes.\n\n"
+        "## 7. Taste anchors\n"
+        "- Stripe Docs typographic restraint with warm stone surfaces.\n",
         encoding="utf-8",
     )
     tokens = {
@@ -947,5 +961,83 @@ def test_i_missing_pillow_raises_clear_named_error(
             render_paths={("warm-ledger", "positions", "light", 390): tile_a, ("warm-ledger", "positions", "dark", 390): tile_a, ("warm-ledger", "positions", "light", 1440): tile_a, ("warm-ledger", "positions", "dark", 1440): tile_a},
             baseline_paths={("positions", "light", 390): tile_a, ("positions", "dark", 390): tile_a, ("positions", "light", 1440): tile_a, ("positions", "dark", 1440): tile_a},
         )
+
+
+def test_j_malformed_brief_raises_preview_error_naming_file_and_both_parse_failures(
+    tmp_path: Path,
+) -> None:
+    """A brief that parses as neither JSON nor markdown raises PreviewError naming the file and both parse failures; absent brief still uses defaults."""
+    # Absent brief remains distinct and uses defaults.
+    absent_fields = preview._brief_fields(None)
+    assert absent_fields["product"] == "Foundation Sample Product"
+
+    bad_brief = tmp_path / "malformed-brief.md"
+    bad_brief.write_text("{not valid json and not valid markdown brief\n", encoding="utf-8")
+
+    with pytest.raises(preview.PreviewError) as exc_info:
+        preview._brief_fields(bad_brief)
+    msg = str(exc_info.value)
+    assert str(bad_brief) in msg
+    assert "JSONDecodeError" in msg
+    assert "BriefError" in msg
+
+    with pytest.raises(preview.PreviewError) as render_exc:
+        preview.render_preview(
+            tokens={"warm-ledger": _make_tokens(WARM_LIGHT, WARM_DARK)},
+            out_dir=tmp_path / "out_bad_brief",
+            captures_dir=None,
+            brief_path=bad_brief,
+        )
+    render_msg = str(render_exc.value)
+    assert str(bad_brief) in render_msg
+    assert "JSONDecodeError" in render_msg
+    assert "BriefError" in render_msg
+
+
+def test_k_unreadable_manifest_falls_back_to_globbing_and_records_reason_in_honesty_report(
+    tmp_path: Path,
+) -> None:
+    """An unreadable or corrupt manifest.json still falls back to globbing *.html and records the reason in the honesty report."""
+    tokens = {"warm-ledger": _make_tokens(WARM_LIGHT, WARM_DARK)}
+
+    # 1. Corrupt JSON manifest
+    captures_corrupt = tmp_path / "captures_corrupt"
+    captures_corrupt.mkdir(parents=True, exist_ok=True)
+    (captures_corrupt / "positions.html").write_text(CAPTURED_SCREEN_WITH_HARDCODED_HTML, encoding="utf-8")
+    manifest_corrupt = captures_corrupt / "manifest.json"
+    manifest_corrupt.write_text("{corrupt manifest json", encoding="utf-8")
+
+    out_corrupt = tmp_path / "out_corrupt"
+    report_corrupt = preview.render_preview(
+        tokens=tokens,
+        out_dir=out_corrupt,
+        captures_dir=captures_corrupt,
+    )
+    assert report_corrupt["surface_mode"] == "captured"
+    assert report_corrupt["screens"] == ["positions"]
+    assert "manifest_fallback_reason" in report_corrupt
+    assert str(manifest_corrupt) in report_corrupt["manifest_fallback_reason"]
+    assert "JSONDecodeError" in report_corrupt["manifest_fallback_reason"]
+    persisted = json.loads((out_corrupt / "preview-report.json").read_text(encoding="utf-8"))
+    assert persisted.get("manifest_fallback_reason") == report_corrupt["manifest_fallback_reason"]
+
+    # 2. Unreadable OS-level manifest (directory named manifest.json -> IsADirectoryError / OSError)
+    captures_unreadable = tmp_path / "captures_unreadable"
+    captures_unreadable.mkdir(parents=True, exist_ok=True)
+    (captures_unreadable / "positions.html").write_text(CAPTURED_SCREEN_WITH_HARDCODED_HTML, encoding="utf-8")
+    manifest_dir = captures_unreadable / "manifest.json"
+    manifest_dir.mkdir()
+
+    out_unreadable = tmp_path / "out_unreadable"
+    report_unreadable = preview.render_preview(
+        tokens=tokens,
+        out_dir=out_unreadable,
+        captures_dir=captures_unreadable,
+    )
+    assert report_unreadable["surface_mode"] == "captured"
+    assert report_unreadable["screens"] == ["positions"]
+    assert "manifest_fallback_reason" in report_unreadable
+    assert str(manifest_dir) in report_unreadable["manifest_fallback_reason"]
+
 
 

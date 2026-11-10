@@ -24,13 +24,16 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from app_screen.gates import GateError  # noqa: E402
-from foundation import brief, contracts, gates, proof, stubs  # noqa: E402
+from foundation import brief, contracts, gates, preview, proof, stubs  # noqa: E402
 from foundation.workspace import STEPS, Workspace, WorkspaceError  # noqa: E402
+
+CLI_STEPS = (*STEPS, "preview")
 
 FAILURES = (
     WorkspaceError,
     contracts.ContractError,
     brief.BriefError,
+    preview.PreviewError,
     GateError,
     OSError,
     ValueError,
@@ -120,21 +123,53 @@ def run_step(
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="design_foundation.py", description=__doc__)
-    p.add_argument("step", choices=STEPS, help="Foundation step to execute")
-    p.add_argument("--workspace", required=True, help="Foundation workspace path (<repo>/.temper/design)")
+    p.add_argument("step", choices=CLI_STEPS, help="Foundation step or standalone subcommand to execute")
+    p.add_argument("--workspace", default="", help="Foundation workspace path (<repo>/.temper/design)")
     p.add_argument("--product", default="", help="Product slug (required for Stage 1 brief)")
-    p.add_argument("--brief", default="", help="Product brief path relative to repo root (default .temper/product/brief.md)")
+    p.add_argument("--brief", default="", help="Product brief path relative to repo root (or brief JSON/MD for preview)")
     p.add_argument("--render-surface", default="", help="Render surface mode: app | sample | none")
     p.add_argument("--data", default="", help="Gate answer JSON or model draft JSON (overrides FOUNDATION_DATA)")
     p.add_argument("--base-url", default="", help="Provisioned app instance base URL from stack_up_ref")
     p.add_argument("--stack-commit", default="", help="Provisioned app commit SHA from stack_up_ref")
     p.add_argument("--stack-ref", default="", help="Git ref passed to stack_up_ref")
     p.add_argument("--allow-red-commit", default="", help="Whether red CI commits are explicitly permitted")
+    p.add_argument(
+        "--tokens",
+        action="append",
+        default=[],
+        help="Token file path (or dir=path); repeat or comma-separate for multiple directions",
+    )
+    p.add_argument("--out", default="", help="Output directory for preview renders, sheets, and colour report")
+    p.add_argument("--captures", default="", help="Captured HTML screen directory or file (optional; falls back to sample screen)")
+    p.add_argument("--browser", default="", help="Optional playwright-mcp URL override for preview")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.step == "preview":
+        try:
+            if not args.tokens:
+                raise preview.PreviewError("preview requires --tokens")
+            if not args.out.strip():
+                raise preview.PreviewError("preview requires --out")
+            result = preview.run_cli(
+                tokens_args=args.tokens,
+                out_dir=args.out.strip(),
+                captures=args.captures.strip() or None,
+                brief_path=args.brief.strip() or None,
+                browser_url=args.browser.strip() or None,
+            )
+        except FAILURES as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+
+    if not args.workspace.strip():
+        print("step requires --workspace", file=sys.stderr)
+        return 1
+
     raw_data = args.data or os.environ.get("FOUNDATION_DATA", "")
     base_url = args.base_url or os.environ.get("FOUNDATION_BASE_URL", "")
     stack_commit = args.stack_commit or os.environ.get("FOUNDATION_STACK_COMMIT", "")

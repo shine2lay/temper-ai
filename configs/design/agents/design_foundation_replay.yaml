@@ -1,0 +1,58 @@
+# @description Design-owned $0.00 stub/replay agent for design_foundation_v1_bench and the
+# fenced model boundaries of design_foundation_v1 skeleton before Task 4 lands real LLM agents:
+# model steps declare tools: [] and receive no workspace_path.
+agent:
+  name: design_foundation_replay
+  version: 1
+  type: script
+  tools: []
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    step = os.environ.get("{{ step | default('', true) | env }}", "")
+    product = os.environ.get("{{ product | default('rollcall', true) | env }}", "rollcall")
+    bench_workspace = os.environ.get("{{ bench_workspace | default('', true) | env }}", "")
+    {% if step in ('workspace_startup', 'workspace_cleanup') %}
+    if not bench_workspace:
+        bench_workspace = os.environ.get("{{ workspace_path | default('', true) | env }}", "")
+    {% endif %}
+    run_slug = os.environ.get("{{ run_slug | default('design', true) | env }}", "design")
+    run_id = os.environ.get("{{ run_id | default('', true) | env }}", "")
+    ref = os.environ.get("{{ ref | default('origin/master', true) | env }}", "origin/master")
+    task = os.environ.get("{{ task | default('', true) | env }}", "")
+    draft = os.environ.get("{{ draft | default('', true) | env }}", "")
+    problems = os.environ.get("{{ problems | default('', true) | env }}", "")
+    if not step:
+        raise SystemExit("design_foundation_replay requires step")
+
+    cli = Path("/app/configs/design/bin/foundation_harness/cli.py")
+    if not cli.is_file():
+        import temper_ai
+        cli = Path(temper_ai.__file__).resolve().parents[1] / "configs/design/bin/foundation_harness/cli.py"
+
+    cmd = [sys.executable, str(cli), "--step", step]
+    if step in ("directions_read", "directions_revise", "build_read", "build_revise"):
+        if task:
+            cmd += ["--task", task]
+        if draft:
+            cmd += ["--draft", draft]
+        if problems:
+            cmd += ["--problems", problems]
+    else:
+        cmd += ["--product", product, "--run-slug", run_slug]
+        if bench_workspace:
+            cmd += ["--workspace", bench_workspace]
+        if run_id:
+            cmd += ["--run-id", run_id]
+        if ref:
+            cmd += ["--ref", ref]
+
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

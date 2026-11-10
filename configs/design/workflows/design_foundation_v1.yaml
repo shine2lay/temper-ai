@@ -1,0 +1,347 @@
+# @description Design-owned product foundation workflow (DESIGN.md + closed DTCG tokens.json):
+# brief-led 6-stage pipeline with two owner gates (direction + final), per-step input contracts,
+# sample-screen fallback when no live app render surface exists, and held setup/teardown pairs.
+workflow:
+  name: design_foundation_v1
+  version: 1
+  description: "Design product foundations (DESIGN.md + closed DTCG tokens.json) from an approved .temper/product/brief.md"
+  on_failure: hold
+
+  inputs:
+    product:
+      type: string
+      required: true
+      description: "Product slug (e.g. rollcall, temper)."
+    brief_path:
+      type: string
+      required: false
+      default: ".temper/product/brief.md"
+      description: "Approved 7-section product brief path relative to the product repository root (<repo>/.temper/product/brief.md)."
+    ref:
+      type: string
+      required: false
+      default: "origin/master"
+      description: "Git ref or 40-char commit SHA deployed onto <product>-dev-design when render_surface is 'app'."
+    allow_red_commit:
+      type: boolean
+      required: false
+      default: false
+      description: "Explicitly allow rendering against a commit whose GitHub Actions CI is not green."
+    render_surface:
+      type: string
+      required: false
+      default: "app"
+      description: "Render surface mode: 'app' provisions <product>-dev-design via stack_up_ref + stack_seed; 'sample' (or 'none') skips stack provisioning and uses a sample screen built from the brief."
+
+  nodes:
+    - name: workspace_startup
+      agent: workspace_startup
+      input_map:
+        repo: input.product
+        run_slug: design
+        department: design
+
+    # Stage 1 — Read and validate <repo>/.temper/product/brief.md; fail loud when missing or incomplete.
+    - name: brief
+      type: stage
+      depends_on: [workspace_startup]
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+        brief_path: input.brief_path
+        render_surface: input.render_surface
+      nodes:
+        - name: brief_finish
+          agent: design_foundation_stage_v1
+          input_map:
+            step: brief
+            workspace: input.workspace_path
+            product: input.product
+            brief_path: input.brief_path
+            render_surface: input.render_surface
+      outputs:
+        status: brief_finish.structured.status
+        brief_path: brief_finish.structured.brief_path
+        render_surface: brief_finish.structured.render_surface
+        constraints: brief_finish.structured.constraints
+        taste_anchors: brief_finish.structured.taste_anchors
+        taste_anchors_empty: brief_finish.structured.taste_anchors_empty
+
+    # Stage 2 — Propose candidate foundation directions strictly from 01-brief (never from painted app styles).
+    - name: directions
+      type: stage
+      depends_on: [brief]
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+      nodes:
+        - name: directions_collect
+          agent: design_foundation_stage_v1
+          input_map:
+            step: directions_collect
+            workspace: input.workspace_path
+            product: input.product
+        - name: directions_read
+          agent: design_foundation_replay
+          tools: []
+          depends_on: [directions_collect]
+          input_map:
+            step: directions_read
+            task: directions_collect.structured.task
+        - name: directions_check
+          agent: design_foundation_stage_v1
+          depends_on: [directions_read]
+          input_map:
+            step: directions_check
+            workspace: input.workspace_path
+            product: input.product
+            data: directions_read.output
+        - name: directions_revise
+          agent: design_foundation_replay
+          tools: []
+          depends_on: [directions_check]
+          condition:
+            source: directions_check.structured.verdict
+            operator: equals
+            value: "retry"
+          input_map:
+            step: directions_revise
+            task: directions_collect.structured.task
+            draft: directions_read.output
+            problems: directions_check.structured.problems
+        - name: directions_finish
+          agent: design_foundation_stage_v1
+          depends_on: [directions_check, directions_revise]
+          input_map:
+            step: directions
+            workspace: input.workspace_path
+            product: input.product
+      outputs:
+        status: directions_finish.structured.status
+        recommended: directions_finish.structured.recommended
+        directions: directions_finish.structured.directions
+
+    # Provision <product>-dev-design only when brief.structured.render_surface == "app".
+    - name: stack_up_ref
+      agent: stack_up_ref
+      depends_on: [brief]
+      condition:
+        source: brief.structured.render_surface
+        operator: equals
+        value: "app"
+      input_map:
+        product: input.product
+        slug: design
+        ref: input.ref
+
+    - name: stack_seed
+      agent: stack_seed
+      depends_on: [stack_up_ref]
+      condition:
+        source: brief.structured.render_surface
+        operator: equals
+        value: "app"
+      input_map:
+        product: input.product
+        slug: design
+        env_name: stack_up_ref.structured.env_name
+
+    # Stage 3 — Render candidate direction previews on the app surface or sample screen fallback.
+    - name: proof
+      type: stage
+      depends_on: [directions, stack_seed]
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+        base_url: stack_up_ref.structured.base_url
+        stack_commit: stack_up_ref.structured.commit
+        stack_ref: input.ref
+        allow_red_commit: input.allow_red_commit
+      nodes:
+        - name: proof_finish
+          agent: design_foundation_stage_v1
+          input_map:
+            step: proof
+            workspace: input.workspace_path
+            product: input.product
+            base_url: input.base_url
+            stack_commit: input.stack_commit
+            stack_ref: input.stack_ref
+            allow_red_commit: input.allow_red_commit
+      outputs:
+        status: proof_finish.structured.status
+        surface_kind: proof_finish.structured.surface_kind
+        fallback: proof_finish.structured.fallback
+        sheet: proof_finish.structured.sheet
+
+    # Owner gate 1 — Choose direction and optionally record owner taste anchors into ~/design-lab/taste/owner.md.
+    - name: gate_direction
+      agent: design_foundation_stage_v1
+      gate: true
+      depends_on: [proof]
+      input_map:
+        step: gate_direction
+        workspace: workspace_startup.structured.department_path
+        product: input.product
+
+    # Stage 4 — Compile the chosen direction into 04-build/{tokens.json,DESIGN.md,tokens.css}.
+    - name: build
+      type: stage
+      depends_on: [gate_direction]
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+      nodes:
+        - name: build_collect
+          agent: design_foundation_stage_v1
+          input_map:
+            step: build_collect
+            workspace: input.workspace_path
+            product: input.product
+        - name: build_read
+          agent: design_foundation_replay
+          tools: []
+          depends_on: [build_collect]
+          input_map:
+            step: build_read
+            task: build_collect.structured.task
+        - name: build_check
+          agent: design_foundation_stage_v1
+          depends_on: [build_read]
+          input_map:
+            step: build_check
+            workspace: input.workspace_path
+            product: input.product
+            data: build_read.output
+        - name: build_revise
+          agent: design_foundation_replay
+          tools: []
+          depends_on: [build_check]
+          condition:
+            source: build_check.structured.verdict
+            operator: equals
+            value: "retry"
+          input_map:
+            step: build_revise
+            task: build_collect.structured.task
+            draft: build_read.output
+            problems: build_check.structured.problems
+        - name: build_finish
+          agent: design_foundation_stage_v1
+          depends_on: [build_check, build_revise]
+          input_map:
+            step: build
+            workspace: input.workspace_path
+            product: input.product
+      outputs:
+        status: build_finish.structured.status
+        direction: build_finish.structured.direction
+        tokens: build_finish.structured.tokens
+        design_md: build_finish.structured.design_md
+
+    # Stage 5 — Validate closed DTCG tokens.json, DESIGN.md sections, and surface checks.
+    - name: checks
+      type: stage
+      depends_on: [build, stack_seed]
+      loop_to: build
+      max_loops: 2
+      loop_condition:
+        source: checks.structured.verdict
+        operator: equals
+        value: "revise"
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+        base_url: stack_up_ref.structured.base_url
+        stack_commit: stack_up_ref.structured.commit
+        stack_ref: input.ref
+        allow_red_commit: input.allow_red_commit
+      nodes:
+        - name: checks_finish
+          agent: design_foundation_stage_v1
+          input_map:
+            step: checks
+            workspace: input.workspace_path
+            product: input.product
+            base_url: input.base_url
+            stack_commit: input.stack_commit
+            stack_ref: input.stack_ref
+            allow_red_commit: input.allow_red_commit
+      outputs:
+        status: checks_finish.structured.status
+        verdict: checks_finish.structured.verdict
+        blockers: checks_finish.structured.blockers
+        surface_kind: checks_finish.structured.surface_kind
+
+    # Owner gate 2 — Approve final DESIGN.md + tokens.json or request another build pass.
+    - name: gate_final
+      agent: design_foundation_stage_v1
+      gate: true
+      depends_on: [checks]
+      loop_to: build
+      max_loops: 2
+      loop_condition:
+        source: gate_final.structured.verdict
+        operator: equals
+        value: "changes"
+      input_map:
+        step: gate_final
+        workspace: workspace_startup.structured.department_path
+        product: input.product
+
+    # Stage 6 — Package approved DESIGN.md + tokens.json in 06-handoff/ for landing into .temper/design/.
+    - name: handoff
+      type: stage
+      depends_on: [gate_final]
+      input_map:
+        workspace_path: workspace_startup.structured.department_path
+        product: input.product
+      nodes:
+        - name: handoff_finish
+          agent: design_foundation_stage_v1
+          input_map:
+            step: handoff
+            workspace: input.workspace_path
+            product: input.product
+      outputs:
+        ok: handoff_finish.structured.ok
+        status: handoff_finish.structured.status
+        landing_status: handoff_finish.structured.landing_status
+        direction: handoff_finish.structured.direction
+        tokens: handoff_finish.structured.tokens
+        design_md: handoff_finish.structured.design_md
+        targets: handoff_finish.structured.targets
+        landed: handoff_finish.structured.landed
+
+    - name: stack_down
+      agent: stack_down
+      depends_on: [handoff]
+      undoes: [stack_up_ref, stack_seed]
+      run_after_failure: true
+      input_map:
+        product: input.product
+        slug: design
+        env_name: stack_up_ref.structured.env_name
+
+    - name: workspace_cleanup
+      agent: workspace_cleanup
+      depends_on: [handoff, stack_down]
+      undoes: [workspace_startup]
+      run_after_failure: true
+      input_map:
+        repo: input.product
+        task_slug: workspace_startup.structured.task_slug
+        department: design
+
+  outputs:
+    product: input.product
+    brief_path: brief.structured.brief_path
+    render_surface: brief.structured.render_surface
+    direction: gate_direction.structured.choice
+    checks: checks.structured.verdict
+    approved: gate_final.structured.choice
+    handoff: handoff.structured.status
+    tokens: handoff.structured.tokens
+    design_md: handoff.structured.design_md
+    stack_down_status: stack_down.structured.status
+    workspace_cleanup_status: workspace_cleanup.structured.status

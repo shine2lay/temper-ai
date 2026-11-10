@@ -1,0 +1,61 @@
+# @description Design-owned script steps of design_foundation_v1: runs one foundation step
+# (brief, directions_collect/check/finish, proof, gate_direction, build_collect/check/finish,
+# checks, gate_final, handoff) through bin/design_foundation.py, enforcing STEP_INPUTS and
+# validating every written artifact against closed foundation contracts.
+agent:
+  name: design_foundation_stage_v1
+  version: 1
+  type: script
+  tools: []
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    step = os.environ.get("{{ step | env }}", "")
+    workspace = (
+        os.environ.get("{{ workspace | default('', true) | env }}", "")
+        or os.environ.get("{{ workspace_path | default('', true) | env }}", "")
+    )
+    product = os.environ.get("{{ product | default('', true) | env }}", "")
+    brief_path = os.environ.get("{{ brief_path | default('', true) | env }}", "")
+    render_surface = os.environ.get("{{ render_surface | default('', true) | env }}", "")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    base_url = os.environ.get("{{ base_url | default('', true) | env }}", "")
+    stack_commit = os.environ.get("{{ stack_commit | default('', true) | env }}", "")
+    stack_ref = os.environ.get("{{ stack_ref | default('', true) | env }}", "")
+    allow_red_commit = os.environ.get("{{ allow_red_commit | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not step or not workspace:
+        raise SystemExit("foundation step and workspace required")
+
+    cli = Path("/app/configs/design/bin/design_foundation.py")
+    if not cli.is_file():
+        import temper_ai
+        cli = Path(temper_ai.__file__).resolve().parents[1] / "configs/design/bin/design_foundation.py"
+
+    os.environ["FOUNDATION_DATA"] = raw
+    cmd = [sys.executable, str(cli), step, "--workspace", workspace]
+    if product:
+        cmd += ["--product", product]
+    if brief_path:
+        cmd += ["--brief", brief_path]
+    if render_surface:
+        cmd += ["--render-surface", render_surface]
+    if base_url:
+        cmd += ["--base-url", base_url]
+    if stack_commit:
+        cmd += ["--stack-commit", stack_commit]
+    if stack_ref:
+        cmd += ["--stack-ref", stack_ref]
+    if allow_red_commit:
+        cmd += ["--allow-red-commit", allow_red_commit]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

@@ -1,0 +1,119 @@
+workflow:
+  name: code_land
+  description: |
+    Reusable portable landing stage: opens or reuses a pull request (`mode=pr`)
+    or merges directly onto `base` (`mode=merge`), auto-resolves clean base
+    drift by merging `origin/<base>` into `<branch>` and re-running required
+    checks on the new commit SHA, enforces GitHub check runs when
+    `require_checks=true`, and pauses at a Temper gate (`code_land_pause`)
+    instead of failing when overlapping conflicts, failing checks, or missing
+    check runs require human/lead intervention.
+
+    Gate waiting has no timeout and safely outlives the worker container:
+    `code_land_attempt` emits durable `{repo, pr_number, pr_url, branch, base,
+    sha}` and `code_land_pause` relays it on loop rewind (`on_max_loops: fail`),
+    so resumed rounds reconstruct repository state even when Round 1's `/tmp`
+    `work_dir` no longer exists.
+
+  inputs:
+    work_dir:
+      type: string
+      required: false
+      default: ""
+      description: "Container-local checkout path (optional on resume or when repo is provided)."
+    branch:
+      type: string
+      required: true
+      description: "Head branch name on origin to land."
+    base:
+      type: string
+      required: false
+      default: "main"
+      description: "Target base branch on origin."
+    mode:
+      type: string
+      required: false
+      default: "pr"
+      description: "Landing mode: 'pr' (default) or 'merge'."
+    title:
+      type: string
+      required: false
+      default: ""
+      description: "Optional PR title or merge commit message."
+    body:
+      type: string
+      required: false
+      default: ""
+      description: "Optional PR description body."
+    merge_method:
+      type: string
+      required: false
+      default: "squash"
+      description: "PR merge method when mode == 'pr': 'squash' (default), 'merge', or 'rebase'."
+    require_checks:
+      type: string
+      required: false
+      default: "true"
+      description: "Require completed green GitHub check runs on head SHA ('true' or 'false')."
+    repo:
+      type: string
+      required: false
+      default: ""
+      description: "Optional '<owner>/<repo>' slug or GitHub repository URL."
+    poll_interval_s:
+      type: string
+      required: false
+      default: "10"
+      description: "Polling interval in seconds while checks or mergeability are pending."
+    checks_appear_timeout_s:
+      type: string
+      required: false
+      default: "30"
+      description: "Seconds to wait for at least one check run to appear when require_checks=true."
+
+  outputs:
+    merged: code_land_attempt.structured.merged
+    sha: code_land_attempt.structured.sha
+    pr_url: code_land_attempt.structured.pr_url
+    pr_number: code_land_attempt.structured.pr_number
+    status: code_land_attempt.structured.status
+    auto_resolved: code_land_attempt.structured.auto_resolved
+    resolved_files: code_land_attempt.structured.resolved_files
+    checks: code_land_attempt.structured.checks
+
+  nodes:
+    - name: code_land_attempt
+      type: agent
+      agent: code_land_attempt
+      input_map:
+        work_dir: input.work_dir
+        branch: input.branch
+        base: input.base
+        mode: input.mode
+        title: input.title
+        body: input.body
+        merge_method: input.merge_method
+        require_checks: input.require_checks
+        repo: input.repo
+        poll_interval_s: input.poll_interval_s
+        checks_appear_timeout_s: input.checks_appear_timeout_s
+        prior_pause: code_land_pause.output
+
+    - name: code_land_pause
+      type: agent
+      agent: code_land_pause
+      depends_on: [code_land_attempt]
+      gate: true
+      condition:
+        source: code_land_attempt.structured.action
+        operator: equals
+        value: pause
+      loop_to: code_land_attempt
+      max_loops: 20
+      on_max_loops: fail
+      loop_condition:
+        source: code_land_pause.structured.verdict
+        operator: equals
+        value: retry
+      input_map:
+        attempt_state: code_land_attempt.output

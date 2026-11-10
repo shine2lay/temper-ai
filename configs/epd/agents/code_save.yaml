@@ -1,0 +1,79 @@
+# EPD stage: stage, secret-check, commit, and push changes from a container-local checkout.
+#
+# Pairs with `code_checkout` (`configs/epd/agents/code_checkout.yaml`). Operates only inside
+# the run container's isolated checkout (`work_dir`, e.g. `/tmp/temper-checkout/repo`),
+# refreshes short-lived GitHub App credentials via `POST /api/github/token` without storing
+# tokens in `.git/config`, refuses staged `.env*`, `*.pem`, `*.key`, credentials, or secret
+# patterns, and pushes `HEAD:refs/heads/<branch>` to `origin`.
+#
+# POSIX sh; no dollar-brace env syntax (the config loader substitutes dollar-brace with server env).
+agent:
+  name: code_save
+  version: 1
+  type: script
+  timeout_seconds: 300
+  strict_undefined: true
+  inputs:
+    work_dir:
+      type: string
+      required: true
+      description: "Container-local git checkout path (for example /tmp/temper-checkout/repo)."
+    message:
+      type: string
+      required: true
+      description: "Commit message for staged changes."
+    branch:
+      type: string
+      default: ""
+      description: "Optional target branch name (defaults to the current checked-out branch in work_dir)."
+    files:
+      type: string
+      default: ""
+      description: "Optional JSON array or newline-separated list of repo-relative paths to stage (empty stages all changes)."
+    allow_empty:
+      type: string
+      default: "false"
+      description: "Create and push an empty commit when the working tree has no changes ('true' or 'false')."
+  outputs:
+    pushed:
+      type: boolean
+      description: "Whether a commit was pushed to origin/<branch>."
+    branch:
+      type: string
+      description: "Target branch name on origin."
+    sha:
+      type: string
+      description: "40-character commit SHA at HEAD after save (or existing HEAD when clean and allow_empty=false)."
+    clean:
+      type: boolean
+      description: "True when no file modifications were staged relative to HEAD."
+  script_template: |
+    #!/bin/sh
+    # POSIX sh; no dollar-brace env syntax (config-loader substitution).
+    set -e
+
+    PYTHON="$TEMPER_PYTHON"
+    [ -n "$PYTHON" ] || PYTHON=python3
+    SCRIPT="$CONFIGS_DIR/epd/bin/code_save.py"
+    [ -f "$SCRIPT" ] || SCRIPT=/app/configs/epd/bin/code_save.py
+    [ -f "$SCRIPT" ] || SCRIPT=configs/epd/bin/code_save.py
+    set -u
+
+    WORK_DIR={{ work_dir }}
+    MESSAGE={{ message }}
+    BRANCH={{ branch | default('', true) }}
+    FILES={{ files | default('', true) }}
+    ALLOW_EMPTY={{ allow_empty | default('false', true) }}
+
+    [ "$WORK_DIR" = None ] && WORK_DIR=""
+    [ "$MESSAGE" = None ] && MESSAGE=""
+    [ "$BRANCH" = None ] && BRANCH=""
+    [ "$FILES" = None ] && FILES=""
+    [ "$ALLOW_EMPTY" = None ] && ALLOW_EMPTY="false"
+
+    exec "$PYTHON" "$SCRIPT" \
+      --work-dir "$WORK_DIR" \
+      --message "$MESSAGE" \
+      --branch "$BRANCH" \
+      --files "$FILES" \
+      --allow-empty "$ALLOW_EMPTY"

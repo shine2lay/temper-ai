@@ -33,7 +33,7 @@ role tests and lands a change.
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
-| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, RollCall's release hook for `wt deploy` (master goes live two minutes after the last land, one release at a time, [below](#rollcalls-continuous-deployer)), temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
+| `systems` | System engineering | Claims, worktrees, portable container git stages (`code_checkout`, `code_save`, `code_land`, [docs/code-checkout-save-land.md](code-checkout-save-land.md)), test stacks, deploys, cleanup, shipping, the probe, the leftover audit, RollCall's release hook for `wt deploy` (master goes live two minutes after the last land, one release at a time, [below](#rollcalls-continuous-deployer)), temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests), and the hook's and ad-hoc pytest's entry to the shared machine test pool (tests/machine_slot.py, docs/testing.md; wt slot itself belongs to Ops). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
 | `docs` | Docs | The knowledge-folder check (`.temper/`) and capability maps; next, a docs grader, a doc step for builds, changelogs. |
@@ -715,10 +715,11 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/workflows/epd_qa_grade.yaml` | workflow |
 | `epd/workflows/qa_flaky_report.yaml` | workflow |
 
-### systems (39)
+### systems (47)
 
 | Config | Kind |
 |---|---|
+| `epd/workflows/code_land.yaml` | workflow (portable git land stage: check-runs gate, clean conflict auto-resolve, gate-backed pause, wiped-`work_dir` resume) |
 | `epd/workflows/epd_deploy.yaml` | workflow |
 | `epd/workflows/epd_leftovers.yaml` | workflow |
 | `epd/workflows/epd_probe.yaml` | workflow |
@@ -734,6 +735,9 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `agents/gate_smoke_use.yaml` | agent (script) |
 | `agents/smoke_echo.yaml` | agent (script) |
 | `epd/agents/code_checkout.yaml` | agent (script; container-local shallow single-branch clone at `<root>/repo`) |
+| `epd/agents/code_land_attempt.yaml` | agent (script; `code_land` attempt step: PR/merge, auto-resolve, check-runs polling) |
+| `epd/agents/code_land_pause.yaml` | agent (script; `code_land` gate pause node echoing durable repo/PR/branch state across box restarts) |
+| `epd/agents/code_save.yaml` | agent (script; secret-guarded commit and branch push with on-demand GitHub App auth) |
 | `epd/agents/epd_deploy.yaml` | agent (script) |
 | `epd/agents/epd_leftovers.yaml` | agent (script) |
 | `epd/agents/epd_ship.yaml` | agent (script) |
@@ -752,6 +756,10 @@ change Project 2's `first_app_shared.host_row`. Tests:
 | `epd/agents/workspace_cleanup.yaml` | agent (script) |
 | `epd/agents/workspace_startup.yaml` | agent (script) |
 | `epd/bin/code_checkout.py` | script (shallow single-branch checkout at `<root>/repo`, on-demand GitHub App credential helper, `deepen_checkout`) |
+| `epd/bin/code_land.py` | script (`code_land` attempt state machine: PR/direct merge, clean auto-resolve, `require_checks`, stateless wiped-`work_dir` recovery) |
+| `epd/bin/code_land_github.py` | script (GitHub REST v3 helper and check-run deduplication/classification for `code_land`) |
+| `epd/bin/code_land_pause.py` | script (`code_land_pause` durable state carrier across gate waits and box restarts) |
+| `epd/bin/code_save.py` | script (container-local commit + push with path, protected-branch, and secret guards) |
 | `epd/bin/leftovers.py` | script |
 | `epd/bin/rollcall_cd_deploy.py` | script |
 | `epd/bin/rollcall_cd_money.py` | script |

@@ -1,0 +1,85 @@
+# EPD stage helper: gate-backed pause relay for `code_land`.
+#
+# Runs only when `code_land_attempt` returns `action == "pause"` and after the
+# node's `gate: true` wait is approved. Preserves durable `{repo, pr_number,
+# pr_url, branch, base, sha, mode, merge_method, require_checks, auto_resolved,
+# resolved_files, gate_response}` across loop rewinds so Round 2+ can resume in
+# a fresh container even when Round 1's `/tmp` `work_dir` is gone.
+#
+# POSIX sh; no dollar-brace env syntax (the config loader substitutes dollar-brace with server env).
+agent:
+  name: code_land_pause
+  version: 1
+  type: script
+  timeout_seconds: 120
+  strict_undefined: true
+  inputs:
+    attempt_state:
+      type: object
+      required: true
+      description: "Structured output from the paused code_land_attempt run."
+    gate:
+      type: object
+      required: false
+      description: "Approval response injected by Temper when the gate is approved."
+  outputs:
+    verdict:
+      type: string
+      description: "Loop verdict ('retry')."
+    repo:
+      type: string
+      description: "Durable owner/repo slug."
+    pr_url:
+      type: string
+      description: "Pull request HTML URL when mode == 'pr'."
+    pr_number:
+      type: integer
+      description: "Pull request number when mode == 'pr'."
+    branch:
+      type: string
+      description: "Head branch being landed."
+    base:
+      type: string
+      description: "Target base branch."
+    sha:
+      type: string
+      description: "Last inspected head commit SHA."
+    mode:
+      type: string
+      description: "Landing mode ('pr' or 'merge')."
+    merge_method:
+      type: string
+      description: "PR merge method ('squash', 'merge', or 'rebase')."
+    require_checks:
+      type: boolean
+      description: "Whether required check runs are enforced."
+    auto_resolved:
+      type: boolean
+      description: "Whether an earlier round auto-resolved a clean conflict."
+    resolved_files:
+      type: array
+      description: "Files updated during earlier auto-resolve commits."
+    gate_response:
+      type: object
+      description: "Human/lead response attached when approving the gate."
+  script_template: |
+    #!/bin/sh
+    # POSIX sh; no dollar-brace env syntax (config-loader substitution).
+    set -e
+
+    PYTHON="$TEMPER_PYTHON"
+    [ -n "$PYTHON" ] || PYTHON=python3
+    SCRIPT="$CONFIGS_DIR/epd/bin/code_land_pause.py"
+    [ -f "$SCRIPT" ] || SCRIPT=/app/configs/epd/bin/code_land_pause.py
+    [ -f "$SCRIPT" ] || SCRIPT=configs/epd/bin/code_land_pause.py
+    set -u
+
+    ATTEMPT_STATE={{ attempt_state }}
+    GATE_RESP={{ gate | default('', true) }}
+
+    [ "$ATTEMPT_STATE" = None ] && ATTEMPT_STATE=""
+    [ "$GATE_RESP" = None ] && GATE_RESP=""
+
+    exec "$PYTHON" "$SCRIPT" \
+      --attempt-state "$ATTEMPT_STATE" \
+      --gate "$GATE_RESP"

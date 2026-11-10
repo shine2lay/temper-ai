@@ -1,0 +1,156 @@
+# EPD stage helper: active check-polling, clean conflict auto-resolve, and merge attempt for `code_land`.
+#
+# Wrapped by `configs/epd/workflows/code_land.yaml`. Never waits on a human inside
+# this script: if a merge conflict cannot be cleanly auto-resolved, if a check run
+# fails, or if `require_checks=true` sees zero check runs within
+# `checks_appear_timeout_s`, emits `action="pause"` with an actionable `question`
+# and durable `{repo, pr_number, pr_url, branch, base, sha}` so `code_land_pause`
+# holds the unbounded gate wait outside container runtime limits.
+#
+# POSIX sh; no dollar-brace env syntax (the config loader substitutes dollar-brace with server env).
+agent:
+  name: code_land_attempt
+  version: 1
+  type: script
+  timeout_seconds: 7200
+  strict_undefined: true
+  inputs:
+    work_dir:
+      type: string
+      default: ""
+      description: "Optional container-local checkout path (may be absent on resumed rounds)."
+    branch:
+      type: string
+      required: true
+      description: "Head branch name to land."
+    base:
+      type: string
+      default: "main"
+      description: "Target base branch name."
+    mode:
+      type: string
+      default: "pr"
+      description: "Landing mode: 'pr' (open/reuse PR and merge) or 'merge' (direct branch merge)."
+    title:
+      type: string
+      default: ""
+      description: "Optional PR title or merge commit message."
+    body:
+      type: string
+      default: ""
+      description: "Optional PR description body."
+    merge_method:
+      type: string
+      default: "squash"
+      description: "PR merge method when mode == 'pr': 'squash', 'merge', or 'rebase'."
+    require_checks:
+      type: string
+      default: "true"
+      description: "Enforce GitHub check runs on head SHA before merging ('true' or 'false')."
+    repo:
+      type: string
+      default: ""
+      description: "Optional '<owner>/<repo>' slug or GitHub URL (used when work_dir is absent)."
+    poll_interval_s:
+      type: string
+      default: "10"
+      description: "Polling interval in seconds while check runs or mergeability are pending."
+    checks_appear_timeout_s:
+      type: string
+      default: "30"
+      description: "Grace window in seconds for at least one check run to appear when require_checks=true."
+    prior_pause:
+      type: object
+      required: false
+      description: "Durable state echoed by code_land_pause on Round 2+."
+  outputs:
+    action:
+      type: string
+      description: "'merged' when landed, or 'pause' when human/lead intervention is needed."
+    merged:
+      type: boolean
+      description: "True when the branch or PR has been merged onto base."
+    sha:
+      type: string
+      description: "Merged commit SHA on base (when merged) or current head SHA (when paused)."
+    pr_url:
+      type: string
+      description: "Pull request HTML URL (empty in mode='merge')."
+    pr_number:
+      type: integer
+      description: "Pull request number (null in mode='merge')."
+    repo:
+      type: string
+      description: "Resolved '<owner>/<repo>' slug."
+    branch:
+      type: string
+      description: "Head branch name."
+    base:
+      type: string
+      description: "Target base branch name."
+    status:
+      type: string
+      description: "'merged', 'paused', or 'blocked'."
+    auto_resolved:
+      type: boolean
+      description: "True if clean base drift/conflict was auto-resolved onto branch."
+    resolved_files:
+      type: array
+      description: "Sorted list of repo-relative files updated by auto-resolve commits."
+    checks:
+      type: object
+      description: "Check-run summary: {'state': 'passed'|'failed'|'pending'|'none', 'runs': [...]}."
+    question:
+      type: string
+      description: "Actionable blocker question when action == 'pause'."
+  script_template: |
+    #!/bin/sh
+    # POSIX sh; no dollar-brace env syntax (config-loader substitution).
+    set -e
+
+    PYTHON="$TEMPER_PYTHON"
+    [ -n "$PYTHON" ] || PYTHON=python3
+    SCRIPT="$CONFIGS_DIR/epd/bin/code_land.py"
+    [ -f "$SCRIPT" ] || SCRIPT=/app/configs/epd/bin/code_land.py
+    [ -f "$SCRIPT" ] || SCRIPT=configs/epd/bin/code_land.py
+    set -u
+
+    WORK_DIR={{ work_dir | default('', true) }}
+    BRANCH={{ branch }}
+    BASE={{ base | default('main', true) }}
+    MODE={{ mode | default('pr', true) }}
+    TITLE={{ title | default('', true) }}
+    BODY={{ body | default('', true) }}
+    MERGE_METHOD={{ merge_method | default('squash', true) }}
+    REQUIRE_CHECKS={{ require_checks | default('true', true) }}
+    REPO={{ repo | default('', true) }}
+    POLL_INTERVAL_S={{ poll_interval_s | default('10', true) }}
+    CHECKS_APPEAR_TIMEOUT_S={{ checks_appear_timeout_s | default('30', true) }}
+    PRIOR_PAUSE={{ prior_pause | default('', true) }}
+
+    [ "$WORK_DIR" = None ] && WORK_DIR=""
+    [ "$BRANCH" = None ] && BRANCH=""
+    [ "$BASE" = None ] && BASE="main"
+    [ "$MODE" = None ] && MODE="pr"
+    [ "$TITLE" = None ] && TITLE=""
+    [ "$BODY" = None ] && BODY=""
+    [ "$MERGE_METHOD" = None ] && MERGE_METHOD="squash"
+    [ "$REQUIRE_CHECKS" = None ] && REQUIRE_CHECKS="true"
+    [ "$REPO" = None ] && REPO=""
+    [ "$POLL_INTERVAL_S" = None ] && POLL_INTERVAL_S="10"
+    [ "$CHECKS_APPEAR_TIMEOUT_S" = None ] && CHECKS_APPEAR_TIMEOUT_S="30"
+    [ "$PRIOR_PAUSE" = None ] && PRIOR_PAUSE=""
+
+    exec "$PYTHON" "$SCRIPT" \
+      --work-dir "$WORK_DIR" \
+      --branch "$BRANCH" \
+      --base "$BASE" \
+      --mode "$MODE" \
+      --title "$TITLE" \
+      --body "$BODY" \
+      --merge-method "$MERGE_METHOD" \
+      --require-checks "$REQUIRE_CHECKS" \
+      --repo "$REPO" \
+      --poll-interval-s "$POLL_INTERVAL_S" \
+      --checks-appear-timeout-s "$CHECKS_APPEAR_TIMEOUT_S" \
+      --prior-pause "$PRIOR_PAUSE"

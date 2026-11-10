@@ -30,7 +30,7 @@ import wcag_contrast  # noqa: E402
 from app_screen import checks_rules  # noqa: E402
 from foundation import color, contracts, proof, stubs, workspace  # noqa: E402
 
-KNOWN_CASES_DIR = Path("/home/shinelay/design-lab/foundation/known-cases/proof")
+LAB_KNOWN_CASES_DIR = Path.home() / "design-lab" / "foundation" / "known-cases" / "proof"
 
 EXPECTED_CASE_DIRS = (
     "base-clean",
@@ -43,6 +43,217 @@ EXPECTED_CASE_DIRS = (
     "p07-type-fallback",
     "p08-tokens-schema",
 )
+
+
+def _build_known_cases_dict() -> dict[str, tuple[dict, dict]]:
+    """Exact deterministic specification of `/home/shinelay/design-lab/foundation/known-cases/proof/`
+    so CI (which does not mount `~/design-lab`) runs all 9 planted-fault cases while host runs verify
+    `~/design-lab/foundation/known-cases/proof/` matches byte-for-byte.
+    """
+    base_tokens = copy.deepcopy(
+        color.generate_tokens(
+            "rollcall", status="draft", date="2026-11-09", anchors=color.DEFAULT_ANCHORS
+        )
+    )
+
+    def _strip_colour_meta(node: object) -> None:
+        if isinstance(node, dict):
+            if "$value" in node:
+                node.pop("$description", None)
+                node["$value"] = dict(node["$value"])
+            else:
+                for val in node.values():
+                    _strip_colour_meta(val)
+
+    _strip_colour_meta(base_tokens["colour"])
+    base_tokens["colour"]["light"].pop("ramp", None)
+    base_tokens["colour"]["dark"].pop("ramp", None)
+    cases: dict[str, tuple[dict, dict]] = {}
+
+    cases["base-clean"] = (
+        base_tokens,
+        {
+            "case": "base-clean",
+            "verdict": "pass",
+            "planted_rule": None,
+            "must_fire": [],
+            "allow": [],
+            "description": "Clean RollCall foundation tokens generated from OKLCH anchor hues (accent=155, good=152, risk=24, warn=72, info=245, neutral=250). Passes all 8 proof rules in both light and dark themes with zero failing rows.",
+        },
+    )
+
+    t1 = copy.deepcopy(base_tokens)
+    t1["$description"] = "rollcall foundation design tokens — planted contrast.text fault."
+    t1["colour"]["light"]["ink"]["muted"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.68, 0.014, 250.0],
+        "hex": "#939AA2",
+    }
+    t1["colour"]["light"]["ink"]["heading"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.53, 0.012, 250.0],
+        "hex": "#676C73",
+    }
+    cases["p01-contrast-text"] = (
+        t1,
+        {
+            "case": "p01-contrast-text",
+            "verdict": "fail",
+            "planted_rule": "contrast.text",
+            "must_fire": ["contrast.text"],
+            "allow": [],
+            "description": "Plants low-contrast body text in light theme (`colour.light.ink.muted` raised to L=0.68 `#94999E`, giving 2.58:1 on canvas `#F3F5F8` < 4.5:1 AA normal text) and low-contrast large heading text (`colour.light.ink.heading` raised to L=0.76 `#AFB4BA`, giving 1.88:1 on canvas < 3.0:1 AA large text).",
+        },
+    )
+
+    t2 = copy.deepcopy(base_tokens)
+    t2["$description"] = "rollcall foundation design tokens — planted contrast.ui fault."
+    t2["colour"]["light"]["line"]["border"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.82, 0.012, 250.0],
+        "hex": "#BEC5CC",
+    }
+    cases["p02-contrast-ui"] = (
+        t2,
+        {
+            "case": "p02-contrast-ui",
+            "verdict": "fail",
+            "planted_rule": "contrast.ui",
+            "must_fire": ["contrast.ui"],
+            "allow": [],
+            "description": "Plants a low-contrast field border in light theme (`colour.light.line.border` raised to L=0.80 `#BDC2C9`, giving 1.62:1 on canvas `#F3F5F8` < 3.0:1 WCAG 1.4.11 non-text contrast) while keeping `colour.light.surface.ghost_fill` (`#EEF0F3`, 1.05:1) exempt as a text-button fill.",
+        },
+    )
+
+    t3 = copy.deepcopy(base_tokens)
+    t3["$description"] = "rollcall foundation design tokens — planted signal.separation fault."
+    t3["colour"]["light"]["semantic"]["good"]["text"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.49, 0.13, 142.0],
+        "hex": "#2D7226",
+    }
+    t3["colour"]["light"]["semantic"]["risk"]["text"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.48, 0.13, 28.0],
+        "hex": "#993A31",
+    }
+    cases["p03-signal-separation"] = (
+        t3,
+        {
+            "case": "p03-signal-separation",
+            "verdict": "fail",
+            "planted_rule": "signal.separation",
+            "must_fire": ["signal.separation"],
+            "allow": [],
+            "description": "Plants an isoluminant green/red signal pair in light theme (`colour.light.semantic.good.text` = `#0F741D` at L=0.49 vs `colour.light.semantic.risk.text` = `#973823` at L=0.48). Both pass 4.5:1 text contrast on all light surfaces and look distinct to normal trichromatic vision (normal \u0394E_ok = 0.2185), but collapse under protanopia (\u0394L = 0.010 < 0.09, simulated \u0394E_ok = 0.0329 < 0.085) and deuteranopia (\u0394L = 0.010 < 0.09, simulated \u0394E_ok = 0.0253 < 0.085).",
+        },
+    )
+
+    t4 = copy.deepcopy(base_tokens)
+    t4["$description"] = "rollcall foundation design tokens — planted gamut.srgb fault."
+    t4["colour"]["light"]["semantic"]["accent"]["ui"]["$value"] = {
+        "colorSpace": "oklch",
+        "components": [0.52, 0.31, 155.0],
+        "hex": "#008546",
+    }
+    cases["p04-gamut-srgb"] = (
+        t4,
+        {
+            "case": "p04-gamut-srgb",
+            "verdict": "fail",
+            "planted_rule": "gamut.srgb",
+            "must_fire": ["gamut.srgb"],
+            "allow": [],
+            "description": "Plants an un-clamped out-of-gamut OKLCH colour in `colour.light.semantic.accent.ui` (`components: [0.52, 0.31, 155.0]`, linear sRGB G=1.087 > 1.0 and B=-0.391 < 0.0, max channel overflow 0.3908).",
+        },
+    )
+
+    t5 = copy.deepcopy(base_tokens)
+    t5["$description"] = "rollcall foundation design tokens — planted scale.spacing fault."
+    t5["spacing"]["2"]["$value"] = {"value": 10, "unit": "px"}
+    t5["spacing"]["5"] = {"$value": {"value": 20, "unit": "px"}}
+    cases["p05-scale-spacing"] = (
+        t5,
+        {
+            "case": "p05-scale-spacing",
+            "verdict": "fail",
+            "planted_rule": "scale.spacing",
+            "must_fire": ["scale.spacing"],
+            "allow": [],
+            "description": "Plants an off-grid spacing step (`spacing.2` = 10px, not a multiple of the 8px base grid) and a non-monotonic step (`spacing.5` = 20px after `spacing.4` = 32px).",
+        },
+    )
+
+    t6 = copy.deepcopy(base_tokens)
+    t6["$description"] = "rollcall foundation design tokens — planted scale.type fault."
+    t6["type"]["scale"]["base"]["$value"] = {"value": 14.0, "unit": "px"}
+    t6["type"]["scale"]["xl"]["$value"] = {"value": 18.0, "unit": "px"}
+    t6["type"]["lineHeight"]["normal"]["$value"] = 1.6
+    cases["p06-scale-type"] = (
+        t6,
+        {
+            "case": "p06-scale-type",
+            "verdict": "fail",
+            "planted_rule": "scale.type",
+            "must_fire": ["scale.type"],
+            "allow": [],
+            "description": "Plants three type-scale faults: body size below 16px (`type.scale.base` = 14px), non-monotonic scale reversal (`type.scale.xl` = 18px < `type.scale.lg` = 20px), and body line-height above 145% (`type.lineHeight.normal` = 1.60).",
+        },
+    )
+
+    t7 = copy.deepcopy(base_tokens)
+    t7["$description"] = "rollcall foundation design tokens — planted type.fallback fault."
+    t7["type"]["family"]["sans"]["$value"] = "Inter"
+    cases["p07-type-fallback"] = (
+        t7,
+        {
+            "case": "p07-type-fallback",
+            "verdict": "fail",
+            "planted_rule": "type.fallback",
+            "must_fire": ["type.fallback"],
+            "allow": [],
+            "description": "Plants a bare primary web font family (`type.family.sans` = `\"Inter\"`) with no fallback stack or generic CSS family, which silently alters metrics when missing on the worker.",
+        },
+    )
+
+    t8 = copy.deepcopy(base_tokens)
+    t8["$description"] = "rollcall foundation design tokens — planted tokens.schema fault."
+    t8["shadows"] = {"$type": "shadow"}
+    t8["colour"]["ink"]["$value"]["rgb"] = [18, 23, 27]
+    cases["p08-tokens-schema"] = (
+        t8,
+        {
+            "case": "p08-tokens-schema",
+            "verdict": "fail",
+            "planted_rule": "tokens.schema",
+            "must_fire": ["tokens.schema"],
+            "allow": [],
+            "description": "Plants two closed-schema violations: an undeclared top-level group `shadows` and an undeclared `rgb` property inside `colour.ink.$value`.",
+        },
+    )
+    return cases
+
+
+@pytest.fixture(scope="module")
+def known_cases_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    built = _build_known_cases_dict()
+    if LAB_KNOWN_CASES_DIR.is_dir():
+        for case_name, (expected_tokens, expected_meta) in built.items():
+            case_dir = LAB_KNOWN_CASES_DIR / case_name
+            assert case_dir.is_dir(), f"Missing lab case dir: {case_dir}"
+            live_tokens = json.loads((case_dir / "tokens.json").read_text(encoding="utf-8"))
+            live_meta = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
+            assert live_tokens == expected_tokens, f"Lab tokens drift in {case_name}"
+            assert live_meta == expected_meta, f"Lab expected.json drift in {case_name}"
+        return LAB_KNOWN_CASES_DIR
+
+    fallback_root = tmp_path_factory.mktemp("proof-known-cases")
+    for case_name, (tokens_doc, expected_doc) in built.items():
+        case_dir = fallback_root / case_name
+        case_dir.mkdir(parents=True, exist_ok=True)
+        (case_dir / "tokens.json").write_text(json.dumps(tokens_doc, indent=2) + "\n", encoding="utf-8")
+        (case_dir / "expected.json").write_text(json.dumps(expected_doc, indent=2) + "\n", encoding="utf-8")
+    return fallback_root
 
 
 def _assert_case_matches_expected(tokens_doc: dict, expected_doc: dict, case_label: str) -> dict:
@@ -89,9 +300,9 @@ def _assert_case_matches_expected(tokens_doc: dict, expected_doc: dict, case_lab
     return ev
 
 
-def test_b_base_clean_passes_all_eight_rules_with_zero_failing_rows() -> None:
+def test_b_base_clean_passes_all_eight_rules_with_zero_failing_rows(known_cases_dir: Path) -> None:
     """Assertion (b): `base-clean` passes all 8 rules with zero failing rows."""
-    case_dir = KNOWN_CASES_DIR / "base-clean"
+    case_dir = known_cases_dir / "base-clean"
     tokens_doc = json.loads((case_dir / "tokens.json").read_text(encoding="utf-8"))
     expected_doc = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
 
@@ -103,11 +314,13 @@ def test_b_base_clean_passes_all_eight_rules_with_zero_failing_rows() -> None:
 
 
 @pytest.mark.parametrize("case_name", EXPECTED_CASE_DIRS)
-def test_a_planted_fault_cases_caught_by_own_rule_and_no_unexplained_extras(case_name: str) -> None:
+def test_a_planted_fault_cases_caught_by_own_rule_and_no_unexplained_extras(
+    case_name: str, known_cases_dir: Path
+) -> None:
     """Assertion (a): every planted-fault case is caught by its own rule, with any other firing
     rule named in `expected.json` allow list and justified.
     """
-    case_dir = KNOWN_CASES_DIR / case_name
+    case_dir = known_cases_dir / case_name
     assert case_dir.is_dir(), f"Missing known-case directory: {case_dir}"
     tokens_doc = json.loads((case_dir / "tokens.json").read_text(encoding="utf-8"))
     expected_doc = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
@@ -121,9 +334,9 @@ def test_a_planted_fault_cases_caught_by_own_rule_and_no_unexplained_extras(case
         )
 
 
-def test_a_guard_rejects_uncaught_plant_or_unjustified_extra_rule() -> None:
+def test_a_guard_rejects_uncaught_plant_or_unjustified_extra_rule(known_cases_dir: Path) -> None:
     """Verify the assertion helper itself fails loud on an uncaught plant or an unexplained extra rule."""
-    clean_tokens = json.loads((KNOWN_CASES_DIR / "base-clean" / "tokens.json").read_text(encoding="utf-8"))
+    clean_tokens = json.loads((known_cases_dir / "base-clean" / "tokens.json").read_text(encoding="utf-8"))
     with pytest.raises(AssertionError, match="planted rule"):
         _assert_case_matches_expected(
             clean_tokens,
@@ -131,7 +344,7 @@ def test_a_guard_rejects_uncaught_plant_or_unjustified_extra_rule() -> None:
             "synthetic-uncaught",
         )
 
-    fault_tokens = json.loads((KNOWN_CASES_DIR / "p01-contrast-text" / "tokens.json").read_text(encoding="utf-8"))
+    fault_tokens = json.loads((known_cases_dir / "p01-contrast-text" / "tokens.json").read_text(encoding="utf-8"))
     with pytest.raises(AssertionError, match="unexplained extra rule"):
         _assert_case_matches_expected(
             fault_tokens,

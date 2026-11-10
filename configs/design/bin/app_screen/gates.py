@@ -46,8 +46,8 @@ def _count_should_rows(ws: Workspace, checks_path: Path) -> int:
     ws_step = ws if ws.step else ws.for_step("gate_direction")
     try:
         doc = json.loads(ws_step.read_text(checks_path))
-    except (OSError, json.JSONDecodeError):
-        return 999999
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"cannot read {checks_path}: {exc}") from exc
     rows = doc.get("checks") if isinstance(doc, dict) else None
     if not isinstance(rows, list):
         return 999999
@@ -75,8 +75,8 @@ def compute_direction_prediction(ws: Workspace, actual_choice: str | None) -> di
     if dir_file.is_file():
         try:
             doc = json.loads(ws.read_text(dir_file))
-        except (OSError, json.JSONDecodeError):
-            doc = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(f"cannot read {dir_file}: {exc}") from exc
         if isinstance(doc, dict):
             dirs = [d for d in (doc.get("directions") or []) if isinstance(d, dict) and d.get("id")]
             dir_ids = [str(d["id"]) for d in dirs]
@@ -117,21 +117,21 @@ def compute_final_prediction(ws: Workspace, actual_choice: str | None) -> dict[s
     if review_path.is_file():
         try:
             rev_doc = json.loads(ws.read_text(review_path))
-            if isinstance(rev_doc, dict):
-                review_verdict = str(rev_doc.get("verdict") or "unknown")
-        except (OSError, json.JSONDecodeError):
-            review_verdict = "unreadable"
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(f"cannot read {review_path}: {exc}") from exc
+        if isinstance(rev_doc, dict):
+            review_verdict = str(rev_doc.get("verdict") or "unknown")
 
     open_comments = 0
     if comments_path.is_file():
         try:
             cm_doc = json.loads(ws.read_text(comments_path))
-            if isinstance(cm_doc, dict):
-                for c in cm_doc.get("comments") or []:
-                    if isinstance(c, dict) and c.get("state") == "open":
-                        open_comments += 1
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(f"cannot read {comments_path}: {exc}") from exc
+        if isinstance(cm_doc, dict):
+            for c in cm_doc.get("comments") or []:
+                if isinstance(c, dict) and c.get("state") == "open":
+                    open_comments += 1
 
     if review_verdict == "done" and open_comments == 0:
         pred_choice = "approve"
@@ -163,10 +163,7 @@ def _append_owner_taste(ws: Workspace, record: dict[str, Any]) -> str:
     ws_step = ws if ws.step else ws.for_step(step_name)
     product = "unknown"
     if ws.run_file.is_file():
-        try:
-            product = str(ws.run().get("product") or "unknown")
-        except Exception:
-            product = "unknown"
+        product = str(ws.run().get("product") or "unknown")
 
     pred = record.get("prediction") or {}
     pred_choice = pred.get("choice", "?")
@@ -219,19 +216,19 @@ def _ensure_targeted_comments_recorded(ws: Workspace, record: dict[str, Any]) ->
     if st_path.is_file():
         try:
             st_doc = json.loads(ws_step.read_text(st_path))
-            if isinstance(st_doc, dict) and st_doc.get("doc_id"):
-                doc_id = str(st_doc["doc_id"])
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(f"cannot read {st_path}: {exc}") from exc
+        if isinstance(st_doc, dict) and st_doc.get("doc_id"):
+            doc_id = str(st_doc["doc_id"])
 
     comments_list: list[dict[str, Any]] = []
     if cm_path.is_file():
         try:
             cm_doc = json.loads(ws_step.read_text(cm_path))
-            if isinstance(cm_doc, dict) and isinstance(cm_doc.get("comments"), list):
-                comments_list = [c for c in cm_doc["comments"] if isinstance(c, dict)]
-        except (OSError, json.JSONDecodeError):
-            comments_list = []
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(f"cannot read {cm_path}: {exc}") from exc
+        if isinstance(cm_doc, dict) and isinstance(cm_doc.get("comments"), list):
+            comments_list = [c for c in cm_doc["comments"] if isinstance(c, dict)]
 
     by_number: dict[int, dict[str, Any]] = {}
     for idx, c in enumerate(comments_list, start=1):
@@ -286,10 +283,10 @@ def answer(ws: Workspace, gate: str, raw: str) -> dict[str, Any]:
         if round_override.is_file():
             try:
                 override_doc = json.loads(ws.read_text(round_override))
-                if isinstance(override_doc, dict):
-                    given = override_doc
-            except (OSError, json.JSONDecodeError):
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise GateError(f"cannot read {round_override}: {exc}") from exc
+            if isinstance(override_doc, dict):
+                given = override_doc
     unknown = sorted(set(given) - set(FIELDS))
     if unknown:
         raise GateError(f"gate {gate}: unknown answer fields {', '.join(unknown)}")

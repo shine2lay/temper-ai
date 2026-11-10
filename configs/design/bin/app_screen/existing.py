@@ -94,25 +94,25 @@ def _save_stack_meta(ws: Workspace, meta: dict[str, Any], *, write_capture_recor
     if ws.run_file.is_file():
         try:
             run_doc = json.loads(ws_step.read_text(ws.run_file))
-            if isinstance(run_doc, dict):
-                merged = dict(run_doc.get("stack") or {})
-                for k, v in meta.items():
-                    if v is not None:
-                        merged[k] = v
-                run_doc["stack"] = merged
-                _write(ws.run_file, run_doc)
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ExistingError(f"cannot read {ws.run_file}: {exc}") from exc
+        if isinstance(run_doc, dict):
+            merged = dict(run_doc.get("stack") or {})
+            for k, v in meta.items():
+                if v is not None:
+                    merged[k] = v
+            run_doc["stack"] = merged
+            _write(ws.run_file, run_doc)
     if write_capture_record:
         cap_path = ws.folder("existing") / "capture.json"
         existing_cap: dict[str, Any] = {}
         if cap_path.is_file():
             try:
                 loaded = json.loads(ws_step.read_text(cap_path))
-                if isinstance(loaded, dict):
-                    existing_cap = loaded
-            except Exception:
-                existing_cap = {}
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ExistingError(f"cannot read {cap_path}: {exc}") from exc
+            if isinstance(loaded, dict):
+                existing_cap = loaded
         for k, v in meta.items():
             if v is not None:
                 existing_cap[k] = v
@@ -125,21 +125,21 @@ def _load_stack_meta(ws: Workspace) -> dict[str, Any]:
     if ws.run_file.is_file():
         try:
             run_doc = json.loads(ws_step.read_text(ws.run_file))
-            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
-                out.update(run_doc["stack"])
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ExistingError(f"cannot read {ws.run_file}: {exc}") from exc
+        if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+            out.update(run_doc["stack"])
     for rel in ("02-existing/capture.json", "02-existing/audit.json"):
         p = ws.path / rel
         if p.is_file():
             try:
                 doc = json.loads(ws_step.read_text(p))
-                if isinstance(doc, dict):
-                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check", "base_url"):
-                        if k not in out and doc.get(k) is not None:
-                            out[k] = doc[k]
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ExistingError(f"cannot read {p}: {exc}") from exc
+            if isinstance(doc, dict):
+                for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check", "base_url"):
+                    if k not in out and doc.get(k) is not None:
+                        out[k] = doc[k]
     return out
 
 

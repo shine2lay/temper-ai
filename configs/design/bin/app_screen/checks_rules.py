@@ -104,10 +104,9 @@ def _numbers(node, out: list[float], depth: int = 0) -> None:
         out.append(float(node))
     elif isinstance(node, str):
         for m in re.finditer(r"-?\d[\d,]*(?:\.\d+)?", node):
-            try:
-                out.append(float(m.group(0).replace(",", "")))
-            except ValueError:
-                pass
+            cleaned_num = m.group(0).replace(",", "")
+            if re.fullmatch(r"-?\d+(?:\.\d+)?", cleaned_num):
+                out.append(float(cleaned_num))
     elif isinstance(node, list):
         for item in node:
             _numbers(item, out, depth + 1)
@@ -168,11 +167,10 @@ def _known(value: float, values: list[float], tol: float) -> bool:
 
 def figure_matches(figure: dict, values: list[float]) -> bool:
     """Is the figure a number the fixture states (or an obvious form of one)?"""
-    raw = (figure.get("raw") or "").replace(",", "")
-    try:
-        shown = float(raw)
-    except ValueError:
+    raw = (figure.get("raw") or "").replace(",", "").strip()
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?", raw):
         return True                                        # unreadable: not evidence of invention
+    shown = float(raw)
     decimals = len(raw.split(".")[1]) if "." in raw else 0
     tol = 0.5 * 10 ** -decimals + 1e-9
     forms = [(shown, tol)]
@@ -201,10 +199,12 @@ def token_sets(tokens: dict | None) -> dict:
     def as_px(value) -> float | None:
         """A dimension in either form: DTCG's {value, unit} or the shorthand "16px" / "1rem"."""
         if isinstance(value, dict) and "value" in value:
-            try:
-                return round(float(value["value"]) * (16 if value.get("unit") == "rem" else 1), 2)
-            except (TypeError, ValueError):
-                return None
+            v = value["value"]
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return round(float(v) * (16 if value.get("unit") == "rem" else 1), 2)
+            if isinstance(v, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", v.strip()):
+                return round(float(v.strip()) * (16 if value.get("unit") == "rem" else 1), 2)
+            return None
         m = re.match(r"^(\d+(?:\.\d+)?)(px|rem)$", str(value).strip()) if value is not None else None
         return round(float(m.group(1)) * (16 if m.group(2) == "rem" else 1), 2) if m else None
 
@@ -422,10 +422,10 @@ def _view_rows(view: dict, m: dict, ctx: dict, th: dict) -> list[dict]:
                          f"{used['value']} is not a tokens.json font family", element=used.get("sel", ""),
                          location=place))
         for used in (cm.get("used", {}).get("sizes") or [])[:40]:
-            try:
-                px = round(float(used["value"]), 2)
-            except ValueError:
+            val_str = str(used.get("value", "")).strip()
+            if not re.fullmatch(r"-?\d+(?:\.\d+)?", val_str):
                 continue
+            px = round(float(val_str), 2)
             if allow["sizes"] and px not in allow["sizes"]:
                 add(_row("tokens.size", view, f"{px}px", f"{px}px is not a tokens.json text size",
                          element=used.get("sel", ""), location=place))

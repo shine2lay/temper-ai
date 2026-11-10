@@ -234,7 +234,24 @@ def check_workspace(
         if draft_path.is_file():
             try:
                 active_draft = json.loads(ws_step.read_text(draft_path))
-            except (OSError, json.JSONDecodeError):
-                active_draft = None
+            except (OSError, json.JSONDecodeError) as exc:
+                problems = [
+                    _prob(
+                        "directions_draft_schema",
+                        "04-directions/draft.json",
+                        f"cannot parse {draft_path}: {exc}",
+                    )
+                ]
+                return {
+                    "verdict": "retry",
+                    "pass": pass_name,
+                    "counts": {
+                        "directions": 0,
+                        "entry_screens": len(select_entry_screens(inventory)),
+                        "problems": len(problems),
+                    },
+                    "checks": list(CHECKS),
+                    "problems": problems,
+                }
 
     return check(active_draft, inventory, fixture, pass_name=pass_name)

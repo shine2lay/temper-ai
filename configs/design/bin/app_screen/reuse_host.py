@@ -194,12 +194,11 @@ def prepare(product: str | Path, workspace: str | Path, force: str | None = None
 
     stored_g, problems_g = _stored(ps, "ground")
     dec_g = reuse.decide_ground(dec_e, stored_g, problems_g, "ground" in forced)
-    try:
-        prepped = ground_host.prep(product, str(ws.path), products)
-    except ground_host.GroundPrepError:
-        if "fixture" in app:
-            raise
-        prepped = {"product": prod_name}
+    prepped = (
+        ground_host.prep(product, str(ws.path), products)
+        if "fixture" in app
+        else {"product": prod_name}
+    )
     entry_g = {**dec_g.record(), "version": (stored_g or {}).get("version"), "source_run": (stored_g or {}).get("run")}
     if dec_g.decision == "pending":
         target = stored_copy.folder(ws, "ground")

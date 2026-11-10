@@ -62,12 +62,9 @@ def _default_doc_id(ws: Workspace) -> str:
     product = "app"
     run_id = "run"
     if ws.run_file.is_file():
-        try:
-            meta = ws.run()
-            product = str(meta.get("product") or "app")
-            run_id = str(meta.get("run_id") or ws.path.name or "run")
-        except Exception:
-            pass
+        meta = ws.run()
+        product = str(meta.get("product") or "app")
+        run_id = str(meta.get("run_id") or ws.path.name or "run")
     return default_doc_id(product, run_id)
 
 
@@ -306,16 +303,16 @@ def _default_title(ws: Workspace) -> str:
     if req_path.is_file():
         try:
             req_doc = json.loads(ws_step.read_text(req_path))
-            prod = str(req_doc.get("product") or "").strip()
-            items = req_doc.get("items") or []
-            if prod and items and isinstance(items[0], dict):
-                means = str(items[0].get("means") or items[0].get("owner_words") or "").strip()
-                if means:
-                    return f"{prod} — {means[:80]}"
-            if prod:
-                return f"{prod} prototype"
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"cannot read {req_path}: {exc}") from exc
+        prod = str(req_doc.get("product") or "").strip()
+        items = req_doc.get("items") or []
+        if prod and items and isinstance(items[0], dict):
+            means = str(items[0].get("means") or items[0].get("owner_words") or "").strip()
+            if means:
+                return f"{prod} — {means[:80]}"
+        if prod:
+            return f"{prod} prototype"
 
     index_path = ws_step.folder("build") / "index.html"
     if index_path.is_file():
@@ -346,15 +343,15 @@ def prep_show(
     if st_path.is_file():
         try:
             existing_st = json.loads(ws.read_text(st_path))
-        except (OSError, json.JSONDecodeError):
-            existing_st = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"cannot read {st_path}: {exc}") from exc
 
     existing_cm: dict[str, Any] = {}
     if cm_path.is_file():
         try:
             existing_cm = json.loads(ws.read_text(cm_path))
-        except (OSError, json.JSONDecodeError):
-            existing_cm = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"cannot read {cm_path}: {exc}") from exc
 
     resolved_doc_id = _normalize_doc_id(doc_id or existing_st.get("doc_id"), ws)
     resolved_title = str(title or existing_st.get("title") or _default_title(ws)).strip()
@@ -415,8 +412,8 @@ def _resolve_targeted_comments_on_rerun(
     ws_step = ws if ws.step else ws.for_step("show")
     try:
         gate_doc = json.loads(ws_step.read_text(gate_path))
-    except (OSError, json.JSONDecodeError):
-        return comments_list, []
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ContractError(f"cannot read {gate_path}: {exc}") from exc
 
     if isinstance(gate_doc, dict) and gate_doc.get("choice") == "changes" and not prev_gate_archive.is_file():
         prev_gate_archive.write_text(

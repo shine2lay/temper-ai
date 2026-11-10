@@ -104,10 +104,12 @@ class Workspace:
         ws_root = self.path.resolve()
         t_path = Path(target)
         if t_path.is_absolute() or (isinstance(target, Path) and str(target).startswith(str(self.path))):
-            try:
-                rel = t_path.resolve().relative_to(ws_root).as_posix()
-            except ValueError:
-                rel = str(target)
+            resolved_target = t_path.resolve()
+            rel = (
+                resolved_target.relative_to(ws_root).as_posix()
+                if resolved_target.is_relative_to(ws_root)
+                else str(target)
+            )
         else:
             rel = str(target)
         norm = contracts.check_input(active_step, rel, repo_input=False)

@@ -49,10 +49,12 @@ def _require_pillow() -> None:
 
 
 def _font(size: int):
+    if not Path(FONT).is_file():
+        return ImageFont.load_default()
     try:
         return ImageFont.truetype(FONT, size)
-    except OSError:
-        return ImageFont.load_default()
+    except OSError as exc:
+        raise SheetError(f"failed to load font {FONT}: {exc}") from exc
 
 
 def _layout(n: int, tile_w: int, tile_h: int, label_h: int, long_edge: int) -> tuple[int, float]:

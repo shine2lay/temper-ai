@@ -783,38 +783,61 @@ def directions_collect(ws: Workspace) -> dict[str, Any]:
     brief_sha = _brief_sha(brief_doc)
 
     # Rule 11-04 / 11-08: skip stage if valid prior work matching current brief sha256 already exists
-    if (step_ws.path / "02-directions" / "directions.json").is_file():
+    directions_path = step_ws.path / "02-directions" / "directions.json"
+    if directions_path.is_file():
         try:
-            existing = json.loads((step_ws.path / "02-directions" / "directions.json").read_text(encoding="utf-8"))
+            existing = json.loads(directions_path.read_text(encoding="utf-8"))
             contracts.validate("directions", existing)
-            if existing.get("brief_sha256") == brief_sha:
-                all_valid = True
-                for entry in existing.get("directions", []):
-                    tok_rel = entry["tokens_file"]
-                    md_rel = entry["design_md_file"]
-                    if not ((step_ws.path / tok_rel).is_file() and (step_ws.path / md_rel).is_file()):
-                        all_valid = False
-                        break
-                    tok = json.loads((step_ws.path / tok_rel).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, contracts.ContractError, ValueError, TypeError) as exc:
+            raise DirectionsError(
+                f"DirectionsError: corrupt prior directions record at {directions_path}: {exc}"
+            ) from exc
+        if existing.get("brief_sha256") == brief_sha:
+            all_valid = True
+            for entry in existing.get("directions", []):
+                tok_rel = entry["tokens_file"]
+                md_rel = entry["design_md_file"]
+                tok_path = step_ws.path / tok_rel
+                md_path = step_ws.path / md_rel
+                if not (tok_path.is_file() and md_path.is_file()):
+                    all_valid = False
+                    break
+                try:
+                    tok = json.loads(tok_path.read_text(encoding="utf-8"))
                     contracts.validate_tokens(tok, label=tok_rel)
-                    if proof.evaluate_tokens(tok)["verdict"] != "pass":
-                        all_valid = False
-                        break
-                    md = (step_ws.path / md_rel).read_text(encoding="utf-8")
+                    tok_eval = proof.evaluate_tokens(tok)
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    contracts.ContractError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                ) as exc:
+                    raise DirectionsError(
+                        f"DirectionsError: corrupt prior directions tokens at {tok_path}: {exc}"
+                    ) from exc
+                if tok_eval["verdict"] != "pass":
+                    all_valid = False
+                    break
+                try:
+                    md = md_path.read_text(encoding="utf-8")
                     contracts.validate_design_md(md, label=md_rel, product=product)
-                if all_valid:
-                    if step_ws.run_file.is_file():
-                        step_ws.mark("directions_collect", "reused", note="reused valid 02-directions/directions.json")
-                    return {
-                        "ok": True,
-                        "step": "directions_collect",
-                        "status": "reused",
-                        "model": "no",
-                        "product": product,
-                        "task": "",
-                    }
-        except Exception:
-            pass
+                except (OSError, contracts.ContractError, ValueError, TypeError) as exc:
+                    raise DirectionsError(
+                        f"DirectionsError: corrupt prior directions DESIGN.md at {md_path}: {exc}"
+                    ) from exc
+            if all_valid:
+                if step_ws.run_file.is_file():
+                    step_ws.mark("directions_collect", "reused", note="reused valid 02-directions/directions.json")
+                return {
+                    "ok": True,
+                    "step": "directions_collect",
+                    "status": "reused",
+                    "model": "no",
+                    "product": product,
+                    "task": "",
+                }
 
     task_md = render_task_md(brief_doc)
     out_dir = step_ws.folder("directions")

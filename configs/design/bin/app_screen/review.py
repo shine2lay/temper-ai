@@ -73,11 +73,13 @@ def _write_canonical_png(out: Path, width: int = 390, height: int = 260) -> None
 
 
 def _png_size(ws: Workspace, path: Path) -> tuple[int, int] | None:
+    if not path.is_file():
+        return None
     ws_step = ws.for_step(ws.step or "review_collect")
     try:
         head = ws_step.read_bytes(path)[:24]
-    except OSError:
-        return None
+    except OSError as exc:
+        raise ReviewError(f"cannot read {path}: {exc}") from exc
     if len(head) >= 24 and head.startswith(b"\x89PNG\r\n\x1a\n") and head[12:16] == b"IHDR":
         w, h = struct.unpack(">II", head[16:24])
         if w > 0 and h > 0:
@@ -233,12 +235,7 @@ def _build_contact_sheet(ws: Workspace, measured_doc: dict[str, Any]) -> tuple[P
             candidates = [item for item in candidates if item[0] in prioritized_set]
 
         _require_pillow()
-        try:
-            existing_sheet.build(candidates, sheet_path, budget=140_000)
-        except existing_sheet.SheetError as exc:
-            if len(candidates) <= 6 or "does not fit" not in str(exc):
-                raise
-            existing_sheet.build(candidates[:6], sheet_path, budget=140_000)
+        existing_sheet.build(candidates, sheet_path, budget=140_000)
     elif not sheet_path.is_file():
         raise ReviewError(f"{views_dir} has no view PNGs and {sheet_path} is missing; run checks first")
 
@@ -257,40 +254,40 @@ def _render_screen_copy_section(ws: Workspace, valid_screens: list[str]) -> str:
     if draft_path.is_file():
         try:
             ddoc = json.loads(ws_step.read_text(draft_path))
-            for s in ddoc.get("screens") or []:
-                if not isinstance(s, dict):
-                    continue
-                sid = str(s.get("id") or "")
-                lines = [
-                    f"### Screen `{sid}` — title: {s.get('title')!r} | layout: `{s.get('layout')}`",
-                    f"- Lead: {s.get('lead')!r}",
-                    "- States (`states`):",
-                ]
-                states = s.get("states") or {}
-                if isinstance(states, dict):
-                    for st_name, st_obj in states.items():
-                        if isinstance(st_obj, dict):
-                            lines.append(
-                                f"  - `{sid}/{st_name}`: badge={st_obj.get('badge', '')!r} | "
-                                f"headline={st_obj.get('headline', '')!r} | summary={st_obj.get('summary', '')!r}"
-                            )
-                lines.append("- Shows cards (`shows[]`):")
-                for sh in s.get("shows") or []:
-                    if isinstance(sh, dict):
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReviewError(f"cannot read {draft_path}: {exc}") from exc
+        for s in ddoc.get("screens") or []:
+            if not isinstance(s, dict):
+                continue
+            sid = str(s.get("id") or "")
+            lines = [
+                f"### Screen `{sid}` — title: {s.get('title')!r} | layout: `{s.get('layout')}`",
+                f"- Lead: {s.get('lead')!r}",
+                "- States (`states`):",
+            ]
+            states = s.get("states") or {}
+            if isinstance(states, dict):
+                for st_name, st_obj in states.items():
+                    if isinstance(st_obj, dict):
                         lines.append(
-                            f"  - `{sh.get('ref')}` heading={sh.get('heading', '')!r} | "
-                            f"copy={sh.get('copy', '')!r} | fields={sh.get('fields')!r}"
+                            f"  - `{sid}/{st_name}`: badge={st_obj.get('badge', '')!r} | "
+                            f"headline={st_obj.get('headline', '')!r} | summary={st_obj.get('summary', '')!r}"
                         )
-                lines.append("- Action controls (`actions[]`):")
-                for act in s.get("actions") or []:
-                    if isinstance(act, dict):
-                        lines.append(
-                            f"  - id=`{act.get('id')}` kind=`{act.get('kind')}` label={act.get('label', '')!r} | "
-                            f"states={act.get('states')!r} | feedback={act.get('feedback', '')!r}"
-                        )
-                blocks.append("\n".join(lines))
-        except (OSError, json.JSONDecodeError):
-            pass
+            lines.append("- Shows cards (`shows[]`):")
+            for sh in s.get("shows") or []:
+                if isinstance(sh, dict):
+                    lines.append(
+                        f"  - `{sh.get('ref')}` heading={sh.get('heading', '')!r} | "
+                        f"copy={sh.get('copy', '')!r} | fields={sh.get('fields')!r}"
+                    )
+            lines.append("- Action controls (`actions[]`):")
+            for act in s.get("actions") or []:
+                if isinstance(act, dict):
+                    lines.append(
+                        f"  - id=`{act.get('id')}` kind=`{act.get('kind')}` label={act.get('label', '')!r} | "
+                        f"states={act.get('states')!r} | feedback={act.get('feedback', '')!r}"
+                    )
+            blocks.append("\n".join(lines))
 
     if blocks:
         return "\n\n".join(blocks)
@@ -301,38 +298,38 @@ def _render_screen_copy_section(ws: Workspace, valid_screens: list[str]) -> str:
     if measures_path.is_file():
         try:
             mdoc = json.loads(ws_step.read_text(measures_path))
-            by_screen: dict[str, list[str]] = {}
-            measured_map = mdoc.get("measured")
-            view_entries = (
-                list(measured_map.values())
-                if isinstance(measured_map, dict)
-                else (mdoc.get("views") or [])
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReviewError(f"cannot read {measures_path}: {exc}") from exc
+        by_screen: dict[str, list[str]] = {}
+        measured_map = mdoc.get("measured")
+        view_entries = (
+            list(measured_map.values())
+            if isinstance(measured_map, dict)
+            else (mdoc.get("views") or [])
+        )
+        for v in view_entries:
+            if not isinstance(v, dict):
+                continue
+            scr = str(v.get("screen") or "")
+            st = str(v.get("state") or "")
+            w = v.get("width")
+            if w and int(w) != 390:
+                continue
+            texts: list[str] = []
+            raw_runs = (
+                ((v.get("mp") or {}).get("runs") or [])
+                + ((v.get("measures") or {}).get("texts") or [])
             )
-            for v in view_entries:
-                if not isinstance(v, dict):
-                    continue
-                scr = str(v.get("screen") or "")
-                st = str(v.get("state") or "")
-                w = v.get("width")
-                if w and int(w) != 390:
-                    continue
-                texts: list[str] = []
-                raw_runs = (
-                    ((v.get("mp") or {}).get("runs") or [])
-                    + ((v.get("measures") or {}).get("texts") or [])
-                )
-                for t in raw_runs:
-                    txt = t.get("text") if isinstance(t, dict) else str(t)
-                    if isinstance(txt, str) and txt.strip() and txt.strip() not in texts:
-                        texts.append(txt.strip())
-                by_screen.setdefault(scr, []).append(
-                    f"  - `{scr}/{st}` visible texts: {json.dumps(texts[:18], ensure_ascii=False)}"
-                )
-            for scr in valid_screens:
-                lines = [f"### Screen `{scr}`", *(by_screen.get(scr) or [f"  - `{scr}`: (see contact sheet)"])]
-                blocks.append("\n".join(lines))
-        except (OSError, json.JSONDecodeError):
-            pass
+            for t in raw_runs:
+                txt = t.get("text") if isinstance(t, dict) else str(t)
+                if isinstance(txt, str) and txt.strip() and txt.strip() not in texts:
+                    texts.append(txt.strip())
+            by_screen.setdefault(scr, []).append(
+                f"  - `{scr}/{st}` visible texts: {json.dumps(texts[:18], ensure_ascii=False)}"
+            )
+        for scr in valid_screens:
+            lines = [f"### Screen `{scr}`", *(by_screen.get(scr) or [f"  - `{scr}`: (see contact sheet)"])]
+            blocks.append("\n".join(lines))
 
     return "\n\n".join(blocks) if blocks else "(No per-screen copy extracted)"
 
@@ -349,14 +346,14 @@ def build_task(ws: Workspace, measured_doc: dict[str, Any]) -> str:
     if req_path.is_file():
         try:
             rdoc = json.loads(ws_step.read_text(req_path))
-            for item in rdoc.get("items") or []:
-                if isinstance(item, dict):
-                    req_lines.append(
-                        f"- `{item.get('id')}` ({item.get('kind')}): {item.get('means') or item.get('owner_words')} "
-                        f"[maps_to: {', '.join(item.get('maps_to') or [])}]"
-                    )
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReviewError(f"cannot read {req_path}: {exc}") from exc
+        for item in rdoc.get("items") or []:
+            if isinstance(item, dict):
+                req_lines.append(
+                    f"- `{item.get('id')}` ({item.get('kind')}): {item.get('means') or item.get('owner_words')} "
+                    f"[maps_to: {', '.join(item.get('maps_to') or [])}]"
+                )
 
     measured_items = measured_doc.get("items") or []
     measured_lines: list[str] = []
@@ -372,14 +369,14 @@ def build_task(ws: Workspace, measured_doc: dict[str, Any]) -> str:
         if prev_rev_path.is_file():
             try:
                 prev_rev = json.loads(ws_step.read_text(prev_rev_path))
-                for f in prev_rev.get("findings") or []:
-                    if isinstance(f, dict) and f.get("priority") == "must":
-                        prior_must_lines.append(
-                            f"- `{f.get('id')}` at `{f.get('location')}` ({f.get('element')}): "
-                            f"evidence={f.get('evidence')!r} | suggestion={f.get('suggestion', '')!r}"
-                        )
-            except (OSError, json.JSONDecodeError):
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ReviewError(f"cannot read {prev_rev_path}: {exc}") from exc
+            for f in prev_rev.get("findings") or []:
+                if isinstance(f, dict) and f.get("priority") == "must":
+                    prior_must_lines.append(
+                        f"- `{f.get('id')}` at `{f.get('location')}` ({f.get('element')}): "
+                        f"evidence={f.get('evidence')!r} | suggestion={f.get('suggestion', '')!r}"
+                    )
 
     copy_section = _render_screen_copy_section(ws, valid_screens)
 
@@ -627,21 +624,21 @@ def _load_stack_metadata(ws: Workspace) -> dict[str, Any]:
     if ws.run_file.is_file():
         try:
             run_doc = json.loads(ws_step.read_text(ws.run_file))
-            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
-                meta.update(run_doc["stack"])
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReviewError(f"cannot read {ws.run_file}: {exc}") from exc
+        if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+            meta.update(run_doc["stack"])
     for rel in ("02-existing/capture.json", "02-existing/audit.json"):
         p = ws.path / rel
         if p.is_file():
             try:
                 doc = json.loads(ws_step.read_text(p))
-                if isinstance(doc, dict):
-                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
-                        if k not in meta and doc.get(k) is not None:
-                            meta[k] = doc[k]
-            except (OSError, json.JSONDecodeError):
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ReviewError(f"cannot read {p}: {exc}") from exc
+            if isinstance(doc, dict):
+                for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+                    if k not in meta and doc.get(k) is not None:
+                        meta[k] = doc[k]
     env_commit = os.environ.get("APP_SCREEN_STACK_COMMIT", "").strip()
     if env_commit and "commit" not in meta:
         meta["commit"] = env_commit

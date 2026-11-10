@@ -83,22 +83,34 @@ class _BundleHTMLInspector(HTMLParser):
             self._in_script = False
 
 
-def _read_json(ws: Workspace, path: Path) -> tuple[Any, str | None]:
+def _read_json(
+    ws: Workspace,
+    path: Path,
+    problems: list[str],
+    label: str,
+    *,
+    custom_error: str | None = None,
+) -> dict[str, Any] | None:
     if not path.is_file():
-        return None, f"{path.name}: file is missing"
+        problems.append(custom_error or f"{label}: {path.name}: file is missing")
+        return None
     ws_step = ws if ws.step else ws.for_step("show")
     try:
-        return json.loads(ws_step.read_text(path)), None
+        doc = json.loads(ws_step.read_text(path))
     except (OSError, json.JSONDecodeError) as exc:
-        return None, f"{path.name}: invalid JSON ({exc})"
+        problems.append(custom_error or f"{label}: {path.name}: invalid JSON ({exc})")
+        return None
+    if not isinstance(doc, dict):
+        problems.append(custom_error or f"{label}: must be a JSON object")
+        return None
+    return doc
 
 
 def _check_review_done(ws: Workspace, round_num: int) -> list[str]:
     problems: list[str] = []
     review_path = ws.round_folder(round_num) / "review.json"
-    review_doc, err = _read_json(ws, review_path)
-    if err or not isinstance(review_doc, dict):
-        problems.append(f"06-checks/round-{round_num}/review.json: {err or 'must be a JSON object'}")
+    review_doc = _read_json(ws, review_path, problems, f"06-checks/round-{round_num}/review.json")
+    if review_doc is None:
         return problems
 
     verdict = review_doc.get("verdict")
@@ -168,10 +180,14 @@ def _check_bundle_self_contained(ws: Workspace, round_num: int) -> list[str]:
         problems.append('07-show/bundle.html: missing inlined <script id="rc-fixture-data"> block')
 
     if round_num > 1 and (show_dir / f"bundle-round-{round_num - 1}.html").is_file():
-        showtell_doc, err = _read_json(ws_step, show_dir / "showtell.json")
-        if err or not isinstance(showtell_doc, dict):
-            problems.append("07-show/showtell.json: missing or invalid for round > 1 retention check")
-        else:
+        showtell_doc = _read_json(
+            ws_step,
+            show_dir / "showtell.json",
+            problems,
+            "07-show/showtell.json",
+            custom_error="07-show/showtell.json: missing or invalid for round > 1 retention check",
+        )
+        if showtell_doc is not None:
             change_note = str(showtell_doc.get("change_note") or "").strip()
             kept = showtell_doc.get("kept_lines")
             prev_total = showtell_doc.get("prev_non_blank_lines")
@@ -190,14 +206,10 @@ def _check_bundle_self_contained(ws: Workspace, round_num: int) -> list[str]:
 def _check_showtell_and_comments_match(ws: Workspace, round_num: int) -> list[str]:
     problems: list[str] = []
     show_dir = ws.folder("show")
-    showtell_doc, st_err = _read_json(ws, show_dir / "showtell.json")
-    comments_doc, cm_err = _read_json(ws, show_dir / "comments.json")
+    showtell_doc = _read_json(ws, show_dir / "showtell.json", problems, "07-show/showtell.json")
+    comments_doc = _read_json(ws, show_dir / "comments.json", problems, "07-show/comments.json")
 
-    if st_err or not isinstance(showtell_doc, dict):
-        problems.append(f"07-show/showtell.json: {st_err or 'must be a JSON object'}")
-    if cm_err or not isinstance(comments_doc, dict):
-        problems.append(f"07-show/comments.json: {cm_err or 'must be a JSON object'}")
-    if problems:
+    if problems or showtell_doc is None or comments_doc is None:
         return problems
 
     doc_id = str(showtell_doc.get("doc_id") or "")
@@ -299,9 +311,8 @@ def _check_targeted_comments_answered(ws: Workspace, round_num: int) -> list[str
     if not gate_path.is_file():
         return problems
 
-    gate_doc, g_err = _read_json(ws, gate_path)
-    if g_err or not isinstance(gate_doc, dict):
-        problems.append(f"07-show/gate_final.json: {g_err or 'must be a JSON object'}")
+    gate_doc = _read_json(ws, gate_path, problems, "07-show/gate_final.json")
+    if gate_doc is None:
         return problems
 
     if gate_doc.get("choice") != "changes":
@@ -311,9 +322,8 @@ def _check_targeted_comments_answered(ws: Workspace, round_num: int) -> list[str
     if not isinstance(raw_targets, list) or not raw_targets:
         return problems
 
-    comments_doc, cm_err = _read_json(ws, show_dir / "comments.json")
-    if cm_err or not isinstance(comments_doc, dict):
-        problems.append(f"07-show/comments.json: {cm_err or 'must be a JSON object'}")
+    comments_doc = _read_json(ws, show_dir / "comments.json", problems, "07-show/comments.json")
+    if comments_doc is None:
         return problems
 
     comments_list = [c for c in (comments_doc.get("comments") or []) if isinstance(c, dict)]

@@ -25,17 +25,20 @@ from typing import Any
 
 from . import product_app
 
-try:  # host only: modules stay importable where Pillow is not installed (tests, workers)
-    from PIL import Image, ImageChops
-except ImportError:  # pragma: no cover
-    Image = ImageChops = None
-
-STAGES = ("existing", "ground")
-SCREEN_SPEC_KEYS = ("screens", "sizes", "page", "login", "sheet_width")
-
 
 class ReuseError(ValueError):
     """The fingerprint or force flag is invalid; the message says why."""
+
+
+try:
+    from PIL import Image, ImageChops
+except ImportError as _pil_exc:  # pragma: no cover
+    raise ReuseError(
+        "Pillow (PIL) is required for visual diff in reuse; install pillow in the active environment"
+    ) from _pil_exc
+
+STAGES = ("existing", "ground")
+SCREEN_SPEC_KEYS = ("screens", "sizes", "page", "login", "sheet_width")
 
 
 @dataclass
@@ -127,8 +130,8 @@ def visual_diff_ratio(path_a: Path, path_b: Path) -> float:
             pixels = getattr(diff, "get_flattened_data", diff.getdata)()
             changed = sum(1 for px in pixels if px != (0, 0, 0, 0))
             return changed / total
-    except Exception:
-        return 1.0
+    except OSError as exc:
+        raise ReuseError(f"cannot decode PNG for visual diff ({path_a}, {path_b}): {exc}") from exc
 
 
 def _capture_png_path(root: Path, cid: str) -> Path:

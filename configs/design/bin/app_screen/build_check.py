@@ -76,26 +76,28 @@ def _prob(check_name: str, where: str, problem: str) -> dict[str, str]:
     return {"check": check_name, "where": where, "problem": problem}
 
 
-def _parse_screen_spec(js_text: str) -> dict[str, Any] | None:
+def _parse_screen_spec(js_text: str, problems: list[dict[str, str]], where: str) -> dict[str, Any] | None:
     m = SPEC_RE.search(js_text)
     if not m:
         return None
     try:
         data = json.loads(m.group(1))
-        return data if isinstance(data, dict) else None
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        problems.append(_prob("screen_file_per_inventory_screen", where, f"invalid SCREEN_SPEC JSON: {exc}"))
         return None
+    return data if isinstance(data, dict) else None
 
 
-def _parse_route_table(router_text: str) -> dict[str, Any] | None:
+def _parse_route_table(router_text: str, problems: list[dict[str, str]], where: str) -> dict[str, Any] | None:
     m = ROUTE_TABLE_RE.search(router_text)
     if not m:
         return None
     try:
         data = json.loads(m.group(1))
-        return data if isinstance(data, dict) else None
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        problems.append(_prob("shell_loads_every_screen_file", where, f"invalid ROUTE_TABLE JSON: {exc}"))
         return None
+    return data if isinstance(data, dict) else None
 
 
 def _strip_spec_widths(js_text: str) -> str:
@@ -153,7 +155,7 @@ def check(
 
     router_path = build_dir / "shell" / "router.js"
     router_text = _read_path_text(router_path, ws) if router_path.is_file() else ""
-    route_table = _parse_route_table(router_text) if router_text else None
+    route_table = _parse_route_table(router_text, problems, "05-build/shell/router.js") if router_text else None
     if not router_path.is_file():
         problems.append(_prob("shell_loads_every_screen_file", "05-build/shell/router.js", "missing 05-build/shell/router.js"))
 
@@ -191,7 +193,7 @@ def check(
         else:
             js_text = _read_path_text(abs_file, ws)
             screen_js_by_id[sid] = js_text
-            spec = _parse_screen_spec(js_text)
+            spec = _parse_screen_spec(js_text, problems, f"05-build/{rel_file}")
             if spec is not None:
                 screen_spec_by_id[sid] = spec
 
@@ -506,7 +508,8 @@ def check(
                 parsed_d = json.loads(_read_path_text(draft_path, ws))
                 if isinstance(parsed_d, dict):
                     active_draft = parsed_d
-            except (OSError, json.JSONDecodeError):
+            except (OSError, json.JSONDecodeError) as exc:
+                problems.append(_prob("every_screen_state_designed", "05-build/draft.json", f"unreadable JSON: {exc}"))
                 active_draft = None
 
     if require_built:

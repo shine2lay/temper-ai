@@ -50,11 +50,10 @@ def _write(path: Path, data: Any) -> None:
 
 def _open_to_worker(folder: Path) -> None:
     """The workflow's worker writes as another user: the stage folder and its files stay writable to it."""
+    uid = os.getuid()
     for path in [folder, *folder.rglob("*")]:
-        try:
+        if path.exists() and path.stat().st_uid == uid:
             os.chmod(path, 0o777 if path.is_dir() else 0o666)
-        except OSError:
-            pass
 
 
 def app_summary(app: dict[str, Any]) -> dict[str, Any]:

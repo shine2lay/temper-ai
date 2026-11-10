@@ -240,10 +240,9 @@ def check_step(ws: Workspace, raw: str = "") -> dict[str, Any]:
                 encoding="utf-8",
             )
     if draft is None and draft_path.is_file():
-        try:
-            draft = json.loads(ws.read_text(draft_path))
-        except (OSError, json.JSONDecodeError):
-            draft = None
+        parsed = model_step.parse_reply(ws.read_text(draft_path))
+        if isinstance(parsed, dict) and "unreadable" not in parsed:
+            draft = parsed
 
     report = directions_check.check_workspace(ws, pass_name="draft", draft=draft)
     (dir_folder / "check.json").write_text(
@@ -295,13 +294,10 @@ def _hex_to_rgb_str(hex_str: str) -> str:
     h = hex_str.strip().lstrip("#")
     if len(h) == 3:
         h = "".join(ch * 2 for ch in h)
-    if len(h) != 6:
+    if len(h) != 6 or not all(ch in "0123456789abcdefABCDEF" for ch in h):
         return ""
-    try:
-        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return f"rgb({r},{g},{b})"
-    except ValueError:
-        return ""
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgb({r},{g},{b})"
 
 
 def measure_direction_checks(
@@ -358,8 +354,8 @@ def measure_direction_checks(
             if m:
                 try:
                     spec_by_sid[sid] = json.loads(m.group(1))
-                except json.JSONDecodeError:
-                    spec_by_sid[sid] = {}
+                except json.JSONDecodeError as exc:
+                    raise DirectionsError(f"cannot parse SCREEN_SPEC in {js_path}: {exc}") from exc
 
     measured: dict[str, dict[str, Any]] = {}
     for view in plan["views"]:

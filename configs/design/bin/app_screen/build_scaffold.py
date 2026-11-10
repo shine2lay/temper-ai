@@ -1388,39 +1388,39 @@ def _open_round_feedback(ws: Workspace, round_num: int) -> list[str]:
     if prev_round.is_file():
         try:
             rev = json.loads(ws_step.read_text(prev_round))
-            for f in rev.get("findings") or []:
-                if isinstance(f, dict) and f.get("priority") == "must":
-                    fid = f.get("id") or "F?"
-                    loc = f.get("location") or f.get("screen") or "all"
-                    screen = f.get("screen") or (str(loc).split("/")[0].split(":")[0].split("@")[0].strip() if loc else "all")
-                    elem = f.get("element") or ""
-                    evid = f.get("evidence") or f.get("what") or ""
-                    sugg = f.get("suggestion") or ""
-                    line = (
-                        f"Must finding {fid} (screen={screen}, location={loc}, element={elem}): "
-                        f"evidence={evid!r}"
-                    )
-                    if sugg:
-                        line += f" -> suggestion: {sugg}"
-                    notes.append(line)
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildInputError(f"cannot read {prev_round}: {exc}") from exc
+        for f in rev.get("findings") or []:
+            if isinstance(f, dict) and f.get("priority") == "must":
+                fid = f.get("id") or "F?"
+                loc = f.get("location") or f.get("screen") or "all"
+                screen = f.get("screen") or (str(loc).split("/")[0].split(":")[0].split("@")[0].strip() if loc else "all")
+                elem = f.get("element") or ""
+                evid = f.get("evidence") or f.get("what") or ""
+                sugg = f.get("suggestion") or ""
+                line = (
+                    f"Must finding {fid} (screen={screen}, location={loc}, element={elem}): "
+                    f"evidence={evid!r}"
+                )
+                if sugg:
+                    line += f" -> suggestion: {sugg}"
+                notes.append(line)
     comments_path = ws_step.folder("show") / "comments.json"
     if comments_path.is_file():
         try:
             cdoc = json.loads(ws_step.read_text(comments_path))
-            for item in (cdoc.get("comments") or cdoc.get("items") or []):
-                if isinstance(item, dict):
-                    text = item.get("body") or item.get("text")
-                    where = (
-                        item.get("where")
-                        or "/".join(str(x) for x in (item.get("element"), item.get("state")) if x)
-                        or "general"
-                    )
-                    if text:
-                        notes.append(f"Owner comment ({where}): {text}")
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildInputError(f"cannot read {comments_path}: {exc}") from exc
+        for item in (cdoc.get("comments") or cdoc.get("items") or []):
+            if isinstance(item, dict):
+                text = item.get("body") or item.get("text")
+                where = (
+                    item.get("where")
+                    or "/".join(str(x) for x in (item.get("element"), item.get("state")) if x)
+                    or "general"
+                )
+                if text:
+                    notes.append(f"Owner comment ({where}): {text}")
     return notes
 
 
@@ -1449,16 +1449,16 @@ def build_task(ws: Workspace) -> str:
     if directions_draft_path.is_file():
         try:
             ddoc = json.loads(ws.read_text(directions_draft_path))
-            for d in ddoc.get("directions") or []:
-                if isinstance(d, dict) and d.get("id") == chosen_direction:
-                    if not chosen_dir_obj.get("name") and d.get("name"):
-                        chosen_dir_obj = {**chosen_dir_obj, "name": d["name"]}
-                    if not chosen_dir_obj.get("idea") and d.get("idea"):
-                        chosen_dir_obj = {**chosen_dir_obj, "idea": d["idea"]}
-                    chosen_draft_screens = [s for s in (d.get("screens") or []) if isinstance(s, dict)]
-                    break
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildInputError(f"cannot read {directions_draft_path}: {exc}") from exc
+        for d in ddoc.get("directions") or []:
+            if isinstance(d, dict) and d.get("id") == chosen_direction:
+                if not chosen_dir_obj.get("name") and d.get("name"):
+                    chosen_dir_obj = {**chosen_dir_obj, "name": d["name"]}
+                if not chosen_dir_obj.get("idea") and d.get("idea"):
+                    chosen_dir_obj = {**chosen_dir_obj, "idea": d["idea"]}
+                chosen_draft_screens = [s for s in (d.get("screens") or []) if isinstance(s, dict)]
+                break
 
     design_md_path = ws.folder("ground") / "design-files" / "DESIGN.md"
     design_md_summary = ""

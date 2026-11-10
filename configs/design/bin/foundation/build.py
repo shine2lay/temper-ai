@@ -248,8 +248,8 @@ def _resolve_build_date(ws: Workspace, chosen: dict[str, Any]) -> str:
         if p.is_file():
             try:
                 tok_doc = json.loads(p.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                tok_doc = None
+            except (OSError, json.JSONDecodeError) as exc:
+                raise BuildError(f"cannot read tokens file {p}: {exc}") from exc
             d = _extract_tokens_date(tok_doc)
             if d:
                 return d
@@ -1195,12 +1195,16 @@ def build_collect(ws: Workspace) -> dict[str, Any]:
     if build_json_path.is_file() and design_md_path.is_file() and draft_path.is_file():
         try:
             existing_build = json.loads(build_json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildError(f"corrupt prior build record at {build_json_path}: {exc}") from exc
+        try:
             existing_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildError(f"corrupt prior build draft at {draft_path}: {exc}") from exc
+        try:
             existing_md = design_md_path.read_text(encoding="utf-8")
-        except json.JSONDecodeError:
-            existing_build = {}
-            existing_draft = None
-            existing_md = ""
+        except OSError as exc:
+            raise BuildError(f"cannot read prior DESIGN.md at {design_md_path}: {exc}") from exc
         if (
             isinstance(existing_build, dict)
             and existing_build.get("input_digest") == input_digest

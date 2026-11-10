@@ -126,33 +126,33 @@ def validate_prerequisites(ws: Workspace) -> dict[str, Any]:
     if req_path.is_file():
         try:
             req_doc = json.loads(ws.read_text(req_path))
-        except (OSError, json.JSONDecodeError):
-            req_doc = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"handoff: cannot read {req_path}: {exc}") from exc
 
     fixture_doc: dict[str, Any] = {}
     for fp in (ws.folder("ground") / "fixture.json", ws.folder("build") / "fixture.json"):
         if fp.is_file():
             try:
                 fixture_doc = json.loads(ws.read_text(fp))
-                break
-            except (OSError, json.JSONDecodeError):
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ContractError(f"handoff: cannot read {fp}: {exc}") from exc
+            break
 
     comments_doc: dict[str, Any] = {"comments": []}
     cm_path = ws.folder("show") / "comments.json"
     if cm_path.is_file():
         try:
             comments_doc = json.loads(ws.read_text(cm_path))
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"handoff: cannot read {cm_path}: {exc}") from exc
 
     showtell_doc: dict[str, Any] = {}
     st_path = ws.folder("show") / "showtell.json"
     if st_path.is_file():
         try:
             showtell_doc = json.loads(ws.read_text(st_path))
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"handoff: cannot read {st_path}: {exc}") from exc
 
     return {
         "round": round_num,
@@ -448,23 +448,23 @@ def _load_handoff_stack_metadata(ws: Workspace, review_doc: dict[str, Any]) -> d
     if ws.run_file.is_file():
         try:
             run_doc = json.loads(ws_step.read_text(ws.run_file))
-            if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
-                for k, v in run_doc["stack"].items():
-                    if k not in meta and v is not None:
-                        meta[k] = v
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractError(f"handoff: cannot read {ws.run_file}: {exc}") from exc
+        if isinstance(run_doc, dict) and isinstance(run_doc.get("stack"), dict):
+            for k, v in run_doc["stack"].items():
+                if k not in meta and v is not None:
+                    meta[k] = v
     for rel in ("02-existing/capture.json", "02-existing/audit.json"):
         p = ws.path / rel
         if p.is_file():
             try:
                 doc = json.loads(ws_step.read_text(p))
-                if isinstance(doc, dict):
-                    for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
-                        if k not in meta and doc.get(k) is not None:
-                            meta[k] = doc[k]
-            except (OSError, json.JSONDecodeError):
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ContractError(f"handoff: cannot read {p}: {exc}") from exc
+            if isinstance(doc, dict):
+                for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check"):
+                    if k not in meta and doc.get(k) is not None:
+                        meta[k] = doc[k]
     return {
         k: meta[k]
         for k in ("commit", "short_commit", "ref", "reused", "ci_conclusion", "allow_red_commit", "ci_failing_check")

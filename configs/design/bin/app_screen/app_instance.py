@@ -128,8 +128,8 @@ def _extract_github_repo_from_git_dir(repo_dir: Path) -> str | None:
     elif git_entry.is_file():
         try:
             first = git_entry.read_text(encoding="utf-8", errors="replace").strip()
-        except OSError:
-            first = ""
+        except OSError as exc:
+            raise AppInstanceError(f"cannot read {git_entry}: {exc}") from exc
         if first.startswith("gitdir:"):
             raw_gitdir = first.split(":", 1)[1].strip()
             gitdir = Path(raw_gitdir) if Path(raw_gitdir).is_absolute() else (repo_dir / raw_gitdir).resolve()
@@ -140,15 +140,16 @@ def _extract_github_repo_from_git_dir(repo_dir: Path) -> str | None:
         if not cfg.is_file():
             continue
         try:
-            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
-                stripped = line.strip()
-                if stripped.startswith("url") and "=" in stripped:
-                    rhs = stripped.split("=", 1)[1].strip()
-                    m = GITHUB_REMOTE_RE.search(rhs)
-                    if m:
-                        return m.group(1)
-        except OSError:
-            continue
+            lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            raise AppInstanceError(f"cannot read {cfg}: {exc}") from exc
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("url") and "=" in stripped:
+                rhs = stripped.split("=", 1)[1].strip()
+                m = GITHUB_REMOTE_RE.search(rhs)
+                if m:
+                    return m.group(1)
     return None
 
 
@@ -163,13 +164,11 @@ def resolve_github_repo(product: str, repo_path: str | Path | None = None) -> st
     candidates: list[Path] = []
     if repo_path is not None:
         candidates.append(Path(repo_path).expanduser())
-    try:
+    if callable(getattr(product_app, "registry", None)):
         reg = product_app.registry()
         mapped = (reg.get("repos") or {}).get(prod)
         if mapped:
             candidates.append(Path(str(mapped)).expanduser())
-    except Exception:
-        pass
     candidates.append(Path.home() / prod)
     for cand in candidates:
         slug = _extract_github_repo_from_git_dir(cand)
@@ -184,21 +183,18 @@ def _github_token_from_env() -> str:
         val = os.environ.get(key, "").strip()
         if val:
             return val
-    proc_root = Path("/proc")
-    if proc_root.is_dir():
-        for entry in sorted(proc_root.iterdir()):
-            if not entry.name.isdigit():
-                continue
-            try:
-                raw = (entry / "environ").read_bytes()
-            except OSError:
-                continue
-            for item in raw.split(b"\0"):
-                for prefix in (b"GH_TOKEN=", b"GITHUB_TOKEN=", b"TEMPER_GITHUB_TOKEN="):
-                    if item.startswith(prefix):
-                        tok = item[len(prefix):].decode("utf-8", errors="ignore").strip()
-                        if tok:
-                            return tok
+    p1_env = Path("/proc/1/environ")
+    if p1_env.is_file() and os.access(p1_env, os.R_OK):
+        try:
+            raw = p1_env.read_bytes()
+        except OSError as exc:
+            raise AppInstanceError(f"cannot read {p1_env}: {exc}") from exc
+        for item in raw.split(b"\0"):
+            for prefix in (b"GH_TOKEN=", b"GITHUB_TOKEN=", b"TEMPER_GITHUB_TOKEN="):
+                if item.startswith(prefix):
+                    tok = item[len(prefix):].decode("utf-8", errors="ignore").strip()
+                    if tok:
+                        return tok
     return ""
 
 
@@ -429,25 +425,27 @@ def verify_commit_ci_status(
                             return j_name
         db_id = run_obj.get("databaseId")
         if db_id:
-            try:
-                v_rc, v_out, _ = _invoke_gh(
-                    eff_runner,
-                    ["gh", "run", "view", str(db_id), "--repo", repo, "--json", "jobs"],
-                    commit=full_commit,
-                    repo=repo,
-                    secrets_list=secrets_list,
-                )
-                if v_rc == 0 and (v_out or "").strip().startswith("{"):
+            v_rc, v_out, _ = _invoke_gh(
+                eff_runner,
+                ["gh", "run", "view", str(db_id), "--repo", repo, "--json", "jobs"],
+                commit=full_commit,
+                repo=repo,
+                secrets_list=secrets_list,
+            )
+            if v_rc == 0 and (v_out or "").strip().startswith("{"):
+                try:
                     v_doc = json.loads(v_out)
-                    for job in v_doc.get("jobs") or []:
-                        if isinstance(job, dict):
-                            j_conc = str(job.get("conclusion") or "").strip().lower()
-                            if j_conc and j_conc not in ("success", "skipped", "neutral"):
-                                j_name = str(job.get("name") or "").strip()
-                                if j_name:
-                                    return j_name
-            except Exception:
-                pass
+                except json.JSONDecodeError as exc:
+                    raise AppInstanceError(
+                        f"invalid JSON from gh run view {db_id} in {repo}: {exc}"
+                    ) from exc
+                for job in v_doc.get("jobs") or []:
+                    if isinstance(job, dict):
+                        j_conc = str(job.get("conclusion") or "").strip().lower()
+                        if j_conc and j_conc not in ("success", "skipped", "neutral"):
+                            j_name = str(job.get("name") or "").strip()
+                            if j_name:
+                                return j_name
         return str(run_obj.get("name") or run_obj.get("workflowName") or "ci").strip() or "ci"
 
     if not matching_runs:
@@ -523,27 +521,29 @@ def verify_commit_ci_status(
 
 
 def _resolve_gateway_ip(hostname: str, timeout: float = 5.0) -> str | None:
-    """Resolve hostname via DoH or sibling gateway host when container DNS lacks a new wildcard record."""
+    """Resolve hostname via env override or /etc/hosts gateway entry when container DNS lacks a new wildcard record."""
+    _ = timeout
     host = (hostname or "").strip().lower()
     if not host or not host.endswith(".wai2shine.com"):
         return None
-    try:
-        doh_url = f"https://1.1.1.1/dns-query?name={urllib.parse.quote(host)}&type=A"
-        req = urllib.request.Request(doh_url, headers={"Accept": "application/dns-json"}, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            doc = json.loads(resp.read().decode("utf-8", errors="replace"))
-        for ans in doc.get("Answer") or []:
-            if ans.get("type") == 1 and ans.get("data"):
-                return str(ans["data"]).strip()
-    except Exception:
-        pass
-    for fallback_host in ("temper-dev.wai2shine.com", "rollcall.wai2shine.com"):
+    env_ip = os.environ.get("APP_SCREEN_GATEWAY_IP", "").strip()
+    if env_ip:
+        return env_ip
+    hosts_path = Path("/etc/hosts")
+    if hosts_path.is_file():
         try:
-            ip = socket.gethostbyname(fallback_host)
-            if ip:
-                return ip
-        except OSError:
-            continue
+            lines = hosts_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            raise AppInstanceError(f"cannot read {hosts_path}: {exc}") from exc
+        for line in lines:
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            if len(parts) >= 2 and any(
+                h in ("temper-dev.wai2shine.com", "rollcall.wai2shine.com", host) for h in parts[1:]
+            ):
+                return parts[0]
     return None
 
 
@@ -577,10 +577,7 @@ def _request_via_ip(
         data = resp.read()
         return int(resp.status), list(resp.getheaders()), data
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
 
 
 def _read_health_url(url: str, base: str, opener: Any = None, timeout: float = 15.0) -> str:
@@ -614,11 +611,7 @@ def _read_health_url(url: str, base: str, opener: Any = None, timeout: float = 1
             raise AppInstanceError(f"GET {url} is unreachable for base_url {base}: {exc}") from None
 
     try:
-        try:
-            res = opener(url, timeout)
-        except TypeError:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
-            res = opener(req, timeout=timeout)
+        res = opener(url, timeout)
     except AppInstanceError:
         raise
     except urllib.error.HTTPError as exc:
@@ -826,10 +819,8 @@ class AppInstance:
             page.wait_for_selector(lg["wait_for"], timeout=20000)
             return ctx
         except Exception as exc:
-            try:
+            if hasattr(ctx, "close"):
                 ctx.close()
-            except Exception:
-                pass
             clean = _scrub(str(exc), self._secrets())
             raise AppInstanceError(
                 f"login failed for account {account!r} on {self.base_url}: {clean}"
@@ -918,8 +909,10 @@ class AppInstance:
             if stdout_clean.startswith("{"):
                 try:
                     summary = json.loads(stdout_clean)
-                except ValueError:
-                    summary = {}
+                except ValueError as exc:
+                    raise AppInstanceError(
+                        f"existing_capture.mjs emitted invalid JSON against {self.base_url}: {exc}"
+                    ) from exc
                 failed_raw = summary.get("failed") or {}
                 if isinstance(failed_raw, dict):
                     for cid, why in failed_raw.items():
@@ -1050,14 +1043,11 @@ class AppInstance:
                     for hk, hv in resp_headers:
                         if hk.lower() == "set-cookie":
                             sc = http.cookies.SimpleCookie()
-                            try:
-                                sc.load(hv)
-                                with lock:
-                                    bucket = account_cookies.setdefault(acct, {})
-                                    for morsel_key, morsel in sc.items():
-                                        bucket[morsel_key] = morsel.value
-                            except Exception:
-                                pass
+                            sc.load(hv)
+                            with lock:
+                                bucket = account_cookies.setdefault(acct, {})
+                                for morsel_key, morsel in sc.items():
+                                    bucket[morsel_key] = morsel.value
 
                 self.send_response(status)
                 for hk, hv in resp_headers:
@@ -1121,23 +1111,23 @@ class AppInstance:
 
 
 def _local_node_playwright_available() -> bool:
-    try:
-        proc = subprocess.run(
-            ["node", "-e", "import('playwright').then(()=>process.exit(0)).catch(()=>process.exit(1))"],
-            capture_output=True,
-            timeout=5,
-            check=False,
-        )
-        return proc.returncode == 0
-    except Exception:
+    if not shutil.which("node"):
         return False
+    proc = subprocess.run(
+        ["node", "-e", "import('playwright').then(()=>process.exit(0)).catch(()=>process.exit(1))"],
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+    return proc.returncode == 0
 
 
 def _local_container_ip() -> str:
+    hostname = socket.gethostname()
     try:
-        return socket.gethostbyname(socket.gethostname())
-    except OSError:
-        return "127.0.0.1"
+        return socket.gethostbyname(hostname)
+    except OSError as exc:
+        raise AppInstanceError(f"cannot resolve container hostname {hostname!r}: {exc}") from exc
 
 
 def _format_exc(exc: BaseException) -> str:

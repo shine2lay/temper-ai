@@ -110,20 +110,20 @@ def _valid_screens(ws: Workspace) -> list[str]:
     if build_file.is_file():
         try:
             bdoc = json.loads(ws_step.read_text(build_file))
-            for s in bdoc.get("screens") or []:
-                if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
-                    screens.append(s["id"])
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise contracts.ContractError(f"cannot read {build_file}: {exc}") from exc
+        for s in bdoc.get("screens") or []:
+            if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
+                screens.append(s["id"])
     inv_file = ws_step.folder("ground") / "inventory.json"
     if inv_file.is_file():
         try:
             idoc = json.loads(ws_step.read_text(inv_file))
-            for s in idoc.get("screens") or []:
-                if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
-                    screens.append(s["id"])
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise contracts.ContractError(f"cannot read {inv_file}: {exc}") from exc
+        for s in idoc.get("screens") or []:
+            if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"] not in screens:
+                screens.append(s["id"])
     return screens
 
 
@@ -137,84 +137,84 @@ def _screen_ground_phrases(ws: Workspace, screen_id: str) -> tuple[str, list[str
     if draft_file.is_file():
         try:
             ddoc = json.loads(ws_step.read_text(draft_file))
-            for s in ddoc.get("screens") or []:
-                if isinstance(s, dict) and s.get("id") == screen_id:
-                    for key in ("id", "title", "lead", "layout"):
-                        val = s.get(key)
-                        if isinstance(val, str) and val.strip():
-                            phrases.append(val.strip())
-                    states = s.get("states") or {}
-                    if isinstance(states, dict):
-                        for st_name, st_obj in states.items():
-                            phrases.append(str(st_name))
-                            if isinstance(st_obj, dict):
-                                for k in ("headline", "summary", "badge"):
-                                    v = st_obj.get(k)
-                                    if isinstance(v, str) and v.strip():
-                                        phrases.append(v.strip())
-                    for sh in s.get("shows") or []:
-                        if isinstance(sh, dict):
-                            for k in ("ref", "heading", "copy"):
-                                v = sh.get(k)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise contracts.ContractError(f"cannot read {draft_file}: {exc}") from exc
+        for s in ddoc.get("screens") or []:
+            if isinstance(s, dict) and s.get("id") == screen_id:
+                for key in ("id", "title", "lead", "layout"):
+                    val = s.get(key)
+                    if isinstance(val, str) and val.strip():
+                        phrases.append(val.strip())
+                states = s.get("states") or {}
+                if isinstance(states, dict):
+                    for st_name, st_obj in states.items():
+                        phrases.append(str(st_name))
+                        if isinstance(st_obj, dict):
+                            for k in ("headline", "summary", "badge"):
+                                v = st_obj.get(k)
                                 if isinstance(v, str) and v.strip():
                                     phrases.append(v.strip())
-                            for fp in sh.get("fields") or []:
-                                if isinstance(fp, str) and fp.strip():
-                                    phrases.append(fp.strip())
-                    for act in s.get("actions") or []:
-                        if isinstance(act, dict):
-                            for k in ("id", "label", "feedback"):
-                                v = act.get(k)
-                                if isinstance(v, str) and v.strip():
-                                    phrases.append(v.strip())
-        except (OSError, json.JSONDecodeError):
-            pass
+                for sh in s.get("shows") or []:
+                    if isinstance(sh, dict):
+                        for k in ("ref", "heading", "copy"):
+                            v = sh.get(k)
+                            if isinstance(v, str) and v.strip():
+                                phrases.append(v.strip())
+                        for fp in sh.get("fields") or []:
+                            if isinstance(fp, str) and fp.strip():
+                                phrases.append(fp.strip())
+                for act in s.get("actions") or []:
+                    if isinstance(act, dict):
+                        for k in ("id", "label", "feedback"):
+                            v = act.get(k)
+                            if isinstance(v, str) and v.strip():
+                                phrases.append(v.strip())
 
     js_file = build_dir / "screens" / f"{screen_id}.js"
     if js_file.is_file():
         try:
             js_text = ws_step.read_text(js_file)
-            phrases.append(js_text)
-            for m in re.finditer(r'"([^"\\]*(?:\\.[^"\\]*)*)"|\'([^\'\\]*(?:\\.[^\'\\]*)*)\'', js_text):
-                lit = (m.group(1) or m.group(2) or "").strip()
-                if len(lit) >= 4:
-                    phrases.append(lit)
-        except OSError:
-            pass
+        except OSError as exc:
+            raise contracts.ContractError(f"cannot read {js_file}: {exc}") from exc
+        phrases.append(js_text)
+        for m in re.finditer(r'"([^"\\]*(?:\\.[^"\\]*)*)"|\'([^\'\\]*(?:\\.[^\'\\]*)*)\'', js_text):
+            lit = (m.group(1) or m.group(2) or "").strip()
+            if len(lit) >= 4:
+                phrases.append(lit)
 
     html_file = build_dir / "index.html"
     if html_file.is_file():
         try:
             phrases.append(ws_step.read_text(html_file))
-        except OSError:
-            pass
+        except OSError as exc:
+            raise contracts.ContractError(f"cannot read {html_file}: {exc}") from exc
 
     measures_file = ws_step.round_folder() / "measures.json"
     if measures_file.is_file():
         try:
             mdoc = json.loads(ws_step.read_text(measures_file))
-            measured_map = mdoc.get("measured")
-            view_entries = (
-                list(measured_map.values())
-                if isinstance(measured_map, dict)
-                else (mdoc.get("views") or [])
-            )
-            for v in view_entries:
-                if isinstance(v, dict) and v.get("screen") == screen_id:
-                    m = v.get("measures") or {}
-                    mp = v.get("mp") or {}
-                    for t in (m.get("texts") or []) + (mp.get("runs") or []):
-                        if isinstance(t, dict) and isinstance(t.get("text"), str) and t["text"].strip():
-                            phrases.append(t["text"].strip())
-                        elif isinstance(t, str) and t.strip():
-                            phrases.append(t.strip())
-                    for b in (m.get("Interactive") or m.get("controls") or []) + (v.get("tab_stops") or []):
-                        if isinstance(b, dict):
-                            for key in ("text", "name"):
-                                if isinstance(b.get(key), str) and b[key].strip():
-                                    phrases.append(b[key].strip())
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise contracts.ContractError(f"cannot read {measures_file}: {exc}") from exc
+        measured_map = mdoc.get("measured")
+        view_entries = (
+            list(measured_map.values())
+            if isinstance(measured_map, dict)
+            else (mdoc.get("views") or [])
+        )
+        for v in view_entries:
+            if isinstance(v, dict) and v.get("screen") == screen_id:
+                m = v.get("measures") or {}
+                mp = v.get("mp") or {}
+                for t in (m.get("texts") or []) + (mp.get("runs") or []):
+                    if isinstance(t, dict) and isinstance(t.get("text"), str) and t["text"].strip():
+                        phrases.append(t["text"].strip())
+                    elif isinstance(t, str) and t.strip():
+                        phrases.append(t.strip())
+                for b in (m.get("Interactive") or m.get("controls") or []) + (v.get("tab_stops") or []):
+                    if isinstance(b, dict):
+                        for key in ("text", "name"):
+                            if isinstance(b.get(key), str) and b[key].strip():
+                                phrases.append(b[key].strip())
 
     corpus_norm = _norm(" ".join(phrases))
     distinct_phrases = []
@@ -260,19 +260,19 @@ def _failed_checks_by_screen(ws: Workspace) -> tuple[set[str], dict[str, set[str
         return all_failed, by_screen
     try:
         cdoc = json.loads(ws_step.read_text(checks_file))
-        for row in cdoc.get("checks") or []:
-            if isinstance(row, dict) and row.get("result") == "fail":
-                cid = str(row.get("id") or "")
-                fam = cid.split(".")[0]
-                all_failed.add(cid)
-                all_failed.add(fam)
-                scr = str(row.get("screen") or "")
-                if not scr and isinstance(row.get("location"), str):
-                    scr = row["location"].split("/")[0].split(":")[0].strip()
-                if scr:
-                    by_screen.setdefault(scr, set()).update({cid, fam})
-    except (OSError, json.JSONDecodeError):
-        pass
+    except (OSError, json.JSONDecodeError) as exc:
+        raise contracts.ContractError(f"cannot read {checks_file}: {exc}") from exc
+    for row in cdoc.get("checks") or []:
+        if isinstance(row, dict) and row.get("result") == "fail":
+            cid = str(row.get("id") or "")
+            fam = cid.split(".")[0]
+            all_failed.add(cid)
+            all_failed.add(fam)
+            scr = str(row.get("screen") or "")
+            if not scr and isinstance(row.get("location"), str):
+                scr = row["location"].split("/")[0].split(":")[0].strip()
+            if scr:
+                by_screen.setdefault(scr, set()).update({cid, fam})
     return all_failed, by_screen
 
 
@@ -283,10 +283,10 @@ def load_measured_items(ws: Workspace) -> list[dict[str, Any]]:
         return []
     try:
         doc = json.loads(ws_step.read_text(path))
-        items = doc.get("items")
-        return [it for it in items if isinstance(it, dict)] if isinstance(items, list) else []
-    except (OSError, json.JSONDecodeError):
-        return []
+    except (OSError, json.JSONDecodeError) as exc:
+        raise contracts.ContractError(f"cannot read {path}: {exc}") from exc
+    items = doc.get("items")
+    return [it for it in items if isinstance(it, dict)] if isinstance(items, list) else []
 
 
 def check_draft(

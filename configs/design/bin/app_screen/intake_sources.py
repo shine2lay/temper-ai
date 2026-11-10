@@ -88,12 +88,12 @@ def _find_record(record_id: str, records: Path) -> dict:
     if not records.is_file():
         raise SourcesError(f"dialog records {records} not found")
     with records.open(encoding="utf-8") as handle:
-        for line in handle:
+        for line_no, line in enumerate(handle, start=1):
             if record_id in line:
                 try:
                     record = json.loads(line)
-                except ValueError:
-                    continue
+                except ValueError as exc:
+                    raise SourcesError(f"malformed JSON in dialog records {records}:{line_no}: {exc}") from exc
                 if record.get("id") == record_id:
                     return record
     raise SourcesError(f"dialog record {record_id} not in {records}")

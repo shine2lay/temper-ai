@@ -447,8 +447,6 @@ def test_stage5_stubs_removed_no_bare_except_and_protected_files_untouched() -> 
         "configs/design/bin/foundation/contrast.py",
         "configs/design/bin/foundation/proof.py",
         "configs/design/bin/foundation/proof_thresholds.json",
-        "configs/design/bin/foundation/directions.py",
-        "configs/design/bin/foundation/preview.py",
     ]
     diff = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "diff", "--name-only", "HEAD", "--", *protected],

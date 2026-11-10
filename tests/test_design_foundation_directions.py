@@ -257,3 +257,72 @@ def test_stage2_stub_path_removed_and_stage3_files_untouched() -> None:
     assert not hasattr(stubs, "build_collect")
     assert not hasattr(stubs, "build_check")
     assert not hasattr(stubs, "build_finish")
+
+
+def test_corrupt_prior_record_fails_loudly_with_path_while_absent_prior_passes_clean(
+    tmp_path: Path,
+) -> None:
+    foundation_cli = BIN_DIR / "design_foundation.py"
+
+    # 1. Absent prior record is a normal, legal state and passes clean.
+    ws_clean = _seed_brief_workspace(tmp_path / "clean" / ".temper" / "design")
+    col_clean = directions.directions_collect(ws_clean)
+    assert col_clean["model"] == "yes"
+    assert "L01:" in col_clean["task"]
+
+    proc_clean = subprocess.run(
+        [sys.executable, str(foundation_cli), "directions_collect", "--workspace", str(ws_clean.path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc_clean.returncode == 0, proc_clean.stderr
+    assert json.loads(proc_clean.stdout)["model"] == "yes"
+
+    # 2. Planted corrupt prior directions.json fails loudly with DirectionsError and path.
+    ws_corrupt_json = _seed_brief_workspace(tmp_path / "corrupt-json" / ".temper" / "design")
+    corrupt_dir_path = ws_corrupt_json.path / "02-directions" / "directions.json"
+    corrupt_dir_path.parent.mkdir(parents=True, exist_ok=True)
+    corrupt_dir_path.write_text("{corrupt-prior-directions", encoding="utf-8")
+
+    with pytest.raises(directions.DirectionsError) as exc_info:
+        directions.directions_collect(ws_corrupt_json)
+    assert str(corrupt_dir_path) in str(exc_info.value)
+
+    proc_corrupt = subprocess.run(
+        [sys.executable, str(foundation_cli), "directions_collect", "--workspace", str(ws_corrupt_json.path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc_corrupt.returncode != 0
+    combined_corrupt = proc_corrupt.stdout + proc_corrupt.stderr
+    assert "DirectionsError" in combined_corrupt
+    assert str(corrupt_dir_path) in combined_corrupt
+
+    # 3. Planted corrupt prior tokens.json in the render_task_md prior-state read fails loudly.
+    ws_corrupt_tok = _seed_brief_workspace(tmp_path / "corrupt-tok" / ".temper" / "design")
+    directions.directions_check(ws_corrupt_tok, draft=_clean_draft(), allow_retry=True)
+    directions.directions_finish(ws_corrupt_tok)
+    # Force brief sha mismatch so reusable_directions returns None and directions_collect reaches L816 prior-state read
+    (ws_corrupt_tok.path / "02-directions" / "directions-report.json").write_text(
+        json.dumps({"verdict": "pass", "brief_sha256": "0" * 64}),
+        encoding="utf-8",
+    )
+    corrupt_tok_path = ws_corrupt_tok.path / "02-directions" / "a" / "tokens.json"
+    corrupt_tok_path.write_text("{not-json-tokens", encoding="utf-8")
+
+    with pytest.raises(directions.DirectionsError) as tok_exc:
+        directions.directions_collect(ws_corrupt_tok)
+    assert str(corrupt_tok_path) in str(tok_exc.value)
+
+    proc_tok = subprocess.run(
+        [sys.executable, str(foundation_cli), "directions_collect", "--workspace", str(ws_corrupt_tok.path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc_tok.returncode != 0
+    combined_tok = proc_tok.stdout + proc_tok.stderr
+    assert "DirectionsError" in combined_tok
+    assert str(corrupt_tok_path) in combined_tok

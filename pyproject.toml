@@ -42,6 +42,9 @@ dependencies = [
     # Optional at runtime — server tolerates Redis being unreachable; feature
     # degrades gracefully (milestones still flow via Postgres).
     "redis>=5.0,<6.0",
+    # Contact-sheet and preview rendering for Design stage helpers
+    # (design_app_screen_stage_v1, design_foundation_stage_v1).
+    "pillow>=11.0,<12.0",
 ]
 
 [project.optional-dependencies]

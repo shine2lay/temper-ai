@@ -94,3 +94,24 @@ def test_locked_check_tools_require_every_exact_version(monkeypatch, tmp_path):
     assert module.main() == 1
     lock.unlink()
     assert module.main() == 1
+
+
+def test_pillow_is_declared_in_runtime_dependencies_and_imports_cleanly():
+    import tomllib
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    deps = pyproject["project"]["dependencies"]
+    assert "pillow>=11.0,<12.0" in deps
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    temper_pkg = next(pkg for pkg in lock["package"] if pkg["name"] == "temper-ai")
+    assert {"name": "pillow"} in temper_pkg["dependencies"]
+    assert {"name": "pillow", "specifier": ">=11.0,<12.0"} in temper_pkg["metadata"]["requires-dist"]
+    canvas = Image.new("RGB", (16, 16), (255, 255, 255))
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.load_default()
+    draw.text((1, 1), "A", fill=(0, 0, 0), font=font)
+    assert canvas.size == (16, 16)
+
+

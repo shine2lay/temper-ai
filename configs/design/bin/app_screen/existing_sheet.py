@@ -9,22 +9,7 @@ from __future__ import annotations
 
 import io
 import math
-import sys
 from pathlib import Path
-
-try:  # host only: the capture's other modules stay importable where Pillow is not installed (tests, workers)
-    from PIL import Image, ImageDraw, ImageFont
-except ImportError:  # pragma: no cover - try container shared venv, else build() fails loud
-    for _cand in (
-        "/app/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
-        "/home/shinelay/temper-ai/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
-    ):
-        if Path(_cand).is_dir() and _cand not in sys.path:
-            sys.path.insert(0, _cand)
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        Image = ImageDraw = ImageFont = None
 
 from .workspace import Workspace
 
@@ -36,6 +21,31 @@ GAP = 6
 
 class SheetError(RuntimeError):
     """The sheet could not be built within the budget."""
+
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as _pil_exc:
+    raise SheetError(
+        "Pillow (PIL) is required to build contact sheets; install pillow in the active environment"
+    ) from _pil_exc
+
+
+def _require_pillow() -> None:
+    try:
+        from PIL import (  # noqa: I001, PLC0415
+            Image as _img,
+            ImageDraw as _draw_mod,
+            ImageFont as _font_mod,
+        )
+    except ImportError as exc:
+        raise SheetError(
+            "Pillow (PIL) is required to build contact sheets; install pillow in the active environment"
+        ) from exc
+    if Image is None or ImageDraw is None or ImageFont is None or _img is None or _draw_mod is None or _font_mod is None:
+        raise SheetError(
+            "Pillow (PIL) is required to build contact sheets; install pillow in the active environment"
+        )
 
 
 def _font(size: int):
@@ -89,8 +99,7 @@ def _png(img: Image.Image) -> bytes:
 
 def build(captures: list[tuple[str, Path]], out: Path, budget: int = BUDGET) -> dict:
     """Write the sheet PNG for [(capture id, png path)], in order; return its size and tile order."""
-    if Image is None:
-        raise SheetError("the contact sheet needs Pillow (host python3 has it)")
+    _require_pillow()
     if not captures:
         raise SheetError("no captures at the sheet width")
     tiles = []
@@ -103,8 +112,11 @@ def build(captures: list[tuple[str, Path]], out: Path, budget: int = BUDGET) -> 
             stream = io.BytesIO(ws.read_bytes(path))
         else:
             stream = path
-        with Image.open(stream) as img:
-            tiles.append((cid, img.copy()))
+        try:
+            with Image.open(stream) as img:
+                tiles.append((cid, img.copy()))
+        except Exception as exc:
+            raise SheetError(f"failed to decode PNG capture {cid!r} ({path}): {exc}") from exc
     sizes = {img.size for _, img in tiles}
     if len(sizes) != 1:
         raise SheetError(f"captures at the sheet width differ in size: {sorted(sizes)}")

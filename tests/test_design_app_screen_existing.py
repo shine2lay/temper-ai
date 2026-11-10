@@ -651,3 +651,27 @@ def test_cli_runs_the_existing_steps(ws, capsys):
     cli.main(["existing_collect", "--workspace", str(ws.path)])
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line["step"] == "existing_collect" and line["model"] == "yes" and line["valid"] is True
+
+
+def test_existing_sheet_builds_real_sheet_and_fails_loud_when_pillow_missing(tmp_path, monkeypatch):
+    from app_screen import existing_sheet
+
+    tile_1 = tmp_path / "home-empty-390.png"
+    tile_2 = tmp_path / "home-done-390.png"
+    existing_sheet.Image.new("RGB", (390, 260), (240, 248, 255)).save(tile_1, format="PNG")
+    existing_sheet.Image.new("RGB", (390, 260), (20, 40, 60)).save(tile_2, format="PNG")
+
+    out_sheet = tmp_path / "sheet.png"
+    meta = existing_sheet.build([("home:empty:390", tile_1), ("home:done:390", tile_2)], out_sheet)
+    assert out_sheet.is_file()
+    assert meta["file"] == "sheet.png"
+    assert meta["bytes"] == out_sheet.stat().st_size <= existing_sheet.BUDGET
+    assert meta["tiles"] == ["home:empty:390", "home:done:390"]
+
+    missing_out = tmp_path / "missing.png"
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    monkeypatch.setitem(sys.modules, "PIL.Image", None)
+    with pytest.raises(existing_sheet.SheetError, match="Pillow"):
+        existing_sheet.build([("home:empty:390", tile_1)], missing_out)
+    assert not missing_out.exists()
+

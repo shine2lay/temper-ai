@@ -21,7 +21,6 @@ import json
 import os
 import re
 import struct
-import sys
 import zlib
 from pathlib import Path
 from typing import Any
@@ -30,25 +29,34 @@ from . import app_instance, contracts, existing_sheet, model_step, review_check
 from .workspace import Workspace
 
 
-def _ensure_pillow() -> bool:
-    if existing_sheet.Image is not None:
-        return True
-    for extra in (
-        "/app/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
-        "/home/shinelay/temper-ai/workspaces/merged_poster_ws/main/.venv/lib/python3.12/site-packages",
-        "/home/shinelay/.local/lib/python3.12/site-packages",
-    ):
-        if Path(extra).is_dir() and extra not in sys.path:
-            sys.path.append(extra)
-    try:
-        from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+class ReviewError(ValueError):
+    """Stage 6b review failed input preconditions or final draft validation."""
 
-        existing_sheet.Image = Image
-        existing_sheet.ImageDraw = ImageDraw
-        existing_sheet.ImageFont = ImageFont
-        return True
-    except ImportError:
-        return False
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as _pil_exc:
+    raise ReviewError(
+        "Pillow (PIL) is required to build the review contact sheet; install pillow in the active environment"
+    ) from _pil_exc
+
+
+def _require_pillow() -> None:
+    try:
+        from PIL import (  # noqa: I001, PLC0415
+            Image as _img,
+            ImageDraw as _draw_mod,
+            ImageFont as _font_mod,
+        )
+    except ImportError as exc:
+        raise ReviewError(
+            "Pillow (PIL) is required to build the review contact sheet; install pillow in the active environment"
+        ) from exc
+    if Image is None or ImageDraw is None or ImageFont is None or _img is None or _draw_mod is None or _font_mod is None:
+        raise ReviewError(
+            "Pillow (PIL) is required to build the review contact sheet; install pillow in the active environment"
+        )
+    existing_sheet._require_pillow()
 
 
 def _png_chunk(kind: bytes, data: bytes) -> bytes:
@@ -75,10 +83,6 @@ def _png_size(ws: Workspace, path: Path) -> tuple[int, int] | None:
         if w > 0 and h > 0:
             return int(w), int(h)
     return None
-
-
-class ReviewError(ValueError):
-    """Stage 6b review failed input preconditions or final draft validation."""
 
 
 def _load_json(ws: Workspace, path: Path, label: str) -> dict[str, Any]:
@@ -228,16 +232,13 @@ def _build_contact_sheet(ws: Workspace, measured_doc: dict[str, Any]) -> tuple[P
             prioritized_set = {item[0] for item in prioritized}
             candidates = [item for item in candidates if item[0] in prioritized_set]
 
-        if _ensure_pillow():
-            try:
-                existing_sheet.build(candidates, sheet_path, budget=140_000)
-            except Exception:
-                try:
-                    existing_sheet.build(candidates[:6], sheet_path, budget=140_000)
-                except Exception:
-                    _write_canonical_png(sheet_path)
-        else:
-            _write_canonical_png(sheet_path)
+        _require_pillow()
+        try:
+            existing_sheet.build(candidates, sheet_path, budget=140_000)
+        except existing_sheet.SheetError as exc:
+            if len(candidates) <= 6 or "does not fit" not in str(exc):
+                raise
+            existing_sheet.build(candidates[:6], sheet_path, budget=140_000)
     elif not sheet_path.is_file():
         raise ReviewError(f"{views_dir} has no view PNGs and {sheet_path} is missing; run checks first")
 

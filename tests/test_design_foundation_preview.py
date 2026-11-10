@@ -15,7 +15,6 @@ import hashlib
 import json
 import os
 import re
-import site
 import socket
 import struct
 import subprocess
@@ -25,20 +24,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image as _PILImage
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DESIGN_BIN = REPO_ROOT / "configs" / "design" / "bin"
 CLI_SCRIPT = DESIGN_BIN / "design_foundation.py"
 if str(DESIGN_BIN) not in sys.path:
     sys.path.insert(0, str(DESIGN_BIN))
-for _site_dir in (site.getusersitepackages(), *site.getsitepackages()):
-    if isinstance(_site_dir, str) and os.path.isdir(_site_dir) and _site_dir not in sys.path:
-        sys.path.append(_site_dir)
 
 from foundation import preview  # noqa: E402, I001
 from app_screen import existing_sheet  # noqa: E402, I001
-
-_PILImage = existing_sheet.Image
 
 
 def _dtcg_color(hex_val: str) -> dict[str, Any]:
@@ -295,59 +290,8 @@ def _hex_rgb(hex_str: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-class _FallbackImage:
-    """Minimal stdlib PNG view used only when Pillow is absent in headless CI."""
-
-    def __init__(self, width: int, height: int, rgb_bytes: bytes) -> None:
-        self.width = width
-        self.height = height
-        self._rgb = rgb_bytes
-
-    def __enter__(self) -> _FallbackImage:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return None
-
-    def convert(self, _mode: str) -> _FallbackImage:
-        return self
-
-    def getpixel(self, xy: tuple[int, int]) -> tuple[int, int, int]:
-        x, y = xy
-        idx = (y * self.width + x) * 3
-        return (self._rgb[idx], self._rgb[idx + 1], self._rgb[idx + 2])
-
-    def getcolors(self, maxcolors: int = 200_000) -> list[tuple[int, tuple[int, int, int]]]:
-        counts: dict[tuple[int, int, int], int] = {}
-        mv = self._rgb
-        stride = max(1, (len(mv) // 3) // 8192) * 3
-        for idx in range(0, len(mv), stride):
-            c = (mv[idx], mv[idx + 1], mv[idx + 2])
-            counts[c] = counts.get(c, 0) + 1
-            if len(counts) > maxcolors:
-                break
-        return [(cnt, col) for col, cnt in counts.items()]
-
-    def crop(self, box: tuple[int, int, int, int]) -> _FallbackImage:
-        x0, y0, x1, y1 = box
-        w = max(0, x1 - x0)
-        h = max(0, y1 - y0)
-        out = bytearray(w * h * 3)
-        for row in range(h):
-            src_start = ((y0 + row) * self.width + x0) * 3
-            dst_start = row * w * 3
-            out[dst_start : dst_start + w * 3] = self._rgb[src_start : src_start + w * 3]
-        return _FallbackImage(w, h, bytes(out))
-
-    def tobytes(self) -> bytes:
-        return self._rgb
-
-
 def _open_png(path: Path) -> Any:
-    if _PILImage is not None:
-        return _PILImage.open(path)
-    w, h, rgb_bytes = preview._read_png_rgb_fallback(path)
-    return _FallbackImage(w, h, rgb_bytes)
+    return _PILImage.open(path)
 
 
 def _write_png_stdlib(path: Path, width: int, height: int, rows_rgb: list[bytes]) -> None:
@@ -447,7 +391,6 @@ def _ci_headless_harness_if_no_playwright() -> Any:
         return
 
     orig_render_all = preview._render_all_async
-    orig_sheet_build = existing_sheet.build
 
     async def _harness_render_all(
         *,
@@ -502,36 +445,11 @@ def _ci_headless_harness_if_no_playwright() -> Any:
             "baseline_paths": baseline_paths,
         }
 
-    def _harness_sheet_build(
-        captures: list[tuple[str, Path]],
-        out: Path,
-        budget: int = existing_sheet.BUDGET,
-    ) -> dict[str, Any]:
-        if existing_sheet.Image is not None:
-            return orig_sheet_build(captures, out, budget=budget)
-        _, _, first_rgb = preview._read_png_rgb_fallback(captures[0][1])
-        _, _, last_rgb = preview._read_png_rgb_fallback(captures[-1][1])
-        w, h = 400, 300
-        half = w // 2
-        l_col = (first_rgb[0], first_rgb[1], first_rgb[2])
-        r_col = (last_rgb[0], last_rgb[1], last_rgb[2])
-        row_bytes = bytes(l_col) * half + bytes(r_col) * (w - half)
-        _write_png_stdlib(out, w, h, [row_bytes] * h)
-        return {
-            "file": out.name,
-            "bytes": out.stat().st_size,
-            "width": w,
-            "height": h,
-            "tiles": [cid for cid, _ in captures],
-        }
-
     preview._render_all_async = _harness_render_all  # type: ignore[assignment]
-    existing_sheet.build = _harness_sheet_build  # type: ignore[assignment]
     try:
         yield
     finally:
         preview._render_all_async = orig_render_all  # type: ignore[assignment]
-        existing_sheet.build = orig_sheet_build  # type: ignore[assignment]
 
 
 @pytest.fixture(scope="module")
@@ -879,4 +797,155 @@ def test_g_rendering_is_deterministic_across_repeated_runs_and_cli(
         h1 = hashlib.sha256((out_1 / rel_png).read_bytes()).hexdigest()
         h2 = hashlib.sha256((out_2 / rel_png).read_bytes()).hexdigest()
         assert h1 == h2, f"Non-deterministic PNG output for {rel_png}: {h1} != {h2}"
+
+
+def test_h_sheet_build_is_import_order_invariant_and_preview_leaves_import_state_untouched(
+    tmp_path: Path,
+) -> None:
+    """Importing existing_sheet alone vs importing foundation.preview first yields identical sheets and leaves sys.path/sys.modules untouched."""
+    tile_a = tmp_path / "tile_a.png"
+    tile_b = tmp_path / "tile_b.png"
+    _ci_synthesise_png(tile_a, 390, 260, ["#ffffff", "#0f766e", "#111827"])
+    _ci_synthesise_png(tile_b, 390, 260, ["#111827", "#2dd4bf", "#f9fafb"])
+
+    sheet_a = tmp_path / "run_a" / "sheet.png"
+    sheet_b = tmp_path / "run_b" / "sheet.png"
+    sheet_a.parent.mkdir()
+    sheet_b.parent.mkdir()
+
+    probe_script = """
+import hashlib, json, pathlib, sys
+design_bin = sys.argv[1]
+mode = sys.argv[2]
+tile_a = pathlib.Path(sys.argv[3])
+tile_b = pathlib.Path(sys.argv[4])
+out_png = pathlib.Path(sys.argv[5])
+
+if design_bin not in sys.path:
+    sys.path.insert(0, design_bin)
+
+if mode == "existing_sheet_alone":
+    sys_path_before = list(sys.path)
+    pre_modules = dict(sys.modules)
+    from app_screen import existing_sheet
+    sys_path_after = list(sys.path)
+    mutated_modules = [
+        k for k, v in pre_modules.items()
+        if k not in sys.modules or sys.modules[k] is not v
+    ]
+else:
+    sys_path_before = list(sys.path)
+    pre_modules = dict(sys.modules)
+    from foundation import preview
+    from app_screen import existing_sheet
+    sys_path_after = list(sys.path)
+    mutated_modules = [
+        k for k, v in pre_modules.items()
+        if k not in sys.modules or sys.modules[k] is not v
+    ]
+
+meta = existing_sheet.build([("tile-a", tile_a), ("tile-b", tile_b)], out_png)
+import PIL
+print(json.dumps({
+    "sys_path_before": sys_path_before,
+    "sys_path_after": sys_path_after,
+    "mutated_modules": mutated_modules,
+    "pil_version": getattr(PIL, "__version__", None),
+    "pil_file": getattr(existing_sheet.Image, "__file__", None),
+    "meta": meta,
+    "sha256": hashlib.sha256(out_png.read_bytes()).hexdigest(),
+}))
+"""
+    proc_a = subprocess.run(
+        [sys.executable, "-c", probe_script, str(DESIGN_BIN), "existing_sheet_alone", str(tile_a), str(tile_b), str(sheet_a)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc_a.returncode == 0, f"existing_sheet alone failed: {proc_a.stderr}"
+    res_a = json.loads(proc_a.stdout.strip().splitlines()[-1])
+
+    proc_b = subprocess.run(
+        [sys.executable, "-c", probe_script, str(DESIGN_BIN), "preview_first", str(tile_a), str(tile_b), str(sheet_b)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc_b.returncode == 0, f"preview first failed: {proc_b.stderr}"
+    res_b = json.loads(proc_b.stdout.strip().splitlines()[-1])
+
+    assert (
+        res_a["pil_version"] == res_b["pil_version"]
+        and res_a["pil_file"] == res_b["pil_file"]
+        and res_a["meta"] == res_b["meta"]
+        and res_a["sha256"] == res_b["sha256"]
+        and res_a["sys_path_after"] == res_a["sys_path_before"]
+        and res_b["sys_path_after"] == res_b["sys_path_before"]
+        and res_b["mutated_modules"] == []
+    ), (
+        f"Import-order / import-state mismatch:\n"
+        f"  existing_sheet_alone: pil={res_a['pil_version']} ({res_a['pil_file']}), "
+        f"sys_path_changed={res_a['sys_path_after'] != res_a['sys_path_before']} ({res_a['sys_path_after']})\n"
+        f"  preview_first:        pil={res_b['pil_version']} ({res_b['pil_file']}), "
+        f"sys_path_changed={res_b['sys_path_after'] != res_b['sys_path_before']} ({res_b['sys_path_after']}), "
+        f"mutated_modules={res_b['mutated_modules']}"
+    )
+
+
+def test_i_missing_pillow_raises_clear_named_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When PIL is absent, sheet/poster/preview and review requests fail loudly naming Pillow instead of None globals or empty PNGs."""
+    tile_a = tmp_path / "tile_a.png"
+    _ci_synthesise_png(tile_a, 390, 260, ["#ffffff", "#0f766e", "#111827"])
+    out_sheet = tmp_path / "sheet.png"
+
+    # 1. Fresh process with PIL blocked in sys.modules: importing existing_sheet / preview / review fails loud naming Pillow.
+    for mod_expr in (
+        "from app_screen import existing_sheet",
+        "from foundation import preview",
+        "from app_screen import review",
+    ):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "\n".join([
+                    "import sys",
+                    f"sys.path.insert(0, {str(DESIGN_BIN)!r})",
+                    "for k in list(sys.modules):",
+                    "    if k == 'PIL' or k.startswith('PIL.'):",
+                    "        sys.modules.pop(k, None)",
+                    "sys.modules['PIL'] = None",
+                    "sys.modules['PIL.Image'] = None",
+                    mod_expr,
+                ]),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert proc.returncode != 0, f"{mod_expr} succeeded with PIL blocked"
+        assert "Pillow" in proc.stderr, f"Expected error naming Pillow for {mod_expr}, got: {proc.stderr}"
+
+    # 2. Runtime sheet / preview request with PIL blocked raises a clear error naming Pillow and writes no sheet.
+    for key in [k for k in sys.modules if k == "PIL" or k.startswith("PIL.")]:
+        monkeypatch.setitem(sys.modules, key, None)
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    monkeypatch.setitem(sys.modules, "PIL.Image", None)
+
+    with pytest.raises(existing_sheet.SheetError, match="Pillow"):
+        existing_sheet.build([("tile-a", tile_a)], out_sheet)
+    assert not out_sheet.exists()
+
+    with pytest.raises((preview.PreviewError, existing_sheet.SheetError), match="Pillow"):
+        preview._build_sheets(
+            out_dir=tmp_path,
+            dir_ids=["warm-ledger"],
+            screens=[{"id": "positions", "file": "positions.html"}],
+            render_paths={("warm-ledger", "positions", "light", 390): tile_a, ("warm-ledger", "positions", "dark", 390): tile_a, ("warm-ledger", "positions", "light", 1440): tile_a, ("warm-ledger", "positions", "dark", 1440): tile_a},
+            baseline_paths={("positions", "light", 390): tile_a, ("positions", "dark", 390): tile_a, ("positions", "light", 1440): tile_a, ("positions", "dark", 1440): tile_a},
+        )
+
 

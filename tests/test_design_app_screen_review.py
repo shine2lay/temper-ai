@@ -462,3 +462,27 @@ def test_group_measured_items_maps_round_level_location_to_valid_id():
     assert grouped["items"][0]["screen"] == "tracker"
     assert not contracts.check_json("measured_items", grouped, "06-checks/round-1/measured_items.json")
 
+
+def test_review_collect_fails_loud_naming_pillow_instead_of_writing_empty_sheet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    ws = _make_review_ws(tmp_path)
+    sheet_path = ws.round_folder() / "sheet.png"
+    assert not sheet_path.exists()
+
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    monkeypatch.setitem(sys.modules, "PIL.Image", None)
+    with pytest.raises(review.ReviewError, match="Pillow"):
+        review.collect(ws)
+    assert not sheet_path.exists()
+
+
+def test_review_collect_fails_with_named_sheet_error_on_corrupt_png(tmp_path: Path):
+    from app_screen import existing_sheet
+
+    ws = _make_review_ws(tmp_path)
+    corrupt_png = ws.round_folder() / "views" / "home-done-390.png"
+    raw = corrupt_png.read_bytes()
+    corrupt_png.write_bytes(raw[:33] + b"\x00\x00\x00\x0dIDATcorruptpayload")
+    with pytest.raises(existing_sheet.SheetError, match="failed to decode PNG capture 'home-done-390'"):
+        review.collect(ws)
+
+

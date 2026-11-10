@@ -1,8 +1,8 @@
 """``temper github``: the app's manifest, making it, and where its keys go.
 
 Pinned: the manifest asks for exactly the events and permissions the work
-needs (issues, pull requests and contents read/write, metadata read), private,
-with the public hook; the page that hands it to GitHub escapes it; the code
+needs (issues, pull requests and contents read/write, checks and metadata
+read), private, with the public hook; the page that hands it to GitHub escapes it; the code
 GitHub gives back is traded once, and the id, key and webhook secret land in
 the env file (the key base64 on one line), replacing old values and keeping
 everything else and the file's mode; nothing secret is printed; and the whole
@@ -36,7 +36,7 @@ def test_the_manifest_asks_for_what_the_work_needs_and_no_more():
     assert made["hook_attributes"] == {"url": "https://hooks.wai2shine.com/api/hooks/github", "active": True}
     assert sorted(made["default_events"]) == ["issue_comment", "issues", "pull_request"]
     assert made["default_permissions"] == {"issues": "write", "pull_requests": "write", "contents": "write",
-                                           "metadata": "read"}
+                                           "checks": "read", "metadata": "read"}
     assert made["redirect_url"] == "http://localhost:8765/done"
 
 
@@ -138,7 +138,13 @@ def test_setup_round_trip(tmp_path, monkeypatch):
 
 # --- temper github check ----------------------------------------------------------------------
 
-NEEDED = {"contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}
+NEEDED = {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "metadata": "read",
+}
 
 
 class StubApp:
@@ -216,6 +222,23 @@ class TestCheck:
         code, report = run(StubApp(installed={**NEEDED, "contents": "read"}))
         assert code == 1
         assert report["warnings"] == ["the installation on shine2lay lacks contents: write: accept the app's "
+                                      "new permissions there (Settings, Applications)"]
+
+    def test_checks_write_satisfies_checks_read_without_warning_or_note(self, checking):
+        run, _ = checking
+        code, report = run(StubApp(permissions={**NEEDED, "checks": "write"}))
+        assert code == 0 and "warnings" not in report and "notes" not in report
+
+    def test_missing_checks_read_warns_on_app_or_installation(self, checking):
+        run, _ = checking
+        without_checks = {k: v for k, v in NEEDED.items() if k != "checks"}
+        code, report = run(StubApp(permissions=without_checks, installed=without_checks))
+        assert code == 1
+        assert report["warnings"] == ["the app lacks checks: read (its settings page, Permissions)"]
+
+        code, report = run(StubApp(permissions=NEEDED, installed=without_checks))
+        assert code == 1
+        assert report["warnings"] == ["the installation on shine2lay lacks checks: read: accept the app's "
                                       "new permissions there (Settings, Applications)"]
 
     def test_an_env_file_others_can_read(self, checking):

@@ -9,10 +9,10 @@ memory by integrations.github.secret) signs a JSON Web Token that says "I am
 app ``GITHUB_APP_ID``" for ten minutes. With it temper asks GitHub for an
 *installation token*: good for an hour and, when it is for one repository,
 good on that repository only. It carries only ``PERMISSIONS``, what temper
-does as the app (push a branch, comment, open and review pull requests),
-however much more the app was given on GitHub. That token is what every call
-and push uses; it is kept in memory and used again until five minutes before
-it runs out. Neither the key nor a token is ever logged or put in an error
+does as the app (push a branch, comment, open and review pull requests, read
+check runs), however much more the app was given on GitHub. That token is what
+every call and push uses; it is kept in memory and used again until five
+minutes before it runs out. Neither the key nor a token is ever logged or put in an error
 message.
 
 Where the key is. Only in temper's server (``GitHubApp``). A run works in a
@@ -68,8 +68,15 @@ INSTALL_TTL_S = 600.0         # how long a repo -> installation answer (and what
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 # What temper does as the app, and so all its tokens for a repository may do, whatever else the
-# app was given: push a branch (contents), comment on issues, open and review pull requests.
-PERMISSIONS = {"contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}
+# app was given: push a branch (contents), comment on issues, open and review pull requests, and
+# read check runs.
+PERMISSIONS = {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "metadata": "read",
+}
 # A token for a whole installation only lists its repositories.
 LISTING = {"metadata": "read"}
 _LEVELS = {"read": 1, "write": 2, "admin": 3}

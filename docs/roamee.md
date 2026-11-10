@@ -112,14 +112,13 @@ published on any port. It answers exactly five things — `GET /health`,
 everything else.
 
 `RoameeWork` reads GitHub and Linear from inside the run, through temper's
-own app credentials — except `checks`. Temper's installation token carries
-contents, issues and pull requests only (`integrations/github/app.py`,
-`PERMISSIONS`), so GitHub answers 403 for check runs; widening that token
-would widen it for every repository temper touches. So the one question goes
-to roamee-reader, which runs the box's own `gh` with an argument list it
-builds itself: one repository (`shine2lay/roamee`, written in the file, not
-taken from the caller), one branch whose name has to look like a branch name,
-and `--method GET`.
+own app credentials — except `checks`, which stays on roamee-reader even now
+that temper's single-repository installation token (`integrations/github/app.py`,
+`PERMISSIONS`) carries `checks: read` alongside contents, issues, pull requests
+and metadata. That question still goes to roamee-reader, which runs the box's
+own `gh` with an argument list it builds itself: one repository
+(`shine2lay/roamee`, written in the file, not taken from the caller), one
+branch whose name has to look like a branch name, and `--method GET`.
 
 ```bash
 mkdir -p ~/.temper/roamee-reader          # before the containers mount it

@@ -36,7 +36,13 @@ INSTALLED = {"shine2lay/temper-ai": 99, "shine2lay/roamee": 99}
 GRANTED = {"actions": "write", "checks": "write", "code_quality": "write", "contents": "write",
            "issues": "write", "metadata": "read", "pull_requests": "write", "repository_hooks": "write",
            "security_events": "write"}
-TEMPERS = {"contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}
+TEMPERS = {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "metadata": "read",
+}
 
 
 @pytest.fixture(scope="module")
@@ -214,6 +220,22 @@ class TestInstallationTokens:
         assert scoped({"contents": "read", "metadata": "read"}) == {"contents": "read", "metadata": "read"}
         assert scoped({"contents": "admin", "issues": "none"}) == {"contents": "write"}
         assert scoped({}) == {}
+
+    def test_checks_write_is_narrowed_to_read_and_omitted_when_ungranted(self, the_app, gh, clock):
+        assert scoped({**TEMPERS, "checks": "write"})["checks"] == "read"
+        assert scoped({**TEMPERS, "checks": "read"})["checks"] == "read"
+        without_checks = {k: v for k, v in TEMPERS.items() if k != "checks"}
+        assert "checks" not in scoped(without_checks)
+        assert "checks" not in scoped({**without_checks, "checks": "none"})
+
+        the_app.installation_token("shine2lay/temper-ai")
+        assert gh.token_bodies[-1]["permissions"]["checks"] == "read"
+
+        the_app.forget_tokens()
+        gh.granted = dict(without_checks)
+        clock.now += 10
+        the_app.installation_token("shine2lay/temper-ai")
+        assert gh.token_bodies[-1]["permissions"] == without_checks
 
     def test_the_login_to_get_one_is_the_apps_token(self, the_app, gh):
         the_app.installation_token("shine2lay/temper-ai")

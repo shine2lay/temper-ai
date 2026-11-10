@@ -370,10 +370,11 @@ def _commits(branch: str, limit: int) -> str:
 def _checks(branch: str) -> str:
     """How the checks went, read through roamee-reader.
 
-    Not through temper's own GitHub token: that one carries contents, issues
-    and pull requests only (integrations/github/app.py PERMISSIONS), so GitHub
-    answers 403 for check runs. The box's own `gh` can read them, and the
-    reader is where a run may use it — for this one repository and a GET.
+    Single-repository installation tokens in integrations/github/app.py
+    PERMISSIONS now include ``checks: read`` alongside contents, issues, pull
+    requests and metadata, while ``RoameeWork`` keeps reading roamee's check
+    runs through roamee-reader (the host's ``gh`` pinned to this one repository
+    and a GET).
     """
     found = ask_reader("GET", f"/checks?branch={quote(branch, safe='')}")
     runs = found.get("checks") or []

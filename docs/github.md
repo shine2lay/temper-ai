@@ -133,7 +133,7 @@ with the other keys.
    that hands GitHub the app's manifest — the name, the webhook
    `https://hooks.wai2shine.com/api/hooks/github`, the events (issues,
    issue comments, pull requests) and the permissions (issues, pull requests
-   and contents read/write, metadata read):
+   and contents read/write, checks and metadata read):
 
    ```
    temper github setup --env-file ~/temper-ai/.env --listen <this machine's address>:8765
@@ -158,8 +158,9 @@ with the other keys.
    GitHub Apps → New GitHub App), as temper-ai-bot was made. It needs:
    the webhook URL above with a secret you make up, content type
    `application/json`; repository permissions **Contents**, **Issues** and
-   **Pull requests** read and write (Metadata read comes with them); and the
-   events **Issues**, **Issue comment** and **Pull request**. Then generate a
+   **Pull requests** read and write, **Checks** read-only (Metadata read comes
+   with them); and the events **Issues**, **Issue comment** and **Pull
+   request**. Then generate a
    private key, and put the three values in the env file yourself — the key
    as `base64 -w0 key.pem`, and delete the `.pem` after. More permissions do
    no harm (the tokens temper makes never carry them); more events are
@@ -210,9 +211,11 @@ else and dies with the run; the server logs each token with the run and the
 repository ([api-access.md](api-access.md), "A run's GitHub-token key").
 
 A token is only ever for that one repository, and carries only what temper
-uses there — contents, issues and pull requests (read and write), metadata
-(read) — however much more the app was given on GitHub. (Listing where the
-app is installed takes a token with metadata read only.)
+uses there — contents, issues and pull requests (read and write), checks and
+metadata (read) — however much more the app was given on GitHub (for instance,
+`checks: write` on the installation is narrowed to `checks: read` on each
+repository token). (Listing where the app is installed takes a token with
+metadata read only.)
 
 ## How an event is handled
 

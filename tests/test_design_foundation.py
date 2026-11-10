@@ -22,7 +22,14 @@ if str(BIN) not in sys.path:
 
 import design_files  # noqa: E402
 import foundation_harness  # noqa: E402
-from foundation import brief, contracts, directions, gates, stubs  # noqa: E402
+from foundation import (  # noqa: E402
+    brief,
+    build,
+    contracts,
+    directions,
+    gates,
+    stubs,
+)
 from foundation.workspace import FOLDERS, STAGES, STEPS, Workspace  # noqa: E402
 
 from temper_ai.runner import holds  # noqa: E402
@@ -256,7 +263,10 @@ def test_a_tokens_schema_accepts_temper_tokens_and_aligns_with_design_files():
 
     # 3. Completing those 5 parts alongside temper/tokens.json's unchanged colour group passes both
     # foundation.contracts.validate_tokens(require_all_parts=True) and design_files.check_tokens.
-    full_tokens = stubs.stub_tokens("temper")
+    full_tokens = build.compile_chosen_tokens(
+        "temper",
+        foundation_harness.BENCH_DIRECTIONS_DRAFT["directions"][0],
+    )
     full_tokens["colour"] = copy.deepcopy(TEMPER_LOGO_TOKENS["colour"])
     contracts.validate_tokens(full_tokens, require_all_parts=True)
     assert design_files.check_tokens(full_tokens) == []
@@ -266,7 +276,10 @@ def test_a_tokens_schema_accepts_temper_tokens_and_aligns_with_design_files():
 # (b) tokens.json schema is closed and fails loud with file, field and reason
 # ---------------------------------------------------------------------------
 def test_b_tokens_schema_is_closed_and_fails_loud_with_file_field_and_reason():
-    base = stubs.stub_tokens("rollcall")
+    base = build.compile_chosen_tokens(
+        "rollcall",
+        foundation_harness.BENCH_DIRECTIONS_DRAFT["directions"][0],
+    )
     contracts.validate_tokens(base, step="checks", file="04-build/tokens.json")
 
     # 1. Unknown top-level part
@@ -326,12 +339,11 @@ def test_b_tokens_schema_is_closed_and_fails_loud_with_file_field_and_reason():
     ],
 )
 def test_c_design_md_section_contract_fails_loud_when_section_missing(heading_to_drop: str):
-    valid_md = stubs.stub_design_md(
-        "rollcall",
-        direction_name="Quiet Ledger",
-        why="Calm financial ledger with crisp stone contrast.",
-        how_to_use="Use ink hierarchy on warm paper and tabular figures for strikes.",
-        what_not_to_do="Never use purple-indigo neon gradients or flat grey lists.",
+    valid_md = build.render_design_md(
+        product="rollcall",
+        draft=foundation_harness.BENCH_BUILD_DRAFT,
+        chosen_direction=foundation_harness.BENCH_DIRECTIONS_DRAFT["directions"][0],
+        gate_direction={"choice": "a", "decided_by": "owner", "source": "gate_direction", "reason": "Calm financial ledger with crisp stone contrast."},
         status="approved",
         approved_by="owner",
         owner_words="Calm financial ledger with crisp stone contrast.",
@@ -655,9 +667,9 @@ def test_i_valid_brief_with_no_render_surface_reaches_handoff_with_every_stage_v
         "direction",
         json.dumps({"choice": "a", "decided_by": "design", "source": "bench", "reason": "pick recommended a"}),
     )
-    stubs.build_collect(ws)
-    stubs.build_check(ws, draft=stubs.stub_model_read("build_read"))
-    stubs.build_finish(ws)
+    build_task = build.build_collect(ws)
+    build.build_check(ws, draft=foundation_harness.replay_model("build_read", task=build_task["task"]))
+    build.build_finish(ws)
     checks_out = stubs.checks_run(ws, base_url=None)
     assert checks_out["surface_kind"] == "sample_screen"
     assert checks_out["verdict"] == "done"

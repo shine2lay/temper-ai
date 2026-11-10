@@ -18,160 +18,9 @@ from typing import Any
 
 import design_files
 
-from . import color, contracts, proof
-from .contracts import EXT, FORMAT, TOKEN_PARTS, ContractError
+from . import build, contracts, proof
+from .contracts import EXT, TOKEN_PARTS, ContractError
 from .workspace import Workspace
-
-
-def stub_tokens(
-    product: str,
-    *,
-    status: str = "draft",
-    approved_by: str | None = None,
-    date: str | None = None,
-    accent_hex: str = "#2E7D4F",
-) -> dict[str, Any]:
-    """Build a complete DTCG tokens.json document via foundation.color satisfying closed TOKENS_SCHEMA."""
-    _, _, accent_h = color.hex_to_oklch(accent_hex)
-    anchors = dict(color.DEFAULT_ANCHORS)
-    anchors["accent"] = round(accent_h, 2)
-    return color.generate_tokens(
-        product,
-        anchors=anchors,
-        status=status,
-        approved_by=approved_by,
-        date=date or design_files.today(),
-    )
-
-
-def stub_design_md(
-    product: str,
-    *,
-    direction_name: str,
-    why: str,
-    how_to_use: str,
-    what_not_to_do: str,
-    status: str = "draft",
-    approved_by: str | None = None,
-    date: str | None = None,
-    owner_words: str | None = None,
-    source: str | None = None,
-    reason: str | None = None,
-) -> str:
-    """Build a DESIGN.md document satisfying both design_files.parse_design_md and foundation's Direction contract."""
-    stamp_date = date or design_files.today()
-    if status == "approved":
-        by = approved_by or "design"
-        status_line = f"Status: approved by {by} on {stamp_date}"
-        mirror_suffix = f"approved by {by} on {stamp_date}"
-        if by == "owner":
-            words = (owner_words or "approved").replace('"', "'")
-            src = source or "gate_final"
-            approval_tail = f'"{words}" ({src})'
-        else:
-            approval_tail = reason or "approved at gate_final"
-        approvals_lines = [
-            f"- {part}: {by} on {stamp_date}: {approval_tail}"
-            for part in ("direction", *TOKEN_PARTS)
-        ]
-        approvals_block = "\n".join(approvals_lines)
-    else:
-        status_line = "Status: draft"
-        mirror_suffix = "draft"
-        approvals_block = ""
-
-    mirror_lines = "\n".join(f"- {part}: {mirror_suffix}" for part in TOKEN_PARTS)
-    lines = [
-        f"# {product.capitalize()} design files",
-        "",
-        f"Product: {product}",
-        f"Updated: {stamp_date}",
-        f"Format: {FORMAT}",
-        "",
-        "## Users",
-        "Status: draft",
-        "",
-        "### Primary users",
-        "Grounded from .temper/product/brief.md.",
-        "",
-        "## Direction",
-        status_line,
-        "",
-        "### Named direction",
-        direction_name,
-        "",
-        "### Why",
-        why,
-        "",
-        "### How to use",
-        how_to_use,
-        "",
-        "### What not to do",
-        what_not_to_do,
-        "",
-        "## Tokens",
-        "Values live in tokens.json (DTCG 2025.10); each part's status:",
-        mirror_lines,
-        "",
-        "## Logo",
-        "Status: missing",
-        "",
-        "## Library",
-        "Status: missing",
-        "",
-        "## Approvals",
-    ]
-    if approvals_block:
-        lines.append(approvals_block)
-    return "\n".join(lines).rstrip() + "\n"
-
-
-# ---------------------------------------------------------------- Stage 4: build (stub model read)
-
-
-def stub_model_read(step: str, *, task: str = "", draft: str = "", problems: str = "") -> dict[str, Any]:
-    """Model-free $0.00 stub for build_read/revise only (Stage 2 directions is real in foundation.directions)."""
-    del draft, problems
-    parsed_task: dict[str, Any] = {}
-    if task.strip():
-        try:
-            parsed_task = json.loads(task)
-        except json.JSONDecodeError:
-            parsed_task = {}
-    product = str(parsed_task.get("product") or "product")
-
-    if step in ("build_read", "build_revise"):
-        chosen_id = str(parsed_task.get("direction") or "a")
-        accent_hex = "#2E7D4F" if chosen_id == "a" else "#1D5B79"
-        dir_name = str(parsed_task.get("direction_name") or "Warm Ledger")
-        payload = {
-            "product": product,
-            "direction": chosen_id,
-            "direction_name": dir_name,
-            "accent_hex": accent_hex,
-            "why": str(parsed_task.get("why") or "Grounded in .temper/product/brief.md."),
-            "how_to_use": "Apply colour, type, spacing, radius, elevation, and motion tokens consistently across views.",
-            "what_not_to_do": "Never hardcode ad-hoc hex values or off-scale spacing outside tokens.json.",
-        }
-        return {"ok": True, "step": step, "draft": payload}
-
-    raise ContractError(f"unknown stub model step {step!r}")
-
-
-def _extract_draft_dict(raw_draft: str | dict[str, Any] | None) -> dict[str, Any]:
-    if isinstance(raw_draft, dict):
-        inner = raw_draft.get("draft")
-        return dict(inner) if isinstance(inner, dict) else dict(raw_draft)
-    text = (raw_draft or "").strip()
-    if not text:
-        return {}
-    parsed = json.loads(text)
-    if isinstance(parsed, dict) and isinstance(parsed.get("draft"), dict):
-        return dict(parsed["draft"])
-    if not isinstance(parsed, dict):
-        raise ContractError("draft output must be a JSON object")
-    return parsed
-
 
 # ---------------------------------------------------------------- Stage 3: proof (with sample-screen fallback)
 
@@ -251,114 +100,6 @@ def proof_run(
         ref=ref,
         allow_red_commit=allow_red_commit,
     )
-
-
-# ---------------------------------------------------------------- Stage 4: build
-
-def build_collect(ws: Workspace) -> dict[str, Any]:
-    step_ws = ws.for_step("build_collect")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    directions_doc = step_ws.read_json("02-directions/directions.json")
-    gate_dir = step_ws.read_json("02-directions/gate_direction.json")
-    chosen_id = gate_dir["choice"]
-    chosen = next((d for d in directions_doc["directions"] if d["id"] == chosen_id), directions_doc["directions"][0])
-    chosen_tokens_rel = f"02-directions/{chosen['id']}/tokens.json"
-    chosen_design_rel = f"02-directions/{chosen['id']}/DESIGN.md"
-    chosen_tokens = step_ws.read_json(chosen_tokens_rel)
-    chosen_design_md = step_ws.read_text(chosen_design_rel)
-    contracts.validate_tokens(chosen_tokens, step="build_collect", file=chosen_tokens_rel)
-    contracts.validate_design_md(chosen_design_md, step="build_collect", file=chosen_design_rel, product=brief_doc["product"])
-
-    out_dir = step_ws.folder("build")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    round_num = max(1, step_ws.round) if step_ws.run_file.is_file() else 1
-
-    task = {
-        "step": "build_read",
-        "product": brief_doc["product"],
-        "round": round_num,
-        "direction": chosen["id"],
-        "direction_name": chosen["name"],
-        "why": chosen["why"],
-    }
-    task_text = json.dumps(task, indent=2, ensure_ascii=False)
-    (out_dir / "task.md").write_text(f"# Build task ({brief_doc['product']} round {round_num})\n\n```json\n{task_text}\n```\n")
-    step_ws.mark("build_collect", "done", round=round_num)
-    return {
-        "ok": True,
-        "step": "build_collect",
-        "model": "yes",
-        "product": brief_doc["product"],
-        "round": round_num,
-        "direction": chosen["id"],
-        "task": task_text,
-    }
-
-
-def build_check(ws: Workspace, *, draft: str | dict[str, Any] | None = None) -> dict[str, Any]:
-    step_ws = ws.for_step("build_check")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    gate_dir = step_ws.read_json("02-directions/gate_direction.json")
-    try:
-        draft_obj = _extract_draft_dict(draft) if draft else stub_model_read(
-            "build_read",
-            task=json.dumps({"product": brief_doc["product"], "direction": gate_dir["choice"]}),
-        )["draft"]
-    except (json.JSONDecodeError, ContractError) as exc:
-        return {"ok": True, "step": "build_check", "valid": "no", "problems": str(exc)}
-
-    if not draft_obj.get("direction"):
-        return {"ok": True, "step": "build_check", "valid": "no", "problems": "build draft missing direction id"}
-
-    out_dir = step_ws.folder("build")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "draft.json").write_text(json.dumps(draft_obj, indent=2, ensure_ascii=False) + "\n")
-    step_ws.mark("build_check", "done")
-    return {"ok": True, "step": "build_check", "valid": "yes", "problems": ""}
-
-
-def build_finish(ws: Workspace) -> dict[str, Any]:
-    step_ws = ws.for_step("build")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    directions_doc = step_ws.read_json("02-directions/directions.json")
-    gate_dir = step_ws.read_json("02-directions/gate_direction.json")
-    product = brief_doc["product"]
-    chosen_id = gate_dir["choice"]
-    chosen = next((d for d in directions_doc["directions"] if d["id"] == chosen_id), directions_doc["directions"][0])
-
-    tok = step_ws.read_json(chosen["tokens_file"])
-    md = step_ws.read_text(chosen["design_md_file"])
-
-    contracts.validate_tokens(tok, label="04-build/tokens.json", step="build")
-    contracts.validate_design_md(md, label="04-build/DESIGN.md", step="build")
-
-    out_dir = step_ws.folder("build")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tok_text = json.dumps(tok, indent=2, ensure_ascii=False) + "\n"
-    (out_dir / "tokens.json").write_text(tok_text, encoding="utf-8")
-    (out_dir / "DESIGN.md").write_text(md, encoding="utf-8")
-
-    round_num = max(1, step_ws.round) if step_ws.run_file.is_file() else 1
-    build_doc = {
-        "product": product,
-        "round": round_num,
-        "direction": chosen["id"],
-        "tokens_file": "04-build/tokens.json",
-        "design_md_file": "04-build/DESIGN.md",
-        "tokens_sha256": hashlib.sha256(tok_text.encode("utf-8")).hexdigest(),
-        "design_md_sha256": hashlib.sha256(md.encode("utf-8")).hexdigest(),
-        "parts": list(TOKEN_PARTS),
-    }
-    contracts.validate("build", build_doc, step="build")
-    (out_dir / "build.json").write_text(json.dumps(build_doc, indent=2, ensure_ascii=False) + "\n")
-    step_ws.mark("build", "done", round=round_num, direction=chosen["id"])
-    return {
-        "ok": True,
-        "step": "build",
-        "product": product,
-        "round": round_num,
-        "direction": chosen["id"],
-    }
 
 
 # ---------------------------------------------------------------- Stage 5: checks (with sample-screen fallback)
@@ -468,7 +209,7 @@ def handoff_run(ws: Workspace) -> dict[str, Any]:
 
     raw_tok = step_ws.read_json("04-build/tokens.json")
     raw_md = step_ws.read_text("04-build/DESIGN.md")
-    parsed_md = contracts.validate_design_md(raw_md, label="04-build/DESIGN.md", step="handoff")
+    contracts.validate_design_md(raw_md, label="04-build/DESIGN.md", step="handoff")
 
     approved_by = str(gate_final["decided_by"])
     approved_date = str(gate_final["at"])[:10]
@@ -485,19 +226,12 @@ def handoff_run(ws: Workspace) -> dict[str, Any]:
         }
     contracts.validate_tokens(approved_tok, label="06-handoff/tokens.json", step="handoff")
 
-    dir_subs = parsed_md["direction_subsections"]
-    approved_md = stub_design_md(
-        brief_doc["product"],
-        direction_name=dir_subs["Named direction"],
-        why=dir_subs["Why"],
-        how_to_use=dir_subs["How to use"],
-        what_not_to_do=dir_subs["What not to do"],
-        status="approved",
+    approved_md = build.promote_design_md_to_approved(
+        raw_md,
         approved_by=approved_by,
         date=approved_date,
         owner_words=gate_final.get("owner_words"),
         source=gate_final.get("source"),
-        reason=gate_final.get("reason"),
     )
     contracts.validate_design_md(approved_md, label="06-handoff/DESIGN.md", step="handoff")
 

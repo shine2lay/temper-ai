@@ -1,0 +1,49 @@
+# Stage 5 (build) standalone workflow for testing and stage-by-stage trials (rule 11).
+# Uses the exact same five Stage 5 nodes (`build_collect` -> `build_read` -> `build_check`
+# -> `build_revise` -> `build_finish`) as `design_foundation_v1.yaml`.
+workflow:
+  name: design_foundation_v1_build
+  version: 1
+  description: |
+    Stage 5 of design_foundation_v1 alone: reads 01-brief/brief.json, 02-directions/directions.json,
+    and 02-directions/gate_direction.json, compiles 04-build/tokens.json deterministically via color.py,
+    calls the fenced DESIGN.md writer (design_foundation_build_v1) to produce 04-build/draft.json,
+    validates it with build_check (7 deterministic rules with one bounded revision pass if needed),
+    and persists 04-build/{tokens.json,DESIGN.md,build.json}.
+  inputs:
+    product: {type: string, required: true}
+    workspace_path: {type: string, required: true}
+  outputs:
+    status: build_finish.structured.status
+    direction: build_finish.structured.direction
+    tokens: build_finish.structured.tokens
+    design_md: build_finish.structured.design_md
+    verdict: build_check.structured.verdict
+  nodes:
+    - name: build_collect
+      type: agent
+      agent: design_foundation_stage_v1
+      input_map: {step: build_collect, product: input.product, workspace_path: input.workspace_path}
+    - name: build_read
+      type: agent
+      agent: design_foundation_build_v1
+      depends_on: [build_collect]
+      condition: {source: build_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: build_collect.structured.task}
+    - name: build_check
+      type: agent
+      agent: design_foundation_stage_v1
+      depends_on: [build_collect, build_read]
+      condition: {source: build_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {step: build_check, product: input.product, data: build_read.output, workspace_path: input.workspace_path}
+    - name: build_revise
+      type: agent
+      agent: design_foundation_build_v1
+      depends_on: [build_check]
+      condition: {source: build_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: build_check.structured.revise_task}
+    - name: build_finish
+      type: agent
+      agent: design_foundation_stage_v1
+      depends_on: [build_collect, build_check, build_revise]
+      input_map: {step: build, product: input.product, data: build_revise.output, workspace_path: input.workspace_path}

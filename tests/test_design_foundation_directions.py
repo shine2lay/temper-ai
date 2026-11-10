@@ -251,7 +251,9 @@ def test_stage2_stub_path_removed_and_stage3_files_untouched() -> None:
     assert not hasattr(stubs, "directions_collect")
     assert not hasattr(stubs, "directions_check")
     assert not hasattr(stubs, "directions_finish")
-    with pytest.raises(contracts.ContractError):
-        stubs.stub_model_read("directions_read")
-    with pytest.raises(contracts.ContractError):
-        stubs.stub_model_read("directions_revise")
+    assert not hasattr(stubs, "stub_model_read")
+    assert not hasattr(stubs, "stub_tokens")
+    assert not hasattr(stubs, "stub_design_md")
+    assert not hasattr(stubs, "build_collect")
+    assert not hasattr(stubs, "build_check")
+    assert not hasattr(stubs, "build_finish")

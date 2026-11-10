@@ -94,7 +94,7 @@ workflow:
             task: directions_collect.structured.task
         - name: directions_check
           agent: design_foundation_stage_v1
-          depends_on: [directions_read]
+          depends_on: [directions_collect, directions_read]
           condition:
             source: directions_collect.structured.model
             operator: equals
@@ -119,7 +119,7 @@ workflow:
             problems: directions_check.structured.problems
         - name: directions_finish
           agent: design_foundation_stage_v1
-          depends_on: [directions_check, directions_revise]
+          depends_on: [directions_collect, directions_check, directions_revise]
           input_map:
             step: directions
             workspace: input.workspace_path
@@ -195,7 +195,7 @@ workflow:
         workspace: workspace_startup.structured.department_path
         product: input.product
 
-    # Stage 4 — Compile the chosen direction into 04-build/{tokens.json,DESIGN.md,tokens.css}.
+    # Stage 5 — Compile the chosen direction into 04-build/{tokens.json,DESIGN.md,build.json}.
     - name: build
       type: stage
       depends_on: [gate_direction]
@@ -210,22 +210,29 @@ workflow:
             workspace: input.workspace_path
             product: input.product
         - name: build_read
-          agent: design_foundation_replay
+          agent: design_foundation_build_v1
           tools: []
           depends_on: [build_collect]
+          condition:
+            source: build_collect.structured.model
+            operator: equals
+            value: "yes"
           input_map:
-            step: build_read
             task: build_collect.structured.task
         - name: build_check
           agent: design_foundation_stage_v1
-          depends_on: [build_read]
+          depends_on: [build_collect, build_read]
+          condition:
+            source: build_collect.structured.model
+            operator: equals
+            value: "yes"
           input_map:
             step: build_check
             workspace: input.workspace_path
             product: input.product
             data: build_read.output
         - name: build_revise
-          agent: design_foundation_replay
+          agent: design_foundation_build_v1
           tools: []
           depends_on: [build_check]
           condition:
@@ -233,17 +240,15 @@ workflow:
             operator: equals
             value: "retry"
           input_map:
-            step: build_revise
-            task: build_collect.structured.task
-            draft: build_read.output
-            problems: build_check.structured.problems
+            task: build_check.structured.revise_task
         - name: build_finish
           agent: design_foundation_stage_v1
-          depends_on: [build_check, build_revise]
+          depends_on: [build_collect, build_check, build_revise]
           input_map:
             step: build
             workspace: input.workspace_path
             product: input.product
+            data: build_revise.output
       outputs:
         status: build_finish.structured.status
         direction: build_finish.structured.direction

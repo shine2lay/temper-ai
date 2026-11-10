@@ -26,6 +26,7 @@ if str(HERE) not in sys.path:
 from app_screen.gates import GateError  # noqa: E402
 from foundation import (  # noqa: E402
     brief,
+    build,
     contracts,
     directions,
     gates,
@@ -35,12 +36,13 @@ from foundation import (  # noqa: E402
 )
 from foundation.workspace import STEPS, Workspace, WorkspaceError  # noqa: E402
 
-CLI_STEPS = (*STEPS, "directions_finish", "preview")
+CLI_STEPS = (*STEPS, "directions_finish", "build_finish", "preview")
 
 FAILURES = (
     WorkspaceError,
     contracts.ContractError,
     directions.DirectionsError,
+    build.BuildError,
     brief.BriefError,
     preview.PreviewError,
     GateError,
@@ -113,11 +115,15 @@ def run_step(
         if step == "gate_direction":
             return gates.answer(ws, "direction", raw_data)
         if step == "build_collect":
-            return stubs.build_collect(ws)
+            return build.build_collect(ws)
         if step == "build_check":
-            return stubs.build_check(ws, draft=raw_data)
-        if step == "build":
-            return stubs.build_finish(ws)
+            return build.build_check(
+                ws,
+                draft=raw_data if raw_data else None,
+                allow_retry=bool(allow_retry and raw_data),
+            )
+        if step in ("build", "build_finish"):
+            return build.build_finish(ws, draft=raw_data if raw_data else None)
         if step == "checks":
             return stubs.checks_run(
                 ws,

@@ -9,8 +9,10 @@ build_collect, build_check, build, checks, gate_final, handoff) executes via des
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -21,7 +23,7 @@ BIN_DIR = HERE.parent
 if str(BIN_DIR) not in sys.path:
     sys.path.insert(0, str(BIN_DIR))
 
-from foundation import contracts, stubs  # noqa: E402
+from foundation import contracts  # noqa: E402
 
 BENCH_COMMIT = "81117dd509f2272d3f2fb36af16f118819efb0f4"
 
@@ -258,12 +260,71 @@ BENCH_DIRECTIONS_DRAFT: dict[str, Any] = {
 }
 
 
+BENCH_BUILD_DRAFT: dict[str, Any] = {
+    "product": "rollcall",
+    "direction_id": "a",
+    "direction_name": "Warm Ledger",
+    "users": [
+        "Self-directed equity investors managing weekly and monthly covered calls across accounts.",
+        "Traders reviewing active short calls, assignment exposure, and roll candidates at market open on desktop or mobile alert triage.",
+    ],
+    "premise": "Warm stone ledger surfaces with disciplined forest-emerald primary emphasis and high-precision tabular figures for covered-call position triage.",
+    "why": [
+        "Supports calm financial ledger hierarchy at market open for roll decisions without casino-ticker noise.",
+        "Keeps active short calls, assignment exposure, and roll candidates readable across light and dark themes.",
+    ],
+    "how_to_use": [
+        "Use `colour.paper` for the main portfolio workspace canvas and `colour.surface` for raised covered-call position and roll-candidate cards.",
+        "Reserve `colour.accent` and `colour.accent_on` for the primary roll decision action in each view.",
+        "Set workspace headings and labels in `type.family.sans` and all active short call and assignment exposure figures in `type.family.mono` with `spacing.2` and `radius.md`.",
+    ],
+    "what_not_to_do": [
+        "Never replace `colour.paper` or `colour.dark.surface.canvas` with neon purple gradients on portfolio ledger views.",
+        "Never stack competing `colour.accent` solid buttons or introduce casino ticker chrome around covered-call tables.",
+        "Never render assignment exposure or roll candidate figures in proportional fonts instead of `type.family.mono`.",
+    ],
+    "evidence": {
+        "users": "L02: Self-directed equity investors managing weekly and monthly covered calls",
+        "premise": "L01: assignment exposure, and roll candidates",
+        "why": "L03: at market open for roll decisions",
+        "how_to_use": "L07: in both light and dark themes",
+        "what_not_to_do": "L04: must never feel like a casino ticker, neon crypto dashboard",
+    },
+}
+
+
 def replay_model(step: str, *, task: str = "", draft: str = "", problems: str = "") -> dict[str, Any]:
     if step not in contracts.MODEL_STEPS:
         raise ValueError(f"step {step!r} is not a declared MODEL_STEPS entry ({sorted(contracts.MODEL_STEPS)})")
+    del draft, problems
     if step in ("directions_read", "directions_revise"):
         return dict(BENCH_DIRECTIONS_DRAFT)
-    return stubs.stub_model_read(step, task=task, draft=draft, problems=problems)
+    if step in ("build_read", "build_revise"):
+        payload = copy.deepcopy(BENCH_BUILD_DRAFT)
+        m_prod = re.search(
+            r"# Stage 5 \(`build_read`\) — `([a-z0-9-]+)` \(round \d+, direction `([a-z0-9][a-z0-9_-]*)`: ([^)]+)\)",
+            task,
+        )
+        if m_prod:
+            payload["product"] = m_prod.group(1)
+            payload["direction_id"] = m_prod.group(2)
+            payload["direction_name"] = m_prod.group(3).strip()
+        else:
+            m_p = re.search(r"(?:Product|`product`):\s*`([a-z0-9-]+)`", task)
+            if m_p:
+                payload["product"] = m_p.group(1)
+            m_d_id = re.search(r"`direction_id`:\s*`([a-z0-9][a-z0-9_-]*)`", task)
+            if m_d_id:
+                payload["direction_id"] = m_d_id.group(1)
+            m_d_name = re.search(r"`direction_name`:\s*`([^`]+)`", task)
+            if m_d_name:
+                payload["direction_name"] = m_d_name.group(1).strip()
+            m_d = re.search(r"Chosen direction:\s*`([a-z0-9][a-z0-9_-]*)`\s*—\s*\*\*([^*]+)\*\*", task)
+            if m_d:
+                payload["direction_id"] = m_d.group(1)
+                payload["direction_name"] = m_d.group(2).strip()
+        return payload
+    raise ValueError(f"unsupported replay model step {step!r}")
 
 
 def main(argv: list[str] | None = None) -> int:

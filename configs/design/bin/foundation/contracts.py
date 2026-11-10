@@ -91,6 +91,13 @@ DIRECTION_CLAIM_KEYS: tuple[str, ...] = (
     "type_family",
     "why",
 )
+BUILD_CLAIM_KEYS: tuple[str, ...] = (
+    "users",
+    "premise",
+    "why",
+    "how_to_use",
+    "what_not_to_do",
+)
 
 # ---------------------------------------------------------------- per-step input declarations
 
@@ -174,14 +181,38 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
         "02-directions/*/tokens.json",
         "02-directions/*/DESIGN.md",
         "02-directions/gate_direction.json",
+        "04-build/task.md",
+        "04-build/build.json",
+        "04-build/tokens.json",
+        "04-build/DESIGN.md",
         "05-checks/round-*/checks.json",
         "05-checks/gate_final.json",
     ),
     "build_check": (
         "run.json",
         "01-brief/brief.json",
+        "02-directions/directions.json",
+        "02-directions/*/tokens.json",
+        "02-directions/*/DESIGN.md",
         "02-directions/gate_direction.json",
+        "04-build/task.md",
         "04-build/draft.json",
+        "04-build/check.json",
+        "04-build/build.json",
+        "04-build/tokens.json",
+        "04-build/DESIGN.md",
+    ),
+    "build_finish": (
+        "run.json",
+        "01-brief/brief.json",
+        "02-directions/directions.json",
+        "02-directions/*/tokens.json",
+        "02-directions/*/DESIGN.md",
+        "02-directions/gate_direction.json",
+        "04-build/task.md",
+        "04-build/draft.json",
+        "04-build/check.json",
+        "04-build/check-final.json",
         "04-build/build.json",
         "04-build/tokens.json",
         "04-build/DESIGN.md",
@@ -193,7 +224,10 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
         "02-directions/*/tokens.json",
         "02-directions/*/DESIGN.md",
         "02-directions/gate_direction.json",
+        "04-build/task.md",
         "04-build/draft.json",
+        "04-build/check.json",
+        "04-build/check-final.json",
         "04-build/build.json",
         "04-build/tokens.json",
         "04-build/DESIGN.md",
@@ -935,15 +969,153 @@ GATE_DIRECTION_SCHEMA = closed(
     required=["gate", "choice", "decided_by", "source", "taste", "prediction", "at"],
 )
 
+BUILD_EVIDENCE_CLAIM_SCHEMA: dict[str, Any] = {
+    "anyOf": [
+        NON_EMPTY,
+        closed(
+            {
+                "ref": {"type": "string", "pattern": r"^[^#\s]+#L\d+(-L\d+)?$"},
+                "quote": NON_EMPTY,
+            },
+            required=["ref", "quote"],
+        ),
+    ]
+}
+
+BUILD_EVIDENCE_SCHEMA = closed(
+    {key: BUILD_EVIDENCE_CLAIM_SCHEMA for key in BUILD_CLAIM_KEYS},
+    required=list(BUILD_CLAIM_KEYS),
+)
+
+BUILD_DRAFT_SCHEMA = closed(
+    {
+        "product": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,63}$"},
+        "direction_id": ID,
+        "direction_name": NON_EMPTY,
+        "users": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": NON_EMPTY,
+        },
+        "premise": NON_EMPTY,
+        "why": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "items": NON_EMPTY,
+        },
+        "how_to_use": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 8,
+            "items": NON_EMPTY,
+        },
+        "what_not_to_do": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 8,
+            "items": NON_EMPTY,
+        },
+        "evidence": BUILD_EVIDENCE_SCHEMA,
+    },
+    required=[
+        "product",
+        "direction_id",
+        "direction_name",
+        "users",
+        "premise",
+        "why",
+        "how_to_use",
+        "what_not_to_do",
+        "evidence",
+    ],
+)
+
+BUILD_CHECK_RULE_IDS: tuple[str, ...] = (
+    "build.tokens_schema",
+    "build.proof_gate",
+    "build.tokens_from_color",
+    "build.design_md_contract",
+    "build.prose_tokens_agreement",
+    "build.no_raw_colour_literal",
+    "build.brief_evidence",
+)
+
+BUILD_CHECK_PROBLEM_SCHEMA = closed(
+    {
+        "rule": {"type": "string", "enum": list(BUILD_CHECK_RULE_IDS)},
+        "location": NON_EMPTY,
+        "message": NON_EMPTY,
+    },
+    required=["rule", "location", "message"],
+)
+
+BUILD_CHECK_RULE_ROW_SCHEMA = closed(
+    {
+        "rule": {"type": "string", "enum": list(BUILD_CHECK_RULE_IDS)},
+        "result": {"type": "string", "enum": list(CHECK_RESULTS)},
+        "evidence": NON_EMPTY,
+        "location": NON_EMPTY,
+    },
+    required=["rule", "result", "evidence", "location"],
+)
+
+BUILD_CHECK_SCHEMA = closed(
+    {
+        "step": {"const": "build_check"},
+        "product": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,63}$"},
+        "direction_id": ID,
+        "verdict": {"type": "string", "enum": ["ok", "retry"]},
+        "problem_count": {"type": "integer", "minimum": 0},
+        "failing_rules": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(BUILD_CHECK_RULE_IDS)},
+        },
+        "rules": closed(
+            {
+                rule_id: closed(
+                    {
+                        "passed": {"type": "boolean"},
+                        "problem_count": {"type": "integer", "minimum": 0},
+                    },
+                    required=["passed", "problem_count"],
+                )
+                for rule_id in BUILD_CHECK_RULE_IDS
+            },
+            required=list(BUILD_CHECK_RULE_IDS),
+        ),
+        "problems": {"type": "array", "items": BUILD_CHECK_PROBLEM_SCHEMA},
+        "revise_task": {"type": "string"},
+    },
+    required=[
+        "step",
+        "product",
+        "direction_id",
+        "verdict",
+        "problem_count",
+        "failing_rules",
+        "rules",
+        "problems",
+        "revise_task",
+    ],
+)
+
 BUILD_SCHEMA = closed(
     {
+        "step": {"const": "build"},
+        "status": {"const": "done"},
         "product": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,63}$"},
         "round": {"type": "integer", "minimum": 1},
         "direction": ID,
+        "direction_name": NON_EMPTY,
+        "tokens": {"const": "04-build/tokens.json"},
+        "design_md": {"const": "04-build/DESIGN.md"},
         "tokens_file": {"const": "04-build/tokens.json"},
         "design_md_file": {"const": "04-build/DESIGN.md"},
         "tokens_sha256": SHA256,
         "design_md_sha256": SHA256,
+        "input_digest": SHA256,
         "parts": {
             "type": "array",
             "minItems": len(TOKEN_PARTS),
@@ -1073,6 +1245,8 @@ SCHEMAS: dict[str, tuple[str, dict[str, Any]]] = {
     "directions": ("02-directions/directions.json", DIRECTIONS_SCHEMA),
     "proof": ("03-proof/proof.json", PROOF_SCHEMA),
     "gate_direction": ("02-directions/gate_direction.json", GATE_DIRECTION_SCHEMA),
+    "build_draft": ("04-build/draft.json", BUILD_DRAFT_SCHEMA),
+    "build_check": ("04-build/check.json", BUILD_CHECK_SCHEMA),
     "build": ("04-build/build.json", BUILD_SCHEMA),
     "checks": ("05-checks/round-<n>/checks.json", CHECKS_SCHEMA),
     "gate_final": ("05-checks/gate_final.json", GATE_FINAL_SCHEMA),

@@ -93,7 +93,7 @@ workflow:
             task: directions_collect.structured.task
         - name: directions_check
           agent: design_foundation_stage_v1
-          depends_on: [directions_read]
+          depends_on: [directions_collect, directions_read]
           condition:
             source: directions_collect.structured.model
             operator: equals
@@ -118,7 +118,7 @@ workflow:
             problems: directions_check.structured.problems
         - name: directions_finish
           agent: design_foundation_stage_v1
-          depends_on: [directions_check, directions_revise]
+          depends_on: [directions_collect, directions_check, directions_revise]
           input_map:
             step: directions
             workspace: input.workspace_path
@@ -209,12 +209,20 @@ workflow:
           agent: design_foundation_replay
           tools: []
           depends_on: [build_collect]
+          condition:
+            source: build_collect.structured.model
+            operator: equals
+            value: "yes"
           input_map:
             step: build_read
             task: build_collect.structured.task
         - name: build_check
           agent: design_foundation_stage_v1
-          depends_on: [build_read]
+          depends_on: [build_collect, build_read]
+          condition:
+            source: build_collect.structured.model
+            operator: equals
+            value: "yes"
           input_map:
             step: build_check
             workspace: input.workspace_path
@@ -230,16 +238,17 @@ workflow:
             value: "retry"
           input_map:
             step: build_revise
-            task: build_collect.structured.task
+            task: build_check.structured.revise_task
             draft: build_read.output
             problems: build_check.structured.problems
         - name: build_finish
           agent: design_foundation_stage_v1
-          depends_on: [build_check, build_revise]
+          depends_on: [build_collect, build_check, build_revise]
           input_map:
             step: build
             workspace: input.workspace_path
             product: input.product
+            data: build_revise.output
       outputs:
         status: build_finish.structured.status
         direction: build_finish.structured.direction

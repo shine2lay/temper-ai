@@ -100,6 +100,9 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
         "02-directions/*/tokens.json",
         "02-directions/*/DESIGN.md",
         "03-proof/proof.json",
+        "03-proof/table.md",
+        "03-proof/sample-screen.html",
+        "03-proof/preview-*.html",
     ),
     "gate_direction": (
         "run.json",
@@ -107,6 +110,7 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
         "01-brief/brief.json",
         "02-directions/directions.json",
         "03-proof/proof.json",
+        "03-proof/table.md",
         "02-directions/gate_direction.json",
     ),
     "build_collect": (
@@ -146,6 +150,7 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
         "run.json",
         "01-brief/brief.json",
         "03-proof/proof.json",
+        "03-proof/table.md",
         "03-proof/sample-screen.html",
         "04-build/build.json",
         "04-build/tokens.json",
@@ -747,13 +752,44 @@ PROOF_PREVIEW_ITEM = closed(
     required=["direction", "surface_kind", "artifact", "status"],
 )
 
+PROOF_ROW_SCHEMA = closed(
+    {
+        "id": {"type": "string", "pattern": r"^[a-z][a-z0-9_.-]{1,63}$"},
+        "value": {"type": ["number", "string"]},
+        "threshold": {"type": ["number", "string"]},
+        "result": {"type": "string", "enum": ["pass", "fail"]},
+        "evidence": NON_EMPTY,
+        "token_a": {"type": "string"},
+        "token_b": {"type": "string"},
+        "theme": {"type": "string", "enum": ["light", "dark", "all"]},
+    },
+    required=["id", "value", "threshold", "result", "evidence", "token_a", "token_b", "theme"],
+)
+
+PROOF_DIRECTION_REPORT = closed(
+    {
+        "direction": ID,
+        "name": NON_EMPTY,
+        "tokens_file": NON_EMPTY,
+        "verdict": {"type": "string", "enum": ["pass", "fail"]},
+        "rules": {"type": "array", "minItems": 8, "maxItems": 8, "items": PROOF_ROW_SCHEMA},
+        "rows": {"type": "array", "minItems": 8, "items": PROOF_ROW_SCHEMA},
+        "failing_rows": {"type": "array", "items": PROOF_ROW_SCHEMA},
+    },
+    required=["direction", "name", "tokens_file", "verdict", "rules", "rows", "failing_rows"],
+)
+
 PROOF_SCHEMA = closed(
     {
         "product": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,63}$"},
+        "verdict": {"type": "string", "enum": ["pass", "fail"]},
+        "table_file": {"const": "03-proof/table.md"},
         "surface": SURFACE_RECORD_SCHEMA,
         "previews": {"type": "array", "minItems": 2, "items": PROOF_PREVIEW_ITEM},
+        "directions": {"type": "array", "minItems": 2, "items": PROOF_DIRECTION_REPORT},
+        "rows": {"type": "array", "minItems": 8, "items": PROOF_ROW_SCHEMA},
     },
-    required=["product", "surface", "previews"],
+    required=["product", "verdict", "table_file", "surface", "previews", "directions", "rows"],
 )
 
 GATE_PREDICTION = closed(

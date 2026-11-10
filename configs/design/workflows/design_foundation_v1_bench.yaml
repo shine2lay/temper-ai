@@ -168,6 +168,8 @@ workflow:
             allow_red_commit: input.allow_red_commit
       outputs:
         status: proof_finish.structured.status
+        verdict: proof_finish.structured.verdict
+        table: proof_finish.structured.table
         surface_kind: proof_finish.structured.surface_kind
         fallback: proof_finish.structured.fallback
         sheet: proof_finish.structured.sheet

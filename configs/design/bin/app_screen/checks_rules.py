@@ -18,6 +18,20 @@ import sys
 from pathlib import Path
 
 DESIGN_BIN = Path(__file__).resolve().parent.parent
+if str(DESIGN_BIN) not in sys.path:
+    sys.path.insert(0, str(DESIGN_BIN))
+
+from wcag_contrast import (  # noqa: E402, F401
+    UI_EXEMPT_ROLES,
+    check_text_contrast,
+    check_ui_contrast,
+    contrast_ratio,
+    contrast_ratio_2dp,
+    is_large_text,
+    parse_color_rgb,
+    relative_luminance,
+    required_text_contrast,
+)
 
 BLOCKER = "blocker"
 SHOULD = "should"
@@ -302,15 +316,38 @@ def _view_rows(view: dict, m: dict, ctx: dict, th: dict) -> list[dict]:
                  f"{body_small} sentence-length run(s) below {th['type']['body_px']}px, e.g. "
                  f"{example.get('size')}px \"{(example.get('text') or '')[:60]}\"", location=place))
 
-    # --- contrast (WCAG 2.2 AA), from design_measure.js, which applies the large-text and inactive rules
+    # --- contrast (WCAG 2.2 AA), from design_measure.js / shared wcag_contrast formula
     for t in (dm.get("contrast_failures") or [])[:cap]:
-        add(_row("contrast.text", view, t.get("contrast"),
-                 f"{t.get('contrast')}:1 needs {t.get('needs')}:1 ({t.get('size')}px {t.get('weight')}, "
-                 f"{t.get('color')} on {t.get('background')}): \"{t.get('text', '')}\"",
+        fg_c, bg_c = t.get("color"), t.get("background")
+        size_px = t.get("size") if t.get("size") is not None else 16
+        weight_num = t.get("weight") if t.get("weight") is not None else 400
+        ratio_val = t.get("contrast")
+        need_val = t.get("needs")
+        if (ratio_val is None or need_val is None) and fg_c and bg_c:
+            calc_ratio, calc_need, passed = check_text_contrast(
+                fg_c, bg_c, size_px=size_px, weight=weight_num, thresholds=th
+            )
+            if ratio_val is None:
+                ratio_val = calc_ratio
+            if need_val is None:
+                need_val = calc_need
+            if passed and t.get("contrast") is None:
+                continue
+        add(_row("contrast.text", view, ratio_val,
+                 f"{ratio_val}:1 needs {need_val}:1 ({t.get('size')}px {t.get('weight')}, "
+                 f"{fg_c} on {bg_c}): \"{t.get('text', '')}\"",
                  element=t.get("sel", ""), location=place))
     for b in (dm.get("weak_boundaries") or [])[:cap]:
-        add(_row("contrast.ui", view, b.get("boundary_contrast"),
-                 f"the field \"{b.get('name', '')}\" has a {b.get('boundary_contrast')}:1 boundary "
+        fg_c, bg_c = b.get("color"), b.get("background")
+        b_ratio = b.get("boundary_contrast")
+        if b_ratio is None and fg_c and bg_c:
+            b_ratio, _b_need, b_passed = check_ui_contrast(
+                fg_c, bg_c, role=str(b.get("role") or "border"), thresholds=th
+            )
+            if b_passed:
+                continue
+        add(_row("contrast.ui", view, b_ratio,
+                 f"the field \"{b.get('name', '')}\" has a {b_ratio}:1 boundary "
                  f"(needs {th['contrast']['ui']}:1)", element=b.get("sel", ""), location=place))
 
     # --- targets

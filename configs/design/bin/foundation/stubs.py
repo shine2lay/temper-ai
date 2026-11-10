@@ -18,7 +18,7 @@ from typing import Any
 
 import design_files
 
-from . import contracts
+from . import color, contracts, proof
 from .contracts import EXT, FORMAT, TOKEN_PARTS, ContractError
 from .workspace import Workspace
 
@@ -31,100 +31,17 @@ def stub_tokens(
     date: str | None = None,
     accent_hex: str = "#2E7D4F",
 ) -> dict[str, Any]:
-    """Build a static, math-free DTCG tokens.json document satisfying closed TOKENS_SCHEMA."""
-    def part_ext(part: str) -> dict[str, Any]:
-        meta: dict[str, Any] = {
-            "part": part,
-            "status": status,
-            "date": date or design_files.today(),
-        }
-        if status == "approved":
-            meta["approved_by"] = approved_by or "design"
-        return {EXT: meta}
-
-    return {
-        "$description": f"{product} design foundation tokens (skeleton stub).",
-        "$extensions": {
-            EXT: {
-                "product": product,
-                "format": FORMAT,
-            }
-        },
-        "colour": {
-            "$type": "color",
-            "$extensions": part_ext("colour"),
-            "ink": design_files.color_token("#1A1A17", "primary foreground ink"),
-            "paper": design_files.color_token("#F7F5EF", "primary light surface"),
-            "surface": design_files.color_token("#E9E5DA", "elevated light surface"),
-            "muted": design_files.color_token("#5E5B53", "secondary foreground ink"),
-            "accent": design_files.color_token(accent_hex, "primary brand accent"),
-            "accent_on": design_files.color_token("#FFFFFF", "foreground on accent"),
-        },
-        "type": {
-            "$extensions": part_ext("type"),
-            "family": {
-                "$type": "fontFamily",
-                "display": {"$value": ["Fraunces", "Georgia", "serif"]},
-                "sans": {"$value": ["Plus Jakarta Sans", "system-ui", "sans-serif"]},
-                "mono": {"$value": ["JetBrains Mono", "monospace"]},
-            },
-            "scale": {
-                "$type": "dimension",
-                "sm": {"$value": {"value": 14, "unit": "px"}},
-                "base": {"$value": {"value": 16, "unit": "px"}},
-                "lg": {"$value": {"value": 20, "unit": "px"}},
-                "xl": {"$value": {"value": 28, "unit": "px"}},
-            },
-            "weight": {
-                "$type": "fontWeight",
-                "regular": {"$value": 400},
-                "medium": {"$value": 500},
-                "semibold": {"$value": 600},
-            },
-            "leading": {
-                "$type": "number",
-                "tight": {"$value": 1.2},
-                "body": {"$value": 1.45},
-            },
-        },
-        "spacing": {
-            "$type": "dimension",
-            "$extensions": part_ext("spacing"),
-            "0": {"$value": {"value": 0, "unit": "px"}},
-            "1": {"$value": {"value": 4, "unit": "px"}},
-            "2": {"$value": {"value": 8, "unit": "px"}},
-            "3": {"$value": {"value": 16, "unit": "px"}},
-            "4": {"$value": {"value": 24, "unit": "px"}},
-            "6": {"$value": {"value": 32, "unit": "px"}},
-        },
-        "radius": {
-            "$type": "dimension",
-            "$extensions": part_ext("radius"),
-            "sm": {"$value": {"value": 4, "unit": "px"}},
-            "md": {"$value": {"value": 8, "unit": "px"}},
-            "lg": {"$value": {"value": 12, "unit": "px"}},
-            "pill": {"$value": {"value": 999, "unit": "px"}},
-        },
-        "elevation": {
-            "$type": "shadow",
-            "$extensions": part_ext("elevation"),
-            "card": {
-                "$value": {
-                    "color": "{colour.ink}",
-                    "offsetX": {"value": 0, "unit": "px"},
-                    "offsetY": {"value": 2, "unit": "px"},
-                    "blur": {"value": 8, "unit": "px"},
-                    "spread": {"value": 0, "unit": "px"},
-                }
-            },
-        },
-        "motion": {
-            "$extensions": part_ext("motion"),
-            "fast": {"$type": "duration", "$value": {"value": 150, "unit": "ms"}},
-            "normal": {"$type": "duration", "$value": {"value": 220, "unit": "ms"}},
-            "out": {"$type": "cubicBezier", "$value": [0.16, 1.0, 0.3, 1.0]},
-        },
-    }
+    """Build a complete DTCG tokens.json document via foundation.color satisfying closed TOKENS_SCHEMA."""
+    _, _, accent_h = color.hex_to_oklch(accent_hex)
+    anchors = dict(color.DEFAULT_ANCHORS)
+    anchors["accent"] = round(accent_h, 2)
+    return color.generate_tokens(
+        product,
+        anchors=anchors,
+        status=status,
+        approved_by=approved_by,
+        date=date or design_files.today(),
+    )
 
 
 def stub_design_md(
@@ -463,66 +380,13 @@ def proof_run(
     ref: str | None = None,
     allow_red_commit: bool = False,
 ) -> dict[str, Any]:
-    step_ws = ws.for_step("proof")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    directions_doc = step_ws.read_json("02-directions/directions.json")
-
-    for entry in directions_doc["directions"]:
-        tok = step_ws.read_json(entry["tokens_file"])
-        contracts.validate_tokens(tok, label=entry["tokens_file"], step="proof")
-        md = step_ws.read_text(entry["design_md_file"])
-        contracts.validate_design_md(md, label=entry["design_md_file"], step="proof")
-
-    out_dir = step_ws.folder("proof")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    sample_rel = "03-proof/sample-screen.html"
-    surface = _resolve_surface_record(
-        brief_doc,
+    return proof.run(
+        ws,
         base_url=base_url,
         commit=commit,
         ref=ref,
         allow_red_commit=allow_red_commit,
-        sample_rel=sample_rel,
     )
-
-    if surface["kind"] == "sample_screen":
-        sample_html = _render_sample_screen_html(brief_doc, directions_doc)
-        (out_dir / "sample-screen.html").write_text(sample_html, encoding="utf-8")
-
-    previews = []
-    for entry in directions_doc["directions"]:
-        did = entry["id"]
-        preview_rel = f"03-proof/preview-{did}.html"
-        (out_dir / f"preview-{did}.html").write_text(
-            f"<!doctype html><html lang='en'><body data-direction='{html.escape(did)}' "
-            f"data-surface='{surface['kind']}'><h1>{html.escape(entry['name'])}</h1></body></html>\n",
-            encoding="utf-8",
-        )
-        previews.append(
-            {
-                "direction": did,
-                "surface_kind": surface["kind"],
-                "artifact": preview_rel,
-                "status": "ready",
-            }
-        )
-
-    proof_doc = {
-        "product": brief_doc["product"],
-        "surface": surface,
-        "previews": previews,
-    }
-    contracts.validate("proof", proof_doc, step="proof")
-    (out_dir / "proof.json").write_text(json.dumps(proof_doc, indent=2, ensure_ascii=False) + "\n")
-    step_ws.mark("proof", "done", surface_kind=surface["kind"])
-    return {
-        "ok": True,
-        "step": "proof",
-        "product": brief_doc["product"],
-        "surface_kind": surface["kind"],
-        "fallback": surface["fallback"],
-        "previews_count": len(previews),
-    }
 
 
 # ---------------------------------------------------------------- Stage 4: build

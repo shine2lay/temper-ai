@@ -24,7 +24,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from app_screen.gates import GateError  # noqa: E402
-from foundation import brief, contracts, gates, stubs  # noqa: E402
+from foundation import brief, contracts, gates, proof, stubs  # noqa: E402
 from foundation.workspace import STEPS, Workspace, WorkspaceError  # noqa: E402
 
 FAILURES = (
@@ -84,7 +84,7 @@ def run_step(
         if step == "directions":
             return stubs.directions_finish(ws)
         if step == "proof":
-            return stubs.proof_run(
+            return proof.run(
                 ws,
                 base_url=base_url,
                 commit=stack_commit,

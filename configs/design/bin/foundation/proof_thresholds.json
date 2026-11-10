@@ -1,0 +1,37 @@
+{
+ "version": 1,
+ "status": "frozen",
+ "frozen": "2026-11-09T00:00:00-08:00",
+ "decided": "Design #244, before running stage 3 proof trials. Contrast thresholds are WCAG 2.2 AA (4.5:1 normal text, 3.0:1 large text >=24px or >=18.66px bold, 3.0:1 non-text UI per 1.4.11 with text-button fill exempt). Signal separation requires perceptual lightness separation >=0.08 and post-simulation Oklab distance >=0.08 under protanopia, deuteranopia and tritanopia. Spacing sits on the 8px base and is strictly monotonic. Type scale is strictly monotonic with a consistent ratio (spread <=0.08, step ratio 1.12..1.50), body >=16px, line height 1.20..1.45, and fallback font stacks of >=2 families. Never loosened to make a case pass.",
+ "contrast": {
+  "text": 4.5,
+  "large_text": 3.0,
+  "large_px": 24.0,
+  "large_bold_px": 18.66,
+  "bold_weight": 700,
+  "ui": 3.0
+ },
+ "signal": {
+  "min_lightness_diff": 0.08,
+  "min_simulated_delta_e": 0.08,
+  "simulations": ["protanopia", "deuteranopia", "tritanopia"],
+  "pairs": [["good", "risk"]]
+ },
+ "gamut": {
+  "srgb_tolerance": 0.0001,
+  "hex_channel_tolerance": 2
+ },
+ "spacing": {
+  "base_px": 8,
+  "min_steps": 3
+ },
+ "type": {
+  "body_min_px": 16.0,
+  "ratio_min": 1.12,
+  "ratio_max": 1.50,
+  "ratio_max_spread": 0.08,
+  "line_height_min": 1.20,
+  "line_height_max": 1.45,
+  "fallback_min_families": 2
+ }
+}

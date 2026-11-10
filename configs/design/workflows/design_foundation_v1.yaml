@@ -146,7 +146,7 @@ workflow:
         slug: design
         env_name: stack_up_ref.structured.env_name
 
-    # Stage 3 — Render candidate direction previews on the app surface or sample screen fallback.
+    # Stage 3 — Deterministic proof battery (foundation.proof) + candidate direction previews.
     - name: proof
       type: stage
       depends_on: [directions, stack_seed]
@@ -170,6 +170,8 @@ workflow:
             allow_red_commit: input.allow_red_commit
       outputs:
         status: proof_finish.structured.status
+        verdict: proof_finish.structured.verdict
+        table: proof_finish.structured.table
         surface_kind: proof_finish.structured.surface_kind
         fallback: proof_finish.structured.fallback
         sheet: proof_finish.structured.sheet

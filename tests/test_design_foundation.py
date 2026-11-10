@@ -22,7 +22,7 @@ if str(BIN) not in sys.path:
 
 import design_files  # noqa: E402
 import foundation_harness  # noqa: E402
-from foundation import brief, contracts, gates, stubs  # noqa: E402
+from foundation import brief, contracts, directions, gates, stubs  # noqa: E402
 from foundation.workspace import FOLDERS, STAGES, STEPS, Workspace  # noqa: E402
 
 from temper_ai.runner import holds  # noqa: E402
@@ -516,9 +516,9 @@ def test_f_section_6_constraints_and_section_7_anchors_extracted_with_source_lin
     # Verify owner filling taste anchors at gate_direction appends to DESIGN_TASTE_FILE
     taste_file = tmp_path / "owner-taste.md"
     monkeypatch.setenv("DESIGN_TASTE_FILE", str(taste_file))
-    stubs.directions_collect(ws)
-    stubs.directions_check(ws, draft=stubs.stub_model_read("directions_read"))
-    stubs.directions_finish(ws)
+    directions.directions_collect(ws)
+    directions.directions_check(ws, draft=foundation_harness.replay_model("directions_read"))
+    directions.directions_finish(ws)
     stubs.proof_run(ws)
     gate_out = gates.answer(
         ws,
@@ -643,9 +643,9 @@ def test_i_valid_brief_with_no_render_surface_reaches_handoff_with_every_stage_v
     repo, ws = _make_repo(tmp_path / "direct", brief_text=foundation_harness.BENCH_BRIEF_MD)
     brief_out = brief.run(ws, product="newproduct", render_surface="none")
     assert brief_out["render_surface"] == "sample_screen"
-    stubs.directions_collect(ws)
-    stubs.directions_check(ws, draft=stubs.stub_model_read("directions_read"))
-    stubs.directions_finish(ws)
+    directions.directions_collect(ws)
+    directions.directions_check(ws, draft=foundation_harness.replay_model("directions_read"))
+    directions.directions_finish(ws)
     proof_out = stubs.proof_run(ws, base_url=None)
     assert proof_out["surface_kind"] == "sample_screen"
     assert proof_out["fallback"] is True
@@ -786,12 +786,14 @@ def test_j_workflow_declares_on_failure_hold_and_cleanup_undoes_pairs():
         assert loaded_wf.on_failure == "hold"
         assert [n.name for n in loaded_nodes] == expected_top_order
 
-    # Ownership table in docs/departments.md lists all 4 configs, and Rule 29 holds (zero fixture branches in foundation/).
+    # Ownership table in docs/departments.md lists all foundation configs, and Rule 29 holds (zero fixture branches in foundation/).
     departments_md = (ROOT / "docs" / "departments.md").read_text(encoding="utf-8")
     for rel in (
         "design/workflows/design_foundation_v1.yaml",
         "design/workflows/design_foundation_v1_bench.yaml",
+        "design/workflows/design_foundation_v1_directions.yaml",
         "design/agents/design_foundation_stage_v1.yaml",
+        "design/agents/design_foundation_directions_v1.yaml",
         "design/agents/design_foundation_replay.yaml",
     ):
         assert f"| `{rel}` |" in departments_md

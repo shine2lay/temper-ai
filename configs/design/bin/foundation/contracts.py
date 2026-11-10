@@ -58,6 +58,40 @@ SURFACE_KINDS = ("app", "sample_screen")
 CHECK_RESULTS = ("pass", "fail", "skipped")
 SEVERITIES = ("blocker", "must", "should", "could", "wont", "info")
 
+CHROMA_INTENTS: tuple[str, ...] = ("muted", "balanced", "crisp", "vivid")
+NEUTRAL_TEMPS: tuple[str, ...] = ("cool", "slate", "neutral", "true", "warm")
+NEUTRAL_TEMP_HUES: dict[str, float] = {
+    "cool": 250.0,
+    "slate": 225.0,
+    "neutral": 210.0,
+    "true": 210.0,
+    "warm": 65.0,
+}
+TYPE_FAMILY_STACKS: dict[str, tuple[list[str], list[str]]] = {
+    "IBM Plex Sans": (["IBM Plex Sans", "system-ui", "sans-serif"], ["IBM Plex Mono", "ui-monospace", "monospace"]),
+    "Plus Jakarta Sans": (["Plus Jakarta Sans", "system-ui", "sans-serif"], ["JetBrains Mono", "ui-monospace", "monospace"]),
+    "Space Grotesk": (["Space Grotesk", "system-ui", "sans-serif"], ["JetBrains Mono", "ui-monospace", "monospace"]),
+    "Source Sans 3": (["Source Sans 3", "system-ui", "sans-serif"], ["Source Code Pro", "ui-monospace", "monospace"]),
+    "Work Sans": (["Work Sans", "system-ui", "sans-serif"], ["IBM Plex Mono", "ui-monospace", "monospace"]),
+    "DM Sans": (["DM Sans", "system-ui", "sans-serif"], ["JetBrains Mono", "ui-monospace", "monospace"]),
+    "Public Sans": (["Public Sans", "system-ui", "sans-serif"], ["IBM Plex Mono", "ui-monospace", "monospace"]),
+    "Geist": (["Geist", "system-ui", "sans-serif"], ["Geist Mono", "ui-monospace", "monospace"]),
+    "Fraunces": (["Fraunces", "Georgia", "serif"], ["IBM Plex Mono", "ui-monospace", "monospace"]),
+    "Newsreader": (["Newsreader", "Georgia", "serif"], ["IBM Plex Mono", "ui-monospace", "monospace"]),
+    "Instrument Serif": (["Instrument Serif", "Georgia", "serif"], ["JetBrains Mono", "ui-monospace", "monospace"]),
+    "Inter": (["Inter", "system-ui", "sans-serif"], ["JetBrains Mono", "ui-monospace", "monospace"]),
+}
+AVAILABLE_TYPE_FAMILIES: tuple[str, ...] = tuple(TYPE_FAMILY_STACKS.keys())
+MIN_ANCHOR_HUE_SEPARATION_DEG: float = 40.0
+DIRECTION_CLAIM_KEYS: tuple[str, ...] = (
+    "premise",
+    "anchor_hue_deg",
+    "chroma_intent",
+    "neutral_temp",
+    "type_family",
+    "why",
+)
+
 # ---------------------------------------------------------------- per-step input declarations
 
 MODEL_STEPS: dict[str, tuple[str, ...]] = {
@@ -76,11 +110,28 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
     "directions_collect": (
         "run.json",
         "01-brief/brief.json",
+        "02-directions/task.md",
+        "02-directions/directions.json",
+        "02-directions/*/tokens.json",
+        "02-directions/*/DESIGN.md",
     ),
     "directions_check": (
         "run.json",
         "01-brief/brief.json",
+        "02-directions/task.md",
         "02-directions/draft.json",
+        "02-directions/check.json",
+        "02-directions/directions.json",
+        "02-directions/*/tokens.json",
+        "02-directions/*/DESIGN.md",
+    ),
+    "directions_finish": (
+        "run.json",
+        "01-brief/brief.json",
+        "02-directions/task.md",
+        "02-directions/draft.json",
+        "02-directions/check.json",
+        "02-directions/check-final.json",
         "02-directions/directions.json",
         "02-directions/*/tokens.json",
         "02-directions/*/DESIGN.md",
@@ -88,7 +139,10 @@ STEP_INPUTS: dict[str, tuple[str, ...]] = {
     "directions": (
         "run.json",
         "01-brief/brief.json",
+        "02-directions/task.md",
         "02-directions/draft.json",
+        "02-directions/check.json",
+        "02-directions/check-final.json",
         "02-directions/directions.json",
         "02-directions/*/tokens.json",
         "02-directions/*/DESIGN.md",
@@ -692,16 +746,80 @@ BRIEF_SCHEMA = closed(
     ],
 )
 
+DIRECTION_EVIDENCE_SCHEMA = closed(
+    {k: NON_EMPTY for k in DIRECTION_CLAIM_KEYS},
+    required=list(DIRECTION_CLAIM_KEYS),
+)
+
+DIRECTION_DRAFT_ITEM_SCHEMA = closed(
+    {
+        "id": ID,
+        "name": NON_EMPTY,
+        "premise": NON_EMPTY,
+        "anchor_hue_deg": {"type": "number", "minimum": 0.0, "maximum": 360.0},
+        "chroma_intent": {"type": "string", "enum": list(CHROMA_INTENTS)},
+        "neutral_temp": {"type": "string", "enum": list(NEUTRAL_TEMPS)},
+        "type_family": NON_EMPTY,
+        "why": NON_EMPTY,
+        "evidence": DIRECTION_EVIDENCE_SCHEMA,
+    },
+    required=[
+        "id",
+        "name",
+        "premise",
+        "anchor_hue_deg",
+        "chroma_intent",
+        "neutral_temp",
+        "type_family",
+        "why",
+        "evidence",
+    ],
+)
+
+DIRECTION_CONTRACT_SCHEMA = DIRECTION_DRAFT_ITEM_SCHEMA
+
+DIRECTIONS_DRAFT_SCHEMA = closed(
+    {
+        "recommended": ID,
+        "directions": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 3,
+            "items": DIRECTION_DRAFT_ITEM_SCHEMA,
+        },
+    },
+    required=["recommended", "directions"],
+)
+
 DIRECTION_ENTRY_SCHEMA = closed(
     {
         "id": ID,
         "name": NON_EMPTY,
+        "premise": NON_EMPTY,
         "summary": NON_EMPTY,
+        "anchor_hue_deg": {"type": "number", "minimum": 0.0, "maximum": 360.0},
+        "chroma_intent": {"type": "string", "enum": list(CHROMA_INTENTS)},
+        "neutral_temp": {"type": "string", "enum": list(NEUTRAL_TEMPS)},
+        "type_family": {"type": "string", "enum": list(AVAILABLE_TYPE_FAMILIES)},
         "why": NON_EMPTY,
+        "evidence": DIRECTION_EVIDENCE_SCHEMA,
         "tokens_file": NON_EMPTY,
         "design_md_file": NON_EMPTY,
     },
-    required=["id", "name", "summary", "why", "tokens_file", "design_md_file"],
+    required=[
+        "id",
+        "name",
+        "premise",
+        "summary",
+        "anchor_hue_deg",
+        "chroma_intent",
+        "neutral_temp",
+        "type_family",
+        "why",
+        "evidence",
+        "tokens_file",
+        "design_md_file",
+    ],
 )
 
 DIRECTIONS_SCHEMA = closed(
@@ -712,7 +830,7 @@ DIRECTIONS_SCHEMA = closed(
         "directions": {
             "type": "array",
             "minItems": 2,
-            "maxItems": 4,
+            "maxItems": 3,
             "items": DIRECTION_ENTRY_SCHEMA,
         },
     },
@@ -951,6 +1069,7 @@ HANDOFF_SCHEMA = closed(
 SCHEMAS: dict[str, tuple[str, dict[str, Any]]] = {
     "brief": ("01-brief/brief.json", BRIEF_SCHEMA),
     "tokens": ("tokens.json", TOKENS_SCHEMA),
+    "directions_draft": ("02-directions/draft.json", DIRECTIONS_DRAFT_SCHEMA),
     "directions": ("02-directions/directions.json", DIRECTIONS_SCHEMA),
     "proof": ("03-proof/proof.json", PROOF_SCHEMA),
     "gate_direction": ("02-directions/gate_direction.json", GATE_DIRECTION_SCHEMA),

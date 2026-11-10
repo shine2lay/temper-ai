@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .cli import (
     BENCH_BRIEF_MD,
+    BENCH_DIRECTIONS_DRAFT,
     default_bench_repo,
     replay_model,
     replay_stack,
@@ -11,6 +12,7 @@ from .cli import (
 
 __all__ = [
     "BENCH_BRIEF_MD",
+    "BENCH_DIRECTIONS_DRAFT",
     "default_bench_repo",
     "replay_model",
     "replay_stack",

@@ -28,7 +28,7 @@ if str(FOUNDATION_BIN) not in sys.path:
 
 import wcag_contrast  # noqa: E402
 from app_screen import checks_rules  # noqa: E402
-from foundation import color, contracts, proof, stubs, workspace  # noqa: E402
+from foundation import color, contracts, directions, proof, workspace  # noqa: E402
 
 LAB_KNOWN_CASES_DIR = Path.home() / "design-lab" / "foundation" / "known-cases" / "proof"
 
@@ -505,9 +505,52 @@ def test_proof_stage_step_writes_proof_json_and_table_md(tmp_path: Path) -> None
     )
     ws = workspace.Workspace(ws_dir)
     brief.run(ws, product="rollcall")
-    stubs.directions_collect(ws)
-    stubs.directions_check(ws, draft=stubs.stub_model_read("directions_read"))
-    stubs.directions_finish(ws)
+    directions.directions_collect(ws)
+    directions.directions_check(
+        ws,
+        draft={
+            "recommended": "a",
+            "directions": [
+                {
+                    "id": "a",
+                    "name": "Warm Ledger",
+                    "premise": "Warm stone ledger surfaces with disciplined forest-emerald primary emphasis for covered-call position triage.",
+                    "anchor_hue_deg": 155.0,
+                    "chroma_intent": "balanced",
+                    "neutral_temp": "warm",
+                    "type_family": "IBM Plex Sans",
+                    "why": "Fits active options traders managing roll signals during market hours with calm ledger hierarchy.",
+                    "evidence": {
+                        "premise": "L01: Covered-call trading dashboard",
+                        "anchor_hue_deg": "L04: Calm, high-precision financial ledger",
+                        "chroma_intent": "L04: never purple neon",
+                        "neutral_temp": "L08: Stripe Docs restraint",
+                        "type_family": "L05: Stripe Docs and Linear",
+                        "why": "L02: Active options traders managing roll signals",
+                    },
+                },
+                {
+                    "id": "b",
+                    "name": "Mineral Instrument",
+                    "premise": "Cool slate instrument workspace with crisp mineral-blue primary actions across desktop and mobile web.",
+                    "anchor_hue_deg": 230.0,
+                    "chroma_intent": "crisp",
+                    "neutral_temp": "cool",
+                    "type_family": "Plus Jakarta Sans",
+                    "why": "Gives desktop and mobile web views crisp contrast on an 8px spacing base without purple neon.",
+                    "evidence": {
+                        "premise": "L03: Desktop and mobile web during market hours",
+                        "anchor_hue_deg": "L05: Stripe Docs and Linear",
+                        "chroma_intent": "L04: never purple neon",
+                        "neutral_temp": "L04: Calm, high-precision financial ledger",
+                        "type_family": "L06: Body text >= 16px",
+                        "why": "L07: 8px spacing base",
+                    },
+                },
+            ],
+        },
+    )
+    directions.directions_finish(ws)
 
     res = proof.run(ws)
     assert res["status"] == "done"

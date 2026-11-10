@@ -197,9 +197,72 @@ def replay_stack(
     raise ValueError(f"unknown bench stack step {step!r}")
 
 
+BENCH_DIRECTIONS_DRAFT: dict[str, Any] = {
+    "recommended": "a",
+    "directions": [
+        {
+            "id": "a",
+            "name": "Warm Ledger",
+            "premise": "Warm stone ledger surfaces with disciplined forest-emerald primary emphasis and high-precision tabular figures for covered-call position triage.",
+            "anchor_hue_deg": 155.0,
+            "chroma_intent": "balanced",
+            "neutral_temp": "warm",
+            "type_family": "IBM Plex Sans",
+            "why": "Fits self-directed equity investors scanning roll candidates at market open with calm ledger hierarchy and zero casino-ticker noise.",
+            "evidence": {
+                "premise": "L01: assignment exposure, and roll candidates",
+                "anchor_hue_deg": "L04: Calm, high-precision financial ledger",
+                "chroma_intent": "L04: casino ticker",
+                "neutral_temp": "L02: Self-directed equity investors managing weekly and monthly covered calls",
+                "type_family": "L05: Tastytrade, Interactive Brokers Client Portal",
+                "why": "L03: at market open for roll decisions",
+            },
+        },
+        {
+            "id": "b",
+            "name": "Mineral Instrument",
+            "premise": "Cool slate instrument workspace with crisp mineral-blue primary actions and keyboard-first typographic hierarchy across desktop and mobile.",
+            "anchor_hue_deg": 230.0,
+            "chroma_intent": "crisp",
+            "neutral_temp": "cool",
+            "type_family": "Plus Jakarta Sans",
+            "why": "Gives dense options chains and mobile alert triage crisp contrast in both light and dark themes while keeping existing wordmark proportions untouched.",
+            "evidence": {
+                "premise": "L03: at market open for roll decisions",
+                "anchor_hue_deg": "L05: Tastytrade, Interactive Brokers Client Portal",
+                "chroma_intent": "L07: in both light and dark themes",
+                "neutral_temp": "L04: Calm, high-precision financial ledger",
+                "type_family": "L06: foundation covers colour, type, spacing, radius, elevation, and motion only",
+                "why": "L02: Self-directed equity investors managing weekly and monthly covered calls",
+            },
+        },
+        {
+            "id": "c",
+            "name": "Copper Desk",
+            "premise": "True-neutral institutional desk with muted amber-ochre action focus and editorial sans hierarchy for calm portfolio review.",
+            "anchor_hue_deg": 55.0,
+            "chroma_intent": "muted",
+            "neutral_temp": "true",
+            "type_family": "Source Sans 3",
+            "why": "Separates weekly and monthly covered-call exposure across taxable and retirement accounts without neon dashboard glare.",
+            "evidence": {
+                "premise": "L01: assignment exposure, and roll candidates",
+                "anchor_hue_deg": "L04: Calm, high-precision financial ledger",
+                "chroma_intent": "L07: in both light and dark themes",
+                "neutral_temp": "L06: foundation covers colour, type, spacing, radius, elevation, and motion only",
+                "type_family": "L05: Tastytrade, Interactive Brokers Client Portal",
+                "why": "L02: Self-directed equity investors managing weekly and monthly covered calls",
+            },
+        },
+    ],
+}
+
+
 def replay_model(step: str, *, task: str = "", draft: str = "", problems: str = "") -> dict[str, Any]:
     if step not in contracts.MODEL_STEPS:
         raise ValueError(f"step {step!r} is not a declared MODEL_STEPS entry ({sorted(contracts.MODEL_STEPS)})")
+    if step in ("directions_read", "directions_revise"):
+        return dict(BENCH_DIRECTIONS_DRAFT)
     return stubs.stub_model_read(step, task=task, draft=draft, problems=problems)
 
 

@@ -24,14 +24,23 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from app_screen.gates import GateError  # noqa: E402
-from foundation import brief, contracts, gates, preview, proof, stubs  # noqa: E402
+from foundation import (  # noqa: E402
+    brief,
+    contracts,
+    directions,
+    gates,
+    preview,
+    proof,
+    stubs,
+)
 from foundation.workspace import STEPS, Workspace, WorkspaceError  # noqa: E402
 
-CLI_STEPS = (*STEPS, "preview")
+CLI_STEPS = (*STEPS, "directions_finish", "preview")
 
 FAILURES = (
     WorkspaceError,
     contracts.ContractError,
+    directions.DirectionsError,
     brief.BriefError,
     preview.PreviewError,
     GateError,
@@ -60,7 +69,10 @@ def run_step(
     stack_commit: str | None = None,
     stack_ref: str | None = None,
     allow_red_commit: bool = False,
+    allow_retry: bool = False,
 ) -> dict[str, Any]:
+    if step == "directions_finish":
+        step = "directions"
     if step not in STEPS:
         raise WorkspaceError(f"unknown foundation step {step!r}; declared steps: {', '.join(STEPS)}")
 
@@ -81,11 +93,15 @@ def run_step(
 
         ws.mark(step, "running")
         if step == "directions_collect":
-            return stubs.directions_collect(ws)
+            return directions.directions_collect(ws)
         if step == "directions_check":
-            return stubs.directions_check(ws, draft=raw_data)
+            return directions.directions_check(
+                ws,
+                draft=raw_data if raw_data else None,
+                allow_retry=bool(allow_retry and raw_data),
+            )
         if step == "directions":
-            return stubs.directions_finish(ws)
+            return directions.directions_finish(ws, draft=raw_data if raw_data else None)
         if step == "proof":
             return proof.run(
                 ws,
@@ -129,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--brief", default="", help="Product brief path relative to repo root (or brief JSON/MD for preview)")
     p.add_argument("--render-surface", default="", help="Render surface mode: app | sample | none")
     p.add_argument("--data", default="", help="Gate answer JSON or model draft JSON (overrides FOUNDATION_DATA)")
+    p.add_argument("--allow-retry", action="store_true", help="Return verdict=retry instead of exiting non-zero on directions_check failure")
     p.add_argument("--base-url", default="", help="Provisioned app instance base URL from stack_up_ref")
     p.add_argument("--stack-commit", default="", help="Provisioned app commit SHA from stack_up_ref")
     p.add_argument("--stack-ref", default="", help="Git ref passed to stack_up_ref")
@@ -188,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             stack_commit=stack_commit.strip() or None,
             stack_ref=stack_ref.strip() or None,
             allow_red_commit=_as_bool(allow_red_raw),
+            allow_retry=bool(args.allow_retry),
         )
     except FAILURES as exc:
         print(str(exc), file=sys.stderr)

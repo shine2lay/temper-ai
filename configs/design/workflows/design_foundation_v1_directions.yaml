@@ -1,0 +1,48 @@
+# Stage 2 (directions) standalone workflow for testing and stage-by-stage trials (rule 11).
+# Uses the exact same five Stage 2 nodes (`directions_collect` -> `directions_read` -> `directions_check`
+# -> `directions_revise` -> `directions_finish`) as `design_foundation_v1.yaml`.
+workflow:
+  name: design_foundation_v1_directions
+  version: 1
+  description: |
+    Stage 2 of design_foundation_v1 alone: reads 01-brief/brief.json, calls the fenced directions writer
+    (design_foundation_directions_v1) to produce 02-directions/draft.json, validates it with
+    directions_check (count 2-3, >= 40 deg OKLCH hue separation, available type_family, grounded brief
+    evidence on every claim, and color.py + proof.py grading, with one bounded revision pass if needed),
+    and persists 02-directions/directions.json plus per-direction tokens.json and DESIGN.md.
+  inputs:
+    product: {type: string, required: true}
+    workspace_path: {type: string, required: true}
+  outputs:
+    status: directions_finish.structured.status
+    recommended: directions_finish.structured.recommended
+    directions: directions_finish.structured.directions
+    verdict: directions_check.structured.verdict
+  nodes:
+    - name: directions_collect
+      type: agent
+      agent: design_foundation_stage_v1
+      input_map: {step: directions_collect, product: input.product, workspace_path: input.workspace_path}
+    - name: directions_read
+      type: agent
+      agent: design_foundation_directions_v1
+      depends_on: [directions_collect]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {task: directions_collect.structured.task}
+    - name: directions_check
+      type: agent
+      agent: design_foundation_stage_v1
+      depends_on: [directions_read]
+      condition: {source: directions_collect.structured.model, operator: equals, value: "yes"}
+      input_map: {step: directions_check, product: input.product, data: directions_read.output, workspace_path: input.workspace_path}
+    - name: directions_revise
+      type: agent
+      agent: design_foundation_directions_v1
+      depends_on: [directions_check]
+      condition: {source: directions_check.structured.verdict, operator: equals, value: retry}
+      input_map: {task: directions_check.structured.revise_task}
+    - name: directions_finish
+      type: agent
+      agent: design_foundation_stage_v1
+      depends_on: [directions_revise]
+      input_map: {step: directions_finish, product: input.product, data: directions_revise.output, workspace_path: input.workspace_path}

@@ -57,5 +57,7 @@ agent:
         cmd += ["--stack-ref", stack_ref]
     if allow_red_commit:
         cmd += ["--allow-red-commit", allow_red_commit]
+    if step == "directions_check" and raw:
+        cmd += ["--allow-retry"]
     subprocess.run(cmd, env=os.environ, check=True)
     PYEOF

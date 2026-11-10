@@ -126,35 +126,11 @@ def stub_design_md(
     return "\n".join(lines).rstrip() + "\n"
 
 
-# ---------------------------------------------------------------- Stage 2: directions
-
-def directions_collect(ws: Workspace) -> dict[str, Any]:
-    step_ws = ws.for_step("directions_collect")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    product = brief_doc["product"]
-    out_dir = step_ws.folder("directions")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    task = {
-        "step": "directions_read",
-        "product": product,
-        "brief_sha256": brief_doc["sha256"],
-        "constraints": brief_doc["constraints"],
-        "taste_anchors": brief_doc["taste_anchors"],
-    }
-    task_text = json.dumps(task, indent=2, ensure_ascii=False)
-    (out_dir / "task.md").write_text(f"# Directions task ({product})\n\n```json\n{task_text}\n```\n")
-    step_ws.mark("directions_collect", "done")
-    return {
-        "ok": True,
-        "step": "directions_collect",
-        "model": "yes",
-        "product": product,
-        "task": task_text,
-    }
+# ---------------------------------------------------------------- Stage 4: build (stub model read)
 
 
 def stub_model_read(step: str, *, task: str = "", draft: str = "", problems: str = "") -> dict[str, Any]:
-    """Model-free $0.00 stub for directions_read/revise and build_read/revise (no workspace access)."""
+    """Model-free $0.00 stub for build_read/revise only (Stage 2 directions is real in foundation.directions)."""
     del draft, problems
     parsed_task: dict[str, Any] = {}
     if task.strip():
@@ -163,33 +139,6 @@ def stub_model_read(step: str, *, task: str = "", draft: str = "", problems: str
         except json.JSONDecodeError:
             parsed_task = {}
     product = str(parsed_task.get("product") or "product")
-
-    if step in ("directions_read", "directions_revise"):
-        payload = {
-            "product": product,
-            "recommended": "a",
-            "directions": [
-                {
-                    "id": "a",
-                    "name": "Warm Ledger",
-                    "summary": "High-contrast warm paper and deep ink with disciplined forest accent.",
-                    "why": "Fits the brief's calm decision-first posture without dashboard clutter.",
-                    "how_to_use": "Lead with ink hierarchy on warm paper; reserve accent for the single primary action.",
-                    "what_not_to_do": "Never stack competing neon badges or purple-indigo gradients.",
-                    "accent_hex": "#2E7D4F",
-                },
-                {
-                    "id": "b",
-                    "name": "Crisp Instrument",
-                    "summary": "Taut neutral slate ground with sharp mineral blue signal.",
-                    "why": "Gives dense workflows clean separation while keeping brief constraints intact.",
-                    "how_to_use": "Use 8px spacing multiples and tabular mono figures for every quantitative comparison.",
-                    "what_not_to_do": "Never flatten hierarchy into uniform 14px grey lists.",
-                    "accent_hex": "#1D5B79",
-                },
-            ],
-        }
-        return {"ok": True, "step": step, "draft": payload}
 
     if step in ("build_read", "build_revise"):
         chosen_id = str(parsed_task.get("direction") or "a")
@@ -222,91 +171,6 @@ def _extract_draft_dict(raw_draft: str | dict[str, Any] | None) -> dict[str, Any
     if not isinstance(parsed, dict):
         raise ContractError("draft output must be a JSON object")
     return parsed
-
-
-def directions_check(ws: Workspace, *, draft: str | dict[str, Any] | None = None) -> dict[str, Any]:
-    step_ws = ws.for_step("directions_check")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    try:
-        draft_obj = _extract_draft_dict(draft) if draft else stub_model_read(
-            "directions_read", task=json.dumps({"product": brief_doc["product"]})
-        )["draft"]
-    except (json.JSONDecodeError, ContractError) as exc:
-        return {"ok": True, "step": "directions_check", "valid": "no", "problems": str(exc)}
-
-    dirs = draft_obj.get("directions")
-    if not isinstance(dirs, list) or len(dirs) < 2:
-        return {
-            "ok": True,
-            "step": "directions_check",
-            "valid": "no",
-            "problems": "directions draft must contain at least 2 candidate directions",
-        }
-    out_dir = step_ws.folder("directions")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "draft.json").write_text(json.dumps(draft_obj, indent=2, ensure_ascii=False) + "\n")
-    step_ws.mark("directions_check", "done")
-    return {"ok": True, "step": "directions_check", "valid": "yes", "problems": ""}
-
-
-def directions_finish(ws: Workspace) -> dict[str, Any]:
-    step_ws = ws.for_step("directions")
-    brief_doc = step_ws.read_json("01-brief/brief.json")
-    product = brief_doc["product"]
-    out_dir = step_ws.folder("directions")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    draft_path = out_dir / "draft.json"
-    if draft_path.is_file():
-        draft_obj = step_ws.read_json("02-directions/draft.json")
-    else:
-        draft_obj = stub_model_read("directions_read", task=json.dumps({"product": product}))["draft"]
-
-    entries: list[dict[str, Any]] = []
-    for item in draft_obj["directions"]:
-        did = str(item["id"])
-        d_folder = out_dir / did
-        d_folder.mkdir(parents=True, exist_ok=True)
-        tok = stub_tokens(product, status="draft", accent_hex=str(item.get("accent_hex") or "#2E7D4F"))
-        contracts.validate_tokens(tok, label=f"02-directions/{did}/tokens.json", step="directions")
-        md = stub_design_md(
-            product,
-            direction_name=str(item["name"]),
-            why=str(item["why"]),
-            how_to_use=str(item["how_to_use"]),
-            what_not_to_do=str(item["what_not_to_do"]),
-            status="draft",
-        )
-        contracts.validate_design_md(md, label=f"02-directions/{did}/DESIGN.md", step="directions")
-        (d_folder / "tokens.json").write_text(json.dumps(tok, indent=2, ensure_ascii=False) + "\n")
-        (d_folder / "DESIGN.md").write_text(md)
-        entries.append(
-            {
-                "id": did,
-                "name": str(item["name"]),
-                "summary": str(item["summary"]),
-                "why": str(item["why"]),
-                "tokens_file": f"02-directions/{did}/tokens.json",
-                "design_md_file": f"02-directions/{did}/DESIGN.md",
-            }
-        )
-
-    directions_doc = {
-        "product": product,
-        "brief_sha256": brief_doc["sha256"],
-        "recommended": str(draft_obj.get("recommended") or entries[0]["id"]),
-        "directions": entries,
-    }
-    contracts.validate("directions", directions_doc, step="directions")
-    (out_dir / "directions.json").write_text(json.dumps(directions_doc, indent=2, ensure_ascii=False) + "\n")
-    step_ws.mark("directions", "done")
-    return {
-        "ok": True,
-        "step": "directions",
-        "product": product,
-        "recommended": directions_doc["recommended"],
-        "count": len(entries),
-    }
 
 
 # ---------------------------------------------------------------- Stage 3: proof (with sample-screen fallback)

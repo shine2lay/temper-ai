@@ -514,7 +514,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_assets/positioning_tools.py` | script |
 | `marketing/bin/gather_evidence.py` | script |
 
-### design (53)
+### design (55)
 
 | Config | Kind |
 |---|---|
@@ -569,7 +569,9 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_app_screen_directions_v1.yaml` | agent (one fenced read: entry screen inventory and requirements into 2-3 distinct clickable direction drafts; JSON only) |
 | `design/workflows/design_foundation_v1.yaml` | workflow (product foundations: brief-led 6-stage pipeline — brief, directions, proof, build, checks, handoff — plus direction/final owner gates, closed DTCG tokens.json schema, DESIGN.md section contract, sample-screen fallback and held teardown pairs) |
 | `design/workflows/design_foundation_v1_bench.yaml` | workflow ($0.00 bench twin of design_foundation_v1: exercises every foundation contract, gate and cleanup pair without live model or stack cost) |
+| `design/workflows/design_foundation_v1_directions.yaml` | workflow (stage 2 of design_foundation_v1 alone: reads 01-brief/brief.json, calls design_foundation_directions_v1, validates with directions_check, and persists 02-directions/directions.json plus per-direction tokens.json and DESIGN.md) |
 | `design/agents/design_foundation_stage_v1.yaml` | agent (script; runs one foundation step and validates its output against its closed contract) |
+| `design/agents/design_foundation_directions_v1.yaml` | agent (one fenced read: approved brief into 2-3 genuinely distinct direction contracts; JSON only, no colour mathematics) |
 | `design/agents/design_foundation_replay.yaml` | agent (script; $0.00 model-boundary and bench lifecycle replay for design_foundation_v1_bench and skeleton stubs) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |

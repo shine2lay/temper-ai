@@ -511,6 +511,114 @@ class TestCodeLandStage:
         assert "<<<<<<<" not in (work_dir / "shared.txt").read_text(encoding="utf-8")
         assert git_raw(work_dir, "status", "--porcelain") == ""
 
+    def test_zero_gitconfig_identity_and_non_conflict_git_merge_failure_fails_loud(
+        self, harness: LocalGitHubHarness, tmp_path: Path
+    ):
+        """Containers / GitHub runners without ~/.gitconfig still succeed via fallback identity,
+        and non-conflict git merge errors raise CodeLandError instead of masquerading as conflicts."""
+        bare_env = {
+            **harness.env(),
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
+        for k in (
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+        ):
+            bare_env.pop(k, None)
+
+        work_dir = _checkout_feature_branch(harness, tmp_path, "feat/no-gitconfig")
+        # Clear any repo-local user.name/user.email set during checkout so code_save + code_land must supply fallback
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.name"],
+            check=False,
+        )
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.email"],
+            check=False,
+        )
+        (work_dir / "isolated.py").write_text("X = 1\n", encoding="utf-8")
+        saved = code_save.save_code(
+            work_dir=str(work_dir),
+            message="feat: save without global gitconfig",
+            env=bare_env,
+        )
+        assert saved["pushed"] is True
+
+        # Clear repo-local user.name/user.email again and diverge main so _attempt_auto_resolve runs in existing_work_dir
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.name"],
+            check=False,
+        )
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.email"],
+            check=False,
+        )
+        harness.commit_on_remote("main", {"other_main.txt": "disjoint\n"})
+        harness.force_behind_when_diverged = True
+        harness.set_default_checks_callback(
+            lambda _sha, _poll: [
+                {"id": 1, "name": "ci", "status": "completed", "conclusion": "success", "app": {"id": 1}}
+            ]
+        )
+
+        # First verify non-conflict merge error (e.g. broken gpg.program on merge commit)
+        # raises CodeLandError instead of masquerading as a merge conflict!
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "commit.gpgsign", "true"],
+            check=True,
+        )
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "gpg.program", "/nonexistent-gpg-binary"],
+            check=True,
+        )
+        try:
+            with pytest.raises(code_land.CodeLandError, match="without unmerged conflict paths"):
+                code_land.land_code(
+                    work_dir=str(work_dir),
+                    branch="feat/no-gitconfig",
+                    base="main",
+                    mode="pr",
+                    require_checks="true",
+                    poll_interval_s="0.02",
+                    checks_appear_timeout_s="0.1",
+                    env=bare_env,
+                )
+        finally:
+            subprocess.run(
+                [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "commit.gpgsign"],
+                check=False,
+            )
+            subprocess.run(
+                [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "gpg.program"],
+                check=False,
+            )
+
+        # Clear repo-local user.name/user.email once more and verify auto-resolve + merge succeed with zero host gitconfig!
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.name"],
+            check=False,
+        )
+        subprocess.run(
+            [GIT_BIN, "-C", str(work_dir), "config", "--unset-all", "user.email"],
+            check=False,
+        )
+        res = code_land.land_code(
+            work_dir=str(work_dir),
+            branch="feat/no-gitconfig",
+            base="main",
+            mode="pr",
+            require_checks="true",
+            poll_interval_s="0.02",
+            checks_appear_timeout_s="0.1",
+            env=bare_env,
+        )
+        assert res["action"] == "merged"
+        assert res["merged"] is True
+        assert res["auto_resolved"] is True
+
 
 # ---------------------------------------------------------------------------
 # 3. Full workflow, StageNode pipeline, and dead-box / wiped-work_dir resume

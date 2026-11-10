@@ -30,21 +30,26 @@ GIT_BIN = "/usr/bin/git"
 GIT_HTTP_BACKEND = "/usr/lib/git-core/git-http-backend"
 
 
-def git_raw(cwd: Path, *args: str) -> str:
-    env = {
+def _git_env() -> dict[str, str]:
+    return {
         **os.environ,
         "GIT_AUTHOR_NAME": "Test Author",
         "GIT_AUTHOR_EMAIL": "author@example.com",
         "GIT_COMMITTER_NAME": "Test Author",
         "GIT_COMMITTER_EMAIL": "author@example.com",
         "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
     }
+
+
+def git_raw(cwd: Path, *args: str) -> str:
     proc = subprocess.run(
         [GIT_BIN, "-C", str(cwd), *args],
         check=True,
         capture_output=True,
         text=True,
-        env=env,
+        env=_git_env(),
     )
     return proc.stdout.strip()
 
@@ -167,6 +172,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
             capture_output=True,
             text=True,
             check=False,
+            env=_git_env(),
         )
         return proc.stdout.strip() if proc.returncode == 0 else None
 
@@ -191,6 +197,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
                         capture_output=True,
                         text=True,
                         check=False,
+                        env=_git_env(),
                     )
             else:
                 git_raw(work, "checkout", "-B", branch, f"origin/{base}")
@@ -200,6 +207,9 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
                 target.write_text(content, encoding="utf-8")
             git_raw(work, "add", "-A")
             git_raw(work, "commit", "-m", message)
+            if merge_base and existing:
+                second_parent = git_raw(work, "rev-parse", "HEAD^2")
+                assert len(second_parent) == 40
             sha = git_raw(work, "rev-parse", "HEAD")
             git_raw(work, "push", "origin", f"HEAD:refs/heads/{branch}")
             return sha
@@ -225,12 +235,14 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
         anc = subprocess.run(
             [GIT_BIN, "--git-dir", str(self.bare_repo), "merge-base", "--is-ancestor", base_sha, head_sha],
             check=False,
+            env=_git_env(),
         )
         mt = subprocess.run(
             [GIT_BIN, "--git-dir", str(self.bare_repo), "merge-tree", "--write-tree", base_sha, head_sha],
             capture_output=True,
             text=True,
             check=False,
+            env=_git_env(),
         )
         if mt.returncode != 0:
             return False, "dirty"
@@ -253,6 +265,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
             anc = subprocess.run(
                 [GIT_BIN, "-C", str(work), "merge-base", "--is-ancestor", head_sha, base_before],
                 check=False,
+                env=_git_env(),
             )
             if anc.returncode == 0:
                 return 204, {}
@@ -263,6 +276,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
                     capture_output=True,
                     text=True,
                     check=False,
+                    env=_git_env(),
                 )
                 if proc.returncode != 0:
                     return 405, {"message": "Merge conflict"}
@@ -273,6 +287,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
                     capture_output=True,
                     text=True,
                     check=False,
+                    env=_git_env(),
                 )
                 if proc.returncode != 0:
                     return 405, {"message": "Base branch cannot be rebased cleanly"}
@@ -282,6 +297,7 @@ raise SystemExit(subprocess.call(cmd, env=os.environ))
                     capture_output=True,
                     text=True,
                     check=False,
+                    env=_git_env(),
                 )
                 if proc.returncode != 0:
                     return 409, {"message": "Merge conflict"}

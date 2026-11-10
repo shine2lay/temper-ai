@@ -242,18 +242,34 @@ def _attempt_auto_resolve(
                 token=token,
             )
 
-        code_checkout.run_git(
-            ["config", "user.name", "temper-bot"],
+        name_proc = code_checkout.run_git(
+            ["config", "--get", "user.name"],
             cwd=checkout_dir,
             git_env=git_env,
             token=token,
+            check=False,
         )
-        code_checkout.run_git(
-            ["config", "user.email", "bot@temper.ai"],
+        if name_proc.returncode != 0 or not name_proc.stdout.strip():
+            code_checkout.run_git(
+                ["config", "user.name", "temper-bot"],
+                cwd=checkout_dir,
+                git_env=git_env,
+                token=token,
+            )
+        email_proc = code_checkout.run_git(
+            ["config", "--get", "user.email"],
             cwd=checkout_dir,
             git_env=git_env,
             token=token,
+            check=False,
         )
+        if email_proc.returncode != 0 or not email_proc.stdout.strip():
+            code_checkout.run_git(
+                ["config", "user.email", "bot@temper.ai"],
+                cwd=checkout_dir,
+                git_env=git_env,
+                token=token,
+            )
 
         fetch_args = ["fetch", "--quiet", "--no-tags"]
         if temp_ctx is not None:
@@ -346,6 +362,13 @@ def _attempt_auto_resolve(
                 token=token,
                 check=False,
             )
+            if not conflicting:
+                raw_detail = (merge_proc.stderr or merge_proc.stdout or "").strip()
+                safe_detail = code_checkout.scrub_secrets(raw_detail, [token])
+                raise CodeLandError(
+                    f"git merge failed without unmerged conflict paths (exit {merge_proc.returncode}): "
+                    f"{safe_detail or 'unknown git error'}"
+                )
             return {
                 "outcome": "conflict",
                 "sha": old_sha,

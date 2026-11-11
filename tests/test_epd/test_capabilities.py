@@ -419,7 +419,7 @@ def test_derive_preserves_other_probes_and_authored_map(capabilities, tmp_path):
     path = tmp_path / 'map.md'
     first = capabilities.render(tmp_path, surface, intents, preamble)
     path.write_text(first)
-    assert capabilities.check(surface, path) == ([], [], [])
+    assert capabilities.check(surface, path) == ([], [], [], [])
     parsed_intents, parsed_preamble = capabilities.parse_map(path)
     assert parsed_intents == intents
     assert parsed_preamble == preamble
@@ -451,3 +451,42 @@ def test_exported_cli_refresh_is_idempotent_with_stdlib_only(capabilities, tmp_p
         assert path.read_bytes() == text.encode()
     checked = subprocess.run([*command, '--check', '--strict'], check=True, capture_output=True, text=True)
     assert checked.stdout == 'ok: 1 capabilities, map agrees\n'
+
+
+def run_cli(root, *args):
+    return subprocess.run([sys.executable, str(BIN / 'capabilities.py'), '--repo', str(root), *args],
+                          capture_output=True, text=True)
+
+
+def test_check_fails_when_an_entry_moved_file_but_not_on_line_drift(tmp_path):
+    route = '<Route path="/fruit" element={<Fruit/>}/>\n'
+    write_sources(tmp_path, {'web/App.tsx': route})
+    assert run_cli(tmp_path).returncode == 0
+    (tmp_path / 'web/App.tsx').write_text('// a new import\n\n' + route)
+    line_drift = run_cli(tmp_path, '--check')
+    assert (line_drift.returncode, line_drift.stdout) == (0, 'ok: 1 capabilities, map agrees (1 undescribed)\n')
+    (tmp_path / 'web/App.tsx').unlink()
+    write_sources(tmp_path, {'web/routes.tsx': route})
+    moved = run_cli(tmp_path, '--check')
+    assert (moved.returncode, moved.stdout) == (1, 'moved: /fruit: web/App.tsx:1 -> web/routes.tsx:1\n')
+
+
+def test_refresh_keeps_the_written_title_in_a_differently_named_folder(tmp_path):
+    root = tmp_path / 'rollcall-docs-capmap-app-split'
+    write_sources(root, {'cli.py': 'parser = commands.add_parser("list", help="List items")'})
+    path = root / '.temper/topics/capabilities.md'
+    assert run_cli(root).returncode == 0
+    assert path.read_text().startswith('# What rollcall-docs-capmap-app-split can do\n')
+    path.write_text(path.read_text().replace('# What rollcall-docs-capmap-app-split', '# What rollcall', 1))
+    assert run_cli(root).returncode == 0
+    assert path.read_text().startswith('# What rollcall can do\n')
+
+
+def test_out_outside_the_repo_is_written_and_printed_absolute(tmp_path):
+    root, out = tmp_path.resolve() / 'project', tmp_path.resolve() / 'elsewhere' / 'map.md'
+    write_sources(root, {'cli.py': 'parser = commands.add_parser("list", help="List items")'})
+    created = run_cli(root, '--out', str(out))
+    assert (created.returncode, created.stdout) == (0, f'created {out}: 1 capabilities, none described yet\n')
+    refreshed = run_cli(root, '--out', str(out))
+    assert (refreshed.returncode, refreshed.stdout) == (
+        0, f'wrote {out}: 1 capabilities (1 sentences kept, 0 new, 0 dropped)\n')

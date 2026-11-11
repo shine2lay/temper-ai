@@ -19,7 +19,8 @@ So the map is two things with different lifetimes, in one file:
 Refreshing MERGES: existing sentences are carried over by key, new entries
 arrive undescribed, and entries whose code is gone are reported rather than
 deleted behind your back. `--check` exits non-zero when the code and the map
-disagree, which is what makes the map trustworthy a year from now.
+disagree -- an entry missing, gone, or located in a file it no longer lives
+in -- which is what makes the map trustworthy a year from now.
 
 Deliberately stdlib-only and importing nothing from temper: it has to run
 inside an arbitrary checkout, against a project whose dependencies are not
@@ -409,18 +410,18 @@ def parse_map(path: Path) -> tuple[dict[str, str], str]:
     if not path.exists():
         return {}, ""
     text = path.read_text(errors="replace")
-    intents: dict[str, str] = {}
-    for line in text.splitlines():
-        m = _ENTRY.match(line.strip())
-        if m:
-            key, intent = m.group(1), (m.group(2) or "").strip()
-            if intent and intent != UNDESCRIBED:
-                intents[key] = intent
+    intents = {c.key: c.intent for c in read_map(text) if c.intent}
     preamble = ""
     pm = re.search(r"## What this is\n(.*?)(?=\n## |\Z)", text, re.S)
     if pm:
         preamble = pm.group(1).strip()
     return intents, preamble
+
+
+def map_title(path: Path) -> str:
+    """The written map's own heading, or "": a refresh run in a worktree folder keeps the product's name."""
+    first = path.read_text(errors="replace").split("\n", 1)[0] if path.exists() else ""
+    return first[2:].strip() if first.startswith("# ") else ""
 
 
 _KIND_SECTION = re.compile(r"^## (.+?) \(\d+\)\s*$")
@@ -454,13 +455,12 @@ def read_map(text: str) -> list[Capability]:
     return caps
 
 
-def render(root: Path, surface: Surface, intents: dict[str, str], preamble: str) -> str:
-    name = root.resolve().name
+def render(root: Path, surface: Surface, intents: dict[str, str], preamble: str, title: str = "") -> str:
     described = sum(1 for c in surface.caps if intents.get(c.key))
     total = len(surface.caps)
 
     out: list[str] = []
-    out.append(f"# What {name} can do")
+    out.append(f"# {title or f'What {root.resolve().name} can do'}")
     out.append("")
     out.append(MARKER)
     out.append("<!-- The list of capabilities is DERIVED from the code: do not edit it by hand, -->")
@@ -509,25 +509,22 @@ def render(root: Path, surface: Surface, intents: dict[str, str], preamble: str)
     return "\n".join(out).rstrip() + "\n"
 
 
-def check(surface: Surface, path: Path) -> tuple[list[str], list[str], list[str]]:
-    """Compare code against the committed map. Returns (added, removed, undescribed)."""
-    if not path.exists():
-        return [c.key for c in surface.caps], [], []
-    text = path.read_text(errors="replace")
-    mapped: dict[str, str] = {}
-    for line in text.splitlines():
-        m = _ENTRY.match(line.strip())
-        if m:
-            mapped[m.group(1)] = (m.group(2) or "").strip()
+def check(surface: Surface, path: Path) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Compare code against the committed map. Returns (added, removed, undescribed, moved).
 
-    derived_keys = {c.key for c in surface.caps}
-    added = sorted(derived_keys - set(mapped))
-    removed = sorted(set(mapped) - derived_keys)
-    undescribed = sorted(
-        k for k in derived_keys & set(mapped)
-        if not mapped[k] or mapped[k] == UNDESCRIBED
-    )
-    return added, removed, undescribed
+    moved holds "<key>: <written where> -> <derived where>" for each entry whose FILE differs: a location
+    in a deleted or split file sends an agent to code that is not there. Line numbers are not compared,
+    so an ordinary edit above a route does not fail the check.
+    """
+    if not path.exists():
+        return [c.key for c in surface.caps], [], [], []
+    written = {c.key: c for c in read_map(path.read_text(errors="replace"))}
+    derived = {c.key: c for c in surface.caps}
+    both = sorted(derived.keys() & written.keys())
+    moved = [f"{k}: {written[k].where} -> {derived[k].where}" for k in both
+             if written[k].where.rsplit(":", 1)[0] != derived[k].where.rsplit(":", 1)[0]]
+    undescribed = [k for k in both if not written[k].intent]
+    return sorted(derived.keys() - written.keys()), sorted(written.keys() - derived.keys()), undescribed, moved
 
 
 def main() -> int:
@@ -549,7 +546,7 @@ def main() -> int:
         return 2
 
     surface = derive(root)
-    out_path = root / args.out
+    out_path = (root / args.out).resolve()  # an --out outside the repo is printed absolute, by _rel
 
     if args.json:
         print(json.dumps({
@@ -560,19 +557,21 @@ def main() -> int:
         return 0
 
     if args.check:
-        added, removed, undescribed = check(surface, out_path)
+        added, removed, undescribed, moved = check(surface, out_path)
         if not out_path.exists():
-            print(f"drift: {out_path.relative_to(root)} does not exist "
+            print(f"drift: {_rel(root, out_path)} does not exist "
                   f"({len(surface.caps)} capabilities found in code)")
             return 1
         for k in added:
             print(f"drift: in code, missing from map: {k}")
         for k in removed:
             print(f"drift: in map, gone from code: {k}")
+        for m in moved:
+            print(f"moved: {m}")
         if args.strict:
             for k in undescribed:
                 print(f"undescribed: {k}")
-        bad = bool(added or removed) or (args.strict and bool(undescribed))
+        bad = bool(added or removed or moved) or (args.strict and bool(undescribed))
         if not bad:
             print(f"ok: {len(surface.caps)} capabilities, map agrees"
                   + (f" ({len(undescribed)} undescribed)" if undescribed else ""))
@@ -580,17 +579,18 @@ def main() -> int:
 
     first_time = not out_path.exists()
     intents, preamble = parse_map(out_path)
-    added, removed, _ = check(surface, out_path)
+    added, removed, _, _ = check(surface, out_path)
+    title = map_title(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render(root, surface, intents, preamble))
+    out_path.write_text(render(root, surface, intents, preamble, title))
 
     kept = len(intents)
     if first_time:
-        print(f"created {out_path.relative_to(root)}: {len(surface.caps)} capabilities, "
+        print(f"created {_rel(root, out_path)}: {len(surface.caps)} capabilities, "
               f"none described yet")
         return 0
 
-    print(f"wrote {out_path.relative_to(root)}: {len(surface.caps)} capabilities "
+    print(f"wrote {_rel(root, out_path)}: {len(surface.caps)} capabilities "
           f"({kept} sentences kept, {len(added)} new, {len(removed)} dropped)")
     # Only the delta is worth printing on a refresh: an unchanged surface should
     # be silent, so that anything printed here is something to look at.

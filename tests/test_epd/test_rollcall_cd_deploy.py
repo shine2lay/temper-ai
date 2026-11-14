@@ -45,6 +45,18 @@ def cd(tmp_path, monkeypatch):
     monkeypatch.setattr(cd, "checkout", lambda sha: cd.checked_out.append(sha))
     monkeypatch.setattr(cd, "run_release", lambda sha, kind, reason: cd.released.append((sha, kind, reason))
                         or cd.release_result)
+    # The staging put and the smoke runs: `cd.steps` lists (step, base url, password) in order, `cd.step_codes`
+    # sets a step's exit code (default 0, green).
+    cd.steps, cd.step_codes = [], {}
+
+    def run_step(argv, *, env=None, ceiling_s):
+        step = " ".join(argv[:2])
+        cd.steps.append((step, (env or {}).get("ROLLCALL_SMOKE_BASE_URL"), (env or {}).get("ROLLCALL_QA_PASSWORD")))
+        code = cd.step_codes.get(step, 0)
+        return code, (["FAILED qa/smoke/test_f1_overview.py::test_f1 - net liq differs", "1 failed"] if code else ["ok"])
+
+    monkeypatch.setattr(cd, "run_step", run_step)
+    monkeypatch.setattr(cd, "container_secret", lambda container, argv: f"pw-of-{container}")
     return cd
 
 
@@ -62,6 +74,57 @@ def test_the_exit_codes_are_the_ones_deploy_prod_names(cd):
 def test_a_healthy_release_exits_0_after_one_release_of_that_commit(cd):
     assert cd.deploy(A, "deploy", "master aaaaaaaa, quiet 2m") == 0
     assert cd.checked_out == [A] and cd.released == [(A, "deploy", "master aaaaaaaa, quiet 2m")]
+
+
+# ---- QA's smoke tests around a release (TEST-SMOKE-BOTH) ---------------------------------------------
+
+
+def test_green_staging_and_live_smoke_put_staging_first_then_release_then_smoke_prod(cd):
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 0
+    assert cd.steps == [
+        ("rollcall-staging put", None, None),
+        ("make smoke-before", "http://127.0.0.1:8030", "pw-of-rollcall-staging-rollcall-1"),
+        ("make smoke-live", "http://127.0.0.1:8020", "pw-of-rollcall-prod-rollcall-1"),
+    ]
+    assert cd.released == [(A, "deploy", "master aaaaaaaa")]
+
+
+@pytest.mark.parametrize("red", ["rollcall-staging put", "make smoke-before"])
+def test_a_red_staging_put_or_smoke_before_stops_before_prod(cd, red, capsys):
+    cd.step_codes[red] = 1
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
+    assert cd.released == []  # prod untouched
+    assert [s[0] for s in cd.steps][-1] == red and "make smoke-live" not in [s[0] for s in cd.steps]
+    out = capsys.readouterr().out
+    assert "stopped before prod" in out and "prod was not touched" in out
+    assert "pw-of-" not in out  # the password is never printed
+
+
+def test_a_red_live_smoke_exits_1_after_the_release_naming_the_last_good_commit(cd, monkeypatch, capsys):
+    monkeypatch.setenv("DEPLOY_LIVE_SHA", B)
+    cd.step_codes["make smoke-live"] = 1
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1  # wt deploy's undo hook puts B back
+    assert cd.released == [(A, "deploy", "master aaaaaaaa")]
+    out = capsys.readouterr().out
+    assert f"last good commit {B[:12]} back" in out and "FAILED qa/smoke/test_f1_overview.py" in out
+    assert "pw-of-" not in out
+
+
+def test_an_undo_runs_no_smoke_and_a_failed_release_no_live_smoke(cd):
+    assert cd.deploy(B, "undo", "smoke-live red on aaaaaaaa") == 0
+    assert cd.steps == []
+    cd.release_result = (1, "health failed; undone")
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
+    assert [s[0] for s in cd.steps] == ["rollcall-staging put", "make smoke-before"]
+
+
+def test_run_step_stops_a_run_past_its_ceiling(cd, monkeypatch, tmp_path):
+    importlib.reload(cd)  # the real run_step
+    monkeypatch.setattr(cd, "CHECKOUT", tmp_path)
+    code, tail = cd.run_step([sys.executable, "-c", "import time; print('started', flush=True); time.sleep(30)"],
+                             ceiling_s=0.5)
+    assert code == cd.CEILING_EXIT and tail[0] == "started" and "ceiling" in tail[-1]
+    assert cd.run_step([sys.executable, "-c", "print('x'); raise SystemExit(3)"], ceiling_s=30) == (3, ["x"])
 
 
 @pytest.mark.parametrize("release_code, exit_code", [
@@ -146,6 +209,8 @@ def repo(tmp_path, monkeypatch):
     (home / "fixtures").mkdir(parents=True)
     (home / ".env").write_text("NOT_A_SECRET=1\n")
     monkeypatch.setattr(cd, "REPO_URL", str(origin))
+    monkeypatch.setattr(cd, "run_step", lambda argv, *, env=None, ceiling_s: (0, ["ok"]))  # staging + smoke: green
+    monkeypatch.setattr(cd, "container_secret", lambda container, argv: "")
     cd.ensure_clone()
     return cd, work, first, second
 

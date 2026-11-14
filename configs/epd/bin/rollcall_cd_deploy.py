@@ -7,6 +7,12 @@
         already), 75 when another release holds the clone or deploy_prod's lock, 76 when deploy_prod's
         order guard refused (the live commit is no ancestor of S); both: nothing changed. 1 otherwise.
 
+        --kind deploy wraps the release in QA's smoke tests (rollcall qa/smoke, TEST-SMOKE-BOTH): first
+        `rollcall-staging put S` and QA's before-release smoke against the staging copy (red: exit 1,
+        prod untouched), then the release, then QA's live smoke against prod (red: exit 1 while S is
+        live, and wt deploy's own undo puts the previous live commit back). A red is never run again.
+        --kind undo runs neither.
+
 `wt deploy` (agent-tools lib/deploy, `repos.rollcall.deploy` in agent-tools wt.yaml, docs/wt-deploy.md)
 decides when and what goes live: the two-minute quiet window, batching, skipped commits, CI verdicts, the
 money-test undo, the order of releases, its own lock and every notice. It checks the clone out at S and
@@ -36,8 +42,10 @@ import contextlib
 import fcntl
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -63,6 +71,21 @@ KINDS = ("deploy", "undo")
 #: This CLI's --kind -> epd_loop.deploy_prod's kind (forward: the order guard applies; undo: may go back).
 RELEASE_KIND = {"deploy": "forward", "undo": "undo"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
+#: The standing staging copy (agent-tools lib/staging, wt.yaml repos.rollcall.staging; Systems #130).
+STAGING_PUT = ("rollcall-staging", "put")
+STAGING_URL = "http://127.0.0.1:8030"
+STAGING_CONTAINER = "rollcall-staging-rollcall-1"
+PROD_URL = "http://127.0.0.1:8020"
+PROD_CONTAINER = "rollcall-prod-rollcall-1"
+#: Staging's QA logins have the seed's password: ROLLCALL_SEED_PASSWORD when the copy was given one, else the
+#: seed's own default, read inside the container from the code that seeded it (never copied here).
+STAGING_PASSWORD = ("python", "-c", "import os, sys; from rollcall.practice.seed.base import DEFAULT_PASSWORD as d; "
+                    "sys.stdout.write(os.environ.get('ROLLCALL_SEED_PASSWORD') or d)")
+#: Prod's are the live secret in the container's environment; no default.
+PROD_PASSWORD = ("printenv", "ROLLCALL_QA_PASSWORD")
+STAGING_CEILING_S = 30 * 60
+SMOKE_CEILING_S = 20 * 60
+CEILING_EXIT = 124
 
 
 class CheckoutProblem(RuntimeError):
@@ -104,6 +127,44 @@ def run_release(sha: str, kind: str, reason: str) -> tuple[int, str]:
     errors = [t for t in tail if "ERROR:" in t]
     why = (errors[-1].split("ERROR:", 1)[1].strip() if errors else (tail[-1] if tail else "no output"))
     return code, why
+
+
+def run_step(argv: list[str], *, env: dict[str, str] | None = None, ceiling_s: float) -> tuple[int, list[str]]:
+    """Run `argv` in CHECKOUT, its output passed through; (exit code, its last 40 non-empty lines).
+    Past `ceiling_s` its process group is killed and the code is CEILING_EXIT."""
+    p = subprocess.Popen(argv, cwd=CHECKOUT, env=env, text=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, start_new_session=True)
+    tail: collections.deque[str] = collections.deque(maxlen=40)
+    stopped = threading.Event()
+
+    def stop() -> None:
+        stopped.set()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(p.pid, signal.SIGKILL)
+
+    timer = threading.Timer(ceiling_s, stop)
+    timer.start()
+    try:
+        assert p.stdout is not None
+        for line in p.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            if line.strip():
+                tail.append(line.strip())
+        code = p.wait()
+    finally:
+        timer.cancel()
+    if stopped.is_set():
+        tail.append(f"{argv[0]} passed its {int(ceiling_s // 60)}-minute ceiling and was stopped")
+        return CEILING_EXIT, list(tail)
+    return code, list(tail)
+
+
+def container_secret(container: str, argv: tuple[str, ...]) -> str:
+    """What `docker exec <container> <argv>` prints, for the process env only: never logged or put on a
+    command line. '' when it fails (the smoke run then says the password is missing)."""
+    r = subprocess.run(["docker", "exec", container, *argv], text=True, capture_output=True, timeout=60)
+    return r.stdout.strip() if r.returncode == 0 else ""
 
 
 @contextlib.contextmanager
@@ -185,6 +246,36 @@ def link_live_files() -> None:
         os.symlink(target, link)
 
 
+# ---------------------------------------------------------------------------- smoke --
+
+def red_lines(tail: list[str]) -> str:
+    """The FAILED/ERROR lines of a smoke run's tail, else its last line."""
+    bad = [t for t in tail if t.startswith(("FAILED", "ERROR")) or " FAIL " in t]
+    return "; ".join(bad[-8:]) if bad else (tail[-1] if tail else "no output")
+
+
+def smoke(command: str, base_url: str, container: str, password_argv: tuple[str, ...]) -> tuple[int, str]:
+    """QA's smoke `command` (a rollcall Makefile target) from CHECKOUT against `base_url`, the QA password from
+    `container`'s environment straight into the run's environment; (exit code, its red lines)."""
+    env = dict(os.environ, ROLLCALL_SMOKE_BASE_URL=base_url,
+               ROLLCALL_QA_PASSWORD=container_secret(container, password_argv))
+    print(f"rollcall_cd_deploy: {command} against {base_url}", flush=True)
+    code, tail = run_step(command.split(), env=env, ceiling_s=SMOKE_CEILING_S)
+    print(f"rollcall_cd_deploy: {command} exit {code}", flush=True)
+    return code, red_lines(tail)
+
+
+def before_prod(sha: str) -> str | None:
+    """Staging put at `sha`, then smoke-before on it; None when green, else why prod is not touched."""
+    print(f"rollcall_cd_deploy: {' '.join(STAGING_PUT)} {sha[:12]}", flush=True)
+    code, tail = run_step([*STAGING_PUT, sha], ceiling_s=STAGING_CEILING_S)
+    print(f"rollcall_cd_deploy: staging put exit {code}", flush=True)
+    if code != 0:
+        return f"staging put of {sha[:12]} exited {code}: {tail[-1] if tail else 'no output'}"
+    code, red = smoke("make smoke-before", STAGING_URL, STAGING_CONTAINER, STAGING_PASSWORD)
+    return None if code == 0 else f"smoke-before on staging exited {code}: {red}"
+
+
 # --------------------------------------------------------------------------- deploy --
 
 def deploy(sha: str, kind: str, reason: str) -> int:
@@ -206,7 +297,19 @@ def deploy(sha: str, kind: str, reason: str) -> int:
         except CheckoutProblem as e:  # before the release: nothing changed
             print(f"rollcall_cd_deploy: refused: {e}", flush=True)
             return 1
+        if kind == "deploy" and (stop := before_prod(sha)):
+            print(f"rollcall_cd_deploy: release of {sha[:12]} stopped before prod: {stop}; prod was not "
+                  f"touched", flush=True)
+            return 1
         code, why = run_release(sha, kind, reason)
+        if kind == "deploy" and code == 0:
+            live_code, red = smoke("make smoke-live", PROD_URL, PROD_CONTAINER, PROD_PASSWORD)
+            if live_code != 0:  # red: exit 1 naming the last good commit, which wt deploy's undo puts back
+                good = os.environ.get("DEPLOY_LIVE_SHA", "")
+                print(f"rollcall_cd_deploy: smoke-live on prod exited {live_code} after {sha[:12]} went live: "
+                      f"{red}; exit 1, wt deploy's undo puts the last good commit "
+                      f"{good[:12] or '(none known: no undo)'} back", flush=True)
+                return 1
     if code == DEPLOY_ALREADY_LIVE:  # what was asked for is live: done, nothing changed
         print(f"rollcall_cd_deploy: {sha[:12]} is live already; nothing was changed", flush=True)
         return 0

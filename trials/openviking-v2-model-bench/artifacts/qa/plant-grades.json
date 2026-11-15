@@ -1,0 +1,167 @@
+[
+ {
+  "blind_id": "P01",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 0,
+  "concise": 1,
+  "corruption": true,
+  "defect": "keeps superseded n1 cleanup as an active instruction ('For the requested Rule 34 cleanup, use a standalone task...')",
+  "gradable": true
+ },
+ {
+  "blind_id": "P02",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 0,
+  "corruption": false,
+  "defect": "the same item text appears twice",
+  "gradable": true
+ },
+ {
+  "blind_id": "P03",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "",
+  "gradable": true
+ },
+ {
+  "blind_id": "P04",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 0,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "adds 'Backend #8981 later confirmed this in commit 0808aad5 with a 48-hour rollback window.' which no note states",
+  "gradable": true
+ },
+ {
+  "blind_id": "P05",
+  "topic_separation": 1,
+  "fact_retention": 0,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "n2 loses 'backend rm-a8311b06 completed task #164's /entries removal'",
+  "gradable": true
+ },
+ {
+  "blind_id": "P06",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "",
+  "gradable": true
+ },
+ {
+  "blind_id": "P07",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 0,
+  "concise": 1,
+  "corruption": true,
+  "defect": "keeps obsolete n1 '6. `pi-web-deploy --when-idle <sha>`; wait live.' as active although the evidence says never --when-idle",
+  "gradable": true
+ },
+ {
+  "blind_id": "P08",
+  "topic_separation": 0,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "merges n1 (observer last_reachable_at contract) and n2 (resource-sync values), different topics, into one item",
+  "gradable": true
+ },
+ {
+  "blind_id": "P09",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "",
+  "gradable": true
+ },
+ {
+  "blind_id": "P10",
+  "topic_separation": 1,
+  "fact_retention": 0,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "n2 loses 'Backend rm-a8311b06 completed task #164's route removal'",
+  "gradable": true
+ },
+ {
+  "blind_id": "P11",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 0,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "adds 'Backend #6345 later confirmed this in commit 2cdc1725 with a 48-hour rollback window.' which no note states",
+  "gradable": true
+ },
+ {
+  "blind_id": "P12",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 0,
+  "corruption": false,
+  "defect": "the same merged item appears twice",
+  "gradable": true
+ },
+ {
+  "blind_id": "P13",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "",
+  "gradable": true
+ },
+ {
+  "blind_id": "P14",
+  "topic_separation": 0,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "merges n2 (audit clean result) and n1 (retired path-scoped attachment) into one item; different topics",
+  "gradable": true
+ },
+ {
+  "blind_id": "P15",
+  "topic_separation": 1,
+  "fact_retention": 1,
+  "no_invention": 1,
+  "history_handling": 1,
+  "concise": 1,
+  "corruption": false,
+  "defect": "",
+  "gradable": true
+ }
+]

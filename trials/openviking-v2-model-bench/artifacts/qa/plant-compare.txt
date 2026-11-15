@@ -1,0 +1,17 @@
+P01 eject_back_active  target=history_handling  target_caught=yes any_flag=yes
+P02 repeat_item        target=concise           target_caught=yes any_flag=yes
+P04 invent_sentence    target=no_invention      target_caught=yes any_flag=yes
+P05 drop_fact          target=fact_retention    target_caught=yes any_flag=yes
+P07 eject_back_active  target=history_handling  target_caught=yes any_flag=yes
+P08 merge_topics       target=topic_separation  target_caught=yes any_flag=yes
+P10 drop_fact          target=fact_retention    target_caught=yes any_flag=yes
+P11 invent_sentence    target=no_invention      target_caught=yes any_flag=yes
+P12 repeat_item        target=concise           target_caught=yes any_flag=yes
+P14 merge_topics       target=topic_separation  target_caught=yes any_flag=yes
+field topic_separation: caught 2/2
+field fact_retention: caught 2/2
+field no_invention: caught 2/2
+field history_handling: caught 2/2
+field concise: caught 2/2
+mutations caught on target field: 10/10; flagged on any field: 10/10
+controls flagged: 0/5 []

@@ -1,0 +1,4961 @@
+[
+  {
+    "id": "D01--gpt-6-luna--r1",
+    "case": "D01",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 1.5293258919846267,
+    "input_tokens": 319,
+    "output_tokens": 39,
+    "total_tokens": 358,
+    "response_hash": "afc7b8cb8e3ca268830bd0d1e1bfaaa57d9d950a0180a2a050e948cb3c9b4a8e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D01--gpt-6-luna--r2",
+    "case": "D01",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 1.9933492559939623,
+    "input_tokens": 319,
+    "output_tokens": 64,
+    "total_tokens": 383,
+    "response_hash": "afc7b8cb8e3ca268830bd0d1e1bfaaa57d9d950a0180a2a050e948cb3c9b4a8e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D01--gpt-6.1-sol--r1",
+    "case": "D01",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.1565365579444915,
+    "input_tokens": 319,
+    "output_tokens": 39,
+    "total_tokens": 358,
+    "response_hash": "7a55c88abaa54aa8162be634e7e97a3ff060faf7db0cc2d339aa35487ac7b000",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D01--gpt-6.1-sol--r2",
+    "case": "D01",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 1.9636551621370018,
+    "input_tokens": 319,
+    "output_tokens": 39,
+    "total_tokens": 358,
+    "response_hash": "7a55c88abaa54aa8162be634e7e97a3ff060faf7db0cc2d339aa35487ac7b000",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D01--gpt-6.1-terra--r1",
+    "case": "D01",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 1.7676596569363028,
+    "input_tokens": 319,
+    "output_tokens": 39,
+    "total_tokens": 358,
+    "response_hash": "7a55c88abaa54aa8162be634e7e97a3ff060faf7db0cc2d339aa35487ac7b000",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D01--gpt-6.1-terra--r2",
+    "case": "D01",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 1.8051152899861336,
+    "input_tokens": 319,
+    "output_tokens": 39,
+    "total_tokens": 358,
+    "response_hash": "7a55c88abaa54aa8162be634e7e97a3ff060faf7db0cc2d339aa35487ac7b000",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6-luna--r1",
+    "case": "D02",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.1911374249029905,
+    "input_tokens": 532,
+    "output_tokens": 216,
+    "total_tokens": 748,
+    "response_hash": "a865c50fac7a5c4f3bfde5dea53dc000fa3152e2ba720861cd4d0e36d3c02869",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6-luna--r2",
+    "case": "D02",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.066811298020184,
+    "input_tokens": 532,
+    "output_tokens": 213,
+    "total_tokens": 745,
+    "response_hash": "e6e45b7794605a6e04eab2d15fd3fa6706e7d25546dd7653431ca14daf09d430",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6.1-sol--r1",
+    "case": "D02",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.555889992043376,
+    "input_tokens": 532,
+    "output_tokens": 230,
+    "total_tokens": 762,
+    "response_hash": "fd78bc3c4ad635c70aec135f40e4a15767c1dce24d57d31401449634b6e3f53d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6.1-sol--r2",
+    "case": "D02",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 6.9064433900639415,
+    "input_tokens": 532,
+    "output_tokens": 229,
+    "total_tokens": 761,
+    "response_hash": "a847a6295c3def5d1aa57599967fd9a25a87aa31a8918b86113fc593342c6f10",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6.1-terra--r1",
+    "case": "D02",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.634564500069246,
+    "input_tokens": 532,
+    "output_tokens": 196,
+    "total_tokens": 728,
+    "response_hash": "91d79e0a55fb7d5252afc0dcd7c29ffeed6fbbf807282853d8bb34a4b036ec0e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D02--gpt-6.1-terra--r2",
+    "case": "D02",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.907339863013476,
+    "input_tokens": 532,
+    "output_tokens": 218,
+    "total_tokens": 750,
+    "response_hash": "0e7ed10895dd60d9dd9200f52a26fc9146bf730f1261f71de1163872b24ae372",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6-luna--r1",
+    "case": "D03",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.2043288971763104,
+    "input_tokens": 352,
+    "output_tokens": 68,
+    "total_tokens": 420,
+    "response_hash": "d2125b7145152d4ebc7893619d79323c45e6bcc4002d5a6921632047d887be0b",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6-luna--r2",
+    "case": "D03",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.7178417451214045,
+    "input_tokens": 352,
+    "output_tokens": 93,
+    "total_tokens": 445,
+    "response_hash": "3c74668ccbce53ac236fd0c1a959a2760628733bddef644cadbb9b2e27b10931",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6.1-sol--r1",
+    "case": "D03",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.2229689790401608,
+    "input_tokens": 352,
+    "output_tokens": 68,
+    "total_tokens": 420,
+    "response_hash": "c6dcf3da047f8776cbb2c919fa5798708c3cbf1a39993eb4e417a967b3a8883d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6.1-sol--r2",
+    "case": "D03",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.7531477550510317,
+    "input_tokens": 352,
+    "output_tokens": 68,
+    "total_tokens": 420,
+    "response_hash": "c6dcf3da047f8776cbb2c919fa5798708c3cbf1a39993eb4e417a967b3a8883d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6.1-terra--r1",
+    "case": "D03",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.179894267814234,
+    "input_tokens": 352,
+    "output_tokens": 67,
+    "total_tokens": 419,
+    "response_hash": "9e207ce70884cdd734a357446c0028cc28bf865422b4a88a40f358a81e082ced",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D03--gpt-6.1-terra--r2",
+    "case": "D03",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.2842432181350887,
+    "input_tokens": 352,
+    "output_tokens": 68,
+    "total_tokens": 420,
+    "response_hash": "c6dcf3da047f8776cbb2c919fa5798708c3cbf1a39993eb4e417a967b3a8883d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6-luna--r1",
+    "case": "D04",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.6709205040242523,
+    "input_tokens": 347,
+    "output_tokens": 86,
+    "total_tokens": 433,
+    "response_hash": "62dffe9b4f57eff0961431c4a8ba87dede55466fb76cb5c54781aabed13513a7",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6-luna--r2",
+    "case": "D04",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.471779946004972,
+    "input_tokens": 347,
+    "output_tokens": 81,
+    "total_tokens": 428,
+    "response_hash": "bd73551f614e0fdcb36d9a3aa70cc5523e8b438b35475bb92b3fee1b71292eee",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6.1-sol--r1",
+    "case": "D04",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.9364658589474857,
+    "input_tokens": 347,
+    "output_tokens": 84,
+    "total_tokens": 431,
+    "response_hash": "c69865c5f6ed08a3fc4f14c704f5258411252a0907d70bf59b24f0c32f287571",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6.1-sol--r2",
+    "case": "D04",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.214526910800487,
+    "input_tokens": 347,
+    "output_tokens": 85,
+    "total_tokens": 432,
+    "response_hash": "88e0a78f9ffe9a4e60619a14337f779e24a7094e95f5799f872f94b8378d7cfe",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6.1-terra--r1",
+    "case": "D04",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.475394489010796,
+    "input_tokens": 347,
+    "output_tokens": 85,
+    "total_tokens": 432,
+    "response_hash": "2c3ede0e11e2dbf51f672f6c8aed45559b46379d9f713a5ebcdaf56d5628e248",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D04--gpt-6.1-terra--r2",
+    "case": "D04",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.6010239999741316,
+    "input_tokens": 347,
+    "output_tokens": 86,
+    "total_tokens": 433,
+    "response_hash": "11a9bd7722cd7c9fe1ff8e1f3366ce8c0b1214b7887bad80cfb5e3afcd745126",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6-luna--r1",
+    "case": "D05",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.947489153128117,
+    "input_tokens": 666,
+    "output_tokens": 229,
+    "total_tokens": 895,
+    "response_hash": "fcf187a41e14c7a88a7006bb184b369d001f9f8c541bf380892cb6486b105ea8",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6-luna--r2",
+    "case": "D05",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.869577157078311,
+    "input_tokens": 666,
+    "output_tokens": 219,
+    "total_tokens": 885,
+    "response_hash": "0c63b352cbc3daf1795365ec285e0864e4aceef08dcdb60aa378742c2252dd5b",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6.1-sol--r1",
+    "case": "D05",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.212794112972915,
+    "input_tokens": 666,
+    "output_tokens": 241,
+    "total_tokens": 907,
+    "response_hash": "f90079abad518c2351a97db32aebf6c45a65ffef790d2118b2335846185c9ac2",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6.1-sol--r2",
+    "case": "D05",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 6.244108055019751,
+    "input_tokens": 666,
+    "output_tokens": 222,
+    "total_tokens": 888,
+    "response_hash": "ba536020c2dc1ef4c18f938b60f23702e9fa0d0ebd8e62182554ae8c73899e75",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6.1-terra--r1",
+    "case": "D05",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.6998672490008175,
+    "input_tokens": 666,
+    "output_tokens": 200,
+    "total_tokens": 866,
+    "response_hash": "38bb8f62a6296dbc53fa241dad63f4578c24eb68aea2176bb5c0c5ded5dc453d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D05--gpt-6.1-terra--r2",
+    "case": "D05",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.020545592997223,
+    "input_tokens": 666,
+    "output_tokens": 214,
+    "total_tokens": 880,
+    "response_hash": "185a99a7a417c2ba22b9a6bb025da375f90a7ed9e603035b60d514f25bd6ce0f",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6-luna--r1",
+    "case": "D06",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 9.060421750880778,
+    "input_tokens": 734,
+    "output_tokens": 450,
+    "total_tokens": 1184,
+    "response_hash": "f18bdb2bcfb062c740da77d9a56e7322f61ed2729df835934bcbf30adc7deef1",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6-luna--r2",
+    "case": "D06",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 9.289249846944585,
+    "input_tokens": 734,
+    "output_tokens": 447,
+    "total_tokens": 1181,
+    "response_hash": "1fc6723c296a034375519e459d1814989c9a4c4353f40dce477aa4d794cd0072",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [
+      "~/.local/bin/test-check."
+    ],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6.1-sol--r1",
+    "case": "D06",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 10.741538932081312,
+    "input_tokens": 734,
+    "output_tokens": 466,
+    "total_tokens": 1200,
+    "response_hash": "864fe5d0791765e747af3f4bdfb78ef9c669c0f9e727e6b86611e6967a9b3ceb",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6.1-sol--r2",
+    "case": "D06",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 12.560356622096151,
+    "input_tokens": 734,
+    "output_tokens": 449,
+    "total_tokens": 1183,
+    "response_hash": "055fda0895e607d6fa46e112b6f97d67927d2c4fde54b8afc4f7906f92f96da1",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6.1-terra--r1",
+    "case": "D06",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 8.856367841130123,
+    "input_tokens": 734,
+    "output_tokens": 443,
+    "total_tokens": 1177,
+    "response_hash": "7850c0fcfad14e249ee59e7ae5ab5c5b52da7f2aa23861dc93d159688e2ba36e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D06--gpt-6.1-terra--r2",
+    "case": "D06",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 8.966574342921376,
+    "input_tokens": 734,
+    "output_tokens": 448,
+    "total_tokens": 1182,
+    "response_hash": "1425d424b626eed18af013574678787fbb73160c483e3e7982ca098d20936e7a",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6-luna--r1",
+    "case": "D07",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.5296741821803153,
+    "input_tokens": 425,
+    "output_tokens": 148,
+    "total_tokens": 573,
+    "response_hash": "2ff8c792a466bd2c5b92e49bb0ac57ddd8151c901fad8285d45d0a5770cd46de",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6-luna--r2",
+    "case": "D07",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.299627273110673,
+    "input_tokens": 425,
+    "output_tokens": 148,
+    "total_tokens": 573,
+    "response_hash": "2ff8c792a466bd2c5b92e49bb0ac57ddd8151c901fad8285d45d0a5770cd46de",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6.1-sol--r1",
+    "case": "D07",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.419853535946459,
+    "input_tokens": 425,
+    "output_tokens": 148,
+    "total_tokens": 573,
+    "response_hash": "896c6a1563907ddf93189f1cf07b868565bf2c12e47894ee8231bb4761ca9efc",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6.1-sol--r2",
+    "case": "D07",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.914950133068487,
+    "input_tokens": 425,
+    "output_tokens": 148,
+    "total_tokens": 573,
+    "response_hash": "896c6a1563907ddf93189f1cf07b868565bf2c12e47894ee8231bb4761ca9efc",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6.1-terra--r1",
+    "case": "D07",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.116534129017964,
+    "input_tokens": 425,
+    "output_tokens": 148,
+    "total_tokens": 573,
+    "response_hash": "896c6a1563907ddf93189f1cf07b868565bf2c12e47894ee8231bb4761ca9efc",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D07--gpt-6.1-terra--r2",
+    "case": "D07",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.7481968249194324,
+    "input_tokens": 425,
+    "output_tokens": 149,
+    "total_tokens": 574,
+    "response_hash": "4a1784d24a914633e02d4c764f522594bf3be1f94afa755bbd794dc4e199f359",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6-luna--r1",
+    "case": "D08",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 9.242392930202186,
+    "input_tokens": 736,
+    "output_tokens": 452,
+    "total_tokens": 1188,
+    "response_hash": "9089b1808759d7b5925614ed2df9433414422c88723cd4f74c836bf7c935d752",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6-luna--r2",
+    "case": "D08",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 10.671185038983822,
+    "input_tokens": 736,
+    "output_tokens": 537,
+    "total_tokens": 1273,
+    "response_hash": "0620cb07610c09e2b30a73415c451b747730cf0d00170b4aec0a26726740d8a7",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6.1-sol--r1",
+    "case": "D08",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 9.760663298889995,
+    "input_tokens": 736,
+    "output_tokens": 425,
+    "total_tokens": 1161,
+    "response_hash": "e6df57f51ffd76d3e66460283564e9ebea7df5b2f059a718358847961c408e18",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6.1-sol--r2",
+    "case": "D08",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 10.721297013107687,
+    "input_tokens": 736,
+    "output_tokens": 446,
+    "total_tokens": 1182,
+    "response_hash": "1196739273019ba3c802a6b81dd37beead5e6fd89be09a2b9af8b28d8321ecd4",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6.1-terra--r1",
+    "case": "D08",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 8.846621958073229,
+    "input_tokens": 736,
+    "output_tokens": 437,
+    "total_tokens": 1173,
+    "response_hash": "090d19d35a40dde54bde1658d1b9e86c280d969ad5926051ba38d46b13a805ee",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D08--gpt-6.1-terra--r2",
+    "case": "D08",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 9.019319306127727,
+    "input_tokens": 736,
+    "output_tokens": 440,
+    "total_tokens": 1176,
+    "response_hash": "2399ec6c04bbbd82f05361ad045df2c01f010bd667521965574c7622f09ec44b",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6-luna--r1",
+    "case": "D09",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.132816893979907,
+    "input_tokens": 332,
+    "output_tokens": 45,
+    "total_tokens": 377,
+    "response_hash": "0aa7ee96926fa2898fbeabe3a99354efa1e45f417fb64170cc6d3d8de54f8af9",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6-luna--r2",
+    "case": "D09",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.955547658028081,
+    "input_tokens": 332,
+    "output_tokens": 45,
+    "total_tokens": 377,
+    "response_hash": "0aa7ee96926fa2898fbeabe3a99354efa1e45f417fb64170cc6d3d8de54f8af9",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6.1-sol--r1",
+    "case": "D09",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.312806715024635,
+    "input_tokens": 332,
+    "output_tokens": 46,
+    "total_tokens": 378,
+    "response_hash": "5cd597e50d3ffa01d8452d53867d7352769d1f7446aef7c1a51259f488c87177",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6.1-sol--r2",
+    "case": "D09",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.2474866760894656,
+    "input_tokens": 332,
+    "output_tokens": 46,
+    "total_tokens": 378,
+    "response_hash": "5cd597e50d3ffa01d8452d53867d7352769d1f7446aef7c1a51259f488c87177",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6.1-terra--r1",
+    "case": "D09",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 1.873885925160721,
+    "input_tokens": 332,
+    "output_tokens": 45,
+    "total_tokens": 377,
+    "response_hash": "0aa7ee96926fa2898fbeabe3a99354efa1e45f417fb64170cc6d3d8de54f8af9",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D09--gpt-6.1-terra--r2",
+    "case": "D09",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 1.6879520330112427,
+    "input_tokens": 332,
+    "output_tokens": 45,
+    "total_tokens": 377,
+    "response_hash": "0aa7ee96926fa2898fbeabe3a99354efa1e45f417fb64170cc6d3d8de54f8af9",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6-luna--r1",
+    "case": "D10",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.6818625829182565,
+    "input_tokens": 466,
+    "output_tokens": 150,
+    "total_tokens": 616,
+    "response_hash": "9e3e177cd3c9f088e0f629622f2e7ba40085d3a7a9ac2e7abe9b14a7ef890297",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6-luna--r2",
+    "case": "D10",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.9345891980919987,
+    "input_tokens": 466,
+    "output_tokens": 150,
+    "total_tokens": 616,
+    "response_hash": "bf69e617cda35d94b0e167f39828b118d6f34fe9287cc74f1160ffc0c047f23c",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6.1-sol--r1",
+    "case": "D10",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.04064483800903,
+    "input_tokens": 466,
+    "output_tokens": 162,
+    "total_tokens": 628,
+    "response_hash": "3bf1c8e32fffcad6d57a4fe2289de62bcf34c8874e5afb44dce6e74b5dc29f04",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6.1-sol--r2",
+    "case": "D10",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.713250673841685,
+    "input_tokens": 466,
+    "output_tokens": 162,
+    "total_tokens": 628,
+    "response_hash": "f67551ed4b557c00b70d496200fe60a3aad50234ecd7cc03fa28a65c423a0c08",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6.1-terra--r1",
+    "case": "D10",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.187232095981017,
+    "input_tokens": 466,
+    "output_tokens": 148,
+    "total_tokens": 614,
+    "response_hash": "da93aab3cbd5673f3f44343d2083390be0085cc0a98c6faefd633cf26b81cb7e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D10--gpt-6.1-terra--r2",
+    "case": "D10",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.2484845749568194,
+    "input_tokens": 466,
+    "output_tokens": 138,
+    "total_tokens": 604,
+    "response_hash": "e743c0dff0ad34458cf6e8bcdc5b2818fdbf01a381cc3e00dcaf106047520f8f",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6-luna--r1",
+    "case": "D11",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.028041936922818,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6-luna--r2",
+    "case": "D11",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.9113285068888217,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6.1-sol--r1",
+    "case": "D11",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.699502323986962,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6.1-sol--r2",
+    "case": "D11",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.00886818789877,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6.1-terra--r1",
+    "case": "D11",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.7807959099300206,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D11--gpt-6.1-terra--r2",
+    "case": "D11",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.943588946014643,
+    "input_tokens": 421,
+    "output_tokens": 160,
+    "total_tokens": 581,
+    "response_hash": "dffe4fce7210cbdd811b57772c711f08eeb7afc5280389e4a459b707803fbb49",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6-luna--r1",
+    "case": "D12",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.1202037669718266,
+    "input_tokens": 433,
+    "output_tokens": 114,
+    "total_tokens": 547,
+    "response_hash": "c9d9aa13d8bf67c0ecf99d4520f905d6649b44520a524b659e170fff1105cbde",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6-luna--r2",
+    "case": "D12",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.953538249945268,
+    "input_tokens": 433,
+    "output_tokens": 112,
+    "total_tokens": 545,
+    "response_hash": "908dd2116291aa292887dc2d0d560b3461e8913f58bab4e736285964eff1e293",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6.1-sol--r1",
+    "case": "D12",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.999611580045894,
+    "input_tokens": 433,
+    "output_tokens": 114,
+    "total_tokens": 547,
+    "response_hash": "c9d9aa13d8bf67c0ecf99d4520f905d6649b44520a524b659e170fff1105cbde",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6.1-sol--r2",
+    "case": "D12",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.9615068978164345,
+    "input_tokens": 433,
+    "output_tokens": 114,
+    "total_tokens": 547,
+    "response_hash": "c9d9aa13d8bf67c0ecf99d4520f905d6649b44520a524b659e170fff1105cbde",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6.1-terra--r1",
+    "case": "D12",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.025758052011952,
+    "input_tokens": 433,
+    "output_tokens": 105,
+    "total_tokens": 538,
+    "response_hash": "09a6992df60243d61a72af59f5401bb000d4f81136d1abdc3197a35683f2397a",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D12--gpt-6.1-terra--r2",
+    "case": "D12",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.102739555062726,
+    "input_tokens": 433,
+    "output_tokens": 105,
+    "total_tokens": 538,
+    "response_hash": "09a6992df60243d61a72af59f5401bb000d4f81136d1abdc3197a35683f2397a",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true
+    ],
+    "truth": [
+      true
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6-luna--r1",
+    "case": "D13",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.227474287850782,
+    "input_tokens": 518,
+    "output_tokens": 244,
+    "total_tokens": 762,
+    "response_hash": "6a5f96323004466843ba6bd56c20fe61c568e868b1f7c66f0ee2538471bf4a91",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6-luna--r2",
+    "case": "D13",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.154555020155385,
+    "input_tokens": 518,
+    "output_tokens": 244,
+    "total_tokens": 762,
+    "response_hash": "b4655332a184d35937633219fb30d95d7ce7b6a268b499b4a718fc929d033b72",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6.1-sol--r1",
+    "case": "D13",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.296338691143319,
+    "input_tokens": 518,
+    "output_tokens": 244,
+    "total_tokens": 762,
+    "response_hash": "6a5f96323004466843ba6bd56c20fe61c568e868b1f7c66f0ee2538471bf4a91",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6.1-sol--r2",
+    "case": "D13",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 6.508312314981595,
+    "input_tokens": 518,
+    "output_tokens": 244,
+    "total_tokens": 762,
+    "response_hash": "6a5f96323004466843ba6bd56c20fe61c568e868b1f7c66f0ee2538471bf4a91",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6.1-terra--r1",
+    "case": "D13",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.373949431814253,
+    "input_tokens": 518,
+    "output_tokens": 245,
+    "total_tokens": 763,
+    "response_hash": "34064815fd2b0c9dad83188a555de408eabde438383bc02d9baa1e2162be0398",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D13--gpt-6.1-terra--r2",
+    "case": "D13",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.431392761878669,
+    "input_tokens": 518,
+    "output_tokens": 245,
+    "total_tokens": 763,
+    "response_hash": "34064815fd2b0c9dad83188a555de408eabde438383bc02d9baa1e2162be0398",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6-luna--r1",
+    "case": "D14",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.6058108599390835,
+    "input_tokens": 390,
+    "output_tokens": 81,
+    "total_tokens": 471,
+    "response_hash": "e19f5c979beecdecad98a5b3c58909fb388d21edd01a8f44c5e7f48b0f3cc168",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6-luna--r2",
+    "case": "D14",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.293354248860851,
+    "input_tokens": 390,
+    "output_tokens": 83,
+    "total_tokens": 473,
+    "response_hash": "ceee46536638d0a6a08f7027483e611aecc79caa446dbc9c1c4d1e05a505745c",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6.1-sol--r1",
+    "case": "D14",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.0056825508363545,
+    "input_tokens": 390,
+    "output_tokens": 86,
+    "total_tokens": 476,
+    "response_hash": "70ba63c50f8d509bf1a7a7e9e194978e652719d5ec3b95f5d712a3f769075189",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6.1-sol--r2",
+    "case": "D14",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.0948377528693527,
+    "input_tokens": 390,
+    "output_tokens": 83,
+    "total_tokens": 473,
+    "response_hash": "2df29297988e3052d8342acbf2b3eda585aece18f33bd34b33a969e82496e5bf",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6.1-terra--r1",
+    "case": "D14",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.6631890819408,
+    "input_tokens": 390,
+    "output_tokens": 84,
+    "total_tokens": 474,
+    "response_hash": "be79bf484946f0382a12e59026f77701f3ee3ab23f1ed5a9612222c5cf8b6555",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "D14--gpt-6.1-terra--r2",
+    "case": "D14",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.4798215518239886,
+    "input_tokens": 390,
+    "output_tokens": 82,
+    "total_tokens": 472,
+    "response_hash": "ebf807305b9a3aaaabc02106dcefba86e8b9a15db8da297ffdf453930f7a5320",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      true,
+      true
+    ],
+    "truth": [
+      true,
+      true,
+      true
+    ],
+    "tp": 3,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6-luna--r1",
+    "case": "S01",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.2468087568413466,
+    "input_tokens": 469,
+    "output_tokens": 70,
+    "total_tokens": 539,
+    "response_hash": "6efb7705e2c5b94f1a63234d68fb0eeeefdb689bd4a3848e4750ede04a4756e0",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6-luna--r2",
+    "case": "S01",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.3330325610004365,
+    "input_tokens": 469,
+    "output_tokens": 70,
+    "total_tokens": 539,
+    "response_hash": "6efb7705e2c5b94f1a63234d68fb0eeeefdb689bd4a3848e4750ede04a4756e0",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6.1-sol--r1",
+    "case": "S01",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 9.161689698928967,
+    "input_tokens": 469,
+    "output_tokens": 237,
+    "total_tokens": 706,
+    "response_hash": "e969236caeda876133c28da76c3fbb53097a52a57f027f108599a27c8b03e503",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6.1-sol--r2",
+    "case": "S01",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.2069669938646257,
+    "input_tokens": 469,
+    "output_tokens": 72,
+    "total_tokens": 541,
+    "response_hash": "c0cf32bba4ccb22cfa0a2dc80ce69712622ff4049ba42e7e9e46e270d59ac376",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6.1-terra--r1",
+    "case": "S01",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.7925286288373172,
+    "input_tokens": 469,
+    "output_tokens": 91,
+    "total_tokens": 560,
+    "response_hash": "72ef911f1d82031cbe753931c9412410d5d5d590a32a34742bd18e435159661b",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S01--gpt-6.1-terra--r2",
+    "case": "S01",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.42769080796279,
+    "input_tokens": 469,
+    "output_tokens": 87,
+    "total_tokens": 556,
+    "response_hash": "0ce17991aa3a8c53d3a02a8d0faf9838cea714cac5fa4b18a85a1ce822ff3dd0",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S02--gpt-6-luna--r1",
+    "case": "S02",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.222737515810877,
+    "input_tokens": 514,
+    "output_tokens": 196,
+    "total_tokens": 710,
+    "response_hash": "23408ca202e34438401ca73d24717f122150869a0a6c823ed12914460bdc3e17",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S02--gpt-6-luna--r2",
+    "case": "S02",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.182311719050631,
+    "input_tokens": 514,
+    "output_tokens": 207,
+    "total_tokens": 721,
+    "response_hash": "0517f71baed6fb7be7a7ec91ab49ef9a6beb1cebc39acc041f9af26379f37505",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      true
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 1,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": [
+      "n2"
+    ]
+  },
+  {
+    "id": "S02--gpt-6.1-sol--r1",
+    "case": "S02",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.971203935798258,
+    "input_tokens": 514,
+    "output_tokens": 233,
+    "total_tokens": 747,
+    "response_hash": "2bf8ba5c2f17a2a44ffcf8f78f11b7428d54aa79e37023f1e8821b6c00d3fde1",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S02--gpt-6.1-sol--r2",
+    "case": "S02",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 6.863982047885656,
+    "input_tokens": 514,
+    "output_tokens": 228,
+    "total_tokens": 742,
+    "response_hash": "1620754247f27c96bf75007a086574a3646c0ff46eb0d577c1e3cd4fbd4a1f94",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S02--gpt-6.1-terra--r1",
+    "case": "S02",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.263022609986365,
+    "input_tokens": 514,
+    "output_tokens": 181,
+    "total_tokens": 695,
+    "response_hash": "a0e0dfcaba51f7798433b1c1bc7d9ad43637e888d7d28fda78fb1c055ea0c428",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [
+      "--when-idle"
+    ],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S02--gpt-6.1-terra--r2",
+    "case": "S02",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.359453878132626,
+    "input_tokens": 514,
+    "output_tokens": 248,
+    "total_tokens": 762,
+    "response_hash": "7e9fa717aaf9abf029b8290d6e96f19d3fa25974e1150d169a41fb5a012d4251",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [
+      "--when-idle"
+    ],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S03--gpt-6-luna--r1",
+    "case": "S03",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.4468061949592084,
+    "input_tokens": 642,
+    "output_tokens": 86,
+    "total_tokens": 728,
+    "response_hash": "2869d9d85fc15ea2c0bca07e90f6028a23d314ca4fe90fb9415b8f997efd8b19",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S03--gpt-6-luna--r2",
+    "case": "S03",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 7.271036608843133,
+    "input_tokens": 642,
+    "output_tokens": 347,
+    "total_tokens": 989,
+    "response_hash": "2ca15a564a4d2e8d98c746cf90e14301e57dcf03a22e95898b19a37edb4767d3",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S03--gpt-6.1-sol--r1",
+    "case": "S03",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 10.751108994008973,
+    "input_tokens": 642,
+    "output_tokens": 251,
+    "total_tokens": 893,
+    "response_hash": "5a4daefd5561bd0d278e8a028b3f195ca57d750da8b8e7ce408239dfe6226b97",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S03--gpt-6.1-sol--r2",
+    "case": "S03",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 12.188706621993333,
+    "input_tokens": 642,
+    "output_tokens": 288,
+    "total_tokens": 930,
+    "response_hash": "6953a047cb274c2daab84284330542459e31cfafeca77d38f5453e1167d0774f",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S03--gpt-6.1-terra--r1",
+    "case": "S03",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.2369903158396482,
+    "input_tokens": 642,
+    "output_tokens": 122,
+    "total_tokens": 764,
+    "response_hash": "9f1ad7da78f3c0b0539512b480b020602e44a0290f2c2d68968ac16cb831bcfa",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S03--gpt-6.1-terra--r2",
+    "case": "S03",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.303300702944398,
+    "input_tokens": 642,
+    "output_tokens": 201,
+    "total_tokens": 843,
+    "response_hash": "1a1d05c1d699613996dbc86efdb806784ff5006825010e9d81bdad69293c4064",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6-luna--r1",
+    "case": "S04",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.7250607828609645,
+    "input_tokens": 855,
+    "output_tokens": 257,
+    "total_tokens": 1112,
+    "response_hash": "95651df70aca6ef0ea38b0026505fd12ac9f8ad56f04030cc88fdc6fed4303fa",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6-luna--r2",
+    "case": "S04",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.614453592104837,
+    "input_tokens": 855,
+    "output_tokens": 243,
+    "total_tokens": 1098,
+    "response_hash": "9357f1688ca1aaa90ae12c7325d7658960d52e6a1a8fad3405f115e425d8755b",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6.1-sol--r1",
+    "case": "S04",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.954484553076327,
+    "input_tokens": 855,
+    "output_tokens": 237,
+    "total_tokens": 1092,
+    "response_hash": "95651df70aca6ef0ea38b0026505fd12ac9f8ad56f04030cc88fdc6fed4303fa",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6.1-sol--r2",
+    "case": "S04",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.001648860052228,
+    "input_tokens": 855,
+    "output_tokens": 193,
+    "total_tokens": 1048,
+    "response_hash": "95651df70aca6ef0ea38b0026505fd12ac9f8ad56f04030cc88fdc6fed4303fa",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6.1-terra--r1",
+    "case": "S04",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.99404306919314,
+    "input_tokens": 855,
+    "output_tokens": 155,
+    "total_tokens": 1010,
+    "response_hash": "95651df70aca6ef0ea38b0026505fd12ac9f8ad56f04030cc88fdc6fed4303fa",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S04--gpt-6.1-terra--r2",
+    "case": "S04",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.7331890668720007,
+    "input_tokens": 855,
+    "output_tokens": 155,
+    "total_tokens": 1010,
+    "response_hash": "95651df70aca6ef0ea38b0026505fd12ac9f8ad56f04030cc88fdc6fed4303fa",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false
+    ],
+    "truth": [
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S05--gpt-6-luna--r1",
+    "case": "S05",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.712639970006421,
+    "input_tokens": 662,
+    "output_tokens": 159,
+    "total_tokens": 821,
+    "response_hash": "a9955decce3f18f354de36e0b1a281e59a87f0e7e14306c9d44c6a84d088ad45",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S05--gpt-6-luna--r2",
+    "case": "S05",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.6969272571150213,
+    "input_tokens": 662,
+    "output_tokens": 100,
+    "total_tokens": 762,
+    "response_hash": "4931cbf1f784895a51f7367871ab92c0474e78dde3867e9eec3f34d769818e55",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S05--gpt-6.1-sol--r1",
+    "case": "S05",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 7.075473721837625,
+    "input_tokens": 662,
+    "output_tokens": 277,
+    "total_tokens": 939,
+    "response_hash": "156941d381b0addefb77fdc7a4f247163e1ffb62750c4498a775d21f27e80142",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S05--gpt-6.1-sol--r2",
+    "case": "S05",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 8.945666196988896,
+    "input_tokens": 662,
+    "output_tokens": 273,
+    "total_tokens": 935,
+    "response_hash": "59ca160792eb48f7b36b9b4a7423122537b882fa31952f65a9f8055e937ab9fe",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S05--gpt-6.1-terra--r1",
+    "case": "S05",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.105394402053207,
+    "input_tokens": 662,
+    "output_tokens": 107,
+    "total_tokens": 769,
+    "response_hash": "d3886320ec2bd89b2c4c0857a54fee763a51a7752c8cb0d60fbfccbd270cf67f",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S05--gpt-6.1-terra--r2",
+    "case": "S05",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.382944475859404,
+    "input_tokens": 662,
+    "output_tokens": 176,
+    "total_tokens": 838,
+    "response_hash": "526298ec59792b83cb336f5010ff9f0d5300f89b374435f15e20c14cfa1fe6c7",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S06--gpt-6-luna--r1",
+    "case": "S06",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.590120152803138,
+    "input_tokens": 433,
+    "output_tokens": 99,
+    "total_tokens": 532,
+    "response_hash": "44c448cee3d06dc41d707b58212b2b5f44023136973c557b24f5c9c9b6da655b",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S06--gpt-6-luna--r2",
+    "case": "S06",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.362746503902599,
+    "input_tokens": 433,
+    "output_tokens": 109,
+    "total_tokens": 542,
+    "response_hash": "58745dad230803b65b06470614c52b000b3b453c57b428bc8a1b7f9afd61c186",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S06--gpt-6.1-sol--r1",
+    "case": "S06",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.144215455045924,
+    "input_tokens": 433,
+    "output_tokens": 166,
+    "total_tokens": 599,
+    "response_hash": "5d69312b7973be5d636a02dcf4eb73f8763e74e277b13230a6b3f63ff65516ac",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S06--gpt-6.1-sol--r2",
+    "case": "S06",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 6.263816682156175,
+    "input_tokens": 433,
+    "output_tokens": 173,
+    "total_tokens": 606,
+    "response_hash": "b4a44723240e2246cde606cd704b11ef954f48a7d6480d9fc5a2d8ab504d93a2",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S06--gpt-6.1-terra--r1",
+    "case": "S06",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.265406952938065,
+    "input_tokens": 433,
+    "output_tokens": 119,
+    "total_tokens": 552,
+    "response_hash": "7a422a948acc12c17ab9731db2c96768ca3765b4453ad96b6eda10ddfc280b7d",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S06--gpt-6.1-terra--r2",
+    "case": "S06",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.520797443110496,
+    "input_tokens": 433,
+    "output_tokens": 119,
+    "total_tokens": 552,
+    "response_hash": "c3fc4468d07fd1a6c2c8236271e979192c754f390d848ecfec6660b6d356f9c2",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6-luna--r1",
+    "case": "S07",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.0544313229620457,
+    "input_tokens": 422,
+    "output_tokens": 104,
+    "total_tokens": 526,
+    "response_hash": "5b450cdfde688d98839119d5925f30658b6ebb789e7ca27387c064e07353c33d",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6-luna--r2",
+    "case": "S07",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.7186274020932615,
+    "input_tokens": 422,
+    "output_tokens": 105,
+    "total_tokens": 527,
+    "response_hash": "3a14579e64470daacb3c1a9b3f008d7c3ff877f545d546b55cc3a2dd94e8a824",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6.1-sol--r1",
+    "case": "S07",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.870024428004399,
+    "input_tokens": 422,
+    "output_tokens": 103,
+    "total_tokens": 525,
+    "response_hash": "843d7bc2e587cd35809feb4a1d551761a4a0e89feb803c71cc70bc1b8a5f697f",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6.1-sol--r2",
+    "case": "S07",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.410638978006318,
+    "input_tokens": 422,
+    "output_tokens": 103,
+    "total_tokens": 525,
+    "response_hash": "843d7bc2e587cd35809feb4a1d551761a4a0e89feb803c71cc70bc1b8a5f697f",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6.1-terra--r1",
+    "case": "S07",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.021337864920497,
+    "input_tokens": 422,
+    "output_tokens": 103,
+    "total_tokens": 525,
+    "response_hash": "96a08c4b211e43c6d77d560c74a5528900b04bc588c1e05a797db80ac58b1d1e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S07--gpt-6.1-terra--r2",
+    "case": "S07",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.519979629199952,
+    "input_tokens": 422,
+    "output_tokens": 103,
+    "total_tokens": 525,
+    "response_hash": "423526b50ce2b12454740ebcda0781c978da7c668462b27073634ca73ce5bbb4",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6-luna--r1",
+    "case": "S08",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.1677471599541605,
+    "input_tokens": 482,
+    "output_tokens": 134,
+    "total_tokens": 616,
+    "response_hash": "68c7f90075fa07d4ca8cbbbcbe120d0dfd6a15f9bc5bf0950e3fd10cd8fbcc46",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6-luna--r2",
+    "case": "S08",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.3126984660048038,
+    "input_tokens": 482,
+    "output_tokens": 135,
+    "total_tokens": 617,
+    "response_hash": "24da36c61c59651fd669791c188628a4f179eb2964b2b3023af05e1faddf247e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6.1-sol--r1",
+    "case": "S08",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 5.5148762399330735,
+    "input_tokens": 482,
+    "output_tokens": 182,
+    "total_tokens": 664,
+    "response_hash": "e6d33c5ae673a7946a6f74e7dc481a2d27d22e2eb13869a49652db0baa6a1fe7",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6.1-sol--r2",
+    "case": "S08",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 5.020592310000211,
+    "input_tokens": 482,
+    "output_tokens": 150,
+    "total_tokens": 632,
+    "response_hash": "24da36c61c59651fd669791c188628a4f179eb2964b2b3023af05e1faddf247e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6.1-terra--r1",
+    "case": "S08",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.9901740020141006,
+    "input_tokens": 482,
+    "output_tokens": 135,
+    "total_tokens": 617,
+    "response_hash": "24da36c61c59651fd669791c188628a4f179eb2964b2b3023af05e1faddf247e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S08--gpt-6.1-terra--r2",
+    "case": "S08",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 4.97858997900039,
+    "input_tokens": 482,
+    "output_tokens": 226,
+    "total_tokens": 708,
+    "response_hash": "24da36c61c59651fd669791c188628a4f179eb2964b2b3023af05e1faddf247e",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6-luna--r1",
+    "case": "S09",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.7680838990490884,
+    "input_tokens": 401,
+    "output_tokens": 97,
+    "total_tokens": 498,
+    "response_hash": "e7648742f5882551a244eb794a3f6801a4591d37bd691b9d1a91fa7581af9841",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6-luna--r2",
+    "case": "S09",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.6332120418082923,
+    "input_tokens": 401,
+    "output_tokens": 82,
+    "total_tokens": 483,
+    "response_hash": "a448c389f34fbc144552e47ae07500d53be01f47d98bce7aa1ad643589e62c16",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1",
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6.1-sol--r1",
+    "case": "S09",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 3.7968165630009025,
+    "input_tokens": 401,
+    "output_tokens": 97,
+    "total_tokens": 498,
+    "response_hash": "e7648742f5882551a244eb794a3f6801a4591d37bd691b9d1a91fa7581af9841",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6.1-sol--r2",
+    "case": "S09",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.5974079510197043,
+    "input_tokens": 401,
+    "output_tokens": 97,
+    "total_tokens": 498,
+    "response_hash": "e7648742f5882551a244eb794a3f6801a4591d37bd691b9d1a91fa7581af9841",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6.1-terra--r1",
+    "case": "S09",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 2.8270043849479407,
+    "input_tokens": 401,
+    "output_tokens": 99,
+    "total_tokens": 500,
+    "response_hash": "34ec7852936a8fc06c1d2bcf7b0067b7d33bdb0ab2ea1eafc7523e4cd3945009",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S09--gpt-6.1-terra--r2",
+    "case": "S09",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.6849101369734854,
+    "input_tokens": 401,
+    "output_tokens": 99,
+    "total_tokens": 500,
+    "response_hash": "34ec7852936a8fc06c1d2bcf7b0067b7d33bdb0ab2ea1eafc7523e4cd3945009",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      false,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S10--gpt-6-luna--r1",
+    "case": "S10",
+    "model": "gpt-6-luna",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.016907763201743,
+    "input_tokens": 485,
+    "output_tokens": 86,
+    "total_tokens": 571,
+    "response_hash": "ed2b74cc77a27a5a4827ae0dbf21284151a00eb12abfbe3ee0a95353828964c4",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S10--gpt-6-luna--r2",
+    "case": "S10",
+    "model": "gpt-6-luna",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 2.704716023989022,
+    "input_tokens": 485,
+    "output_tokens": 98,
+    "total_tokens": 583,
+    "response_hash": "03c95320c5dc781468509f32353f704fea993eab698ce9b978bbcfe98b5e2707",
+    "schema": true,
+    "correct": true,
+    "missing_sentinels": [
+      "pi-web-deploy"
+    ],
+    "missing_lexemes": [],
+    "decisions": [
+      true,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "groups": [
+      [
+        "n2"
+      ]
+    ],
+    "ejected": [
+      "n1"
+    ]
+  },
+  {
+    "id": "S10--gpt-6.1-sol--r1",
+    "case": "S10",
+    "model": "gpt-6.1-sol",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 6.572296750033274,
+    "input_tokens": 485,
+    "output_tokens": 158,
+    "total_tokens": 643,
+    "response_hash": "ce8663d07a813de739acddc402879f6d3b2ad39622620537a6f6ee8806de8adc",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [
+      "pi-web-deploy"
+    ],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S10--gpt-6.1-sol--r2",
+    "case": "S10",
+    "model": "gpt-6.1-sol",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 7.986657338915393,
+    "input_tokens": 485,
+    "output_tokens": 193,
+    "total_tokens": 678,
+    "response_hash": "9203f2ab5e7a7906dd4c9345dcdc7372d1444cb36b790136e01fa07d4bbd0910",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S10--gpt-6.1-terra--r1",
+    "case": "S10",
+    "model": "gpt-6.1-terra",
+    "repeat": 1,
+    "ok": true,
+    "latency_s": 4.188466842053458,
+    "input_tokens": 485,
+    "output_tokens": 169,
+    "total_tokens": 654,
+    "response_hash": "6c056ceda4ef801e6413bc18a1f8f5e2811a9423045cb1fc9da39e85bc730542",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  },
+  {
+    "id": "S10--gpt-6.1-terra--r2",
+    "case": "S10",
+    "model": "gpt-6.1-terra",
+    "repeat": 2,
+    "ok": true,
+    "latency_s": 3.4309174800291657,
+    "input_tokens": 485,
+    "output_tokens": 46,
+    "total_tokens": 531,
+    "response_hash": "98702d0549889b0b3f70662f754cb1ff5c697799ec30b013106245dbd391e236",
+    "schema": true,
+    "correct": false,
+    "missing_sentinels": [
+      "pi-web-deploy"
+    ],
+    "missing_lexemes": [],
+    "decisions": [
+      false,
+      false
+    ],
+    "truth": [
+      true,
+      false
+    ],
+    "tp": 0,
+    "fp": 0,
+    "fn": 1,
+    "groups": [
+      [
+        "n1"
+      ],
+      [
+        "n2"
+      ]
+    ],
+    "ejected": []
+  }
+]

@@ -1,0 +1,81 @@
+{
+ "seed_sha256": "f9e6f681a2b8e49812935927e1186e3d00086e1e6544f8de68ed1864d1daf4d3",
+ "seed": "f9e6f681a2b8e498",
+ "plants": {
+  "P01": {
+   "source_blind_id": "S03-r1-A",
+   "mutation": "eject_back_active",
+   "field": "history_handling"
+  },
+  "P02": {
+   "source_blind_id": "D14-r2-A",
+   "mutation": "repeat_item",
+   "field": "concise"
+  },
+  "P03": {
+   "source_blind_id": "D13-r2-A",
+   "mutation": "control",
+   "field": null
+  },
+  "P04": {
+   "source_blind_id": "D13-r2-C",
+   "mutation": "invent_sentence",
+   "field": "no_invention"
+  },
+  "P05": {
+   "source_blind_id": "S06-r1-C",
+   "mutation": "drop_fact",
+   "field": "fact_retention"
+  },
+  "P06": {
+   "source_blind_id": "D01-r1-A",
+   "mutation": "control",
+   "field": null
+  },
+  "P07": {
+   "source_blind_id": "S10-r1-C",
+   "mutation": "eject_back_active",
+   "field": "history_handling"
+  },
+  "P08": {
+   "source_blind_id": "D08-r2-A",
+   "mutation": "merge_topics",
+   "field": "topic_separation"
+  },
+  "P09": {
+   "source_blind_id": "D05-r1-A",
+   "mutation": "control",
+   "field": null
+  },
+  "P10": {
+   "source_blind_id": "S07-r1-B",
+   "mutation": "drop_fact",
+   "field": "fact_retention"
+  },
+  "P11": {
+   "source_blind_id": "D11-r1-C",
+   "mutation": "invent_sentence",
+   "field": "no_invention"
+  },
+  "P12": {
+   "source_blind_id": "D10-r1-C",
+   "mutation": "repeat_item",
+   "field": "concise"
+  },
+  "P13": {
+   "source_blind_id": "D04-r2-B",
+   "mutation": "control",
+   "field": null
+  },
+  "P14": {
+   "source_blind_id": "S01-r2-B",
+   "mutation": "merge_topics",
+   "field": "topic_separation"
+  },
+  "P15": {
+   "source_blind_id": "D08-r1-B",
+   "mutation": "control",
+   "field": null
+  }
+ }
+}

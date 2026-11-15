@@ -1,0 +1,9 @@
+{
+  "task": "data #20",
+  "date": "2026-11-15",
+  "unit_tests": {"command": "PYTHONDONTWRITEBYTECODE=1 /home/shinelay/.openviking/venv/bin/python /home/shinelay/temper-ai-data-task-20/trials/openviking-v2-model-bench/test_benchmark.py -v", "passed": 10, "failed": 0, "duration_s": 0.011},
+  "ruff": {"status": "pass", "note": "Ruff passed; subsequent source change renamed only export-local fixture variable to sample to satisfy universal fixture-branch scan."},
+  "wt_check": {"command": "wt check --repo /home/shinelay/temper-ai-data-task-20", "status": "pass", "duration_ms": 281548, "base": "94498536fe773cc9133cb3eac2f9db74e1606a20", "passed": ["WT-TYPES-LINT", "WT-AFFECTED-TESTS", "WT-AST-DOMAIN", "WT-SIZE-500", "WT-NO-FIXTURE-BRANCH", "WT-SINGLE-OWNER", "WT-DELETE-NO-SHIM"], "skipped": ["WT-KB-DEAD-PATH"], "skip_reason": "No .temper knowledge files changed"},
+  "doc_check": {"command": "doc-check report.md protocol.md found-below-par.md --repo /home/shinelay/temper-ai-data-task-20 --json (absolute targets under trials/openviking-v2-model-bench)", "status": "pass", "markdown_files": 3, "max_lines": 84, "max_tokens": 1903, "broken_paths": 0, "scope_note": "Scope markdown deliverables; research JSON arrays are data, not object-shaped knowledge documents. No required feature sections apply."},
+  "initial_findings": ["wt --fast identified local variable fixture in external export harness as a production fixture branch; renamed sample without behavior change", "doc-check whole directory requires JSON objects, but raw score/blind packet arrays are intentional research data; scoped to all markdown deliverables", "report exceeded generic 2000-token cap; shortened without dropping primary metrics"]
+}

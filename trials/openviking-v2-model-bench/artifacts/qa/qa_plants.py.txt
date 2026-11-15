@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Seeded-defect test of QA's blind grader (data #20 benchmark).
+
+  qa_plants.py make <frozen-grades.json>    writes plants.json + plants-key.json (prints counts only)
+  qa_plants.py show <plant_id>              one plant: notes, evidence, response (no key)
+  qa_plants.py add <plant-grades.json> <stage.json>   merge plant grades (staging shorthand as qa_packet)
+  qa_plants.py compare <plant-grades.json>  caught per field + controls flagged (opens the key)
+
+Seed = first 16 hex of the frozen grades' sha256. 15 responses graded all-pass:
+10 get one scripted mutation (2 per field), 5 stay unchanged. No model calls.
+"""
+import hashlib
+import json
+import os
+import random
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import qa_packet as qp  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PLANTS = os.path.join(HERE, "plants.json")
+KEY = os.path.join(HERE, "plants-key.json")
+
+MUTATIONS = [  # (name, target field)
+    ("merge_topics", "topic_separation"),
+    ("drop_fact", "fact_retention"),
+    ("invent_sentence", "no_invention"),
+    ("eject_back_active", "history_handling"),
+    ("repeat_item", "concise"),
+]
+SEG_SPLIT = re.compile(r"(?<=[.;])\s+|\n+")
+
+
+def parse(resp):
+    try:
+        out = json.loads(resp)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(out, dict) or not isinstance(out.get("items"), list):
+        return None
+    return out
+
+
+def segments(text):
+    return [s for s in SEG_SPLIT.split(text) if s.strip()]
+
+
+def factual(seg):
+    return bool(re.search(r"[0-9#/`]", seg))
+
+
+def eligible(name, bundle, out):
+    items = out["items"]
+    if name == "merge_topics":
+        return len(items) >= 2
+    if name == "drop_fact":
+        return any(len(segments(i["text"])) >= 2 and any(factual(s) for s in segments(i["text"])) for i in items)
+    if name == "invent_sentence":
+        return len(items) >= 1
+    if name == "eject_back_active":
+        return bundle["task"] == "sweep" and bool(out.get("ejected"))
+    if name == "repeat_item":
+        return len(items) >= 1
+    return False
+
+
+def mutate(name, bundle, out, rng):
+    out = json.loads(json.dumps(out))
+    items = out["items"]
+    if name == "merge_topics":
+        a, b = items[0], items[1]
+        merged = {"source_ids": a["source_ids"] + b["source_ids"], "text": a["text"].rstrip() + " " + b["text"].lstrip()}
+        out["items"] = [merged] + items[2:]
+    elif name == "drop_fact":
+        cands = [i for i in items if len(segments(i["text"])) >= 2 and any(factual(s) for s in segments(i["text"]))]
+        it = rng.choice(cands)
+        segs = segments(it["text"])
+        drop = rng.choice([k for k, s in enumerate(segs) if factual(s)])
+        it["text"] = " ".join(s for k, s in enumerate(segs) if k != drop)
+    elif name == "invent_sentence":
+        it = rng.choice(items)
+        n = rng.randint(1000, 9999)
+        h = "".join(rng.choice("0123456789abcdef") for _ in range(8))
+        it["text"] = it["text"].rstrip() + f" Backend #{n} later confirmed this in commit {h} with a 48-hour rollback window."
+    elif name == "eject_back_active":
+        notes = {n["id"]: n["text"] for n in bundle["notes"]}
+        ej = out["ejected"].pop(rng.randrange(len(out["ejected"])))
+        items.append({"source_ids": [ej["source_id"]], "text": notes[ej["source_id"]].lstrip("- ").strip()})
+    elif name == "repeat_item":
+        it = rng.choice(items)
+        items.insert(items.index(it) + 1, {"source_ids": list(it["source_ids"]), "text": it["text"]})
+    return out
+
+
+def cmd_make(grades_path):
+    if os.path.exists(PLANTS) or os.path.exists(KEY):
+        sys.exit("plants already made; refusing to overwrite")
+    sha = hashlib.sha256(open(grades_path, "rb").read()).hexdigest()
+    rng = random.Random(int(sha[:16], 16))
+    grades = {r["blind_id"]: r for r in json.load(open(grades_path))}
+    bundles = qp.load_bundles()
+    pool = []
+    for b in bundles:
+        for c in b["choices"]:
+            r = grades[c["blind_id"]]
+            out = parse(c["response"])
+            if out and all(r[f] == 1 for f in qp.BIN_FIELDS) and not r["corruption"]:
+                pool.append((b, c["blind_id"], out))
+    rng.shuffle(pool)
+    used, plants, key = set(), [], {}
+    for name, field in MUTATIONS:
+        for _ in range(2):
+            pick = next(p for p in pool if p[1] not in used and eligible(name, p[0], p[2]))
+            used.add(pick[1])
+            plants.append((pick, mutate(name, pick[0], pick[2], rng), name, field))
+    for p in [p for p in pool if p[1] not in used][:5]:
+        used.add(p[1])
+        plants.append((p, p[2], "control", None))
+    rng.shuffle(plants)
+    out_list = []
+    for k, (pick, resp, name, field) in enumerate(plants, 1):
+        pid = f"P{k:02d}"
+        b = pick[0]
+        out_list.append({"plant_id": pid, "task": b["task"], "notes": b["notes"],
+                         "canonical_evidence": b.get("canonical_evidence") or [],
+                         "response": json.dumps(resp, ensure_ascii=False)})
+        key[pid] = {"source_blind_id": pick[1], "mutation": name, "field": field}
+    json.dump(out_list, open(PLANTS, "w"), indent=1, ensure_ascii=False)
+    json.dump({"seed_sha256": sha, "seed": sha[:16], "plants": key}, open(KEY, "w"), indent=1)
+    print(f"seed={sha[:16]} pool_all_pass={len(pool)} plants={len(out_list)} mutated=10 controls=5")
+
+
+def cmd_show(pid):
+    for p in json.load(open(PLANTS)):
+        if p["plant_id"] == pid:
+            print(f"=== {pid} task={p['task']}\n--- NOTES")
+            for n in p["notes"]:
+                print(f"[{n['id']}] {n['text']}\n")
+            print(f"--- CANONICAL EVIDENCE ({len(p['canonical_evidence'])})")
+            for e in p["canonical_evidence"]:
+                print(e if isinstance(e, str) else json.dumps(e, ensure_ascii=False), "\n")
+            print(f"--- RESPONSE\n{p['response']}")
+            return
+    sys.exit(f"no plant {pid}")
+
+
+def cmd_add(path, stage):
+    ids = {p["plant_id"] for p in json.load(open(PLANTS))}
+    grades = qp.load_grades(path)
+    new = {k: qp.expand(v) for k, v in json.load(open(stage)).items()}
+    errs = []
+    for pid, r in new.items():
+        if pid not in ids:
+            errs.append(f"{pid}: not a plant")
+        errs += qp.check_record(pid, r)
+    if errs:
+        sys.exit("\n".join(errs))
+    for pid, r in new.items():
+        grades.setdefault(pid, {"blind_id": pid, **{k: r[k] for k in qp.ALL_FIELDS}})
+    json.dump([grades[i] for i in sorted(grades)], open(path, "w"), indent=1, ensure_ascii=False)
+    print(f"total={len(grades)}/{len(ids)}")
+
+
+def cmd_compare(path):
+    grades = {r["blind_id"]: r for r in json.load(open(path))}
+    key = json.load(open(KEY))["plants"]
+    if set(grades) != set(key):
+        sys.exit("plant grades do not cover exactly the plants")
+    def flagged(r):
+        return any(r[f] == 0 for f in qp.BIN_FIELDS) or r["corruption"]
+    caught_field = caught_any = 0
+    per_field = {f: [0, 0] for _, f in MUTATIONS}
+    for pid, k in sorted(key.items()):
+        r = grades[pid]
+        if k["mutation"] == "control":
+            continue
+        hit = r[k["field"]] == 0
+        per_field[k["field"]][1] += 1
+        per_field[k["field"]][0] += hit
+        caught_field += hit
+        caught_any += flagged(r)
+        print(f"{pid} {k['mutation']:<18} target={k['field']:<17} target_caught={'yes' if hit else 'NO'} any_flag={'yes' if flagged(r) else 'no'}")
+    ctrl = [pid for pid, k in key.items() if k["mutation"] == "control"]
+    ctrl_flag = [pid for pid in ctrl if flagged(grades[pid])]
+    for f, (c, n) in per_field.items():
+        print(f"field {f}: caught {c}/{n}")
+    print(f"mutations caught on target field: {caught_field}/10; flagged on any field: {caught_any}/10")
+    print(f"controls flagged: {len(ctrl_flag)}/5 {sorted(ctrl_flag)}")
+
+
+def main(argv):
+    if len(argv) < 2:
+        sys.exit(__doc__)
+    cmd = argv[1]
+    if cmd == "make":
+        cmd_make(argv[2])
+    elif cmd == "show":
+        cmd_show(argv[2])
+    elif cmd == "add":
+        cmd_add(argv[2], argv[3])
+    elif cmd == "compare":
+        cmd_compare(argv[2])
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv)

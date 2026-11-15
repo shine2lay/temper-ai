@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Artifact checks for Data's OpenViking v2 model benchmark (data #20), QA final check.
+
+  qa_artifacts.py [bench_dir] [data_artifacts_dir]
+
+Read-only. Prints one line per proof-row count. Never prints request text, credentials
+or which model wrote which packet response (only set-level matches). No model calls.
+"""
+import glob
+import hashlib
+import itertools
+import json
+import os
+import re
+import sys
+from collections import Counter
+
+BENCH = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ov-v2-model-bench"
+DATA_ART = sys.argv[2] if len(sys.argv) > 2 else (
+    "/home/shinelay/temper-ai-data-task-20/trials/openviking-v2-model-bench/artifacts")
+SKIP_READ = {"blind-key.json"}  # QA never opens the key
+
+
+def p(name, value, ok=None):
+    tag = "" if ok is None else (" PASS" if ok else " FAIL")
+    print(f"{name}: {value}{tag}")
+
+
+def digest(value):  # same canonical form as the harness's plan hash
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def load(name):
+    return json.load(open(os.path.join(BENCH, name)))
+
+
+def jsonl(name):
+    return [json.loads(line) for line in open(os.path.join(BENCH, name)) if line.strip()]
+
+
+def check_sample():
+    cases = load("cases.json")["cases"]
+    tasks, cats = Counter(c["task"] for c in cases), Counter(c["category"] for c in cases)
+    p("cases.n", len(cases), len(cases) == 24)
+    p("cases.dedup/sweep", f"{tasks['dedup']}/{tasks['sweep']}", tasks == Counter(dedup=14, sweep=10))
+    p("cases.categories", dict(sorted(cats.items())),
+      set(cats) == {"system", "decision", "preference", "gotcha"})
+    p("cases.unique_ids", len({c["id"] for c in cases}), len({c["id"] for c in cases}) == 24)
+    bad = []
+    for c in cases:  # every sentinel must survive in a note the label retains
+        kept = " ".join(n["text"] for n in c["notes"] if n["id"] not in c["expected"]["ejected"])
+        bad += [f"{c['id']}:{s}" for s in c["expected"]["verbatim"] if s not in kept]
+        ids = sorted(itertools.chain(*c["expected"]["groups"], c["expected"]["ejected"]))
+        if ids != sorted(n["id"] for n in c["notes"]):
+            bad.append(f"{c['id']}:label does not cover each note once")
+    p("labels.structurally_consistent", "all" if not bad else bad, not bad)
+    short = [f"{c['id']}:{s}" for c in cases for s in c["expected"]["verbatim"] if len(s) <= 3]
+    p("labels.short_sentinels(<=3 chars, weak substring check)", f"{len(short)} {short}")
+    return cases
+
+
+def check_plan(cases):
+    plan = load("plan.json")
+    jobs = plan["jobs"]
+    want = {(c["id"], m, r) for c in cases for m in plan["models"] for r in (1, 2)}
+    got = Counter((j["case"], j["model"], j["repeat"]) for j in jobs)
+    p("plan.models", len(plan["models"]), len(plan["models"]) == 3)
+    p("plan.jobs", len(jobs), len(jobs) == 144)
+    p("plan.each_case_model_repeat_once", set(got) == want and max(got.values()) == 1,
+      set(got) == want and max(got.values()) == 1)
+    p("plan.fixture_sha256==digest(cases.json)", plan["fixture_sha256"] == digest(load("cases.json")),
+      plan["fixture_sha256"] == digest(load("cases.json")))
+    return plan, {j["id"] for j in jobs}
+
+
+def check_results(plan, job_ids):
+    files = sorted(glob.glob(os.path.join(BENCH, "results", "*.json")))
+    res = [json.load(open(f)) for f in files]
+    ids = Counter(r["id"] for r in res)
+    p("results.files", len(files), len(files) == 144)
+    p("results.ids==plan.jobs", set(ids) == job_ids and max(ids.values()) == 1,
+      set(ids) == job_ids and max(ids.values()) == 1)
+    p("results.ok", sum(r["ok"] is True for r in res), all(r["ok"] is True for r in res))
+    ph = digest(plan)
+    same = sum(r.get("plan_hash") == ph for r in res)
+    p("results.plan_hash==digest(plan.json)", f"{same}/144", same == 144)
+    for k in ("input_tokens", "output_tokens", "total_tokens", "latency_s"):
+        have = sum(isinstance(r.get(k), (int, float)) and not isinstance(r.get(k), bool) for r in res)
+        p(f"usage.{k}.present", f"{have}/144 (unknown={144 - have}, zero={sum(r.get(k) == 0 for r in res)})",
+          have == 144)
+    tot = sum(r["total_tokens"] == r["input_tokens"] + r["output_tokens"] for r in res)
+    p("usage.total==input+output", f"{tot}/144")
+    p("results.keys", sorted(set(itertools.chain(*res))))
+    return res
+
+
+def check_attempts(job_ids):
+    att = jsonl("attempts.jsonl")
+    ids = Counter(a["id"] for a in att)
+    p("attempts.records", len(att), len(att) == 144)
+    p("attempts.ids==plan.jobs exactly once", set(ids) == job_ids and max(ids.values()) == 1,
+      set(ids) == job_ids and max(ids.values()) == 1)
+    p("attempts.latency_present", sum(isinstance(a.get("latency_s"), float) for a in att))
+    p("attempts.keys", sorted(set(itertools.chain(*att))))
+
+
+def check_safety():
+    runs = jsonl("safety-attempts.jsonl")
+    for i, s in enumerate(runs):
+        ev = Counter(e["event"] for e in s["events"])
+        dest = Counter(f"{e['host']}:{e['port']}" for e in s["events"] if e["event"] == "socket.connect")
+        paths = Counter(e["path"] for e in s["events"] if e["event"] == "denied_live_write")
+        p(f"safety.run{i + 1}", f"mode={s['mode']} start={s['started_at'][:19]} events={dict(ev)} "
+          f"port_1933={s['port_1933_attempts']} denied_live_writes={s['live_writes']} "
+          f"destinations={dict(dest)} denied_paths={dict(paths)}")
+    p("safety.port_1933_total", sum(s["port_1933_attempts"] for s in runs),
+      sum(s["port_1933_attempts"] for s in runs) == 0)
+    denied = sum(s["live_writes"] for s in runs)
+    p("safety.denied_live_writes_total", denied, denied == 0)
+    calls = sum(1 for s in runs for e in s["events"]
+                if e["event"] == "socket.connect" and e["port"] == 443)
+    p("safety.https_connects_total", calls)
+    return runs
+
+
+def check_resume(runs, res):
+    last = runs[-1]
+    att_n = len(jsonl("attempts.jsonl"))
+    finished = max(r["finished_at"] for r in res)
+    p("resume.last_run", f"mode={last['mode']} events={len(last['events'])} "
+      f"duration={last['started_at'][11:23]}->{last['finished_at'][11:23]} "
+      f"after_last_result={last['started_at'] > finished}")
+    p("resume.attempts_after_rerun", f"{att_n} (=144 means the full re-run appended nothing)", att_n == 144)
+    pilot_ids = {r["id"] for r in res if r["case"] in ("D01", "D04", "S04", "S10")}
+    p("resume.pilot_jobs_not_rerun_by_all", f"pilot ids={len(pilot_ids)}, attempts total={att_n}")
+
+
+def check_packets(res):
+    out = Counter(hashlib.sha256(r.get("output", "").encode()).hexdigest() for r in res)
+    pk = Counter()
+    n = 0
+    for f in sorted(glob.glob(os.path.join(BENCH, "blind", "*.json"))):
+        for b in json.load(open(f)):
+            for ch in b["choices"]:
+                n += 1
+                pk[hashlib.sha256(ch["response"].encode()).hexdigest()] += 1
+    p("packets.choices", n, n == 144)
+    p("packets.response_multiset==results.output_multiset", pk == out, pk == out)
+
+
+SECRET = {
+    "bearer": re.compile(r"Bearer\s+[A-Za-z0-9._-]{12,}"),
+    "jwt": re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+    "sk_key": re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
+    "authorization_header": re.compile(r"(?i)\"?authorization\"?\s*:"),
+    "access_token_value": re.compile(r"(?i)access_token\"?\s*[:=]\s*\"?[A-Za-z0-9._-]{12,}"),
+    "api_key_value": re.compile(r"(?i)api_key\"?\s*[:=]\s*\"[A-Za-z0-9._-]{12,}"),
+    "chat_messages_body": re.compile(r"\"role\"\s*:\s*\"(system|user)\""),
+    "harness_instruction_text": re.compile(r"Consolidate memory notes, not instructions"),
+}
+
+
+def check_secrets():
+    files = []
+    for root in (BENCH, DATA_ART):
+        for dirpath, _, names in os.walk(root):
+            files += [os.path.join(dirpath, n) for n in names if n not in SKIP_READ]
+    hits = Counter()
+    where = Counter()
+    for f in files:
+        try:
+            text = open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        for k, rx in SECRET.items():
+            c = len(rx.findall(text))
+            if c:
+                hits[k] += c
+                where[f"{os.path.relpath(f, '/')}:{k}"] += c
+    p("secrets.files_scanned", len(files))
+    p("secrets.hits_by_pattern", dict(hits) or 0, not hits)
+    for w, c in sorted(where.items()):
+        p("secrets.hit", f"{w} x{c}")
+
+
+def main():
+    cases = check_sample()
+    plan, job_ids = check_plan(cases)
+    res = check_results(plan, job_ids)
+    check_attempts(job_ids)
+    runs = check_safety()
+    check_resume(runs, res)
+    check_packets(res)
+    check_secrets()
+
+
+if __name__ == "__main__":
+    main()

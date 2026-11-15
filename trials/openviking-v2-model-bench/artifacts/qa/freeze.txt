@@ -1,0 +1,8 @@
+blind-grades.json frozen
+sha256=f9e6f681a2b8e49812935927e1186e3d00086e1e6544f8de68ed1864d1daf4d3
+path=/tmp/ov-v2-model-bench/blind-grades.json (chmod 444)
+frozen_at=2026-11-15T19:04:40Z
+rubric_sha256=107dfbd69076f9009872b7d3f2897ecdbe3590639972b593c127295c83115276
+files read before freeze: protocol.md, rubric.md (own), /tmp/ov-v2-model-bench/blind/{dedup-a,dedup-b,sweep}.json only
+not opened before freeze: blind-key.json (never), cases.json, attempts.jsonl, safety-attempts.jsonl, plan.json, metrics.json, scores.json, results/, plants.json (not yet created)
+validate: PASS records=144 unique=144 exact_match=yes types=ok

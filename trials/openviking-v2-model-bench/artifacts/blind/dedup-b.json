@@ -1,0 +1,472 @@
+[
+  {
+    "case": "D08",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Contract\n- OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process.\n- In-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL.\n- Cadence is 30 seconds, matching other observer fields.\n- Architecture #529 owns the spec amendment and Backend request.\n- checked_at is request time, not proof of liveness or the last successful response."
+      },
+      {
+        "id": "n2",
+        "text": "## Values\n- auxiliary.resource_sync.pending_syncs_count is null when rollout-state.json is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed.\n- pending_syncs_count equals pending_wt_land_syncs.length; status is ok for zero, pending for a positive count, and missing for null. The TypeScript count type is number | null; synced_at and repos_synced stay null because no writer records them.\n- pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75).\n- An empty list means no outstanding failures, not never-synced: pending_syncs_count is 0 with status ok. Null means the source could not be inspected.\n- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\n- Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D08-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"## Contract\\nOpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process. It is in-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL. Cadence is 30 seconds, matching other observer fields. Architecture #529 owns the spec amendment and Backend request. checked_at is request time, not proof of liveness or the last successful response.\"},{\"source_ids\":[\"n2\"],\"text\":\"## Values\\nauxiliary.resource_sync.pending_syncs_count is number | null and equals pending_wt_land_syncs.length when the source can be inspected. It is null, never zero, when rollout-state.json is absent or unreadable; zero means the source was inspected and no pending syncs existed. status is ok for zero, pending for a positive count, and missing for null. An empty list means no outstanding failures, not never-synced. synced_at and repos_synced stay null because no writer records them. pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75). Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys. Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D08-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process. It is in-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL. Cadence is 30 seconds, matching other observer fields. Architecture #529 owns the spec amendment and Backend request. checked_at is request time, not proof of liveness or the last successful response.\"},{\"source_ids\":[\"n2\"],\"text\":\"auxiliary.resource_sync.pending_syncs_count equals pending_wt_land_syncs.length when rollout-state.json can be inspected; it is null when the file is absent or unreadable, never zero in those cases. The TypeScript count type is number | null; status is ok for zero, pending for a positive count, and missing for null. An empty list means no outstanding failures, not never-synced. synced_at and repos_synced stay null because no writer records them. pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75). Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys. Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D08-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process. It is in-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL. Cadence is 30 seconds, matching other observer fields. Architecture #529 owns the spec amendment and Backend request. checked_at is request time, not proof of liveness or the last successful response.\"},{\"source_ids\":[\"n2\"],\"text\":\"auxiliary.resource_sync.pending_syncs_count is null when rollout-state.json is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed. pending_syncs_count equals pending_wt_land_syncs.length; status is ok for zero, pending for a positive count, and missing for null. The TypeScript count type is number | null; synced_at and repos_synced stay null because no writer records them. pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75). An empty list means no outstanding failures, not never-synced: pending_syncs_count is 0 with status ok. Null means the source could not be inspected. Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys. Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D08",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Contract\n- OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process.\n- In-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL.\n- Cadence is 30 seconds, matching other observer fields.\n- Architecture #529 owns the spec amendment and Backend request.\n- checked_at is request time, not proof of liveness or the last successful response."
+      },
+      {
+        "id": "n2",
+        "text": "## Values\n- auxiliary.resource_sync.pending_syncs_count is null when rollout-state.json is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed.\n- pending_syncs_count equals pending_wt_land_syncs.length; status is ok for zero, pending for a positive count, and missing for null. The TypeScript count type is number | null; synced_at and repos_synced stay null because no writer records them.\n- pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75).\n- An empty list means no outstanding failures, not never-synced: pending_syncs_count is 0 with status ok. Null means the source could not be inspected.\n- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\n- Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D08-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"## OpenVikingObserverSummary contract\\n- `last_reachable_at` is `string | null`: the ISO timestamp of the last `/health` response for which `daemon-http.ts` `isHealthy` was true, observed by this `pi-web-ui` server process.\\n- It is in-memory only, without persistence; `null` means no successful `/health` since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL.\\n- Cadence is 30 seconds, matching other observer fields.\\n- Architecture #529 owns the spec amendment and Backend request.\\n- `checked_at` is request time, not proof of liveness or the last successful response.\"},{\"source_ids\":[\"n2\"],\"text\":\"## Resource sync values\\n- `auxiliary.resource_sync.pending_syncs_count` is `null` when `rollout-state.json` is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed.\\n- `pending_syncs_count` equals `pending_wt_land_syncs.length`; status is `ok` for zero, `pending` for a positive count, and `missing` for null. The TypeScript count type is `number | null`; `synced_at` and `repos_synced` stay null because no writer records them.\\n- `pending_wt_land_syncs` entries contain `{project, repoRoot, changedPaths, failedAt, error}`; a later successful sync of the same repo removes its entries (`lib/wt-openviking-sync.mjs:75`). An empty list means no outstanding failures, not never-synced: `pending_syncs_count` is 0 with status `ok`. Null means the source could not be inspected.\\n- Entries have no `updated_at` (`pi-openviking docs/telemetry-schema.md:148`); `failedAt` records failure time. Never derive `synced_at` from the file's `updated_at`: two writers change it for unrelated keys.\\n- Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: `pi-openviking` 9326c69, land 16-c61a38, with `product-autopilot` added to `ACTIVE_REPOS`. `agent-tools` a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D08-r2-B",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\"],\n      \"text\": \"OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process. It is in-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL. Cadence is 30 seconds, matching other observer fields. Architecture #529 owns the spec amendment and Backend request. checked_at is request time, not proof of liveness or the last successful response.\"\n    },\n    {\n      \"source_ids\": [\"n2\"],\n      \"text\": \"auxiliary.resource_sync.pending_syncs_count equals pending_wt_land_syncs.length when rollout-state.json can be inspected; it is null when the file is absent or unreadable, never zero in those cases. Its TypeScript type is number | null; status is ok for zero, pending for a positive count, and missing for null. An empty list means no outstanding failures, not never-synced. synced_at and repos_synced stay null because no writer records them. pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75). Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys. Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D08-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process. It is in-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL. Cadence is 30 seconds, matching other observer fields. Architecture #529 owns the spec amendment and Backend request. checked_at is request time, not proof of liveness or the last successful response.\"},{\"source_ids\":[\"n2\"],\"text\":\"auxiliary.resource_sync.pending_syncs_count is null when rollout-state.json is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed. It equals pending_wt_land_syncs.length; status is ok for zero, pending for a positive count, and missing for null. The TypeScript count type is number | null; synced_at and repos_synced stay null because no writer records them. pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75). An empty list means no outstanding failures, not never-synced: pending_syncs_count is 0 with status ok. Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys. Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D09",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019."
+      },
+      {
+        "id": "n2",
+        "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D09-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D09-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D09-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D09",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019."
+      },
+      {
+        "id": "n2",
+        "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D09-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D09-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D09-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D10",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not."
+      },
+      {
+        "id": "n2",
+        "text": "- When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Architecture ruling R-SNAPSHOT-STALE-1 supersedes the temporary 30-minute entries threshold: entries show the age badge iff snapshot age exceeds 15 minutes and there is no in-flight build started less than 5 minutes ago. A build aged 5 minutes or more no longer suppresses the age badge; other panels retain their cadence thresholds."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D10-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5) supersedes the temporary 30-minute entries threshold: entries stale_badge is \\\"> 15m\\\" iff snapshot age strictly exceeds 15 minutes and no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds aged 5 minutes or more do not. When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Other panels retain their cadence thresholds.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D10-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): Entries show the \\\"> 15m\\\" age badge iff snapshot age exceeds 15 minutes and there is no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds aged 5 minutes or more do not. When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. This supersedes the temporary 30-minute entries threshold; other panels retain their cadence thresholds.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D10-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5) supersedes the temporary 30-minute entries threshold: entries stale_badge is \\\"> 15m\\\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; a build aged 5 minutes or more no longer suppresses it, including hung builds past 5 minutes. Failed builds with none in flight do not suppress it. When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Other panels retain their cadence thresholds.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D10",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not."
+      },
+      {
+        "id": "n2",
+        "text": "- When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Architecture ruling R-SNAPSHOT-STALE-1 supersedes the temporary 30-minute entries threshold: entries show the age badge iff snapshot age exceeds 15 minutes and there is no in-flight build started less than 5 minutes ago. A build aged 5 minutes or more no longer suppresses the age badge; other panels retain their cadence thresholds."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D10-r2-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\", \"n2\"],\n      \"text\": \"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5) supersedes the temporary 30-minute entries threshold: entries stale_badge is \\\"> 15m\\\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds aged 5 minutes or more do not. When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Other panels retain their cadence thresholds.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D10-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries show the \\\"> 15m\\\" stale badge iff snapshot age exceeds 15 minutes and there is no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds aged 5 minutes or more do not. When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. This supersedes the temporary 30-minute entries threshold; other panels retain their cadence thresholds.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D10-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5) supersedes the temporary 30-minute entries threshold: entries stale_badge is \\\"> 15m\\\" iff snapshot age strictly exceeds 15 minutes and no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds aged 5 minutes or more do not. When both age and pending-sync causes hold, the age value wins. Other panels retain their cadence thresholds.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D11",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63)."
+      },
+      {
+        "id": "n2",
+        "text": "- Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D11-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D11-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D11-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D11",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63)."
+      },
+      {
+        "id": "n2",
+        "text": "- Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D11-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D11-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D11-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).\"},{\"source_ids\":[\"n2\"],\"text\":\"Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D12",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag."
+      },
+      {
+        "id": "n2",
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D12-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart, never --when-idle, because interrupted chats resume automatically. If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D12-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`, because interrupted chats resume automatically. If a `--when-idle` deployment is already waiting, inspect `pi-web-deploy status` and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D12-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`, because interrupted chats resume automatically. If a `--when-idle` deployment is already waiting, inspect `pi-web-deploy status` and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D12",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag."
+      },
+      {
+        "id": "n2",
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D12-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically. If a `--when-idle` deployment is already waiting, inspect `pi-web-deploy status` and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D12-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`, because interrupted chats resume automatically. If a `--when-idle` deployment is already waiting, inspect `pi-web-deploy status` and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D12-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle. For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart, never --when-idle, because interrupted chats resume automatically. If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D13",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json.\n- Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes.\n- If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information.\n- Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source.\n- Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs.\n- Measure duplicates avoided and cases where stripping would remove the only record of information."
+      },
+      {
+        "id": "n2",
+        "text": "- Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects.\n- Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D13-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently, and serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility; ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D13-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D13-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D13",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json.\n- Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes.\n- If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information.\n- Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source.\n- Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs.\n- Measure duplicates avoided and cases where stripping would remove the only record of information."
+      },
+      {
+        "id": "n2",
+        "text": "- Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects.\n- Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D13-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently, and serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D13-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently, and serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility; ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D13-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json. Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes. If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information. Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source. Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs. Measure duplicates avoided and cases where stripping would remove the only record of information.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects. Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D14",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically."
+      },
+      {
+        "id": "n2",
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically."
+      },
+      {
+        "id": "n3",
+        "text": "- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D14-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, deploy or restart immediately with `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`. Interrupted chats resume automatically. Rerun pending idle-wait deployments without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D14-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, run installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`, because interrupted chats resume automatically. Rerun pending idle-wait deployments without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D14-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, installs and restarts should run immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`, because interrupted chats resume automatically. Pending idle-wait deployments should be rerun without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D14",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically."
+      },
+      {
+        "id": "n2",
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically."
+      },
+      {
+        "id": "n3",
+        "text": "- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D14-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, install and restart immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`, because interrupted chats resume automatically. Rerun pending idle-wait deployments without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D14-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, install and restart immediately using plain `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`, because interrupted chats resume automatically. Rerun pending idle-wait deployments without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D14-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"For pi-web-ui, install and restart immediately with plain `pi-web-deploy` or `pi-web-deploy restart`; never use `--when-idle`, because interrupted chats resume automatically. Rerun pending idle-wait deployments without the idle-wait option.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  }
+]

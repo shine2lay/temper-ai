@@ -1,0 +1,306 @@
+{
+  "grades_sha256": "f9e6f681a2b8e49812935927e1186e3d00086e1e6544f8de68ed1864d1daf4d3",
+  "n_grades": 144,
+  "models": {
+    "gpt-6.1-terra": {
+      "n": 48,
+      "criterion_passes": {
+        "topic_separation": 48,
+        "fact_retention": 43,
+        "no_invention": 47,
+        "history_handling": 44,
+        "concise": 48
+      },
+      "corruption_calls": 3,
+      "ungradable_calls": 0,
+      "full_score_calls": 40,
+      "defects": [
+        {
+          "blind_id": "D02-r1-C",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "narrows n1's 'manually alter receipts' to 'manually alter health receipts' (general receipts prohibition lost)",
+          "gradable": true,
+          "result_id": "D02--gpt-6.1-terra--r1"
+        },
+        {
+          "blind_id": "D10-r2-C",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "drops n2's general rule 'age must be strictly greater than the applicable threshold' (keeps strictness only for the 15-minute entries case)",
+          "gradable": true,
+          "result_id": "D10--gpt-6.1-terra--r2"
+        },
+        {
+          "blind_id": "S02-r1-C",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "drops the 'pi-web-deploy --when-idle with the landed SHA' step from the historical task #157 sequence ('...detached landing, and waiting for successful land status.')",
+          "gradable": true,
+          "result_id": "S02--gpt-6.1-terra--r1"
+        },
+        {
+          "blind_id": "S02-r2-B",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "rewrites the historical task #157 step 'pi-web-deploy --when-idle with the landed SHA' as 'pi-web-deploy with the landed SHA' (history changed to a different value)",
+          "gradable": true,
+          "result_id": "S02--gpt-6.1-terra--r2"
+        },
+        {
+          "blind_id": "S03-r1-C",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps superseded n1 as an active instruction ('For the requested Rule 34 cleanup, use a standalone task titled \"Tidy notebook.md and notes/ per Rule 34\"...') next to the contradicting skip rule",
+          "gradable": true,
+          "result_id": "S03--gpt-6.1-terra--r1"
+        },
+        {
+          "blind_id": "S03-r2-C",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": false,
+          "defect": "superseded n1 kept with only a tense change ('The requested Rule 34 cleanup had specified a standalone task...'); does not say it no longer applies",
+          "gradable": true,
+          "result_id": "S03--gpt-6.1-terra--r2"
+        },
+        {
+          "blind_id": "S05-r2-A",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 0,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "rewrites the obsolete n1 cases with conditions neither source gives as test cases ('rebuild in flight started more than 5 minutes ago, age 31m -> \"> 15m\"') and keeps them as active instructions instead of ejecting",
+          "gradable": true,
+          "result_id": "S05--gpt-6.1-terra--r2"
+        },
+        {
+          "blind_id": "S10-r2-C",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "n2 loses 'pi-web-deploy queues itself and needs no such pre-restart check' (evidence does not literally contradict it; rater doubt noted)",
+          "gradable": true,
+          "result_id": "S10--gpt-6.1-terra--r2"
+        }
+      ],
+      "mean_rubric_out_of_5": 4.791666666666667
+    },
+    "gpt-6-luna": {
+      "n": 48,
+      "criterion_passes": {
+        "topic_separation": 46,
+        "fact_retention": 45,
+        "no_invention": 47,
+        "history_handling": 43,
+        "concise": 46
+      },
+      "corruption_calls": 4,
+      "ungradable_calls": 0,
+      "full_score_calls": 40,
+      "defects": [
+        {
+          "blind_id": "S01-r1-A",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps n1 'Path prefixes or globs scope automatic attachment...' as active although the evidence retires automatic role-note attachments",
+          "gradable": true,
+          "result_id": "S01--gpt-6-luna--r1"
+        },
+        {
+          "blind_id": "S01-r2-A",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps n1 'Path prefixes or globs scope automatic attachment...' as active although the evidence retires automatic role-note attachments",
+          "gradable": true,
+          "result_id": "S01--gpt-6-luna--r2"
+        },
+        {
+          "blind_id": "S02-r2-A",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": false,
+          "defect": "ejects still-valid n2 ('Install or restart services only through pi-web-deploy or temper-deploy, immediately...') as superseded; the evidence agrees with it, and the temper-deploy rule is lost",
+          "gradable": true,
+          "result_id": "S02--gpt-6-luna--r2"
+        },
+        {
+          "blind_id": "S03-r2-A",
+          "topic_separation": 0,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 0,
+          "corruption": true,
+          "defect": "keeps superseded n1 cleanup as an active instruction, shortens the task title to 'Tidy notebook.md and notes/' (drops 'per Rule 34'), and pastes the whole canonical evidence (showtell-deploy, COO about-page, \u00a77.1.4 draft) into n1's item",
+          "gradable": true,
+          "result_id": "S03--gpt-6-luna--r2"
+        },
+        {
+          "blind_id": "S04-r2-A",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 0,
+          "corruption": false,
+          "defect": "appends canonical-evidence content not in the note ('As of 2026-11-15, retired notebook.md and notes/ remain read-only migration backups... never reopening the notebook.') to n1's item",
+          "gradable": true,
+          "result_id": "S04--gpt-6-luna--r2"
+        },
+        {
+          "blind_id": "S05-r1-A",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps superseded n1 test cases as active, incl. 'snapshot age 16m with a rebuild in flight -> health_state healthy, stale_badge null' and 'rebuild in flight but age 31m -> \"> 15m\"' (old 30-minute threshold)",
+          "gradable": true,
+          "result_id": "S05--gpt-6-luna--r1"
+        },
+        {
+          "blind_id": "S09-r2-C",
+          "topic_separation": 0,
+          "fact_retention": 1,
+          "no_invention": 0,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "merges n1 and n2 into one item although the evidence touches neither; states 'seen-role-messages.json was genuinely absent before the 200K commit writer went live' although n2 only says 'The store' (subject inferred, not stated)",
+          "gradable": true,
+          "result_id": "S09--gpt-6-luna--r2"
+        },
+        {
+          "blind_id": "S10-r2-B",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "n2 loses 'pi-web-deploy queues itself and needs no such pre-restart check' (evidence does not literally contradict it; rater doubt noted)",
+          "gradable": true,
+          "result_id": "S10--gpt-6-luna--r2"
+        }
+      ],
+      "mean_rubric_out_of_5": 4.729166666666667
+    },
+    "gpt-6.1-sol": {
+      "n": 48,
+      "criterion_passes": {
+        "topic_separation": 48,
+        "fact_retention": 44,
+        "no_invention": 48,
+        "history_handling": 45,
+        "concise": 48
+      },
+      "corruption_calls": 3,
+      "ungradable_calls": 0,
+      "full_score_calls": 43,
+      "defects": [
+        {
+          "blind_id": "S01-r2-C",
+          "topic_separation": 1,
+          "fact_retention": 1,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps n1 '- Path prefixes or globs scope automatic attachment...' as active although the evidence retires automatic role-note attachments",
+          "gradable": true,
+          "result_id": "S01--gpt-6.1-sol--r2"
+        },
+        {
+          "blind_id": "S05-r1-B",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps superseded n1 as active ('snapshot age 16m with a rebuild in flight -> health_state healthy') and drops 'stale_badge null' and case (c)",
+          "gradable": true,
+          "result_id": "S05--gpt-6.1-sol--r1"
+        },
+        {
+          "blind_id": "S05-r2-C",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 0,
+          "concise": 1,
+          "corruption": true,
+          "defect": "keeps superseded n1 as active ('(a) snapshot age 16m with a rebuild in flight -> health_state healthy') and drops 'stale_badge null' and case (c)",
+          "gradable": true,
+          "result_id": "S05--gpt-6.1-sol--r2"
+        },
+        {
+          "blind_id": "S10-r1-A",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "n2 loses 'pi-web-deploy queues itself and needs no such pre-restart check' (evidence does not literally contradict it; rater doubt noted)",
+          "gradable": true,
+          "result_id": "S10--gpt-6.1-sol--r1"
+        },
+        {
+          "blind_id": "S10-r2-A",
+          "topic_separation": 1,
+          "fact_retention": 0,
+          "no_invention": 1,
+          "history_handling": 1,
+          "concise": 1,
+          "corruption": false,
+          "defect": "n2 loses 'pi-web-deploy queues itself' (evidence does not literally contradict it; rater doubt noted: the clause may be stale)",
+          "gradable": true,
+          "result_id": "S10--gpt-6.1-sol--r2"
+        }
+      ],
+      "mean_rubric_out_of_5": 4.854166666666667
+    }
+  }
+}

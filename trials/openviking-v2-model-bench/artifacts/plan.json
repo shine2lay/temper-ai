@@ -1,0 +1,880 @@
+{
+  "fixture_sha256": "0cc13901fd30ca3282b029291c5310428e11a3d7423e1ea695eae02a785fa9b9",
+  "instruction_sha256": "b9fcdcbfcae0358e7415da28e1344acb1c7d0b7abe0a486e17d4457ff3a5e1bc",
+  "models": [
+    "gpt-6.1-sol",
+    "gpt-6.1-terra",
+    "gpt-6-luna"
+  ],
+  "effort": "low",
+  "repeats": 2,
+  "seed": 20261115,
+  "parallelism": 3,
+  "version": 1,
+  "jobs": [
+    {
+      "id": "D12--gpt-6.1-sol--r2",
+      "case": "D12",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S03--gpt-6.1-sol--r1",
+      "case": "S03",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S04--gpt-6.1-terra--r1",
+      "case": "S04",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D09--gpt-6-luna--r2",
+      "case": "D09",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S08--gpt-6.1-terra--r2",
+      "case": "S08",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D10--gpt-6-luna--r1",
+      "case": "D10",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D14--gpt-6-luna--r1",
+      "case": "D14",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D02--gpt-6-luna--r1",
+      "case": "D02",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S01--gpt-6.1-terra--r1",
+      "case": "S01",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S01--gpt-6.1-terra--r2",
+      "case": "S01",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D14--gpt-6.1-sol--r2",
+      "case": "D14",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S06--gpt-6-luna--r1",
+      "case": "S06",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D13--gpt-6.1-sol--r2",
+      "case": "D13",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D10--gpt-6.1-sol--r2",
+      "case": "D10",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D12--gpt-6.1-sol--r1",
+      "case": "D12",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S10--gpt-6.1-terra--r2",
+      "case": "S10",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D02--gpt-6.1-terra--r1",
+      "case": "D02",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S03--gpt-6-luna--r2",
+      "case": "S03",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S09--gpt-6.1-sol--r2",
+      "case": "S09",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S06--gpt-6.1-sol--r1",
+      "case": "S06",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D05--gpt-6.1-sol--r2",
+      "case": "D05",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D13--gpt-6.1-terra--r1",
+      "case": "D13",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6.1-sol--r2",
+      "case": "D06",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6.1-terra--r2",
+      "case": "S07",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6-luna--r2",
+      "case": "S07",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S08--gpt-6.1-terra--r1",
+      "case": "S08",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D13--gpt-6.1-terra--r2",
+      "case": "D13",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6-luna--r1",
+      "case": "S07",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D11--gpt-6.1-terra--r2",
+      "case": "D11",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S10--gpt-6-luna--r1",
+      "case": "S10",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D09--gpt-6.1-terra--r2",
+      "case": "D09",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D13--gpt-6.1-sol--r1",
+      "case": "D13",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S09--gpt-6-luna--r1",
+      "case": "S09",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D05--gpt-6.1-terra--r2",
+      "case": "D05",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S04--gpt-6-luna--r1",
+      "case": "S04",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S06--gpt-6-luna--r2",
+      "case": "S06",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D03--gpt-6-luna--r1",
+      "case": "D03",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6-luna--r2",
+      "case": "D06",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S01--gpt-6-luna--r1",
+      "case": "S01",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D03--gpt-6.1-sol--r2",
+      "case": "D03",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D02--gpt-6.1-terra--r2",
+      "case": "D02",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S02--gpt-6-luna--r2",
+      "case": "S02",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D05--gpt-6-luna--r1",
+      "case": "D05",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S02--gpt-6.1-terra--r2",
+      "case": "S02",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D01--gpt-6.1-terra--r2",
+      "case": "D01",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D11--gpt-6.1-sol--r1",
+      "case": "D11",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S01--gpt-6.1-sol--r2",
+      "case": "S01",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S09--gpt-6.1-terra--r2",
+      "case": "S09",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D12--gpt-6-luna--r1",
+      "case": "D12",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S04--gpt-6.1-sol--r1",
+      "case": "S04",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D09--gpt-6.1-terra--r1",
+      "case": "D09",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D11--gpt-6-luna--r1",
+      "case": "D11",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D11--gpt-6.1-terra--r1",
+      "case": "D11",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D07--gpt-6.1-sol--r1",
+      "case": "D07",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6-luna--r1",
+      "case": "D06",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D04--gpt-6.1-sol--r1",
+      "case": "D04",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S04--gpt-6-luna--r2",
+      "case": "S04",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S04--gpt-6.1-sol--r2",
+      "case": "S04",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D04--gpt-6-luna--r2",
+      "case": "D04",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D05--gpt-6-luna--r2",
+      "case": "D05",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S10--gpt-6.1-sol--r2",
+      "case": "S10",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S10--gpt-6-luna--r2",
+      "case": "S10",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D02--gpt-6.1-sol--r2",
+      "case": "D02",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S08--gpt-6-luna--r2",
+      "case": "S08",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D08--gpt-6.1-sol--r1",
+      "case": "D08",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D04--gpt-6.1-terra--r2",
+      "case": "D04",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D14--gpt-6-luna--r2",
+      "case": "D14",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S08--gpt-6.1-sol--r2",
+      "case": "S08",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S05--gpt-6.1-terra--r1",
+      "case": "S05",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D04--gpt-6.1-sol--r2",
+      "case": "D04",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D07--gpt-6.1-sol--r2",
+      "case": "D07",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S05--gpt-6.1-sol--r1",
+      "case": "S05",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S06--gpt-6.1-terra--r1",
+      "case": "S06",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6.1-terra--r2",
+      "case": "D06",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D01--gpt-6.1-terra--r1",
+      "case": "D01",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D01--gpt-6.1-sol--r1",
+      "case": "D01",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S01--gpt-6.1-sol--r1",
+      "case": "S01",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6.1-terra--r1",
+      "case": "D06",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D07--gpt-6.1-terra--r2",
+      "case": "D07",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S05--gpt-6-luna--r1",
+      "case": "S05",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D03--gpt-6.1-terra--r1",
+      "case": "D03",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D06--gpt-6.1-sol--r1",
+      "case": "D06",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D03--gpt-6.1-terra--r2",
+      "case": "D03",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D12--gpt-6.1-terra--r1",
+      "case": "D12",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D08--gpt-6.1-terra--r1",
+      "case": "D08",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D10--gpt-6.1-terra--r2",
+      "case": "D10",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S01--gpt-6-luna--r2",
+      "case": "S01",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D10--gpt-6.1-terra--r1",
+      "case": "D10",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S02--gpt-6.1-terra--r1",
+      "case": "S02",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D14--gpt-6.1-terra--r2",
+      "case": "D14",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D09--gpt-6-luna--r1",
+      "case": "D09",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D01--gpt-6-luna--r1",
+      "case": "D01",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D03--gpt-6.1-sol--r1",
+      "case": "D03",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D05--gpt-6.1-terra--r1",
+      "case": "D05",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S02--gpt-6-luna--r1",
+      "case": "S02",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S09--gpt-6.1-terra--r1",
+      "case": "S09",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S03--gpt-6-luna--r1",
+      "case": "S03",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D09--gpt-6.1-sol--r1",
+      "case": "D09",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "S10--gpt-6.1-sol--r1",
+      "case": "S10",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D13--gpt-6-luna--r1",
+      "case": "D13",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S10--gpt-6.1-terra--r1",
+      "case": "S10",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S03--gpt-6.1-sol--r2",
+      "case": "S03",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S06--gpt-6.1-terra--r2",
+      "case": "S06",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S08--gpt-6-luna--r1",
+      "case": "S08",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D12--gpt-6-luna--r2",
+      "case": "D12",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S05--gpt-6-luna--r2",
+      "case": "S05",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D01--gpt-6.1-sol--r2",
+      "case": "D01",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D10--gpt-6.1-sol--r1",
+      "case": "D10",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D14--gpt-6.1-sol--r1",
+      "case": "D14",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D01--gpt-6-luna--r2",
+      "case": "D01",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D12--gpt-6.1-terra--r2",
+      "case": "D12",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D04--gpt-6-luna--r1",
+      "case": "D04",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D14--gpt-6.1-terra--r1",
+      "case": "D14",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S09--gpt-6-luna--r2",
+      "case": "S09",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D10--gpt-6-luna--r2",
+      "case": "D10",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D08--gpt-6-luna--r1",
+      "case": "D08",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "D03--gpt-6-luna--r2",
+      "case": "D03",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S03--gpt-6.1-terra--r1",
+      "case": "S03",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S05--gpt-6.1-sol--r2",
+      "case": "S05",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6.1-sol--r1",
+      "case": "S07",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D08--gpt-6.1-sol--r2",
+      "case": "D08",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6.1-terra--r1",
+      "case": "S07",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "S02--gpt-6.1-sol--r2",
+      "case": "S02",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S03--gpt-6.1-terra--r2",
+      "case": "S03",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S04--gpt-6.1-terra--r2",
+      "case": "S04",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D11--gpt-6-luna--r2",
+      "case": "D11",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S05--gpt-6.1-terra--r2",
+      "case": "S05",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "D07--gpt-6-luna--r1",
+      "case": "D07",
+      "model": "gpt-6-luna",
+      "repeat": 1
+    },
+    {
+      "id": "S08--gpt-6.1-sol--r1",
+      "case": "S08",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D04--gpt-6.1-terra--r1",
+      "case": "D04",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D07--gpt-6.1-terra--r1",
+      "case": "D07",
+      "model": "gpt-6.1-terra",
+      "repeat": 1
+    },
+    {
+      "id": "D08--gpt-6-luna--r2",
+      "case": "D08",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S09--gpt-6.1-sol--r1",
+      "case": "S09",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D11--gpt-6.1-sol--r2",
+      "case": "D11",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D02--gpt-6-luna--r2",
+      "case": "D02",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "D05--gpt-6.1-sol--r1",
+      "case": "D05",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D09--gpt-6.1-sol--r2",
+      "case": "D09",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "S06--gpt-6.1-sol--r2",
+      "case": "S06",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D08--gpt-6.1-terra--r2",
+      "case": "D08",
+      "model": "gpt-6.1-terra",
+      "repeat": 2
+    },
+    {
+      "id": "S02--gpt-6.1-sol--r1",
+      "case": "S02",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D07--gpt-6-luna--r2",
+      "case": "D07",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    },
+    {
+      "id": "S07--gpt-6.1-sol--r2",
+      "case": "S07",
+      "model": "gpt-6.1-sol",
+      "repeat": 2
+    },
+    {
+      "id": "D02--gpt-6.1-sol--r1",
+      "case": "D02",
+      "model": "gpt-6.1-sol",
+      "repeat": 1
+    },
+    {
+      "id": "D13--gpt-6-luna--r2",
+      "case": "D13",
+      "model": "gpt-6-luna",
+      "repeat": 2
+    }
+  ]
+}

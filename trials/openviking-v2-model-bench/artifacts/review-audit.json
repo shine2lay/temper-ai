@@ -1,0 +1,78 @@
+{
+  "grades_sha256": "f9e6f681a2b8e49812935927e1186e3d00086e1e6544f8de68ed1864d1daf4d3",
+  "instruction_sha256": "b9fcdcbfcae0358e7415da28e1344acb1c7d0b7abe0a486e17d4457ff3a5e1bc",
+  "instruction_matches_plan": true,
+  "packet_reproducibility": {
+    "blind/dedup-a.json": {
+      "sha256": "5754e506c80c6f662b41bcba95f6d305350cb645d7dc8a14459d0cecf63eb3c8",
+      "same_seed_byte_identical": true
+    },
+    "blind/dedup-b.json": {
+      "sha256": "524a79f93d6145cae3b46deda0a1a644f751ac67fac637b3a77edb4f86eaed48",
+      "same_seed_byte_identical": true
+    },
+    "blind/sweep.json": {
+      "sha256": "f5d9d5620a3e13c5eaa91234bb4433dd29e36c264c7a19ca3be14d532749699f",
+      "same_seed_byte_identical": true
+    },
+    "blind-key.json": {
+      "sha256": "8dc506d8feccb65bbc305e9496dd429e965b9377b1b4e14403eb19734ea34883",
+      "same_seed_byte_identical": true
+    }
+  },
+  "sensitivity_only_not_preregistered": true,
+  "accepted_blind_ids": [
+    "S01-r1-B",
+    "S01-r1-C",
+    "S01-r2-B",
+    "S03-r1-B",
+    "S03-r2-B",
+    "S06-r1-B",
+    "S06-r1-C",
+    "S06-r2-A",
+    "S06-r2-B"
+  ],
+  "accepted_result_ids": [
+    "S01--gpt-6.1-sol--r1",
+    "S01--gpt-6.1-terra--r1",
+    "S01--gpt-6.1-terra--r2",
+    "S03--gpt-6.1-sol--r1",
+    "S03--gpt-6.1-sol--r2",
+    "S06--gpt-6.1-sol--r1",
+    "S06--gpt-6.1-sol--r2",
+    "S06--gpt-6.1-terra--r1",
+    "S06--gpt-6.1-terra--r2"
+  ],
+  "models": {
+    "gpt-6.1-sol": {
+      "n_calls": 48,
+      "strict_exact": 38,
+      "strict_sweep_exact": 10,
+      "accepted_historical_answers": 5,
+      "sensitivity_exact": 43,
+      "sensitivity_sweep_exact": 15,
+      "strict_literal_ejection_recall": 0.0,
+      "sensitivity_safe_resolution_recall": 0.5
+    },
+    "gpt-6.1-terra": {
+      "n_calls": 48,
+      "strict_exact": 38,
+      "strict_sweep_exact": 10,
+      "accepted_historical_answers": 4,
+      "sensitivity_exact": 42,
+      "sensitivity_sweep_exact": 14,
+      "strict_literal_ejection_recall": 0.0,
+      "sensitivity_safe_resolution_recall": 0.4
+    },
+    "gpt-6-luna": {
+      "n_calls": 48,
+      "strict_exact": 42,
+      "strict_sweep_exact": 14,
+      "accepted_historical_answers": 0,
+      "sensitivity_exact": 42,
+      "sensitivity_sweep_exact": 14,
+      "strict_literal_ejection_recall": 0.6,
+      "sensitivity_safe_resolution_recall": 0.6
+    }
+  }
+}

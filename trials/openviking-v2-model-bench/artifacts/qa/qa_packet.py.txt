@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""QA blind-grading helper for the OpenViking v2 model benchmark (data #20).
+
+Reads only /tmp/ov-v2-model-bench/blind/*.json. No model calls, no network.
+
+  qa_packet.py list                      bundles with index, case, repeat, task summary
+  qa_packet.py show <idx|CASE-rN>        one bundle: notes, evidence, three responses
+  qa_packet.py add <grades.json> <new.json>   merge records (graded ids are skipped)
+  qa_packet.py validate <grades.json>    144 ids exactly matching packets, field types
+  qa_packet.py totals <grades.json>      per-field totals (no model names exist here)
+"""
+import json
+import os
+import sys
+
+BLIND = "/tmp/ov-v2-model-bench/blind"
+PACKETS = ["dedup-a.json", "dedup-b.json", "sweep.json"]
+BIN_FIELDS = ["topic_separation", "fact_retention", "no_invention", "history_handling", "concise"]
+ALL_FIELDS = BIN_FIELDS + ["corruption", "defect", "gradable"]
+
+
+def load_bundles(blind_dir=BLIND, packets=PACKETS):
+    out = []
+    for name in packets:
+        data = json.load(open(os.path.join(blind_dir, name)))
+        bundles = data if isinstance(data, list) else data.get("bundles", data.get("cases"))
+        if not isinstance(bundles, list):
+            sys.exit(f"{name}: no bundle list found")
+        out.extend(bundles)
+    return out
+
+
+def packet_ids(bundles):
+    ids = [c["blind_id"] for b in bundles for c in b["choices"]]
+    if len(ids) != len(set(ids)):
+        sys.exit("packets contain duplicate blind_ids")
+    return ids
+
+
+def summarize_task(task):
+    if isinstance(task, str) and len(task) <= 40:
+        return task
+    return f"<{type(task).__name__} len={len(str(task))}>"
+
+
+def cmd_list(bundles):
+    for i, b in enumerate(bundles):
+        print(i, b["case"], f"r{b['repeat']}", summarize_task(b.get("task")),
+              f"notes={len(b['notes'])}", f"evidence={len(b.get('canonical_evidence') or [])}",
+              f"choices={len(b['choices'])}")
+
+
+def find_bundle(bundles, key):
+    if key.isdigit():
+        return bundles[int(key)]
+    for b in bundles:
+        if f"{b['case']}-r{b['repeat']}" == key:
+            return b
+    sys.exit(f"no bundle {key}")
+
+
+def cmd_show(bundles, key):
+    b = find_bundle(bundles, key)
+    print(f"=== {b['case']} repeat {b['repeat']} task={summarize_task(b.get('task'))}")
+    print("--- NOTES")
+    for n in b["notes"]:
+        print(f"[{n['id']}] {n['text']}\n")
+    ev = b.get("canonical_evidence") or []
+    print(f"--- CANONICAL EVIDENCE ({len(ev)})")
+    for e in ev:
+        print(e if isinstance(e, str) else json.dumps(e, ensure_ascii=False), "\n")
+    for c in b["choices"]:
+        print(f"--- {c['blind_id']} request_ok={c['request_ok']}")
+        print(c["response"], "\n")
+
+
+def load_grades(path):
+    if not os.path.exists(path):
+        return {}
+    data = json.load(open(path))
+    if isinstance(data, list):
+        return {r["blind_id"]: r for r in data}
+    return data
+
+
+def check_record(bid, r):
+    errs = []
+    for f in BIN_FIELDS:
+        if r.get(f) not in (0, 1) or isinstance(r.get(f), bool):
+            errs.append(f"{bid}: {f} must be 0 or 1")
+    for f in ("corruption", "gradable"):
+        if not isinstance(r.get(f), bool):
+            errs.append(f"{bid}: {f} must be true/false")
+    if not isinstance(r.get("defect"), str):
+        errs.append(f"{bid}: defect must be a string")
+    extra = set(r) - set(ALL_FIELDS) - {"blind_id"}
+    if extra:
+        errs.append(f"{bid}: unknown fields {sorted(extra)}")
+    if errs:
+        return errs
+    failing = any(r[f] == 0 for f in BIN_FIELDS) or r["corruption"]
+    if failing and not r["defect"].strip():
+        errs.append(f"{bid}: defect empty although a field fails")
+    if not failing and r["defect"].strip():
+        errs.append(f"{bid}: defect text although all fields pass")
+    if not r["gradable"]:
+        if any(r[f] != 0 for f in BIN_FIELDS) or r["corruption"]:
+            errs.append(f"{bid}: ungradable must have five 0s and corruption false")
+    return errs
+
+
+def expand(r):
+    """Staging shorthand: "P" = all pass; [ts, fr, ni, hh, co, corruption, defect]; or a full record."""
+    if r == "P":
+        return {**{f: 1 for f in BIN_FIELDS}, "corruption": False, "defect": "", "gradable": True}
+    if isinstance(r, list):
+        if len(r) != 7:
+            sys.exit(f"shorthand needs 7 values: {r}")
+        return {**dict(zip(BIN_FIELDS, r[:5])), "corruption": r[5], "defect": r[6], "gradable": True}
+    return r
+
+
+def cmd_add(bundles, path, new_path):
+    known = set(packet_ids(bundles))
+    grades = load_grades(path)
+    new = {k: expand(v) for k, v in json.load(open(new_path)).items()}
+    added = skipped = 0
+    errs = []
+    for bid, r in new.items():
+        r = {k: v for k, v in r.items() if k != "blind_id"}
+        if bid not in known:
+            errs.append(f"{bid}: not in packets")
+            continue
+        errs += check_record(bid, r)
+    if errs:
+        sys.exit("\n".join(errs))
+    for bid, r in new.items():
+        if bid in grades:
+            skipped += 1
+            continue
+        grades[bid] = {"blind_id": bid, **{k: r[k] for k in ALL_FIELDS}}
+        added += 1
+    order = [i for i in packet_ids(bundles) if i in grades]
+    tmp = path + ".tmp"
+    json.dump([grades[i] for i in order], open(tmp, "w"), indent=1, ensure_ascii=False)
+    os.replace(tmp, path)
+    print(f"added={added} skipped={skipped} total={len(grades)}/{len(known)}")
+
+
+def cmd_validate(bundles, path, expect_n=144):
+    ids = packet_ids(bundles)
+    raw = json.load(open(path))
+    if not isinstance(raw, list):
+        sys.exit("FAIL: grades file must be a list of records")
+    seen = [r.get("blind_id") for r in raw]
+    errs = []
+    if len(seen) != len(set(seen)):
+        errs.append("duplicate blind_ids in grades")
+    if set(seen) != set(ids):
+        errs.append(f"id mismatch: missing={sorted(set(ids) - set(seen))[:5]} extra={sorted(set(seen) - set(ids))[:5]}")
+    if expect_n and len(ids) != expect_n:
+        errs.append(f"packets hold {len(ids)} ids, expected {expect_n}")
+    for r in raw:
+        errs += check_record(r.get("blind_id"), {k: v for k, v in r.items() if k != "blind_id"})
+    if errs:
+        print("FAIL")
+        print("\n".join(errs[:50]))
+        sys.exit(1)
+    print(f"PASS records={len(raw)} unique={len(set(seen))} exact_match=yes types=ok")
+
+
+def cmd_totals(path):
+    raw = json.load(open(path))
+    n = len(raw)
+    for f in BIN_FIELDS:
+        print(f"{f}: {sum(r[f] for r in raw)}/{n}")
+    print(f"corruption_true: {sum(r['corruption'] for r in raw)}/{n}")
+    print(f"gradable_false: {sum(not r['gradable'] for r in raw)}/{n}")
+    print(f"all_pass: {sum(all(r[f] == 1 for f in BIN_FIELDS) and not r['corruption'] for r in raw)}/{n}")
+
+
+def main(argv):
+    if len(argv) < 2:
+        sys.exit(__doc__)
+    cmd = argv[1]
+    if cmd == "totals":
+        return cmd_totals(argv[2])
+    bundles = load_bundles()
+    if cmd == "list":
+        cmd_list(bundles)
+    elif cmd == "show":
+        cmd_show(bundles, argv[2])
+    elif cmd == "add":
+        cmd_add(bundles, argv[2], argv[3])
+    elif cmd == "validate":
+        cmd_validate(bundles, argv[2])
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv)

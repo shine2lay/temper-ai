@@ -1,0 +1,934 @@
+{
+  "version": 1,
+  "source_root": "/home/shinelay/.openviking/data/viking/default/user",
+  "sampling": "purposive stratified fixed excerpts, not random population sample",
+  "cases": [
+    {
+      "id": "D01",
+      "category": "gotcha",
+      "task": "dedup",
+      "subtype": "constructed exact duplicate",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "- NEVER classify an entry as shared from its account identity alone.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "- NEVER classify an entry as shared from its account identity alone.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": []
+      }
+    },
+    {
+      "id": "D02",
+      "category": "gotcha",
+      "task": "dedup",
+      "subtype": "natural paraphrase overlap",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "## Reflect\n- NEVER add the shared account to the recognized role registry or introduce a second owner parser.\n- NEVER classify an entry as shared from its account identity alone.\n- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs.\n- NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\n- NEVER read or write live data from unit tests or introduce production mock paths.\n- NEVER repair unrelated health faults, restart services, or expand migration scope under this classification fix.\n- NEVER claim red-first verification without observed failing tests or live success from repository checks alone.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "39a831322cae53d29fd973d11131a55401ace9adfd628ebe58d38131d0cbca9b",
+          "text": "## Reflect\n- NEVER add the shared account as another registered role or exempt unknown owners broadly.\n- NEVER classify a shared-account personal-scope entry as valid shared memory.\n- NEVER introduce a second owner parser or duplicate the shared-account literal.\n- NEVER edit append-only history or manually alter health receipts.\n- NEVER use live data as test fixtures or add production mock paths.\n- NEVER remove checks, restart services, or repair unrelated faults to obtain a green result.\n- NEVER equate passing tests or landing with verified live health.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": []
+      }
+    },
+    {
+      "id": "D03",
+      "category": "gotcha",
+      "task": "dedup",
+      "subtype": "three-note complementary merge",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "- NEVER add the shared account to the recognized role registry or introduce a second owner parser.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "39a831322cae53d29fd973d11131a55401ace9adfd628ebe58d38131d0cbca9b",
+          "text": "- NEVER introduce a second owner parser or duplicate the shared-account literal.",
+          "id": "n2"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs.",
+          "id": "n3"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2",
+            "n3"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": []
+      }
+    },
+    {
+      "id": "D04",
+      "category": "gotcha",
+      "task": "dedup",
+      "subtype": "same-repo unrelated negative",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/experiences/shared_changelog_replay_classification.md",
+          "sha256": "60b0bf19efbf148f49d24839f4427ab98244f56bf9f2138aecb29cf89a0b2970",
+          "text": "- NEVER edit, rewrite, or delete live changelog history or manually alter receipts.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/cases/isolate_landing_model_calls.md",
+          "sha256": "64b02a0e2720c17d06789d43a6930308e5b68e0421fbb46cbf4fbb244e1a474a",
+          "text": "## Task Signature\nMake a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": []
+      }
+    },
+    {
+      "id": "D05",
+      "category": "system",
+      "task": "dedup",
+      "subtype": "natural near-duplicate",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/software/pi_identity.md",
+          "sha256": "f85a9f6f32af90af6d06d75a6ebd56620f15105bf997a508b4adc28cc228a90f",
+          "text": "# pi-identity\npi-identity provides notebook notes with scoped automatic attachment and auditing.\n## Note attachment\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\n- Touch triggers scope attachment when queued tasks start with matching touches.\n- Scopes are configured with `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- `notebook(action=\"audit\")` checks note integrity.\n- Reported issues can include dead disk paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/entities/software_component/pi_identity.md",
+          "sha256": "0d57e35a2ee8644a8620999d063c89f526426d20af9a37874f451356967acb7f",
+          "text": "# Pi identity\nPi identity provides scoped automatic attachment of living notes and notebook auditing.\n## Note scoping\n- Supports `paths:` and `touches:` in note headers following #612, commit 7a362d6.\n- Path prefixes or globs scope attachment when a chat reads, edits, greps, or runs bash against matching paths.\n- Touch triggers scope attachment when a queued task starts with matching touches.\n- Scopes can be set using `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- Supports `notebook(action=\"audit\")`.\n- Audit issues include dead file paths, lines longer than 240 characters, empty level-two sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "#612",
+          "7a362d6",
+          "240",
+          "Audit OK: 0 issues"
+        ]
+      }
+    },
+    {
+      "id": "D06",
+      "category": "system",
+      "task": "dedup",
+      "subtype": "partial-overlap system merge",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/entities/checking_tool/test_check.md",
+          "sha256": "cfe602c2a9ac43db9a405f4514dd80b15db7b50a986c292655863eb84c1dd763",
+          "text": "## Contract\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/tool/test_check.md",
+          "sha256": "04f9e0dd2bf8659385e7579024ed261210e25ab71698f0f9bd076899d29ab6c8",
+          "text": "## Implementation\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\n## Output and scanning\n- Exit codes: 0 pass, 1 findings, 2 usage/unreadable input; --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "19",
+          "500",
+          "60,000",
+          "lib/wt.mjs",
+          "seam: 2"
+        ]
+      }
+    },
+    {
+      "id": "D07",
+      "category": "system",
+      "task": "dedup",
+      "subtype": "three-note system merge",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/architecture/memories/entities/runtime_state/rollout_state.md",
+          "sha256": "07673ea633e446e7f1539e5ee914fbc57afd49f8f1350620e67f44f1b7be8393",
+          "text": "Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` with two cooperating writers.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/architecture/memories/entities/runtime_state/rollout_state.md",
+          "sha256": "07673ea633e446e7f1539e5ee914fbc57afd49f8f1350620e67f44f1b7be8393",
+          "text": "- pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57.",
+          "id": "n2"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/architecture/memories/entities/runtime_state/rollout_state.md",
+          "sha256": "07673ea633e446e7f1539e5ee914fbc57afd49f8f1350620e67f44f1b7be8393",
+          "text": "- agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.",
+          "id": "n3"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2",
+            "n3"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "src/migration-verifier.ts:230",
+          "lib/wt-openviking-sync.mjs:64-75",
+          "bin/wt:25"
+        ]
+      }
+    },
+    {
+      "id": "D08",
+      "category": "system",
+      "task": "dedup",
+      "subtype": "same-repo unrelated negative",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract_field/observer_last_reachable_at.md",
+          "sha256": "4ee69d6d75f6a51096093755e65df51033021422f37d1a35824bb9ccfe56c44e",
+          "text": "## Contract\n- OpenVikingObserverSummary.last_reachable_at is string | null: the ISO timestamp of the last /health response for which daemon-http.ts isHealthy was true, observed by this pi-web-ui server process.\n- In-memory only, without persistence; null means no successful /health since server startup, including after restart. Preserve it while port 1933 is down, including under R-FAIL.\n- Cadence is 30 seconds, matching other observer fields.\n- Architecture #529 owns the spec amendment and Backend request.\n- checked_at is request time, not proof of liveness or the last successful response.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_resource_sync.md",
+          "sha256": "8c232835abfe16d3349c8d639d6ae58291c78e3d646333019a674dd3545e40ba",
+          "text": "## Values\n- auxiliary.resource_sync.pending_syncs_count is null when rollout-state.json is absent or unreadable, never zero; zero means the source was inspected and no pending syncs existed.\n- pending_syncs_count equals pending_wt_land_syncs.length; status is ok for zero, pending for a positive count, and missing for null. The TypeScript count type is number | null; synced_at and repos_synced stay null because no writer records them.\n- pending_wt_land_syncs entries contain {project, repoRoot, changedPaths, failedAt, error}; a later successful sync of the same repo removes its entries (lib/wt-openviking-sync.mjs:75).\n- An empty list means no outstanding failures, not never-synced: pending_syncs_count is 0 with status ok. Null means the source could not be inspected.\n- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\n- Ops reported that #827 cleared the 2026-11-11 failures and the 15:26 leftover: pi-openviking 9326c69, land 16-c61a38, with product-autopilot added to ACTIVE_REPOS. agent-tools a4435c1, land 217-9ade92, made failed syncs print to stderr rather than only recording them in this file.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "30",
+          "1933",
+          "number | null",
+          "pending_wt_land_syncs.length"
+        ]
+      }
+    },
+    {
+      "id": "D09",
+      "category": "decision",
+      "task": "dedup",
+      "subtype": "constructed exact duplicate",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract_field/dashboard_stale_badge.md",
+          "sha256": "fc00519c05e94c1658d05c153a4649c3c1f7efa299143ca13089ccabc240ddac",
+          "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract_field/dashboard_stale_badge.md",
+          "sha256": "fc00519c05e94c1658d05c153a4649c3c1f7efa299143ca13089ccabc240ddac",
+          "text": "- Backend #143 landed as 2ed35cdc under Architecture #531 contract beef2019.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "#143",
+          "2ed35cdc",
+          "#531",
+          "beef2019"
+        ]
+      }
+    },
+    {
+      "id": "D10",
+      "category": "decision",
+      "task": "dedup",
+      "subtype": "natural cross-note ruling overlap",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries_snapshot.md",
+          "sha256": "00037ef72bf6c889f3d0a077f4a2f41424e20477f1fe736ec9fcaeb94e9e322e",
+          "text": "- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract_field/dashboard_stale_badge.md",
+          "sha256": "fc00519c05e94c1658d05c153a4649c3c1f7efa299143ca13089ccabc240ddac",
+          "text": "- When both age and pending-sync causes hold, the age value wins; age must be strictly greater than the applicable threshold. Architecture ruling R-SNAPSHOT-STALE-1 supersedes the temporary 30-minute entries threshold: entries show the age badge iff snapshot age exceeds 15 minutes and there is no in-flight build started less than 5 minutes ago. A build aged 5 minutes or more no longer suppresses the age badge; other panels retain their cadence thresholds.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "R-SNAPSHOT-STALE-1",
+          "15",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "D11",
+      "category": "decision",
+      "task": "dedup",
+      "subtype": "same-tooling-repo unrelated releases",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/entities/release_tool/showtell_deploy.md",
+          "sha256": "6ee7cab658a9d763d3e2dfdb98cac7e26b60ab5b5086b0b8a1d9af14b84adccd",
+          "text": "- Ops #898 landed implementation 7d38d65 (273-1e1414), hypothesis result fae3167 (274-9b73dd), and show-and-tell README 65edf76 (76-da2c63).",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/deployment_tool/pi_web_deploy.md",
+          "sha256": "3da759d677202dc1f424be62fed1ee67460e467e19a8a3340df27d2c0743e023",
+          "text": "- Ops #916 landed as agent-tools 7a6acb9 on 2026-11-14; documentation is docs/pi-web-deploy-smoke.md. Ops #917 completed live verification, stop proof, the page release block, and first real install; agent-tools b8292ef and pi-web-ui 37ff32bc both landed with land-status 0.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "7d38d65",
+          "273-1e1414",
+          "7a6acb9",
+          "2026-11-14"
+        ]
+      }
+    },
+    {
+      "id": "D12",
+      "category": "preference",
+      "task": "dedup",
+      "subtype": "natural partial overlap",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/preferences/user/service_deployment_workflow.md",
+          "sha256": "8c0efa076b612361c6f29500f970b031d470e410099cdcc6734ea1fdec755ad7",
+          "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/preferences/owner/deployment_timing.md",
+          "sha256": "d7ffd65c209d29078bb24eecade6dbb23a23371eef09f877f24421e2200b3014",
+          "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "pi-web-deploy",
+          "temper-deploy",
+          "--when-idle"
+        ]
+      }
+    },
+    {
+      "id": "D13",
+      "category": "preference",
+      "task": "dedup",
+      "subtype": "related vocabulary different scope negative",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/preferences/user/role_message_dedup.md",
+          "sha256": "7ea6b2976acd44dc839267a2a60251adcf5e51ecce41e8eced786288436573ba",
+          "text": "- Deduplicate role-to-role messages entering OpenViking by rm-<id> across roles and sessions, using ~/.pi/openviking/seen-role-messages.json.\n- Prefer the sender's full-text copy when sender and recipient hold the same ID concurrently; serialize shared-ledger writes.\n- If the ledger is lost or corrupt, allow duplicates rather than silently losing uncommitted information.\n- Strip only procedural acknowledgments, task-completion FYIs, and injected reply footers from commits; preserve substantive decisions attached to them. The owning task's queue_done is the canonical task-completion source.\n- Filtering must not change live role chat visibility. ID-based deduplication does not eliminate paraphrased facts with different IDs.\n- Measure duplicates avoided and cases where stripping would remove the only record of information.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/preferences/user/processing_idempotency.md",
+          "sha256": "79de5b5a126ae22dcbf20cf800890d58e2fcd3ee922b152030f1d45ce9e4e0a3",
+          "text": "- Make processing idempotent by default, using artist-scoped operation identity, durable progress/results, and deduplication of completed work and effects.\n- Make intentional reprocessing explicit; separate consumers and effects keep distinct identities. Redelivery or retry does not constitute new business intent.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "~/.pi/openviking/seen-role-messages.json",
+          "rm-<id>"
+        ]
+      }
+    },
+    {
+      "id": "D14",
+      "category": "preference",
+      "task": "dedup",
+      "subtype": "three-note preference merge",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/preferences/user/service_deployment_workflow.md",
+          "sha256": "8c0efa076b612361c6f29500f970b031d470e410099cdcc6734ea1fdec755ad7",
+          "text": "- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/preferences/owner/deployment_timing.md",
+          "sha256": "d7ffd65c209d29078bb24eecade6dbb23a23371eef09f877f24421e2200b3014",
+          "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.",
+          "id": "n2"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/preferences/owner/deployment_timing.md",
+          "sha256": "d7ffd65c209d29078bb24eecade6dbb23a23371eef09f877f24421e2200b3014",
+          "text": "- Wants pending idle-wait deployments rerun without the idle-wait option.",
+          "id": "n3"
+        }
+      ],
+      "canonical_evidence": [],
+      "expected": {
+        "groups": [
+          [
+            "n1",
+            "n2",
+            "n3"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "pi-web-deploy",
+          "--when-idle"
+        ]
+      }
+    },
+    {
+      "id": "S01",
+      "category": "system",
+      "task": "sweep",
+      "subtype": "retired automatic note attachment; keep unrelated audit fact",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/software/pi_identity.md",
+          "sha256": "f85a9f6f32af90af6d06d75a6ebd56620f15105bf997a508b4adc28cc228a90f",
+          "text": "- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/software/pi_identity.md",
+          "sha256": "f85a9f6f32af90af6d06d75a6ebd56620f15105bf997a508b4adc28cc228a90f",
+          "text": "- The clean result is `Audit OK: 0 issues`.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/events/2026/11/11/notebook_retirement_approved.md",
+          "sha256": "30e7a6ac2bedf9461c3c5a057c69faf105be886b92ea5ed476662dc1320ec341",
+          "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [
+          "n1"
+        ],
+        "verbatim": [
+          "Audit OK: 0 issues"
+        ]
+      }
+    },
+    {
+      "id": "S02",
+      "category": "preference",
+      "task": "sweep",
+      "subtype": "historical deployment assignment is not an active policy; retain history",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/events/2026/11/12/staleness_fix_commitment.md",
+          "sha256": "7f472c68faa708c74ad268c7643526824022647e449e9d681dde077574180e65",
+          "text": "On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy --when-idle with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/preferences/user/service_deployment_workflow.md",
+          "sha256": "8c0efa076b612361c6f29500f970b031d470e410099cdcc6734ea1fdec755ad7",
+          "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/preferences/owner/deployment_timing.md",
+          "sha256": "d7ffd65c209d29078bb24eecade6dbb23a23371eef09f877f24421e2200b3014",
+          "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "#157",
+          "9e138b48",
+          "pi-web-deploy"
+        ]
+      }
+    },
+    {
+      "id": "S03",
+      "category": "preference",
+      "task": "sweep",
+      "subtype": "retired notebook cleanup instruction superseded; preserve format constraint",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/preferences/user/notebook_maintenance.md",
+          "sha256": "6c8592e317077b2acfcfe7e6b64920d65393bd0868acafd19575f38b4546fb20",
+          "text": "- For the requested Rule 34 cleanup, use a standalone task titled \"Tidy notebook.md and notes/ per Rule 34\" with touches: []; report notebook and index character counts before/after and the task number once to Ops.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/preferences/user/notebook_maintenance.md",
+          "sha256": "6c8592e317077b2acfcfe7e6b64920d65393bd0868acafd19575f38b4546fb20",
+          "text": "- Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/post_cutover_notebooks.md",
+          "sha256": "afb867200c644598811ee7739ff5828766ad500fd561957a9345cb4a01f789a1",
+          "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [
+          "n1"
+        ],
+        "verbatim": [
+          "240"
+        ]
+      }
+    },
+    {
+      "id": "S04",
+      "category": "decision",
+      "task": "sweep",
+      "subtype": "restoration of frozen backups does not reverse retirement",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/events/2026/11/11/notebook_retirement_approved.md",
+          "sha256": "30e7a6ac2bedf9461c3c5a057c69faf105be886b92ea5ed476662dc1320ec341",
+          "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.",
+          "id": "n1"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/events/2026/11/15/notebook_restore_completed.md",
+          "sha256": "3e17996a51764b45935fa60a8baa2439456320036016ae56bdbc73636cf6cfa8",
+          "text": "# Summary\nOn 2026-11-15, task #934 completed restoration of eight notebooks from the weekly tidy-up's own pre-run archives, with all seven requested roles replying and zero memory-store writes. The tidy-up had reworded ten owner rules, added five, and dropped others. Prevention landed as pi-openviking ov-owner-rules 1543406 and agent-tools owner-rules-guard plus watch checks 01a558e; 30 tests went red-first then green, wt check passed, and the installed script was patched with a local-patches record. ov-health --recheck passed 15/15 and verifier receipts were refreshed. Evidence and the still-unobserved Sunday hypothesis are in ~/ops-checks/openviking-fixes/drift/result.md."
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/post_cutover_notebooks.md",
+          "sha256": "afb867200c644598811ee7739ff5828766ad500fd561957a9345cb4a01f789a1",
+          "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "#802",
+          "2026-11-11",
+          "notebook_retired",
+          "fallback_roles"
+        ]
+      }
+    },
+    {
+      "id": "S05",
+      "category": "system",
+      "task": "sweep",
+      "subtype": "code drift: obsolete 31-minute in-flight acceptance instruction superseded by 5-minute ruling",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/events/2026/11/12/staleness_fix_commitment.md",
+          "sha256": "7f472c68faa708c74ad268c7643526824022647e449e9d681dde077574180e65",
+          "text": "2. Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: (a) snapshot age 16m with a rebuild in flight -> health_state healthy, stale_badge null; (b) rebuild failed, age 16m -> \"> 15m\"; (c) rebuild in flight but age 31m -> \"> 15m\".",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/tool/test_check.md",
+          "sha256": "04f9e0dd2bf8659385e7579024ed261210e25ab71698f0f9bd076899d29ab6c8",
+          "text": "- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries_snapshot.md",
+          "sha256": "00037ef72bf6c889f3d0a077f4a2f41424e20477f1fe736ec9fcaeb94e9e322e",
+          "text": "## Health and freshness\n- /health stays live per request and alone determines server-unreachable under R-FAIL, spec-states.md §4.\n- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not.\n- This supersedes Backend #157's temporary 30-minute in-flight threshold. Label remains \"> 15m\": older than the cadence and not about to refresh. Applies only to entries; pending-sync precedence remains unchanged, with age winning under Architecture #531.\n- Required failing-first cases on 7c38790: age 15m+1s with build started 30s ago gives null; same age with failed build and none in flight gives \"> 15m\"; build started 5m+1s ago gives \"> 15m\"."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [
+          "n1"
+        ],
+        "verbatim": [
+          "60,000"
+        ]
+      }
+    },
+    {
+      "id": "S06",
+      "category": "system",
+      "task": "sweep",
+      "subtype": "code drift: retired endpoint active rule versus explicitly historical summary",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries.md",
+          "sha256": "ed947cfd6019a2fbc2a0eef72eedb8244677d7e6d50273b98bb3feba14ced45e",
+          "text": "- Architecture #537 requires every /entries response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial is true exactly when unread_count > 0.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries.md",
+          "sha256": "ed947cfd6019a2fbc2a0eef72eedb8244677d7e6d50273b98bb3feba14ced45e",
+          "text": "This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries.md",
+          "sha256": "ed947cfd6019a2fbc2a0eef72eedb8244677d7e6d50273b98bb3feba14ced45e",
+          "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [
+          "n1"
+        ],
+        "verbatim": [
+          "#164",
+          "rm-a8311b06"
+        ]
+      }
+    },
+    {
+      "id": "S07",
+      "category": "decision",
+      "task": "sweep",
+      "subtype": "code drift negative: deployed-SHA historical fact survives endpoint removal",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries_snapshot.md",
+          "sha256": "00037ef72bf6c889f3d0a077f4a2f41424e20477f1fe736ec9fcaeb94e9e322e",
+          "text": "- Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries_snapshot.md",
+          "sha256": "00037ef72bf6c889f3d0a077f4a2f41424e20477f1fe736ec9fcaeb94e9e322e",
+          "text": "This historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the rules below describe the retired dashboard, not the live explorer.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_entries.md",
+          "sha256": "ed947cfd6019a2fbc2a0eef72eedb8244677d7e6d50273b98bb3feba14ced45e",
+          "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "7c38790",
+          "7acf602e",
+          "2026-11-12",
+          "#164"
+        ]
+      }
+    },
+    {
+      "id": "S08",
+      "category": "gotcha",
+      "task": "sweep",
+      "subtype": "code drift negative: unrelated newer state cannot revoke absent-writer or timestamp guards",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/architecture/memories/entities/runtime_state/rollout_state.md",
+          "sha256": "07673ea633e446e7f1539e5ee914fbc57afd49f8f1350620e67f44f1b7be8393",
+          "text": "- resource-sync-state.json never existed: Ops found zero commits with `git log -S\"resource-sync-state\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/dashboard_resource_sync.md",
+          "sha256": "8c232835abfe16d3349c8d639d6ae58291c78e3d646333019a674dd3545e40ba",
+          "text": "- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/architecture/memories/entities/runtime_state/rollout_state.md",
+          "sha256": "07673ea633e446e7f1539e5ee914fbc57afd49f8f1350620e67f44f1b7be8393",
+          "text": "- Live shape at 2026-11-11T23:09:26.646Z: phase phase2, notebook_retired true, fallback_roles [], cutover_ts 2026-11-11T00:53:35.455Z, pending_wt_land_syncs [], stage full, updated_at 2026-11-11T23:09:26.646Z."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "resource-sync-state.json",
+          "synced_at",
+          "updated_at"
+        ]
+      }
+    },
+    {
+      "id": "S09",
+      "category": "decision",
+      "task": "sweep",
+      "subtype": "code drift negative: successive dated counts and once-absent store are compatible",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/role_message_dedup.md",
+          "sha256": "8fed4f7f58c9ea5cb0db52721b845dc6fd11c517d47f5b34180fc343da4db1cf",
+          "text": "- /home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/role_message_dedup.md",
+          "sha256": "8fed4f7f58c9ea5cb0db52721b845dc6fd11c517d47f5b34180fc343da4db1cf",
+          "text": "- The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/default/memories/entities/contract/role_message_dedup.md",
+          "sha256": "8fed4f7f58c9ea5cb0db52721b845dc6fd11c517d47f5b34180fc343da4db1cf",
+          "text": "- Ops subsequently verified the live file at 200914 bytes, with updated_at 2026-11-11T23:54:37.299Z and a committed recipient-side Ops entry."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n1"
+          ],
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [],
+        "verbatim": [
+          "624",
+          "2026-11-11T23:50Z",
+          "#826"
+        ]
+      }
+    },
+    {
+      "id": "S10",
+      "category": "preference",
+      "task": "sweep",
+      "subtype": "non-code obsolete --when-idle action fragment versus current never-use guidance",
+      "notes": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/events/2026/11/12/staleness_fix_commitment.md",
+          "sha256": "7f472c68faa708c74ad268c7643526824022647e449e9d681dde077574180e65",
+          "text": "6. `pi-web-deploy --when-idle <sha>`; wait live.",
+          "id": "n1"
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/ops/memories/preferences/user/service_deployment.md",
+          "sha256": "c29929467005139e913e99d01d399b04f5bc3ca81bd995b0cc3490c1b27f6bff",
+          "text": "- Before restarting Temper, check running or waiting work; pi-web-deploy queues itself and needs no such pre-restart check.",
+          "id": "n2"
+        }
+      ],
+      "canonical_evidence": [
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/data/memories/preferences/owner/deployment_timing.md",
+          "sha256": "d7ffd65c209d29078bb24eecade6dbb23a23371eef09f877f24421e2200b3014",
+          "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+        },
+        {
+          "source": "/home/shinelay/.openviking/data/viking/default/user/backend/memories/preferences/user/service_deployment_workflow.md",
+          "sha256": "8c0efa076b612361c6f29500f970b031d470e410099cdcc6734ea1fdec755ad7",
+          "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag."
+        }
+      ],
+      "expected": {
+        "groups": [
+          [
+            "n2"
+          ]
+        ],
+        "ejected": [
+          "n1"
+        ],
+        "verbatim": [
+          "Temper",
+          "pi-web-deploy"
+        ]
+      }
+    }
+  ]
+}

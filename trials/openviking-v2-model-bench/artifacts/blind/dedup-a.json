@@ -1,0 +1,480 @@
+[
+  {
+    "case": "D01",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER classify an entry as shared from its account identity alone."
+      },
+      {
+        "id": "n2",
+        "text": "- NEVER classify an entry as shared from its account identity alone."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D01-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D01-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D01-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D01",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER classify an entry as shared from its account identity alone."
+      },
+      {
+        "id": "n2",
+        "text": "- NEVER classify an entry as shared from its account identity alone."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D01-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D01-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"- NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D01-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"NEVER classify an entry as shared from its account identity alone.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D02",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Reflect\n- NEVER add the shared account to the recognized role registry or introduce a second owner parser.\n- NEVER classify an entry as shared from its account identity alone.\n- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs.\n- NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\n- NEVER read or write live data from unit tests or introduce production mock paths.\n- NEVER repair unrelated health faults, restart services, or expand migration scope under this classification fix.\n- NEVER claim red-first verification without observed failing tests or live success from repository checks alone."
+      },
+      {
+        "id": "n2",
+        "text": "## Reflect\n- NEVER add the shared account as another registered role or exempt unknown owners broadly.\n- NEVER classify a shared-account personal-scope entry as valid shared memory.\n- NEVER introduce a second owner parser or duplicate the shared-account literal.\n- NEVER edit append-only history or manually alter health receipts.\n- NEVER use live data as test fixtures or add production mock paths.\n- NEVER remove checks, restart services, or repair unrelated faults to obtain a green result.\n- NEVER equate passing tests or landing with verified live health."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D02-r1-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\", \"n2\"],\n      \"text\": \"## Reflect\\n- NEVER add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal.\\n- NEVER classify an entry as shared from its account identity alone or accept shared-account ownership on personal URIs, including treating a shared-account personal-scope entry as valid shared memory.\\n- NEVER weaken unknown-owner failures or exempt unknown owners broadly.\\n- NEVER edit, rewrite, or delete live changelog or append-only history, or manually alter receipts, including health receipts.\\n- NEVER read or write live data from unit tests, use live data as test fixtures, or introduce production mock paths.\\n- NEVER remove checks, repair unrelated health faults, restart services, or expand migration scope under this classification fix to obtain a green result.\\n- NEVER claim red-first verification without observed failing tests, claim live success from repository checks alone, or equate passing tests or landing with verified live health.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D02-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Reflect\\n- NEVER add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal.\\n- NEVER classify an entry as shared from its account identity alone or accept a shared-account personal-scope entry as valid shared memory.\\n- NEVER weaken unknown-owner failures, broadly exempt unknown owners, or accept shared-account ownership on personal URIs.\\n- NEVER edit, rewrite, or delete live changelog history or append-only history; never manually alter receipts or health receipts.\\n- NEVER read or write live data from unit tests, use live data as test fixtures, or introduce production mock paths.\\n- NEVER repair unrelated health faults, restart services, expand migration scope under this classification fix, or remove checks to obtain a green result.\\n- NEVER claim red-first verification without observed failing tests; passing tests or landing alone do not verify live health, and repository checks alone do not establish live success.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D02-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"NEVER add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal. NEVER classify an entry as shared from its account identity alone, accept shared-account ownership on personal URIs, or classify a shared-account personal-scope entry as valid shared memory. NEVER weaken unknown-owner failures or broadly exempt unknown owners. NEVER edit, rewrite, or delete live changelog or append-only history, or manually alter health receipts. NEVER read or write live data from unit tests, use it as test fixtures, or introduce production mock paths. NEVER remove checks, repair unrelated health faults, restart services, or expand migration scope under this classification fix to obtain a green result. NEVER claim red-first verification without observed failing tests, claim live success from repository checks alone, or equate passing tests or landing with verified live health.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D02",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Reflect\n- NEVER add the shared account to the recognized role registry or introduce a second owner parser.\n- NEVER classify an entry as shared from its account identity alone.\n- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs.\n- NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\n- NEVER read or write live data from unit tests or introduce production mock paths.\n- NEVER repair unrelated health faults, restart services, or expand migration scope under this classification fix.\n- NEVER claim red-first verification without observed failing tests or live success from repository checks alone."
+      },
+      {
+        "id": "n2",
+        "text": "## Reflect\n- NEVER add the shared account as another registered role or exempt unknown owners broadly.\n- NEVER classify a shared-account personal-scope entry as valid shared memory.\n- NEVER introduce a second owner parser or duplicate the shared-account literal.\n- NEVER edit append-only history or manually alter health receipts.\n- NEVER use live data as test fixtures or add production mock paths.\n- NEVER remove checks, restart services, or repair unrelated faults to obtain a green result.\n- NEVER equate passing tests or landing with verified live health."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D02-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Reflect\\n- NEVER add the shared account to the recognized role registry as another registered role, introduce a second owner parser, or duplicate the shared-account literal.\\n- NEVER classify an entry as shared from its account identity alone, accept shared-account ownership on personal URIs, or classify a shared-account personal-scope entry as valid shared memory.\\n- NEVER weaken unknown-owner failures or exempt unknown owners broadly.\\n- NEVER edit, rewrite, or delete live changelog or append-only history, or manually alter receipts or health receipts.\\n- NEVER read or write live data from unit tests, use live data as test fixtures, or introduce production mock paths.\\n- NEVER remove checks, repair unrelated health faults, restart services, or expand migration scope under this classification fix to obtain a green result.\\n- NEVER claim red-first verification without observed failing tests, claim live success from repository checks alone, or equate passing tests or landing with verified live health.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D02-r2-B",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\", \"n2\"],\n      \"text\": \"## Reflect\\n- NEVER add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal.\\n- NEVER classify an entry as shared from its account identity alone or accept shared-account ownership on personal URIs, including classifying a shared-account personal-scope entry as valid shared memory.\\n- NEVER weaken unknown-owner failures or exempt unknown owners broadly.\\n- NEVER edit, rewrite, or delete live append-only changelog history or manually alter receipts, including health receipts.\\n- NEVER read or write live data from unit tests, use live data as test fixtures, or introduce production mock paths.\\n- NEVER remove checks, repair unrelated health faults, restart services, or expand migration scope under this classification fix to obtain a green result.\\n- NEVER claim red-first verification without observed failing tests, claim live success from repository checks alone, or equate passing tests or landing with verified live health.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D02-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Reflect\\n- NEVER add the shared account to the recognized role registry, register it as another role, introduce a second owner parser, or duplicate the shared-account literal.\\n- NEVER classify an entry as shared from its account identity alone, or classify a shared-account personal-scope entry as valid shared memory.\\n- NEVER weaken unknown-owner failures, exempt unknown owners broadly, or accept shared-account ownership on personal URIs.\\n- NEVER edit, rewrite, or delete live changelog history or append-only history; never manually alter receipts or health receipts.\\n- NEVER read or write live data from unit tests, use live data as test fixtures, or introduce production mock paths.\\n- NEVER repair unrelated health faults, remove checks, restart services, or expand migration scope under this classification fix.\\n- NEVER claim red-first verification without observed failing tests; passing tests, landing, or repository checks alone do not establish verified live health.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D03",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER add the shared account to the recognized role registry or introduce a second owner parser."
+      },
+      {
+        "id": "n2",
+        "text": "- NEVER introduce a second owner parser or duplicate the shared-account literal."
+      },
+      {
+        "id": "n3",
+        "text": "- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D03-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Never add the shared account to the recognized role registry, introduce a second owner parser, duplicate the shared-account literal, weaken unknown-owner failures, or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D03-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"NEVER add the shared account to the recognized role registry, introduce a second owner parser, duplicate the shared-account literal, weaken unknown-owner failures, or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D03-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Never add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal. Never weaken unknown-owner failures or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D03",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER add the shared account to the recognized role registry or introduce a second owner parser."
+      },
+      {
+        "id": "n2",
+        "text": "- NEVER introduce a second owner parser or duplicate the shared-account literal."
+      },
+      {
+        "id": "n3",
+        "text": "- NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D03-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"NEVER add the shared account to the recognized role registry, introduce a second owner parser, duplicate the shared-account literal, weaken unknown-owner failures, or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D03-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"NEVER add the shared account to the recognized role registry, introduce a second owner parser, duplicate the shared-account literal, weaken unknown-owner failures, or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D03-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"NEVER add the shared account to the recognized role registry, introduce a second owner parser, or duplicate the shared-account literal. NEVER weaken unknown-owner failures or accept shared-account ownership on personal URIs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D04",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER edit, rewrite, or delete live changelog history or manually alter receipts."
+      },
+      {
+        "id": "n2",
+        "text": "## Task Signature\nMake a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D04-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Never edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"Task signature: Make a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D04-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"Task Signature: Make a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D04-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"- NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"## Task Signature\\nMake a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D04",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- NEVER edit, rewrite, or delete live changelog history or manually alter receipts."
+      },
+      {
+        "id": "n2",
+        "text": "## Task Signature\nMake a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D04-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"## Task Signature\\nMake a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D04-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"NEVER edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"Task signature: Make a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D04-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Never edit, rewrite, or delete live changelog history or manually alter receipts.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make a repository's integration-test gate independent of shared model services using a test-only local stand-in, preserve assertions, and prove concurrent reliability and fast diagnostic failures.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D05",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "# pi-identity\npi-identity provides notebook notes with scoped automatic attachment and auditing.\n## Note attachment\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\n- Touch triggers scope attachment when queued tasks start with matching touches.\n- Scopes are configured with `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- `notebook(action=\"audit\")` checks note integrity.\n- Reported issues can include dead disk paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`."
+      },
+      {
+        "id": "n2",
+        "text": "# Pi identity\nPi identity provides scoped automatic attachment of living notes and notebook auditing.\n## Note scoping\n- Supports `paths:` and `touches:` in note headers following #612, commit 7a362d6.\n- Path prefixes or globs scope attachment when a chat reads, edits, greps, or runs bash against matching paths.\n- Touch triggers scope attachment when a queued task starts with matching touches.\n- Scopes can be set using `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- Supports `notebook(action=\"audit\")`.\n- Audit issues include dead file paths, lines longer than 240 characters, empty level-two sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D05-r1-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\", \"n2\"],\n      \"text\": \"# pi-identity\\npi-identity provides notebook (living) notes with scoped automatic attachment and auditing.\\n## Note attachment\\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands (including bash) against matching paths.\\n- Touch triggers scope attachment when queued tasks start with matching touches.\\n- Scopes are configured with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n## Auditing\\n- `notebook(action=\\\"audit\\\")` checks note integrity.\\n- Reported issues can include dead disk/file paths, lines longer than 240 characters, empty `##` (level-two) sections, and leftover `(n...)` or `(d...)` references.\\n- The clean result is `Audit OK: 0 issues`.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D05-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"# pi-identity\\npi-identity provides scoped automatic attachment of living notebook notes and auditing. Following issue #612, commit 7a362d6, note headers support `paths:` and `touches:`. Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands (including bash) against matching paths; touch triggers scope attachment when queued tasks start with matching touches. Configure scopes with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n\\n`notebook(action=\\\"audit\\\")` checks note integrity. Reported issues can include dead disk or file paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references. The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D05-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"# pi-identity\\nPi identity provides living notebook notes with scoped automatic attachment and auditing.\\n## Note scoping\\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\\n- Path prefixes or globs scope automatic attachment when a chat reads, edits, greps, or runs shell commands (including bash) against matching paths.\\n- Touch triggers scope attachment when a queued task starts with matching touches.\\n- Scopes are configured with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n## Auditing\\n- `notebook(action=\\\"audit\\\")` checks note integrity.\\n- Reported issues can include dead disk/file paths, lines longer than 240 characters, empty `##` sections (empty level-two sections), and leftover `(n...)` or `(d...)` references.\\n- The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D05",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "# pi-identity\npi-identity provides notebook notes with scoped automatic attachment and auditing.\n## Note attachment\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\n- Touch triggers scope attachment when queued tasks start with matching touches.\n- Scopes are configured with `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- `notebook(action=\"audit\")` checks note integrity.\n- Reported issues can include dead disk paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`."
+      },
+      {
+        "id": "n2",
+        "text": "# Pi identity\nPi identity provides scoped automatic attachment of living notes and notebook auditing.\n## Note scoping\n- Supports `paths:` and `touches:` in note headers following #612, commit 7a362d6.\n- Path prefixes or globs scope attachment when a chat reads, edits, greps, or runs bash against matching paths.\n- Touch triggers scope attachment when a queued task starts with matching touches.\n- Scopes can be set using `notebook(action=\"edit\", id=\"<id>\", paths=[...], touches=[...])`.\n## Auditing\n- Supports `notebook(action=\"audit\")`.\n- Audit issues include dead file paths, lines longer than 240 characters, empty level-two sections, and leftover `(n...)` or `(d...)` references.\n- The clean result is `Audit OK: 0 issues`."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D05-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"# pi-identity\\npi-identity provides notebook living notes with scoped automatic attachment and auditing.\\n## Note attachment\\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands (including bash) against matching paths.\\n- Touch triggers scope attachment when queued tasks start with matching touches.\\n- Scopes are configured with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n## Auditing\\n- `notebook(action=\\\"audit\\\")` checks note integrity.\\n- Reported issues include dead disk/file paths, lines longer than 240 characters, empty level-two (`##`) sections, and leftover `(n...)` or `(d...)` references.\\n- The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D05-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"# pi-identity\\npi-identity provides scoped automatic attachment of living notebook notes and notebook auditing.\\n## Note attachment\\n- Note headers support `paths:` and `touches:` following issue #612, commit 7a362d6.\\n- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands, including bash, against matching paths. Touch triggers scope attachment when queued tasks start with matching touches.\\n- Configure scopes with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n## Auditing\\n- `notebook(action=\\\"audit\\\")` checks note integrity. Issues can include dead disk or file paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references.\\n- The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D05-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"# pi-identity\\nPi identity provides notebook notes with scoped automatic attachment of living notes and notebook auditing.\\n## Note scoping\\n- Supports `paths:` and `touches:` in note headers following issue #612, commit 7a362d6.\\n- Path prefixes or globs scope attachment when chats read, edit, grep, or run shell commands against matching paths.\\n- Touch triggers scope attachment when a queued task starts with matching touches.\\n- Scopes can be configured with `notebook(action=\\\"edit\\\", id=\\\"<id>\\\", paths=[...], touches=[...])`.\\n## Auditing\\n- `notebook(action=\\\"audit\\\")` checks note integrity.\\n- Audit issues include dead disk/file paths, lines longer than 240 characters, empty `##` sections, and leftover `(n...)` or `(d...)` references.\\n- The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D06",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Contract\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input."
+      },
+      {
+        "id": "n2",
+        "text": "## Implementation\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\n## Output and scanning\n- Exit codes: 0 pass, 1 findings, 2 usage/unreadable input; --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D06-r1-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\", \"n2\"],\n      \"text\": \"## Contract\\n- test-check answers 19 yes/no checks alongside wt check, ui-check, and doc-check.\\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input; --json emits one object.\\n## Implementation and acceptance\\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\\n## Output and scanning\\n- QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D06-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Contract and output\\n- test-check answers 19 yes/no checks alongside wt check, ui-check, and doc-check. Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`. Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input.\\n- --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step. Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n## Implementation\\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\\n## Scanning\\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D06-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Contract\\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input.\\n\\n## Implementation\\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\\n\\n## Output and scanning\\n- --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D06",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "## Contract\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input."
+      },
+      {
+        "id": "n2",
+        "text": "## Implementation\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\n## Output and scanning\n- Exit codes: 0 pass, 1 findings, 2 usage/unreadable input; --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D06-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Contract\\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input.\\n## Implementation\\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\\n## Output and scanning\\n- --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D06-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"## Contract and output\\n- Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check.\\n- Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`.\\n- Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input. --json emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step.\\n- Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n## Implementation and acceptance\\n- Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is node scripts/select-tests.mjs --for-check.\\n- bin/test-check is a three-line Node shim calling process.exit(runCli(process.argv.slice(2))); lib/test-check/*.mjs uses ESM/plain Node, files under 500 lines, and lib/wt.mjs's wt.yaml reader. Builds/new dependencies require Ops approval.\\n- node:test tests live in test/test-check-*.test.mjs, discovered by npm test via scripts/test.sh 'test/*.test.mjs'; fixtures belong in test/fixtures/test-check/, never real repositories.\\n- Ops installs after landing: ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check. Require a README.md section and doc-check-clean docs/test-check.md.\\n## Scanning\\n- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\\n- Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D06-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"Contract: Answers 19 yes/no checks, alongside wt check, ui-check, and doc-check. Usage: `test-check <repo> [--level N] [--json] [--wt-config <file>] [--land-records <file>]`. Exit codes: 0 pass, 1 findings, 2 usage error or unreadable input. `--json` emits one object. QA's seam defines stable UPPER-KEBAB IDs and JSON shape; findings include ID, file[:line], a plain sentence and next step. Seam 2 JSON requires seam: 2 and per-check required; observed and human findings are bounded single lines.\\n\\nImplementation: Ops builds on master and lands with wt land; QA owns the standard, seam, failing fixture acceptance tests and blind final check. The land gate is `node scripts/select-tests.mjs --for-check`. `bin/test-check` is a three-line Node shim calling `process.exit(runCli(process.argv.slice(2)))`; `lib/test-check/*.mjs` uses ESM/plain Node, files under 500 lines, and `lib/wt.mjs`'s wt.yaml reader. Builds/new dependencies require Ops approval. `node:test` tests live in `test/test-check-*.test.mjs`, discovered by npm test via `scripts/test.sh 'test/*.test.mjs'`; fixtures belong in `test/fixtures/test-check/`, never real repositories. Ops installs after landing: `ln -s /home/shinelay/projects/agent-tools/bin/test-check ~/.local/bin/test-check`. Require a README.md section and doc-check-clean `docs/test-check.md`.\\n\\nScanning: Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output. Seam 2 supports three-hop/argument-list runners, gitignore-aware scanning, current-config land records, release.files, linked worktrees, and fit helpers versus focused tests.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D07",
+    "repeat": 1,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` with two cooperating writers."
+      },
+      {
+        "id": "n2",
+        "text": "- pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57."
+      },
+      {
+        "id": "n3",
+        "text": "- agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D07-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers. pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D07-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers: pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D07-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers: pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "D07",
+    "repeat": 2,
+    "task": "dedup",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` with two cooperating writers."
+      },
+      {
+        "id": "n2",
+        "text": "- pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57."
+      },
+      {
+        "id": "n3",
+        "text": "- agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25."
+      }
+    ],
+    "canonical_evidence": [],
+    "choices": [
+      {
+        "blind_id": "D07-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers: pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D07-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers. pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "D07-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\",\"n3\"],\"text\":\"Shared runtime state at `/home/shinelay/.pi/openviking/rollout-state.json` has two cooperating writers: pi-openviking `src/migration-verifier.ts:230` writes stage via deriveRolloutStage(overallPass, fallbackRoles), plus notebook_retired, fallback_roles, cutover_ts, and updated_at; the stage type is at :57. agent-tools `lib/wt-openviking-sync.mjs:64-75` owns phase and pending_wt_land_syncs; syncAfterWtLand at :147 is invoked from bin/wt:25.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  }
+]

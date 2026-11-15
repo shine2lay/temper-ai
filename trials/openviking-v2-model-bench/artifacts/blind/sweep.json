@@ -1,0 +1,746 @@
+[
+  {
+    "case": "S01",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths."
+      },
+      {
+        "id": "n2",
+        "text": "- The clean result is `Audit OK: 0 issues`."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S01-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\"},{\"source_ids\":[\"n2\"],\"text\":\"The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S01-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Automatic role-note attachments are retired; path prefixes or globs no longer trigger those attachments when chats read, edit, grep, or run shell commands against matching paths.\"},{\"source_ids\":[\"n2\"],\"text\":\"The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S01-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Path prefixes or globs previously scoped automatic role-note attachment when chats read, edited, grepped, or ran shell commands against matching paths; automatic role-note attachments were approved for retirement on 2026-11-11.\"},{\"source_ids\":[\"n2\"],\"text\":\"The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S01",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths."
+      },
+      {
+        "id": "n2",
+        "text": "- The clean result is `Audit OK: 0 issues`."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S01-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\"},{\"source_ids\":[\"n2\"],\"text\":\"The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S01-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"The clean result is `Audit OK: 0 issues`.\"},{\"source_ids\":[\"n1\"],\"text\":\"Path prefixes or globs scoped automatic attachment when chats read, edit, grep, or ran shell commands against matching paths; automatic role-note attachments were approved for retirement on 2026-11-11.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S01-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"- Path prefixes or globs scope automatic attachment when chats read, edit, grep, or run shell commands against matching paths.\"},{\"source_ids\":[\"n2\"],\"text\":\"- The clean result is `Audit OK: 0 issues`.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S02",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy --when-idle with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files."
+      },
+      {
+        "id": "n2",
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S02-r1-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\"],\n      \"text\": \"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and deployment with the landed SHA. The originally approved deployment command was pi-web-deploy --when-idle; that idle-wait requirement is superseded. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"\n    },\n    {\n      \"source_ids\": [\"n2\"],\n      \"text\": \"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S02-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and `pi-web-deploy --when-idle` with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"},{\"source_ids\":[\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S02-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, and waiting for successful land status. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"},{\"source_ids\":[\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S02",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy --when-idle with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files."
+      },
+      {
+        "id": "n2",
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S02-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy --when-idle with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"}],\"ejected\":[{\"source_id\":\"n2\",\"reason\":\"Superseded by canonical evidence requiring pi-web-ui installs and restarts to use plain pi-web-deploy or pi-web-deploy restart immediately, never --when-idle.\"}]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S02-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence requires failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy with the landed SHA. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"},{\"source_ids\":[\"n2\"],\"text\":\"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S02-r2-C",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\"],\n      \"text\": \"On 2026-11-12, the user assigned backend task #157 to implement the Memory Explorer staleness fix through completion in a dedicated pi-web-ui worktree. The approved delivery sequence required failing-first tests, typecheck, dashboard Vitest, wt check against task-one reference 9e138b48, detached landing, waiting for successful land status, and pi-web-deploy --when-idle with the landed SHA. The --when-idle requirement is historical and superseded. Once live, notify QA regarding rm-9ff77d77 with the SHA and test names, then call queue_done. The task forbids writes to :1933 or /home/shinelay/.pi/openviking/ and repository scratch files.\"\n    },\n    {\n      \"source_ids\": [\"n2\"],\n      \"text\": \"Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S03",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- For the requested Rule 34 cleanup, use a standalone task titled \"Tidy notebook.md and notes/ per Rule 34\" with touches: []; report notebook and index character counts before/after and the task number once to Ops."
+      },
+      {
+        "id": "n2",
+        "text": "- Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S03-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded: retired notebook.md and notes/ are read-only migration backups; weekly tidy-up must skip them for roles outside fallback_roles.\"}]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S03-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Superseded cleanup request: standalone task \\\"Tidy notebook.md and notes/ per Rule 34\\\" with touches: []; report notebook and index character counts before/after and the task number once to Ops. This cleanup must not run on retired notebook.md and notes/ for roles outside fallback_roles; those files are read-only migration backups.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S03-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For the requested Rule 34 cleanup, use a standalone task titled \\\"Tidy notebook.md and notes/ per Rule 34\\\" with touches: []; report notebook and index character counts before/after and the task number once to Ops. Weekly tidy-up must skip retired notebook.md and notes/ for roles outside fallback_roles.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S03",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- For the requested Rule 34 cleanup, use a standalone task titled \"Tidy notebook.md and notes/ per Rule 34\" with touches: []; report notebook and index character counts before/after and the task number once to Ops."
+      },
+      {
+        "id": "n2",
+        "text": "- Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S03-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For the requested Rule 34 cleanup, use a standalone task titled \\\"Tidy notebook.md and notes/\\\" with touches: []; report notebook and index character counts before/after and the task number once to Ops. Retired notebook.md and notes/ are read-only migration backups and weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15. Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2. Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook. Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement. Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files. For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S03-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"The requested Rule 34 cleanup of notebook.md and notes/, including the standalone task and associated Ops reporting, is superseded by their read-only migration-backup status for retired roles outside fallback_roles.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S03-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"The requested Rule 34 cleanup had specified a standalone task titled \\\"Tidy notebook.md and notes/ per Rule 34\\\" with touches: [], and reporting notebook and index character counts before/after and the task number once to Ops.\"},{\"source_ids\":[\"n2\"],\"text\":\"Make each notebook rule self-contained, at most 240 characters, without (n...) or (d...) footnote IDs.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S04",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# Summary\nOn 2026-11-15, task #934 completed restoration of eight notebooks from the weekly tidy-up's own pre-run archives, with all seven requested roles replying and zero memory-store writes. The tidy-up had reworded ten owner rules, added five, and dropped others. Prevention landed as pi-openviking ov-owner-rules 1543406 and agent-tools owner-rules-guard plus watch checks 01a558e; 30 tests went red-first then green, wt check passed, and the installed script was patched with a local-patches record. ov-health --recheck passed 15/15 and verifier receipts were refreshed. Evidence and the still-unobserved Sunday hypothesis are in ~/ops-checks/openviking-fixes/drift/result.md."
+      },
+      {
+        "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S04-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S04-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S04-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S04",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "# Summary\nFor Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# Summary\nOn 2026-11-15, task #934 completed restoration of eight notebooks from the weekly tidy-up's own pre-run archives, with all seven requested roles replying and zero memory-store writes. The tidy-up had reworded ten owner rules, added five, and dropped others. Prevention landed as pi-openviking ov-owner-rules 1543406 and agent-tools owner-rules-guard plus watch checks 01a558e; 30 tests went red-first then green, wt check passed, and the installed script was patched with a local-patches record. ov-health --recheck passed 15/15 and verifier receipts were refreshed. Evidence and the still-unobserved Sunday hypothesis are in ~/ops-checks/openviking-fixes/drift/result.md."
+      },
+      {
+        "text": "## Frozen backups and implementation\n- R-MIGRATE-1b leaves retired notebook.md and notes/ untouched as read-only migration backups; weekly tidy-up must skip them entirely for roles outside fallback_roles, all 15 as of 2026-11-15.\n- Only fallback-entry backfill and the fallback role's notebook tool may write notebooks. The owner-rule tripwire alone is insufficient: non-owner-rule rewrites also break V2.\n- Retired-role V1 failure means restore an improperly written notebook from its pre-write copy or restore a lost rule to the store, never reopen the notebook.\n- Ops owns verifier, ov-health, tidy-up and write-guard implementation. Inspect direct Edit/cp access: Architecture reported editing its showtell-deploy owner rule on 2026-11-14 despite retirement.\n- Raise owner-only about-page instructions with COO: existing “keep it curated” and “fix the notebook line” wording wrongly directs retired roles to edit frozen files.\n- For the §7.1.4 R-MIGRATE-POST-2/3 replacement draft, name the role's own store preferences, reached through its lead chat, as the destination for lessons and rules; do not instruct notebook edits. The about-page's “this page wins” precedence must also hold against the store."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S04-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity’s default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles. As of 2026-11-15, retired notebook.md and notes/ remain read-only migration backups; weekly tidy-up skips them for roles outside fallback_roles, all 15 as of that date. Only fallback-entry backfill and the fallback role’s notebook tool may write notebooks. Retired-role V1 failure means restoring an improperly written notebook from its pre-write copy or restoring a lost rule to the store, never reopening the notebook.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S04-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S04-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For Task #802 on 2026-11-11, the user approved retiring pi-identity's default notebook.md injection, Notes index, two-layer memory header, notebook tool, and automatic role-note attachments. Role prompts, about.md, Other roles, and message_role must remain intact. Identity directories must remain backed up and intact, rollout-state.json notebook_retired and fallback_roles must be respected, and legacy notebook tests may use opt-in flags. viking_find and viking_read must enter DEFAULT_ALWAYS_ALLOW, with pi-identity/config.ts and pi-web-ui/server/identity-config.ts kept byte-identical and tools exposed across all 15 roles.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S05",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "2. Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: (a) snapshot age 16m with a rebuild in flight -> health_state healthy, stale_badge null; (b) rebuild failed, age 16m -> \"> 15m\"; (c) rebuild in flight but age 31m -> \"> 15m\"."
+      },
+      {
+        "id": "n2",
+        "text": "- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "## Health and freshness\n- /health stays live per request and alone determines server-unreachable under R-FAIL, spec-states.md §4.\n- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not.\n- This supersedes Backend #157's temporary 30-minute in-flight threshold. Label remains \"> 15m\": older than the cadence and not about to refresh. Applies only to entries; pending-sync precedence remains unchanged, with age winning under Architecture #531.\n- Required failing-first cases on 7c38790: age 15m+1s with build started 30s ago gives null; same age with failed build and none in flight gives \"> 15m\"; build started 5m+1s ago gives \"> 15m\"."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S05-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Failing-first tests in tests/unit/openviking-entries-snapshot.test.ts or the entries test, using a fake clock and fake builder: snapshot age 16m with a rebuild in flight -> health_state healthy, stale_badge null; rebuild failed, age 16m -> \\\"> 15m\\\"; rebuild in flight but age 31m -> \\\"> 15m\\\".\"},{\"source_ids\":[\"n2\"],\"text\":\"Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S05-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: snapshot age 16m with a rebuild in flight -> health_state healthy; rebuild failed, age 16m -> \\\"> 15m\\\".\"},{\"source_ids\":[\"n2\"],\"text\":\"Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S05-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Failing-first tests use a fake clock and fake builder in tests/unit/openviking-entries-snapshot.test.ts or the entries test.\"},{\"source_ids\":[\"n2\"],\"text\":\"Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S05",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "2. Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: (a) snapshot age 16m with a rebuild in flight -> health_state healthy, stale_badge null; (b) rebuild failed, age 16m -> \"> 15m\"; (c) rebuild in flight but age 31m -> \"> 15m\"."
+      },
+      {
+        "id": "n2",
+        "text": "- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "## Health and freshness\n- /health stays live per request and alone determines server-unreachable under R-FAIL, spec-states.md §4.\n- R-SNAPSHOT-STALE-1 (rm-3a23be76, QA #136 F5): entries stale_badge is \"> 15m\" iff snapshot age exceeds 15 minutes AND no in-flight build started less than 5 minutes ago. A young rebuild suppresses the badge; failed builds with none in flight and hung builds past 5 minutes do not.\n- This supersedes Backend #157's temporary 30-minute in-flight threshold. Label remains \"> 15m\": older than the cadence and not about to refresh. Applies only to entries; pending-sync precedence remains unchanged, with age winning under Architecture #531.\n- Required failing-first cases on 7c38790: age 15m+1s with build started 30s ago gives null; same age with failed build and none in flight gives \"> 15m\"; build started 5m+1s ago gives \"> 15m\"."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S05-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: snapshot age 16m with a rebuild in flight started less than 5 minutes ago -> health_state healthy, stale_badge null; rebuild failed, age 16m with none in flight -> \\\"> 15m\\\"; rebuild in flight started more than 5 minutes ago, age 31m -> \\\"> 15m\\\".\"},{\"source_ids\":[\"n2\"],\"text\":\"Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S05-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded by canonical evidence specifying the required failing-first cases and the 5-minute in-flight threshold.\"}]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S05-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"2. Failing-first tests (fake clock, fake builder) in tests/unit/openviking-entries-snapshot.test.ts or the entries test: (a) snapshot age 16m with a rebuild in flight -> health_state healthy; (b) rebuild failed, age 16m -> \\\"> 15m\\\".\"},{\"source_ids\":[\"n2\"],\"text\":\"- Hold at most one file's text at a time; handle 60,000 test files on Node's default heap. No network, model calls, writes into checked repositories or execution of their tests; identical input yields identical output.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S06",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Architecture #537 requires every /entries response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial is true exactly when unread_count > 0."
+      },
+      {
+        "id": "n2",
+        "text": "This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S06-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded by canonical evidence documenting that the /entries route was removed and its rules are historical.\"}]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S06-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For the retired /entries route, Architecture #537 required every response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial was true exactly when unread_count > 0.\"},{\"source_ids\":[\"n2\"],\"text\":\"This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules document the retired route, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S06-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Historical Architecture #537 specified that every /entries response include entries_partial (boolean) and unread_count (integer >= 0); entries_partial was true exactly when unread_count > 0. This contract documents the retired route, not the live explorer.\"},{\"source_ids\":[\"n2\"],\"text\":\"This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S06",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Architecture #537 requires every /entries response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial is true exactly when unread_count > 0."
+      },
+      {
+        "id": "n2",
+        "text": "This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S06-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"The retired /entries route contract under Architecture #537 required every response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial was true exactly when unread_count > 0.\"},{\"source_ids\":[\"n2\"],\"text\":\"The historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules document the retired route, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S06-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"For the retired /entries route, Architecture #537 required every response to include entries_partial (boolean) and unread_count (integer >= 0); entries_partial was true exactly when unread_count > 0. This is historical, not current live-explorer guidance.\"},{\"source_ids\":[\"n2\"],\"text\":\"This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules document the retired route, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S06-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"This historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded: the /entries route was removed in backend rm-a8311b06 for task #164, so its response requirements are retired.\"}]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S07",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12."
+      },
+      {
+        "id": "n2",
+        "text": "This historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the rules below describe the retired dashboard, not the live explorer."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S07-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"The historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the contract described the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S07-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"This historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the rules below describe the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S07-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"The historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the contract describes the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S07",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12."
+      },
+      {
+        "id": "n2",
+        "text": "This historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the rules below describe the retired dashboard, not the live explorer."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "# OpenViking dashboard entries contract\nThis historical pi-web-ui contract distinguished incomplete listings from daemon reachability and stale data; backend rm-a8311b06 completed task #164's /entries removal. The rules below document the retired route, not the live explorer."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S07-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"The historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the rules describe the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S07-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"This historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's /entries removal; the rules below describe the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S07-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Backend #155 deployed 7c38790 in live build 7acf602e on 2026-11-12.\"},{\"source_ids\":[\"n2\"],\"text\":\"The historical /entries contract specified a background-built snapshot rather than per-request fan-out. Backend rm-a8311b06 completed task #164's route removal; the contract describes the retired dashboard, not the live explorer.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S08",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- resource-sync-state.json never existed: Ops found zero commits with `git log -S\"resource-sync-state\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync."
+      },
+      {
+        "id": "n2",
+        "text": "- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Live shape at 2026-11-11T23:09:26.646Z: phase phase2, notebook_retired true, fallback_roles [], cutover_ts 2026-11-11T00:53:35.455Z, pending_wt_land_syncs [], stage full, updated_at 2026-11-11T23:09:26.646Z."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S08-r1-A",
+        "response": "{\n  \"items\": [\n    {\n      \"source_ids\": [\"n1\"],\n      \"text\": \"- resource-sync-state.json never existed: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.\"\n    },\n    {\n      \"source_ids\": [\"n2\"],\n      \"text\": \"- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"\n    }\n  ],\n  \"ejected\": []\n}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S08-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"resource-sync-state.json was known to be rot, not a file awaiting first sync: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file.\"},{\"source_ids\":[\"n2\"],\"text\":\"Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S08-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"resource-sync-state.json never existed: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.\"},{\"source_ids\":[\"n2\"],\"text\":\"Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S08",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- resource-sync-state.json never existed: Ops found zero commits with `git log -S\"resource-sync-state\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync."
+      },
+      {
+        "id": "n2",
+        "text": "- Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Live shape at 2026-11-11T23:09:26.646Z: phase phase2, notebook_retired true, fallback_roles [], cutover_ts 2026-11-11T00:53:35.455Z, pending_wt_land_syncs [], stage full, updated_at 2026-11-11T23:09:26.646Z."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S08-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"resource-sync-state.json never existed: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.\"},{\"source_ids\":[\"n2\"],\"text\":\"Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S08-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"resource-sync-state.json never existed: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.\"},{\"source_ids\":[\"n2\"],\"text\":\"Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S08-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"resource-sync-state.json never existed: Ops found zero commits with `git log -S\\\"resource-sync-state\\\" --all` in pi-openviking, no matches in src/, bin/, docs/, tests/, and no live file. It is rot, not a file awaiting first sync.\"},{\"source_ids\":[\"n2\"],\"text\":\"Entries have no updated_at (pi-openviking docs/telemetry-schema.md:148); failedAt records failure time. Never derive synced_at from the file's updated_at: two writers change it for unrelated keys.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S09",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- /home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z."
+      },
+      {
+        "id": "n2",
+        "text": "- The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Ops subsequently verified the live file at 200914 bytes, with updated_at 2026-11-11T23:54:37.299Z and a committed recipient-side Ops entry."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S09-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"/home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.\"},{\"source_ids\":[\"n2\"],\"text\":\"The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S09-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"/home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.\"},{\"source_ids\":[\"n2\"],\"text\":\"The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S09-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"- /home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.\"},{\"source_ids\":[\"n2\"],\"text\":\"- The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S09",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "- /home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z."
+      },
+      {
+        "id": "n2",
+        "text": "- The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Ops subsequently verified the live file at 200914 bytes, with updated_at 2026-11-11T23:54:37.299Z and a committed recipient-side Ops entry."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S09-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"/home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.\"},{\"source_ids\":[\"n2\"],\"text\":\"The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S09-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"- /home/shinelay/.pi/openviking/seen-role-messages.json existed with 624 entries when reverified at 2026-11-11T23:50Z.\"},{\"source_ids\":[\"n2\"],\"text\":\"- The store was first written when the 200K commit writer went live (Ops #826); it was genuinely absent before that.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S09-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\",\"n2\"],\"text\":\"/home/shinelay/.pi/openviking/seen-role-messages.json was genuinely absent before the 200K commit writer went live (Ops #826). It existed with 624 entries when reverified at 2026-11-11T23:50Z.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S10",
+    "repeat": 1,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "6. `pi-web-deploy --when-idle <sha>`; wait live."
+      },
+      {
+        "id": "n2",
+        "text": "- Before restarting Temper, check running or waiting work; pi-web-deploy queues itself and needs no such pre-restart check."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      },
+      {
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S10-r1-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"6. Wait live.\"},{\"source_ids\":[\"n2\"],\"text\":\"- Before restarting Temper, check running or waiting work.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S10-r1-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Wait live.\"},{\"source_ids\":[\"n2\"],\"text\":\"Before restarting Temper, check running or waiting work; pi-web-deploy queues itself and needs no such pre-restart check.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S10-r1-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"Before restarting Temper, check running or waiting work; pi-web-deploy queues itself and needs no such pre-restart check.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded: pi-web-ui deployments must run immediately without `--when-idle`; waiting deployments should be rerun without that flag.\"}]}",
+        "request_ok": true
+      }
+    ]
+  },
+  {
+    "case": "S10",
+    "repeat": 2,
+    "task": "sweep",
+    "notes": [
+      {
+        "id": "n1",
+        "text": "6. `pi-web-deploy --when-idle <sha>`; wait live."
+      },
+      {
+        "id": "n2",
+        "text": "- Before restarting Temper, check running or waiting work; pi-web-deploy queues itself and needs no such pre-restart check."
+      }
+    ],
+    "canonical_evidence": [
+      {
+        "text": "- Requires pi-web-ui installs and restarts immediately with plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; interrupted chats resume automatically.\n- Wants pending idle-wait deployments rerun without the idle-wait option."
+      },
+      {
+        "text": "- Install or restart services only through pi-web-deploy or temper-deploy, immediately rather than waiting for idle.\n- For pi-web-ui, use plain pi-web-deploy or pi-web-deploy restart; never use --when-idle, because interrupted chats resume automatically.\n- If a --when-idle deployment is already waiting, inspect pi-web-deploy status and rerun the same deployment without that flag."
+      }
+    ],
+    "choices": [
+      {
+        "blind_id": "S10-r2-A",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Wait live.\"},{\"source_ids\":[\"n2\"],\"text\":\"Before restarting Temper, check running or waiting work; pi-web-deploy needs no such pre-restart check.\"}],\"ejected\":[]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S10-r2-B",
+        "response": "{\"items\":[{\"source_ids\":[\"n2\"],\"text\":\"Before restarting Temper, check running or waiting work.\"}],\"ejected\":[{\"source_id\":\"n1\",\"reason\":\"Superseded: pi-web-ui deployments must use plain `pi-web-deploy` or `pi-web-deploy restart`, never `--when-idle`; pending idle-wait deployments should be inspected with `pi-web-deploy status` and rerun without the flag.\"}]}",
+        "request_ok": true
+      },
+      {
+        "blind_id": "S10-r2-C",
+        "response": "{\"items\":[{\"source_ids\":[\"n1\"],\"text\":\"Wait live.\"},{\"source_ids\":[\"n2\"],\"text\":\"Before restarting Temper, check running or waiting work.\"}],\"ejected\":[]}",
+        "request_ok": true
+      }
+    ]
+  }
+]

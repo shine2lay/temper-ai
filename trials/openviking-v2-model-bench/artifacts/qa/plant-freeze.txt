@@ -1,0 +1,5 @@
+plant-grades.json frozen (chmod 444) before plants-key.json was opened
+sha256=7b005267580195d0b2e5746089773e115e51c82abd2ec9b0fa8550c00bcd8eb5
+frozen_at=2026-11-15T19:06:49Z
+compare run after freeze -> plant-compare.txt: target field caught 10/10 (2/2 per field), controls flagged 0/5
+caveat: rater wrote the plant script and saw the originals during grading; catch rate may be inflated

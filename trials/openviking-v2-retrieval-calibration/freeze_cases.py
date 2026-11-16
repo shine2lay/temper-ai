@@ -36,21 +36,21 @@ def main():
                           'rationale': 'Canonical Architecture judgment_set label; contradictions are candidates, not automatic ejections.'})
     # Direction means one whole note may be removed without losing a claim.
     # Complementary N-way merges are NOT duplicate pairs (Architecture rm-f22a8461).
-    duplicate_directions = {'D01': 'eject_b', 'D02': 'eject_b', 'D05': 'eject_b',
+    duplicate_directions = {'D01': 'eject_b', 'D05': 'eject_b',
                             'D09': 'eject_b', 'D10': 'eject_a', 'D12': 'eject_b'}
     data24 = json.loads((sources / 'data24.json').read_text())['cases']
     for c in data24:
         for a, b in itertools.combinations(c['notes'], 2):
             decision = duplicate_directions.get(c['id'], 'both_stay')
             if c['id'] == 'D14' and [a['id'], b['id']] == ['n1', 'n2']:
-                decision = 'eject_b'
+                decision = 'eject_a'
             if c['task'] == 'sweep':
                 ejected = c['expected']['ejected']
                 decision = 'eject_a' if a['id'] in ejected else 'eject_b' if b['id'] in ejected else 'both_stay'
             pairs.append({'id': f"{c['id']}-{a['id']}-{b['id']}", 'slice': 'data24',
                           'a': a['text'], 'b': b['text'], 'decision': decision,
                           'label': 'must_merge' if c['task'] == 'dedup' and decision != 'both_stay' else 'data24_both_stay' if decision == 'both_stay' else 'evidence_ejection',
-                          'rationale': 'Pairwise whole-note redundancy' if c['id'] in duplicate_directions else 'Complementary or orthogonal facts both survive; sweep ejection only with canonical evidence.',
+                          'rationale': 'Pairwise whole-note redundancy' if c['task'] == 'dedup' and decision != 'both_stay' else 'Complementary or orthogonal facts both survive; sweep ejection only with canonical evidence.',
                           'source_case': c['id'], 'note_ids': [a['id'], b['id']],
                           'canonical_evidence': c['canonical_evidence']})
     twins = [

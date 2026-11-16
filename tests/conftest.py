@@ -139,6 +139,16 @@ def _no_sealed_box_guard():
 
 
 @pytest.fixture(autouse=True)
+def _isolated_design_taste(tmp_path, monkeypatch):
+    """Synthetic gate answers belong to this test, never the owner's taste log.
+
+    Override even an inherited DESIGN_TASTE_FILE; tests needing another local
+    destination can still set it themselves. Production gate defaults stay intact.
+    """
+    monkeypatch.setenv("DESIGN_TASTE_FILE", str(tmp_path / "taste-owner.md"))
+
+
+@pytest.fixture(autouse=True)
 def _no_trigger_scheduler(monkeypatch):
     """A test server must not fire the repo's schedules in the background,
     nor connect to Slack."""

@@ -195,8 +195,10 @@ def repo(tmp_path, monkeypatch):
     origin, work = tmp_path / "origin.git", tmp_path / "work"
     git("init", "--quiet", "--bare", str(origin), cwd=tmp_path)
     git("clone", "--quiet", str(origin), str(work), cwd=tmp_path)
-    (work / "standee.yaml").write_text("name: rollcall\nbackup:\n  files: [.env, fixtures/shine_book.json]\n")
-    (work / ".gitignore").write_text(".env\nfixtures/shine_book.json\n")
+    (work / "standee.yaml").write_text(
+        "name: rollcall\nbackup:\n  files: [.env, fixtures/shine_book.json]\n  cold_files: [data/backtest.db]\n"
+    )
+    (work / ".gitignore").write_text(".env\nfixtures/shine_book.json\n*.db\n")
     git("add", ".", cwd=work)
     git("commit", "--quiet", "-m", "one", cwd=work)
     first = git("rev-parse", "HEAD", cwd=work)
@@ -225,6 +227,9 @@ def test_the_checkout_is_a_plain_clone_detached_at_the_commit_and_clean(repo):
     env = cd.CHECKOUT / ".env"
     assert env.is_symlink() and os.readlink(env) == str(cd.PROD_HOME / ".env")
     assert os.readlink(cd.CHECKOUT / "fixtures" / "shine_book.json") == str(cd.PROD_HOME / "fixtures" / "shine_book.json")
+    # backup.cold_files too: the live cache the container mounts at /app/data, linked even while absent
+    cold = cd.CHECKOUT / "data" / "backtest.db"
+    assert os.readlink(cold) == str(cd.PROD_HOME / "data" / "backtest.db") and not cold.exists()
     assert cd.dirty() == ""
     cd.checkout(second)  # and on to the next, links kept
     assert git("rev-parse", "HEAD", cwd=cd.CHECKOUT) == second

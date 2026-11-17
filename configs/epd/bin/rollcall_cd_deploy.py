@@ -225,16 +225,18 @@ def checkout(sha: str) -> None:
 
 
 def link_live_files() -> None:
-    """Each file standee.yaml's backup lists, linked from CHECKOUT to the live one in PROD_HOME.
+    """Each file standee.yaml's backup lists (`files` and `cold_files`), linked from CHECKOUT to the
+    live one in PROD_HOME.
 
-    `standee backup` copies those files (the master key in .env, the owner's book) from the directory
-    the environment was last stood up from. Once that is CHECKOUT, each must lead to the live file, or
-    the nightly backup would skip it. A link, not a copy: the live file stays where it is.
+    `standee backup` copies those files (the master key in .env, the backtest cache in data/) from the
+    directory the environment was last stood up from. Once that is CHECKOUT, each must lead to the live
+    file, or the nightly backup would skip it. A link, not a copy: the live file stays where it is, and
+    a link to a file that is absent makes the backup name the live path as missing.
     """
     import yaml  # the host's python3 has it
 
-    names = ((yaml.safe_load((CHECKOUT / "standee.yaml").read_text()) or {}).get("backup") or {}).get("files") or []
-    for name in names:
+    backup = (yaml.safe_load((CHECKOUT / "standee.yaml").read_text()) or {}).get("backup") or {}
+    for name in [*(backup.get("files") or []), *(backup.get("cold_files") or [])]:
         link, target = CHECKOUT / name, PROD_HOME / name
         if link.is_symlink():
             if os.readlink(link) == str(target):

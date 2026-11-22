@@ -25,6 +25,20 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+PINNED = ("entry.py", "owner_gate/__init__.py", "owner_gate/pairs.py")
+#: The builders' harness folder: the pinned files plus what QA #228 F1 slipped past the pins.
+HARNESS = {
+    "entry.py": "print('entry')\n",
+    "owner_gate/__init__.py": "",
+    "owner_gate/pairs.py": "PAIRS = ()\n",
+    "json.py": "# shadows the stdlib json: turns refused rows into ok\n",
+    "owner_gate/__pycache__/pairs.cpython-312.pyc": "stale bytecode\n",
+    "sitecustomize.py": "# runs at start-up\n",
+    "DESIGN.md": "# design\n",
+    "tests/test_pairs.py": "def test(): pass\n",
+}
+
+
 def snapshot(folder: Path, sid: str, captured_at: str) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{sid}.json"
@@ -44,11 +58,15 @@ def og(tmp_path, monkeypatch):
     og = importlib.import_module("rollcall_owner_gate")
     fixed = snapshot(checks / "corpus" / "fixed", "2026-01-02T150000Z", "2026-01-02T15:00:00Z")
     (checks / "corpus" / "MANIFEST.json").write_text(json.dumps({fixed.stem: digest(fixed)}))
-    (checks / "harness").mkdir()
+    harness = checks / "harness"
+    for rel, text in HARNESS.items():
+        (harness / rel).parent.mkdir(parents=True, exist_ok=True)
+        (harness / rel).write_text(text)
     for folder in (skill, checks / "judge"):
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "judge.py").write_text("# judge\n")
         (folder / "allowed.json").write_text('{"codes": []}\n')
+    (skill / "pins.json").write_text(json.dumps({"files": {rel: digest(harness / rel) for rel in PINNED}}))
     monkeypatch.setattr(og, "now", lambda: datetime(2026, 1, 7, 18, 0, tzinfo=UTC))  # a Wednesday
     og.calls, og.built_at, og.judge_code, og.harness_code = [], SHA[:8], og.PASS, 0
     verdicts = {og.PASS: {"verdict": "pass", "expected": 3, "tried": 3, "refused": 1, "allowed_refusals": 1,
@@ -96,7 +114,11 @@ def test_a_pass_runs_the_harness_offline_on_the_image_by_id_and_records_the_numb
     assert result.code == og.PASS and "passed: tried 3, refused 1" in result.summary
     argv = harness_argv(og)
     assert argv[argv.index("--network") + 1] == "none" and "--read-only" in argv
-    assert f"{og.checks / 'harness'}:/harness:ro" in argv and any(a.endswith("/snapshots:/snapshots:ro") for a in argv)
+    run = og.checks / "runs" / records(og)[0]["run_id"]
+    assert f"{run / 'harness'}:/harness:ro" in argv and any(a.endswith("/snapshots:/snapshots:ro") for a in argv)
+    assert not any(str(og.checks / "harness") + ":" in a for a in argv)  # never the builders' folder
+    assert argv[argv.index("--entrypoint") + 1:argv.index("--entrypoint") + 6] == (
+        "python", f"sha256:{'d' * 64}", "-I", "-B", "/harness/entry.py")
     assert f"sha256:{'d' * 64}" in argv and IMAGE not in argv  # by id, so a re-tag mid-run changes nothing
     assert not any(a.startswith("--env-file") for a in argv)
     [rec] = records(og)
@@ -190,6 +212,52 @@ def test_the_record_goes_to_wt_deploys_notes_file_when_it_names_one(og, monkeypa
     monkeypatch.setenv("DEPLOY_RECORD_NOTES", str(notes))
     og.gate(SHA, IMAGE)
     assert json.loads(notes.read_text())["owner_action_gate"]["tried"] == 3
+
+
+# QA #228 F1: an unpinned json.py or stale .pyc in the builders' harness folder turned a block into a pass.
+
+def test_the_harness_mounted_is_a_read_only_copy_of_only_the_pinned_files(og):
+    og.gate(SHA, IMAGE)
+    copy = og.checks / "runs" / records(og)[0]["run_id"] / "harness"
+    files = sorted(p.relative_to(copy).as_posix() for p in copy.rglob("*") if not p.is_dir())
+    assert files == sorted(PINNED)
+    assert sorted(p.relative_to(copy).as_posix() for p in copy.rglob("*") if p.is_dir()) == ["owner_gate"]
+    for rel in PINNED:
+        assert (copy / rel).read_bytes() == (og.checks / "harness" / rel).read_bytes()
+        assert (copy / rel).stat().st_mode & 0o777 == 0o444
+    assert copy.stat().st_mode & 0o777 == 0o555 and (copy / "owner_gate").stat().st_mode & 0o777 == 0o555
+
+
+def test_the_judge_checks_the_clean_copy_in_isolated_mode(og):
+    run = og.checks / "runs" / "r1"
+    argv = og.judge_argv(run, 0)
+    assert argv[1:4] == ["-I", "-B", str(og.skill / "judge.py")]
+    assert argv[argv.index("--harness-root") + 1] == str(run / "harness")
+    assert argv[argv.index("--pins") + 1] == str(og.skill / "pins.json")
+
+
+def test_a_pinned_file_that_changed_cannot_be_judged_and_runs_nothing(og):
+    (og.checks / "harness" / "owner_gate" / "pairs.py").write_text("PAIRS = ('skip follow_mid',)\n")
+    result = og.gate(SHA, IMAGE)
+    assert result.code == og.CANNOT_JUDGE and "owner_gate/pairs.py" in result.record["reason"]
+    assert not [c for c in og.calls if c[0] == "run"]
+
+
+def test_a_pinned_file_that_is_a_symlink_cannot_be_judged(og, tmp_path):
+    entry = og.checks / "harness" / "entry.py"
+    (tmp_path / "elsewhere.py").write_bytes(entry.read_bytes())
+    entry.unlink()
+    entry.symlink_to(tmp_path / "elsewhere.py")
+    result = og.gate(SHA, IMAGE)
+    assert result.code == og.CANNOT_JUDGE and "entry.py" in result.record["reason"]
+    assert not [c for c in og.calls if c[0] == "run"]
+
+
+def test_no_pins_cannot_be_judged(og):
+    (og.skill / "pins.json").write_text('{"files": {}}')
+    result = og.gate(SHA, IMAGE)
+    assert result.code == og.CANNOT_JUDGE and "pins" in result.record["reason"]
+    assert not [c for c in og.calls if c[0] == "run"]
 
 
 def test_old_run_folders_are_pruned(og, monkeypatch):

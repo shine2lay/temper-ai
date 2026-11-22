@@ -10,10 +10,14 @@ What one run does (contract: ~/rollcall-checks/owner-actions/CONTRACT.md):
   1. snapshots: every corpus/fixed/*.json (each checked against corpus/MANIFEST.json) and the newest
      corpus/latest/*.json, linked into runs/<run_id>/snapshots/ (one folder, mounted read-only);
   2. the candidate image, by id, must say it was built at S (ROLLCALL_COMMIT);
-  3. backend #263's harness in that image: `docker run --rm --network none --read-only` with no env file and
+  3. backend #263's harness in that image: only the files RollCall's pins.json lists are copied, hash-checked,
+     into runs/<run_id>/harness/ (files 0444, folders 0555) and that copy is mounted, never the builders'
+     folder, whose other files (a json.py, a stale __pycache__/*.pyc) would change what runs (QA #228 F1);
+     `docker run --rm --network none --read-only ... python -I -B /harness/entry.py` with no env file and
      no keys (CONTRACT §4); its results stay in the run folder;
   4. RollCall's judge, allowed list and pins from RollCall's role folder (never a builder's copy; the
-     builders' read-only copy in corpus/../judge must be byte-identical, or the gate cannot judge);
+     builders' read-only copy in corpus/../judge must be byte-identical, or the gate cannot judge); the
+     judge checks the copy holds exactly the pinned bytes and nothing else;
   5. one record {tried, refused, blocked, not_exercisable, ms, ...} appended to runs.jsonl (append only)
      and, when wt deploy names a notes file (DEPLOY_RECORD_NOTES), written there for its deploys.jsonl.
 Nothing here places, changes or cancels an order, reads a broker, or touches the live prod DB.
@@ -79,10 +83,7 @@ def docker(*args: str, timeout: float) -> subprocess.CompletedProcess[str]:
 
 
 def run_judge(run: Path, harness_exit: int) -> int:
-    argv = [sys.executable, str(SKILL / "judge.py"), "--snapshots", str(run / "snapshots"),
-            "--results", str(run / "out" / "results.jsonl"), "--harness-exit", str(harness_exit),
-            "--harness-root", str(CHECKS / "harness"), "--allowed", str(SKILL / "allowed.json"),
-            "--pins", str(SKILL / "pins.json"), "--out", str(run / "verdict.json")]
+    argv = judge_argv(run, harness_exit)
     return subprocess.run(argv, capture_output=True, text=True, timeout=JUDGE_CEILING_S, check=False).returncode
 
 
@@ -98,6 +99,52 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def judge_argv(run: Path, harness_exit: int) -> list[str]:
+    """The judge on the run's clean harness copy, isolated (-I: no PYTHON* env, no user site) and -B."""
+    return [sys.executable, "-I", "-B", str(SKILL / "judge.py"), "--snapshots", str(run / "snapshots"),
+            "--results", str(run / "out" / "results.jsonl"), "--harness-exit", str(harness_exit),
+            "--harness-root", str(run / "harness"), "--allowed", str(SKILL / "allowed.json"),
+            "--pins", str(SKILL / "pins.json"), "--out", str(run / "verdict.json")]
+
+
+def stage_harness(run: Path) -> int:
+    """Copy only the pinned harness files into run/harness (files 0444, folders 0555); the number copied.
+
+    A pinned file that is missing, a symlink, or not the pinned bytes = cannot judge, before anything runs."""
+    try:
+        files = json.loads((SKILL / "pins.json").read_text()).get("files")
+    except (OSError, ValueError, AttributeError) as e:
+        raise CannotRun(f"pins.json unreadable: {e}") from e
+    if not isinstance(files, dict) or not files:
+        raise CannotRun("pins.json pins no harness file")
+    src_root, dest = CHECKS / "harness", run / "harness"
+    folders = {dest}
+    for rel, want in sorted(files.items()):
+        parts = Path(rel).parts
+        if not parts or Path(rel).is_absolute() or ".." in parts:
+            raise CannotRun(f"pinned path outside the harness root: {rel}")
+        src, out = src_root / rel, dest / rel
+        if src.is_symlink() or not src.is_file():
+            raise CannotRun(f"pinned harness file missing or not a regular file: {rel}")
+        data = src.read_bytes()
+        if hashlib.sha256(data).hexdigest() != want:
+            raise CannotRun(f"harness file changed since it was pinned: {rel}")
+        out.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        folders.update(p for p in out.parents if p == dest or dest in p.parents)
+        out.write_bytes(data)
+        out.chmod(0o444)
+    for folder in sorted(folders, key=lambda p: len(p.parts), reverse=True):
+        folder.chmod(0o555)
+    return len(files)
+
+
+def remove_tree(path: Path) -> None:
+    """rmtree that first makes the run's read-only folders (its harness copy) writable again."""
+    for here, _dirs, _files in os.walk(path):
+        os.chmod(here, 0o700)
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def check_mirror() -> None:
@@ -169,9 +216,9 @@ def run_harness(run: Path, image_id: str, label: str) -> int:
     name = f"owner-gate-{run.name}"
     argv = ["run", "--rm", "--name", name, "--network", "none", "--read-only", "--tmpfs", "/tmp",
             "--user", f"{os.getuid()}:{os.getgid()}", "-e", f"OWNER_GATE_IMAGE={label}",
-            "-v", f"{run / 'snapshots'}:/snapshots:ro", "-v", f"{CHECKS / 'harness'}:/harness:ro",
+            "-v", f"{run / 'snapshots'}:/snapshots:ro", "-v", f"{run / 'harness'}:/harness:ro",
             "-v", f"{out}:/out", "--entrypoint", "python", image_id,
-            "/harness/entry.py", "--snapshot-dir", "/snapshots", "--out", "/out/results.jsonl"]
+            "-I", "-B", "/harness/entry.py", "--snapshot-dir", "/snapshots", "--out", "/out/results.jsonl"]
     try:
         r = docker(*argv, timeout=HARNESS_CEILING_S)
     except subprocess.TimeoutExpired:
@@ -184,7 +231,7 @@ def run_harness(run: Path, image_id: str, label: str) -> int:
 
 def prune_runs(runs: Path) -> None:
     for old in sorted(p for p in runs.iterdir() if p.is_dir())[:-KEEP_RUNS]:
-        shutil.rmtree(old, ignore_errors=True)
+        remove_tree(old)
 
 
 def append_record(record: dict) -> None:
@@ -211,6 +258,7 @@ def gate(sha: str, image: str) -> Gate:
         run.mkdir(mode=0o700)
         check_mirror()
         record["snapshots"] = pick_snapshots(run)
+        record["harness_files"] = stage_harness(run)
         record["image_id"] = image_at(image, sha)
         record["harness_exit"] = run_harness(run, record["image_id"], f"{image} ({record['image_id'][:19]})")
         code = run_judge(run, record["harness_exit"])

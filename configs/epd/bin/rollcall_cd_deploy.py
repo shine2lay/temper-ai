@@ -11,7 +11,9 @@
         `rollcall-staging put S` and QA's before-release smoke against the staging copy (red: exit 1,
         prod untouched), then the release, then QA's live smoke against prod (red: exit 1 while S is
         live, and wt deploy's own undo puts the previous live commit back). A red is never run again.
-        --kind undo runs neither.
+        Between staging and prod it runs RollCall's owner-action gate (rollcall_owner_gate) on the staging
+        image built at S: a block or a cannot-judge is exit 1 with prod untouched.
+        --kind undo runs none of these, so an undo stays fast.
 
 `wt deploy` (agent-tools lib/deploy, `repos.rollcall.deploy` in agent-tools wt.yaml, docs/wt-deploy.md)
 decides when and what goes live: the two-minute quiet window, batching, skipped commits, CI verdicts, the
@@ -50,6 +52,10 @@ import time
 from pathlib import Path
 
 BIN = Path(__file__).resolve().parent
+sys.path.insert(0, str(BIN))
+
+import rollcall_owner_gate  # noqa: E402
+
 EXTRA_PATH = [str(Path.home() / ".local" / "bin"), "/usr/local/bin", "/usr/bin", "/bin"]
 os.environ["PATH"] = os.pathsep.join(
     dict.fromkeys([p for p in os.environ.get("PATH", "").split(os.pathsep) if p] + EXTRA_PATH)
@@ -75,6 +81,8 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 STAGING_PUT = ("rollcall-staging", "put")
 STAGING_URL = "http://127.0.0.1:8030"
 STAGING_CONTAINER = "rollcall-staging-rollcall-1"
+#: The image `rollcall-staging put S` builds and serves: the candidate the owner-action gate runs.
+STAGING_IMAGE = "rollcall:rollcall-staging"
 PROD_URL = "http://127.0.0.1:8020"
 PROD_CONTAINER = "rollcall-prod-rollcall-1"
 #: Staging's QA logins have the seed's password: ROLLCALL_SEED_PASSWORD when the copy was given one, else the
@@ -278,6 +286,15 @@ def before_prod(sha: str) -> str | None:
     return None if code == 0 else f"smoke-before on staging exited {code}: {red}"
 
 
+def owner_action_gate(sha: str) -> str | None:
+    """RollCall's owner-action gate on the staging image built at `sha`; None when it passed, else why prod is
+    not touched (a block or a cannot-judge)."""
+    print(f"rollcall_cd_deploy: owner-action gate on {STAGING_IMAGE} at {sha[:12]}", flush=True)
+    result = rollcall_owner_gate.gate(sha, STAGING_IMAGE)
+    print(f"rollcall_cd_deploy: {result.summary}", flush=True)
+    return None if result.code == rollcall_owner_gate.PASS else result.summary
+
+
 # --------------------------------------------------------------------------- deploy --
 
 def deploy(sha: str, kind: str, reason: str) -> int:
@@ -299,7 +316,7 @@ def deploy(sha: str, kind: str, reason: str) -> int:
         except CheckoutProblem as e:  # before the release: nothing changed
             print(f"rollcall_cd_deploy: refused: {e}", flush=True)
             return 1
-        if kind == "deploy" and (stop := before_prod(sha)):
+        if kind == "deploy" and (stop := before_prod(sha) or owner_action_gate(sha)):
             print(f"rollcall_cd_deploy: release of {sha[:12]} stopped before prod: {stop}; prod was not "
                   f"touched", flush=True)
             return 1

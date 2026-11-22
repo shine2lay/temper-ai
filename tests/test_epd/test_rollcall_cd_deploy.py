@@ -57,7 +57,24 @@ def cd(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cd, "run_step", run_step)
     monkeypatch.setattr(cd, "container_secret", lambda container, argv: f"pw-of-{container}")
+    fake_gate(cd, monkeypatch)
     return cd
+
+
+def fake_gate(cd, monkeypatch):
+    """The owner-action gate faked: `cd.gated` lists (sha, image); `cd.gate_code` sets its answer (default pass)."""
+    og = cd.rollcall_owner_gate
+    cd.gated, cd.gate_code = [], og.PASS
+    records = {og.PASS: {"tried": 25, "refused": 0, "not_exercisable": 24, "ms": 20000},
+               og.BLOCK: {"blocked": 1, "blocked_items": [{"action": "follow_mid", "item_id": "rc-d3b78606",
+                                                          "why": "refused_not_allowed", "code": "rule_floor_unknown"}]},
+               og.CANNOT_JUDGE: {"reason": "harness file changed since it was pinned: entry.py"}}
+
+    def gate(sha, image):
+        cd.gated.append((sha, image))
+        return og.Gate(cd.gate_code, records[cd.gate_code])
+
+    monkeypatch.setattr(og, "gate", gate)
 
 
 # ---- what wt deploy reads: the exit code ------------------------------------------------------------
@@ -110,9 +127,41 @@ def test_a_red_live_smoke_exits_1_after_the_release_naming_the_last_good_commit(
     assert "pw-of-" not in out
 
 
+# ---- RollCall's owner-action gate between staging and prod (rollcall #61) ----------------------------
+
+
+def test_a_passing_gate_runs_on_the_staging_image_after_smoke_before_and_the_release_goes_on(cd, capsys):
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 0
+    assert cd.gated == [(A, "rollcall:rollcall-staging")]
+    assert cd.released == [(A, "deploy", "master aaaaaaaa")]
+    assert "owner-action gate passed: tried 25" in capsys.readouterr().out
+
+
+def test_a_gate_block_stops_the_release_before_prod(cd, capsys):
+    cd.gate_code = cd.rollcall_owner_gate.BLOCK
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
+    assert cd.released == [] and "make smoke-live" not in [s[0] for s in cd.steps]
+    out = capsys.readouterr().out
+    assert "stopped before prod: owner-action gate blocked 1: follow_mid on rc-d3b78606" in out
+    assert "prod was not touched" in out
+
+
+def test_a_gate_that_cannot_judge_stops_the_release_before_prod(cd, capsys):
+    cd.gate_code = cd.rollcall_owner_gate.CANNOT_JUDGE
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
+    assert cd.released == []
+    assert "stopped before prod: owner-action gate cannot judge: harness file changed" in capsys.readouterr().out
+
+
+def test_red_staging_skips_the_gate(cd):
+    cd.step_codes["make smoke-before"] = 1
+    assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
+    assert cd.gated == []
+
+
 def test_an_undo_runs_no_smoke_and_a_failed_release_no_live_smoke(cd):
     assert cd.deploy(B, "undo", "smoke-live red on aaaaaaaa") == 0
-    assert cd.steps == []
+    assert cd.steps == [] and cd.gated == []  # an undo stays fast: no staging, smoke or owner-action gate
     cd.release_result = (1, "health failed; undone")
     assert cd.deploy(A, "deploy", "master aaaaaaaa") == 1
     assert [s[0] for s in cd.steps] == ["rollcall-staging put", "make smoke-before"]
@@ -213,6 +262,7 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setattr(cd, "REPO_URL", str(origin))
     monkeypatch.setattr(cd, "run_step", lambda argv, *, env=None, ceiling_s: (0, ["ok"]))  # staging + smoke: green
     monkeypatch.setattr(cd, "container_secret", lambda container, argv: "")
+    fake_gate(cd, monkeypatch)
     cd.ensure_clone()
     return cd, work, first, second
 
